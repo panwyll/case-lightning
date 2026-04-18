@@ -121,18 +121,18 @@ export default function Page() {
             <CtaButton
               label="Book a Demo"
               href={buildCtaHref(CTA_ROUTES.demo, 'hero_book_demo')}
-              dataCta="hero-book-demo"
+              dataCta="hero_book_demo"
             />
             <CtaButton
               label="Start Free Trial"
               href={buildCtaHref(CTA_ROUTES.trial, 'hero_start_trial')}
-              dataCta="hero-start-trial"
+              dataCta="hero_start_trial"
               variant="secondary"
             />
             <CtaButton
               label="See How It Works"
               href={buildCtaHref(CTA_ROUTES.howItWorks, 'hero_see_how_it_works')}
-              dataCta="hero-see-how-it-works"
+              dataCta="hero_see_how_it_works"
               variant="text"
             />
           </div>
@@ -190,7 +190,7 @@ export default function Page() {
             <CtaButton
               label="See How It Works"
               href={buildCtaHref(CTA_ROUTES.howItWorks, 'midpage_see_how_it_works')}
-              dataCta="midpage-see-how-it-works"
+              dataCta="midpage_see_how_it_works"
               variant="secondary"
             />
           </div>
@@ -220,17 +220,17 @@ export default function Page() {
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-600">Simple pricing</p>
           <h2 className="mt-3 text-4xl font-bold">£200/month</h2>
           <p className="mt-3 text-slate-700">One flat monthly price to help your team handle more cases and reply faster.</p>
-          <p className="mt-5 font-semibold text-slate-900">If it doesn’t save you time, don’t keep it.</p>
+          <p className="mt-5 font-semibold text-slate-900">If it doesn't save you time, don't keep it.</p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
             <CtaButton
               label="Start Free Trial"
               href={buildCtaHref(CTA_ROUTES.trial, 'pricing_start_trial')}
-              dataCta="pricing-start-trial"
+              dataCta="pricing_start_trial"
             />
             <CtaButton
               label="Book a Demo"
               href={buildCtaHref(CTA_ROUTES.demo, 'midpage_book_demo')}
-              dataCta="midpage-book-demo"
+              dataCta="midpage_book_demo"
               variant="secondary"
             />
           </div>
@@ -269,12 +269,12 @@ export default function Page() {
             <CtaButton
               label="Book a Demo"
               href={buildCtaHref(CTA_ROUTES.demo, 'footer_book_demo')}
-              dataCta="footer-book-demo"
+              dataCta="footer_book_demo"
             />
             <CtaButton
               label="Start Free Trial"
               href={buildCtaHref(CTA_ROUTES.trial, 'footer_start_trial')}
-              dataCta="footer-start-trial"
+              dataCta="footer_start_trial"
               variant="secondary"
             />
           </div>
