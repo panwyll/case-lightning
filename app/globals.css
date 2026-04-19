@@ -8,9 +8,21 @@
 
 html {
   scroll-behavior: smooth;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
+  background-color: #020617; /* slate-950 */
+  color: #f8fafc;             /* slate-50 */
+}
+
+/* FAQ accordion – remove default browser details marker */
+details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+  display: none;
 }
