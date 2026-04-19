@@ -152,9 +152,6 @@ export default function Page() {
         </div>
 
         <div className="relative mx-auto max-w-4xl text-center">
-          <div className="mb-5 inline-block rounded-full border border-brand-500/40 bg-brand-500/10 px-4 py-1.5 text-sm font-semibold text-brand-500">
-            Built for small law firms &amp; conveyancers
-          </div>
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
             10X More Cases.
             <br className="hidden sm:block" />
@@ -162,13 +159,6 @@ export default function Page() {
             <br className="hidden sm:block" />
             Or your money back.
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-400 md:text-xl">
-            CaseLightning turns messy case email threads into a clear summary and fast next actions
-            — right inside Outlook. Your team moves faster without hiring more staff.
-          </p>
-          <p className="mt-4 text-base font-semibold text-slate-300">
-            £200/month &nbsp;·&nbsp; Money-back guarantee &nbsp;·&nbsp; No complicated setup
-          </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Cta
               label="Start Free Trial"
