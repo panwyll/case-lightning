@@ -26,14 +26,16 @@ function Redirector() {
       if (val) dest.searchParams.set(key, val);
     }
 
-    // Fire a GA4 event before leaving so we can track funnel entry
-    if (typeof window !== 'undefined' && typeof (window as any).gtag === 'function') {
+    // Fire a GA4 event before leaving so we can track funnel entry.
+    // transport_type 'beacon' uses sendBeacon, which survives page unload reliably.
+    if (typeof (window as any).gtag === 'function') {
       (window as any).gtag('event', 'begin_trial', {
         utm_source: searchParams.get('utm_source') ?? undefined,
         utm_medium: searchParams.get('utm_medium') ?? undefined,
         utm_campaign: searchParams.get('utm_campaign') ?? undefined,
         utm_content: searchParams.get('utm_content') ?? undefined,
         page_location: window.location.href,
+        transport_type: 'beacon',
       });
     }
 
