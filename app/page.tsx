@@ -151,11 +151,11 @@ export default function Page() {
       {/* ── HERO ── */}
       <section className="relative overflow-hidden bg-slate-950 px-6 pb-24 pt-20 md:pb-32 md:pt-28">
         {/* Subtle radial glow behind headline */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 flex items-start justify-center"
-        >
-          <div className="h-[500px] w-[700px] -translate-y-1/3 rounded-full bg-brand-500 opacity-[0.07] blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 flex items-start justify-center">
+          <div
+            aria-hidden="true"
+            className="h-[500px] w-[700px] -translate-y-1/3 rounded-full bg-brand-500 opacity-[0.07] blur-3xl"
+          />
         </div>
 
         <div className="relative mx-auto max-w-4xl text-center">
@@ -309,11 +309,11 @@ export default function Page() {
 
       {/* ── FINAL CTA ── */}
       <section className="relative overflow-hidden bg-slate-900 px-6 py-16 md:py-24">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0 flex items-center justify-center"
-        >
-          <div className="h-[400px] w-[600px] rounded-full bg-brand-pink opacity-[0.08] blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            aria-hidden="true"
+            className="h-[400px] w-[600px] rounded-full bg-brand-pink opacity-[0.08] blur-3xl"
+          />
         </div>
         <div className="relative mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-extrabold md:text-5xl">
