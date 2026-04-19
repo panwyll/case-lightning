@@ -6,7 +6,6 @@ const UTM = {
 } as const;
 
 const ROUTES = {
-  demo: '/book-demo',
   trial: '/start-trial',
 } as const;
 
@@ -134,12 +133,6 @@ export default function Page() {
           </span>
           <div className="flex items-center gap-3">
             <Cta
-              label="Book a Demo"
-              href={ctaHref(ROUTES.demo, 'nav_book_demo')}
-              dataCta="nav_book_demo"
-              variant="secondary"
-            />
-            <Cta
               label="Start Free Trial"
               href={ctaHref(ROUTES.trial, 'nav_start_trial')}
               dataCta="nav_start_trial"
@@ -163,11 +156,11 @@ export default function Page() {
             Built for small law firms &amp; conveyancers
           </div>
           <h1 className="text-4xl font-extrabold leading-tight tracking-tight md:text-6xl">
-            Handle more cases.
+            10X More Cases.
             <br className="hidden sm:block" />
-            <span className="text-brand-500"> Reply faster.</span>
+            <span className="text-brand-500"> Without Leaving Outlook.</span>
             <br className="hidden sm:block" />
-            Make more money.
+            Or your money back.
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-400 md:text-xl">
             CaseLightning turns messy case email threads into a clear summary and fast next actions
@@ -182,13 +175,6 @@ export default function Page() {
               href={ctaHref(ROUTES.trial, 'hero_start_trial')}
               dataCta="hero_start_trial"
               size="lg"
-            />
-            <Cta
-              label="Book a Demo"
-              href={ctaHref(ROUTES.demo, 'hero_book_demo')}
-              dataCta="hero_book_demo"
-              size="lg"
-              variant="secondary"
             />
           </div>
         </div>
@@ -250,12 +236,6 @@ export default function Page() {
                 href={ctaHref(ROUTES.trial, 'pricing_start_trial')}
                 dataCta="pricing_start_trial"
                 size="lg"
-              />
-              <Cta
-                label="Book a Demo"
-                href={ctaHref(ROUTES.demo, 'pricing_book_demo')}
-                dataCta="pricing_book_demo"
-                variant="secondary"
               />
             </div>
           </div>
@@ -328,13 +308,6 @@ export default function Page() {
               href={ctaHref(ROUTES.trial, 'footer_start_trial')}
               dataCta="footer_start_trial"
               size="lg"
-            />
-            <Cta
-              label="Book a Demo"
-              href={ctaHref(ROUTES.demo, 'footer_book_demo')}
-              dataCta="footer_book_demo"
-              size="lg"
-              variant="secondary"
             />
           </div>
           <p className="mt-6 text-sm text-slate-500">
