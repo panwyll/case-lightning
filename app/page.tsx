@@ -53,6 +53,24 @@ function Cta({ label, href, dataCta, variant = 'primary', size = 'md' }: CtaProp
 }
 
 // ── Page data ─────────────────────────────────────────────────────────────────
+const highlights = [
+  {
+    icon: '⚖️',
+    title: 'Add a QC to your team',
+    body: 'Trained on 8,192 legal documents, CaseLightning gives every fee earner instant access to expert-level case insight.',
+  },
+  {
+    icon: '📧',
+    title: 'Who runs the world? Email.',
+    body: 'Manage your transactions from exactly where you and your clients already operate — no new tools, no workflow changes.',
+  },
+  {
+    icon: '☁️',
+    title: 'Automate case knowledge',
+    body: 'Keep your case files updated in OneDrive. Automatically. Your knowledge base stays current without anyone lifting a finger.',
+  },
+];
+
 const features = [
   {
     icon: '⚡',
@@ -166,6 +184,24 @@ export default function Page() {
               dataCta="hero_start_trial"
               size="lg"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* ── HIGHLIGHT CARDS ── */}
+      <section className="bg-slate-900 px-6 py-16 md:py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid gap-6 sm:grid-cols-3">
+            {highlights.map((h) => (
+              <article
+                key={h.title}
+                className="rounded-2xl border border-slate-700 bg-slate-950 p-8 shadow-sm transition hover:border-brand-blue hover:shadow-glow-blue"
+              >
+                <span className="text-4xl">{h.icon}</span>
+                <h3 className="mt-4 text-xl font-bold text-white">{h.title}</h3>
+                <p className="mt-2 text-slate-400">{h.body}</p>
+              </article>
+            ))}
           </div>
         </div>
       </section>
