@@ -3,6 +3,12 @@
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 
+declare global {
+  interface Window {
+    gtag?: (...args: unknown[]) => void;
+  }
+}
+
 const WAITLIST_ENDPOINT = process.env.NEXT_PUBLIC_WAITLIST_ENDPOINT ?? '';
 
 // ── Form ──────────────────────────────────────────────────────────────────────
@@ -23,8 +29,8 @@ function WaitlistForm() {
     setError('');
 
     // Fire GA4 event
-    if (typeof (window as unknown as { gtag?: Function }).gtag === 'function') {
-      (window as unknown as { gtag: Function }).gtag('event', 'waitlist_signup', {
+    if (typeof window.gtag === 'function') {
+      window.gtag('event', 'waitlist_signup', {
         utm_source: searchParams.get('utm_source') ?? undefined,
         utm_medium: searchParams.get('utm_medium') ?? undefined,
         utm_campaign: searchParams.get('utm_campaign') ?? undefined,

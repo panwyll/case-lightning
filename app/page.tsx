@@ -432,7 +432,7 @@ export default function Page() {
               >
                 <summary className="flex cursor-pointer items-center justify-between gap-4 px-6 py-5">
                   <span className="text-lg font-semibold text-white">{item.q}</span>
-                  <span className="shrink-0 text-xl text-brand-blue transition-transform duration-200 group-open:rotate-45">
+                  <span aria-hidden="true" className="shrink-0 text-xl text-brand-blue transition-transform duration-200 group-open:rotate-45">
                     +
                   </span>
                 </summary>
