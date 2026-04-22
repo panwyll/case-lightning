@@ -136,9 +136,9 @@ function Cta({ label, href, dataCta, variant = 'primary', size = 'md', className
 // ── Page data ─────────────────────────────────────────────────────────────────
 const features = [
   {
-    icon: '⚡',
-    title: 'Handle more cases without hiring',
-    body: 'Move work forward faster with your current team. No extra headcount needed.',
+    icon: '⚖️',
+    title: 'Add a QC to your team',
+    body: 'Trained on 8,192 legal documents, CaseLightning gives every fee earner instant access to expert-level case insight.',
   },
   {
     icon: '💬',
@@ -301,7 +301,7 @@ export default function Page() {
               size="lg"
             />
           </div>
-          <p className="mt-4 text-sm text-slate-500">No credit card required &nbsp;·&nbsp; 14-day free trial</p>
+
         </div>
       </section>
 
