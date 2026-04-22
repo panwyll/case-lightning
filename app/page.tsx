@@ -141,19 +141,14 @@ const features = [
     body: 'Trained on 8,192 legal documents, CaseLightning gives every fee earner instant access to expert-level case insight.',
   },
   {
-    icon: '💬',
-    title: 'Reply in minutes, not after digging through email',
-    body: 'Get the full case picture instantly, then send a clear, confident update.',
+    icon: '📧',
+    title: 'Who runs the world? Email.',
+    body: 'Manage your transactions from exactly where you and your clients already operate — no new tools, no workflow changes.',
   },
   {
-    icon: '📋',
-    title: 'Turn long email chains into a clear crib sheet',
-    body: 'Stop reading back through threads. See what matters — now.',
-  },
-  {
-    icon: '😊',
-    title: 'Give clients faster, better updates',
-    body: 'Keep clients reassured and reduce time-wasting chasing calls.',
+    icon: '☁️',
+    title: 'Automate case knowledge',
+    body: 'Keep your case files updated in OneDrive. Automatically. Your knowledge base stays current without anyone lifting a finger.',
   },
 ];
 
@@ -195,7 +190,7 @@ const pricingTiers = [
 const testimonials = [
   {
     quote:
-      'We cut the time spent reading back through emails by more than half. The team handles more cases without anyone working late.',
+      'We now bill more work in the same hours. CaseLightning cut the time we spend chasing context so our fee earners spend more of the day on billable work.',
     author: 'Sarah M.',
     role: 'Practice Manager, conveyancing firm',
   },
@@ -315,14 +310,14 @@ export default function Page() {
           <p className="mt-3 text-lg text-slate-400">
             Speed up every step. Keep clients happy. Grow without adding headcount.
           </p>
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
+          <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {features.map((f) => (
               <article
                 key={f.title}
-                className="rounded-2xl border border-slate-700/60 bg-slate-950/80 p-6 shadow-[0_4px_24px_rgba(0,0,0,0.45)] transition duration-200 hover:border-brand-blue hover:shadow-[0_6px_32px_rgba(0,212,255,0.15)]"
+                className="rounded-2xl border border-slate-700 bg-slate-950 p-8 shadow-sm transition hover:border-brand-blue hover:shadow-glow-blue"
               >
-                <span className="text-3xl">{f.icon}</span>
-                <h3 className="mt-3 text-xl font-semibold text-white">{f.title}</h3>
+                <span className="text-4xl">{f.icon}</span>
+                <h3 className="mt-4 text-xl font-bold text-white">{f.title}</h3>
                 <p className="mt-2 text-slate-400">{f.body}</p>
               </article>
             ))}
