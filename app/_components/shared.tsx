@@ -102,67 +102,11 @@ export function SectionBackground({ positions = SECTION_BG }: { positions?: BgPo
 }
 
 // ── Reusable CTA button ───────────────────────────────────────────────────────
-type CtaProps = {
-  label: string;
-  href: string;
-  dataCta: string;
-  variant?: 'primary' | 'secondary' | 'ghost';
-  size?: 'md' | 'lg';
-  className?: string;
-};
-
-export function Cta({ label, href, dataCta, variant = 'primary', size = 'md', className = '' }: CtaProps) {
-  const base =
-    'inline-flex items-center justify-center rounded-xl font-semibold transition-all duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-pink';
-
-  const sizes = {
-    md: 'px-6 py-3 text-base',
-    lg: 'px-8 py-4 text-lg',
-  };
-
-  const variants = {
-    primary:
-      'bg-brand-pink text-white hover:bg-brand-pink-dim shadow-glow-pink hover:shadow-[0_0_35px_rgba(255,45,120,0.65)] active:scale-95',
-    secondary:
-      'border-2 border-slate-600 bg-transparent text-white hover:border-brand-blue hover:text-brand-blue active:scale-95',
-    ghost: 'text-slate-400 hover:text-brand-blue underline underline-offset-4',
-  };
-
-  return (
-    <a href={href} className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} data-cta={dataCta}>
-      {label}
-    </a>
-  );
-}
+export type { CtaProps } from './Cta';
+export { Cta } from './Cta';
 
 // ── Shared nav header ─────────────────────────────────────────────────────────
-type NavHeaderProps = {
-  signupHref: string;
-};
-
-export function NavHeader({ signupHref }: NavHeaderProps) {
-  return (
-    <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-[0_1px_20px_rgba(0,0,0,0.5)]">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <a href="/" className="text-xl font-bold tracking-tight transition hover:opacity-80">
-          Case<span className="text-brand-500">Lightning</span>
-        </a>
-        <nav className="hidden items-center gap-8 text-sm font-medium text-slate-400 md:flex">
-          <a href="/how-it-works" className="transition-colors hover:text-white">How It Works</a>
-          <a href="/pricing" className="transition-colors hover:text-white">Pricing</a>
-          <a href="/faq" className="transition-colors hover:text-white">FAQ</a>
-        </nav>
-        <div className="flex items-center gap-3">
-          <Cta
-            label="Sign Up"
-            href={signupHref}
-            dataCta="nav_signup"
-          />
-        </div>
-      </div>
-    </header>
-  );
-}
+export { NavHeader } from './NavHeader';
 
 // ── Shared footer ─────────────────────────────────────────────────────────────
 export function SiteFooter() {
