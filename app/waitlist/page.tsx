@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { createClient } from '../../utils/supabase/client';
 
 declare global {
   interface Window {
@@ -9,15 +10,13 @@ declare global {
   }
 }
 
-const WAITLIST_ENDPOINT = process.env.NEXT_PUBLIC_WAITLIST_ENDPOINT ?? '';
-
 // ── Form ──────────────────────────────────────────────────────────────────────
 function WaitlistForm() {
   const searchParams = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', firm: '', role: '' });
+  const [form, setForm] = useState({ first_name: '', surname: '', email: '' });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -40,26 +39,18 @@ function WaitlistForm() {
       });
     }
 
-    if (WAITLIST_ENDPOINT) {
-      try {
-        const resp = await fetch(WAITLIST_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...form,
-            utm_source: searchParams.get('utm_source'),
-            utm_medium: searchParams.get('utm_medium'),
-            utm_campaign: searchParams.get('utm_campaign'),
-            utm_content: searchParams.get('utm_content'),
-            submitted_at: new Date().toISOString(),
-          }),
-        });
-        if (!resp.ok) throw new Error('Submission failed');
-      } catch {
-        setError('Something went wrong. Please try again or email us directly.');
-        setLoading(false);
-        return;
-      }
+    try {
+      const supabase = createClient();
+      const { error: insertError } = await supabase.from('leads').insert({
+        first_name: form.first_name,
+        surname: form.surname,
+        email: form.email,
+      });
+      if (insertError) throw insertError;
+    } catch {
+      setError('Something went wrong. Please try again or email us directly.');
+      setLoading(false);
+      return;
     }
 
     setSubmitted(true);
@@ -86,17 +77,32 @@ function WaitlistForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <label htmlFor="name" className="mb-1.5 block text-sm font-medium text-slate-300">
-          Full name <span className="text-brand-pink">*</span>
+        <label htmlFor="first_name" className="mb-1.5 block text-sm font-medium text-slate-300">
+          First name <span className="text-brand-pink">*</span>
         </label>
         <input
-          id="name"
-          name="name"
+          id="first_name"
+          name="first_name"
           type="text"
           required
-          value={form.name}
+          value={form.first_name}
           onChange={handleChange}
-          placeholder="Jane Smith"
+          placeholder="Jane"
+          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
+        />
+      </div>
+      <div>
+        <label htmlFor="surname" className="mb-1.5 block text-sm font-medium text-slate-300">
+          Surname <span className="text-brand-pink">*</span>
+        </label>
+        <input
+          id="surname"
+          name="surname"
+          type="text"
+          required
+          value={form.surname}
+          onChange={handleChange}
+          placeholder="Smith"
           className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
         />
       </div>
@@ -112,36 +118,6 @@ function WaitlistForm() {
           value={form.email}
           onChange={handleChange}
           placeholder="jane@smithsolicitors.co.uk"
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
-        />
-      </div>
-      <div>
-        <label htmlFor="firm" className="mb-1.5 block text-sm font-medium text-slate-300">
-          Firm name <span className="text-brand-pink">*</span>
-        </label>
-        <input
-          id="firm"
-          name="firm"
-          type="text"
-          required
-          value={form.firm}
-          onChange={handleChange}
-          placeholder="Smith Solicitors"
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
-        />
-      </div>
-      <div>
-        <label htmlFor="role" className="mb-1.5 block text-sm font-medium text-slate-300">
-          Your role{' '}
-          <span className="font-normal text-slate-500">(optional)</span>
-        </label>
-        <input
-          id="role"
-          name="role"
-          type="text"
-          value={form.role}
-          onChange={handleChange}
-          placeholder="Solicitor / Practice Manager / Director…"
           className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
         />
       </div>
