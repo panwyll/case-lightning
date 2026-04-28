@@ -34,6 +34,8 @@ npm run build
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_STRIPE_PAYMENT_LINK` | **Yes** | Full Stripe Payment Link URL (e.g. `https://buy.stripe.com/xxxxx`). The `/start-trial` route redirects here, forwarding all UTM parameters so attribution is preserved in Stripe and GA4. |
+| `NEXT_PUBLIC_SUPABASE_URL` | **Yes** | Your Supabase project URL (e.g. `https://xxxxxxxxxxxx.supabase.co`). Required by the `/api/waitlist` endpoint to store signups. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | **Yes** | Your Supabase project's anon/public API key. Required by the `/api/waitlist` endpoint. |
 | `NEXT_PUBLIC_GA_ID` | No | Google Analytics 4 measurement ID (e.g. `G-XXXXXXXXXX`). Enables CTA-click tracking and the `begin_trial` event fired just before the Stripe redirect. |
 
 Set both variables in **Vercel → Project → Settings → Environment Variables**.
