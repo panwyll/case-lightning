@@ -21,17 +21,17 @@ export async function POST(req: NextRequest) {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   const missing: string[] = [];
   if (!supabaseUrl) missing.push('NEXT_PUBLIC_SUPABASE_URL');
-  if (!supabaseServiceKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!supabaseServiceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY');
 
   if (missing.length > 0) {
     return NextResponse.json({ error: 'Missing env vars', missing }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
+  const supabase = createClient(supabaseUrl!, supabaseServiceRoleKey!);
 
   const { error } = await supabase.from('leads').insert({ first_name, surname, email });
 
