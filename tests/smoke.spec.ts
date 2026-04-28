@@ -18,10 +18,10 @@ test('landing page renders with correct brand colour on CTA button', async ({ pa
   // Testimonials section must be present
   await expect(page.getByRole('heading', { name: /what firms are saying/i })).toBeVisible();
 
-  // Nav must link to the dedicated section pages
-  await expect(page.getByRole('link', { name: /how it works/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /pricing/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /faq/i })).toBeVisible();
+  // Nav must link to the dedicated section pages (exact match avoids collision with hero CTAs)
+  await expect(page.getByRole('link', { name: 'How It Works', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Pricing', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'FAQ', exact: true })).toBeVisible();
 
   // Screenshot for manual review
   await page.screenshot({ path: 'tests/screenshots/home.png', fullPage: true });
