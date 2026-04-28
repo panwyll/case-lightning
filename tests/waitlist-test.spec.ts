@@ -1,47 +1,46 @@
 import { test, expect } from '@playwright/test';
 
-test('waitlist form submission shows error', async ({ page }) => {
-  const consoleMessages: string[] = [];
-  const networkErrors: string[] = [];
+test('waitlist page renders the sign-up form', async ({ page }) => {
+  await page.goto('/waitlist');
 
-  page.on('console', msg => consoleMessages.push(`[${msg.type()}] ${msg.text()}`));
-  page.on('requestfailed', req => networkErrors.push(`FAILED: ${req.url()} - ${req.failure()?.errorText}`));
-  page.on('response', async res => {
-    if (!res.ok() && res.url().includes('supabase')) {
-      const body = await res.text().catch(() => '');
-      networkErrors.push(`HTTP ${res.status()} ${res.url()}: ${body}`);
-    }
-  });
+  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  await expect(page.locator('#first_name')).toBeVisible();
+  await expect(page.locator('#surname')).toBeVisible();
+  await expect(page.locator('#email')).toBeVisible();
+  await expect(page.getByRole('button', { name: /join the waitlist/i })).toBeVisible();
+});
+
+test('waitlist form shows success state when API returns ok', async ({ page }) => {
+  // Mock the server-side API route so the test passes without real Supabase creds
+  await page.route('/api/waitlist', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) })
+  );
 
   await page.goto('/waitlist');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 
-  // Fill in the form
-  await page.fill('#first_name', 'Test');
-  await page.fill('#surname', 'User');
-  await page.fill('#email', 'test@example.com');
+  await page.fill('#first_name', 'Jane');
+  await page.fill('#surname', 'Smith');
+  await page.fill('#email', 'jane@smithsolicitors.co.uk');
 
-  await page.screenshot({ path: 'tests/screenshots/waitlist-filled.png' });
+  await page.getByRole('button', { name: /join the waitlist/i }).click();
 
-  // Submit
-  await page.click('button[type="submit"]');
-  await page.waitForTimeout(3000);
+  await expect(page.getByRole('heading', { name: /you.re on the list/i })).toBeVisible({ timeout: 5000 });
+});
 
-  await page.screenshot({ path: 'tests/screenshots/waitlist-after-submit.png' });
+test('waitlist form shows error state when API returns an error', async ({ page }) => {
+  await page.route('/api/waitlist', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'DB error' }) })
+  );
 
-  // Check for error message
-  const errorEl = page.locator('p').filter({ hasText: /something went wrong/i });
-  const successEl = page.locator('h2').filter({ hasText: /you're on the list/i });
+  await page.goto('/waitlist');
 
-  const hasError = await errorEl.count() > 0;
-  const hasSuccess = await successEl.count() > 0;
+  await page.fill('#first_name', 'Jane');
+  await page.fill('#surname', 'Smith');
+  await page.fill('#email', 'jane@smithsolicitors.co.uk');
 
-  console.log('Has error:', hasError);
-  console.log('Has success:', hasSuccess);
-  console.log('Console messages:', consoleMessages.join('\n'));
-  console.log('Network errors:', networkErrors.join('\n'));
+  await page.getByRole('button', { name: /join the waitlist/i }).click();
 
-  // Print page content for diagnosis
-  const content = await page.textContent('body');
-  console.log('Page body snippet:', content?.substring(0, 500));
+  await expect(
+    page.locator('p').filter({ hasText: /something went wrong/i })
+  ).toBeVisible({ timeout: 5000 });
 });
