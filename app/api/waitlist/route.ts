@@ -21,17 +21,17 @@ export async function POST(req: NextRequest) {
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
   const missing: string[] = [];
   if (!supabaseUrl) missing.push('NEXT_PUBLIC_SUPABASE_URL');
-  if (!supabaseAnonKey) missing.push('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  if (!supabaseSecretKey) missing.push('SUPABASE_SECRET_KEY');
 
   if (missing.length > 0) {
     return NextResponse.json({ error: 'Missing env vars', missing }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
+  const supabase = createClient(supabaseUrl!, supabaseSecretKey!);
 
   const { error } = await supabase.from('leads').insert({ first_name, surname, email });
 
