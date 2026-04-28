@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing env vars', missing }, { status: 500 });
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 
   const { error } = await supabase.from('leads').insert({ first_name, surname, email });
 
