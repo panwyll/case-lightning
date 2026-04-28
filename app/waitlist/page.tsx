@@ -2,7 +2,6 @@
 
 import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { createClient } from '../../utils/supabase/client';
 
 declare global {
   interface Window {
@@ -40,13 +39,15 @@ function WaitlistForm() {
     }
 
     try {
-      const supabase = createClient();
-      const { error: insertError } = await supabase.from('leads').insert({
-        first_name: form.first_name,
-        surname: form.surname,
-        email: form.email,
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       });
-      if (insertError) throw insertError;
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? 'Unknown error');
+      }
     } catch {
       setError('Something went wrong. Please try again or email us directly.');
       setLoading(false);
