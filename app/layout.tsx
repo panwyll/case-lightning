@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         {children}
+        <Analytics />
 
         {/* Google Analytics 4 — set NEXT_PUBLIC_GA_ID in your environment */}
         {GA_ID && (
