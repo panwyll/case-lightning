@@ -13,7 +13,8 @@
     "@vercel/analytics": "^2.0.1",
     "next": "^15.5.15",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "resend": "^6.12.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
