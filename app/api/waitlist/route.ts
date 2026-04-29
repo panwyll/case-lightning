@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { Resend } from 'resend';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_FIELD_LEN = 200;
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 export async function POST(req: NextRequest) {
   const { first_name, surname, email } = await req.json();
@@ -37,6 +47,26 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  // Send confirmation email (best-effort — failure does not affect the lead save)
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const fromEmail = process.env.RESEND_FROM_EMAIL;
+
+  if (resendApiKey && fromEmail) {
+    try {
+      const resend = new Resend(resendApiKey);
+      await resend.emails.send({
+        from: fromEmail,
+        to: email,
+        subject: "You're on the CaseLightning waitlist",
+        html: `<p>Hi ${escapeHtml(first_name)},</p>
+<p>Thanks for joining the CaseLightning waitlist! We'll reach out as soon as intake opens.</p>
+<p>Talk soon,<br/>The CaseLightning Team</p>`,
+      });
+    } catch (emailError) {
+      console.error('Failed to send confirmation email:', emailError);
+    }
   }
 
   return NextResponse.json({ ok: true });
