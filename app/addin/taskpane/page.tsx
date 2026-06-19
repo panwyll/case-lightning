@@ -82,6 +82,13 @@ export default function Taskpane() {
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
 
+  // Documents & sharing
+  const [docs, setDocs] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [attachmentIntent, setAttachmentIntent] = useState('');
+  const [teamId, setTeamId] = useState('');
+  const [channelId, setChannelId] = useState('');
+
   const officeReady = useRef(false);
 
   const refreshMe = useCallback(async () => {
@@ -300,6 +307,37 @@ export default function Taskpane() {
     });
   }
 
+  async function loadDocs() {
+    await run('Loading documents', async () => {
+      requireMatter();
+      const r = await api<{ documents: any[] }>(`/matters/${matterId}/documents`);
+      setDocs(r.documents);
+    });
+  }
+
+  async function suggestAttachments() {
+    const r = await run('Suggesting attachments', async () => {
+      requireMatter();
+      return api<{ suggestions: any[] }>(`/matters/${matterId}/documents/suggest-attachments`, {
+        method: 'POST',
+        body: JSON.stringify({ intent: attachmentIntent || 'respond to the current thread' }),
+      });
+    });
+    if (r) setSuggestions(r.suggestions);
+  }
+
+  async function postToTeams() {
+    await run('Posting to Teams', async () => {
+      requireMatter();
+      if (!teamId || !channelId) throw new Error('Team ID and Channel ID are required.');
+      await api(`/matters/${matterId}/teams/post-summary`, {
+        method: 'POST',
+        body: JSON.stringify({ teamId, channelId }),
+      });
+      setStatus('Posted matter summary to Teams.');
+    });
+  }
+
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -481,6 +519,55 @@ export default function Taskpane() {
                   <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
                 </>
               )}
+            </Card>
+          )}
+
+          {/* Documents & sharing */}
+          {matterId && (
+            <Card>
+              <Label>Documents &amp; sharing</Label>
+              <div style={S.rowWrap}>
+                <button style={S.secondary} onClick={loadDocs}>List documents</button>
+                <button style={S.secondary} onClick={suggestAttachments}>Suggest attachments</button>
+              </div>
+              <input
+                style={S.input}
+                placeholder="What's the reply about? (improves suggestions)"
+                value={attachmentIntent}
+                onChange={(e) => setAttachmentIntent(e.target.value)}
+              />
+              {suggestions.length > 0 && (
+                <>
+                  <SubLabel>Suggested attachments</SubLabel>
+                  <ul style={S.ul}>
+                    {suggestions.map((s) => (
+                      <li key={s.id}>
+                        {s.web_url ? <a style={S.link} href={s.web_url} target="_blank" rel="noreferrer">{s.file_name}</a> : s.file_name}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {docs.length > 0 && (
+                <>
+                  <SubLabel>All documents</SubLabel>
+                  <ul style={S.ul}>
+                    {docs.map((d) => (
+                      <li key={d.id}>
+                        {d.web_url ? <a style={S.link} href={d.web_url} target="_blank" rel="noreferrer">{d.file_name}</a> : d.file_name}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              <SubLabel>Post matter summary to Teams</SubLabel>
+              <div style={S.rowWrap}>
+                <Field label="Team ID" value={teamId} onChange={setTeamId} />
+                <Field label="Channel ID" value={channelId} onChange={setChannelId} />
+              </div>
+              <button style={S.secondary} onClick={postToTeams} disabled={!teamId || !channelId}>
+                Post to Teams
+              </button>
             </Card>
           )}
 

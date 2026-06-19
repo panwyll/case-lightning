@@ -17,6 +17,7 @@ import {
 import { threadToText, stripHtml } from './text';
 import { writeAudit } from './audit';
 import { externalDomainsAllowed } from './guard';
+import { isPremiumTenant } from './plan';
 import type { SessionUser } from './types';
 
 export interface Classification {
@@ -154,6 +155,9 @@ export async function runAutoRules(
   if (!policy?.automation_enabled) {
     return { applied: false, actions: [], reason: 'Automation disabled for this firm.' };
   }
+  if (!(await isPremiumTenant(user.tenantId))) {
+    return { applied: false, actions: [], reason: 'Premium automation requires the Team plan.' };
+  }
 
   const rules = await query<AutoRuleRow>(
     `select * from auto_rule where tenant_id = $1 and enabled = true order by min_confidence desc`,
@@ -284,7 +288,25 @@ export async function runAutoRules(
     }
   }
 
-  if (rule.do_assign && rule.assign_to) actions.push('assigned');
+  if (rule.do_assign && rule.assign_to) {
+    await query(`update matter set assigned_to = $1, updated_at = now() where id = $2 and tenant_id = $3`, [
+      rule.assign_to,
+      match.matterId,
+      user.tenantId,
+    ]);
+    await query(
+      `insert into matter_timeline_event (tenant_id, matter_id, event_type, title, details, source_ref)
+       values ($1,$2,'ASSIGNED',$3,$4,$5::jsonb)`,
+      [
+        user.tenantId,
+        match.matterId,
+        'Auto-assigned by rule',
+        `Rule "${rule.name}" assigned this matter on a ${cls.intent} email`,
+        JSON.stringify({ ruleId: rule.id, assignedTo: rule.assign_to }),
+      ]
+    );
+    actions.push('assigned');
+  }
 
   await query(
     `update email_triage set decision = 'AUTO_APPLIED', decided_at = now() where graph_message_id = $1 and tenant_id = $2`,

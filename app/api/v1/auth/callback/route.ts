@@ -75,11 +75,17 @@ export async function GET(req: NextRequest) {
         );
         return existing.rows[0]!;
       }
+      // First user in a tenant becomes ADMIN (the firm owner); everyone after is a
+      // CONVEYANCER until an admin promotes them.
+      const count = await client.query<{ n: string }>('select count(*)::text as n from app_user where tenant_id = $1', [
+        tenant.id,
+      ]);
+      const role = Number(count.rows[0]?.n ?? '0') === 0 ? 'ADMIN' : 'CONVEYANCER';
       const created = await client.query<{ id: string }>(
         `insert into app_user
           (tenant_id, entra_object_id, email, display_name, role, graph_access_token, graph_refresh_token, token_expires_at)
-         values ($1,$2,$3,$4,'ADMIN',$5,$6,$7) returning id`,
-        [tenant.id, oid, email, name, token.access_token, token.refresh_token ?? null, expiresAt]
+         values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
+        [tenant.id, oid, email, name, role, token.access_token, token.refresh_token ?? null, expiresAt]
       );
       return created.rows[0]!;
     });

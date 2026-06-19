@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
+import { isPremiumTenant } from '@/lib/server/plan';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 
@@ -44,6 +45,10 @@ export async function POST(req: NextRequest) {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
     const b = ruleSchema.parse(await req.json());
+
+    if (b.enabled && !(await isPremiumTenant(user.tenantId))) {
+      return fail(new Error('Premium auto-rules require the Team plan. Create the rule disabled, or upgrade.'));
+    }
 
     // A SEND rule that is enabled must carry an explicit, re-accepted risk ack.
     if (b.replyMode === 'SEND' && b.enabled && (!b.riskAccepted || !b.riskAcknowledgement)) {

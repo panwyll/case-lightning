@@ -41,6 +41,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         lender: z.string().optional(),
         chainPosition: z.string().optional(),
         status: z.string().optional(),
+        assignedTo: z.string().uuid().nullable().optional(),
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
@@ -55,8 +56,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
          lender = coalesce($6, lender),
          chain_position = coalesce($7, chain_position),
          status = coalesce($8, status),
+         assigned_to = case when $9::boolean then $10::uuid else assigned_to end,
          updated_at = now()
-       where id = $9 and tenant_id = $10`,
+       where id = $11 and tenant_id = $12`,
       [
         body.propertyAddress ?? null,
         body.counterpartySolicitor ?? null,
@@ -66,6 +68,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         body.lender ?? null,
         body.chainPosition ?? null,
         body.status ?? null,
+        body.assignedTo !== undefined,
+        body.assignedTo ?? null,
         matterId,
         user.tenantId,
       ]

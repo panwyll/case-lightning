@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { queryOne } from '@/lib/server/db';
+import { isPremiumTenant } from '@/lib/server/plan';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 
@@ -31,6 +32,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ru
       [ruleId, user.tenantId]
     );
     if (!existing) return fail(new Error('Rule not found'));
+
+    if (b.enabled === true && !(await isPremiumTenant(user.tenantId))) {
+      return fail(new Error('Premium auto-rules require the Team plan.'));
+    }
 
     const effectiveMode = b.replyMode ?? existing.reply_mode;
     // Re-enabling (or keeping enabled) a SEND rule requires fresh risk acceptance.

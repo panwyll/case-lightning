@@ -25,7 +25,8 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'templates' | 'policy' | 'rules' | 'referrals' | 'audit'>('templates');
+  const [tab, setTab] = useState<'templates' | 'team' | 'policy' | 'rules' | 'referrals' | 'audit'>('templates');
+  const [users, setUsers] = useState<any[]>([]);
   const [status, setStatus] = useState('');
   const [templates, setTemplates] = useState<Template[]>([]);
   const [policy, setPolicy] = useState<any>(null);
@@ -51,6 +52,7 @@ export default function AdminPage() {
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
       if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
       if (tab === 'referrals') setReferrals(await api('/referrals'));
+      if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
       setStatus('');
     } catch (e) {
       setStatus((e as Error).message);
@@ -93,6 +95,15 @@ export default function AdminPage() {
     }
   }
 
+  async function setUserRole(userId: string, role: string) {
+    try {
+      await api(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ role }) });
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
   async function savePolicy() {
     try {
       await api('/admin/policies', {
@@ -129,6 +140,7 @@ export default function AdminPage() {
         <p style={{ color: '#64748b', marginTop: 0 }}>Firm playbook templates, policy and audit. Admin role required.</p>
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
           <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Templates</button>
+          <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>Team</button>
           <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
           <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
           <button style={tabBtn(tab === 'referrals')} onClick={() => setTab('referrals')}>Referrals</button>
@@ -174,6 +186,29 @@ export default function AdminPage() {
             <button style={{ padding: '8px 16px', background: '#ff2d78', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePolicy}>
               Save policy
             </button>
+          </div>
+        )}
+
+        {tab === 'team' && (
+          <div style={card}>
+            <h3 style={{ marginTop: 0 }}>Team members</h3>
+            <p style={{ fontSize: 13, color: '#64748b' }}>
+              The first person to sign in is the firm Admin; everyone else joins as a Conveyancer. Change roles here.
+            </p>
+            {users.map((u) => (
+              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}</div>
+                  <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
+                </div>
+                <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }}>
+                  <option value="ADMIN">Admin</option>
+                  <option value="CONVEYANCER">Conveyancer</option>
+                  <option value="ASSISTANT">Assistant</option>
+                  <option value="READ_ONLY">Read only</option>
+                </select>
+              </div>
+            ))}
           </div>
         )}
 
