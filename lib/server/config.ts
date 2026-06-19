@@ -18,7 +18,9 @@ export const config = {
 
   // Backend database — a direct Postgres connection (Supabase pooler / DATABASE_URL).
   // Used for raw SQL incl. pgvector `<=>`, which supabase-js cannot express cleanly.
-  databaseUrl: env('DATABASE_URL'),
+  // Falls back to the vars the Vercel↔Supabase integration already provisions, so
+  // no separate DATABASE_URL needs setting in Vercel.
+  databaseUrl: env('DATABASE_URL') ?? env('POSTGRES_URL') ?? env('POSTGRES_PRISMA_URL'),
 
   // Session + secret encryption
   sessionJwtSecret: env('SESSION_JWT_SECRET'),
