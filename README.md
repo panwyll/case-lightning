@@ -29,7 +29,7 @@ The product features are **feature-gated**: if their env vars aren't set, the ma
    ```bash
    npm run dev:https   # serves https://localhost:3000
    ```
-5. **Sideload** `public/addin/manifest.xml` in Outlook (web or desktop), open a message, and click **Open CaseLightning** in the ribbon. For production, replace every `https://localhost:3000` in the manifest with your Vercel domain.
+5. **Sideload** the add-in. Outlook won't reliably load a `localhost` add-in (self-signed cert + the OWA/new-Outlook sandbox), so **deploy to Vercel and sideload from there** — that also makes auto-triage work (Graph needs a public HTTPS callback). The manifest is served dynamically at **`https://<your-domain>/addin/manifest`** and rewrites all its URLs to the serving origin, so there's nothing to hand-edit per deployment. In Outlook → **Get Add-ins → My add-ins → Add a custom add-in → Add from URL** (or save that URL as `.xml` and use **Add from file**), open a message, then **Open CaseLightning** in the ribbon. (`public/addin/manifest.xml` remains as a static localhost fallback.)
 
 ### End-to-end flow (UAT)
 
