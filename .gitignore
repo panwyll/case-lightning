@@ -9,3 +9,7 @@ pnpm-debug.log*
 
 tests/screenshots/
 test-results/
+.vercel
+
+# Local Claude tooling
+.claude/

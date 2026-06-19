@@ -1,187 +1,91 @@
 import type { Metadata } from 'next';
-import {
-  ctaHref,
-  ROUTES,
-  SectionBackground,
-  Cta,
-  NavHeader,
-  SiteFooter,
-} from '../_components/shared';
+import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
 
 export const metadata: Metadata = {
-  title: 'How It Works — CaseLightning',
+  title: 'How it works — CONVEYi',
   description:
-    'See how CaseLightning gives every fee earner instant case insight inside Outlook — clear summaries, fast next actions, and confident client replies.',
+    'CONVEYi works inside Outlook. Point it at a case thread and it summarises, drafts the reply, files to OneDrive and updates your Excel tracker — no new portal, no onboarding.',
 };
 
 const PAGE_SOURCE = 'how_it_works';
 
-const features = [
-  {
-    icon: '⚖️',
-    title: 'Add a QC to your team',
-    body: 'Trained on 8,192 legal documents, CaseLightning gives every fee earner instant access to expert-level case insight.',
-  },
-  {
-    icon: '📧',
-    title: 'Who runs the world? Email.',
-    body: 'Manage your transactions from exactly where you and your clients already operate — no new tools, no workflow changes.',
-  },
-  {
-    icon: '☁️',
-    title: 'Automate case knowledge',
-    body: 'Keep your case files updated in OneDrive. Automatically. Your knowledge base stays current without anyone lifting a finger.',
-  },
-];
-
 const steps = [
   {
-    number: '01',
-    title: 'Connect your Outlook',
-    body: 'CaseLightning links to your existing Outlook account. No migration, no new inbox — your team keeps working exactly as before.',
+    n: '01',
+    title: 'Open the email you’re already in',
+    body: 'The CONVEYi sidebar opens beside any message in Outlook. No new tab, no separate login — it’s right there in the inbox your team lives in.',
   },
   {
-    number: '02',
-    title: 'Point it at a case',
-    body: "Select a case thread and CaseLightning reads the emails, pulls out the key facts, and presents a clear summary in seconds.",
+    n: '02',
+    title: 'It finds the matter',
+    body: 'CONVEYi matches the email to the right case using the thread, the people on it and the property — robustly, so a counterparty firm or repeat investor is never confused for the wrong file.',
   },
   {
-    number: '03',
-    title: 'Get your next action',
-    body: 'Receive a suggested next step based on the case status — draft a client update, chase a document, or flag a deadline.',
+    n: '03',
+    title: 'Summary, next action, draft reply',
+    body: 'In seconds you get what happened, what’s outstanding, and a case-aware draft reply written in your firm’s style — ready in your Drafts to check and send.',
   },
   {
-    number: '04',
-    title: 'Reply with confidence',
-    body: 'Use the suggested reply or edit it to your taste. Send it from Outlook as normal. No copy-pasting, no tab-switching.',
+    n: '04',
+    title: 'Everything filed, automatically',
+    body: 'The email and its attachments are saved to the case’s OneDrive folder, and the live Excel tracker is updated — so nothing gets lost and nobody re-keys anything.',
   },
 ];
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function HowItWorksPage() {
   return (
-    <main className="bg-slate-950 text-white antialiased">
-
+    <main className="bg-paper text-ink antialiased">
       <NavHeader signupHref={ctaHref(ROUTES.signup, PAGE_SOURCE, 'nav_signup')} />
 
-      {/* ── HERO ── */}
-      <section className="relative overflow-hidden bg-slate-950 px-6 pb-20 pt-16 md:pb-28 md:pt-24">
-        <div className="pointer-events-none absolute inset-0 flex items-start justify-center">
-          <div
-            aria-hidden="true"
-            className="h-[500px] w-[700px] -translate-y-1/3 rounded-full bg-brand-500 opacity-[0.06] blur-3xl"
-          />
-        </div>
-        <div className="relative mx-auto max-w-3xl text-center">
-          <p className="text-sm font-semibold uppercase tracking-widest text-slate-400">How It Works</p>
-          <h1 className="mt-3 text-4xl font-extrabold leading-tight tracking-tight md:text-5xl">
-            Case intelligence,
-            <br className="hidden sm:block" />
-            <span className="text-brand-500"> right inside Outlook</span>
+      <section className="px-6 pt-16 pb-12 md:pt-24">
+        <div className="mx-auto max-w-3xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">How it works</p>
+          <h1 className="mt-4 font-serif text-5xl font-semibold leading-tight tracking-tight md:text-6xl">
+            It works where your team already works.
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-slate-400">
-            No new tools. No workflow changes. CaseLightning works where your team already lives.
+          <p className="mt-5 max-w-xl text-lg text-ink-soft">
+            No migration. No new system to learn. CONVEYi sits inside Outlook and quietly does the
+            admin around every case.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Cta
-              label="Sign Up"
-              href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'hero_signup')}
-              dataCta="hero_signup"
-              size="lg"
-            />
-            <Cta
-              label="See Pricing"
-              href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'hero_pricing')}
-              dataCta="hero_pricing"
-              variant="secondary"
-              size="lg"
-            />
-          </div>
         </div>
       </section>
 
-      {/* ── STEP-BY-STEP ── */}
-      <section className="relative overflow-hidden bg-slate-900 px-6 py-16 md:py-24">
-        <SectionBackground />
-        <div className="relative mx-auto max-w-5xl">
-          <h2 className="text-3xl font-bold md:text-4xl">Four steps to faster cases</h2>
-          <p className="mt-3 text-lg text-slate-400">
-            From setup to your first time-saving reply in minutes.
-          </p>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2">
-            {steps.map((step) => (
-              <article
-                key={step.number}
-                className="rounded-2xl border border-slate-700 bg-slate-950 p-8 shadow-sm transition hover:border-brand-blue hover:shadow-glow-blue"
-              >
-                <span className="text-4xl font-extrabold text-brand-500 opacity-60">{step.number}</span>
-                <h3 className="mt-3 text-xl font-bold text-white">{step.title}</h3>
-                <p className="mt-2 text-slate-400">{step.body}</p>
-              </article>
-            ))}
-          </div>
+      <section className="px-6 py-12 md:py-16">
+        <div className="mx-auto max-w-5xl divide-y divide-line border-y border-line">
+          {steps.map((s) => (
+            <div key={s.n} className="grid gap-4 py-10 md:grid-cols-[auto_1fr] md:gap-12">
+              <div className="font-serif text-5xl font-semibold text-violet md:text-6xl">{s.n}</div>
+              <div>
+                <h2 className="font-serif text-2xl font-semibold tracking-tight md:text-3xl">{s.title}</h2>
+                <p className="mt-3 max-w-2xl text-lg text-ink-soft">{s.body}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
-      {/* ── FEATURES ── */}
-      <section className="relative overflow-hidden bg-slate-950 px-6 py-16 md:py-24">
-        <SectionBackground />
-        <div className="relative mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold md:text-4xl">
-            Everything your team needs to move faster
+      <section className="px-6 pb-8">
+        <div className="mx-auto max-w-5xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-12">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">On the Team plan</p>
+          <h2 className="mt-3 font-serif text-3xl font-semibold tracking-tight md:text-4xl">
+            The routine handles itself.
           </h2>
-          <p className="mt-3 text-lg text-slate-400">
-            Speed up every step. Keep clients happy. Grow without adding headcount.
+          <p className="mt-4 max-w-2xl text-lg text-ink-soft">
+            New mail is matched to its case the moment it arrives, tagged in Outlook, filed, and — for
+            the status updates that don’t need you — answered automatically by rules you control. You
+            stay in charge: auto-send is opt-in per rule, and you can turn it off any time.
           </p>
-          <div className="mt-10 grid gap-6 sm:grid-cols-3">
-            {features.map((f) => (
-              <article
-                key={f.title}
-                className="rounded-2xl border border-slate-700 bg-slate-900 p-8 shadow-sm transition hover:border-brand-blue hover:shadow-glow-blue"
-              >
-                <span className="text-4xl">{f.icon}</span>
-                <h3 className="mt-4 text-xl font-bold text-white">{f.title}</h3>
-                <p className="mt-2 text-slate-400">{f.body}</p>
-              </article>
-            ))}
-          </div>
         </div>
       </section>
 
-      {/* ── CTA ── */}
-      <section className="relative overflow-hidden bg-slate-900 px-6 py-16 md:py-24">
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            aria-hidden="true"
-            className="h-[400px] w-[600px] rounded-full bg-brand-pink opacity-[0.07] blur-3xl"
-          />
-        </div>
-        <SectionBackground />
-        <div className="relative mx-auto max-w-3xl text-center">
-          <h2 className="text-3xl font-extrabold md:text-5xl">
-            Ready to move faster?
-          </h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-slate-400">
-            Join 50+ legal teams already saving hours every week.
-          </p>
+      <section className="bg-ink px-6 py-20 text-paper md:py-24">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">See it on your own inbox.</h2>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Set up takes minutes — because there’s nothing to set up.</p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Cta
-              label="Sign Up"
-              href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')}
-              dataCta="cta_signup"
-              size="lg"
-            />
-            <Cta
-              label="See Pricing"
-              href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'cta_pricing')}
-              dataCta="cta_pricing"
-              variant="secondary"
-              size="lg"
-            />
+            <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
+            <Cta label="See pricing" href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'cta_pricing')} dataCta="cta_pricing" variant="secondary" size="lg" className="border-paper/30 text-paper hover:bg-paper hover:text-ink" />
           </div>
-          <p className="mt-6 text-sm text-slate-500">
-            From £200/month &nbsp;·&nbsp; Money-back guarantee &nbsp;·&nbsp; No complicated setup
-          </p>
         </div>
       </section>
 

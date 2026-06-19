@@ -1,16 +1,21 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
 import { Suspense } from 'react';
+import { Fraunces, Manrope } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import RefCapture from './_components/RefCapture';
 import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
+// Editorial display serif + clean grotesk-ish sans — deliberately not Inter/Roboto.
+const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
+const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', display: 'swap' });
+
 export const metadata: Metadata = {
-  title: 'CaseLightning — Handle More Cases. Reply Faster.',
+  title: 'CONVEYi — AI for conveyancers. Inside Outlook.',
   description:
-    'CaseLightning turns messy case email threads into a clear summary and fast next actions inside Outlook. Built for small law firms and conveyancers.',
+    '99% of conveyancing is email, updates and chasing. CONVEYi handles it — inside Outlook, on your OneDrive, in your Excel tracker. GDPR-compliant. Zero onboarding.',
   icons: {
     icon: '/favicon.svg',
   },
@@ -18,7 +23,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${fraunces.variable} ${manrope.variable}`}>
       <head>
         <Script id="gtm-head" strategy="afterInteractive">
           {`
@@ -39,6 +44,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               style={{ display: 'none', visibility: 'hidden' }}
             />
           </noscript>
+        <Suspense fallback={null}>
+          <RefCapture />
+        </Suspense>
         {children}
         <Analytics />
 

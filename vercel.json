@@ -4,11 +4,11 @@
   "crons": [
     {
       "path": "/api/v1/graph/subscriptions/renew",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 3 * * *"
     },
     {
       "path": "/api/v1/referrals/apply",
-      "schedule": "0 3 1 * *"
+      "schedule": "0 4 1 * *"
     }
   ]
 }

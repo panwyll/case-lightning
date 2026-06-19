@@ -8,14 +8,22 @@
 
 html {
   scroll-behavior: smooth;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-manrope), system-ui, -apple-system, sans-serif;
 }
 
 body {
   margin: 0;
   -webkit-font-smoothing: antialiased;
-  background-color: #020617; /* slate-950 */
-  color: #f8fafc;             /* slate-50 */
+  text-rendering: optimizeLegibility;
+  background-color: #F4F1EA; /* paper */
+  color: #15101F;            /* ink */
+}
+
+/* Editorial display headings */
+.font-display {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
 }
 
 /* FAQ accordion – remove default browser details marker */

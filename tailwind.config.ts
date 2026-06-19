@@ -5,26 +5,25 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        brand: {
-          // neon yellow – primary accent / headlines
-          50: '#fffce0',
-          100: '#fff799',
-          400: '#ffe600',
-          500: '#ffe600',
-          600: '#cdb800',
-          700: '#a39200',
-          // neon pink – primary CTA
-          pink: '#ff2d78',
-          'pink-dim': '#cc0050',
-          // neon blue – secondary accent
-          blue: '#00d4ff',
-          'blue-dim': '#0099bb',
+        // Editorial palette: warm paper, deep ink, one confident violet.
+        paper: '#F4F1EA',
+        'paper-soft': '#FBFAF6',
+        ink: '#15101F',
+        'ink-soft': '#544E60',
+        line: '#E5E0D4',
+        violet: {
+          DEFAULT: '#5A27E0',
+          dark: '#4A1FBE',
+          soft: '#EDE7FB',
         },
       },
+      fontFamily: {
+        serif: ['var(--font-fraunces)', 'Georgia', 'Times New Roman', 'serif'],
+        sans: ['var(--font-manrope)', 'system-ui', '-apple-system', 'sans-serif'],
+      },
       boxShadow: {
-        'glow-yellow': '0 0 30px rgba(255,230,0,0.35)',
-        'glow-pink': '0 0 25px rgba(255,45,120,0.45)',
-        'glow-blue': '0 0 20px rgba(0,212,255,0.35)',
+        card: '0 1px 2px rgba(21,16,31,0.04), 0 12px 30px -18px rgba(21,16,31,0.25)',
+        violet: '0 10px 30px -12px rgba(90,39,224,0.5)',
       },
     },
   },
