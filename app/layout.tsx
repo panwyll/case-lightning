@@ -39,6 +39,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               style={{ display: 'none', visibility: 'hidden' }}
             />
           </noscript>
+        <Suspense fallback={null}>
+          <RefCapture />
+        </Suspense>
         {children}
         <Analytics />
 
