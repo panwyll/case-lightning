@@ -26,6 +26,13 @@ function Redirector() {
       if (val) dest.searchParams.set(key, val);
     }
 
+    // Forward the referral code as Stripe's client_reference_id (falls back to a
+    // ref cookie set when the visitor first landed via a referral link). It surfaces
+    // on checkout.session.completed, where the referral edge is bound.
+    const cookieRef = document.cookie.match(/(?:^|;\s*)cl_ref=([^;]+)/)?.[1];
+    const ref = searchParams.get('ref') || (cookieRef ? decodeURIComponent(cookieRef) : '');
+    if (ref) dest.searchParams.set('client_reference_id', ref);
+
     // Fire a GA4 event before leaving so we can track funnel entry.
     // transport_type 'beacon' uses sendBeacon, which survives page unload reliably.
     if (typeof (window as any).gtag === 'function') {

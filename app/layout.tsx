@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Script from 'next/script';
+import { Suspense } from 'react';
 import { Analytics } from '@vercel/analytics/next';
+import RefCapture from './_components/RefCapture';
 import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
@@ -18,6 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
+        <Suspense fallback={null}>
+          <RefCapture />
+        </Suspense>
         {children}
         <Analytics />
 
