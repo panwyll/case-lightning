@@ -38,10 +38,14 @@ export const config = {
     'User.Read Mail.Read Mail.ReadWrite Files.ReadWrite Sites.ReadWrite.All Team.ReadBasic.All ChannelMessage.Send'
   ).split(/\s+/),
 
-  // AI — Claude for generation, a pluggable provider for embeddings.
+  // AI — Claude, tiered by task so we don't pay Opus rates to label emails:
+  //   draft  → Opus 4.8 (quality matters most on client-facing drafts)
+  //   summarise/extract → Sonnet 4.6 (good balance)
+  //   classify (triage) → Haiku 4.5 (fast + cheap; perfect for a label)
   anthropicApiKey: env('ANTHROPIC_API_KEY'),
   anthropicModel: env('ANTHROPIC_MODEL') ?? 'claude-opus-4-8',
   anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-4-6',
+  anthropicClassifyModel: env('ANTHROPIC_CLASSIFY_MODEL') ?? 'claude-haiku-4-5',
 
   // Embeddings provider: 'voyage' (default) | 'openai'. Optional — RAG degrades
   // gracefully to non-vector retrieval when no embeddings key is configured.
