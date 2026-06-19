@@ -1,0 +1,79 @@
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { assertFeature } from '@/lib/server/config';
+import { requireUser } from '@/lib/server/session';
+import { queryOne } from '@/lib/server/db';
+import { assertMatterAccess, externalDomainsAllowed } from '@/lib/server/guard';
+import { getMessage, createReplyDraft } from '@/lib/server/graph';
+import { writeAudit } from '@/lib/server/audit';
+import { ok, fail } from '@/lib/server/http';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Creates a DRAFT reply in Outlook only. There is deliberately no send endpoint.
+export async function POST(req: NextRequest, { params }: { params: Promise<{ graphThreadId: string }> }) {
+  try {
+    assertFeature('auth');
+    assertFeature('graph');
+    const user = await requireUser();
+    const { graphThreadId } = await params;
+    const body = z
+      .object({
+        matterId: z.string().uuid(),
+        messageId: z.string(),
+        subject: z.string().optional(),
+        bodyHtml: z.string().min(1),
+      })
+      .parse(await req.json());
+
+    await assertMatterAccess(user, body.matterId);
+    const policy = await queryOne<{ allowed_external_domains: string[] }>(
+      `select allowed_external_domains from policy_config where tenant_id = $1`,
+      [user.tenantId]
+    );
+    // Append the matter's case-ref token to the subject so future replies in this
+    // thread self-identify their matter — the strongest, GDPR-clean match signal.
+    const matterRow = await queryOne<{ case_ref_token: string | null }>(
+      `select case_ref_token from matter where id = $1 and tenant_id = $2`,
+      [body.matterId, user.tenantId]
+    );
+    const token = matterRow?.case_ref_token;
+    let finalSubject = body.subject;
+    if (token && finalSubject && !finalSubject.includes(`[#${token}]`)) {
+      finalSubject = `${finalSubject} [#${token}]`;
+    }
+    const message = await getMessage(user.userId, body.messageId);
+    const recipients = [
+      ...(message.toRecipients ?? []).map((r: any) => r.emailAddress?.address),
+      ...(message.ccRecipients ?? []).map((r: any) => r.emailAddress?.address),
+    ].filter(Boolean) as string[];
+
+    if (!externalDomainsAllowed(recipients, policy?.allowed_external_domains ?? [])) {
+      await writeAudit({
+        tenantId: user.tenantId,
+        matterId: body.matterId,
+        actorUserId: user.userId,
+        actionType: 'OUTLOOK_DRAFT_CREATED',
+        actionStatus: 'BLOCKED',
+        payload: { reason: 'recipient_domain_not_allowed' },
+      });
+      return fail(new Error('One or more recipient domains are not allowed by policy'));
+    }
+
+    const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, finalSubject);
+
+    await writeAudit({
+      tenantId: user.tenantId,
+      matterId: body.matterId,
+      actorUserId: user.userId,
+      actionType: 'OUTLOOK_DRAFT_CREATED',
+      actionStatus: 'SUCCESS',
+      payload: { draftId: draft.id, graphThreadId },
+    });
+
+    return ok({ draftId: draft.id, webLink: draft.webLink ?? null });
+  } catch (error) {
+    return fail(error);
+  }
+}

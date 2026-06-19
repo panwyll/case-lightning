@@ -1,0 +1,111 @@
+/**
+ * Central runtime config for the CaseLightning product backend.
+ *
+ * Unlike the original conveyancing-copilot config (which threw on startup for any
+ * missing var), this is lazy + feature-scoped so the marketing site keeps building
+ * and deploying on Vercel even when M365 / AI credentials are not yet set. Product
+ * routes call `assertFeature(...)` and return a clean 503 if their dependencies are
+ * missing, mirroring the pattern already used in app/api/waitlist/route.ts.
+ */
+
+function env(name: string): string | undefined {
+  const v = process.env[name];
+  return v && v.trim() ? v.trim() : undefined;
+}
+
+export const config = {
+  appUrl: env('APP_URL') ?? env('NEXT_PUBLIC_APP_URL') ?? 'https://localhost:3000',
+
+  // Backend database — a direct Postgres connection (Supabase pooler / DATABASE_URL).
+  // Used for raw SQL incl. pgvector `<=>`, which supabase-js cannot express cleanly.
+  databaseUrl: env('DATABASE_URL'),
+
+  // Session + secret encryption
+  sessionJwtSecret: env('SESSION_JWT_SECRET'),
+  appEncryptionKey: env('APP_ENCRYPTION_KEY'),
+
+  // Microsoft Entra (Azure AD) OAuth
+  azureTenantId: env('AZURE_TENANT_ID'),
+  azureClientId: env('AZURE_CLIENT_ID'),
+  azureClientSecret: env('AZURE_CLIENT_SECRET'),
+  azureRedirectUri:
+    env('AZURE_REDIRECT_URI') ??
+    `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/auth/callback`,
+  graphScopes: (
+    env('GRAPH_SCOPES') ??
+    'User.Read Mail.Read Mail.ReadWrite Files.ReadWrite Sites.ReadWrite.All Team.ReadBasic.All ChannelMessage.Send'
+  ).split(/\s+/),
+
+  // AI — Claude for generation, a pluggable provider for embeddings.
+  anthropicApiKey: env('ANTHROPIC_API_KEY'),
+  anthropicModel: env('ANTHROPIC_MODEL') ?? 'claude-opus-4-8',
+  anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-4-6',
+
+  // Embeddings provider: 'voyage' (default) | 'openai'. Optional — RAG degrades
+  // gracefully to non-vector retrieval when no embeddings key is configured.
+  embeddingsProvider: (env('EMBEDDINGS_PROVIDER') ?? 'voyage') as 'voyage' | 'openai',
+  voyageApiKey: env('VOYAGE_API_KEY'),
+  voyageModel: env('VOYAGE_MODEL') ?? 'voyage-3-large',
+  openAiApiKey: env('OPENAI_API_KEY'),
+  openAiEmbeddingModel: env('OPENAI_EMBEDDING_MODEL') ?? 'text-embedding-3-large',
+  // Vector dimension stored in kb_chunk.embedding. Must match the embeddings model.
+  // voyage-3-large = 1024, text-embedding-3-large = 3072.
+  embeddingDim: Number(env('EMBEDDING_DIM') ?? '1024'),
+
+  // OneDrive layout — per-case folders live under this root in the user's drive.
+  oneDriveRoot: env('ONEDRIVE_ROOT') ?? 'CaseLightning',
+
+  allowedExternalDomains: (env('ALLOWED_EXTERNAL_DOMAINS') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean),
+
+  // Billing + referrals (Stripe)
+  stripeSecretKey: env('STRIPE_SECRET_KEY'),
+  stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET'),
+  // Recurring single-level referral commission, in pennies (£50 = 5000).
+  referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
+  billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
+};
+
+export type FeatureKey = 'db' | 'auth' | 'graph' | 'ai' | 'billing';
+
+const FEATURE_REQUIREMENTS: Record<FeatureKey, Array<[string, string | undefined]>> = {
+  db: [['DATABASE_URL', config.databaseUrl]],
+  auth: [
+    ['DATABASE_URL', config.databaseUrl],
+    ['SESSION_JWT_SECRET', config.sessionJwtSecret],
+    ['AZURE_TENANT_ID', config.azureTenantId],
+    ['AZURE_CLIENT_ID', config.azureClientId],
+    ['AZURE_CLIENT_SECRET', config.azureClientSecret],
+  ],
+  graph: [
+    ['AZURE_TENANT_ID', config.azureTenantId],
+    ['AZURE_CLIENT_ID', config.azureClientId],
+    ['AZURE_CLIENT_SECRET', config.azureClientSecret],
+  ],
+  ai: [['ANTHROPIC_API_KEY', config.anthropicApiKey]],
+  billing: [
+    ['DATABASE_URL', config.databaseUrl],
+    ['STRIPE_SECRET_KEY', config.stripeSecretKey],
+    ['STRIPE_WEBHOOK_SECRET', config.stripeWebhookSecret],
+  ],
+};
+
+/** Returns the list of missing env var names for a feature (empty = ready). */
+export function missingFor(feature: FeatureKey): string[] {
+  return FEATURE_REQUIREMENTS[feature].filter(([, v]) => !v).map(([name]) => name);
+}
+
+export class FeatureUnavailableError extends Error {
+  constructor(public feature: FeatureKey, public missing: string[]) {
+    super(`Feature "${feature}" is not configured. Missing: ${missing.join(', ')}`);
+    this.name = 'FeatureUnavailableError';
+  }
+}
+
+/** Throws FeatureUnavailableError if a feature's env vars are not all present. */
+export function assertFeature(feature: FeatureKey): void {
+  const missing = missingFor(feature);
+  if (missing.length) throw new FeatureUnavailableError(feature, missing);
+}
