@@ -1,0 +1,304 @@
+/**
+ * Triage = (deterministic match) + (LLM classification) + (audit record).
+ * Auto-rules = the premium executor that acts on a triage result when the firm
+ * has opted in. Both paths are fully audited and matter-isolated.
+ */
+import { query, queryOne } from './db';
+import { matchMessage, messageSignals, type Candidate } from './matching';
+import { classifyEmail, draftReply, retrieveMatterContext, type EmailIntent } from './ai';
+import {
+  createReplyDraft,
+  createAndSendReply,
+  appendTrackerRow,
+  listThreadMessages,
+  ensureMasterCategory,
+  addMessageCategories,
+} from './graph';
+import { threadToText, stripHtml } from './text';
+import { writeAudit } from './audit';
+import { externalDomainsAllowed } from './guard';
+import type { SessionUser } from './types';
+
+export interface Classification {
+  intent: EmailIntent;
+  needsAttention: boolean;
+  urgency: 'LOW' | 'MEDIUM' | 'HIGH';
+  reason: string;
+}
+
+export interface TriageResult {
+  triageId: string;
+  classification: Classification;
+  candidates: Candidate[];
+  top: Candidate | null;
+  band: string;
+}
+
+/** Classify + match a message and persist a triage record. Pure read on Graph. */
+export async function runTriage(user: SessionUser, message: any): Promise<TriageResult> {
+  const signals = messageSignals(message);
+  const candidates = await matchMessage(user.tenantId, signals);
+  const top = candidates[0] ?? null;
+
+  const emailText = [
+    `Subject: ${message.subject ?? ''}`,
+    `From: ${message.from?.emailAddress?.address ?? ''}`,
+    '',
+    stripHtml(message.body?.content) || (message.bodyPreview ?? ''),
+  ].join('\n');
+
+  const classification = await classifyEmail({ userId: user.userId, emailText });
+
+  const row = await queryOne<{ id: string }>(
+    `insert into email_triage
+      (tenant_id, graph_message_id, graph_conversation_id, matched_matter_id, confidence, band, classification, candidates)
+     values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb) returning id`,
+    [
+      user.tenantId,
+      message.id ?? null,
+      message.conversationId ?? null,
+      top?.matterId ?? null,
+      top?.score ?? null,
+      top?.band ?? 'NONE',
+      JSON.stringify(classification),
+      JSON.stringify(candidates),
+    ]
+  );
+
+  await writeAudit({
+    tenantId: user.tenantId,
+    matterId: top?.matterId ?? null,
+    actorUserId: user.userId,
+    actionType: 'EMAIL_TRIAGED',
+    actionStatus: 'SUCCESS',
+    payload: { messageId: message.id, band: top?.band ?? 'NONE', confidence: top?.score ?? 0, intent: classification.intent },
+  });
+
+  return { triageId: row!.id, classification, candidates, top, band: top?.band ?? 'NONE' };
+}
+
+const INTENT_LABEL: Record<string, string> = {
+  STATUS_UPDATE: 'CaseLightning · Status update',
+  ACTION_REQUIRED: 'CaseLightning · Action required',
+  DOCUMENT_DELIVERY: 'CaseLightning · Documents',
+  ENQUIRY: 'CaseLightning · Enquiry',
+  CHASE: 'CaseLightning · Chase',
+  ADMIN: 'CaseLightning · Admin',
+  OTHER: 'CaseLightning · Other',
+};
+
+/**
+ * Apply visible Outlook category tags from a triage result (best-effort): an
+ * intent tag always, plus the matched matter ref when the match is AUTO-band.
+ * Opting into auto-triage (the subscription) is the user's consent to tagging.
+ */
+export async function applyTriageTags(user: SessionUser, message: any, triage: TriageResult): Promise<string[]> {
+  if (!message.id) return [];
+  const tags: string[] = [];
+  const intentTag = INTENT_LABEL[triage.classification.intent] ?? INTENT_LABEL.OTHER;
+  tags.push(intentTag);
+  if (triage.top && triage.top.band === 'AUTO') tags.push(`Matter ${triage.top.matterRef}`);
+  for (const t of tags) await ensureMasterCategory(user.userId, t);
+  await addMessageCategories(user.userId, message.id, tags).catch(() => {});
+  return tags;
+}
+
+interface AutoRuleRow {
+  id: string;
+  name: string;
+  enabled: boolean;
+  intents: string[];
+  min_confidence: number;
+  require_no_attention: boolean;
+  sender_domains: string[];
+  do_categorize: boolean;
+  category_label: string | null;
+  do_assign: boolean;
+  assign_to: string | null;
+  do_append_tracker: boolean;
+  reply_mode: 'NONE' | 'DRAFT' | 'SEND';
+  reply_template_id: string | null;
+  risk_accepted: boolean;
+}
+
+export interface AutoOutcome {
+  applied: boolean;
+  ruleId?: string;
+  ruleName?: string;
+  actions: string[];
+  reason?: string;
+}
+
+/**
+ * Premium auto-executor. Only acts when:
+ *  - tenant automation kill-switch is on,
+ *  - the match band is AUTO (very high, multi-signal) and ≥ rule.min_confidence,
+ *  - the classification satisfies the rule (intent + no-attention),
+ *  - sender domain is in the rule's allowlist (if set).
+ * SEND additionally requires the rule's re-accepted risk acknowledgement, the
+ * tenant auto-send switch, and the recipient-domain policy allowlist.
+ */
+export async function runAutoRules(
+  user: SessionUser,
+  message: any,
+  triage: TriageResult
+): Promise<AutoOutcome> {
+  if (!triage.top || triage.top.band !== 'AUTO') {
+    return { applied: false, actions: [], reason: 'No AUTO-band match; left for human review.' };
+  }
+
+  const policy = await queryOne<{ automation_enabled: boolean; auto_send_enabled: boolean; allowed_external_domains: string[] }>(
+    `select automation_enabled, auto_send_enabled, allowed_external_domains from policy_config where tenant_id = $1`,
+    [user.tenantId]
+  );
+  if (!policy?.automation_enabled) {
+    return { applied: false, actions: [], reason: 'Automation disabled for this firm.' };
+  }
+
+  const rules = await query<AutoRuleRow>(
+    `select * from auto_rule where tenant_id = $1 and enabled = true order by min_confidence desc`,
+    [user.tenantId]
+  );
+
+  const senderDomain = message.from?.emailAddress?.address?.split('@')[1]?.toLowerCase();
+  const match = triage.top;
+  const cls = triage.classification;
+
+  const rule = rules.find((r) => {
+    if (r.intents.length && !r.intents.includes(cls.intent)) return false;
+    if (match.score < r.min_confidence) return false;
+    if (r.require_no_attention && cls.needsAttention) return false;
+    if (r.sender_domains.length && (!senderDomain || !r.sender_domains.includes(senderDomain))) return false;
+    return true;
+  });
+
+  if (!rule) {
+    return { applied: false, actions: [], reason: 'No enabled rule matched this email.' };
+  }
+
+  const actions: string[] = [];
+
+  // Ensure the thread is linked to the matched matter.
+  await query(
+    `insert into email_thread (tenant_id, matter_id, graph_thread_id, graph_conversation_id, subject, outlook_category)
+     values ($1,$2,$3,$4,$5,$6)
+     on conflict (tenant_id, graph_thread_id)
+     do update set matter_id = excluded.matter_id`,
+    [
+      user.tenantId,
+      match.matterId,
+      message.conversationId ?? message.id,
+      message.conversationId ?? null,
+      message.subject ?? null,
+      rule.category_label ?? `Matter ${match.matterRef}`,
+    ]
+  );
+  actions.push('linked-thread');
+
+  if (rule.do_categorize && message.id) {
+    const label = rule.category_label ?? `Matter ${match.matterRef}`;
+    await ensureMasterCategory(user.userId, label);
+    await addMessageCategories(user.userId, message.id, [label]).catch(() => {});
+    actions.push('categorized');
+  }
+
+  const matter = await queryOne<{ tracker_item_id: string | null }>(
+    `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
+    [match.matterId, user.tenantId]
+  );
+
+  if (rule.do_append_tracker && matter?.tracker_item_id) {
+    await appendTrackerRow(user.userId, matter.tracker_item_id, {
+      date: new Date().toISOString().slice(0, 10),
+      type: cls.intent,
+      detail: `${cls.reason} — auto-triaged from: ${message.subject ?? ''}`.slice(0, 250),
+      owner: rule.do_assign && rule.assign_to ? 'assigned' : '',
+      due: '',
+      status: cls.needsAttention ? 'OPEN' : 'NOTED',
+    }).catch(() => {});
+    actions.push('tracker-appended');
+  }
+
+  // Reply actions
+  if ((rule.reply_mode === 'DRAFT' || rule.reply_mode === 'SEND') && message.id) {
+    const threadText = threadToText(await listThreadMessages(user.userId, message.conversationId ?? message.id));
+    const facts = await queryOne<{ facts: Record<string, unknown> }>(
+      `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
+      [match.matterId, user.tenantId]
+    );
+    const template = rule.reply_template_id
+      ? await queryOne<any>(`select * from template where id = $1 and tenant_id = $2`, [rule.reply_template_id, user.tenantId])
+      : null;
+    const retrieved = await retrieveMatterContext({
+      tenantId: user.tenantId,
+      matterId: match.matterId,
+      queryText: 'Acknowledge status update',
+      includePlaybook: true,
+      limit: 6,
+    });
+    const draft = await draftReply({
+      userId: user.userId,
+      tone: 'NEUTRAL',
+      threadText,
+      matterFacts: facts?.facts ?? {},
+      retrievedContext: retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n'),
+      templateText: template ? `${template.subject_template ?? ''}\n${template.body_template}` : '',
+    });
+
+    if (rule.reply_mode === 'SEND') {
+      const recipients = [
+        message.from?.emailAddress?.address,
+        ...(message.toRecipients ?? []).map((r: any) => r.emailAddress?.address),
+      ].filter(Boolean) as string[];
+      const sendOk =
+        rule.risk_accepted &&
+        policy.auto_send_enabled &&
+        externalDomainsAllowed(recipients, policy.allowed_external_domains ?? []);
+      if (sendOk) {
+        const id = await createAndSendReply(user.userId, message.id, draft.bodyHtml, draft.subject);
+        actions.push('auto-sent');
+        await writeAudit({
+          tenantId: user.tenantId,
+          matterId: match.matterId,
+          actorUserId: user.userId,
+          actionType: 'AUTO_REPLY_SENT',
+          actionStatus: 'SUCCESS',
+          payload: { ruleId: rule.id, draftId: id, recipients },
+        });
+      } else {
+        // Fail safe: degrade to a draft and record why the send was blocked.
+        await createReplyDraft(user.userId, message.id, draft.bodyHtml, draft.subject);
+        actions.push('auto-drafted (send blocked)');
+        await writeAudit({
+          tenantId: user.tenantId,
+          matterId: match.matterId,
+          actorUserId: user.userId,
+          actionType: 'AUTO_REPLY_SENT',
+          actionStatus: 'BLOCKED',
+          payload: { ruleId: rule.id, reason: 'risk/kill-switch/domain check failed' },
+        });
+      }
+    } else {
+      await createReplyDraft(user.userId, message.id, draft.bodyHtml, draft.subject);
+      actions.push('auto-drafted');
+    }
+  }
+
+  if (rule.do_assign && rule.assign_to) actions.push('assigned');
+
+  await query(
+    `update email_triage set decision = 'AUTO_APPLIED', decided_at = now() where graph_message_id = $1 and tenant_id = $2`,
+    [message.id ?? '', user.tenantId]
+  );
+
+  await writeAudit({
+    tenantId: user.tenantId,
+    matterId: match.matterId,
+    actorUserId: user.userId,
+    actionType: 'AUTO_RULE_APPLIED',
+    actionStatus: 'SUCCESS',
+    payload: { ruleId: rule.id, ruleName: rule.name, actions, confidence: match.score },
+  });
+
+  return { applied: true, ruleId: rule.id, ruleName: rule.name, actions };
+}
