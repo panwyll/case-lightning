@@ -8,7 +8,7 @@ type NavHeaderProps = {
 };
 
 const NAV_LINKS = [
-  { href: '/how-it-works', label: 'How It Works' },
+  { href: '/how-it-works', label: 'How it works' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/faq', label: 'FAQ' },
 ] as const;
@@ -23,28 +23,25 @@ export function NavHeader({ signupHref }: NavHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur shadow-[0_1px_20px_rgba(0,0,0,0.5)]">
+    <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        {/* Logo */}
-        <a href="/" className="text-xl font-bold tracking-tight transition hover:opacity-80">
-          Case<span className="text-brand-500">Lightning</span>
+        <a href="/" className="text-xl font-extrabold tracking-tight text-ink transition hover:opacity-80">
+          CONVE<span className="text-violet">Yi</span>
         </a>
 
-        {/* Desktop nav */}
-        <nav className="hidden items-center gap-8 text-sm font-medium text-slate-400 md:flex">
+        <nav className="hidden items-center gap-8 text-sm font-medium text-ink-soft md:flex">
           {NAV_LINKS.map(({ href, label }) => (
-            <a key={href} href={href} className="transition-colors hover:text-white">{label}</a>
+            <a key={href} href={href} className="transition-colors hover:text-ink">{label}</a>
           ))}
         </nav>
 
-        {/* Right: desktop CTA + mobile burger */}
         <div className="flex items-center gap-3">
           <div className="hidden md:block">
-            <Cta label="Sign Up" href={signupHref} dataCta="nav_signup" />
+            <Cta label="Get started" href={signupHref} dataCta="nav_signup" />
           </div>
           <button
             ref={burgerRef}
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white md:hidden"
+            className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-ink/5 hover:text-ink md:hidden"
             onClick={() => setMenuOpen((v) => !v)}
             aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={menuOpen}
@@ -66,31 +63,17 @@ export function NavHeader({ signupHref }: NavHeaderProps) {
         </div>
       </div>
 
-      {/* Mobile menu */}
       {menuOpen && (
-        <div
-          id="mobile-menu"
-          className="border-t border-slate-800 bg-slate-950/95 px-6 pb-5 pt-4 md:hidden"
-        >
-          <nav className="flex flex-col gap-1 text-base font-medium text-slate-300">
+        <div id="mobile-menu" className="border-t border-line bg-paper px-6 pb-5 pt-4 md:hidden">
+          <nav className="flex flex-col gap-1 text-base font-medium text-ink">
             {NAV_LINKS.map(({ href, label }) => (
-              <a
-                key={href}
-                href={href}
-                className="rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-800 hover:text-white"
-                onClick={closeMenu}
-              >
+              <a key={href} href={href} className="rounded-lg px-3 py-2.5 transition-colors hover:bg-ink/5" onClick={closeMenu}>
                 {label}
               </a>
             ))}
           </nav>
           <div className="mt-4">
-            <Cta
-              label="Sign Up"
-              href={signupHref}
-              dataCta="nav_signup_mobile"
-              className="w-full justify-center"
-            />
+            <Cta label="Get started" href={signupHref} dataCta="nav_signup_mobile" className="w-full" />
           </div>
         </div>
       )}
