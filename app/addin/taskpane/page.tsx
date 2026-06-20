@@ -83,6 +83,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
+  const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null } | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -165,7 +166,20 @@ export default function Taskpane() {
     } catch {
       setAutoTriage(null);
     }
+    try {
+      const b = await api<{ plan: string | null; status: string }>('/billing/account');
+      setPlan({ plan: b.plan, status: b.status });
+    } catch {
+      setPlan(null);
+    }
   }, []);
+
+  // Billing lives on a full page (redirects need width). Hand the session token
+  // over in the URL fragment so desktop Outlook's separate storage jar can auth.
+  function openAccount() {
+    const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
+    window.open(t ? `/account#token=${encodeURIComponent(t)}` : '/account', '_blank', 'noopener');
+  }
 
   async function toggleAutoTriage() {
     await run(autoTriage?.enabled ? 'Disabling auto-triage' : 'Enabling auto-triage', async () => {
@@ -588,7 +602,23 @@ export default function Taskpane() {
             CONVE<span style={{ color: '#5A27E0' }}>Yi</span>
           </strong>
         </div>
-        <span style={S.user}>{me ? `${me.displayName || me.email}` : 'Not connected'}</span>
+        {me ? (
+          <button style={S.account} onClick={openAccount} title="Manage account & billing">
+            <span style={S.planBadge}>
+              {plan?.plan === 'team'
+                ? 'Team'
+                : plan?.plan === 'standard'
+                ? 'Standard'
+                : plan?.status === 'trialing'
+                ? 'Trial'
+                : 'Free'}
+            </span>
+            <span style={S.user}>{me.displayName || me.email}</span>
+            <span style={{ color: '#94a3b8' }}>›</span>
+          </button>
+        ) : (
+          <span style={S.user}>Not connected</span>
+        )}
       </header>
 
       {!me && (
@@ -1158,6 +1188,23 @@ const S: Record<string, React.CSSProperties> = {
   },
   bolt: { color: '#5A27E0', fontSize: 18 },
   user: { fontSize: 12, color: '#64748b' },
+  account: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  planBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#5A27E0',
+    background: '#EDE7FB',
+    borderRadius: 999,
+    padding: '2px 7px',
+  },
   card: {
     border: '1px solid #e2e8f0',
     borderRadius: 10,
