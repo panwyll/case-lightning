@@ -33,10 +33,19 @@ interface DraftPackage {
 const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
 type Tone = (typeof TONES)[number];
 
+const TOKEN_KEY = 'cl_token';
+
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+  // Bearer token (set after the sign-in dialog) covers desktop Outlook, where the
+  // session cookie isn't shared with the taskpane. Cookie still works on the web.
+  const token = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
   const res = await fetch(`/api/v1${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
     ...options,
   });
   const text = await res.text();
@@ -154,7 +163,7 @@ export default function Taskpane() {
   }
 
   const requireThread = () => {
-    if (!conversationId) throw new Error('Open an email so CaseLightning can read the thread.');
+    if (!conversationId) throw new Error('Open an email so CONVEYi can read the thread.');
   };
   const requireMatter = () => {
     if (!matterId) throw new Error('Link or create a matter first.');
@@ -176,7 +185,13 @@ export default function Taskpane() {
             return;
           }
           const dialog = result.value;
-          dialog.addEventHandler(Office.EventType.DialogMessageReceived, async () => {
+          dialog.addEventHandler(Office.EventType.DialogMessageReceived, async (arg: any) => {
+            try {
+              const data = JSON.parse(arg.message);
+              if (data.token) window.localStorage.setItem(TOKEN_KEY, data.token);
+            } catch {
+              /* ignore malformed message */
+            }
             dialog.close();
             await refreshMe();
             setStatus('Connected to Outlook.');
@@ -372,8 +387,13 @@ export default function Taskpane() {
     <div style={S.page}>
       <header style={S.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={S.bolt}>⚡</span>
-          <strong style={{ fontSize: 15 }}>CaseLightning</strong>
+          <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#5A27E0" />
+            <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
+          </svg>
+          <strong style={{ fontSize: 15 }}>
+            CONVE<span style={{ color: '#5A27E0' }}>Yi</span>
+          </strong>
         </div>
         <span style={S.user}>{me ? `${me.displayName || me.email}` : 'Not connected'}</span>
       </header>
@@ -668,7 +688,7 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #e2e8f0',
     marginBottom: 12,
   },
-  bolt: { color: '#ff2d78', fontSize: 18 },
+  bolt: { color: '#5A27E0', fontSize: 18 },
   user: { fontSize: 12, color: '#64748b' },
   card: {
     border: '1px solid #e2e8f0',
@@ -704,7 +724,7 @@ const S: Record<string, React.CSSProperties> = {
   primary: {
     width: '100%',
     padding: '9px 12px',
-    background: '#ff2d78',
+    background: '#5A27E0',
     color: '#fff',
     border: 'none',
     borderRadius: 8,
@@ -733,13 +753,13 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   tone: { padding: '5px 10px', background: '#fff', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer' },
-  toneActive: { padding: '5px 10px', background: '#00d4ff', border: '1px solid #00d4ff', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 700 },
+  toneActive: { padding: '5px 10px', background: '#5A27E0', border: '1px solid #5A27E0', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 700 },
   ul: { margin: '0 0 4px', paddingLeft: 18, fontSize: 13, lineHeight: 1.5 },
   chip: { fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: '#e2e8f0', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.3 },
   candidate: { border: '1px solid #e2e8f0', borderRadius: 8, padding: 8, marginBottom: 6, background: '#fff' },
   confidence: { fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, color: '#0f172a' },
   kv: { display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', color: '#334155', gap: 12 },
-  link: { display: 'block', fontSize: 12, color: '#0099bb', margin: '6px 0', textDecoration: 'none', fontWeight: 600 },
+  link: { display: 'block', fontSize: 12, color: '#5A27E0', margin: '6px 0', textDecoration: 'none', fontWeight: 600 },
   toast: {
     position: 'fixed',
     left: 12,
@@ -754,6 +774,6 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
   },
-  toastBusy: { background: '#0099bb' },
+  toastBusy: { background: '#5A27E0' },
   footer: { position: 'fixed', left: 0, right: 0, bottom: 0, textAlign: 'center', fontSize: 10, color: '#94a3b8', padding: 6, background: '#fff', borderTop: '1px solid #e2e8f0' },
 };

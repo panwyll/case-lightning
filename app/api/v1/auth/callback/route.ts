@@ -91,9 +91,10 @@ export async function GET(req: NextRequest) {
     });
 
     const session = await signSession(user.id);
-    // Land on a tiny completion page: inside an Office dialog it messages the
-    // taskpane and closes; in a plain browser it forwards to the taskpane.
-    const res = NextResponse.redirect(`${config.appUrl}/addin/auth-complete`);
+    // Land on a tiny completion page. The token rides in the URL fragment (never
+    // sent to a server or logged) so the dialog can hand it to the taskpane via
+    // postMessage — needed because desktop Outlook isolates the dialog's cookies.
+    const res = NextResponse.redirect(`${config.appUrl}/addin/auth-complete#s=${session}`);
     res.cookies.set(SESSION_COOKIE, session, {
       path: '/',
       httpOnly: true,

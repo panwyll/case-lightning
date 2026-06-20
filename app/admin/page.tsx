@@ -124,7 +124,7 @@ export default function AdminPage() {
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '8px 14px',
     border: 'none',
-    borderBottom: active ? '2px solid #ff2d78' : '2px solid transparent',
+    borderBottom: active ? '2px solid #5A27E0' : '2px solid transparent',
     background: 'transparent',
     fontWeight: active ? 700 : 500,
     cursor: 'pointer',
@@ -136,7 +136,7 @@ export default function AdminPage() {
   return (
     <div style={{ background: '#fff', minHeight: '100vh' }}>
       <div style={box}>
-        <h1 style={{ fontSize: 22, marginBottom: 4 }}>CaseLightning Admin</h1>
+        <h1 style={{ fontSize: 22, marginBottom: 4 }}>CONVEYi Admin</h1>
         <p style={{ color: '#64748b', marginTop: 0 }}>Firm playbook templates, policy and audit. Admin role required.</p>
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
           <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Templates</button>
@@ -158,7 +158,7 @@ export default function AdminPage() {
               <input style={input} placeholder="Style tag (NEUTRAL/FIRM/CHASING)" value={t.styleTag} onChange={(e) => setT({ ...t, styleTag: e.target.value })} />
               <input style={input} placeholder="Subject template" value={t.subjectTemplate} onChange={(e) => setT({ ...t, subjectTemplate: e.target.value })} />
               <textarea style={{ ...input, minHeight: 100 }} placeholder="Body template" value={t.bodyTemplate} onChange={(e) => setT({ ...t, bodyTemplate: e.target.value })} />
-              <button style={{ padding: '8px 16px', background: '#ff2d78', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={createTemplate}>
+              <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={createTemplate}>
                 Create
               </button>
             </div>
@@ -183,7 +183,7 @@ export default function AdminPage() {
               value={(policy.allowed_external_domains ?? []).join(',')}
               onChange={(e) => setPolicy({ ...policy, allowed_external_domains: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
             />
-            <button style={{ padding: '8px 16px', background: '#ff2d78', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePolicy}>
+            <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePolicy}>
               Save policy
             </button>
           </div>
@@ -259,7 +259,7 @@ export default function AdminPage() {
                 Enable now
               </label>
               <button
-                style={{ padding: '8px 16px', background: '#ff2d78', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', marginTop: 8 }}
+                style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', marginTop: 8 }}
                 onClick={createRule}
                 disabled={!rule.name || (rule.replyMode === 'SEND' && rule.enabled && (!rule.riskAccepted || !rule.riskAcknowledgement))}
               >
@@ -289,7 +289,7 @@ export default function AdminPage() {
               <input style={input} readOnly value={referrals.referralLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  style={{ padding: '8px 16px', background: '#ff2d78', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
+                  style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
                   onClick={() => navigator.clipboard?.writeText(referrals.referralLink)}
                 >
                   Copy link
