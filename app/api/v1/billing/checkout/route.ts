@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -12,13 +13,15 @@ const Body = z.object({ plan: z.enum(['standard', 'team']) });
 
 // Change the signed-in firm's plan. Existing subscribers get an in-place,
 // prorated swap ({ updated: true }); new subscribers get a Checkout URL to
-// redirect to ({ url }).
+// redirect to ({ url }). A referrer code in the cl_ref cookie is forwarded so a
+// first subscription via /account still credits the referrer (as /start-trial does).
 export async function POST(req: Request) {
   try {
     assertFeature('billing');
     const user = await requireUser();
     const { plan } = Body.parse(await req.json());
-    return ok(await changePlan(user, plan));
+    const referrerCode = (await cookies()).get('cl_ref')?.value ?? null;
+    return ok(await changePlan(user, plan, referrerCode));
   } catch (error) {
     if (error instanceof PlanNotConfiguredError) {
       return NextResponse.json(

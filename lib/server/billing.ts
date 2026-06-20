@@ -136,7 +136,8 @@ function priceFor(plan: PlanKey): string {
  */
 export async function changePlan(
   user: SessionUser,
-  plan: PlanKey
+  plan: PlanKey,
+  referrerCode?: string | null
 ): Promise<{ updated: true } | { url: string }> {
   const price = priceFor(plan);
   const account = await accountForUser(user.tenantId, user.email);
@@ -160,13 +161,19 @@ export async function changePlan(
     }
   }
 
-  // New subscriber (or previously canceled) → Checkout.
+  // New subscriber (or previously canceled) → Checkout. Forward the *referrer's*
+  // code (from the cl_ref cookie) as client_reference_id so the webhook can bind
+  // the referral edge — mirroring /start-trial. Never the buyer's own code (that
+  // would be a self-referral no-op), and only a real, different account's code.
+  const ref = referrerCode?.toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
+  const clientReferenceId = ref && ref !== account.referral_code ? ref : undefined;
+
   const session = await stripe().checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price, quantity: 1 }],
     customer: account.stripe_customer_id ?? undefined,
     customer_email: account.stripe_customer_id ? undefined : user.email,
-    client_reference_id: account.referral_code,
+    client_reference_id: clientReferenceId,
     success_url: `${appUrl}/account?upgraded=1`,
     cancel_url: `${appUrl}/account`,
     allow_promotion_codes: true,
