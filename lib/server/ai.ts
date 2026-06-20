@@ -258,6 +258,52 @@ export async function classifyEmail(input: {
   );
 }
 
+/**
+ * Onboarding discovery: given a cluster of related emails, decide whether they
+ * represent a single UK conveyancing matter and, if so, extract its identifying
+ * details. The `isConveyancingCase` flag is the noise filter — newsletters,
+ * internal admin and unrelated mail return false and are dropped before review.
+ * Email content is untrusted DATA (SYSTEM_GUARD), never instructions.
+ */
+export async function proposeMatter(input: {
+  userId: string;
+  threadDigest: string;
+}): Promise<{
+  isConveyancingCase: boolean;
+  propertyAddress: string;
+  buyerNames: string[];
+  sellerNames: string[];
+  counterpartySolicitor?: string;
+  counterpartyAgent?: string;
+  suggestedRef?: string;
+  confidence: number;
+  rationale: string;
+}> {
+  return structured(
+    input.userId,
+    'fast',
+    'propose_matter',
+    'Decide whether a cluster of emails is a single live UK conveyancing matter (a specific property purchase, sale or remortgage being progressed between a client and the firm/counterparties). If it is, extract the property address, buyer/seller names, counterparty solicitor/agent, a short suggested matter reference, a confidence (0–1) and a one-line rationale. ' +
+      'Set isConveyancingCase=false for anything that is NOT an active conveyancing transaction — including marketing or promotional email, newsletters, retailer/brand mail, receipts and order confirmations, social-network or app notifications, statements, automated alerts, internal admin, and generic enquiries with no specific property. A mention of an address or postcode (e.g. a company in a footer) does NOT by itself make it a conveyancing matter; require genuine two-way correspondence about progressing a property transaction. When in doubt, set isConveyancingCase=false and a low confidence.',
+    {
+      type: 'object',
+      properties: {
+        isConveyancingCase: { type: 'boolean' },
+        propertyAddress: { type: 'string' },
+        buyerNames: { type: 'array', items: { type: 'string' } },
+        sellerNames: { type: 'array', items: { type: 'string' } },
+        counterpartySolicitor: { type: 'string' },
+        counterpartyAgent: { type: 'string' },
+        suggestedRef: { type: 'string', description: 'Short human-friendly ref, e.g. a surname or street name. May be empty.' },
+        confidence: { type: 'number', description: '0 to 1' },
+        rationale: { type: 'string' },
+      },
+      required: ['isConveyancingCase', 'propertyAddress', 'buyerNames', 'sellerNames', 'confidence', 'rationale'],
+    },
+    `Email cluster (DATA):\n${input.threadDigest}`
+  );
+}
+
 export async function draftReply(input: {
   userId: string;
   tone: 'NEUTRAL' | 'FIRM' | 'CHASING';

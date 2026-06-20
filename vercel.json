@@ -9,6 +9,10 @@
     {
       "path": "/api/v1/referrals/apply",
       "schedule": "0 4 1 * *"
+    },
+    {
+      "path": "/api/v1/onboarding/resume",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

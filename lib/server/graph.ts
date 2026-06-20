@@ -69,6 +69,33 @@ export async function listThreadMessages(userId: string, conversationId: string)
   return result.value ?? [];
 }
 
+/**
+ * One page of the user's mail at or after `sinceIso` (null = no lower bound),
+ * spanning all folders so we capture both received and sent mail (counterparties
+ * live in sent items). Pass back the returned `nextLink` to fetch the next page.
+ * Light projection only — used to discover existing cases during onboarding.
+ */
+export async function listMailSince(
+  userId: string,
+  sinceIso: string | null,
+  nextLink?: string | null
+): Promise<{ messages: any[]; nextLink: string | null }> {
+  const client = await graphClientForUser(userId);
+  let result: any;
+  if (nextLink) {
+    result = await client.api(nextLink).get();
+  } else {
+    let req = client
+      .api('/me/messages')
+      .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
+      .top(50)
+      .orderby('receivedDateTime desc');
+    if (sinceIso) req = req.filter(`receivedDateTime ge ${sinceIso}`);
+    result = await req.get();
+  }
+  return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
+}
+
 export async function listMessageAttachments(userId: string, messageId: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/messages/${messageId}/attachments`).get();

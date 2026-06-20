@@ -31,6 +31,32 @@ interface DraftPackage {
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
+interface ObJob {
+  id: string;
+  status: string;
+  messages_scanned: number;
+  threads_found: number;
+  cases_proposed: number;
+  cases_onboarded: number;
+  error: string | null;
+  lookback_months: number | null;
+}
+interface ObCase {
+  id: string;
+  proposed_matter_ref: string | null;
+  property_address: string | null;
+  buyer_names: string[];
+  seller_names: string[];
+  counterparty_solicitor: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  thread_count: number;
+  message_count: number;
+  status: string;
+  matter_id: string | null;
+}
+const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
+
 const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
 type Tone = (typeof TONES)[number];
 
@@ -108,6 +134,14 @@ export default function Taskpane() {
   const [teamId, setTeamId] = useState('');
   const [channelId, setChannelId] = useState('');
 
+  // Onboarding (bulk-import existing cases from the mailbox backlog)
+  const [obJob, setObJob] = useState<ObJob | null>(null);
+  const [obCases, setObCases] = useState<ObCase[]>([]);
+  const [obSel, setObSel] = useState<Record<string, boolean>>({});
+  const [obRefEdit, setObRefEdit] = useState<Record<string, string>>({});
+  const [obLookback, setObLookback] = useState<'3' | 'unlimited'>('3');
+  const obDriving = useRef(false);
+
   const officeReady = useRef(false);
 
   const refreshMe = useCallback(async () => {
@@ -136,6 +170,97 @@ export default function Taskpane() {
       setStatus(autoTriage?.enabled ? 'Auto-triage off.' : 'Auto-triage on — new inbox mail will be tagged & matched.');
     });
   }
+
+  // ── Onboarding ───────────────────────────────────────────────────────────────
+  const refreshOnboarding = useCallback(async (): Promise<ObJob | null> => {
+    try {
+      const r = await api<{ job: ObJob | null; cases: ObCase[] }>('/onboarding');
+      setObJob(r.job);
+      setObCases(r.cases ?? []);
+      if (r.job?.status === 'AWAITING_REVIEW') {
+        // Pre-tick confident candidates so the common case is one click.
+        setObSel((prev) => {
+          const next = { ...prev };
+          for (const c of r.cases ?? []) if (!(c.id in next)) next[c.id] = (c.confidence ?? 0) >= 0.6;
+          return next;
+        });
+      }
+      return r.job;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Loop the bounded /process endpoint until the job needs the user (review) or ends.
+  const driveOnboarding = useCallback(async () => {
+    if (obDriving.current) return;
+    obDriving.current = true;
+    try {
+      for (;;) {
+        const r = await api<{ status: string; job: ObJob | null; done: boolean }>('/onboarding/process', { method: 'POST' });
+        if (r.job) setObJob(r.job);
+        if (r.done) {
+          await refreshOnboarding();
+          break;
+        }
+        await new Promise((res) => setTimeout(res, 500));
+      }
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      obDriving.current = false;
+    }
+  }, [refreshOnboarding]);
+
+  async function startOnboarding() {
+    const started = await run('Starting scan', async () => {
+      const lookbackMonths = obLookback === 'unlimited' ? null : 3;
+      const r = await api<{ job: ObJob }>('/onboarding', { method: 'POST', body: JSON.stringify({ lookbackMonths }) });
+      setObJob(r.job);
+      setObCases([]);
+      setObSel({});
+      setObRefEdit({});
+      setStatus('Scanning your mailbox…');
+      return true;
+    });
+    if (started) driveOnboarding();
+  }
+
+  async function confirmOnboarding() {
+    const ok = await run('Onboarding selected cases', async () => {
+      const selections = obCases
+        .filter((c) => c.status === 'PROPOSED')
+        .map((c) => ({
+          caseId: c.id,
+          approved: !!obSel[c.id],
+          edits: obRefEdit[c.id]?.trim() ? { matterRef: obRefEdit[c.id].trim() } : undefined,
+        }));
+      await api('/onboarding/confirm', { method: 'POST', body: JSON.stringify({ selections }) });
+      setStatus('Provisioning matters…');
+      await refreshOnboarding();
+      return true;
+    });
+    if (ok) driveOnboarding();
+  }
+
+  async function cancelOnboarding() {
+    await run('Cancelling', async () => {
+      await api('/onboarding', { method: 'DELETE' });
+      setObJob(null);
+      setObCases([]);
+      setObSel({});
+      setStatus('Onboarding cancelled.');
+    });
+  }
+
+  // Resume an in-progress job whenever the taskpane (re)loads while signed in.
+  useEffect(() => {
+    if (!me) return;
+    (async () => {
+      const job = await refreshOnboarding();
+      if (job && OB_ACTIVE.includes(job.status)) driveOnboarding();
+    })();
+  }, [me, refreshOnboarding, driveOnboarding]);
 
   useEffect(() => {
     refreshMe();
@@ -653,6 +778,105 @@ export default function Taskpane() {
               </button>
             </Card>
           )}
+
+          {/* Onboard existing cases (bulk-import the mailbox backlog) */}
+          <Card>
+            <Label>Onboard existing cases</Label>
+
+            {(!obJob || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(obJob.status)) && (
+              <>
+                <p style={S.muted}>
+                  Scan your mailbox to find cases already in flight and import them as matters — OneDrive folder, Excel
+                  tracker and AI summary included. You review and pick which to keep before anything is created.
+                </p>
+                <SubLabel>How far back</SubLabel>
+                <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
+                  <option value="3">Last 3 months</option>
+                  <option value="unlimited">All history (premium)</option>
+                </select>
+                <button style={S.primary} onClick={startOnboarding}>
+                  Scan my inbox
+                </button>
+                {obJob?.status === 'COMPLETED' && (
+                  <p style={{ ...S.muted, marginTop: 8 }}>Last run onboarded {obJob.cases_onboarded} case(s).</p>
+                )}
+                {obJob?.status === 'FAILED' && (
+                  <p style={{ ...S.muted, color: '#b91c1c', marginTop: 8 }}>Last run failed: {obJob.error}</p>
+                )}
+              </>
+            )}
+
+            {obJob && OB_ACTIVE.includes(obJob.status) && (
+              <>
+                <p style={S.muted}>
+                  {obJob.status === 'SCANNING' && `Scanning mailbox — ${obJob.messages_scanned} emails read…`}
+                  {obJob.status === 'CLUSTERING' && `Grouping ${obJob.messages_scanned} emails into cases…`}
+                  {obJob.status === 'PROPOSING' && `Identifying cases — ${obJob.cases_proposed} found so far…`}
+                  {obJob.status === 'PROVISIONING' && `Provisioning matters — ${obJob.cases_onboarded} done…`}
+                </p>
+                <button style={S.secondary} onClick={cancelOnboarding}>
+                  Cancel
+                </button>
+              </>
+            )}
+
+            {obJob?.status === 'AWAITING_REVIEW' && (
+              <>
+                <p style={S.muted}>
+                  Found {obCases.filter((c) => c.status === 'PROPOSED').length} candidate case(s) across {obJob.messages_scanned}{' '}
+                  emails. Tick the ones to onboard.
+                </p>
+                {obCases
+                  .filter((c) => c.status === 'PROPOSED')
+                  .map((c) => {
+                    const pct = Math.round((c.confidence ?? 0) * 100);
+                    const parties = [...(c.buyer_names || []), ...(c.seller_names || [])].filter(Boolean).join(', ');
+                    return (
+                      <div key={c.id} style={S.candidate}>
+                        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!obSel[c.id]}
+                            onChange={(e) => setObSel((s) => ({ ...s, [c.id]: e.target.checked }))}
+                          />
+                          <strong style={{ fontSize: 13 }}>{c.property_address || 'Unknown property'}</strong>
+                        </label>
+                        {parties && <div style={{ fontSize: 12, color: '#475569' }}>{parties}</div>}
+                        <div style={{ fontSize: 11, color: '#64748b', margin: '2px 0' }}>
+                          {pct}% · {c.message_count} email(s) · {c.thread_count} thread(s)
+                        </div>
+                        {c.rationale && <div style={{ fontSize: 11, color: '#64748b' }}>{c.rationale}</div>}
+                        <input
+                          style={{ ...S.input, marginTop: 4 }}
+                          placeholder={`Matter ref (default: ${c.proposed_matter_ref || 'auto'})`}
+                          value={obRefEdit[c.id] ?? ''}
+                          onChange={(e) => setObRefEdit((r) => ({ ...r, [c.id]: e.target.value }))}
+                        />
+                      </div>
+                    );
+                  })}
+                <button style={S.primary} onClick={confirmOnboarding}>
+                  Onboard selected
+                </button>
+                <button style={{ ...S.secondary, marginTop: 6 }} onClick={cancelOnboarding}>
+                  Discard
+                </button>
+              </>
+            )}
+
+            {obJob?.status === 'COMPLETED' && obCases.some((c) => c.status === 'ONBOARDED') && (
+              <>
+                <SubLabel>Onboarded</SubLabel>
+                <ul style={S.ul}>
+                  {obCases
+                    .filter((c) => c.status === 'ONBOARDED')
+                    .map((c) => (
+                      <li key={c.id}>{c.property_address}</li>
+                    ))}
+                </ul>
+              </>
+            )}
+          </Card>
 
           {/* AI engine + auto-triage */}
           <Card>
