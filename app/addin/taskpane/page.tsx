@@ -90,6 +90,16 @@ export default function Taskpane() {
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState<string>('');
 
+  // Auto-dismiss the status toast. Otherwise a transient message (an error like
+  // "Link or create a matter first." or a success confirmation) lingers until
+  // the next action happens to clear it. While busy we leave it — the toast is
+  // then showing live progress, not a settled message.
+  useEffect(() => {
+    if (!status || busy) return;
+    const t = setTimeout(() => setStatus(''), 6000);
+    return () => clearTimeout(t);
+  }, [status, busy]);
+
   // Outlook thread context
   const [messageId, setMessageId] = useState('');
   const [conversationId, setConversationId] = useState('');

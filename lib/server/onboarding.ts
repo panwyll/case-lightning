@@ -16,7 +16,7 @@
  *     → (confirm) → PROVISIONING → COMPLETED
  */
 import { query, queryOne } from './db';
-import { listMailSince, listThreadMessages, appendTrackerRow } from './graph';
+import { listMailSince, listThreadMessages, appendTrackerRow, describeGraphError } from './graph';
 import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
@@ -513,7 +513,7 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
         payload: { caseId: c.id, clusterKey: c.cluster_key, reusedExisting: Boolean(dup) },
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = describeGraphError(error);
       await query(`update onboarding_case set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), c.id]);
       await writeAudit({
         tenantId: user.tenantId,
@@ -548,7 +548,7 @@ export async function advanceJob(user: SessionUser, job: OnboardingJob): Promise
         break; // AWAITING_REVIEW / terminal — nothing to do
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = describeGraphError(error);
     await query(`update onboarding_job set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), job.id]);
   }
   return (await reloadJob(job.id))!;

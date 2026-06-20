@@ -4,7 +4,7 @@
  * thread, creating draft-only replies, and the per-case OneDrive folder + the
  * live Excel tracker. No send endpoint exists by design.
  */
-import { Client } from '@microsoft/microsoft-graph-client';
+import { Client, GraphError } from '@microsoft/microsoft-graph-client';
 import { queryOne, query } from './db';
 import { refreshAccessToken } from './oauth';
 import { config } from './config';
@@ -53,6 +53,27 @@ function encodePath(p: string): string {
   return p.split('/').map(encodeURIComponent).join('/');
 }
 
+/**
+ * Turn a thrown Graph error into a human-readable message. The SDK's GraphError
+ * leaves `.message` EMPTY when Graph replies with a body-less error (e.g. a bare
+ * `401` with `Content-Length: 0`, which is exactly what mailbox endpoints return
+ * for an account with no accessible Exchange mailbox). Without this, such
+ * failures surface to the user as a blank string. We fall back to the HTTP
+ * status (and `code`/`body` when present) so the cause is never invisible.
+ */
+export function describeGraphError(error: unknown): string {
+  if (error instanceof GraphError) {
+    const detail = error.message || (typeof error.body === 'string' ? error.body : '') || error.code || '';
+    const status = error.statusCode && error.statusCode > 0 ? ` (HTTP ${error.statusCode})` : '';
+    if (error.statusCode === 401) {
+      return `Microsoft Graph denied access to the mailbox${status}. This account has no Graph-readable Outlook/Exchange mailbox — onboarding needs a licensed mailbox it can read.`;
+    }
+    return `Microsoft Graph request failed${status}${detail ? `: ${detail}` : '.'}`;
+  }
+  if (error instanceof Error) return error.message || error.name || 'Unknown error';
+  return String(error) || 'Unknown error';
+}
+
 // ── Mail ──────────────────────────────────────────────────────────────────
 
 export async function listThreadMessages(userId: string, conversationId: string): Promise<any[]> {
@@ -82,18 +103,25 @@ export async function listMailSince(
 ): Promise<{ messages: any[]; nextLink: string | null }> {
   const client = await graphClientForUser(userId);
   let result: any;
-  if (nextLink) {
-    result = await client.api(nextLink).get();
-  } else {
-    let req = client
-      .api('/me/messages')
-      .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
-      .top(50)
-      .orderby('receivedDateTime desc');
-    // `sinceIso` may arrive as a Date (pg parses timestamptz columns into Date
-    // objects) — coerce to strict ISO 8601, which is what the OData filter needs.
-    if (sinceIso) req = req.filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()}`);
-    result = await req.get();
+  try {
+    if (nextLink) {
+      result = await client.api(nextLink).get();
+    } else {
+      let req = client
+        .api('/me/messages')
+        .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
+        .top(50)
+        .orderby('receivedDateTime desc');
+      // `sinceIso` may arrive as a Date (pg parses timestamptz columns into Date
+      // objects) — coerce to strict ISO 8601, which is what the OData filter needs.
+      if (sinceIso) req = req.filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()}`);
+      result = await req.get();
+    }
+  } catch (error) {
+    // Mailbox endpoints answer with a body-less 401 for accounts that have no
+    // accessible Exchange mailbox (guest/unlicensed tenants). Re-throw with a
+    // legible message so callers don't store/show an empty error string.
+    throw new Error(describeGraphError(error));
   }
   return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
 }
