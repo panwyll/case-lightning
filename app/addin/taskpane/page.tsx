@@ -146,6 +146,11 @@ export default function Taskpane() {
   const [summary, setSummary] = useState<{ happened: string[]; outstanding: string[] } | null>(null);
   const [facts, setFacts] = useState<ExtractedFacts | null>(null);
   const [tone, setTone] = useState<Tone>('NEUTRAL');
+
+  // Which top-level view is showing. The taskpane is organised by what the user
+  // is doing (triage this email → manage the matter → set things up) rather than
+  // by feature, so the narrow pane stays focused instead of an endless scroll.
+  const [tab, setTab] = useState<'email' | 'matter' | 'setup'>('email');
   const [draft, setDraft] = useState<DraftPackage | null>(null);
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -661,6 +666,21 @@ export default function Taskpane() {
     setStatus('Draft loaded in the draft workspace below — review, then create the Outlook draft.');
   }
 
+  // The single most likely next step for the open email — shown as the hero
+  // action so the user isn't faced with a flat grid of equal-weight verbs.
+  // Mirrors Jira's "next transition": read-only updates → Summarise; anything
+  // that needs a response → Draft reply.
+  const emailActions: Array<{ key: string; label: string; onClick: () => void; needsMatter?: boolean }> = [
+    { key: 'draft', label: 'Draft reply', onClick: generateDraft },
+    { key: 'summarise', label: 'Summarise', onClick: summarise },
+    { key: 'facts', label: 'Extract facts', onClick: extractFacts },
+    { key: 'save', label: 'Save to matter', onClick: saveToMatter, needsMatter: true },
+  ];
+  const noReplyNeeded = triage?.classification?.needsAttention === false;
+  const primaryKey = noReplyNeeded ? 'summarise' : 'draft';
+  const primaryAction = emailActions.find((a) => a.key === primaryKey)!;
+  const otherActions = emailActions.filter((a) => a.key !== primaryKey);
+
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -732,6 +752,27 @@ export default function Taskpane() {
             </div>
           </Card>
 
+          {/* Top-level navigation — keeps the narrow pane focused on one job at a time. */}
+          <div style={S.tabBar} role="tablist">
+            {([
+              ['email', 'This email'],
+              ['matter', 'Matter'],
+              ['setup', 'Setup'],
+            ] as const).map(([key, lbl]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={tab === key}
+                style={tab === key ? { ...S.tab, ...S.tabActive } : S.tab}
+                onClick={() => setTab(key)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+
+          {tab === 'email' && (
+          <>
           {triage && (
             <Card>
               <Label>Suggested match</Label>
@@ -798,18 +839,27 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* Quick actions */}
+          {/* Act on this email — one recommended step up top, the rest below. */}
           <Card>
-            <Label>Quick actions</Label>
-            {!conversationId && (
-              <p style={S.muted}>Open an email to use these. Summarise, extract facts and draft a reply work without a matter; saving needs one.</p>
+            <Label>{noReplyNeeded ? 'Recommended: summarise' : 'Recommended: draft a reply'}</Label>
+            {!conversationId ? (
+              <p style={S.muted}>Open an email to summarise it, extract facts, or draft a reply. Saving to a matter needs one linked.</p>
+            ) : (
+              <>
+                <button style={S.primary} onClick={primaryAction.onClick}>{primaryAction.label}</button>
+                <div style={{ ...S.grid, marginTop: 8 }}>
+                  {otherActions.map((a) => (
+                    <button
+                      key={a.key}
+                      style={btn(S.secondary, !!a.needsMatter && !matterId)}
+                      onClick={a.onClick}
+                    >
+                      {a.label}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-            <div style={S.grid}>
-              <button style={btn(S.action, !conversationId)} onClick={summarise}>Summarise</button>
-              <button style={btn(S.action, !conversationId)} onClick={extractFacts}>Extract facts</button>
-              <button style={btn(S.action, !matterId || !conversationId)} onClick={saveToMatter}>Save to matter</button>
-              <button style={btn(S.action, !conversationId)} onClick={generateDraft}>Draft reply</button>
-            </div>
           </Card>
 
           {summary && (
@@ -875,6 +925,16 @@ export default function Taskpane() {
                 </>
               )}
               <button style={S.primary} onClick={createOutlookDraft}>Create Outlook draft</button>
+            </Card>
+          )}
+          </>
+          )}
+
+          {tab === 'matter' && (
+          <>
+          {!matterId && (
+            <Card>
+              <p style={S.muted}>No matter linked. Open an email in the <strong>This email</strong> tab and link or create a matter, then manage it here.</p>
             </Card>
           )}
 
@@ -1063,6 +1123,11 @@ export default function Taskpane() {
             </Card>
           )}
 
+          </>
+          )}
+
+          {tab === 'setup' && (
+          <>
           {/* Onboard existing cases (bulk-import the mailbox backlog) */}
           <Card>
             <Label>Onboard existing cases</Label>
@@ -1178,6 +1243,8 @@ export default function Taskpane() {
               {autoTriage?.enabled ? 'Turn off auto-triage' : 'Turn on auto-triage'}
             </button>
           </Card>
+          </>
+          )}
         </>
       )}
 
@@ -1311,6 +1378,19 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     padding: '2px 7px',
   },
+  tabBar: { display: 'flex', gap: 4, marginBottom: 12, background: '#f1f5f9', borderRadius: 9, padding: 3 },
+  tab: {
+    flex: 1,
+    padding: '7px 8px',
+    border: 'none',
+    background: 'transparent',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 600,
+    color: '#64748b',
+    cursor: 'pointer',
+  },
+  tabActive: { background: '#fff', color: '#0f172a', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' },
   card: {
     border: '1px solid #e2e8f0',
     borderRadius: 10,
