@@ -31,7 +31,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       [body.matterId, user.tenantId]
     );
 
-    const extracted = await extractFacts({ userId: user.userId, threadText: text, existingFacts: existing?.facts ?? {} });
+    const extracted = await extractFacts({
+      userId: user.userId,
+      tenantId: user.tenantId,
+      matterId: body.matterId,
+      threadText: text,
+      existingFacts: existing?.facts ?? {},
+    });
 
     await query(
       `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb, updated_at = now()

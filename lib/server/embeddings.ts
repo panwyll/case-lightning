@@ -12,7 +12,15 @@ export function embeddingsConfigured(): boolean {
     : Boolean(config.voyageApiKey);
 }
 
-export async function embed(text: string): Promise<number[] | null> {
+export interface EmbedResult {
+  vector: number[];
+  /** Provider-reported token count (for usage metering); 0 if not reported. */
+  tokens: number;
+  provider: 'voyage' | 'openai';
+  model: string;
+}
+
+export async function embed(text: string): Promise<EmbedResult | null> {
   const input = text.replace(/\s+/g, ' ').trim().slice(0, 8000);
   if (!input) return null;
 
@@ -27,8 +35,13 @@ export async function embed(text: string): Promise<number[] | null> {
       body: JSON.stringify({ model: config.openAiEmbeddingModel, input }),
     });
     if (!res.ok) throw new Error(`OpenAI embeddings failed: ${res.status}`);
-    const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-    return json.data[0]?.embedding ?? null;
+    const json = (await res.json()) as {
+      data: Array<{ embedding: number[] }>;
+      usage?: { total_tokens?: number };
+    };
+    const vector = json.data[0]?.embedding;
+    if (!vector) return null;
+    return { vector, tokens: json.usage?.total_tokens ?? 0, provider: 'openai', model: config.openAiEmbeddingModel };
   }
 
   // Voyage (default)
@@ -42,8 +55,13 @@ export async function embed(text: string): Promise<number[] | null> {
     body: JSON.stringify({ model: config.voyageModel, input, input_type: 'document' }),
   });
   if (!res.ok) throw new Error(`Voyage embeddings failed: ${res.status}`);
-  const json = (await res.json()) as { data: Array<{ embedding: number[] }> };
-  return json.data[0]?.embedding ?? null;
+  const json = (await res.json()) as {
+    data: Array<{ embedding: number[] }>;
+    usage?: { total_tokens?: number };
+  };
+  const vector = json.data[0]?.embedding;
+  if (!vector) return null;
+  return { vector, tokens: json.usage?.total_tokens ?? 0, provider: 'voyage', model: config.voyageModel };
 }
 
 export function embeddingLiteral(values: number[]): string {

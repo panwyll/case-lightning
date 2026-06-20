@@ -69,10 +69,66 @@ export async function listThreadMessages(userId: string, conversationId: string)
   return result.value ?? [];
 }
 
+/**
+ * One page of the user's mail at or after `sinceIso` (null = no lower bound),
+ * spanning all folders so we capture both received and sent mail (counterparties
+ * live in sent items). Pass back the returned `nextLink` to fetch the next page.
+ * Light projection only — used to discover existing cases during onboarding.
+ */
+export async function listMailSince(
+  userId: string,
+  sinceIso: string | null,
+  nextLink?: string | null
+): Promise<{ messages: any[]; nextLink: string | null }> {
+  const client = await graphClientForUser(userId);
+  let result: any;
+  if (nextLink) {
+    result = await client.api(nextLink).get();
+  } else {
+    let req = client
+      .api('/me/messages')
+      .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
+      .top(50)
+      .orderby('receivedDateTime desc');
+    // `sinceIso` may arrive as a Date (pg parses timestamptz columns into Date
+    // objects) — coerce to strict ISO 8601, which is what the OData filter needs.
+    if (sinceIso) req = req.filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()}`);
+    result = await req.get();
+  }
+  return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
+}
+
 export async function listMessageAttachments(userId: string, messageId: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/messages/${messageId}/attachments`).get();
   return result.value ?? [];
+}
+
+/** Attachment metadata only (no bytes) — used to list reviewable files cheaply. */
+export async function listMessageAttachmentsMeta(userId: string, messageId: string): Promise<any[]> {
+  const client = await graphClientForUser(userId);
+  const result = await client
+    .api(`/me/messages/${messageId}/attachments`)
+    .select('id,name,contentType,size,isInline')
+    .get();
+  return (result.value ?? []).filter((a: any) => !a.isInline);
+}
+
+/** A single attachment WITH its bytes (contentBytes, base64) for review. */
+export async function getMessageAttachment(userId: string, messageId: string, attachmentId: string): Promise<any> {
+  const client = await graphClientForUser(userId);
+  return client.api(`/me/messages/${messageId}/attachments/${attachmentId}`).get();
+}
+
+/** Download the raw bytes of a OneDrive item (a doc already saved to the matter). */
+export async function downloadDriveItem(userId: string, itemId: string): Promise<Buffer> {
+  const client = await graphClientForUser(userId);
+  const stream = await client.api(`/me/drive/items/${itemId}/content`).getStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 export async function getMessage(userId: string, messageId: string): Promise<any> {

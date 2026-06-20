@@ -33,6 +33,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
 
     const summary = await summarizeThread({
       userId: user.userId,
+      tenantId: user.tenantId,
+      matterId: body.matterId,
       threadText: text,
       matterSummary: JSON.stringify(summaryRow?.facts ?? {}),
     });

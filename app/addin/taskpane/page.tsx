@@ -31,6 +31,32 @@ interface DraftPackage {
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
+interface ObJob {
+  id: string;
+  status: string;
+  messages_scanned: number;
+  threads_found: number;
+  cases_proposed: number;
+  cases_onboarded: number;
+  error: string | null;
+  lookback_months: number | null;
+}
+interface ObCase {
+  id: string;
+  proposed_matter_ref: string | null;
+  property_address: string | null;
+  buyer_names: string[];
+  seller_names: string[];
+  counterparty_solicitor: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  thread_count: number;
+  message_count: number;
+  status: string;
+  matter_id: string | null;
+}
+const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
+
 const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
 type Tone = (typeof TONES)[number];
 
@@ -57,6 +83,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
+  const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null } | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -77,7 +104,7 @@ export default function Taskpane() {
     propertyAddress: string;
     buyerNames: string[];
     sellerNames: string[];
-    counterpartySolicitor: string;
+    counterparties: string[];
     exchangeTargetDate: string;
     completionTargetDate: string;
   }>({
@@ -85,7 +112,7 @@ export default function Taskpane() {
     propertyAddress: '',
     buyerNames: [],
     sellerNames: [],
-    counterpartySolicitor: '',
+    counterparties: [],
     exchangeTargetDate: '',
     completionTargetDate: '',
   });
@@ -105,8 +132,20 @@ export default function Taskpane() {
   const [docs, setDocs] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [attachmentIntent, setAttachmentIntent] = useState('');
+
+  // Document review
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [docReview, setDocReview] = useState<any>(null);
   const [teamId, setTeamId] = useState('');
   const [channelId, setChannelId] = useState('');
+
+  // Onboarding (bulk-import existing cases from the mailbox backlog)
+  const [obJob, setObJob] = useState<ObJob | null>(null);
+  const [obCases, setObCases] = useState<ObCase[]>([]);
+  const [obSel, setObSel] = useState<Record<string, boolean>>({});
+  const [obRefEdit, setObRefEdit] = useState<Record<string, string>>({});
+  const [obLookback, setObLookback] = useState<'3' | 'unlimited'>('3');
+  const obDriving = useRef(false);
 
   const officeReady = useRef(false);
 
@@ -127,7 +166,20 @@ export default function Taskpane() {
     } catch {
       setAutoTriage(null);
     }
+    try {
+      const b = await api<{ plan: string | null; status: string }>('/billing/account');
+      setPlan({ plan: b.plan, status: b.status });
+    } catch {
+      setPlan(null);
+    }
   }, []);
+
+  // Billing lives on a full page (redirects need width). Hand the session token
+  // over in the URL fragment so desktop Outlook's separate storage jar can auth.
+  function openAccount() {
+    const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
+    window.open(t ? `/account#token=${encodeURIComponent(t)}` : '/account', '_blank', 'noopener');
+  }
 
   async function toggleAutoTriage() {
     await run(autoTriage?.enabled ? 'Disabling auto-triage' : 'Enabling auto-triage', async () => {
@@ -136,6 +188,97 @@ export default function Taskpane() {
       setStatus(autoTriage?.enabled ? 'Auto-triage off.' : 'Auto-triage on — new inbox mail will be tagged & matched.');
     });
   }
+
+  // ── Onboarding ───────────────────────────────────────────────────────────────
+  const refreshOnboarding = useCallback(async (): Promise<ObJob | null> => {
+    try {
+      const r = await api<{ job: ObJob | null; cases: ObCase[] }>('/onboarding');
+      setObJob(r.job);
+      setObCases(r.cases ?? []);
+      if (r.job?.status === 'AWAITING_REVIEW') {
+        // Pre-tick confident candidates so the common case is one click.
+        setObSel((prev) => {
+          const next = { ...prev };
+          for (const c of r.cases ?? []) if (!(c.id in next)) next[c.id] = (c.confidence ?? 0) >= 0.6;
+          return next;
+        });
+      }
+      return r.job;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // Loop the bounded /process endpoint until the job needs the user (review) or ends.
+  const driveOnboarding = useCallback(async () => {
+    if (obDriving.current) return;
+    obDriving.current = true;
+    try {
+      for (;;) {
+        const r = await api<{ status: string; job: ObJob | null; done: boolean }>('/onboarding/process', { method: 'POST' });
+        if (r.job) setObJob(r.job);
+        if (r.done) {
+          await refreshOnboarding();
+          break;
+        }
+        await new Promise((res) => setTimeout(res, 500));
+      }
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      obDriving.current = false;
+    }
+  }, [refreshOnboarding]);
+
+  async function startOnboarding() {
+    const started = await run('Starting scan', async () => {
+      const lookbackMonths = obLookback === 'unlimited' ? null : 3;
+      const r = await api<{ job: ObJob }>('/onboarding', { method: 'POST', body: JSON.stringify({ lookbackMonths }) });
+      setObJob(r.job);
+      setObCases([]);
+      setObSel({});
+      setObRefEdit({});
+      setStatus('Scanning your mailbox…');
+      return true;
+    });
+    if (started) driveOnboarding();
+  }
+
+  async function confirmOnboarding() {
+    const ok = await run('Onboarding selected cases', async () => {
+      const selections = obCases
+        .filter((c) => c.status === 'PROPOSED')
+        .map((c) => ({
+          caseId: c.id,
+          approved: !!obSel[c.id],
+          edits: obRefEdit[c.id]?.trim() ? { matterRef: obRefEdit[c.id].trim() } : undefined,
+        }));
+      await api('/onboarding/confirm', { method: 'POST', body: JSON.stringify({ selections }) });
+      setStatus('Provisioning matters…');
+      await refreshOnboarding();
+      return true;
+    });
+    if (ok) driveOnboarding();
+  }
+
+  async function cancelOnboarding() {
+    await run('Cancelling', async () => {
+      await api('/onboarding', { method: 'DELETE' });
+      setObJob(null);
+      setObCases([]);
+      setObSel({});
+      setStatus('Onboarding cancelled.');
+    });
+  }
+
+  // Resume an in-progress job whenever the taskpane (re)loads while signed in.
+  useEffect(() => {
+    if (!me) return;
+    (async () => {
+      const job = await refreshOnboarding();
+      if (job && OB_ACTIVE.includes(job.status)) driveOnboarding();
+    })();
+  }, [me, refreshOnboarding, driveOnboarding]);
 
   useEffect(() => {
     refreshMe();
@@ -219,6 +362,40 @@ export default function Taskpane() {
     return s.replace(/^((re|fw|fwd)\s*:\s*)+/i, '').trim();
   }
 
+  // Pull a clean property address out of the subject: keep everything up to and
+  // including a UK postcode if present; else the house-number clause; else the
+  // de-prefixed subject (trimmed of a trailing "— draft contract" style suffix).
+  function addressFromSubject(s: string): string {
+    const clean = cleanSubject(s);
+    const pc = clean.match(/^(.*?\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+    if (pc) return pc[1].trim();
+    const num = clean.match(/\b\d+\s+[A-Za-z].*/);
+    if (num) return num[0].split(/\s[–—|:-]\s/)[0].trim().slice(0, 80);
+    return clean;
+  }
+
+  // The sender of an incoming email is almost always the other side — format them
+  // as one "Name <email>" contact (or just the email when there's no real name).
+  function senderContact(): string | null {
+    if (!sender?.email) return null;
+    const name = sender.name?.trim();
+    return name && name.toLowerCase() !== sender.email.toLowerCase() ? `${name} <${sender.email}>` : sender.email;
+  }
+
+  // A human, memorable default ref: party surname + postcode/street token, e.g.
+  // "HARTLEY-SW1A" or "SMITH-14OAK". Falls back to a dated ref only when we know
+  // nothing yet. Recomputed live so the placeholder shows what will actually be used.
+  function suggestedRef(): string {
+    const surname = (form.buyerNames[0] || form.sellerNames[0] || '').trim().split(/\s+/).pop() || '';
+    const who = surname.replace(/[^A-Za-z-]/g, '').toUpperCase();
+    const addr = form.propertyAddress.toUpperCase();
+    const pc = addr.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);
+    const street = addr.match(/\b(\d+)\s+([A-Z]+)/);
+    const where = pc ? pc[1] : street ? `${street[1]}${street[2]}` : '';
+    const parts = [who, where].filter(Boolean);
+    return parts.length ? parts.join('-') : `MATTER-${new Date().getFullYear()}-${Math.floor(Math.random() * 900 + 100)}`;
+  }
+
   // Open the New-matter form, pre-filling what we can read from the open email:
   // the property address from the subject, and the counterparty from the sender.
   function openNewMatter() {
@@ -226,10 +403,11 @@ export default function Taskpane() {
       setShowNewMatter(false);
       return;
     }
+    const contact = senderContact();
     setForm((f) => ({
       ...f,
-      propertyAddress: f.propertyAddress || cleanSubject(subject),
-      counterpartySolicitor: f.counterpartySolicitor || (sender ? `${sender.name} <${sender.email}>` : ''),
+      propertyAddress: f.propertyAddress || addressFromSubject(subject),
+      counterparties: f.counterparties.length ? f.counterparties : contact ? [contact] : [],
     }));
     setShowNewMatter(true);
   }
@@ -237,11 +415,13 @@ export default function Taskpane() {
   async function createMatter() {
     await run('Creating matter', async () => {
       const body = {
-        matterRef: form.matterRef || `AUTO-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 9000 + 1000)}`,
+        matterRef: form.matterRef.trim() || suggestedRef(),
         propertyAddress: form.propertyAddress,
         buyerNames: form.buyerNames,
         sellerNames: form.sellerNames,
-        counterpartySolicitor: form.counterpartySolicitor || undefined,
+        // First contact → solicitor, second → agent (the two backend columns).
+        counterpartySolicitor: form.counterparties[0] || undefined,
+        counterpartyAgent: form.counterparties[1] || undefined,
         exchangeTargetDate: form.exchangeTargetDate || undefined,
         completionTargetDate: form.completionTargetDate || undefined,
       };
@@ -411,6 +591,41 @@ export default function Taskpane() {
     });
   }
 
+  async function listAttachments() {
+    const r = await run('Loading attachments', async () => {
+      if (!messageId) throw new Error('Open an email with an attachment first.');
+      return api<{ attachments: any[] }>(
+        `/threads/${encodeURIComponent(conversationId || messageId)}/attachments?messageId=${encodeURIComponent(messageId)}`
+      );
+    });
+    if (r) {
+      setAttachments(r.attachments);
+      setDocReview(null);
+      if (!r.attachments.length) setStatus('No attachments on this email.');
+    }
+  }
+
+  async function reviewAttachment(att: any) {
+    const r = await run(`Reviewing ${att.name}`, async () => {
+      requireMatter();
+      if (!messageId) throw new Error('No message selected.');
+      return api<{ review: any; reviewId: string }>(`/matters/${matterId}/documents/review`, {
+        method: 'POST',
+        body: JSON.stringify({ messageId, attachmentId: att.id }),
+      });
+    });
+    if (r) setDocReview(r.review);
+  }
+
+  function useReviewDraft() {
+    if (!docReview?.draftReply) return;
+    const dr = docReview.draftReply;
+    setDraft({ subject: dr.subject, bodyHtml: dr.bodyHtml, why: [], actions: [], referencedDocuments: [] });
+    setDraftSubject(dr.subject);
+    setDraftBody(dr.bodyHtml);
+    setStatus('Draft loaded in the draft workspace below — review, then create the Outlook draft.');
+  }
+
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -424,7 +639,23 @@ export default function Taskpane() {
             CONVE<span style={{ color: '#5A27E0' }}>Yi</span>
           </strong>
         </div>
-        <span style={S.user}>{me ? `${me.displayName || me.email}` : 'Not connected'}</span>
+        {me ? (
+          <button style={S.account} onClick={openAccount} title="Manage account & billing">
+            <span style={S.planBadge}>
+              {plan?.plan === 'team'
+                ? 'Team'
+                : plan?.plan === 'standard'
+                ? 'Standard'
+                : plan?.status === 'trialing'
+                ? 'Trial'
+                : 'Free'}
+            </span>
+            <span style={S.user}>{me.displayName || me.email}</span>
+            <span style={{ color: '#94a3b8' }}>›</span>
+          </button>
+        ) : (
+          <span style={S.user}>Not connected</span>
+        )}
       </header>
 
       {!me && (
@@ -517,11 +748,11 @@ export default function Taskpane() {
           {showNewMatter && (
             <Card>
               <Label>New matter</Label>
-              <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder="auto-generated if left blank" />
+              <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder={`auto: ${suggestedRef()}`} />
               <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} placeholder="14 Oak Street, London SW1A 1AA" />
               <TagInput label="Buyers" values={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} placeholder="type a name, press Enter" />
               <TagInput label="Sellers" values={form.sellerNames} onChange={(v) => setForm({ ...form, sellerNames: v })} placeholder="type a name, press Enter" />
-              <Field label="Counterparty (firm / email)" value={form.counterpartySolicitor} onChange={(v) => setForm({ ...form, counterpartySolicitor: v })} placeholder="prefilled from the email sender" />
+              <TagInput label="Other side (solicitor, agent…)" values={form.counterparties} onChange={(v) => setForm({ ...form, counterparties: v })} placeholder="prefilled from sender — Enter to add, × to remove" />
               <div style={S.rowWrap}>
                 <Field label="Exchange target" type="date" value={form.exchangeTargetDate} onChange={(v) => setForm({ ...form, exchangeTargetDate: v })} />
                 <Field label="Completion target" type="date" value={form.completionTargetDate} onChange={(v) => setForm({ ...form, completionTargetDate: v })} />
@@ -654,6 +885,221 @@ export default function Taskpane() {
             </Card>
           )}
 
+          {/* Review a document */}
+          {matterId && (
+            <Card>
+              <Label>Review a document</Label>
+              <p style={S.muted}>
+                Read an incoming attachment and check it against this matter — key details, mismatches, risks and a draft
+                reply.
+              </p>
+              <button style={S.secondary} onClick={listAttachments} disabled={!messageId}>
+                List attachments on this email
+              </button>
+              {attachments.map((a) => (
+                <div key={a.id} style={S.candidate}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.name}
+                      {a.size ? ` · ${Math.round(a.size / 1024)} KB` : ''}
+                    </span>
+                    <button style={S.secondary} onClick={() => reviewAttachment(a)}>
+                      Review
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {docReview && (
+                <div style={{ marginTop: 8 }}>
+                  <SubLabel>{docReview.documentType}</SubLabel>
+                  <p style={S.muted}>{docReview.summary}</p>
+
+                  {(docReview.consistencyChecks ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Details vs matter</SubLabel>
+                      {docReview.consistencyChecks.map((c: any, i: number) => {
+                        const bg =
+                          c.status === 'MATCH' ? '#dcfce7' : c.status === 'MISMATCH' ? '#fee2e2' : c.status === 'MISSING' ? '#fef9c3' : '#e2e8f0';
+                        return (
+                          <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 6, marginBottom: 4, background: '#fff' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                              <strong style={{ fontSize: 12 }}>{c.field}</strong>
+                              <span style={{ ...S.chip, background: bg }}>{c.status}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#475569' }}>
+                              matter: {c.expected || '—'} · doc: {c.found || '—'}
+                            </div>
+                            {c.note && <div style={{ fontSize: 11, color: '#64748b' }}>{c.note}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {(docReview.risks ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Risks</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.risks.map((r: any, i: number) => (
+                          <li key={i}>
+                            <strong style={{ color: r.severity === 'HIGH' ? '#b91c1c' : r.severity === 'MEDIUM' ? '#b45309' : '#475569' }}>
+                              {r.severity}:
+                            </strong>{' '}
+                            {r.issue}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {(docReview.keyDetails ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Key details</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.keyDetails.map((k: any, i: number) => (
+                          <li key={i}>
+                            <strong>{k.label}:</strong> {k.value}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {(docReview.nextSteps ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Suggested next steps</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.nextSteps.map((s: string, i: number) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: '8px 10px',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      color: '#92400e',
+                    }}
+                  >
+                    ⚠ AI-generated review — it can miss or misread things. Always verify against the source document before relying on it.
+                  </div>
+
+                  {docReview.draftReply && (
+                    <button style={{ ...S.primary, marginTop: 8 }} onClick={useReviewDraft}>
+                      Use as draft reply
+                    </button>
+                  )}
+                </div>
+              )}
+            </Card>
+          )}
+
+          {/* Onboard existing cases (bulk-import the mailbox backlog) */}
+          <Card>
+            <Label>Onboard existing cases</Label>
+
+            {(!obJob || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(obJob.status)) && (
+              <>
+                <p style={S.muted}>
+                  Scan your mailbox to find cases already in flight and import them as matters — OneDrive folder, Excel
+                  tracker and AI summary included. You review and pick which to keep before anything is created.
+                </p>
+                <SubLabel>How far back</SubLabel>
+                <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
+                  <option value="3">Last 3 months</option>
+                  <option value="unlimited">All history (premium)</option>
+                </select>
+                <button style={S.primary} onClick={startOnboarding}>
+                  Scan my inbox
+                </button>
+                {obJob?.status === 'COMPLETED' && (
+                  <p style={{ ...S.muted, marginTop: 8 }}>Last run onboarded {obJob.cases_onboarded} case(s).</p>
+                )}
+                {obJob?.status === 'FAILED' && (
+                  <p style={{ ...S.muted, color: '#b91c1c', marginTop: 8 }}>Last run failed: {obJob.error}</p>
+                )}
+              </>
+            )}
+
+            {obJob && OB_ACTIVE.includes(obJob.status) && (
+              <>
+                <p style={S.muted}>
+                  {obJob.status === 'SCANNING' && `Scanning mailbox — ${obJob.messages_scanned} emails read…`}
+                  {obJob.status === 'CLUSTERING' && `Grouping ${obJob.messages_scanned} emails into cases…`}
+                  {obJob.status === 'PROPOSING' && `Identifying cases — ${obJob.cases_proposed} found so far…`}
+                  {obJob.status === 'PROVISIONING' && `Provisioning matters — ${obJob.cases_onboarded} done…`}
+                </p>
+                <button style={S.secondary} onClick={cancelOnboarding}>
+                  Cancel
+                </button>
+              </>
+            )}
+
+            {obJob?.status === 'AWAITING_REVIEW' && (
+              <>
+                <p style={S.muted}>
+                  Found {obCases.filter((c) => c.status === 'PROPOSED').length} candidate case(s) across {obJob.messages_scanned}{' '}
+                  emails. Tick the ones to onboard.
+                </p>
+                {obCases
+                  .filter((c) => c.status === 'PROPOSED')
+                  .map((c) => {
+                    const pct = Math.round((c.confidence ?? 0) * 100);
+                    const parties = [...(c.buyer_names || []), ...(c.seller_names || [])].filter(Boolean).join(', ');
+                    return (
+                      <div key={c.id} style={S.candidate}>
+                        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!obSel[c.id]}
+                            onChange={(e) => setObSel((s) => ({ ...s, [c.id]: e.target.checked }))}
+                          />
+                          <strong style={{ fontSize: 13 }}>{c.property_address || 'Unknown property'}</strong>
+                        </label>
+                        {parties && <div style={{ fontSize: 12, color: '#475569' }}>{parties}</div>}
+                        <div style={{ fontSize: 11, color: '#64748b', margin: '2px 0' }}>
+                          {pct}% · {c.message_count} email(s) · {c.thread_count} thread(s)
+                        </div>
+                        {c.rationale && <div style={{ fontSize: 11, color: '#64748b' }}>{c.rationale}</div>}
+                        <input
+                          style={{ ...S.input, marginTop: 4 }}
+                          placeholder={`Matter ref (default: ${c.proposed_matter_ref || 'auto'})`}
+                          value={obRefEdit[c.id] ?? ''}
+                          onChange={(e) => setObRefEdit((r) => ({ ...r, [c.id]: e.target.value }))}
+                        />
+                      </div>
+                    );
+                  })}
+                <button style={S.primary} onClick={confirmOnboarding}>
+                  Onboard selected
+                </button>
+                <button style={{ ...S.secondary, marginTop: 6 }} onClick={cancelOnboarding}>
+                  Discard
+                </button>
+              </>
+            )}
+
+            {obJob?.status === 'COMPLETED' && obCases.some((c) => c.status === 'ONBOARDED') && (
+              <>
+                <SubLabel>Onboarded</SubLabel>
+                <ul style={S.ul}>
+                  {obCases
+                    .filter((c) => c.status === 'ONBOARDED')
+                    .map((c) => (
+                      <li key={c.id}>{c.property_address}</li>
+                    ))}
+                </ul>
+              </>
+            )}
+          </Card>
+
           {/* AI engine + auto-triage */}
           <Card>
             <Label>AI engine</Label>
@@ -779,6 +1225,23 @@ const S: Record<string, React.CSSProperties> = {
   },
   bolt: { color: '#5A27E0', fontSize: 18 },
   user: { fontSize: 12, color: '#64748b' },
+  account: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  planBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#5A27E0',
+    background: '#EDE7FB',
+    borderRadius: 999,
+    padding: '2px 7px',
+  },
   card: {
     border: '1px solid #e2e8f0',
     borderRadius: 10,

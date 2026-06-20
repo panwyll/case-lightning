@@ -48,7 +48,12 @@ export async function runTriage(user: SessionUser, message: any): Promise<Triage
     stripHtml(message.body?.content) || (message.bodyPreview ?? ''),
   ].join('\n');
 
-  const classification = await classifyEmail({ userId: user.userId, emailText });
+  const classification = await classifyEmail({
+    userId: user.userId,
+    tenantId: user.tenantId,
+    matterId: top?.matterId ?? null,
+    emailText,
+  });
 
   const row = await queryOne<{ id: string }>(
     `insert into email_triage
@@ -242,6 +247,8 @@ export async function runAutoRules(
     });
     const draft = await draftReply({
       userId: user.userId,
+      tenantId: user.tenantId,
+      matterId: match.matterId,
       tone: 'NEUTRAL',
       threadText,
       matterFacts: facts?.facts ?? {},

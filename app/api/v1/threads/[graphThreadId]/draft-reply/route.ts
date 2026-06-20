@@ -68,6 +68,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
 
     const draft = await draftReply({
       userId: user.userId,
+      tenantId: user.tenantId,
+      matterId: body.matterId,
       tone: body.tone,
       threadText,
       matterFacts: matterSummary?.facts ?? {},

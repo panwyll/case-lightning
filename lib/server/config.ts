@@ -75,6 +75,11 @@ export const config = {
   // Billing + referrals (Stripe)
   stripeSecretKey: env('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET'),
+  // Recurring price IDs per plan — power in-app upgrade/downgrade (Checkout for new
+  // subscribers, subscription-item swap for existing ones). Optional: when unset the
+  // checkout route 503s and plan changes are still possible via the Stripe portal.
+  stripePriceStandard: env('STRIPE_PRICE_STANDARD'),
+  stripePriceTeam: env('STRIPE_PRICE_TEAM'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
