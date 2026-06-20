@@ -50,8 +50,8 @@ function Redirector() {
   }, [searchParams]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-      <p className="text-lg font-semibold text-slate-400">Taking you to checkout…</p>
+    <main className="flex min-h-screen items-center justify-center bg-paper text-ink">
+      <p className="text-lg font-semibold text-ink-soft">Taking you to checkout…</p>
     </main>
   );
 }
@@ -60,8 +60,8 @@ export default function StartTrialPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
-          <p className="text-lg font-semibold text-slate-400">Taking you to checkout…</p>
+        <main className="flex min-h-screen items-center justify-center bg-paper text-ink">
+          <p className="text-lg font-semibold text-ink-soft">Taking you to checkout…</p>
         </main>
       }
     >
