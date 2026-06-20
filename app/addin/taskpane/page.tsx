@@ -131,6 +131,10 @@ export default function Taskpane() {
   const [docs, setDocs] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [attachmentIntent, setAttachmentIntent] = useState('');
+
+  // Document review
+  const [attachments, setAttachments] = useState<any[]>([]);
+  const [docReview, setDocReview] = useState<any>(null);
   const [teamId, setTeamId] = useState('');
   const [channelId, setChannelId] = useState('');
 
@@ -536,6 +540,41 @@ export default function Taskpane() {
     });
   }
 
+  async function listAttachments() {
+    const r = await run('Loading attachments', async () => {
+      if (!messageId) throw new Error('Open an email with an attachment first.');
+      return api<{ attachments: any[] }>(
+        `/threads/${encodeURIComponent(conversationId || messageId)}/attachments?messageId=${encodeURIComponent(messageId)}`
+      );
+    });
+    if (r) {
+      setAttachments(r.attachments);
+      setDocReview(null);
+      if (!r.attachments.length) setStatus('No attachments on this email.');
+    }
+  }
+
+  async function reviewAttachment(att: any) {
+    const r = await run(`Reviewing ${att.name}`, async () => {
+      requireMatter();
+      if (!messageId) throw new Error('No message selected.');
+      return api<{ review: any; reviewId: string }>(`/matters/${matterId}/documents/review`, {
+        method: 'POST',
+        body: JSON.stringify({ messageId, attachmentId: att.id }),
+      });
+    });
+    if (r) setDocReview(r.review);
+  }
+
+  function useReviewDraft() {
+    if (!docReview?.draftReply) return;
+    const dr = docReview.draftReply;
+    setDraft({ subject: dr.subject, bodyHtml: dr.bodyHtml, why: [], actions: [], referencedDocuments: [] });
+    setDraftSubject(dr.subject);
+    setDraftBody(dr.bodyHtml);
+    setStatus('Draft loaded in the draft workspace below — review, then create the Outlook draft.');
+  }
+
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -776,6 +815,122 @@ export default function Taskpane() {
               <button style={S.secondary} onClick={postToTeams} disabled={!teamId || !channelId}>
                 Post to Teams
               </button>
+            </Card>
+          )}
+
+          {/* Review a document */}
+          {matterId && (
+            <Card>
+              <Label>Review a document</Label>
+              <p style={S.muted}>
+                Read an incoming attachment and check it against this matter — key details, mismatches, risks and a draft
+                reply.
+              </p>
+              <button style={S.secondary} onClick={listAttachments} disabled={!messageId}>
+                List attachments on this email
+              </button>
+              {attachments.map((a) => (
+                <div key={a.id} style={S.candidate}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {a.name}
+                      {a.size ? ` · ${Math.round(a.size / 1024)} KB` : ''}
+                    </span>
+                    <button style={S.secondary} onClick={() => reviewAttachment(a)}>
+                      Review
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {docReview && (
+                <div style={{ marginTop: 8 }}>
+                  <SubLabel>{docReview.documentType}</SubLabel>
+                  <p style={S.muted}>{docReview.summary}</p>
+
+                  {(docReview.consistencyChecks ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Details vs matter</SubLabel>
+                      {docReview.consistencyChecks.map((c: any, i: number) => {
+                        const bg =
+                          c.status === 'MATCH' ? '#dcfce7' : c.status === 'MISMATCH' ? '#fee2e2' : c.status === 'MISSING' ? '#fef9c3' : '#e2e8f0';
+                        return (
+                          <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 6, padding: 6, marginBottom: 4, background: '#fff' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                              <strong style={{ fontSize: 12 }}>{c.field}</strong>
+                              <span style={{ ...S.chip, background: bg }}>{c.status}</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: '#475569' }}>
+                              matter: {c.expected || '—'} · doc: {c.found || '—'}
+                            </div>
+                            {c.note && <div style={{ fontSize: 11, color: '#64748b' }}>{c.note}</div>}
+                          </div>
+                        );
+                      })}
+                    </>
+                  )}
+
+                  {(docReview.risks ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Risks</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.risks.map((r: any, i: number) => (
+                          <li key={i}>
+                            <strong style={{ color: r.severity === 'HIGH' ? '#b91c1c' : r.severity === 'MEDIUM' ? '#b45309' : '#475569' }}>
+                              {r.severity}:
+                            </strong>{' '}
+                            {r.issue}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {(docReview.keyDetails ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Key details</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.keyDetails.map((k: any, i: number) => (
+                          <li key={i}>
+                            <strong>{k.label}:</strong> {k.value}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {(docReview.nextSteps ?? []).length > 0 && (
+                    <>
+                      <SubLabel>Suggested next steps</SubLabel>
+                      <ul style={S.ul}>
+                        {docReview.nextSteps.map((s: string, i: number) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: '8px 10px',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      color: '#92400e',
+                    }}
+                  >
+                    ⚠ AI-generated review — it can miss or misread things. Always verify against the source document before relying on it.
+                  </div>
+
+                  {docReview.draftReply && (
+                    <button style={{ ...S.primary, marginTop: 8 }} onClick={useReviewDraft}>
+                      Use as draft reply
+                    </button>
+                  )}
+                </div>
+              )}
             </Card>
           )}
 

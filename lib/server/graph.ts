@@ -102,6 +102,33 @@ export async function listMessageAttachments(userId: string, messageId: string):
   return result.value ?? [];
 }
 
+/** Attachment metadata only (no bytes) — used to list reviewable files cheaply. */
+export async function listMessageAttachmentsMeta(userId: string, messageId: string): Promise<any[]> {
+  const client = await graphClientForUser(userId);
+  const result = await client
+    .api(`/me/messages/${messageId}/attachments`)
+    .select('id,name,contentType,size,isInline')
+    .get();
+  return (result.value ?? []).filter((a: any) => !a.isInline);
+}
+
+/** A single attachment WITH its bytes (contentBytes, base64) for review. */
+export async function getMessageAttachment(userId: string, messageId: string, attachmentId: string): Promise<any> {
+  const client = await graphClientForUser(userId);
+  return client.api(`/me/messages/${messageId}/attachments/${attachmentId}`).get();
+}
+
+/** Download the raw bytes of a OneDrive item (a doc already saved to the matter). */
+export async function downloadDriveItem(userId: string, itemId: string): Promise<Buffer> {
+  const client = await graphClientForUser(userId);
+  const stream = await client.api(`/me/drive/items/${itemId}/content`).getStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer>) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 export async function getMessage(userId: string, messageId: string): Promise<any> {
   const client = await graphClientForUser(userId);
   return client
