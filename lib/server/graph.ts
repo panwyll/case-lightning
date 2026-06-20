@@ -68,6 +68,12 @@ export function describeGraphError(error: unknown): string {
     if (error.statusCode === 401) {
       return `Microsoft Graph denied access to the mailbox${status}. This account has no Graph-readable Outlook/Exchange mailbox — onboarding needs a licensed mailbox it can read.`;
     }
+    // OneDrive/SharePoint provisioning (matter folder + Excel tracker) fails when
+    // the tenant has no SharePoint Online licence — Graph returns a 400 whose body
+    // says "Tenant does not have a SPO license." Give the same actionable hint.
+    if (/SPO license|SharePoint/i.test(detail)) {
+      return `Couldn't provision the matter's OneDrive folder / Excel tracker${status}. This account's tenant has no SharePoint Online / OneDrive licence, which CaseLightning needs to store matter files.`;
+    }
     return `Microsoft Graph request failed${status}${detail ? `: ${detail}` : '.'}`;
   }
   if (error instanceof Error) return error.message || error.name || 'Unknown error';
