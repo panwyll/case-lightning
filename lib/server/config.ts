@@ -47,6 +47,12 @@ export const config = {
   anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-4-6',
   anthropicClassifyModel: env('ANTHROPIC_CLASSIFY_MODEL') ?? 'claude-haiku-4-5',
 
+  // Groq failover (OpenAI-compatible). Used only when no Anthropic key is set —
+  // a cheaper/faster stopgap; Anthropic is preferred for drafting quality.
+  groqApiKey: env('GROQ_API_KEY'),
+  groqModel: env('GROQ_MODEL') ?? 'llama-3.3-70b-versatile',
+  groqFastModel: env('GROQ_FAST_MODEL') ?? 'llama-3.1-8b-instant',
+
   // Embeddings provider: 'voyage' (default) | 'openai'. Optional — RAG degrades
   // gracefully to non-vector retrieval when no embeddings key is configured.
   embeddingsProvider: (env('EMBEDDINGS_PROVIDER') ?? 'voyage') as 'voyage' | 'openai',
@@ -100,6 +106,10 @@ const FEATURE_REQUIREMENTS: Record<FeatureKey, Array<[string, string | undefined
 
 /** Returns the list of missing env var names for a feature (empty = ready). */
 export function missingFor(feature: FeatureKey): string[] {
+  // AI is satisfied by either an Anthropic key (preferred) or a Groq failover key.
+  if (feature === 'ai') {
+    return config.anthropicApiKey || config.groqApiKey ? [] : ['ANTHROPIC_API_KEY (or GROQ_API_KEY)'];
+  }
   return FEATURE_REQUIREMENTS[feature].filter(([, v]) => !v).map(([name]) => name);
 }
 
