@@ -91,7 +91,9 @@ export async function GET(req: NextRequest) {
     });
 
     const session = await signSession(user.id);
-    const res = NextResponse.redirect(`${config.appUrl}/addin/taskpane`);
+    // Land on a tiny completion page: inside an Office dialog it messages the
+    // taskpane and closes; in a plain browser it forwards to the taskpane.
+    const res = NextResponse.redirect(`${config.appUrl}/addin/auth-complete`);
     res.cookies.set(SESSION_COOKIE, session, {
       path: '/',
       httpOnly: true,
