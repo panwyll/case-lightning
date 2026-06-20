@@ -20,6 +20,7 @@ import { listMailSince, listThreadMessages, appendTrackerRow } from './graph';
 import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
+import { isMeaningfulRef } from '../ref-name';
 import { threadToText } from './text';
 import { writeAudit } from './audit';
 import type { SessionUser } from './types';
@@ -361,7 +362,7 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
         job.id,
         user.tenantId,
         c.cluster_key,
-        isCase ? proposal!.suggestedRef || null : null,
+        isCase && isMeaningfulRef(proposal!.suggestedRef) ? proposal!.suggestedRef!.trim() : null,
         isCase ? proposal!.propertyAddress || null : null,
         isCase ? proposal!.buyerNames ?? [] : [],
         isCase ? proposal!.sellerNames ?? [] : [],

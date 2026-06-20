@@ -3,6 +3,7 @@ import { config } from './config';
 import { ensureMatterFolder, ensureExcelTracker } from './graph';
 import { matterSelfIdentifiers, upsertIdentifiers, domainOf } from './matching';
 import { writeAudit } from './audit';
+import { randomMatterRef } from '../ref-name';
 import type { SessionUser } from './types';
 
 export function addressSlug(propertyAddress: string): string {
@@ -68,7 +69,7 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
 
   const buyerNames = input.buyerNames ?? [];
   const sellerNames = input.sellerNames ?? [];
-  const baseRef = input.matterRef.trim() || `AUTO-${new Date().toISOString().slice(0, 10)}`;
+  const baseRef = input.matterRef.trim() || randomMatterRef();
 
   // Settle on a tenant-unique matter ref, then provision against that ref.
   let matterId: string | null = null;
