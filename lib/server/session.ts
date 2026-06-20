@@ -3,7 +3,7 @@
  * The cookie holds only { userId }; the full SessionUser is loaded from the DB.
  */
 import { SignJWT, jwtVerify } from 'jose';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { queryOne } from './db';
 import { config } from './config';
 import type { SessionUser } from './types';
@@ -36,7 +36,13 @@ export async function verifySession(token: string): Promise<{ userId: string } |
 /** Reads the session cookie and loads the current user, or null if unauthenticated. */
 export async function getSessionUser(): Promise<SessionUser | null> {
   const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
+  // Cookie works in Outlook on the web; on desktop the dialog and taskpane have
+  // separate cookie jars, so we also accept the session as a bearer token.
+  let token = store.get(SESSION_COOKIE)?.value;
+  if (!token) {
+    const auth = (await headers()).get('authorization');
+    if (auth?.startsWith('Bearer ')) token = auth.slice(7);
+  }
   if (!token) return null;
 
   const verified = await verifySession(token);

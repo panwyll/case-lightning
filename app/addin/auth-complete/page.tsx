@@ -13,11 +13,12 @@ export default function AuthComplete() {
 
   useEffect(() => {
     let done = false;
+    const token = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('s') ?? '';
     const finish = () => {
       if (done) return;
       try {
         if ((window as any).Office?.context?.ui?.messageParent) {
-          (window as any).Office.context.ui.messageParent(JSON.stringify({ status: 'ok' }));
+          (window as any).Office.context.ui.messageParent(JSON.stringify({ status: 'ok', token }));
           done = true;
           setMsg('Connected. You can close this window.');
           return;

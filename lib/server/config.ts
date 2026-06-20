@@ -65,7 +65,7 @@ export const config = {
   embeddingDim: Number(env('EMBEDDING_DIM') ?? '1024'),
 
   // OneDrive layout — per-case folders live under this root in the user's drive.
-  oneDriveRoot: env('ONEDRIVE_ROOT') ?? 'CaseLightning',
+  oneDriveRoot: env('ONEDRIVE_ROOT') ?? 'CONVEYi',
 
   allowedExternalDomains: (env('ALLOWED_EXTERNAL_DOMAINS') ?? '')
     .split(',')
