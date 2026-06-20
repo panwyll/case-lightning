@@ -346,6 +346,90 @@ export async function appendTrackerRow(userId: string, itemId: string, row: Trac
   });
 }
 
+// ── Two-way task sync ("Jira in Excel") ─────────────────────────────────────
+// The tracker is a live, hand-editable surface, so we address rows by a stable
+// "Ref" cell rather than by position, and map values by HEADER NAME (not column
+// order) — that way a legacy 6-column tracker and an upgraded 7-column one both
+// work, and a column reordered by the user doesn't corrupt writes.
+
+export interface TrackerTaskRow {
+  ref: string;
+  date?: string;
+  type?: string;
+  detail?: string;
+  owner?: string;
+  due?: string;
+  status?: string;
+}
+
+const norm = (s: string) => s.trim().toLowerCase();
+
+async function trackerColumnNames(client: Client, itemId: string): Promise<string[]> {
+  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/columns`).get();
+  return ((res.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
+}
+
+function valuesForColumns(cols: string[], r: TrackerTaskRow): string[] {
+  const byField: Record<string, string> = {
+    ref: r.ref ?? '',
+    date: r.date ?? '',
+    type: r.type ?? '',
+    detail: r.detail ?? '',
+    owner: r.owner ?? '',
+    due: r.due ?? '',
+    status: r.status ?? '',
+  };
+  return cols.map((c) => byField[norm(c)] ?? '');
+}
+
+/** Adds the "Ref" key column to the tracker table if it isn't there yet. */
+export async function ensureTrackerRefColumn(userId: string, itemId: string): Promise<void> {
+  const client = await graphClientForUser(userId);
+  const cols = await trackerColumnNames(client, itemId);
+  if (!cols.some((c) => norm(c) === 'ref')) {
+    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/columns`).post({ name: 'Ref' });
+  }
+}
+
+/** Reads every tracker row, mapped by header — used to reconcile hand edits back. */
+export async function listTrackerRows(userId: string, itemId: string): Promise<Array<TrackerTaskRow & { rowIndex: number }>> {
+  const client = await graphClientForUser(userId);
+  const cols = (await trackerColumnNames(client, itemId)).map(norm);
+  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows`).get();
+  const at = (vals: any[], name: string) => {
+    const i = cols.indexOf(name);
+    return i >= 0 ? String(vals[i] ?? '') : '';
+  };
+  return ((res.value ?? []) as any[]).map((row) => {
+    const vals = (row.values?.[0] ?? []) as any[];
+    return {
+      rowIndex: row.index as number,
+      ref: at(vals, 'ref'),
+      date: at(vals, 'date'),
+      type: at(vals, 'type'),
+      detail: at(vals, 'detail'),
+      owner: at(vals, 'owner'),
+      due: at(vals, 'due'),
+      status: at(vals, 'status'),
+    };
+  });
+}
+
+/** Upserts a tracker row keyed by `ref`: patches the matching row, else appends. */
+export async function upsertTrackerRowByRef(userId: string, itemId: string, r: TrackerTaskRow): Promise<void> {
+  const client = await graphClientForUser(userId);
+  await ensureTrackerRefColumn(userId, itemId);
+  const cols = await trackerColumnNames(client, itemId);
+  const values = valuesForColumns(cols, r);
+  const existing = await listTrackerRows(userId, itemId);
+  const match = existing.find((x) => x.ref && x.ref === r.ref);
+  if (match) {
+    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows/itemAt(index=${match.rowIndex})`).patch({ values: [values] });
+  } else {
+    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows`).post({ values: [values] });
+  }
+}
+
 // ── Teams ───────────────────────────────────────────────────────────────────
 
 export async function postTeamsSummary(
