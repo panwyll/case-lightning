@@ -107,7 +107,7 @@ function manifest(origin: string): string {
           <bt:String id="TaskpaneButton.Label" DefaultValue="Open CaseLightning"/>
         </bt:ShortStrings>
         <bt:LongStrings>
-          <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the case-aware drafting & case-management sidebar."/>
+          <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the case-aware drafting &amp; case-management sidebar."/>
         </bt:LongStrings>
       </Resources>
     </VersionOverrides>
