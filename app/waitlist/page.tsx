@@ -9,12 +9,18 @@ declare global {
   }
 }
 
-// ── Form ──────────────────────────────────────────────────────────────────────
+const inputClass =
+  'w-full rounded-xl border border-line bg-paper-soft px-4 py-3 text-ink placeholder-ink-soft/50 transition focus:border-violet focus:outline-none focus:ring-1 focus:ring-violet';
+
 function WaitlistForm() {
   const searchParams = useSearchParams();
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   const [error, setError] = useState('');
+  const [errorDetails, setErrorDetails] = useState('');
+  const [diagnostics, setDiagnostics] = useState('');
+  const [controller, setController] = useState<AbortController | null>(null);
   const [form, setForm] = useState({ first_name: '', surname: '', email: '' });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -24,9 +30,15 @@ function WaitlistForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setTimedOut(false);
     setError('');
+    setErrorDetails('');
+    setDiagnostics('');
 
-    // Fire GA4 event
+    const abortController = new AbortController();
+    setController(abortController);
+    const timeoutId = window.setTimeout(() => setTimedOut(true), 15000);
+
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'waitlist_signup', {
         utm_source: searchParams.get('utm_source') ?? undefined,
@@ -43,152 +55,136 @@ function WaitlistForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
+        signal: abortController.signal,
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? 'Unknown error');
+        const message = typeof data.error === 'string' ? data.error : 'We could not complete your signup right now. Please try again.';
+        const action = typeof data.action === 'string' ? ` ${data.action}` : '';
+        const details = typeof data.details === 'string' ? data.details : '';
+        const requestId = typeof data.request_id === 'string' ? data.request_id : 'unknown';
+        const stage = typeof data.stage === 'string' ? data.stage : 'unknown';
+        setError(`${message}${action}`);
+        setErrorDetails(details);
+        setDiagnostics(`request_id=${requestId}; stage=${stage}; status=${res.status}`);
+        setLoading(false);
+        setController(null);
+        window.clearTimeout(timeoutId);
+        return;
       }
     } catch {
-      setError('Something went wrong. Please try again or email us directly.');
+      setError(abortController.signal.aborted ? 'Cancelled. You can retry when ready.' : 'Something went wrong. Please try again, or email us directly.');
       setLoading(false);
+      setController(null);
+      window.clearTimeout(timeoutId);
       return;
     }
 
     setSubmitted(true);
     setLoading(false);
+    setController(null);
+    window.clearTimeout(timeoutId);
+  };
+
+  const handleCancel = () => {
+    controller?.abort();
+    setLoading(false);
+    setTimedOut(false);
+    setController(null);
+  };
+
+  const copyDiagnostics = async () => {
+    if (diagnostics) await navigator.clipboard.writeText(diagnostics).catch(() => {});
   };
 
   if (submitted) {
     return (
       <div className="text-center">
-        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500/10 text-3xl text-brand-500">
-          ✓
-        </div>
-        <h2 className="text-2xl font-bold text-white">You&rsquo;re on the list!</h2>
-        <p className="mt-3 text-slate-400">
-          We&rsquo;ll be in touch as soon as the next intake opens. Keep an eye on your inbox.
-        </p>
-        <a href="/" className="mt-6 inline-block text-sm text-brand-blue hover:underline">
-          ← Back to home
-        </a>
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-violet-soft text-3xl text-violet">✓</div>
+        <h2 className="font-serif text-3xl font-semibold tracking-tight text-ink">You’re on the list.</h2>
+        <p className="mt-3 text-ink-soft">We’ll be in touch the moment the next intake opens. Keep an eye on your inbox.</p>
+        <a href="/" className="mt-6 inline-block text-sm font-semibold text-violet hover:underline">← Back to home</a>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4 text-left">
       <div>
-        <label htmlFor="first_name" className="mb-1.5 block text-sm font-medium text-slate-300">
-          First name <span className="text-brand-pink">*</span>
-        </label>
-        <input
-          id="first_name"
-          name="first_name"
-          type="text"
-          required
-          value={form.first_name}
-          onChange={handleChange}
-          placeholder="Jane"
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
-        />
+        <label htmlFor="first_name" className="mb-1.5 block text-sm font-medium text-ink">First name <span className="text-violet">*</span></label>
+        <input id="first_name" name="first_name" type="text" required value={form.first_name} onChange={handleChange} placeholder="Jane" className={inputClass} />
       </div>
       <div>
-        <label htmlFor="surname" className="mb-1.5 block text-sm font-medium text-slate-300">
-          Surname <span className="text-brand-pink">*</span>
-        </label>
-        <input
-          id="surname"
-          name="surname"
-          type="text"
-          required
-          value={form.surname}
-          onChange={handleChange}
-          placeholder="Smith"
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
-        />
+        <label htmlFor="surname" className="mb-1.5 block text-sm font-medium text-ink">Surname <span className="text-violet">*</span></label>
+        <input id="surname" name="surname" type="text" required value={form.surname} onChange={handleChange} placeholder="Smith" className={inputClass} />
       </div>
       <div>
-        <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-300">
-          Work email <span className="text-brand-pink">*</span>
-        </label>
-        <input
-          id="email"
-          name="email"
-          type="email"
-          required
-          value={form.email}
-          onChange={handleChange}
-          placeholder="jane@smithsolicitors.co.uk"
-          className="w-full rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-white placeholder-slate-500 transition focus:border-brand-blue focus:outline-none focus:ring-1 focus:ring-brand-blue"
-        />
+        <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-ink">Work email <span className="text-violet">*</span></label>
+        <input id="email" name="email" type="email" required value={form.email} onChange={handleChange} placeholder="jane@smithsolicitors.co.uk" className={inputClass} />
       </div>
 
       {error && (
-        <p className="rounded-xl border border-red-700/60 bg-red-900/30 px-4 py-3 text-sm text-red-400">
-          {error}
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p>{error}</p>
+          {errorDetails && <p className="mt-1 text-red-600/80">{errorDetails}</p>}
+          {diagnostics && (
+            <button type="button" onClick={copyDiagnostics} className="mt-2 text-xs font-medium text-red-700 underline underline-offset-2">
+              Copy diagnostics
+            </button>
+          )}
+        </div>
+      )}
+
+      {timedOut && loading && (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          This is taking longer than usual.{' '}
+          <button type="button" onClick={handleCancel} className="font-semibold underline underline-offset-2">Cancel</button> and try again?
         </p>
       )}
 
       <button
         type="submit"
         disabled={loading}
-        className="w-full rounded-xl bg-brand-pink px-6 py-4 text-lg font-semibold text-white shadow-glow-pink transition hover:bg-brand-pink-dim active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+        className="w-full rounded-full bg-violet px-6 py-3.5 text-base font-semibold text-white shadow-violet transition hover:bg-violet-dark active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {loading ? 'Joining…' : 'Join the Waitlist'}
+        {loading ? 'Joining…' : 'Join the waitlist'}
       </button>
     </form>
   );
 }
 
-// ── Page ─────────────────────────────────────────────────────────────────────
 export default function WaitlistPage() {
   return (
-    <main className="min-h-screen bg-slate-950 text-white antialiased">
-      {/* Nav */}
-      <header className="border-b border-slate-800/80 bg-slate-950/95 shadow-[0_1px_20px_rgba(0,0,0,0.5)]">
+    <main className="min-h-screen bg-paper text-ink antialiased">
+      <header className="border-b border-line/80 bg-paper">
         <div className="mx-auto flex max-w-6xl items-center px-6 py-4">
-          <a href="/" className="text-xl font-bold tracking-tight transition hover:opacity-80">
-            Case<span className="text-brand-500">Lightning</span>
+          <a href="/" className="text-xl font-extrabold tracking-tight text-ink transition hover:opacity-80">
+            CONVE<span className="text-violet">Yi</span>
           </a>
         </div>
       </header>
 
-      {/* Body */}
-      <div className="relative overflow-hidden px-6 py-16 md:py-24">
-        {/* Glow */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            aria-hidden="true"
-            className="h-[400px] w-[700px] rounded-full bg-brand-pink opacity-[0.06] blur-3xl"
-          />
-        </div>
-
-        {/* Headline */}
-        <div className="relative mx-auto max-w-lg text-center">
-          <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-pink/10 text-3xl shadow-glow-pink">
-            ⚡
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">
-            We&rsquo;re currently oversubscribed
+      <div className="px-6 py-16 md:py-24">
+        <div className="mx-auto max-w-lg text-center">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">Join the waitlist</p>
+          <h1 className="mt-4 font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+            We’re onboarding firms in small batches.
           </h1>
-          <p className="mt-4 text-lg text-slate-400">
-            CaseLightning is not taking on new clients until the next intake. Join the waitlist and
-            we&rsquo;ll reach out as soon as a spot opens up.
+          <p className="mt-4 text-lg text-ink-soft">
+            CONVEYi is taking on new firms a few at a time so every team gets a proper start. Join the
+            waitlist and we’ll reach out the moment a place opens.
+          </p>
+
+          <div className="mt-10 rounded-3xl border border-line bg-paper-soft p-8 text-left shadow-card">
+            <Suspense fallback={null}>
+              <WaitlistForm />
+            </Suspense>
+          </div>
+
+          <p className="mt-6 text-sm text-ink-soft">
+            From £200/month · 30-day money-back guarantee · nothing to install
           </p>
         </div>
-
-        {/* Card */}
-        <div className="relative mx-auto mt-12 max-w-md rounded-3xl border border-slate-700/60 bg-slate-900 p-8 shadow-[0_8px_40px_rgba(0,0,0,0.55)]">
-          <Suspense fallback={null}>
-            <WaitlistForm />
-          </Suspense>
-        </div>
-
-        <p className="mt-8 text-center text-sm text-slate-600">
-          <a href="/" className="transition-colors hover:text-slate-400">
-            ← Back to CaseLightning
-          </a>
-        </p>
       </div>
     </main>
   );
