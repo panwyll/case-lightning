@@ -20,24 +20,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     const { graphThreadId } = await params;
     const body = z
       .object({
-        matterId: z.string().uuid(),
+        matterId: z.string().uuid().optional(),
         messageId: z.string(),
         subject: z.string().optional(),
         bodyHtml: z.string().min(1),
       })
       .parse(await req.json());
 
-    await assertMatterAccess(user, body.matterId);
+    // A matter is optional. With one we gate access and tag the subject with its
+    // case-ref token; the recipient-domain policy check below always applies.
+    if (body.matterId) await assertMatterAccess(user, body.matterId);
     const policy = await queryOne<{ allowed_external_domains: string[] }>(
       `select allowed_external_domains from policy_config where tenant_id = $1`,
       [user.tenantId]
     );
     // Append the matter's case-ref token to the subject so future replies in this
     // thread self-identify their matter — the strongest, GDPR-clean match signal.
-    const matterRow = await queryOne<{ case_ref_token: string | null }>(
-      `select case_ref_token from matter where id = $1 and tenant_id = $2`,
-      [body.matterId, user.tenantId]
-    );
+    const matterRow = body.matterId
+      ? await queryOne<{ case_ref_token: string | null }>(
+          `select case_ref_token from matter where id = $1 and tenant_id = $2`,
+          [body.matterId, user.tenantId]
+        )
+      : null;
     const token = matterRow?.case_ref_token;
     let finalSubject = body.subject;
     if (token && finalSubject && !finalSubject.includes(`[#${token}]`)) {
@@ -52,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     if (!externalDomainsAllowed(recipients, policy?.allowed_external_domains ?? [])) {
       await writeAudit({
         tenantId: user.tenantId,
-        matterId: body.matterId,
+        matterId: body.matterId ?? null,
         actorUserId: user.userId,
         actionType: 'OUTLOOK_DRAFT_CREATED',
         actionStatus: 'BLOCKED',
@@ -65,7 +69,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
 
     await writeAudit({
       tenantId: user.tenantId,
-      matterId: body.matterId,
+      matterId: body.matterId ?? null,
       actorUserId: user.userId,
       actionType: 'OUTLOOK_DRAFT_CREATED',
       actionStatus: 'SUCCESS',

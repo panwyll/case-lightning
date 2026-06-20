@@ -20,28 +20,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     assertFeature('ai');
     const user = await requireUser();
     const { graphThreadId } = await params;
-    const body = z.object({ matterId: z.string().uuid(), conversationId: z.string().optional() }).parse(await req.json());
+    const body = z.object({ matterId: z.string().uuid().optional(), conversationId: z.string().optional() }).parse(await req.json());
 
-    await assertMatterAccess(user, body.matterId);
+    // A matter is optional here — summarising is read-only over the thread. When
+    // one is linked we use its saved facts as extra context and gate access.
+    if (body.matterId) await assertMatterAccess(user, body.matterId);
     const conversationId = body.conversationId ?? graphThreadId;
     const text = threadToText(await listThreadMessages(user.userId, conversationId));
 
-    const summaryRow = await queryOne<{ facts: Record<string, unknown> }>(
-      `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
-      [body.matterId, user.tenantId]
-    );
+    const summaryRow = body.matterId
+      ? await queryOne<{ facts: Record<string, unknown> }>(
+          `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
+          [body.matterId, user.tenantId]
+        )
+      : null;
 
     const summary = await summarizeThread({
       userId: user.userId,
       tenantId: user.tenantId,
-      matterId: body.matterId,
+      matterId: body.matterId ?? null,
       threadText: text,
       matterSummary: JSON.stringify(summaryRow?.facts ?? {}),
     });
 
     await writeAudit({
       tenantId: user.tenantId,
-      matterId: body.matterId,
+      matterId: body.matterId ?? null,
       actorUserId: user.userId,
       actionType: 'THREAD_SUMMARISED',
       actionStatus: 'SUCCESS',

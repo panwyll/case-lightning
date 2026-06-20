@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     const { graphThreadId } = await params;
     const body = z
       .object({
-        matterId: z.string().uuid(),
+        matterId: z.string().uuid().optional(),
         messageId: z.string(),
         tone: z.enum(['NEUTRAL', 'FIRM', 'CHASING']).default('NEUTRAL'),
         templateId: z.string().uuid().optional(),
@@ -30,14 +30,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       })
       .parse(await req.json());
 
-    await assertMatterAccess(user, body.matterId);
+    // A matter is optional. Without one we still draft a reply from the thread +
+    // firm template/disclaimer, but skip matter facts, RAG context and the
+    // referenced-documents list (all matter-scoped).
+    if (body.matterId) await assertMatterAccess(user, body.matterId);
     const conversationId = body.conversationId ?? graphThreadId;
     const threadText = threadToText(await listThreadMessages(user.userId, conversationId));
 
-    const matterSummary = await queryOne<{ facts: Record<string, unknown> }>(
-      `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
-      [body.matterId, user.tenantId]
-    );
+    const matterSummary = body.matterId
+      ? await queryOne<{ facts: Record<string, unknown> }>(
+          `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
+          [body.matterId, user.tenantId]
+        )
+      : null;
 
     const template = body.templateId
       ? await queryOne<any>(`select * from template where id = $1 and tenant_id = $2 and is_active = true`, [
@@ -54,13 +59,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       [user.tenantId]
     );
 
-    const retrieved = await retrieveMatterContext({
-      tenantId: user.tenantId,
-      matterId: body.matterId,
-      queryText: `Draft reply for thread ${graphThreadId}`,
-      includePlaybook: true,
-      limit: 10,
-    });
+    const retrieved = body.matterId
+      ? await retrieveMatterContext({
+          tenantId: user.tenantId,
+          matterId: body.matterId,
+          queryText: `Draft reply for thread ${graphThreadId}`,
+          includePlaybook: true,
+          limit: 10,
+        })
+      : [];
     const retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
     const templateText = `${template ? `${template.subject_template ?? ''}\n${template.body_template}` : ''}\n${
       policy?.default_disclaimer ?? ''
@@ -69,7 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     const draft = await draftReply({
       userId: user.userId,
       tenantId: user.tenantId,
-      matterId: body.matterId,
+      matterId: body.matterId ?? null,
       tone: body.tone,
       threadText,
       matterFacts: matterSummary?.facts ?? {},
@@ -77,15 +84,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       templateText,
     });
 
-    const docs = await query<any>(
-      `select id, file_name, web_url, storage_path, created_at from document
-       where matter_id = $1 and tenant_id = $2 order by created_at desc limit 10`,
-      [body.matterId, user.tenantId]
-    );
+    const docs = body.matterId
+      ? await query<any>(
+          `select id, file_name, web_url, storage_path, created_at from document
+           where matter_id = $1 and tenant_id = $2 order by created_at desc limit 10`,
+          [body.matterId, user.tenantId]
+        )
+      : [];
 
     await writeAudit({
       tenantId: user.tenantId,
-      matterId: body.matterId,
+      matterId: body.matterId ?? null,
       actorUserId: user.userId,
       actionType: 'DRAFT_GENERATED',
       actionStatus: 'SUCCESS',

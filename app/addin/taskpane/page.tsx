@@ -32,6 +32,13 @@ interface DraftPackage {
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
+interface ExtractedFacts {
+  facts: Record<string, unknown>;
+  risks: string[];
+  outstanding: string[];
+  timeline: Array<{ title: string; details: string }>;
+}
+
 interface ObJob {
   id: string;
   status: string;
@@ -137,6 +144,7 @@ export default function Taskpane() {
 
   // AI outputs
   const [summary, setSummary] = useState<{ happened: string[]; outstanding: string[] } | null>(null);
+  const [facts, setFacts] = useState<ExtractedFacts | null>(null);
   const [tone, setTone] = useState<Tone>('NEUTRAL');
   const [draft, setDraft] = useState<DraftPackage | null>(null);
   const [draftSubject, setDraftSubject] = useState('');
@@ -510,27 +518,31 @@ export default function Taskpane() {
 
   async function summarise() {
     const r = await run('Summarising', async () => {
-      requireMatter();
       requireThread();
       return api<{ happened: string[]; outstanding: string[] }>(`/threads/${encodeURIComponent(conversationId)}/summarise`, {
         method: 'POST',
-        body: JSON.stringify({ matterId, conversationId }),
+        body: JSON.stringify({ matterId: matterId || undefined, conversationId }),
       });
     });
     if (r) setSummary(r);
   }
 
   async function extractFacts() {
-    await run('Extracting facts', async () => {
-      requireMatter();
+    const r = await run('Extracting facts', async () => {
       requireThread();
-      await api(`/threads/${encodeURIComponent(conversationId)}/extract-facts`, {
+      return api<ExtractedFacts>(`/threads/${encodeURIComponent(conversationId)}/extract-facts`, {
         method: 'POST',
-        body: JSON.stringify({ matterId, conversationId }),
+        body: JSON.stringify({ matterId: matterId || undefined, conversationId }),
       });
+    });
+    if (!r) return;
+    setFacts(r);
+    if (matterId) {
       setStatus('Facts extracted; matter summary + Excel tracker updated.');
       await loadMatter();
-    });
+    } else {
+      setStatus('Facts extracted. Link or create a matter to save them.');
+    }
   }
 
   async function saveToMatter() {
@@ -547,13 +559,22 @@ export default function Taskpane() {
   }
 
   async function generateDraft() {
+    // A matter is optional, but a draft written without one has no matter facts
+    // or saved documents to draw on — confirm before proceeding.
+    if (
+      !matterId &&
+      !window.confirm(
+        'No matter is linked. Draft a reply anyway?\n\nThe draft will be based only on this email thread — it won’t use matter facts or saved documents.'
+      )
+    ) {
+      return;
+    }
     const r = await run('Drafting reply', async () => {
-      requireMatter();
       requireThread();
       if (!messageId) throw new Error('No message selected.');
       return api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
         method: 'POST',
-        body: JSON.stringify({ matterId, messageId, conversationId, tone }),
+        body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone }),
       });
     });
     if (r) {
@@ -565,11 +586,10 @@ export default function Taskpane() {
 
   async function createOutlookDraft() {
     await run('Creating Outlook draft', async () => {
-      requireMatter();
       requireThread();
       const r = await api<{ draftId: string }>(`/threads/${encodeURIComponent(conversationId)}/create-draft`, {
         method: 'POST',
-        body: JSON.stringify({ matterId, messageId, subject: draftSubject || undefined, bodyHtml: draftBody }),
+        body: JSON.stringify({ matterId: matterId || undefined, messageId, subject: draftSubject || undefined, bodyHtml: draftBody }),
       });
       setStatus(`Draft created in Outlook (never sent). Draft id: ${r.draftId}`);
     });
@@ -781,14 +801,14 @@ export default function Taskpane() {
           {/* Quick actions */}
           <Card>
             <Label>Quick actions</Label>
-            {!matterId && (
-              <p style={S.muted}>Link or create a matter (and open an email) to use these.</p>
+            {!conversationId && (
+              <p style={S.muted}>Open an email to use these. Summarise, extract facts and draft a reply work without a matter; saving needs one.</p>
             )}
             <div style={S.grid}>
-              <button style={btn(S.action, !matterId)} onClick={summarise}>Summarise</button>
-              <button style={btn(S.action, !matterId)} onClick={extractFacts}>Extract facts</button>
-              <button style={btn(S.action, !matterId)} onClick={saveToMatter}>Save to matter</button>
-              <button style={btn(S.action, !matterId)} onClick={generateDraft}>Draft reply</button>
+              <button style={btn(S.action, !conversationId)} onClick={summarise}>Summarise</button>
+              <button style={btn(S.action, !conversationId)} onClick={extractFacts}>Extract facts</button>
+              <button style={btn(S.action, !matterId || !conversationId)} onClick={saveToMatter}>Save to matter</button>
+              <button style={btn(S.action, !conversationId)} onClick={generateDraft}>Draft reply</button>
             </div>
           </Card>
 
@@ -799,6 +819,30 @@ export default function Taskpane() {
               <ul style={S.ul}>{summary.happened.map((h, i) => <li key={i}>{h}</li>)}</ul>
               <SubLabel>Outstanding</SubLabel>
               <ul style={S.ul}>{summary.outstanding.map((o, i) => <li key={i}>{o}</li>)}</ul>
+            </Card>
+          )}
+
+          {facts && (
+            <Card>
+              <Label>Extracted facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
+              {Object.entries(facts.facts).map(([k, v]) => (
+                <div key={k} style={S.kv}>
+                  <span>{k}</span>
+                  <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                </div>
+              ))}
+              {facts.outstanding.length > 0 && (
+                <>
+                  <SubLabel>Outstanding</SubLabel>
+                  <ul style={S.ul}>{facts.outstanding.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                </>
+              )}
+              {facts.risks.length > 0 && (
+                <>
+                  <SubLabel>Risks</SubLabel>
+                  <ul style={S.ul}>{facts.risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                </>
+              )}
             </Card>
           )}
 
