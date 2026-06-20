@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../_components/shared';
+import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/shared';
 
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',

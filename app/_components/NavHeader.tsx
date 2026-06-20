@@ -2,18 +2,28 @@
 
 import { useRef, useState } from 'react';
 import { Cta } from './Cta';
+import { CONVEYI_NAV, ROUTES } from './shared';
+
+type NavLink = { href: string; label: string };
 
 type NavHeaderProps = {
   signupHref: string;
+  /** Where the logo links to. Defaults to the CONVEYi product home. */
+  homeHref?: string;
+  /** Primary nav links. Defaults to the CONVEYi product nav. */
+  links?: readonly NavLink[];
+  /** Logo style: 'conveyi' (default) or 'caselightning'. */
+  brand?: 'conveyi' | 'caselightning';
+  signupLabel?: string;
 };
 
-const NAV_LINKS = [
-  { href: '/how-it-works', label: 'How it works' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/faq', label: 'FAQ' },
-] as const;
-
-export function NavHeader({ signupHref }: NavHeaderProps) {
+export function NavHeader({
+  signupHref,
+  homeHref = ROUTES.conveyi,
+  links = CONVEYI_NAV,
+  brand = 'conveyi',
+  signupLabel = 'Get started',
+}: NavHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const burgerRef = useRef<HTMLButtonElement>(null);
 
@@ -25,19 +35,30 @@ export function NavHeader({ signupHref }: NavHeaderProps) {
   return (
     <header className="sticky top-0 z-50 border-b border-line/80 bg-paper/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <a href="/" className="text-xl font-extrabold tracking-tight text-ink transition hover:opacity-80">
-          CONVE<span className="text-violet">Yi</span>
+        <a href={homeHref} className="flex items-baseline gap-2 transition hover:opacity-80">
+          {brand === 'caselightning' ? (
+            <span className="text-xl font-extrabold tracking-tight text-ink">
+              Case<span className="text-violet"> Lightning</span>
+            </span>
+          ) : (
+            <>
+              <span className="text-xl font-extrabold tracking-tight text-ink">
+                CONVE<span className="text-violet">Yi</span>
+              </span>
+              <span className="hidden text-xs font-medium text-ink-soft sm:inline">by Case Lightning</span>
+            </>
+          )}
         </a>
 
         <nav className="hidden items-center gap-8 text-sm font-medium text-ink-soft md:flex">
-          {NAV_LINKS.map(({ href, label }) => (
+          {links.map(({ href, label }) => (
             <a key={href} href={href} className="transition-colors hover:text-ink">{label}</a>
           ))}
         </nav>
 
         <div className="flex items-center gap-3">
           <div className="hidden md:block">
-            <Cta label="Get started" href={signupHref} dataCta="nav_signup" />
+            <Cta label={signupLabel} href={signupHref} dataCta="nav_signup" />
           </div>
           <button
             ref={burgerRef}
@@ -66,14 +87,14 @@ export function NavHeader({ signupHref }: NavHeaderProps) {
       {menuOpen && (
         <div id="mobile-menu" className="border-t border-line bg-paper px-6 pb-5 pt-4 md:hidden">
           <nav className="flex flex-col gap-1 text-base font-medium text-ink">
-            {NAV_LINKS.map(({ href, label }) => (
+            {links.map(({ href, label }) => (
               <a key={href} href={href} className="rounded-lg px-3 py-2.5 transition-colors hover:bg-ink/5" onClick={closeMenu}>
                 {label}
               </a>
             ))}
           </nav>
           <div className="mt-4">
-            <Cta label="Get started" href={signupHref} dataCta="nav_signup_mobile" className="w-full" />
+            <Cta label={signupLabel} href={signupHref} dataCta="nav_signup_mobile" className="w-full" />
           </div>
         </div>
       )}

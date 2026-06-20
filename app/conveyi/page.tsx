@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import {
   ctaHref,
   ROUTES,
@@ -5,7 +6,13 @@ import {
   NavHeader,
   SiteFooter,
   NinetyNinePie,
-} from './_components/shared';
+} from '../_components/shared';
+
+export const metadata: Metadata = {
+  title: 'CONVEYi — AI for conveyancers. Inside Outlook. | Case Lightning',
+  description:
+    '99% of conveyancing is email, updates and chasing. CONVEYi handles it — inside Outlook, on your OneDrive, in your Excel tracker. GDPR-compliant. Zero onboarding. A Case Lightning product.',
+};
 
 const PAGE_SOURCE = 'landing';
 

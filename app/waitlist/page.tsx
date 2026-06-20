@@ -103,7 +103,7 @@ function WaitlistForm() {
         <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full bg-violet-soft text-3xl text-violet">✓</div>
         <h2 className="font-serif text-3xl font-semibold tracking-tight text-ink">You’re on the list.</h2>
         <p className="mt-3 text-ink-soft">We’ll be in touch the moment the next intake opens. Keep an eye on your inbox.</p>
-        <a href="/" className="mt-6 inline-block text-sm font-semibold text-violet hover:underline">← Back to home</a>
+        <a href="/conveyi" className="mt-6 inline-block text-sm font-semibold text-violet hover:underline">← Back to CONVEYi</a>
       </div>
     );
   }
@@ -158,8 +158,11 @@ export default function WaitlistPage() {
     <main className="min-h-screen bg-paper text-ink antialiased">
       <header className="border-b border-line/80 bg-paper">
         <div className="mx-auto flex max-w-6xl items-center px-6 py-4">
-          <a href="/" className="text-xl font-extrabold tracking-tight text-ink transition hover:opacity-80">
-            CONVE<span className="text-violet">Yi</span>
+          <a href="/conveyi" className="flex items-baseline gap-2 transition hover:opacity-80">
+            <span className="text-xl font-extrabold tracking-tight text-ink">
+              CONVE<span className="text-violet">Yi</span>
+            </span>
+            <span className="hidden text-xs font-medium text-ink-soft sm:inline">by Case Lightning</span>
           </a>
         </div>
       </header>

@@ -13,9 +13,12 @@ const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', dis
 const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'CONVEYi — AI for conveyancers. Inside Outlook.',
+  title: {
+    default: 'Case Lightning — Case management native to your OS and inbox',
+    template: '%s',
+  },
   description:
-    '99% of conveyancing is email, updates and chasing. CONVEYi handles it — inside Outlook, on your OneDrive, in your Excel tracker. GDPR-compliant. Zero onboarding.',
+    'Case Lightning builds case management for finance, legal and document-heavy practices — native to the operating system and email you already use. CONVEYi for conveyancing, plus custom builds.',
   icons: {
     icon: '/favicon.svg',
   },
