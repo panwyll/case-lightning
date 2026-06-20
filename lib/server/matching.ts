@@ -44,7 +44,15 @@ const POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi;
 const CASE_REF_RE = /\[#([A-Z0-9][A-Z0-9\-_/.]{2,40})\]/gi;
 
 export function domainOf(email?: string): string | null {
-  const d = email?.split('@')[1]?.toLowerCase().trim();
+  if (!email) return null;
+  // Accept a bare address or a "Name <addr@host>" form; pull the address out of
+  // the angle brackets first so we don't capture a trailing ">" in the domain.
+  const inner = email.match(/<([^>]+)>/);
+  const addr = (inner ? inner[1] : email).trim();
+  const host = addr.split('@')[1]?.toLowerCase();
+  if (!host) return null;
+  // Keep only valid domain characters (drops a stray ">", commas, display cruft).
+  const d = host.replace(/[^a-z0-9.-].*$/, '').replace(/\.+$/, '');
   return d || null;
 }
 

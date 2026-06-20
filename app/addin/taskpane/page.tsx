@@ -83,6 +83,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
+  const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null } | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -103,7 +104,7 @@ export default function Taskpane() {
     propertyAddress: string;
     buyerNames: string[];
     sellerNames: string[];
-    counterpartySolicitor: string;
+    counterparties: string[];
     exchangeTargetDate: string;
     completionTargetDate: string;
   }>({
@@ -111,7 +112,7 @@ export default function Taskpane() {
     propertyAddress: '',
     buyerNames: [],
     sellerNames: [],
-    counterpartySolicitor: '',
+    counterparties: [],
     exchangeTargetDate: '',
     completionTargetDate: '',
   });
@@ -165,7 +166,20 @@ export default function Taskpane() {
     } catch {
       setAutoTriage(null);
     }
+    try {
+      const b = await api<{ plan: string | null; status: string }>('/billing/account');
+      setPlan({ plan: b.plan, status: b.status });
+    } catch {
+      setPlan(null);
+    }
   }, []);
+
+  // Billing lives on a full page (redirects need width). Hand the session token
+  // over in the URL fragment so desktop Outlook's separate storage jar can auth.
+  function openAccount() {
+    const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
+    window.open(t ? `/account#token=${encodeURIComponent(t)}` : '/account', '_blank', 'noopener');
+  }
 
   async function toggleAutoTriage() {
     await run(autoTriage?.enabled ? 'Disabling auto-triage' : 'Enabling auto-triage', async () => {
@@ -348,6 +362,40 @@ export default function Taskpane() {
     return s.replace(/^((re|fw|fwd)\s*:\s*)+/i, '').trim();
   }
 
+  // Pull a clean property address out of the subject: keep everything up to and
+  // including a UK postcode if present; else the house-number clause; else the
+  // de-prefixed subject (trimmed of a trailing "— draft contract" style suffix).
+  function addressFromSubject(s: string): string {
+    const clean = cleanSubject(s);
+    const pc = clean.match(/^(.*?\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b/i);
+    if (pc) return pc[1].trim();
+    const num = clean.match(/\b\d+\s+[A-Za-z].*/);
+    if (num) return num[0].split(/\s[–—|:-]\s/)[0].trim().slice(0, 80);
+    return clean;
+  }
+
+  // The sender of an incoming email is almost always the other side — format them
+  // as one "Name <email>" contact (or just the email when there's no real name).
+  function senderContact(): string | null {
+    if (!sender?.email) return null;
+    const name = sender.name?.trim();
+    return name && name.toLowerCase() !== sender.email.toLowerCase() ? `${name} <${sender.email}>` : sender.email;
+  }
+
+  // A human, memorable default ref: party surname + postcode/street token, e.g.
+  // "HARTLEY-SW1A" or "SMITH-14OAK". Falls back to a dated ref only when we know
+  // nothing yet. Recomputed live so the placeholder shows what will actually be used.
+  function suggestedRef(): string {
+    const surname = (form.buyerNames[0] || form.sellerNames[0] || '').trim().split(/\s+/).pop() || '';
+    const who = surname.replace(/[^A-Za-z-]/g, '').toUpperCase();
+    const addr = form.propertyAddress.toUpperCase();
+    const pc = addr.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);
+    const street = addr.match(/\b(\d+)\s+([A-Z]+)/);
+    const where = pc ? pc[1] : street ? `${street[1]}${street[2]}` : '';
+    const parts = [who, where].filter(Boolean);
+    return parts.length ? parts.join('-') : `MATTER-${new Date().getFullYear()}-${Math.floor(Math.random() * 900 + 100)}`;
+  }
+
   // Open the New-matter form, pre-filling what we can read from the open email:
   // the property address from the subject, and the counterparty from the sender.
   function openNewMatter() {
@@ -355,10 +403,11 @@ export default function Taskpane() {
       setShowNewMatter(false);
       return;
     }
+    const contact = senderContact();
     setForm((f) => ({
       ...f,
-      propertyAddress: f.propertyAddress || cleanSubject(subject),
-      counterpartySolicitor: f.counterpartySolicitor || (sender ? `${sender.name} <${sender.email}>` : ''),
+      propertyAddress: f.propertyAddress || addressFromSubject(subject),
+      counterparties: f.counterparties.length ? f.counterparties : contact ? [contact] : [],
     }));
     setShowNewMatter(true);
   }
@@ -366,11 +415,13 @@ export default function Taskpane() {
   async function createMatter() {
     await run('Creating matter', async () => {
       const body = {
-        matterRef: form.matterRef || `AUTO-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 9000 + 1000)}`,
+        matterRef: form.matterRef.trim() || suggestedRef(),
         propertyAddress: form.propertyAddress,
         buyerNames: form.buyerNames,
         sellerNames: form.sellerNames,
-        counterpartySolicitor: form.counterpartySolicitor || undefined,
+        // First contact → solicitor, second → agent (the two backend columns).
+        counterpartySolicitor: form.counterparties[0] || undefined,
+        counterpartyAgent: form.counterparties[1] || undefined,
         exchangeTargetDate: form.exchangeTargetDate || undefined,
         completionTargetDate: form.completionTargetDate || undefined,
       };
@@ -588,7 +639,23 @@ export default function Taskpane() {
             CONVE<span style={{ color: '#5A27E0' }}>Yi</span>
           </strong>
         </div>
-        <span style={S.user}>{me ? `${me.displayName || me.email}` : 'Not connected'}</span>
+        {me ? (
+          <button style={S.account} onClick={openAccount} title="Manage account & billing">
+            <span style={S.planBadge}>
+              {plan?.plan === 'team'
+                ? 'Team'
+                : plan?.plan === 'standard'
+                ? 'Standard'
+                : plan?.status === 'trialing'
+                ? 'Trial'
+                : 'Free'}
+            </span>
+            <span style={S.user}>{me.displayName || me.email}</span>
+            <span style={{ color: '#94a3b8' }}>›</span>
+          </button>
+        ) : (
+          <span style={S.user}>Not connected</span>
+        )}
       </header>
 
       {!me && (
@@ -681,11 +748,11 @@ export default function Taskpane() {
           {showNewMatter && (
             <Card>
               <Label>New matter</Label>
-              <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder="auto-generated if left blank" />
+              <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder={`auto: ${suggestedRef()}`} />
               <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} placeholder="14 Oak Street, London SW1A 1AA" />
               <TagInput label="Buyers" values={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} placeholder="type a name, press Enter" />
               <TagInput label="Sellers" values={form.sellerNames} onChange={(v) => setForm({ ...form, sellerNames: v })} placeholder="type a name, press Enter" />
-              <Field label="Counterparty (firm / email)" value={form.counterpartySolicitor} onChange={(v) => setForm({ ...form, counterpartySolicitor: v })} placeholder="prefilled from the email sender" />
+              <TagInput label="Other side (solicitor, agent…)" values={form.counterparties} onChange={(v) => setForm({ ...form, counterparties: v })} placeholder="prefilled from sender — Enter to add, × to remove" />
               <div style={S.rowWrap}>
                 <Field label="Exchange target" type="date" value={form.exchangeTargetDate} onChange={(v) => setForm({ ...form, exchangeTargetDate: v })} />
                 <Field label="Completion target" type="date" value={form.completionTargetDate} onChange={(v) => setForm({ ...form, completionTargetDate: v })} />
@@ -1158,6 +1225,23 @@ const S: Record<string, React.CSSProperties> = {
   },
   bolt: { color: '#5A27E0', fontSize: 18 },
   user: { fontSize: 12, color: '#64748b' },
+  account: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    border: 'none',
+    background: 'transparent',
+    cursor: 'pointer',
+    padding: 0,
+  },
+  planBadge: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: '#5A27E0',
+    background: '#EDE7FB',
+    borderRadius: 999,
+    padding: '2px 7px',
+  },
   card: {
     border: '1px solid #e2e8f0',
     borderRadius: 10,

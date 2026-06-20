@@ -344,7 +344,7 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
 
     let proposal: Awaited<ReturnType<typeof proposeMatter>> | null = null;
     try {
-      proposal = await proposeMatter({ userId: user.userId, threadDigest: buildDigest(msgs) });
+      proposal = await proposeMatter({ userId: user.userId, tenantId: user.tenantId, threadDigest: buildDigest(msgs) });
     } catch {
       proposal = null;
     }
@@ -406,7 +406,13 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
     `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
-  const extracted = await extractFacts({ userId: user.userId, threadText: text, existingFacts: existing?.facts ?? {} });
+  const extracted = await extractFacts({
+    userId: user.userId,
+    tenantId: user.tenantId,
+    matterId,
+    threadText: text,
+    existingFacts: existing?.facts ?? {},
+  });
 
   await query(
     `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb, updated_at = now()

@@ -129,6 +129,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // ── Review ─────────────────────────────────────────────────────────────────────
     const { review, model } = await reviewDocument({
       userId: user.userId,
+      tenantId: user.tenantId,
+      matterId,
       fileName,
       mimeType,
       pdfBase64,
