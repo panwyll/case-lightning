@@ -19,10 +19,25 @@ export function pool(): pg.Pool {
     if (!config.databaseUrl) {
       throw new Error('DATABASE_URL is not set; database features are unavailable.');
     }
+    const raw = config.databaseUrl;
+    const isLocal = raw.includes('localhost') || raw.includes('127.0.0.1');
+
+    // Strip any `sslmode` from the connection string — otherwise pg honours it
+    // and our explicit `ssl` option below is ignored, so Supabase's pooler cert
+    // (a chain Node treats as self-signed) gets rejected. We do TLS without
+    // chain verification instead, which is correct for the Supabase pooler.
+    let connectionString = raw;
+    try {
+      const u = new URL(raw);
+      u.searchParams.delete('sslmode');
+      connectionString = u.toString();
+    } catch {
+      /* not URL-parseable; use as-is */
+    }
+
     _pool = new Pool({
-      connectionString: config.databaseUrl,
-      // Supabase requires TLS; allow self-signed on the pooler.
-      ssl: config.databaseUrl.includes('localhost') ? undefined : { rejectUnauthorized: false },
+      connectionString,
+      ssl: isLocal ? false : { rejectUnauthorized: false },
       max: 5,
     });
   }
