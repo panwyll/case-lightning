@@ -766,11 +766,14 @@ export default function Taskpane() {
           {/* Quick actions */}
           <Card>
             <Label>Quick actions</Label>
+            {!matterId && (
+              <p style={S.muted}>Link or create a matter (and open an email) to use these.</p>
+            )}
             <div style={S.grid}>
-              <button style={S.action} onClick={summarise} disabled={!matterId}>Summarise</button>
-              <button style={S.action} onClick={extractFacts} disabled={!matterId}>Extract facts</button>
-              <button style={S.action} onClick={saveToMatter} disabled={!matterId}>Save to matter</button>
-              <button style={S.action} onClick={generateDraft} disabled={!matterId}>Draft reply</button>
+              <button style={btn(S.action, !matterId)} onClick={summarise}>Summarise</button>
+              <button style={btn(S.action, !matterId)} onClick={extractFacts}>Extract facts</button>
+              <button style={btn(S.action, !matterId)} onClick={saveToMatter}>Save to matter</button>
+              <button style={btn(S.action, !matterId)} onClick={generateDraft}>Draft reply</button>
             </div>
           </Card>
 
@@ -1128,6 +1131,13 @@ export default function Taskpane() {
 }
 
 // ── Small presentational helpers ─────────────────────────────────────────────
+// Visually dim a button when its action isn't ready yet — but keep it clickable
+// so the handler's guard can explain what's missing (vs. a silently-dead
+// `disabled` button, whose inline dark style hides the disabled state entirely).
+function btn(base: React.CSSProperties, dim: boolean): React.CSSProperties {
+  return dim ? { ...base, opacity: 0.5 } : base;
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return <section style={S.card}>{children}</section>;
 }
