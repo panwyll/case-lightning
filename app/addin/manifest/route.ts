@@ -38,7 +38,7 @@ function manifest(origin: string): string {
   <Description DefaultValue="Case-aware AI email drafting and AI case management for UK conveyancers — inside Outlook."/>
   <IconUrl DefaultValue="${origin}/addin/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="${origin}/addin/icon-128.png"/>
-  <SupportUrl DefaultValue="${origin}/how-it-works"/>
+  <SupportUrl DefaultValue="${origin}/conveyi/how-it-works"/>
   <AppDomains>
     <AppDomain>${origin}</AppDomain>
   </AppDomains>
