@@ -90,7 +90,9 @@ export async function listMailSince(
       .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
       .top(50)
       .orderby('receivedDateTime desc');
-    if (sinceIso) req = req.filter(`receivedDateTime ge ${sinceIso}`);
+    // `sinceIso` may arrive as a Date (pg parses timestamptz columns into Date
+    // objects) — coerce to strict ISO 8601, which is what the OData filter needs.
+    if (sinceIso) req = req.filter(`receivedDateTime ge ${new Date(sinceIso).toISOString()}`);
     result = await req.get();
   }
   return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
