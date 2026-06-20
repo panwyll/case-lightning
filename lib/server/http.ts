@@ -3,9 +3,11 @@
  * mapping (mirrors the error-shape conventions in app/api/waitlist/route.ts).
  */
 import { NextResponse } from 'next/server';
+import { GraphError } from '@microsoft/microsoft-graph-client';
 import { ZodError } from 'zod';
 import { UnauthorizedError, ForbiddenError } from './session';
 import { FeatureUnavailableError } from './config';
+import { describeGraphError } from './graph';
 
 export function ok(data: unknown, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -31,6 +33,14 @@ export function fail(error: unknown) {
   if (error instanceof ZodError) {
     return NextResponse.json({ error: 'Invalid request.', details: error.issues }, { status: 400 });
   }
-  const message = error instanceof Error ? error.message : 'Unknown error';
-  return NextResponse.json({ error: message }, { status: 500 });
+  // Microsoft Graph failures are upstream errors, not server bugs. The SDK's
+  // GraphError often has an EMPTY `.message` (e.g. a body-less 401 from a
+  // mailbox-less account), which would otherwise surface as a blank "HTTP 500".
+  // describeGraphError() always yields a legible string; 502 marks it upstream.
+  if (error instanceof GraphError) {
+    return NextResponse.json({ error: describeGraphError(error) }, { status: 502 });
+  }
+  // describeGraphError also covers plain Errors (falls back to name) and unknown
+  // throwables, so the client never receives an empty error string.
+  return NextResponse.json({ error: describeGraphError(error) }, { status: 500 });
 }
