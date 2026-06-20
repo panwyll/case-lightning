@@ -39,6 +39,33 @@ interface ExtractedFacts {
   timeline: Array<{ title: string; details: string }>;
 }
 
+interface AssistData {
+  triageId: string;
+  classification: { intent: string; needsAttention: boolean; urgency: string; reason: string };
+  matchBand: string;
+  matter: { id: string; matterRef: string; propertyAddress: string | null } | null;
+  candidates: Array<{ matterId: string; matterRef: string; propertyAddress: string; score: number; band: string }>;
+  ask: string;
+  whatWeKnow: string[];
+  outstanding: string[];
+  draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+}
+
+interface MatterTask {
+  id: string;
+  ref: string;
+  type: string;
+  detail: string;
+  assignee: string | null;
+  due: string | null;
+  status: string;
+}
+interface Assignee {
+  id: string;
+  email: string;
+  display_name: string | null;
+}
+
 interface ObJob {
   id: string;
   status: string;
@@ -151,6 +178,12 @@ export default function Taskpane() {
   // is doing (triage this email → manage the matter → set things up) rather than
   // by feature, so the narrow pane stays focused instead of an endless scroll.
   const [tab, setTab] = useState<'email' | 'matter' | 'setup'>('email');
+
+  // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
+  const [assist, setAssist] = useState<AssistData | null>(null);
+  const [tasks, setTasks] = useState<MatterTask[]>([]);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+  const [newTaskDetail, setNewTaskDetail] = useState('');
   const [draft, setDraft] = useState<DraftPackage | null>(null);
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -666,6 +699,83 @@ export default function Taskpane() {
     setStatus('Draft loaded in the draft workspace below — review, then create the Outlook draft.');
   }
 
+  // ── Assistant + tasks ────────────────────────────────────────────────────
+  async function runAssist() {
+    const r = await run('Reading the email', async () => {
+      requireThread();
+      if (!messageId) throw new Error('Open an email first.');
+      return api<AssistData>('/assist', {
+        method: 'POST',
+        body: JSON.stringify({ messageId, conversationId, matterId: matterId || undefined, tone }),
+      });
+    });
+    if (r) {
+      setAssist(r);
+      if (r.matter && !matterId) {
+        setMatterId(r.matter.id);
+        loadMatter(r.matter.id);
+      }
+    }
+  }
+
+  function openAssistDraft() {
+    if (!assist?.draft) return;
+    setDraft({ subject: assist.draft.subject, bodyHtml: assist.draft.bodyHtml, why: assist.draft.why, actions: assist.draft.actions, referencedDocuments: [] });
+    setDraftSubject(assist.draft.subject);
+    setDraftBody(assist.draft.bodyHtml);
+    setStatus('Draft ready below — review it, then create the Outlook draft.');
+  }
+
+  const loadTasks = useCallback(async (mid = matterId) => {
+    if (!mid) return;
+    try {
+      const r = await api<{ tasks: MatterTask[]; assignees: Assignee[] }>(`/matters/${mid}/tasks`);
+      setTasks(r.tasks ?? []);
+      setAssignees(r.assignees ?? []);
+    } catch {
+      /* board is best-effort; a tracker read hiccup shouldn't break the pane */
+    }
+  }, [matterId]);
+
+  useEffect(() => {
+    if (matterId) loadTasks(matterId);
+  }, [matterId, loadTasks]);
+
+  async function addTask() {
+    if (!matterId || !newTaskDetail.trim()) return;
+    await run('Adding task', async () => {
+      await api(`/matters/${matterId}/tasks`, { method: 'POST', body: JSON.stringify({ detail: newTaskDetail.trim() }) });
+      setNewTaskDetail('');
+      await loadTasks();
+      return true;
+    });
+  }
+
+  async function patchTask(taskId: string, patch: Record<string, unknown>) {
+    await run('Updating task', async () => {
+      const r = await api<{ task: MatterTask }>(`/matters/${matterId}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      setTasks((ts) => ts.map((t) => (t.id === taskId ? r.task : t)));
+      return true;
+    });
+  }
+
+  async function assignBlocker(detail: string, assigneeUserId: string) {
+    if (!matterId) {
+      setStatus('Link a matter first to assign work.');
+      return;
+    }
+    const a = assignees.find((x) => x.id === assigneeUserId);
+    await run('Assigning', async () => {
+      await api(`/matters/${matterId}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'ENQUIRY', detail, assignee: a ? a.display_name || a.email : null, assigneeUserId, source: 'ASSISTANT', status: 'OPEN' }),
+      });
+      await loadTasks();
+      setStatus('Assigned and written to the Excel tracker.');
+      return true;
+    });
+  }
+
   // The single most likely next step for the open email — shown as the hero
   // action so the user isn't faced with a flat grid of equal-weight verbs.
   // Mirrors Jira's "next transition": read-only updates → Summarise; anything
@@ -773,6 +883,74 @@ export default function Taskpane() {
 
           {tab === 'email' && (
           <>
+          {/* Assistant — the situation + the recommended move, in one pass. */}
+          <Card>
+            {!assist ? (
+              <>
+                <Label>AI assistant</Label>
+                <p style={S.muted}>Let CaseLightning read this email, pull what we already know, and prepare the reply.</p>
+                <button style={S.primary} onClick={runAssist} disabled={!messageId}>
+                  Analyse this email
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                  <span style={S.assistIcon}>✦</span>
+                  <span style={S.label}>Here&apos;s the situation</span>
+                </div>
+                <div style={S.rowWrap}>
+                  <span style={S.chip}>{assist.classification.intent.replace(/_/g, ' ')}</span>
+                  <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
+                    {assist.classification.needsAttention ? 'Needs you' : 'FYI'}
+                  </span>
+                  <span style={S.chip}>{assist.classification.urgency}</span>
+                </div>
+                <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
+                {assist.matter && (
+                  <div style={S.linkedMatter}><span>📁 {assist.matter.matterRef}</span></div>
+                )}
+
+                {assist.whatWeKnow.length > 0 && (
+                  <>
+                    <SubLabel>What we know</SubLabel>
+                    <ul style={S.ul}>{assist.whatWeKnow.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                  </>
+                )}
+
+                {assist.outstanding.length > 0 && (
+                  <>
+                    <SubLabel>Blockers — assign to clear</SubLabel>
+                    {assist.outstanding.map((o, i) => (
+                      <div key={i} style={S.candidate}>
+                        <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{o}</div>
+                        <select
+                          style={{ ...S.input, marginBottom: 0 }}
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) assignBlocker(o, e.target.value);
+                          }}
+                        >
+                          <option value="">{matterId ? 'Assign to…' : 'Link a matter to assign'}</option>
+                          {assignees.map((a) => (
+                            <option key={a.id} value={a.id}>{a.display_name || a.email}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {assist.draft ? (
+                  <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
+                ) : (
+                  <p style={{ ...S.muted, marginTop: 8 }}>No reply needed — looks like an update to note.</p>
+                )}
+                <button style={{ ...S.secondary, marginTop: 6 }} onClick={runAssist}>Re-analyse</button>
+              </>
+            )}
+          </Card>
+
           {triage && (
             <Card>
               <Label>Suggested match</Label>
@@ -935,6 +1113,69 @@ export default function Taskpane() {
           {!matterId && (
             <Card>
               <p style={S.muted}>No matter linked. Open an email in the <strong>This email</strong> tab and link or create a matter, then manage it here.</p>
+            </Card>
+          )}
+
+          {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
+          {matterId && (
+            <Card>
+              <Label>Tasks</Label>
+              <p style={S.muted}>Synced with this matter&apos;s Tracker.xlsx — change them here or in Excel, both stay in step.</p>
+              {tasks.length === 0 && <p style={S.muted}>No tasks yet. Add one below, or the assistant will when you assign a blocker.</p>}
+              {tasks.map((t) => {
+                const assigneeId = assignees.find((a) => (a.display_name || a.email) === t.assignee)?.id || '';
+                const statusBg = t.status === 'DONE' ? '#dcfce7' : t.status === 'IN_PROGRESS' ? '#fef9c3' : t.status === 'NOTED' ? '#e2e8f0' : '#fee2e2';
+                return (
+                  <div key={t.id} style={S.candidate}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>{t.ref} · {t.type}</span>
+                      <select
+                        style={{ ...S.chip, background: statusBg, border: 'none', cursor: 'pointer' }}
+                        value={t.status}
+                        onChange={(e) => patchTask(t.id, { status: e.target.value })}
+                      >
+                        {['OPEN', 'IN_PROGRESS', 'DONE', 'NOTED'].map((s) => (
+                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#0f172a', margin: '5px 0' }}>{t.detail}</div>
+                    <div style={S.rowWrap}>
+                      <select
+                        style={{ ...S.input, marginBottom: 0, flex: 1 }}
+                        value={assigneeId}
+                        onChange={(e) => {
+                          const a = assignees.find((x) => x.id === e.target.value);
+                          patchTask(t.id, { assignee: a ? a.display_name || a.email : null, assigneeUserId: a ? a.id : null });
+                        }}
+                      >
+                        <option value="">Unassigned</option>
+                        {assignees.map((a) => (
+                          <option key={a.id} value={a.id}>{a.display_name || a.email}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="date"
+                        style={{ ...S.input, marginBottom: 0, width: 132 }}
+                        value={t.due ? String(t.due).slice(0, 10) : ''}
+                        onChange={(e) => patchTask(t.id, { due: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ ...S.rowWrap, marginTop: 4 }}>
+                <input
+                  style={{ ...S.input, marginBottom: 0, flex: 1 }}
+                  placeholder="Add a task…"
+                  value={newTaskDetail}
+                  onChange={(e) => setNewTaskDetail(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') addTask();
+                  }}
+                />
+                <button style={S.secondary} onClick={addTask}>Add</button>
+              </div>
             </Card>
           )}
 
@@ -1391,6 +1632,18 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   tabActive: { background: '#fff', color: '#0f172a', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' },
+  assistIcon: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    background: '#5A27E0',
+    color: '#fff',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 12,
+    flex: 'none',
+  },
   card: {
     border: '1px solid #e2e8f0',
     borderRadius: 10,

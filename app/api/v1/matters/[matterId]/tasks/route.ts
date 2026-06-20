@@ -10,13 +10,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** A matter's task board — reconciles live Excel edits, then returns the tasks. */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
     assertFeature('auth');
     const user = await requireUser();
-    const { id } = await params;
-    await assertMatterAccess(user, id);
-    const [tasks, assignees] = await Promise.all([listTasks(user, id), listAssignees(user.tenantId)]);
+    const { matterId } = await params;
+    await assertMatterAccess(user, matterId);
+    const [tasks, assignees] = await Promise.all([listTasks(user, matterId), listAssignees(user.tenantId)]);
     return ok({ tasks, assignees });
   } catch (error) {
     return fail(error);
@@ -24,12 +24,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 /** Create a task; it's written to Postgres and mirrored into Tracker.xlsx. */
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
     assertFeature('auth');
     const user = await requireUser();
-    const { id } = await params;
-    await assertMatterAccess(user, id);
+    const { matterId } = await params;
+    await assertMatterAccess(user, matterId);
     const body = z
       .object({
         type: z.string().optional(),
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         source: z.string().optional(),
       })
       .parse(await req.json());
-    return ok({ task: await createTask(user, id, body) });
+    return ok({ task: await createTask(user, matterId, body) });
   } catch (error) {
     return fail(error);
   }
