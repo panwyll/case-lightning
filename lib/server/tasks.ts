@@ -4,15 +4,33 @@
  * Postgres is the source of truth (fast, queryable, drives the board). Every
  * write also mirrors to the matter's Tracker.xlsx keyed by a stable `ref`, and
  * reads first reconcile hand edits made directly in Excel back into Postgres —
- * so the conveyancer can work in either surface. Excel edits win on read,
- * because that's where the human just typed.
+ * so the conveyancer can work in either surface.
  *
- * NOTE: the Excel side (graph.ts upsert/list) needs live verification against a
- * real workbook — the Graph workbook API shapes can't be exercised offline.
+ * Concurrency: Microsoft Graph offers no per-row optimistic concurrency, so two
+ * overlapping read-modify-writes could PATCH a stale Excel row index and clobber
+ * the wrong task. All tracker read-modify-write for a matter is therefore
+ * serialised behind a Postgres transaction-scoped advisory lock, and every DB
+ * statement inside the lock runs on that SAME transaction client — so each op
+ * holds exactly one pooled connection and can't deadlock the pool while it waits
+ * on Graph. The Graph calls (Excel) carry no DB connection.
+ *
+ * NOTE: the Excel side (graph.ts upsert/list) still needs live verification —
+ * the Graph workbook API shapes can't be exercised offline.
  */
-import { query, queryOne } from './db';
+import { query, transaction } from './db';
 import { listTrackerRows, upsertTrackerRowByRef } from './graph';
 import type { SessionUser } from './types';
+
+// Structural type for "something I can run SQL on" — satisfied by the
+// transaction client (and the pool). Avoids importing pg's types here.
+type DB = { query: <R = any>(text: string, params?: unknown[]) => Promise<{ rows: R[] }> };
+
+async function withTrackerLock<T>(matterId: string, fn: (db: DB) => Promise<T>): Promise<T> {
+  return transaction(async (client) => {
+    await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [matterId]);
+    return fn(client as unknown as DB);
+  });
+}
 
 export interface MatterTask {
   id: string;
@@ -26,11 +44,12 @@ export interface MatterTask {
   source: string;
   created_at: string;
   updated_at: string;
+  excel_synced_at: string | null;
 }
 
 export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'NOTED';
 
-const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_at, updated_at';
+const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_at, updated_at, excel_synced_at';
 
 /** Map free-text Excel status (a human may type anything) onto our enum. */
 function normaliseStatus(s: string): TaskStatus {
@@ -52,17 +71,17 @@ function dateStr(v: string | null | undefined): string {
   return isNaN(d.getTime()) ? String(v) : d.toISOString().slice(0, 10);
 }
 
-async function trackerItemId(tenantId: string, matterId: string): Promise<string | null> {
-  const m = await queryOne<{ tracker_item_id: string | null }>(
+async function trackerItemId(db: DB, tenantId: string, matterId: string): Promise<string | null> {
+  const r = await db.query<{ tracker_item_id: string | null }>(
     `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
     [matterId, tenantId]
   );
-  return m?.tracker_item_id ?? null;
+  return r.rows[0]?.tracker_item_id ?? null;
 }
 
 /** Best-effort push of a task into the Excel tracker — never blocks the DB write. */
-async function mirrorToExcel(user: SessionUser, matterId: string, task: MatterTask): Promise<void> {
-  const itemId = await trackerItemId(user.tenantId, matterId);
+async function mirrorToExcel(db: DB, user: SessionUser, matterId: string, task: MatterTask): Promise<void> {
+  const itemId = await trackerItemId(db, user.tenantId, matterId);
   if (!itemId) return;
   try {
     await upsertTrackerRowByRef(user.userId, itemId, {
@@ -74,7 +93,7 @@ async function mirrorToExcel(user: SessionUser, matterId: string, task: MatterTa
       due: dateStr(task.due),
       status: statusDisplay(task.status),
     });
-    await query(`update matter_task set excel_synced_at = now() where id = $1`, [task.id]);
+    await db.query(`update matter_task set excel_synced_at = now() where id = $1`, [task.id]);
   } catch {
     /* a Graph hiccup must not lose the task — it's safe in Postgres, resync later */
   }
@@ -87,35 +106,52 @@ export async function listAssignees(tenantId: string): Promise<Array<{ id: strin
   );
 }
 
-/** Pull hand edits from Excel back into Postgres (Excel wins for known refs). */
+/**
+ * Pull hand edits from Excel back into Postgres. Conflict policy: an app change
+ * wins until we've confirmed it into Excel (updated_at <= excel_synced_at);
+ * after that, a differing Excel cell is a human edit and wins. This both lets
+ * the lawyer edit live in Excel AND stops a failed mirror from reverting a fresh
+ * app change on the next read. Serialised per matter so it can't race a write.
+ */
 export async function syncFromTracker(user: SessionUser, matterId: string): Promise<void> {
-  const itemId = await trackerItemId(user.tenantId, matterId);
-  if (!itemId) return;
-  let rows: Awaited<ReturnType<typeof listTrackerRows>>;
-  try {
-    rows = await listTrackerRows(user.userId, itemId);
-  } catch {
-    return; // tracker unreadable (e.g. legacy without a Ref column yet) — skip silently
-  }
-  const tasks = await query<MatterTask>(`select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2`, [matterId, user.tenantId]);
-  const byRef = new Map(tasks.map((t) => [t.ref, t]));
-  for (const r of rows) {
-    if (!r.ref) continue; // hand-added row with no ref — left for a future "adopt" pass
-    const t = byRef.get(r.ref);
-    if (!t) continue; // unknown ref — don't import header/noise rows
-    const status = r.status ? normaliseStatus(r.status) : t.status;
-    const detail = r.detail || t.detail;
-    const assignee = r.owner || t.assignee;
-    const due = r.due ? dateStr(r.due) : dateStr(t.due);
-    const changed =
-      status !== t.status || detail !== t.detail || (assignee || '') !== (t.assignee || '') || due !== dateStr(t.due);
-    if (changed) {
-      await query(
-        `update matter_task set status = $1, detail = $2, assignee = $3, due = nullif($4,'')::date, source = 'EXCEL', updated_at = now(), excel_synced_at = now() where id = $5`,
-        [status, detail, assignee || null, due, t.id]
-      );
+  await withTrackerLock(matterId, async (db) => {
+    const itemId = await trackerItemId(db, user.tenantId, matterId);
+    if (!itemId) return;
+    let rows: Awaited<ReturnType<typeof listTrackerRows>>;
+    try {
+      rows = await listTrackerRows(user.userId, itemId);
+    } catch {
+      return; // tracker unreadable (e.g. legacy without a Ref column yet) — skip silently
     }
-  }
+    const tasks = (await db.query<MatterTask>(`select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2`, [matterId, user.tenantId])).rows;
+    const byRef = new Map(tasks.map((t) => [t.ref, t]));
+    for (const r of rows) {
+      if (!r.ref) continue; // hand-added row with no ref — left for a future "adopt" pass
+      const t = byRef.get(r.ref);
+      if (!t) continue; // unknown ref — don't import header/noise rows
+
+      // App change not yet confirmed in Excel: don't let stale Excel clobber it —
+      // re-push it forward instead (idempotent), then move on.
+      const synced = t.excel_synced_at ? new Date(t.excel_synced_at).getTime() : 0;
+      if (new Date(t.updated_at).getTime() > synced) {
+        await mirrorToExcel(db, user, matterId, t);
+        continue;
+      }
+
+      const status = r.status ? normaliseStatus(r.status) : t.status;
+      const detail = r.detail || t.detail;
+      const assignee = r.owner || t.assignee;
+      const due = r.due ? dateStr(r.due) : dateStr(t.due);
+      const changed =
+        status !== t.status || detail !== t.detail || (assignee || '') !== (t.assignee || '') || due !== dateStr(t.due);
+      if (changed) {
+        await db.query(
+          `update matter_task set status = $1, detail = $2, assignee = $3, due = nullif($4,'')::date, source = 'EXCEL', updated_at = now(), excel_synced_at = now() where id = $5`,
+          [status, detail, assignee || null, due, t.id]
+        );
+      }
+    }
+  });
 }
 
 export async function listTasks(user: SessionUser, matterId: string): Promise<MatterTask[]> {
@@ -141,28 +177,41 @@ export async function createTask(
     source?: string;
   }
 ): Promise<MatterTask> {
-  const cnt = await queryOne<{ n: number }>(`select count(*)::int as n from matter_task where matter_id = $1`, [matterId]);
-  const ref = `T-${String((cnt?.n ?? 0) + 1).padStart(4, '0')}`;
-  const task = await queryOne<MatterTask>(
-    `insert into matter_task (tenant_id, matter_id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_by)
-     values ($1,$2,$3,$4,$5,$6,$7, nullif($8,'')::date, $9, $10, $11)
-     returning ${COLS}`,
-    [
-      user.tenantId,
-      matterId,
-      ref,
-      input.type ?? 'TASK',
-      input.detail,
-      input.assignee ?? null,
-      input.assigneeUserId ?? null,
-      input.due ?? '',
-      input.status ?? 'OPEN',
-      input.source ?? 'APP',
-      user.userId,
-    ]
-  );
-  await mirrorToExcel(user, matterId, task!);
-  return task!;
+  return withTrackerLock(matterId, async (db) => {
+    // Safe under the per-matter lock: no other create can interleave, so the ref
+    // can't collide. Derive from max(ref) (not count) so a deletion can't make us
+    // re-issue an existing T-NNNN.
+    const last = (
+      await db.query<{ ref: string }>(
+        `select ref from matter_task where matter_id = $1 and ref ~ '^T-[0-9]+$' order by (substring(ref from 3))::int desc limit 1`,
+        [matterId]
+      )
+    ).rows[0];
+    const lastN = last ? parseInt(last.ref.slice(2), 10) : 0;
+    const ref = `T-${String(lastN + 1).padStart(4, '0')}`;
+    const task = (
+      await db.query<MatterTask>(
+        `insert into matter_task (tenant_id, matter_id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_by)
+         values ($1,$2,$3,$4,$5,$6,$7, nullif($8,'')::date, $9, $10, $11)
+         returning ${COLS}`,
+        [
+          user.tenantId,
+          matterId,
+          ref,
+          input.type ?? 'TASK',
+          input.detail,
+          input.assignee ?? null,
+          input.assigneeUserId ?? null,
+          input.due ?? '',
+          input.status ?? 'OPEN',
+          input.source ?? 'APP',
+          user.userId,
+        ]
+      )
+    ).rows[0];
+    await mirrorToExcel(db, user, matterId, task);
+    return task;
+  });
 }
 
 export async function updateTask(
@@ -171,20 +220,25 @@ export async function updateTask(
   taskId: string,
   patch: { type?: string; detail?: string; assignee?: string | null; assigneeUserId?: string | null; due?: string | null; status?: TaskStatus }
 ): Promise<MatterTask | null> {
-  const task = await queryOne<MatterTask>(
-    `update matter_task set
-       type = coalesce($3, type),
-       detail = coalesce($4, detail),
-       assignee = coalesce($5, assignee),
-       assignee_user_id = coalesce($6, assignee_user_id),
-       due = coalesce(nullif($7,'')::date, due),
-       status = coalesce($8, status),
-       source = 'APP',
-       updated_at = now()
-     where id = $1 and matter_id = $2 and tenant_id = $9
-     returning ${COLS}`,
-    [taskId, matterId, patch.type ?? null, patch.detail ?? null, patch.assignee ?? null, patch.assigneeUserId ?? null, patch.due ?? null, patch.status ?? null, user.tenantId]
-  );
-  if (task) await mirrorToExcel(user, matterId, task);
-  return task;
+  return withTrackerLock(matterId, async (db) => {
+    const task =
+      (
+        await db.query<MatterTask>(
+          `update matter_task set
+             type = coalesce($3, type),
+             detail = coalesce($4, detail),
+             assignee = coalesce($5, assignee),
+             assignee_user_id = coalesce($6, assignee_user_id),
+             due = coalesce(nullif($7,'')::date, due),
+             status = coalesce($8, status),
+             source = 'APP',
+             updated_at = now()
+           where id = $1 and matter_id = $2 and tenant_id = $9
+           returning ${COLS}`,
+          [taskId, matterId, patch.type ?? null, patch.detail ?? null, patch.assignee ?? null, patch.assigneeUserId ?? null, patch.due ?? null, patch.status ?? null, user.tenantId]
+        )
+      ).rows[0] ?? null;
+    if (task) await mirrorToExcel(db, user, matterId, task);
+    return task;
+  });
 }

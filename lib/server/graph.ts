@@ -415,18 +415,39 @@ export async function listTrackerRows(userId: string, itemId: string): Promise<A
   });
 }
 
-/** Upserts a tracker row keyed by `ref`: patches the matching row, else appends. */
+/**
+ * Upserts a tracker row keyed by `ref`: patches the matching row, else appends.
+ *
+ * The whole ensure-column → list → patch/append runs inside ONE workbook session
+ * so the row index we read is the index we write — without the session, a row
+ * inserted/deleted (by another writer or a human editing the sheet) between the
+ * list and the patch would shift indices and we'd overwrite the wrong row. The
+ * caller also serialises these per matter (see tasks.ts), so app writers can't
+ * collide; the session closes the remaining window against live human edits.
+ */
 export async function upsertTrackerRowByRef(userId: string, itemId: string, r: TrackerTaskRow): Promise<void> {
   const client = await graphClientForUser(userId);
-  await ensureTrackerRefColumn(userId, itemId);
-  const cols = await trackerColumnNames(client, itemId);
-  const values = valuesForColumns(cols, r);
-  const existing = await listTrackerRows(userId, itemId);
-  const match = existing.find((x) => x.ref && x.ref === r.ref);
-  if (match) {
-    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows/itemAt(index=${match.rowIndex})`).patch({ values: [values] });
-  } else {
-    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows`).post({ values: [values] });
+  const wb = `/me/drive/items/${itemId}/workbook`;
+  const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
+  const sid = session.id as string;
+  try {
+    const colsRes = await client.api(`${wb}/tables/${TRACKER_TABLE}/columns`).header('workbook-session-id', sid).get();
+    let names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
+    if (!names.some((n) => norm(n) === 'ref')) {
+      await client.api(`${wb}/tables/${TRACKER_TABLE}/columns`).header('workbook-session-id', sid).post({ name: 'Ref' });
+      names = [...names, 'Ref'];
+    }
+    const values = valuesForColumns(names, r);
+    const refIdx = names.map(norm).indexOf('ref');
+    const rowsRes = await client.api(`${wb}/tables/${TRACKER_TABLE}/rows`).header('workbook-session-id', sid).get();
+    const match = ((rowsRes.value ?? []) as any[]).find((row) => String((row.values?.[0] ?? [])[refIdx] ?? '') === r.ref);
+    if (match) {
+      await client.api(`${wb}/tables/${TRACKER_TABLE}/rows/itemAt(index=${match.index})`).header('workbook-session-id', sid).patch({ values: [values] });
+    } else {
+      await client.api(`${wb}/tables/${TRACKER_TABLE}/rows`).header('workbook-session-id', sid).post({ values: [values] });
+    }
+  } finally {
+    await client.api(`${wb}/closeSession`).header('workbook-session-id', sid).post({}).catch(() => {});
   }
 }
 
