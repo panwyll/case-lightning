@@ -39,12 +39,17 @@ export async function POST() {
 
     const clientState = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + SUB_MINUTES * 60_000).toISOString();
-    const sub = await createInboxSubscription(
-      user.userId,
-      `${config.appUrl}/api/v1/graph/notifications`,
-      clientState,
-      expiresAt
-    );
+    let sub;
+    try {
+      sub = await createInboxSubscription(
+        user.userId,
+        `${config.appUrl}/api/v1/graph/notifications`,
+        clientState,
+        expiresAt
+      );
+    } catch (graphError) {
+      throw humanizeSubscriptionError(graphError);
+    }
 
     await query(
       `insert into graph_subscription (id, tenant_id, user_id, resource, client_state, expires_at)
@@ -65,6 +70,27 @@ export async function POST() {
   } catch (error) {
     return fail(error);
   }
+}
+
+/**
+ * The Graph SDK surfaces subscription-create failures as opaque strings like
+ * "Operation: Create; Exception: [Status Code: Unauthorized; Reason: ]". Map the
+ * common ones to plain, actionable guidance the user can see in the task pane.
+ */
+function humanizeSubscriptionError(error: unknown): Error {
+  const status = (error as { statusCode?: number })?.statusCode;
+  const text = error instanceof Error ? error.message : String(error);
+  if (status === 401 || /unauthorized/i.test(text)) {
+    return new Error(
+      "Outlook wouldn't let us watch your inbox — your sign-in needs refreshing. Sign out and reconnect your account, then turn auto-triage on again."
+    );
+  }
+  if (status === 403 || /forbidden/i.test(text)) {
+    return new Error(
+      'Your Microsoft 365 account doesn’t allow inbox watching (your IT admin may need to approve it). Auto-triage can’t be turned on without it.'
+    );
+  }
+  return new Error("Couldn't turn on auto-triage just now. Please try again in a moment.");
 }
 
 export async function DELETE() {
