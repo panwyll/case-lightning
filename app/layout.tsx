@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { Fraunces, Manrope } from 'next/font/google';
 import { Analytics } from '@vercel/analytics/next';
 import RefCapture from './_components/RefCapture';
+import Track from './_components/Track';
 import './globals.css';
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
@@ -49,6 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </noscript>
         <Suspense fallback={null}>
           <RefCapture />
+          <Track />
         </Suspense>
         {children}
         <Analytics />

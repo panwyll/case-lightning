@@ -10,6 +10,7 @@ import {
   accrueCommission,
   clawbackByInvoice,
 } from '@/lib/server/referrals';
+import { recordSubscriptionEvent } from '@/lib/server/billing-events';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
           if (!customerId) break;
           const email = s.customer_details?.email ?? s.customer_email ?? null;
           const account = await accountByCustomer(customerId, email);
+          await recordSubscriptionEvent({ accountId: account.id, stripeCustomerId: customerId, eventType: 'CHECKOUT', toStatus: 'active' });
           await query(
             `update billing_account set stripe_subscription_id = coalesce($1, stripe_subscription_id),
                status = 'active', email = coalesce(email, $2), updated_at = now() where id = $3`,
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
           const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
           if (!customerId || !inv.id) break;
           const account = await accountByCustomer(customerId, inv.customer_email ?? null);
+          await recordSubscriptionEvent({ accountId: account.id, stripeCustomerId: customerId, eventType: 'PAID', toStatus: 'active' });
           await query(`update billing_account set status = 'active', updated_at = now() where id = $1`, [account.id]);
           const line = inv.lines?.data?.[0];
           await accrueCommission({
@@ -80,6 +83,7 @@ export async function POST(req: NextRequest) {
           const inv = event.data.object as Stripe.Invoice;
           const customerId = typeof inv.customer === 'string' ? inv.customer : inv.customer?.id;
           if (customerId) {
+            await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'PAST_DUE', toStatus: 'past_due' });
             await query(`update billing_account set status = 'past_due', updated_at = now() where stripe_customer_id = $1`, [customerId]);
           }
           break;
@@ -106,6 +110,7 @@ export async function POST(req: NextRequest) {
           const amount = sub.items?.data?.[0]?.price?.unit_amount ?? 0;
           const plan = amount >= 40000 ? 'team' : 'standard';
           if (customerId) {
+            await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'SUBSCRIPTION', toStatus: sub.status, plan });
             await query(
               `update billing_account set status = $1, plan = $2, stripe_subscription_id = $3, updated_at = now()
                where stripe_customer_id = $4`,
@@ -119,6 +124,7 @@ export async function POST(req: NextRequest) {
           const sub = event.data.object as Stripe.Subscription;
           const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
           if (customerId) {
+            await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'CANCELED', toStatus: 'canceled' });
             await query(`update billing_account set status = 'canceled', updated_at = now() where stripe_customer_id = $1`, [customerId]);
           }
           break;

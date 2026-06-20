@@ -58,7 +58,49 @@ to `vercel.json` crons when the Hobby cron limit allows:
 
 ## Example queries
 
+## Acquisition funnel & internal dashboard (010_funnel.sql)
+
+Two new data sources feed the funnel:
+- **`pageview_event`** — first-party visits, written by a beacon (`/api/v1/track`)
+  that a client component (`app/_components/Track.tsx`) fires on the marketing
+  site. Anonymous `cl_vid` cookie, captures path + UTM (channel). Skips the add-in,
+  admin, and the internal dashboard itself.
+- **`subscription_event`** — append-only subscription status history, written from
+  the Stripe webhook (`recordSubscriptionEvent` in `lib/server/billing-events.ts`)
+  at every transition. Source for churn / retention / MRR movement.
+
+### Funnel & retention views
+
+| View | Answers |
+|---|---|
+| `v_funnel_global` | The funnel: Visitors → Viewed pricing → Waitlist → Account → Activated → Created matter → Paid → Retained, with count, % of top, step conversion, and **drop-off** per stage |
+| `v_visits_daily` / `v_visits_by_channel` | Top-of-funnel traffic over time and by UTM source/medium/campaign |
+| `v_acquisition_monthly` | New paying customers + new MRR per month |
+| `v_churn_monthly` | Churned customers + lost MRR per month |
+| `v_mrr_movement_monthly` | New vs churned vs **net MRR** per month |
+| `v_retention_summary` | Ever-paid / ever-churned / active-now / lifetime churn % |
+
+CPA is deferred (no ad-spend source yet) — UTM channel is on every pageview so it
+drops in later: add an `acquisition_spend` table and divide by `v_acquisition_monthly`.
+
+### Internal dashboard
+
+`/internal` is an owner-only page (not linked from the site) gated by
+`INTERNAL_DASHBOARD_KEY` — independent of the Outlook/Entra login, so it works
+anywhere. It calls `/api/v1/internal/metrics` (same key as a Bearer token) and
+renders the funnel, economics, MRR movement, churn, usage, and visits-by-channel.
+Set the env var, open `/internal`, paste the key once (kept in localStorage).
+
+## Example queries
+
 ```sql
+-- The funnel: where do people drop out?
+select stage, count, pct_of_top, conversion_from_prev_pct, dropoff_from_prev
+from v_funnel_global;
+
+-- Net MRR movement by month
+select * from v_mrr_movement_monthly;
+
 -- Global P&L right now
 select * from v_global_economics;
 
