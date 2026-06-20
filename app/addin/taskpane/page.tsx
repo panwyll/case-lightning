@@ -161,6 +161,35 @@ export default function Taskpane() {
   };
 
   // ── Actions ────────────────────────────────────────────────────────────────
+  // Sign-in must run in an Office dialog window — Microsoft's login refuses to be
+  // iframed, so a redirect inside the taskpane fails with "refused to connect".
+  function connect() {
+    const Office = (window as any).Office;
+    const origin = window.location.origin;
+    if (Office?.context?.ui?.displayDialogAsync) {
+      Office.context.ui.displayDialogAsync(
+        `${origin}/api/v1/auth/login`,
+        { height: 60, width: 30, displayInIframe: false },
+        (result: any) => {
+          if (result.status !== 'succeeded') {
+            setStatus('Could not open the sign-in window. Allow pop-ups and try again.');
+            return;
+          }
+          const dialog = result.value;
+          dialog.addEventHandler(Office.EventType.DialogMessageReceived, async () => {
+            dialog.close();
+            await refreshMe();
+            setStatus('Connected to Outlook.');
+          });
+          dialog.addEventHandler(Office.EventType.DialogEventReceived, () => refreshMe());
+        }
+      );
+    } else {
+      // Not in Office (e.g. testing in a plain browser tab) — top-level redirect.
+      window.location.href = '/api/v1/auth/login';
+    }
+  }
+
   async function createMatter() {
     await run('Creating matter', async () => {
       const body = {
@@ -352,7 +381,7 @@ export default function Taskpane() {
       {!me && (
         <Card>
           <p style={S.muted}>Connect your Microsoft 365 account to read the current thread and manage cases.</p>
-          <button style={S.primary} onClick={() => (window.location.href = '/api/v1/auth/login')}>
+          <button style={S.primary} onClick={connect}>
             Connect Outlook
           </button>
         </Card>
