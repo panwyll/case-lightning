@@ -83,6 +83,10 @@ export const config = {
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
+
+  // Owner-only internal analytics dashboard. The /internal page and its metrics
+  // API are gated by this shared key (independent of the Outlook/Entra session).
+  internalDashboardKey: env('INTERNAL_DASHBOARD_KEY'),
 };
 
 export type FeatureKey = 'db' | 'auth' | 'graph' | 'ai' | 'billing';
