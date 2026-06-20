@@ -15,6 +15,7 @@ interface OfficeItem {
   itemId?: string;
   conversationId?: string;
   subject?: string;
+  from?: { emailAddress?: string; displayName?: string };
 }
 
 interface Me {
@@ -70,11 +71,20 @@ export default function Taskpane() {
   const [matterId, setMatterId] = useState('');
   const [matterInfo, setMatterInfo] = useState<any>(null);
   const [showNewMatter, setShowNewMatter] = useState(false);
-  const [form, setForm] = useState({
+  const [sender, setSender] = useState<{ name: string; email: string } | null>(null);
+  const [form, setForm] = useState<{
+    matterRef: string;
+    propertyAddress: string;
+    buyerNames: string[];
+    sellerNames: string[];
+    counterpartySolicitor: string;
+    exchangeTargetDate: string;
+    completionTargetDate: string;
+  }>({
     matterRef: '',
     propertyAddress: '',
-    buyerNames: '',
-    sellerNames: '',
+    buyerNames: [],
+    sellerNames: [],
     counterpartySolicitor: '',
     exchangeTargetDate: '',
     completionTargetDate: '',
@@ -137,9 +147,9 @@ export default function Taskpane() {
           const item = window.Office?.context?.mailbox?.item;
           if (item?.itemId) setMessageId(item.itemId);
           if (item?.conversationId) setConversationId(item.conversationId);
-          if (item?.subject) {
-            setSubject(item.subject);
-            setForm((f) => ({ ...f, matterRef: f.matterRef }));
+          if (item?.subject) setSubject(item.subject);
+          if (item?.from?.emailAddress) {
+            setSender({ name: item.from.displayName || item.from.emailAddress, email: item.from.emailAddress });
           }
         });
       }
@@ -205,13 +215,32 @@ export default function Taskpane() {
     }
   }
 
+  function cleanSubject(s: string) {
+    return s.replace(/^((re|fw|fwd)\s*:\s*)+/i, '').trim();
+  }
+
+  // Open the New-matter form, pre-filling what we can read from the open email:
+  // the property address from the subject, and the counterparty from the sender.
+  function openNewMatter() {
+    if (showNewMatter) {
+      setShowNewMatter(false);
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      propertyAddress: f.propertyAddress || cleanSubject(subject),
+      counterpartySolicitor: f.counterpartySolicitor || (sender ? `${sender.name} <${sender.email}>` : ''),
+    }));
+    setShowNewMatter(true);
+  }
+
   async function createMatter() {
     await run('Creating matter', async () => {
       const body = {
         matterRef: form.matterRef || `AUTO-${new Date().toISOString().slice(0, 10)}-${Math.floor(Math.random() * 9000 + 1000)}`,
         propertyAddress: form.propertyAddress,
-        buyerNames: form.buyerNames.split(';').map((s) => s.trim()).filter(Boolean),
-        sellerNames: form.sellerNames.split(';').map((s) => s.trim()).filter(Boolean),
+        buyerNames: form.buyerNames,
+        sellerNames: form.sellerNames,
         counterpartySolicitor: form.counterpartySolicitor || undefined,
         exchangeTargetDate: form.exchangeTargetDate || undefined,
         completionTargetDate: form.completionTargetDate || undefined,
@@ -413,14 +442,19 @@ export default function Taskpane() {
           <Card>
             <Label>Current thread</Label>
             <div style={S.threadSubject}>{subject || '— open an email —'}</div>
-            <div style={S.rowWrap}>
-              <Field label="Matter UUID" value={matterId} onChange={setMatterId} placeholder="paste or create" />
-            </div>
+            {matterInfo?.matter ? (
+              <div style={S.linkedMatter}>
+                <span>📁 {matterInfo.matter.matter_ref}</span>
+                <button style={S.tagX} onClick={() => { setMatterId(''); setMatterInfo(null); }} title="Unlink">×</button>
+              </div>
+            ) : (
+              <p style={S.muted}>No matter linked yet. Find a match, or create one.</p>
+            )}
             <div style={S.rowWrap}>
               <button style={S.secondary} onClick={findMatter} disabled={!messageId}>
                 Find matter
               </button>
-              <button style={S.secondary} onClick={() => setShowNewMatter((s) => !s)}>
+              <button style={S.secondary} onClick={openNewMatter}>
                 {showNewMatter ? 'Cancel' : 'New matter'}
               </button>
               <button style={S.secondary} onClick={linkThread} disabled={!matterId || !conversationId}>
@@ -483,14 +517,14 @@ export default function Taskpane() {
           {showNewMatter && (
             <Card>
               <Label>New matter</Label>
-              <Field label="Matter ref (blank = auto)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} />
-              <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} />
-              <Field label="Buyers (; separated)" value={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} />
-              <Field label="Sellers (; separated)" value={form.sellerNames} onChange={(v) => setForm({ ...form, sellerNames: v })} />
-              <Field label="Counterparty solicitor" value={form.counterpartySolicitor} onChange={(v) => setForm({ ...form, counterpartySolicitor: v })} />
+              <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder="auto-generated if left blank" />
+              <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} placeholder="14 Oak Street, London SW1A 1AA" />
+              <TagInput label="Buyers" values={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} placeholder="type a name, press Enter" />
+              <TagInput label="Sellers" values={form.sellerNames} onChange={(v) => setForm({ ...form, sellerNames: v })} placeholder="type a name, press Enter" />
+              <Field label="Counterparty (firm / email)" value={form.counterpartySolicitor} onChange={(v) => setForm({ ...form, counterpartySolicitor: v })} placeholder="prefilled from the email sender" />
               <div style={S.rowWrap}>
-                <Field label="Exchange target" value={form.exchangeTargetDate} onChange={(v) => setForm({ ...form, exchangeTargetDate: v })} placeholder="YYYY-MM-DD" />
-                <Field label="Completion target" value={form.completionTargetDate} onChange={(v) => setForm({ ...form, completionTargetDate: v })} placeholder="YYYY-MM-DD" />
+                <Field label="Exchange target" type="date" value={form.exchangeTargetDate} onChange={(v) => setForm({ ...form, exchangeTargetDate: v })} />
+                <Field label="Completion target" type="date" value={form.completionTargetDate} onChange={(v) => setForm({ ...form, completionTargetDate: v })} />
               </div>
               <button style={S.primary} onClick={createMatter} disabled={!form.propertyAddress}>
                 Create + provision OneDrive
@@ -662,16 +696,71 @@ function Field({
   value,
   onChange,
   placeholder,
+  type,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
+  type?: string;
 }) {
   return (
     <label style={{ display: 'block', flex: 1, minWidth: 120 }}>
       <span style={S.fieldLabel}>{label}</span>
-      <input style={S.input} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <input style={S.input} type={type ?? 'text'} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+    </label>
+  );
+}
+
+// Chip input: type a value and press Enter (or comma) to add it; multiple allowed.
+function TagInput({
+  label,
+  values,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState('');
+  const add = (raw: string) => {
+    const next = [...values];
+    for (const p of raw.split(/[;,]/).map((s) => s.trim()).filter(Boolean)) {
+      if (!next.includes(p)) next.push(p);
+    }
+    if (next.length !== values.length) onChange(next);
+    setDraft('');
+  };
+  return (
+    <label style={{ display: 'block', marginBottom: 6 }}>
+      <span style={S.fieldLabel}>{label}</span>
+      <div style={S.tagBox}>
+        {values.map((v, i) => (
+          <span key={i} style={S.tag}>
+            {v}
+            <button type="button" style={S.tagX} onClick={() => onChange(values.filter((_, j) => j !== i))} aria-label={`Remove ${v}`}>
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          style={S.tagInput}
+          value={draft}
+          placeholder={values.length ? '' : placeholder}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              add(draft);
+            } else if (e.key === 'Backspace' && !draft && values.length) {
+              onChange(values.slice(0, -1));
+            }
+          }}
+          onBlur={() => draft && add(draft)}
+        />
+      </div>
     </label>
   );
 }
@@ -700,6 +789,45 @@ const S: Record<string, React.CSSProperties> = {
   label: { fontWeight: 700, fontSize: 13, marginBottom: 8, color: '#0f172a' },
   subLabel: { fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', margin: '10px 0 4px' },
   fieldLabel: { display: 'block', fontSize: 11, color: '#64748b', marginBottom: 2 },
+  linkedMatter: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    background: '#f1edfd',
+    border: '1px solid #ddd6fe',
+    borderRadius: 8,
+    padding: '7px 10px',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#4A1FBE',
+    marginBottom: 8,
+  },
+  tagBox: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+    alignItems: 'center',
+    border: '1px solid #cbd5e1',
+    borderRadius: 6,
+    padding: 4,
+    minHeight: 38,
+    background: '#fff',
+    marginBottom: 6,
+  },
+  tag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 2,
+    background: '#ede9fb',
+    color: '#4A1FBE',
+    borderRadius: 999,
+    padding: '2px 4px 2px 9px',
+    fontSize: 12,
+    fontWeight: 600,
+  },
+  tagX: { border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 15, lineHeight: 1, color: '#7c6bb0', padding: '0 3px' },
+  tagInput: { flex: 1, minWidth: 90, border: 'none', outline: 'none', padding: '4px 6px', fontSize: 13, background: 'transparent' },
   muted: { fontSize: 12, color: '#64748b', margin: '0 0 10px' },
   threadSubject: { fontSize: 13, fontWeight: 600, marginBottom: 10, color: '#0f172a' },
   rowWrap: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 },
