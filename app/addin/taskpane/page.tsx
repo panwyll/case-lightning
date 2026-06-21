@@ -136,7 +136,11 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   });
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(json.error || `HTTP ${res.status}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return json as T;
 }
 
@@ -214,7 +218,14 @@ export default function Taskpane() {
   const [assist, setAssist] = useState<AssistData | null>(null);
   // Tracks which message the assist poller is following; changing it cancels any
   // in-flight poll so a fast email-switch never lands stale results.
+  // True when /me failed for a reason *other* than being signed out (a 5xx or a
+  // network error). We're still "not connected", but telling the user to connect
+  // their account won't help — the server is the problem, so offer a retry.
+  const [connError, setConnError] = useState(false);
   const assistPollRef = useRef<string>('');
+  // True when the initial analysis of the open email failed — lets the hero show
+  // a recoverable error + retry instead of an endless "Reading…" spinner.
+  const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [newTaskDetail, setNewTaskDetail] = useState('');
@@ -260,8 +271,13 @@ export default function Taskpane() {
   const refreshMe = useCallback(async () => {
     try {
       setMe(await api<Me>('/me'));
-    } catch {
+      setConnError(false);
+    } catch (e) {
+      // 401/403 → genuinely signed out. Anything else (5xx, or a network error
+      // with no status) → the server is unreachable, not an auth problem.
+      const status = (e as { status?: number }).status;
       setMe(null);
+      setConnError(status !== 401 && status !== 403);
     }
     try {
       const k = await api<{ connected: boolean }>('/me/ai-key');
@@ -838,6 +854,7 @@ export default function Taskpane() {
     const mid = matterOverride ?? matterId;
     const pollKey = messageId;
     assistPollRef.current = pollKey; // cancels any in-flight poll for a prior email
+    setAssistError(false);
     const call = () =>
       api<AssistData>('/assist', {
         method: 'POST',
@@ -853,7 +870,12 @@ export default function Taskpane() {
       if (!messageId) throw new Error('Open an email first.');
       return call();
     });
-    if (!first) return;
+    if (!first) {
+      // Only surface the error when the email is still the one we tried to read —
+      // a fast switch to another message shouldn't flash a stale failure.
+      if (assistPollRef.current === pollKey) setAssistError(true);
+      return;
+    }
     setAssist(first);
     if (first.matter && !mid) {
       setMatterId(first.matter.id);
@@ -1019,29 +1041,37 @@ export default function Taskpane() {
         </div>
         {me ? (
           <button style={S.account} onClick={openAccount} title="Manage account & billing">
-            <span style={S.planBadge}>
-              {plan?.plan === 'team'
-                ? 'Team'
-                : plan?.plan === 'standard'
-                ? 'Standard'
-                : plan?.status === 'trialing'
-                ? 'Trial'
-                : 'Free'}
-            </span>
+            {plan && (
+              <span style={S.planBadge}>
+                {plan.plan === 'team'
+                  ? 'Team'
+                  : plan.plan === 'standard'
+                  ? 'Standard'
+                  : plan.status === 'trialing'
+                  ? 'Trial'
+                  : 'Free'}
+              </span>
+            )}
             <span style={S.user}>{me.displayName || me.email}</span>
             <span style={{ color: '#94a3b8' }}>›</span>
           </button>
         ) : (
-          <span style={S.user}>Not connected</span>
+          <span style={S.user}>{connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
       </header>
 
       {!me && (
         <Card>
-          <p style={S.muted}>Connect your Microsoft 365 account to read the current thread and manage cases.</p>
-          <button style={S.primary} onClick={connect}>
-            Connect Outlook
-          </button>
+          {connError ? (
+            <>
+              <p style={S.muted}>Can’t reach CaseLightning right now — this is usually temporary.</p>
+              <button style={S.secondary} onClick={refreshMe}>Retry</button>
+            </>
+          ) : (
+            <button style={S.primary} onClick={connect}>
+              Connect Outlook
+            </button>
+          )}
         </Card>
       )}
 
@@ -1059,20 +1089,52 @@ export default function Taskpane() {
               found: { icon: '✓', title: 'Matter found', sub: ref ? `${ref} · 100% match` : '100% match', style: S.heroFound },
               partial: { icon: '~', title: 'Partial match', sub: ref ? `${ref} · ${pct}% — tap to confirm` : `${pct ?? ''}% — tap to confirm`, style: S.heroPartial },
               none: { icon: '✕', title: 'No matter found', sub: 'Link an existing matter or create one', style: S.heroNone },
-              pending: { icon: '…', title: messageId ? 'Reading this email…' : 'Open an email', sub: messageId ? 'Matching it to your matters' : 'Select a message to begin', style: S.heroPending },
+              pending: assistError
+                ? { icon: '!', title: 'Couldn’t read this email', sub: 'Tap Try again below', style: S.heroNone }
+                : {
+                    icon: '…',
+                    title: messageId ? 'Reading this email…' : 'Open an email',
+                    sub: messageId ? 'Matching it to your matters' : 'Select a message to begin',
+                    style: S.heroPending,
+                  },
             };
             const m = meta[matchKind];
+            // Tapping the hero only does something when there's a found/partial
+            // match to re-open and change; in none/pending the link drawer is
+            // already shown (or there's nothing yet), so the tap would look dead.
+            const heroToggles = matchKind === 'found' || matchKind === 'partial';
+            const showSpinner = matchKind === 'pending' && !assistError;
             return (
-              <button style={{ ...S.hero, ...m.style }} onClick={() => setLinkOpen((o) => !o)} title="Link to a different or new matter">
-                <span style={S.heroIcon}>{matchKind === 'pending' ? <span style={S.spinner} /> : m.icon}</span>
+              <button
+                style={{ ...S.hero, ...m.style, cursor: heroToggles ? 'pointer' : 'default' }}
+                onClick={heroToggles ? () => setLinkOpen((o) => !o) : undefined}
+                title={heroToggles ? 'Link to a different or new matter' : undefined}
+              >
+                <span style={S.heroIcon}>{showSpinner ? <span style={S.spinner} /> : m.icon}</span>
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0 }}>
                   <span style={{ fontWeight: 700, fontSize: 13 }}>{m.title}</span>
                   <span style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 280 }}>{m.sub}</span>
                 </span>
-                <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{drawerOpen ? '▲' : '▾'}</span>
+                {heroToggles && <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{drawerOpen ? '▲' : '▾'}</span>}
               </button>
             );
           })()}
+
+          {/* Analysis failed — give the spinner an exit instead of spinning forever. */}
+          {messageId && assistError && (
+            <Card>
+              <p style={S.muted}>We couldn’t finish reading this email. It may have been a temporary hiccup.</p>
+              <button style={S.secondary} onClick={() => runAssist()}>Try again</button>
+            </Card>
+          )}
+
+          {/* No email open — don't leave the pane blank; say what to do and where
+              the firm-wide tools are. */}
+          {!messageId && !assistError && (
+            <Card>
+              <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
+            </Card>
+          )}
 
           {/* Link drawer — collapsed when we found the matter, open when we didn't. */}
           {drawerOpen && (
@@ -1115,7 +1177,9 @@ export default function Taskpane() {
                 </>
               )}
               <div style={{ ...S.rowWrap, marginTop: candidates.length ? 8 : 0 }}>
-                <button style={S.secondary} onClick={openNewMatter}>
+                {/* When nothing matched, creating a matter is the real next step —
+                    promote it to the primary action instead of a peer button. */}
+                <button style={matchKind === 'none' && !showNewMatter ? S.primary : S.secondary} onClick={openNewMatter}>
                   {showNewMatter ? 'Cancel new matter' : '+ New matter'}
                 </button>
                 <button style={S.secondary} onClick={findMatter} disabled={!messageId}>
@@ -1143,11 +1207,11 @@ export default function Taskpane() {
                 <span style={S.label}>Here&apos;s the situation</span>
               </div>
               <div style={S.rowWrap}>
-                <span style={S.chip}>{assist.classification.intent.replace(/_/g, ' ')}</span>
+                <span style={S.chip}>{humanize(assist.classification.intent)}</span>
                 <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
                   {assist.classification.needsAttention ? 'Needs you' : 'FYI'}
                 </span>
-                <span style={S.chip}>{assist.classification.urgency}</span>
+                <span style={S.chip}>{humanize(assist.classification.urgency)}</span>
               </div>
               <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
 
@@ -1192,17 +1256,11 @@ export default function Taskpane() {
               {effectiveAction === 'reply' && (
                 <div style={S.actionPanel}>
                   {assist.draft ? (
-                    <>
-                      <p style={S.muted}>A reply is drafted from the thread and this matter&apos;s facts. Open it to review before anything is sent.</p>
-                      <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
-                    </>
+                    <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
                   ) : !assist.ready ? (
                     <p style={S.muted}>Preparing a draft…</p>
                   ) : (
-                    <>
-                      <p style={S.muted}>No reply was prepared — generate one now if you want to respond.</p>
-                      <button style={S.primary} onClick={generateDraft}>Draft a reply</button>
-                    </>
+                    <button style={S.primary} onClick={generateDraft}>Draft a reply</button>
                   )}
                 </div>
               )}
@@ -1210,17 +1268,6 @@ export default function Taskpane() {
               {/* Action — do something on the matter yourself */}
               {effectiveAction === 'action' && (
                 <div style={S.actionPanel}>
-                  <p style={S.muted}>Record the work this email creates, or push its facts into the matter.</p>
-                  <div style={{ ...S.rowWrap, marginBottom: 8 }}>
-                    <input
-                      style={{ ...S.input, marginBottom: 0, flex: 1 }}
-                      placeholder="Add a task…"
-                      value={newTaskDetail}
-                      onChange={(e) => setNewTaskDetail(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
-                    />
-                    <button style={S.secondary} onClick={addTask}>Add</button>
-                  </div>
                   <div style={S.rowWrap}>
                     <button style={S.secondary} onClick={extractFacts}>Extract facts → tracker</button>
                     <button style={S.secondary} onClick={saveToMatter}>Save email to matter</button>
@@ -1233,7 +1280,6 @@ export default function Taskpane() {
                 <div style={S.actionPanel}>
                   {assist.outstanding.length > 0 ? (
                     <>
-                      <p style={S.muted}>Assign each open item to whoever should clear it — it lands in the Excel tracker.</p>
                       {assist.outstanding.map((o, i) => (
                         <div key={i} style={S.candidate}>
                           <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{o}</div>
@@ -1250,7 +1296,6 @@ export default function Taskpane() {
                     </>
                   ) : (
                     <>
-                      <p style={S.muted}>Hand this email to a colleague to handle.</p>
                       <select
                         style={{ ...S.input, marginBottom: 0 }}
                         defaultValue=""
@@ -1270,10 +1315,7 @@ export default function Taskpane() {
                   {ignored ? (
                     <p style={{ ...S.muted, margin: 0, color: '#166534' }}>✓ Marked as handled — no reply needed.</p>
                   ) : (
-                    <>
-                      <p style={S.muted}>Looks like an FYI. Mark it handled so it&apos;s clear there&apos;s nothing outstanding.</p>
-                      <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
-                    </>
+                    <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
                   )}
                 </div>
               )}
@@ -1320,7 +1362,7 @@ export default function Taskpane() {
               <Label>Extracted facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
               {Object.entries(facts.facts).map(([k, v]) => (
                 <div key={k} style={S.kv}>
-                  <span>{k}</span>
+                  <span>{humanize(k)}</span>
                   <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
                 </div>
               ))}
@@ -1346,7 +1388,7 @@ export default function Taskpane() {
               <div style={S.rowWrap}>
                 {TONES.map((t) => (
                   <button key={t} style={t === tone ? S.toneActive : S.tone} onClick={() => setTone(t)}>
-                    {t}
+                    {humanize(t)}
                   </button>
                 ))}
                 <button style={S.secondary} onClick={generateDraft}>Regenerate</button>
@@ -1384,24 +1426,23 @@ export default function Taskpane() {
 
           {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
           {matterId && (
-            <Card>
-              <Label>Tasks</Label>
-              <p style={S.muted}>Synced with this matter&apos;s Tracker.xlsx — change them here or in Excel, both stay in step.</p>
-              {tasks.length === 0 && <p style={S.muted}>No tasks yet. Add one below, or the assistant will when you assign a blocker.</p>}
+            <Section title="Tasks" count={tasks.length}>
+              <p style={S.muted}>Two-way synced with the matter’s Excel tracker.</p>
+              {tasks.length === 0 && <p style={S.muted}>No tasks yet.</p>}
               {tasks.map((t) => {
                 const assigneeId = assignees.find((a) => (a.display_name || a.email) === t.assignee)?.id || '';
                 const statusBg = t.status === 'DONE' ? '#dcfce7' : t.status === 'IN_PROGRESS' ? '#fef9c3' : t.status === 'NOTED' ? '#e2e8f0' : '#fee2e2';
                 return (
                   <div key={t.id} style={S.candidate}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>{t.ref} · {t.type}</span>
+                      <span style={{ fontSize: 11, color: '#64748b' }}>{t.ref} · {humanize(t.type)}</span>
                       <select
-                        style={{ ...S.chip, background: statusBg, border: 'none', cursor: 'pointer' }}
+                        style={{ ...S.chip, background: statusBg, border: 'none', cursor: 'pointer', textTransform: 'none' }}
                         value={t.status}
                         onChange={(e) => patchTask(t.id, { status: e.target.value })}
                       >
                         {['OPEN', 'IN_PROGRESS', 'DONE', 'NOTED'].map((s) => (
-                          <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                          <option key={s} value={s}>{humanize(s)}</option>
                         ))}
                       </select>
                     </div>
@@ -1442,7 +1483,7 @@ export default function Taskpane() {
                 />
                 <button style={S.secondary} onClick={addTask}>Add</button>
               </div>
-            </Card>
+            </Section>
           )}
 
           {/* Matter panel */}
@@ -1496,8 +1537,7 @@ export default function Taskpane() {
 
           {/* Documents & sharing */}
           {matterId && (
-            <Card>
-              <Label>Documents &amp; sharing</Label>
+            <Section title="Documents & sharing" count={docs.length || undefined}>
               <div style={S.rowWrap}>
                 <button style={S.secondary} onClick={loadDocs}>List documents</button>
                 <button style={S.secondary} onClick={suggestAttachments}>Suggest attachments</button>
@@ -1540,17 +1580,12 @@ export default function Taskpane() {
               <button style={S.secondary} onClick={postToTeams} disabled={!teamId || !channelId}>
                 Post to Teams
               </button>
-            </Card>
+            </Section>
           )}
 
           {/* Review a document */}
           {matterId && (
-            <Card>
-              <Label>Review a document</Label>
-              <p style={S.muted}>
-                Read an incoming attachment and check it against this matter — key details, mismatches, risks and a draft
-                reply.
-              </p>
+            <Section title="Review a document" count={attachments.length || undefined}>
               <button style={S.secondary} onClick={listAttachments} disabled={!messageId}>
                 List attachments on this email
               </button>
@@ -1656,7 +1691,7 @@ export default function Taskpane() {
                   )}
                 </div>
               )}
-            </Card>
+            </Section>
           )}
         </>
       )}
@@ -1677,10 +1712,7 @@ export default function Taskpane() {
 
             {(!obJob || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(obJob.status)) && (
               <>
-                <p style={S.muted}>
-                  Scan your mailbox to find cases already in flight and import them as matters — OneDrive folder, Excel
-                  tracker and AI summary included. You review and pick which to keep before anything is created.
-                </p>
+                <p style={S.muted}>Find live cases in your mailbox and import them as matters — you pick which to keep.</p>
                 <SubLabel>How far back</SubLabel>
                 <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
                   <option value="3">Last 3 months</option>
@@ -1805,8 +1837,45 @@ function btn(base: React.CSSProperties, dim: boolean): React.CSSProperties {
   return dim ? { ...base, opacity: 0.5 } : base;
 }
 
+// Turn an UPPER_SNAKE enum or snake_case key into human text for display:
+// "IN_PROGRESS" → "In progress", "completion_date" → "Completion date". The raw
+// value stays the source of truth — this only ever touches what the user reads.
+function humanize(s: string): string {
+  const t = s.replace(/[_-]+/g, ' ').trim().toLowerCase();
+  return t ? t[0].toUpperCase() + t.slice(1) : s;
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return <section style={S.card}>{children}</section>;
+}
+
+// A collapsible card: the secondary surfaces (Tasks, Documents, Review) fold away
+// so the situation + four moves own the top of the pane instead of being buried
+// under an everything-at-once stack. `count` hints there's content when closed.
+function Section({
+  title,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section style={S.card}>
+      <button style={S.sectionHead} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+        <span style={{ ...S.label, marginBottom: 0 }}>
+          {title}
+          {count ? <span style={S.sectionCount}>{count}</span> : null}
+        </span>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>{open ? '▲' : '▾'}</span>
+      </button>
+      {open && <div style={{ marginTop: 10 }}>{children}</div>}
+    </section>
+  );
 }
 function Label({ children }: { children: React.ReactNode }) {
   return <div style={S.label}>{children}</div>;
@@ -2007,6 +2076,26 @@ const S: Record<string, React.CSSProperties> = {
     background: '#f8fafc',
   },
   label: { fontWeight: 700, fontSize: 13, marginBottom: 8, color: '#0f172a' },
+  sectionHead: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+  },
+  sectionCount: {
+    display: 'inline-block',
+    marginLeft: 7,
+    fontSize: 11,
+    fontWeight: 700,
+    color: '#5A27E0',
+    background: '#EDE7FB',
+    borderRadius: 999,
+    padding: '1px 7px',
+  },
   subLabel: { fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', margin: '10px 0 4px' },
   fieldLabel: { display: 'block', fontSize: 11, color: '#64748b', marginBottom: 2 },
   linkedMatter: {
