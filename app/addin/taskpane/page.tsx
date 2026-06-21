@@ -593,13 +593,14 @@ export default function Taskpane() {
     });
   }
 
-  // Rebuild the firm-wide master Excel of all matters and open it.
+  // Open the firm-wide master Excel — syncs Excel edits in, builds it if missing,
+  // and opens it. If it's already open in Excel (locked) we just open it.
   async function buildBoard() {
-    const r = await run('Building team tracker', async () =>
-      api<{ webUrl: string | null; matters: number }>('/matters/board', { method: 'POST' })
+    const r = await run('Opening team tracker', async () =>
+      api<{ webUrl: string | null; matters: number; locked: boolean }>('/matters/board', { method: 'POST' })
     );
     if (r?.webUrl) window.open(r.webUrl, '_blank', 'noopener');
-    if (r) setStatus(`Team tracker updated — ${r.matters} open matter(s).`);
+    if (r) setStatus(r.locked ? 'Opened — close it in Excel to push app changes back.' : `Team tracker synced — ${r.matters} open matter(s).`);
   }
 
   async function findMatter() {
@@ -1204,12 +1205,12 @@ export default function Taskpane() {
 
           {tab === 'matter' && (
           <>
-          {/* Firm-wide board — every open matter, filterable by status in Excel. */}
-          <Card>
-            <Label>Team tracker</Label>
-            <p style={S.muted}>The master Excel of every open matter — stage, status, assignee, open tasks. Filter by status right in Excel.</p>
-            <button style={S.primary} onClick={buildBoard}>📋 Build &amp; open team tracker</button>
-          </Card>
+          <button
+            style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10 }}
+            onClick={buildBoard}
+          >
+            📊 Team tracker
+          </button>
 
           {!matterId && (
             <Card>

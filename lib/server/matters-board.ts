@@ -10,7 +10,7 @@
 import ExcelJS from 'exceljs';
 import { query } from './db';
 import { config } from './config';
-import { putDriveFile, getDriveFileByPath } from './graph';
+import { putDriveFile, getDriveFileByPath, getDriveItemByPath } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
@@ -268,11 +268,25 @@ async function reconcileFromBoard(user: SessionUser): Promise<void> {
  * the board from the (now-reconciled) source of truth, upload it, and stamp
  * board_synced_at so the next edit-vs-app comparison is correct.
  */
-export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: string | null; matters: number }> {
+export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: string | null; matters: number; locked: boolean }> {
+  // Pull Excel edits into the DB first — a download, safe even while the file is
+  // open in Excel.
   await reconcileFromBoard(user);
-  const buffer = await buildWorkbook(user.tenantId);
-  const item = await putDriveFile(user.userId, MASTER_PATH, buffer);
-  await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);
   const count = (await boardRows(user.tenantId)).length;
-  return { webUrl: item?.webUrl ?? null, matters: count };
+
+  // Push a fresh copy out. OneDrive returns 423 (locked) if the workbook is open
+  // in Excel — in that case we skip the overwrite and just hand back its URL, so
+  // the button always opens the sheet instead of erroring.
+  const buffer = await buildWorkbook(user.tenantId);
+  try {
+    const item = await putDriveFile(user.userId, MASTER_PATH, buffer);
+    await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);
+    return { webUrl: item?.webUrl ?? null, matters: count, locked: false };
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode === 423) {
+      const item = await getDriveItemByPath(user.userId, MASTER_PATH);
+      return { webUrl: item?.webUrl ?? null, matters: count, locked: true };
+    }
+    throw error;
+  }
 }

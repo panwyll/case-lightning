@@ -342,6 +342,16 @@ export async function putDriveFile(userId: string, path: string, content: Buffer
   return client.api(`/me/drive/root:/${encodePath(path)}:/content`).put(content);
 }
 
+/** Gets a file's driveItem (incl. webUrl) by path, or null if it doesn't exist. */
+export async function getDriveItemByPath(userId: string, path: string): Promise<any | null> {
+  const client = await graphClientForUser(userId);
+  try {
+    return await client.api(`/me/drive/root:/${encodePath(path)}`).get();
+  } catch {
+    return null;
+  }
+}
+
 /** Downloads a file's bytes by OneDrive path, or null if it doesn't exist yet. */
 export async function getDriveFileByPath(userId: string, path: string): Promise<Buffer | null> {
   const client = await graphClientForUser(userId);
