@@ -128,6 +128,33 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   const note = lists.getCell('H1');
   note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically.';
   note.font = { italic: true, color: { argb: 'FF64748B' } };
+
+  // The StatusesTable "Colour" column (col D): a dropdown from a hidden colours
+  // list, and each cell shows its actual colour (conditional formatting, so it
+  // tracks the value). Keeps the option both constrained and self-evident.
+  lists.addTable({ name: 'ColoursTable', ref: 'J1', headerRow: true, columns: [{ name: 'Colour' }], rows: Object.keys(COLOUR_FILL).map((c) => [c]) });
+  lists.getColumn(10).hidden = true; // hide the colours source (column J)
+  for (let r = 2; r <= 60; r++) {
+    lists.getCell(`D${r}`).dataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: ['=INDIRECT("ColoursTable[Colour]")'],
+      showErrorMessage: true,
+      errorStyle: 'stop',
+      errorTitle: 'Pick a colour',
+      error: 'Choose one of the listed colours.',
+    };
+  }
+  lists.addConditionalFormatting({
+    ref: 'D2:D60',
+    rules: Object.entries(COLOUR_FILL).map(([name, argb], i) => ({
+      type: 'containsText' as const,
+      operator: 'containsText' as const,
+      text: name,
+      priority: i + 1,
+      style: { fill: { type: 'pattern' as const, pattern: 'solid' as const, bgColor: { argb } } },
+    })),
+  });
   // Dropdowns reference the table columns so they grow as rows are added.
   const stageRange = '=INDIRECT("StagesTable[Stage]")';
   const statusRange = '=INDIRECT("StatusesTable[Status]")';
