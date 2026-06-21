@@ -106,17 +106,30 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'CaseLightning';
 
-  // Hidden reference tab holding the allowed values for the dropdowns.
+  // Hidden reference tab holding the allowed values for the dropdowns — tidy, in
+  // case anyone unhides it.
   const stageVals = STAGE_ORDER.map((s) => STAGE_LABELS[s]);
   const statusVals = Object.values(STATUS_LABELS);
   const assigneeVals = ['Unassigned', ...team];
   const lists = wb.addWorksheet('Lists');
-  stageVals.forEach((v, i) => (lists.getCell(`A${i + 1}`).value = v));
-  statusVals.forEach((v, i) => (lists.getCell(`B${i + 1}`).value = v));
-  assigneeVals.forEach((v, i) => (lists.getCell(`C${i + 1}`).value = v));
-  const stageRange = `Lists!$A$1:$A$${stageVals.length}`;
-  const statusRange = `Lists!$B$1:$B$${statusVals.length}`;
-  const assigneeRange = `Lists!$C$1:$C$${assigneeVals.length}`;
+  lists.getColumn(1).width = 26;
+  lists.getColumn(2).width = 18;
+  lists.getColumn(3).width = 24;
+  ['A1', 'B1', 'C1'].forEach((addr, i) => {
+    const c = lists.getCell(addr);
+    c.value = ['Stages', 'Statuses', 'Assignees'][i];
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5A27E0' } };
+  });
+  stageVals.forEach((v, i) => (lists.getCell(`A${i + 2}`).value = v));
+  statusVals.forEach((v, i) => (lists.getCell(`B${i + 2}`).value = v));
+  assigneeVals.forEach((v, i) => (lists.getCell(`C${i + 2}`).value = v));
+  const note = lists.getCell('E1');
+  note.value = 'Reference values for the board dropdowns — managed by CaseLightning, no need to edit.';
+  note.font = { italic: true, color: { argb: 'FF94A3B8' } };
+  const stageRange = `Lists!$A$2:$A$${stageVals.length + 1}`;
+  const statusRange = `Lists!$B$2:$B$${statusVals.length + 1}`;
+  const assigneeRange = `Lists!$C$2:$C$${assigneeVals.length + 1}`;
   lists.state = 'hidden';
 
   const ws = wb.addWorksheet('Matters', { views: [{ state: 'frozen', ySplit: 1 }] });
