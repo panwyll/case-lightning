@@ -8,7 +8,14 @@ declare global {
   interface Window {
     Office?: {
       onReady: (cb: (info: { host: string }) => void) => void;
-      context?: { mailbox?: { item?: OfficeItem } };
+      MailboxEnums?: { RestVersion?: { v2_0?: unknown } };
+      context?: {
+        mailbox?: {
+          item?: OfficeItem;
+          // Office hands out EWS-format ids; Graph needs REST-format ones.
+          convertToRestId?: (itemId: string, version: unknown) => string;
+        };
+      };
     };
   }
 }
@@ -361,13 +368,36 @@ export default function Taskpane() {
     const tryOffice = () => {
       if (window.Office && !officeReady.current) {
         officeReady.current = true;
-        window.Office.onReady(() => {
-          const item = window.Office?.context?.mailbox?.item;
-          if (item?.itemId) setMessageId(item.itemId);
-          if (item?.conversationId) setConversationId(item.conversationId);
-          if (item?.subject) setSubject(item.subject);
-          if (item?.from?.emailAddress) {
+        const Office = window.Office as any;
+        // Read the open message; convert Office's EWS id to the REST id Graph needs.
+        const loadItem = () => {
+          const mailbox = Office?.context?.mailbox;
+          const item = mailbox?.item;
+          if (!item) return;
+          let id = item.itemId as string | undefined;
+          if (id && typeof mailbox.convertToRestId === 'function') {
+            try {
+              id = mailbox.convertToRestId(id, Office?.MailboxEnums?.RestVersion?.v2_0);
+            } catch {
+              /* fall back to the raw id */
+            }
+          }
+          setMessageId(id ?? '');
+          setConversationId(item.conversationId ?? '');
+          setSubject(item.subject ?? '');
+          if (item.from?.emailAddress) {
             setSender({ name: item.from.displayName || item.from.emailAddress, email: item.from.emailAddress });
+          }
+          // Clear last email's assistant result so it doesn't linger on the new one.
+          setAssist(null);
+        };
+        Office.onReady(() => {
+          loadItem();
+          // Re-read when the user selects a different message (pinned task pane).
+          try {
+            Office?.context?.mailbox?.addHandlerAsync?.(Office?.EventType?.ItemChanged ?? 'olkItemSelectedChanged', loadItem);
+          } catch {
+            /* event not available on this host — the pane just won't auto-refresh */
           }
         });
       }
@@ -881,6 +911,25 @@ export default function Taskpane() {
 
       {me && !firstRun && (
         <>
+          {/* Top-level navigation — first thing in the pane, one job at a time. */}
+          <div style={S.tabBar} role="tablist">
+            {([
+              ['email', 'This email'],
+              ['matter', 'Matter'],
+              ['setup', 'Setup'],
+            ] as const).map(([key, lbl]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={tab === key}
+                style={tab === key ? { ...S.tab, ...S.tabActive } : S.tab}
+                onClick={() => setTab(key)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+
           {/* Thread context */}
           <Card>
             <Label>Current thread</Label>
@@ -908,25 +957,6 @@ export default function Taskpane() {
               </button>
             </div>
           </Card>
-
-          {/* Top-level navigation — keeps the narrow pane focused on one job at a time. */}
-          <div style={S.tabBar} role="tablist">
-            {([
-              ['email', 'This email'],
-              ['matter', 'Matter'],
-              ['setup', 'Setup'],
-            ] as const).map(([key, lbl]) => (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={tab === key}
-                style={tab === key ? { ...S.tab, ...S.tabActive } : S.tab}
-                onClick={() => setTab(key)}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
 
           {tab === 'email' && (
           <>
@@ -1064,28 +1094,6 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* Act on this email — one recommended step up top, the rest below. */}
-          <Card>
-            <Label>{noReplyNeeded ? 'Recommended: summarise' : 'Recommended: draft a reply'}</Label>
-            {!conversationId ? (
-              <p style={S.muted}>Open an email to summarise it, extract facts, or draft a reply. Saving to a matter needs one linked.</p>
-            ) : (
-              <>
-                <button style={S.primary} onClick={primaryAction.onClick}>{primaryAction.label}</button>
-                <div style={{ ...S.grid, marginTop: 8 }}>
-                  {otherActions.map((a) => (
-                    <button
-                      key={a.key}
-                      style={btn(S.secondary, !!a.needsMatter && !matterId)}
-                      onClick={a.onClick}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </Card>
 
           {summary && (
             <Card>
@@ -1231,11 +1239,18 @@ export default function Taskpane() {
             <Card>
               <Label>Matter {matterInfo.matter.matter_ref}</Label>
               <div style={S.kv}><span>Property</span><span>{matterInfo.matter.property_address}</span></div>
+              {matterInfo.matter.tracker_web_url && (
+                <a
+                  style={{ ...S.primary, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}
+                  href={matterInfo.matter.tracker_web_url}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  📊 Open case tracker (Excel)
+                </a>
+              )}
               {matterInfo.matter.folder_web_url && (
                 <a style={S.link} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer">Open OneDrive folder →</a>
-              )}
-              {matterInfo.matter.tracker_web_url && (
-                <a style={S.link} href={matterInfo.matter.tracker_web_url} target="_blank" rel="noreferrer">Open Excel tracker →</a>
               )}
               {(matterInfo.summary?.outstanding_items?.length ?? 0) > 0 && (
                 <>
@@ -1666,19 +1681,19 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     padding: '2px 7px',
   },
-  tabBar: { display: 'flex', gap: 4, marginBottom: 12, background: '#f1f5f9', borderRadius: 9, padding: 3 },
+  tabBar: { display: 'flex', gap: 4, marginBottom: 12, background: '#ECE9FB', borderRadius: 10, padding: 4 },
   tab: {
     flex: 1,
-    padding: '7px 8px',
+    padding: '9px 8px',
     border: 'none',
     background: 'transparent',
-    borderRadius: 6,
-    fontSize: 12,
+    borderRadius: 7,
+    fontSize: 13,
     fontWeight: 600,
-    color: '#64748b',
+    color: '#5A4B8A',
     cursor: 'pointer',
   },
-  tabActive: { background: '#fff', color: '#0f172a', boxShadow: '0 1px 2px rgba(0,0,0,0.10)' },
+  tabActive: { background: '#5A27E0', color: '#fff' },
   assistIcon: {
     width: 20,
     height: 20,

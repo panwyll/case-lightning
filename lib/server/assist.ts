@@ -49,7 +49,10 @@ export async function assistOnMessage(
   // match is confident enough to act on (AUTO band).
   const matterId = input.matterId ?? (triage.top?.band === 'AUTO' ? triage.top.matterId : null);
 
-  const conversationId = input.conversationId ?? message.conversationId ?? input.messageId;
+  // Prefer the conversationId off the fetched message — it's Graph's own REST
+  // value, whereas a client-supplied one may be an Office/EWS id that matches no
+  // thread. Fall back only if the message somehow lacks it.
+  const conversationId = message.conversationId ?? input.conversationId ?? input.messageId;
   const threadText = threadToText(await listThreadMessages(user.userId, conversationId));
 
   let matter: AssistResult['matter'] = null;
