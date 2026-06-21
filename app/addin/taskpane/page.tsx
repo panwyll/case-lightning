@@ -230,6 +230,10 @@ export default function Taskpane() {
   // When a matter is linked, the drawer shows just the matter + "Change matter".
   // Setting this reveals the candidate/create chooser so they can pick another.
   const [changing, setChanging] = useState(false);
+  // Free-text search over all the firm's matters — for linking to one the
+  // auto-matcher didn't surface as a candidate.
+  const [matterSearch, setMatterSearch] = useState('');
+  const [matterResults, setMatterResults] = useState<Array<{ id: string; matterRef: string; propertyAddress: string }>>([]);
   const [ignored, setIgnored] = useState(false);
   // Setup (historical import + AI settings) isn't a tab — it's the initial state
   // for a firm that hasn't imported yet, and re-openable via the header gear.
@@ -717,6 +721,24 @@ export default function Taskpane() {
     runAssist(c.matterId);
   }
 
+  // Link this email's thread to a matter the user picked from search (rather than
+  // an AI candidate). link-thread is the direct association; no triage to apply.
+  async function linkExistingMatter(m: { id: string; matterRef: string; propertyAddress: string }) {
+    await run('Linking matter', async () => {
+      if (!conversationId) throw new Error('Open an email to link it to a matter.');
+      await api(`/matters/${m.id}/link-thread`, {
+        method: 'POST',
+        body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, subject }),
+      });
+      setMatterId(m.id);
+      setChanging(false);
+      setLinkOpen(false);
+      await loadMatter(m.id);
+      setStatus(`Linked to ${m.matterRef}.`);
+    });
+    runAssist(m.id);
+  }
+
   async function summarise() {
     const r = await run('Summarising', async () => {
       requireThread();
@@ -1010,7 +1032,27 @@ export default function Taskpane() {
   // Back to the compact confirm view whenever the linked matter or email changes.
   useEffect(() => {
     setChanging(false);
+    setMatterSearch('');
+    setMatterResults([]);
   }, [matterId, messageId]);
+
+  // While the chooser is open, search the firm's matters (debounced). An empty
+  // query returns recent matters, so the list is useful the moment it opens.
+  const choosing = drawerOpen && (changing || !matterId);
+  useEffect(() => {
+    if (!choosing) return;
+    const t = setTimeout(async () => {
+      try {
+        const r = await api<{ matters: Array<{ id: string; matterRef: string; propertyAddress: string }> }>(
+          `/matters?q=${encodeURIComponent(matterSearch.trim())}`
+        );
+        setMatterResults(r.matters ?? []);
+      } catch {
+        setMatterResults([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [choosing, matterSearch]);
 
   // Once we know the matter, an incoming email only ever resolves one of four
   // ways. We surface all four and pre-light the one the classifier implies:
@@ -1217,9 +1259,48 @@ export default function Taskpane() {
                       })}
                     </>
                   ) : (
-                    <p style={{ ...S.muted, marginBottom: 8 }}>No matching matter for this email.</p>
+                    <p style={{ ...S.muted, marginBottom: 8 }}>No suggested matter for this email.</p>
                   )}
-                  <div style={S.rowWrap}>
+
+                  {/* Link to any existing matter, including ones the matcher missed. */}
+                  {(() => {
+                    const others = matterResults.filter(
+                      (m) => m.id !== matterId && !candidates.some((c: any) => c.matterId === m.id)
+                    );
+                    return (
+                      <>
+                        <SubLabel>Link a different matter</SubLabel>
+                        <input
+                          style={S.input}
+                          placeholder="Search by reference or address…"
+                          value={matterSearch}
+                          onChange={(e) => setMatterSearch(e.target.value)}
+                        />
+                        {others.slice(0, 8).map((m) => (
+                          <div key={m.id} style={S.candidate}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                              <div style={{ minWidth: 0 }}>
+                                <strong style={{ fontSize: 13 }}>{m.matterRef}</strong>
+                                {m.propertyAddress && (
+                                  <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {m.propertyAddress}
+                                  </div>
+                                )}
+                              </div>
+                              <button style={S.secondary} onClick={() => linkExistingMatter(m)} disabled={!conversationId}>
+                                Link
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {matterSearch.trim() && others.length === 0 && (
+                          <p style={S.muted}>No matters match “{matterSearch.trim()}”.</p>
+                        )}
+                      </>
+                    );
+                  })()}
+
+                  <div style={{ ...S.rowWrap, marginTop: 8 }}>
                     <button style={!matterId && !showNewMatter ? S.primary : S.secondary} onClick={openNewMatter}>
                       {showNewMatter ? 'Cancel new matter' : '+ New matter'}
                     </button>
