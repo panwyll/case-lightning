@@ -144,6 +144,24 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
+// Remember across opens that this user was signed in, so a cold taskpane shows a
+// brief "Connecting…" instead of flashing "Not connected" while /me is in flight.
+// Set on a successful /me, cleared only on a genuine sign-out (401/403).
+const SIGNED_IN_COOKIE = 'cl_signed_in';
+function setSignedInCookie(on: boolean) {
+  if (typeof document === 'undefined') return;
+  document.cookie = on
+    ? `${SIGNED_IN_COOKIE}=1; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax`
+    : `${SIGNED_IN_COOKIE}=; path=/; max-age=0; samesite=lax`;
+}
+function hasSignInHint(): boolean {
+  if (typeof document === 'undefined') return false;
+  return (
+    new RegExp(`(?:^|; )${SIGNED_IN_COOKIE}=1`).test(document.cookie) ||
+    !!window.localStorage.getItem(TOKEN_KEY)
+  );
+}
+
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
   const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
@@ -222,6 +240,11 @@ export default function Taskpane() {
   // network error). We're still "not connected", but telling the user to connect
   // their account won't help — the server is the problem, so offer a retry.
   const [connError, setConnError] = useState(false);
+  // True until the first /me check resolves. Starts true only when we have a
+  // prior-sign-in hint (cookie / desktop token) so a returning user sees
+  // "Connecting…" instead of "Not connected", but a first-timer goes straight to
+  // the Connect button. Set false in an effect to keep server/client render in step.
+  const [booting, setBooting] = useState(false);
   const assistPollRef = useRef<string>('');
   // True when the initial analysis of the open email failed — lets the hero show
   // a recoverable error + retry instead of an endless "Reading…" spinner.
@@ -272,12 +295,17 @@ export default function Taskpane() {
     try {
       setMe(await api<Me>('/me'));
       setConnError(false);
+      setSignedInCookie(true);
     } catch (e) {
       // 401/403 → genuinely signed out. Anything else (5xx, or a network error
       // with no status) → the server is unreachable, not an auth problem.
       const status = (e as { status?: number }).status;
+      const signedOut = status === 401 || status === 403;
       setMe(null);
-      setConnError(status !== 401 && status !== 403);
+      setConnError(!signedOut);
+      if (signedOut) setSignedInCookie(false); // stale hint — don't keep promising "Connecting…"
+    } finally {
+      setBooting(false);
     }
     try {
       const k = await api<{ connected: boolean }>('/me/ai-key');
@@ -296,6 +324,13 @@ export default function Taskpane() {
     } catch {
       setPlan(null);
     }
+  }, []);
+
+  // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
+  // don't flash "Not connected" during the first /me round-trip. Runs post-mount
+  // (not in the initial state) to keep the server and client render identical.
+  useEffect(() => {
+    if (hasSignInHint()) setBooting(true);
   }, []);
 
   // Billing lives on a full page (redirects need width). Hand the session token
@@ -977,9 +1012,17 @@ export default function Taskpane() {
   const analysed = !!assist || !!triage;
   const matchKind: 'found' | 'partial' | 'none' | 'pending' =
     hasMatter || band === 'AUTO' ? 'found' : band === 'STRONG' || band === 'WEAK' ? 'partial' : analysed ? 'none' : 'pending';
-  // The link/create drawer is collapsed by default but always open when we have
-  // nothing to act on (no matter), or when the user taps the hero to change it.
-  const drawerOpen = linkOpen || matchKind === 'none';
+  // The hero is always expandable; the drawer is purely user-controlled. We
+  // auto-open it once per email when there's no matter (the only state with
+  // nothing else to act on) — but the user can still collapse it.
+  const drawerOpen = linkOpen;
+  const autoOpenedFor = useRef('');
+  useEffect(() => {
+    if (matchKind === 'none' && autoOpenedFor.current !== messageId) {
+      autoOpenedFor.current = messageId;
+      setLinkOpen(true);
+    }
+  }, [matchKind, messageId]);
 
   // Once we know the matter, an incoming email only ever resolves one of four
   // ways. We surface all four and pre-light the one the classifier implies:
@@ -1056,13 +1099,18 @@ export default function Taskpane() {
             <span style={{ color: '#94a3b8' }}>›</span>
           </button>
         ) : (
-          <span style={S.user}>{connError ? 'Can’t reach server' : 'Not connected'}</span>
+          <span style={S.user}>{booting ? 'Connecting…' : connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
       </header>
 
       {!me && (
         <Card>
-          {connError ? (
+          {booting ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+              <span style={S.spinner} />
+              <span style={S.user}>Connecting to Outlook…</span>
+            </div>
+          ) : connError ? (
             <>
               <p style={S.muted}>Can’t reach CaseLightning right now — this is usually temporary.</p>
               <button style={S.secondary} onClick={refreshMe}>Retry</button>
@@ -1078,44 +1126,35 @@ export default function Taskpane() {
       {/* First run: bring the firm's existing cases in before anything else. */}
       {me && !setupView && (
         <>
-          {/* Subject line — small, so the hero below can be the loud thing. */}
-          <div style={S.subjectLine}>{subject || '— open an email —'}</div>
-
-          {/* ── Hero: what did we find? — the one status that drives everything ── */}
+          {/* ── Hero: one compact status pill — a coloured dot (green = certain,
+                amber = unsure, red = none/error), the matter name, and an expand
+                arrow. Always tappable to open the link/create drawer. ── */}
           {(() => {
             const ref = matterInfo?.matter?.matter_ref ?? assist?.matter?.matterRef ?? topCandidate?.matterRef ?? null;
-            const pct = topCandidate ? Math.round((topCandidate.score ?? 0) * 100) : null;
-            const meta: Record<typeof matchKind, { icon: string; title: string; sub: string; style: React.CSSProperties }> = {
-              found: { icon: '✓', title: 'Matter found', sub: ref ? `${ref} · 100% match` : '100% match', style: S.heroFound },
-              partial: { icon: '~', title: 'Partial match', sub: ref ? `${ref} · ${pct}% — tap to confirm` : `${pct ?? ''}% — tap to confirm`, style: S.heroPartial },
-              none: { icon: '✕', title: 'No matter found', sub: 'Link an existing matter or create one', style: S.heroNone },
+            const meta: Record<typeof matchKind, { icon: string; dot: string; name: string; style: React.CSSProperties }> = {
+              found: { icon: '✓', dot: '#16a34a', name: ref || 'Matter found', style: S.heroFound },
+              partial: { icon: '!', dot: '#f59e0b', name: ref || 'Unconfirmed match', style: S.heroPartial },
+              none: { icon: '!', dot: '#dc2626', name: 'No matter found', style: S.heroNone },
               pending: assistError
-                ? { icon: '!', title: 'Couldn’t read this email', sub: 'Tap Try again below', style: S.heroNone }
-                : {
-                    icon: '…',
-                    title: messageId ? 'Reading this email…' : 'Open an email',
-                    sub: messageId ? 'Matching it to your matters' : 'Select a message to begin',
-                    style: S.heroPending,
-                  },
+                ? { icon: '!', dot: '#dc2626', name: 'Couldn’t read this email', style: S.heroNone }
+                : { icon: '', dot: '#94a3b8', name: messageId ? 'Reading this email…' : 'Open an email', style: S.heroPending },
             };
             const m = meta[matchKind];
-            // Tapping the hero only does something when there's a found/partial
-            // match to re-open and change; in none/pending the link drawer is
-            // already shown (or there's nothing yet), so the tap would look dead.
-            const heroToggles = matchKind === 'found' || matchKind === 'partial';
             const showSpinner = matchKind === 'pending' && !assistError;
             return (
               <button
-                style={{ ...S.hero, ...m.style, cursor: heroToggles ? 'pointer' : 'default' }}
-                onClick={heroToggles ? () => setLinkOpen((o) => !o) : undefined}
-                title={heroToggles ? 'Link to a different or new matter' : undefined}
+                style={{ ...S.hero, ...m.style }}
+                onClick={() => setLinkOpen((o) => !o)}
+                title="Show matter options"
+                aria-expanded={drawerOpen}
               >
-                <span style={S.heroIcon}>{showSpinner ? <span style={S.spinner} /> : m.icon}</span>
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13 }}>{m.title}</span>
-                  <span style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 280 }}>{m.sub}</span>
+                <span style={{ ...S.statusDot, background: m.dot }}>
+                  {showSpinner ? <span style={S.spinnerLight} /> : m.icon}
                 </span>
-                {heroToggles && <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{drawerOpen ? '▲' : '▾'}</span>}
+                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {m.name}
+                </span>
+                <span style={{ fontSize: 12, opacity: 0.6, flex: 'none' }}>{drawerOpen ? '▲' : '▾'}</span>
               </button>
             );
           })()}
@@ -1203,7 +1242,7 @@ export default function Taskpane() {
           {hasMatter && assist && (
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-                <span style={S.assistIcon}>✦</span>
+                <span style={S.assistIcon}><Icon name="sparkle" size={13} /></span>
                 <span style={S.label}>Here&apos;s the situation</span>
               </div>
               <div style={S.rowWrap}>
@@ -1231,10 +1270,10 @@ export default function Taskpane() {
               <SubLabel>What do you want to do?</SubLabel>
               <div style={S.actionRow}>
                 {([
-                  ['reply', '↩', 'Reply'],
-                  ['action', '✓', 'Action'],
-                  ['delegate', '👤', 'Delegate'],
-                  ['ignore', '–', 'Ignore'],
+                  ['reply', 'reply', 'Reply'],
+                  ['action', 'check', 'Action'],
+                  ['delegate', 'user', 'Delegate'],
+                  ['ignore', 'minus', 'Ignore'],
                 ] as const).map(([key, icon, lbl]) => {
                   const active = effectiveAction === key;
                   const isRec = recommended === key;
@@ -1244,7 +1283,7 @@ export default function Taskpane() {
                       style={{ ...S.actionBtn, ...(active ? S.actionBtnActive : {}) }}
                       onClick={() => (key === 'ignore' ? markIgnore() : setChosenAction(key))}
                     >
-                      <span style={{ fontSize: 16 }}>{icon}</span>
+                      <Icon name={icon} size={18} />
                       <span>{lbl}</span>
                       {isRec && <span style={S.recDot} title="Suggested" />}
                     </button>
@@ -1318,12 +1357,6 @@ export default function Taskpane() {
                     <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
                   )}
                 </div>
-              )}
-
-              {assist.highlighted.length > 0 && (
-                <p style={{ ...S.muted, marginTop: 10, marginBottom: 0 }}>
-                  🏷️ Tagged in your inbox: {assist.highlighted.map((t) => t.replace('CaseLightning · ', '')).join(', ')}
-                </p>
               )}
             </Card>
           )}
@@ -1420,7 +1453,7 @@ export default function Taskpane() {
             onClick={buildBoard}
             disabled={boardLoading}
           >
-            {boardLoading ? <span style={S.spinner} /> : <span>📊</span>}
+            {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
             {boardLoading ? 'Syncing…' : 'Team tracker'}
           </button>
 
@@ -1515,12 +1548,12 @@ export default function Taskpane() {
               </div>
               {matterInfo.matter.tracker_web_url && (
                 <a
-                  style={{ ...S.primary, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}
+                  style={{ ...S.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, textDecoration: 'none', marginTop: 8 }}
                   href={matterInfo.matter.tracker_web_url}
                   target="_blank"
                   rel="noreferrer"
                 >
-                  📊 Open case tracker (Excel)
+                  <Icon name="chart" size={15} /> Open case tracker (Excel)
                 </a>
               )}
               {matterInfo.matter.folder_web_url && (
@@ -1672,6 +1705,9 @@ export default function Taskpane() {
 
                   <div
                     style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 7,
                       marginTop: 8,
                       padding: '8px 10px',
                       background: '#fffbeb',
@@ -1681,7 +1717,8 @@ export default function Taskpane() {
                       color: '#92400e',
                     }}
                   >
-                    ⚠ AI-generated review — it can miss or misread things. Always verify against the source document before relying on it.
+                    <Icon name="alert" size={14} />
+                    <span>AI-generated review — it can miss or misread things. Always verify against the source document before relying on it.</span>
                   </div>
 
                   {docReview.draftReply && (
@@ -1845,6 +1882,25 @@ function humanize(s: string): string {
   return t ? t[0].toUpperCase() + t.slice(1) : s;
 }
 
+// Small inline SVG icons, stroke-based to match the header gear — keeps the
+// taskpane emoji-free and crisp at any zoom. Inherits colour from the parent.
+function Icon({ name, size = 18 }: { name: string; size?: number }) {
+  const paths: Record<string, React.ReactNode> = {
+    reply: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v4" /></>,
+    check: <path d="M20 6 9 17l-5-5" />,
+    user: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>,
+    minus: <path d="M5 12h14" />,
+    chart: <><path d="M4 4v16h16" /><path d="M8 17v-5" /><path d="M13 17V8" /><path d="M18 17v-3" /></>,
+    sparkle: <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" />,
+    alert: <><path d="M10.3 4 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 4a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></>,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}>
+      {paths[name]}
+    </svg>
+  );
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return <section style={S.card}>{children}</section>;
 }
@@ -2003,26 +2059,36 @@ const S: Record<string, React.CSSProperties> = {
   hero: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 9,
     width: '100%',
     textAlign: 'left',
-    padding: '10px 12px',
+    padding: '7px 11px',
     border: '1px solid',
-    borderRadius: 10,
+    borderRadius: 999,
     cursor: 'pointer',
     marginBottom: 10,
   },
-  heroIcon: {
+  statusDot: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 26,
-    height: 26,
+    width: 20,
+    height: 20,
     borderRadius: 999,
-    background: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    fontWeight: 700,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1,
     flex: 'none',
+  },
+  spinnerLight: {
+    width: 11,
+    height: 11,
+    borderRadius: '50%',
+    border: '2px solid rgba(255,255,255,0.45)',
+    borderTopColor: '#fff',
+    display: 'inline-block',
+    animation: 'cl-spin 0.7s linear infinite',
   },
   heroFound: { background: '#dcfce7', borderColor: '#86efac', color: '#166534' },
   heroPartial: { background: '#fef9c3', borderColor: '#fde68a', color: '#854d0e' },
