@@ -596,15 +596,24 @@ export default function Taskpane() {
   // Open the firm-wide master Excel — syncs Excel edits in, builds it if missing,
   // and opens it. If it's already open in Excel (locked) we just open it.
   async function buildBoard() {
+    // Open the tab synchronously (keeps the user-gesture so it isn't popup-blocked),
+    // then point it at the workbook once the sync returns. The sync can take a few
+    // seconds, which is past the gesture window if we opened after the await.
+    const win = typeof window !== 'undefined' ? window.open('', '_blank') : null;
     const r = await run('Opening team tracker', async () =>
       api<{ webUrl: string | null; matters: number; needsClose: boolean }>('/matters/board', { method: 'POST' })
     );
-    if (!r) return;
+    if (!r) {
+      win?.close();
+      return;
+    }
     if (r.needsClose) {
+      win?.close();
       setStatus('Close the tracker in Excel, then click again — upgrading it to the live-updating version.');
       return;
     }
-    if (r.webUrl) window.open(r.webUrl, '_blank', 'noopener');
+    if (r.webUrl && win) win.location.href = r.webUrl;
+    else if (r.webUrl) window.open(r.webUrl, '_blank');
     setStatus(`Team tracker synced — ${r.matters} open matter(s).`);
   }
 
