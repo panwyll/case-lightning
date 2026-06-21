@@ -206,6 +206,16 @@ export default function Taskpane() {
   const [obRefEdit, setObRefEdit] = useState<Record<string, string>>({});
   const [obLookback, setObLookback] = useState<'3' | 'unlimited'>('3');
   const obDriving = useRef(false);
+  // First-run: until the firm has scanned its backlog (or chosen to skip), lead
+  // with the import. obFetched gates it so the hero doesn't flash before we know.
+  const [obFetched, setObFetched] = useState(false);
+  const [obSkipped, setObSkipped] = useState(
+    () => typeof window !== 'undefined' && window.localStorage.getItem('cl_onboarding_skipped') === '1'
+  );
+  function skipOnboarding() {
+    if (typeof window !== 'undefined') window.localStorage.setItem('cl_onboarding_skipped', '1');
+    setObSkipped(true);
+  }
 
   const officeReady = useRef(false);
 
@@ -266,6 +276,8 @@ export default function Taskpane() {
       return r.job;
     } catch {
       return null;
+    } finally {
+      setObFetched(true);
     }
   }, []);
 
@@ -301,7 +313,10 @@ export default function Taskpane() {
       setStatus('Scanning your mailbox…');
       return true;
     });
-    if (started) driveOnboarding();
+    if (started) {
+      setTab('setup'); // the scan/review lives in Setup once the first-run hero clears
+      driveOnboarding();
+    }
   }
 
   async function confirmOnboarding() {
@@ -776,6 +791,9 @@ export default function Taskpane() {
     });
   }
 
+  // Brand-new user, nothing imported yet → lead with the historical scan.
+  const firstRun = !!me && obFetched && !obJob && !obSkipped;
+
   // The single most likely next step for the open email — shown as the hero
   // action so the user isn't faced with a flat grid of equal-weight verbs.
   // Mirrors Jira's "next transition": read-only updates → Summarise; anything
@@ -832,7 +850,36 @@ export default function Taskpane() {
         </Card>
       )}
 
-      {me && (
+      {/* First run: bring the firm's existing cases in before anything else. */}
+      {firstRun && (
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={S.assistIcon}>✦</span>
+            <span style={S.label}>Let&apos;s bring your cases in</span>
+          </div>
+          <p style={S.muted}>
+            CaseLightning will scan your mailbox for the conveyancing cases already in flight and set each one up — a
+            OneDrive folder, an Excel task tracker, and an AI summary. You review and pick which to keep; nothing is
+            created until you confirm.
+          </p>
+          <SubLabel>How far back</SubLabel>
+          <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
+            <option value="3">Last 3 months</option>
+            <option value="unlimited">All history (premium)</option>
+          </select>
+          <button style={S.primary} onClick={startOnboarding}>
+            Scan my inbox
+          </button>
+          <button
+            onClick={skipOnboarding}
+            style={{ display: 'block', margin: '10px auto 0', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}
+          >
+            Skip for now
+          </button>
+        </Card>
+      )}
+
+      {me && !firstRun && (
         <>
           {/* Thread context */}
           <Card>
