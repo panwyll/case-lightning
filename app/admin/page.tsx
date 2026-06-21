@@ -110,7 +110,7 @@ export default function AdminPage() {
         method: 'POST',
         body: JSON.stringify({
           defaultDisclaimer: policy.default_disclaimer ?? '',
-          folderNamingPattern: policy.folder_naming_pattern ?? '{matter_ref}_{address_slug}',
+          folderNamingPattern: policy.folder_naming_pattern ?? '{matter_ref}',
           allowedExternalDomains: policy.allowed_external_domains ?? [],
         }),
       });

@@ -22,7 +22,7 @@ export async function GET() {
         policy ?? {
           tenant_id: user.tenantId,
           default_disclaimer: '',
-          folder_naming_pattern: '{matter_ref}_{address_slug}',
+          folder_naming_pattern: '{matter_ref}',
           allowed_external_domains: [],
         },
     });
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const body = z
       .object({
         defaultDisclaimer: z.string().default(''),
-        folderNamingPattern: z.string().default('{matter_ref}_{address_slug}'),
+        folderNamingPattern: z.string().default('{matter_ref}'),
         allowedExternalDomains: z.array(z.string()).default([]),
       })
       .parse(await req.json());

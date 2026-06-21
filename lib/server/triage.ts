@@ -105,10 +105,10 @@ export function recommendedAction(c: Classification): RecommendedAction {
 }
 
 const ACTION_LABEL: Record<RecommendedAction, string> = {
-  REPLY: 'CaseLightning · Reply',
-  ACTION: 'CaseLightning · Action',
-  DELEGATE: 'CaseLightning · Delegate',
-  IGNORE: 'CaseLightning · Ignore',
+  REPLY: 'Reply',
+  ACTION: 'Action',
+  DELEGATE: 'Delegate',
+  IGNORE: 'Ignore',
 };
 // Red = a response is owed, Orange = work to do, Blue = handed off, Steel = no-op.
 const ACTION_COLOR: Record<RecommendedAction, string> = {
@@ -117,6 +117,9 @@ const ACTION_COLOR: Record<RecommendedAction, string> = {
   DELEGATE: 'preset7',
   IGNORE: 'preset10',
 };
+// Matter-name tags get their own colour so they read as a different kind of tag
+// (which matter) from the action tags (what to do). Purple = "which matter".
+const MATTER_COLOR = 'preset4';
 
 /**
  * Apply visible Outlook category tags from a triage result (best-effort): the
@@ -127,9 +130,12 @@ export async function applyTriageTags(user: SessionUser, message: any, triage: T
   if (!message.id) return [];
   const action = recommendedAction(triage.classification);
   const actionTag = ACTION_LABEL[action];
-  const tags: string[] = [actionTag];
-  if (triage.top && triage.top.band === 'AUTO') tags.push(`Matter ${triage.top.matterRef}`);
-  for (const t of tags) await ensureMasterCategory(user.userId, t, t === actionTag ? ACTION_COLOR[action] : undefined);
+  const matterTag = triage.top && triage.top.band === 'AUTO' ? triage.top.matterRef : null;
+  const tags: string[] = matterTag ? [actionTag, matterTag] : [actionTag];
+  for (const t of tags) {
+    const color = t === actionTag ? ACTION_COLOR[action] : MATTER_COLOR;
+    await ensureMasterCategory(user.userId, t, color);
+  }
   await addMessageCategories(user.userId, message.id, tags).catch(() => {});
   return tags;
 }
@@ -224,13 +230,13 @@ export async function runAutoRules(
       message.conversationId ?? message.id,
       message.conversationId ?? null,
       message.subject ?? null,
-      rule.category_label ?? `Matter ${match.matterRef}`,
+      rule.category_label ?? match.matterRef,
     ]
   );
   actions.push('linked-thread');
 
   if (rule.do_categorize && message.id) {
-    const label = rule.category_label ?? `Matter ${match.matterRef}`;
+    const label = rule.category_label ?? match.matterRef;
     await ensureMasterCategory(user.userId, label);
     await addMessageCategories(user.userId, message.id, [label]).catch(() => {});
     actions.push('categorized');

@@ -16,12 +16,16 @@ export function addressSlug(propertyAddress: string): string {
 
 /**
  * Deterministic OneDrive path for a matter's knowledge-base folder, relative to
- * the drive root, e.g. "CaseLightning/AUTO-2026-00124_14-oak-street".
+ * the drive root, e.g. "CaseLightning/jumping-frog".
+ *
+ * The default pattern is the bare codename — no surname/address mashup. A tenant
+ * can still opt into appending the address via the `{address_slug}` token in
+ * their folder-naming policy.
  */
 export function makeMatterFolderPath(
   matterRef: string,
   propertyAddress: string,
-  pattern = '{matter_ref}_{address_slug}'
+  pattern = '{matter_ref}'
 ): string {
   const slug = propertyAddress ? addressSlug(propertyAddress) : '';
   const resolved = pattern

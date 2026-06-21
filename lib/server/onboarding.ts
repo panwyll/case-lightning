@@ -20,7 +20,7 @@ import { listMailSince, listThreadMessages, appendTrackerRow, describeGraphError
 import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
-import { isMeaningfulRef } from '../ref-name';
+import { randomMatterRef } from '../ref-name';
 import { threadToText } from './text';
 import { writeAudit } from './audit';
 import type { SessionUser } from './types';
@@ -408,7 +408,7 @@ async function proposeCluster(
         job.id,
         user.tenantId,
         c.cluster_key,
-        isCase && isMeaningfulRef(proposal!.suggestedRef) ? proposal!.suggestedRef!.trim() : null,
+        isCase ? randomMatterRef() : null,
         isCase ? proposal!.propertyAddress || null : null,
         isCase ? proposal!.buyerNames ?? [] : [],
         isCase ? proposal!.sellerNames ?? [] : [],
@@ -522,7 +522,9 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
       const edits = (c.edits ?? {}) as Record<string, any>;
       const propertyAddress = String(edits.propertyAddress ?? c.property_address ?? '').trim();
       if (!propertyAddress) throw new Error('No property address to provision.');
-      const matterRef = String(edits.matterRef ?? c.proposed_matter_ref ?? '').trim();
+      // Fall back to a fresh codename — never the property address — if neither
+      // an edit nor a proposed ref is present.
+      const matterRef = String(edits.matterRef ?? c.proposed_matter_ref ?? '').trim() || randomMatterRef();
 
       // De-dup guard: if a matter already exists for this property (e.g. created
       // manually between scan and confirm), link to it instead of duplicating.
@@ -536,7 +538,7 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
         matterId = dup.id;
       } else {
         const created = await createMatter(user, {
-          matterRef: matterRef || propertyAddress,
+          matterRef,
           propertyAddress,
           buyerNames: (edits.buyerNames as string[]) ?? c.buyer_names ?? [],
           sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],

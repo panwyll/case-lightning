@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
 
     const outstanding = (summary.summary.outstanding_items as string[] | undefined) ?? [];
     const content = [
-      `<h3>Matter ${summary.matter.matter_ref}</h3>`,
+      `<h3>${summary.matter.matter_ref}</h3>`,
       `<p><strong>Property:</strong> ${summary.matter.property_address}</p>`,
       '<p><strong>Outstanding:</strong></p>',
       `<ul>${outstanding.map((o) => `<li>${o}</li>`).join('')}</ul>`,
