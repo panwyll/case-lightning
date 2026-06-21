@@ -335,6 +335,12 @@ export interface TrackerRow {
   status: string;
 }
 
+/** Uploads (creates or overwrites) a file at a OneDrive path; returns the driveItem. */
+export async function putDriveFile(userId: string, path: string, content: Buffer): Promise<any> {
+  const client = await graphClientForUser(userId);
+  return client.api(`/me/drive/root:/${encodePath(path)}:/content`).put(content);
+}
+
 /**
  * Ensures Tracker.xlsx exists in the matter folder, seeded from a template that
  * already contains the "TrackerTable" table. Returns the driveItem (id + webUrl).

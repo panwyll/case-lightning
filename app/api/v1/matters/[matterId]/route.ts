@@ -42,6 +42,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         chainPosition: z.string().optional(),
         status: z.string().optional(),
         assignedTo: z.string().uuid().nullable().optional(),
+        stage: z.enum(['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION']).optional(),
+        statusFlag: z.enum(['ON_TRACK', 'NEEDS_ATTENTION', 'BLOCKED']).optional(),
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
@@ -57,8 +59,10 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
          chain_position = coalesce($7, chain_position),
          status = coalesce($8, status),
          assigned_to = case when $9::boolean then $10::uuid else assigned_to end,
+         stage = coalesce($11, stage),
+         status_flag = coalesce($12, status_flag),
          updated_at = now()
-       where id = $11 and tenant_id = $12`,
+       where id = $13 and tenant_id = $14`,
       [
         body.propertyAddress ?? null,
         body.counterpartySolicitor ?? null,
@@ -70,6 +74,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         body.status ?? null,
         body.assignedTo !== undefined,
         body.assignedTo ?? null,
+        body.stage ?? null,
+        body.statusFlag ?? null,
         matterId,
         user.tenantId,
       ]

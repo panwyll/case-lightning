@@ -103,6 +103,20 @@ const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
 const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
 type Tone = (typeof TONES)[number];
 
+const STAGES: Array<[string, string]> = [
+  ['INSTRUCTION', '1 · Instruction'],
+  ['CONTRACT_PACK', '2 · Contract pack'],
+  ['SEARCHES_ENQUIRIES', '3 · Searches & enquiries'],
+  ['REVIEW_SIGNING', '4 · Review & signing'],
+  ['EXCHANGE', '5 · Exchange'],
+  ['COMPLETION', '6 · Completion'],
+];
+const STATUS_FLAGS: Array<[string, string]> = [
+  ['ON_TRACK', 'On track'],
+  ['NEEDS_ATTENTION', 'Needs attention'],
+  ['BLOCKED', 'Blocked'],
+];
+
 const TOKEN_KEY = 'cl_token';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -567,6 +581,25 @@ export default function Taskpane() {
       if (!id) throw new Error('No matter id');
       setMatterInfo(await api(`/matters/${id}`));
     });
+  }
+
+  // Update a matter field (stage / status) and refresh the panel.
+  async function updateMatterField(patch: Record<string, unknown>) {
+    if (!matterId) return;
+    await run('Updating matter', async () => {
+      await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      await loadMatter();
+      return true;
+    });
+  }
+
+  // Rebuild the firm-wide master Excel of all matters and open it.
+  async function buildBoard() {
+    const r = await run('Building team tracker', async () =>
+      api<{ webUrl: string | null; matters: number }>('/matters/board', { method: 'POST' })
+    );
+    if (r?.webUrl) window.open(r.webUrl, '_blank', 'noopener');
+    if (r) setStatus(`Team tracker updated — ${r.matters} open matter(s).`);
   }
 
   async function findMatter() {
@@ -1171,9 +1204,16 @@ export default function Taskpane() {
 
           {tab === 'matter' && (
           <>
+          {/* Firm-wide board — every open matter, filterable by status in Excel. */}
+          <Card>
+            <Label>Team tracker</Label>
+            <p style={S.muted}>The master Excel of every open matter — stage, status, assignee, open tasks. Filter by status right in Excel.</p>
+            <button style={S.primary} onClick={buildBoard}>📋 Build &amp; open team tracker</button>
+          </Card>
+
           {!matterId && (
             <Card>
-              <p style={S.muted}>No matter linked. Open an email in the <strong>This email</strong> tab and link or create a matter, then manage it here.</p>
+              <p style={S.muted}>Link or open a matter to manage its stage, tasks and documents below.</p>
             </Card>
           )}
 
@@ -1245,6 +1285,28 @@ export default function Taskpane() {
             <Card>
               <Label>Matter {matterInfo.matter.matter_ref}</Label>
               <div style={S.kv}><span>Property</span><span>{matterInfo.matter.property_address}</span></div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <label style={{ flex: 1 }}>
+                  <span style={S.fieldLabel}>Stage</span>
+                  <select
+                    style={{ ...S.input, marginBottom: 0 }}
+                    value={matterInfo.matter.stage || 'INSTRUCTION'}
+                    onChange={(e) => updateMatterField({ stage: e.target.value })}
+                  >
+                    {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </label>
+                <label style={{ flex: 1 }}>
+                  <span style={S.fieldLabel}>Status</span>
+                  <select
+                    style={{ ...S.input, marginBottom: 0 }}
+                    value={matterInfo.matter.status_flag || 'ON_TRACK'}
+                    onChange={(e) => updateMatterField({ statusFlag: e.target.value })}
+                  >
+                    {STATUS_FLAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </label>
+              </div>
               {matterInfo.matter.tracker_web_url && (
                 <a
                   style={{ ...S.primary, display: 'block', textAlign: 'center', textDecoration: 'none', marginTop: 8 }}
