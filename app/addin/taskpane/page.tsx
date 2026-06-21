@@ -227,6 +227,9 @@ export default function Taskpane() {
   // the (normally collapsed) link-to-a-different/new-matter drawer.
   const [chosenAction, setChosenAction] = useState<'reply' | 'action' | 'delegate' | 'ignore' | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
+  // When a matter is linked, the drawer shows just the matter + "Change matter".
+  // Setting this reveals the candidate/create chooser so they can pick another.
+  const [changing, setChanging] = useState(false);
   const [ignored, setIgnored] = useState(false);
   // Setup (historical import + AI settings) isn't a tab — it's the initial state
   // for a firm that hasn't imported yet, and re-openable via the header gear.
@@ -633,18 +636,6 @@ export default function Taskpane() {
     });
   }
 
-  async function linkThread() {
-    await run('Linking thread', async () => {
-      requireMatter();
-      requireThread();
-      await api(`/matters/${matterId}/link-thread`, {
-        method: 'POST',
-        body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, subject }),
-      });
-      setStatus('Thread linked to matter.');
-    });
-  }
-
   async function loadMatter(id = matterId) {
     await run('Loading matter', async () => {
       if (!id) throw new Error('No matter id');
@@ -696,17 +687,6 @@ export default function Taskpane() {
       setStatus((e as Error).message);
     } finally {
       setBoardLoading(false);
-    }
-  }
-
-  async function findMatter() {
-    const r = await run('Finding matter', async () => {
-      if (!messageId) throw new Error('Open an email first.');
-      return api('/triage', { method: 'POST', body: JSON.stringify({ messageId, conversationId }) });
-    });
-    if (r) {
-      setTriage(r);
-      setRiskOk(false);
     }
   }
 
@@ -1009,6 +989,10 @@ export default function Taskpane() {
   const band: string | null = triage?.band ?? assist?.matchBand ?? null;
   const candidates: any[] = (triage?.candidates ?? assist?.candidates ?? []) as any[];
   const topCandidate = candidates[0];
+  // The currently-linked matter's ref/address, for the drawer's confirm view.
+  const linkedCandidate = candidates.find((c: any) => c.matterId === matterId);
+  const linkedRef = matterInfo?.matter?.matter_ref ?? linkedCandidate?.matterRef ?? assist?.matter?.matterRef ?? null;
+  const linkedAddr = matterInfo?.matter?.property_address ?? linkedCandidate?.propertyAddress ?? assist?.matter?.propertyAddress ?? null;
   const analysed = !!assist || !!triage;
   const matchKind: 'found' | 'partial' | 'none' | 'pending' =
     hasMatter || band === 'AUTO' ? 'found' : band === 'STRONG' || band === 'WEAK' ? 'partial' : analysed ? 'none' : 'pending';
@@ -1023,6 +1007,10 @@ export default function Taskpane() {
       setLinkOpen(true);
     }
   }, [matchKind, messageId]);
+  // Back to the compact confirm view whenever the linked matter or email changes.
+  useEffect(() => {
+    setChanging(false);
+  }, [matterId, messageId]);
 
   // Once we know the matter, an incoming email only ever resolves one of four
   // ways. We surface all four and pre-light the one the classifier implies:
@@ -1175,66 +1163,72 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* Link drawer — collapsed when we found the matter, open when we didn't. */}
+          {/* Matter drawer — two states only: confirm the linked matter, or choose
+              a different one (pick a candidate / create new). */}
           {drawerOpen && (
             <Card>
-              {candidates.length > 0 && (
+              {matterId && !changing ? (
+                // Linked: show the matter, one way to change it.
                 <>
-                  <Label>{matchKind === 'found' ? 'Linked matter' : 'Likely matters'}</Label>
-                  {candidates.map((c: any) => {
-                    const pct = Math.round((c.score ?? 0) * 100);
-                    const auto = c.band === 'AUTO';
-                    const isLinked = c.matterId === matterId;
-                    return (
-                      <div key={c.matterId} style={S.candidate}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <strong style={{ fontSize: 13 }}>{c.matterRef}</strong>
-                          <span style={{ ...S.confidence, background: auto ? '#dcfce7' : pct >= 60 ? '#fef9c3' : '#fee2e2' }}>
-                            {pct}% · {c.band}
-                          </span>
-                        </div>
-                        <div style={{ fontSize: 12, color: '#475569' }}>{c.propertyAddress}</div>
-                        <ul style={{ ...S.ul, fontSize: 11, color: '#64748b' }}>
-                          {(c.signals ?? []).map((s: any, i: number) => <li key={i}>{s.detail}</li>)}
-                        </ul>
-                        {!auto && !isLinked && (
-                          <label style={{ display: 'flex', gap: 6, fontSize: 11, color: '#b91c1c', margin: '4px 0' }}>
-                            <input type="checkbox" checked={riskOk} onChange={(e) => setRiskOk(e.target.checked)} />
-                            Below the high-confidence bar — I accept this is a subpar match.
-                          </label>
-                        )}
-                        {isLinked ? (
-                          <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>✓ Linked</span>
-                        ) : (
-                          <button style={S.secondary} onClick={() => useCandidate(c)} disabled={!auto && !riskOk}>
-                            Use this matter
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                  <Label>Linked matter</Label>
+                  <div style={S.candidate}>
+                    <strong style={{ fontSize: 13 }}>{linkedRef || 'This matter'}</strong>
+                    {linkedAddr && <div style={{ fontSize: 12, color: '#475569' }}>{linkedAddr}</div>}
+                  </div>
+                  <button style={S.secondary} onClick={() => setChanging(true)}>Change matter</button>
+                </>
+              ) : (
+                // Chooser: candidates to pick from, or create a new matter.
+                <>
+                  {candidates.length > 0 ? (
+                    <>
+                      <Label>Likely matters</Label>
+                      {candidates.map((c: any) => {
+                        const pct = Math.round((c.score ?? 0) * 100);
+                        const auto = c.band === 'AUTO';
+                        const isLinked = c.matterId === matterId;
+                        return (
+                          <div key={c.matterId} style={S.candidate}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                              <strong style={{ fontSize: 13 }}>{c.matterRef}</strong>
+                              <span style={{ ...S.confidence, background: auto ? '#dcfce7' : pct >= 60 ? '#fef9c3' : '#fee2e2' }}>
+                                {pct}% match
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: '#475569' }}>{c.propertyAddress}</div>
+                            <ul style={{ ...S.ul, fontSize: 11, color: '#64748b' }}>
+                              {(c.signals ?? []).map((s: any, i: number) => <li key={i}>{s.detail}</li>)}
+                            </ul>
+                            {!auto && !isLinked && (
+                              <label style={{ display: 'flex', gap: 6, fontSize: 11, color: '#b91c1c', margin: '4px 0' }}>
+                                <input type="checkbox" checked={riskOk} onChange={(e) => setRiskOk(e.target.checked)} />
+                                Use anyway — low-confidence match
+                              </label>
+                            )}
+                            {isLinked ? (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>✓ Linked</span>
+                            ) : (
+                              <button style={S.secondary} onClick={() => useCandidate(c)} disabled={!auto && !riskOk}>
+                                Use this
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <p style={{ ...S.muted, marginBottom: 8 }}>No matching matter for this email.</p>
+                  )}
+                  <div style={S.rowWrap}>
+                    <button style={!matterId && !showNewMatter ? S.primary : S.secondary} onClick={openNewMatter}>
+                      {showNewMatter ? 'Cancel new matter' : '+ New matter'}
+                    </button>
+                    {matterId && (
+                      <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>
+                    )}
+                  </div>
                 </>
               )}
-              <div style={{ ...S.rowWrap, marginTop: candidates.length ? 8 : 0 }}>
-                {/* When nothing matched, creating a matter is the real next step —
-                    promote it to the primary action instead of a peer button. */}
-                <button style={matchKind === 'none' && !showNewMatter ? S.primary : S.secondary} onClick={openNewMatter}>
-                  {showNewMatter ? 'Cancel new matter' : '+ New matter'}
-                </button>
-                <button style={S.secondary} onClick={findMatter} disabled={!messageId}>
-                  Search again
-                </button>
-                {matterId && (
-                  <>
-                    <button style={S.secondary} onClick={linkThread} disabled={!conversationId}>
-                      Link this thread
-                    </button>
-                    <button style={S.secondary} onClick={() => { setMatterId(''); setMatterInfo(null); setAssist(null); }}>
-                      Unlink
-                    </button>
-                  </>
-                )}
-              </div>
             </Card>
           )}
 
