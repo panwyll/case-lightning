@@ -73,11 +73,41 @@ function dateCell(v: string | null): string {
   return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 }
 
+/** Team members offered in the Assignee dropdown. */
+async function teamNames(tenantId: string): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `select coalesce(display_name, email) as name from app_user where tenant_id = $1 order by name`,
+    [tenantId]
+  );
+  return rows.map((r) => r.name).filter(Boolean);
+}
+
+const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION'];
+
 /** Build the master board workbook as a buffer. */
 async function buildWorkbook(tenantId: string): Promise<Buffer> {
   const rows = await boardRows(tenantId);
+  const team = await teamNames(tenantId);
   const wb = new ExcelJS.Workbook();
   wb.creator = 'CaseLightning';
+
+  // Hidden reference tab holding the allowed values — drives the dropdowns so a
+  // user can only pick valid statuses/stages/assignees, never free-type junk.
+  const stageVals = STAGE_ORDER.map((s) => STAGE_LABELS[s]);
+  const statusVals = Object.values(STATUS_LABELS);
+  const assigneeVals = ['Unassigned', ...team];
+  const lists = wb.addWorksheet('Lists');
+  lists.getCell('A1').value = 'Stages';
+  lists.getCell('B1').value = 'Statuses';
+  lists.getCell('C1').value = 'Assignees';
+  stageVals.forEach((v, i) => (lists.getCell(`A${i + 2}`).value = v));
+  statusVals.forEach((v, i) => (lists.getCell(`B${i + 2}`).value = v));
+  assigneeVals.forEach((v, i) => (lists.getCell(`C${i + 2}`).value = v));
+  const stageRange = `Lists!$A$2:$A$${stageVals.length + 1}`;
+  const statusRange = `Lists!$B$2:$B$${statusVals.length + 1}`;
+  const assigneeRange = `Lists!$C$2:$C$${assigneeVals.length + 1}`;
+  lists.state = 'hidden';
+
   const ws = wb.addWorksheet('Matters', { views: [{ state: 'frozen', ySplit: 1 }] });
 
   ws.columns = [
@@ -126,10 +156,40 @@ async function buildWorkbook(tenantId: string): Promise<Buffer> {
       fc.value = { text: 'Open', hyperlink: r.folder_web_url };
       fc.font = { color: { argb: 'FF5A27E0' }, underline: true };
     }
+
+    // The only editable cells: stage, status, assignee — each a dropdown of valid
+    // values, and unlocked so they survive the sheet protection below.
+    const editable: Array<[string, string, boolean]> = [
+      ['stage', stageRange, false],
+      ['status', statusRange, false],
+      ['assignee', assigneeRange, true],
+    ];
+    for (const [key, range, allowBlank] of editable) {
+      const cell = row.getCell(key);
+      cell.protection = { locked: false };
+      cell.dataValidation = {
+        type: 'list',
+        allowBlank,
+        formulae: [range],
+        showErrorMessage: true,
+        errorStyle: 'stop',
+        errorTitle: 'Pick from the list',
+        error: 'Choose one of the allowed values from the dropdown.',
+      };
+    }
   }
 
   // Filter dropdowns on every column — "filter by status" is one click.
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: ws.columnCount } };
+
+  // Lock everything except the three editable columns; still allow filter + sort.
+  await ws.protect('', {
+    selectLockedCells: true,
+    selectUnlockedCells: true,
+    autoFilter: true,
+    sort: true,
+  });
+  await lists.protect('', { selectLockedCells: false, selectUnlockedCells: false });
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);
