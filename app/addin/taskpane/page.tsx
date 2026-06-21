@@ -199,7 +199,10 @@ export default function Taskpane() {
   // Which top-level view is showing. The taskpane is organised by what the user
   // is doing (triage this email → manage the matter → set things up) rather than
   // by feature, so the narrow pane stays focused instead of an endless scroll.
-  const [tab, setTab] = useState<'email' | 'matter' | 'setup'>('email');
+  const [tab, setTab] = useState<'email' | 'matter'>('email');
+  // Setup (historical import + AI settings) isn't a tab — it's the initial state
+  // for a firm that hasn't imported yet, and re-openable via the header gear.
+  const [showSetup, setShowSetup] = useState(false);
 
   // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
   const [assist, setAssist] = useState<AssistData | null>(null);
@@ -339,10 +342,7 @@ export default function Taskpane() {
       setStatus('Scanning your mailbox…');
       return true;
     });
-    if (started) {
-      setTab('setup'); // the scan/review lives in Setup once the first-run hero clears
-      driveOnboarding();
-    }
+    if (started) driveOnboarding(); // the setup view stays open while the scan runs
   }
 
   async function confirmOnboarding() {
@@ -887,8 +887,10 @@ export default function Taskpane() {
     });
   }
 
-  // Brand-new user, nothing imported yet → lead with the historical scan.
-  const firstRun = !!me && obFetched && !obJob && !obSkipped;
+  // The setup state: shown automatically until the firm has imported (or skipped),
+  // while a scan is running/awaiting review, or whenever re-opened via the gear.
+  const onboardingBusy = !!obJob && (OB_ACTIVE.includes(obJob.status) || obJob.status === 'AWAITING_REVIEW');
+  const setupView = !!me && (showSetup || onboardingBusy || (obFetched && !obJob && !obSkipped));
 
   // The single most likely next step for the open email — shown as the hero
   // action so the user isn't faced with a flat grid of equal-weight verbs.
@@ -911,13 +913,16 @@ export default function Taskpane() {
       <style>{`@keyframes cl-spin{to{transform:rotate(360deg)}}`}</style>
       <header style={S.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
-            <rect width="32" height="32" rx="7" fill="#5A27E0" />
-            <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
-          </svg>
-          <strong style={{ fontSize: 15 }}>
-            CONVE<span style={{ color: '#5A27E0' }}>Yi</span>
-          </strong>
+          {me && (
+            <button
+              style={{ ...S.account, color: showSetup ? '#5A27E0' : '#64748b' }}
+              onClick={() => setShowSetup((s) => !s)}
+              title="Setup & settings"
+            >
+              <span style={{ fontSize: 15 }}>⚙</span>
+              <span style={S.user}>Setup</span>
+            </button>
+          )}
         </div>
         {me ? (
           <button style={S.account} onClick={openAccount} title="Manage account & billing">
@@ -948,42 +953,13 @@ export default function Taskpane() {
       )}
 
       {/* First run: bring the firm's existing cases in before anything else. */}
-      {firstRun && (
-        <Card>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <span style={S.assistIcon}>✦</span>
-            <span style={S.label}>Let&apos;s bring your cases in</span>
-          </div>
-          <p style={S.muted}>
-            CaseLightning will scan your mailbox for the conveyancing cases already in flight and set each one up — a
-            OneDrive folder, an Excel task tracker, and an AI summary. You review and pick which to keep; nothing is
-            created until you confirm.
-          </p>
-          <SubLabel>How far back</SubLabel>
-          <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
-            <option value="3">Last 3 months</option>
-            <option value="unlimited">All history (premium)</option>
-          </select>
-          <button style={S.primary} onClick={startOnboarding}>
-            Scan my inbox
-          </button>
-          <button
-            onClick={skipOnboarding}
-            style={{ display: 'block', margin: '10px auto 0', border: 'none', background: 'transparent', color: '#94a3b8', fontSize: 12, cursor: 'pointer' }}
-          >
-            Skip for now
-          </button>
-        </Card>
-      )}
-
-      {me && !firstRun && (
+      {me && !setupView && (
         <>
-          {/* Top-level navigation — first thing in the pane, one job at a time. */}
+          {/* Top-level navigation — real tabs (underline), one job at a time. */}
           <div style={S.tabBar} role="tablist">
             {([
               ['email', 'This email'],
               ['matter', 'Matter'],
-              ['setup', 'Setup'],
             ] as const).map(([key, lbl]) => (
               <button
                 key={key}
@@ -1531,9 +1507,19 @@ export default function Taskpane() {
 
           </>
           )}
+        </>
+      )}
 
-          {tab === 'setup' && (
-          <>
+      {me && setupView && (
+        <>
+          {!onboardingBusy && (showSetup || !obJob) && (
+            <button
+              style={{ ...S.secondary, marginBottom: 10 }}
+              onClick={() => (showSetup ? setShowSetup(false) : skipOnboarding())}
+            >
+              {showSetup ? '← Back to inbox' : 'Skip for now'}
+            </button>
+          )}
           {/* Onboard existing cases (bulk-import the mailbox backlog) */}
           <Card>
             <Label>Onboard existing cases</Label>
@@ -1649,8 +1635,6 @@ export default function Taskpane() {
               {autoTriage?.enabled ? 'Turn off auto-triage' : 'Turn on auto-triage'}
             </button>
           </Card>
-          </>
-          )}
         </>
       )}
 
@@ -1784,19 +1768,19 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     padding: '2px 7px',
   },
-  tabBar: { display: 'flex', gap: 4, marginBottom: 12, background: '#ECE9FB', borderRadius: 10, padding: 4 },
+  tabBar: { display: 'flex', gap: 4, marginBottom: 12, borderBottom: '1px solid #e2e8f0' },
   tab: {
-    flex: 1,
-    padding: '9px 8px',
+    padding: '9px 14px',
     border: 'none',
     background: 'transparent',
-    borderRadius: 7,
     fontSize: 13,
     fontWeight: 600,
-    color: '#5A4B8A',
+    color: '#64748b',
     cursor: 'pointer',
+    borderBottom: '2px solid transparent',
+    marginBottom: -1,
   },
-  tabActive: { background: '#5A27E0', color: '#fff' },
+  tabActive: { color: '#5A27E0', borderBottom: '2px solid #5A27E0' },
   spinner: {
     width: 12,
     height: 12,

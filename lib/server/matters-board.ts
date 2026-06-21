@@ -34,6 +34,10 @@ const STATUS_LABELS: Record<string, string> = {
   BLOCKED: 'Blocked',
 };
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION'];
+// The "Colour" option column on the Statuses list → drives the board's status
+// conditional formatting. Firms can see (and the board honours) the mapping.
+const STATUS_COLOUR: Record<string, string> = { 'On track': 'Green', 'Needs attention': 'Amber', 'Blocked': 'Red' };
+const COLOUR_FILL: Record<string, string> = { Green: 'FFD7F0E1', Amber: 'FFFBE9C7', Red: 'FFF6CDCD', Grey: 'FFEFEFEF' };
 const STAGE_BY_LABEL = Object.fromEntries(Object.entries(STAGE_LABELS).map(([k, v]) => [v, k]));
 const STATUS_BY_LABEL = Object.fromEntries(Object.entries(STATUS_LABELS).map(([k, v]) => [v, k]));
 
@@ -116,11 +120,12 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   const lists = wb.addWorksheet('Lists');
   lists.getColumn(1).width = 28;
   lists.getColumn(3).width = 20;
-  lists.getColumn(5).width = 26;
+  lists.getColumn(4).width = 12;
+  lists.getColumn(6).width = 26;
   lists.addTable({ name: 'StagesTable', ref: 'A1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Stage' }], rows: stageVals.map((v) => [v]) });
-  lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }], rows: statusVals.map((v) => [v]) });
-  lists.addTable({ name: 'AssigneesTable', ref: 'E1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Assignee' }], rows: assigneeVals.map((v) => [v]) });
-  const note = lists.getCell('G1');
+  lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }, { name: 'Colour' }], rows: statusVals.map((v) => [v, STATUS_COLOUR[v] ?? 'Grey']) });
+  lists.addTable({ name: 'AssigneesTable', ref: 'F1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Assignee' }], rows: assigneeVals.map((v) => [v]) });
+  const note = lists.getCell('H1');
   note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically.';
   note.font = { italic: true, color: { argb: 'FF64748B' } };
   // Dropdowns reference the table columns so they grow as rows are added.
@@ -167,11 +172,13 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   const cfFill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, bgColor: { argb } });
   ws.addConditionalFormatting({
     ref: 'D2:D1000',
-    rules: [
-      { type: 'containsText', operator: 'containsText', text: 'Blocked', priority: 1, style: { fill: cfFill('FFF6CDCD') } },
-      { type: 'containsText', operator: 'containsText', text: 'Needs attention', priority: 2, style: { fill: cfFill('FFFBE9C7') } },
-      { type: 'containsText', operator: 'containsText', text: 'On track', priority: 3, style: { fill: cfFill('FFD7F0E1') } },
-    ],
+    rules: statusVals.map((v, i) => ({
+      type: 'containsText' as const,
+      operator: 'containsText' as const,
+      text: v,
+      priority: i + 1,
+      style: { fill: cfFill(COLOUR_FILL[STATUS_COLOUR[v] ?? 'Grey'] ?? COLOUR_FILL.Grey) },
+    })),
   });
 
   const out = await wb.xlsx.writeBuffer();
