@@ -374,27 +374,24 @@ export async function refreshMasterBoard(
       return { webUrl: item?.webUrl ?? null, matters: count, needsClose: true };
     }
   } else {
-    // Live path: pull Excel edits in, then upsert every row in place (no 423).
-    const { coloursChanged } = await reconcileFromBoard(user, item.id);
-    if (coloursChanged) {
-      // The status→colour conditional formatting is baked at build time, so a
-      // colour edit only reaches the board by re-baking the template.
-      const r = await rebakeTemplate();
-      if (!r.done) {
-        const count = (await boardRows(user.tenantId)).length;
-        return { webUrl: item?.webUrl ?? null, matters: count, needsClose: true };
-      }
-    } else {
-      const rows = await boardRows(user.tenantId);
-      await upsertTableRowsByKey(
-        user.userId,
-        item.id,
-        TABLE,
-        'Matter',
-        rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
-      );
-    }
+    // Live path: pull Excel edits in (incl. the firm's Colour map → policy_config),
+    // then upsert every row in place (no 423).
+    await reconcileFromBoard(user, item.id);
+    const rows = await boardRows(user.tenantId);
+    await upsertTableRowsByKey(
+      user.userId,
+      item.id,
+      TABLE,
+      'Matter',
+      rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
+    );
   }
+
+  // Colour the Status cells from the firm's colour map — live, via Graph cell
+  // fills, after the rows exist. This is what makes the Statuses list's Colour
+  // column drive the board (CF can't look a colour up from a list), and it lands
+  // without re-baking the whole file.
+  if (item) await colourBoardStatuses(user, item.id, await getStatusColours(user.tenantId));
 
   await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);
   const count = (await boardRows(user.tenantId)).length;
