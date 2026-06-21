@@ -12,7 +12,7 @@
 import ExcelJS from 'exceljs';
 import { query } from './db';
 import { config } from './config';
-import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey } from './graph';
+import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey, setRangeFills } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
@@ -37,7 +37,23 @@ const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVI
 // The "Colour" option column on the Statuses list → drives the board's status
 // conditional formatting. Firms can see (and the board honours) the mapping.
 const STATUS_COLOUR: Record<string, string> = { 'On track': 'Green', 'Needs attention': 'Amber', 'Blocked': 'Red' };
-const COLOUR_FILL: Record<string, string> = { Green: 'FFD7F0E1', Amber: 'FFFBE9C7', Red: 'FFF6CDCD', Grey: 'FFEFEFEF' };
+const COLOUR_FILL: Record<string, string> = {
+  Green: 'FFD7F0E1',
+  Amber: 'FFFBE9C7',
+  Red: 'FFF6CDCD',
+  Grey: 'FFEFEFEF',
+  Blue: 'FFD6E4F7',
+  Purple: 'FFE7E0FB',
+  Teal: 'FFD2F0EA',
+  Pink: 'FFF7D9E6',
+  Orange: 'FFFBE0CC',
+  Lime: 'FFE8F3CF',
+  Cyan: 'FFD2EEF2',
+  Brown: 'FFE8DDD3',
+  Navy: 'FFD5DAEB',
+  Slate: 'FFDDE2E8',
+};
+const fillFor = (colourName: string): string => COLOUR_FILL[colourName] ?? COLOUR_FILL.Grey;
 const STAGE_BY_LABEL = Object.fromEntries(Object.entries(STAGE_LABELS).map(([k, v]) => [v, k]));
 const STATUS_BY_LABEL = Object.fromEntries(Object.entries(STATUS_LABELS).map(([k, v]) => [v, k]));
 
@@ -195,17 +211,12 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
     }
   }
 
-  // Status colour by value (conditional formatting → applies to future rows too).
-  const cfFill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, bgColor: { argb } });
-  ws.addConditionalFormatting({
-    ref: 'D2:D1000',
-    rules: statusVals.map((v, i) => ({
-      type: 'containsText' as const,
-      operator: 'containsText' as const,
-      text: v,
-      priority: i + 1,
-      style: { fill: cfFill(COLOUR_FILL[STATUS_COLOUR[v] ?? 'Grey'] ?? COLOUR_FILL.Grey) },
-    })),
+  // Status colour applied directly to each cell (not conditional formatting) so it
+  // matches the firm's Colour mapping — and live updates re-fill cells the same
+  // way via Graph (Excel CF can't look up a colour from the Colour list).
+  rows.forEach((r, i) => {
+    const label = STATUS_LABELS[r.status_flag] ?? r.status_flag;
+    ws.getCell(`D${i + 2}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillFor(STATUS_COLOUR[label] ?? 'Grey') } };
   });
 
   const out = await wb.xlsx.writeBuffer();
@@ -312,6 +323,26 @@ export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: s
       'Matter',
       rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
     );
+
+    // Pull the firm's Colour mapping (from the Statuses list) through to the board:
+    // re-fill each Status cell with its colour. Live, even with the file open.
+    const statusColour = new Map<string, string>();
+    try {
+      for (const r of await listTableRows(user.userId, item.id, 'StatusesTable')) {
+        const s = (r.cells['Status'] ?? '').trim();
+        const c = (r.cells['Colour'] ?? '').trim();
+        if (s) statusColour.set(s, c || STATUS_COLOUR[s] || 'Grey');
+      }
+    } catch {
+      /* no StatusesTable (older file) — fall back to defaults below */
+    }
+    const boardCells = await listTableRows(user.userId, item.id, TABLE);
+    const fills = boardCells.map((r) => {
+      const label = (r.cells['Status'] ?? '').trim();
+      const colour = statusColour.get(label) ?? STATUS_COLOUR[label] ?? 'Grey';
+      return { address: `D${r.rowIndex + 2}`, argb: fillFor(colour) };
+    });
+    await setRangeFills(user.userId, 'Matters', item.id, fills).catch(() => {});
   }
 
   await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);

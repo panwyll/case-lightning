@@ -557,6 +557,29 @@ export async function upsertTableRowsByKey(
   }
 }
 
+/** Sets the fill colour of individual cells, in one session (co-authors live). */
+export async function setRangeFills(
+  userId: string,
+  sheet: string,
+  itemId: string,
+  fills: Array<{ address: string; argb: string }>
+): Promise<void> {
+  if (!fills.length) return;
+  const client = await graphClientForUser(userId);
+  const wb = `/me/drive/items/${itemId}/workbook`;
+  const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
+  const sid = session.id as string;
+  const h = (req: any) => req.header('workbook-session-id', sid);
+  try {
+    for (const f of fills) {
+      const hex = `#${f.argb.slice(-6)}`; // 'FFD7F0E1' → '#D7F0E1'
+      await h(client.api(`${wb}/worksheets('${sheet}')/range(address='${f.address}')/format/fill`)).patch({ color: hex });
+    }
+  } finally {
+    await h(client.api(`${wb}/closeSession`)).post({}).catch(() => {});
+  }
+}
+
 // ── Teams ───────────────────────────────────────────────────────────────────
 
 export async function postTeamsSummary(
