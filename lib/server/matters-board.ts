@@ -106,31 +106,27 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'CaseLightning';
 
-  // Hidden reference tab holding the allowed values for the dropdowns — tidy, in
-  // case anyone unhides it.
+  // Reference tab — each allowed-value list is its own Excel TABLE, so the firm
+  // can add their own stages / statuses / people just by typing a new row, and
+  // the board dropdowns (which point at the table columns via INDIRECT) pick them
+  // up automatically. Kept on its own visible tab so it's editable.
   const stageVals = STAGE_ORDER.map((s) => STAGE_LABELS[s]);
   const statusVals = Object.values(STATUS_LABELS);
   const assigneeVals = ['Unassigned', ...team];
   const lists = wb.addWorksheet('Lists');
-  lists.getColumn(1).width = 26;
-  lists.getColumn(2).width = 18;
-  lists.getColumn(3).width = 24;
-  ['A1', 'B1', 'C1'].forEach((addr, i) => {
-    const c = lists.getCell(addr);
-    c.value = ['Stages', 'Statuses', 'Assignees'][i];
-    c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5A27E0' } };
-  });
-  stageVals.forEach((v, i) => (lists.getCell(`A${i + 2}`).value = v));
-  statusVals.forEach((v, i) => (lists.getCell(`B${i + 2}`).value = v));
-  assigneeVals.forEach((v, i) => (lists.getCell(`C${i + 2}`).value = v));
-  const note = lists.getCell('E1');
-  note.value = 'Reference values for the board dropdowns — managed by CaseLightning, no need to edit.';
-  note.font = { italic: true, color: { argb: 'FF94A3B8' } };
-  const stageRange = `Lists!$A$2:$A$${stageVals.length + 1}`;
-  const statusRange = `Lists!$B$2:$B$${statusVals.length + 1}`;
-  const assigneeRange = `Lists!$C$2:$C$${assigneeVals.length + 1}`;
-  lists.state = 'hidden';
+  lists.getColumn(1).width = 28;
+  lists.getColumn(3).width = 20;
+  lists.getColumn(5).width = 26;
+  lists.addTable({ name: 'StagesTable', ref: 'A1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Stage' }], rows: stageVals.map((v) => [v]) });
+  lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }], rows: statusVals.map((v) => [v]) });
+  lists.addTable({ name: 'AssigneesTable', ref: 'E1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Assignee' }], rows: assigneeVals.map((v) => [v]) });
+  const note = lists.getCell('G1');
+  note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically.';
+  note.font = { italic: true, color: { argb: 'FF64748B' } };
+  // Dropdowns reference the table columns so they grow as rows are added.
+  const stageRange = '=INDIRECT("StagesTable[Stage]")';
+  const statusRange = '=INDIRECT("StatusesTable[Status]")';
+  const assigneeRange = '=INDIRECT("AssigneesTable[Assignee]")';
 
   const ws = wb.addWorksheet('Matters', { views: [{ state: 'frozen', ySplit: 1 }] });
   const tableRows = rows.map((r) => HEADERS.map((h) => rowValues(r)[h] ?? ''));
@@ -212,8 +208,12 @@ async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<vo
     const synced = m.board_synced_at ? new Date(m.board_synced_at).getTime() : 0;
     if (new Date(m.updated_at).getTime() > synced) continue; // app changed it since → app wins
 
-    const stage = STAGE_BY_LABEL[(row.cells['Stage'] ?? '').trim()] ?? m.stage;
-    const status = STATUS_BY_LABEL[(row.cells['Status'] ?? '').trim()] ?? m.status_flag;
+    // Map a known label back to its enum key; keep a firm-added custom value as
+    // the raw label so it round-trips. Blank → leave unchanged.
+    const stageRaw = (row.cells['Stage'] ?? '').trim();
+    const stage = stageRaw ? STAGE_BY_LABEL[stageRaw] ?? stageRaw : m.stage;
+    const statusRaw = (row.cells['Status'] ?? '').trim();
+    const status = statusRaw ? STATUS_BY_LABEL[statusRaw] ?? statusRaw : m.status_flag;
     const name = (row.cells['Assignee'] ?? '').trim();
     const assigned = name === 'Unassigned' || name === '' ? null : userIdByName.get(name) ?? m.assigned_to;
     if (stage !== m.stage || status !== m.status_flag || assigned !== m.assigned_to) {
