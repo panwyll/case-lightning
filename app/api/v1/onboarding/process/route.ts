@@ -5,6 +5,9 @@ import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+// A slice drains many Graph pages within its own wall-clock budget, so give the
+// function room above that budget (Vercel Hobby caps maxDuration at 60s).
+export const maxDuration = 60;
 
 /**
  * Advance the caller's active onboarding job by exactly one bounded slice

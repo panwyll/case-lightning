@@ -54,11 +54,16 @@ interface CaseRow {
 }
 
 // Safety bounds so a noisy / huge mailbox stays cheap and timeout-safe.
-const MESSAGE_CAP = 5000;     // staged messages per job
-const PROPOSE_BATCH = 4;      // clusters proposed (1 LLM call each) per slice
-const PROVISION_BATCH = 2;    // matters provisioned per slice
-const MIN_CONFIDENCE = 0.4;   // below this the AI proposal is treated as noise
-const THREADS_PER_CASE = 5;   // conversations pulled for fact extraction
+const MESSAGE_CAP = 30000;       // staged messages per job (premium deep scans)
+const SCAN_PAGE_SIZE = 100;      // Graph page size while staging the backlog
+const SCAN_SLICE_MS = 12000;     // wall-clock budget per scan slice; we drain as
+                                 // many Graph pages as fit, so a 20k-mail backlog
+                                 // stages in a handful of slices, not hundreds.
+const PROPOSE_BATCH = 8;         // clusters considered per slice
+const PROPOSE_CONCURRENCY = 4;   // proposeMatter (LLM) calls run in parallel, ≤ db pool
+const PROVISION_BATCH = 2;       // matters provisioned per slice
+const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noise
+const THREADS_PER_CASE = 5;      // conversations pulled for fact extraction
 
 // Addresses that are clearly automated / bulk senders (no-reply, ESPs, marketing).
 // Used both to keep these out of clustering and to gate what reaches the AI.
@@ -101,49 +106,71 @@ async function reloadJob(jobId: string): Promise<OnboardingJob | null> {
 
 // ── Step 1: scan ───────────────────────────────────────────────────────────────
 
+/** Stage one Graph page in a single multi-row INSERT (vs. one round-trip each). */
+async function stageMessages(user: SessionUser, jobId: string, messages: any[], own: string): Promise<void> {
+  const placeholders: string[] = [];
+  const values: unknown[] = [];
+  let p = 0;
+  for (const m of messages) {
+    const from = m.from?.emailAddress?.address?.toLowerCase() ?? null;
+    const recipients = [...(m.toRecipients ?? []), ...(m.ccRecipients ?? [])]
+      .map((r: any) => r.emailAddress?.address?.toLowerCase())
+      .filter(Boolean) as string[];
+    const participants = Array.from(new Set([from, ...recipients].filter((x): x is string => !!x && x !== own)));
+    const postcodes = extractPostcodes(`${m.subject ?? ''} ${m.bodyPreview ?? ''}`);
+
+    placeholders.push(
+      `($${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8},$${p + 9},$${p + 10},$${p + 11})`
+    );
+    values.push(
+      jobId,
+      user.tenantId,
+      m.id,
+      m.conversationId ?? null,
+      (m.subject ?? '').slice(0, 400),
+      from,
+      participants,
+      m.receivedDateTime ?? null,
+      (m.bodyPreview ?? '').slice(0, 600),
+      postcodes,
+      Boolean(m.hasAttachments)
+    );
+    p += 11;
+  }
+  if (!placeholders.length) return;
+  await query(
+    `insert into onboarding_message
+      (job_id, tenant_id, graph_message_id, graph_conversation_id, subject, from_address, participants, received_at, body_preview, postcodes, has_attachments)
+     values ${placeholders.join(',')}
+     on conflict (job_id, graph_message_id) do nothing`,
+    values
+  );
+}
+
 async function scanPage(user: SessionUser, job: OnboardingJob): Promise<void> {
   if (job.messages_scanned >= MESSAGE_CAP) {
     await query(`update onboarding_job set status = 'CLUSTERING', updated_at = now() where id = $1`, [job.id]);
     return;
   }
 
-  const { messages, nextLink } = await listMailSince(user.userId, job.since, job.scan_cursor);
   const own = user.email.toLowerCase();
+  const deadline = Date.now() + SCAN_SLICE_MS;
+  let cursor = job.scan_cursor; // Graph @odata.nextLink; null on the first slice
+  let scanned = job.messages_scanned;
 
-  for (const m of messages) {
-    const from = m.from?.emailAddress?.address?.toLowerCase() ?? null;
-    const recipients = [...(m.toRecipients ?? []), ...(m.ccRecipients ?? [])]
-      .map((r: any) => r.emailAddress?.address?.toLowerCase())
-      .filter(Boolean) as string[];
-    const participants = Array.from(new Set([from, ...recipients].filter((p): p is string => !!p && p !== own)));
-    const postcodes = extractPostcodes(`${m.subject ?? ''} ${m.bodyPreview ?? ''}`);
+  // Drain pages until the slice budget is spent, the cap is hit, or mail runs out.
+  // Pulling many pages per HTTP slice (instead of one) is the main scan speed-up.
+  do {
+    const { messages, nextLink } = await listMailSince(user.userId, job.since, cursor, SCAN_PAGE_SIZE);
+    await stageMessages(user, job.id, messages, own);
+    scanned += messages.length;
+    cursor = nextLink;
+  } while (cursor && scanned < MESSAGE_CAP && Date.now() < deadline);
 
-    await query(
-      `insert into onboarding_message
-        (job_id, tenant_id, graph_message_id, graph_conversation_id, subject, from_address, participants, received_at, body_preview, postcodes, has_attachments)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       on conflict (job_id, graph_message_id) do nothing`,
-      [
-        job.id,
-        user.tenantId,
-        m.id,
-        m.conversationId ?? null,
-        (m.subject ?? '').slice(0, 400),
-        from,
-        participants,
-        m.receivedDateTime ?? null,
-        (m.bodyPreview ?? '').slice(0, 600),
-        postcodes,
-        Boolean(m.hasAttachments),
-      ]
-    );
-  }
-
-  const scanned = job.messages_scanned + messages.length;
-  const done = !nextLink || scanned >= MESSAGE_CAP;
+  const done = !cursor || scanned >= MESSAGE_CAP;
   await query(
     `update onboarding_job set messages_scanned = $1, scan_cursor = $2, status = $3, updated_at = now() where id = $4`,
-    [scanned, nextLink, done ? 'CLUSTERING' : 'SCANNING', job.id]
+    [scanned, cursor, done ? 'CLUSTERING' : 'SCANNING', job.id]
   );
 }
 
@@ -294,7 +321,20 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
 
   const own = user.email.toLowerCase();
 
-  for (const c of clusters) {
+  // The per-cluster proposal is dominated by one LLM round-trip, so run a bounded
+  // number of clusters in parallel rather than strictly one after another.
+  for (let i = 0; i < clusters.length; i += PROPOSE_CONCURRENCY) {
+    await Promise.all(clusters.slice(i, i + PROPOSE_CONCURRENCY).map((c) => proposeCluster(user, job, c, own)));
+  }
+}
+
+async function proposeCluster(
+  user: SessionUser,
+  job: OnboardingJob,
+  c: { cluster_key: string; cnt: number; convs: string[] | null },
+  own: string
+): Promise<void> {
+  {
     const msgs = await query<{
       subject: string | null;
       from_address: string | null;
@@ -342,7 +382,7 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
           convs,
         ]
       );
-      continue;
+      return;
     }
 
     let proposal: Awaited<ReturnType<typeof proposeMatter>> | null = null;

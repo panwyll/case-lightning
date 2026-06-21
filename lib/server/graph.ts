@@ -112,7 +112,8 @@ export async function listThreadMessages(userId: string, conversationId: string)
 export async function listMailSince(
   userId: string,
   sinceIso: string | null,
-  nextLink?: string | null
+  nextLink?: string | null,
+  top = 100
 ): Promise<{ messages: any[]; nextLink: string | null }> {
   const client = await graphClientForUser(userId);
   let result: any;
@@ -123,7 +124,7 @@ export async function listMailSince(
       let req = client
         .api('/me/messages')
         .select('id,subject,from,toRecipients,ccRecipients,conversationId,receivedDateTime,bodyPreview,hasAttachments')
-        .top(50)
+        .top(top)
         .orderby('receivedDateTime desc');
       // `sinceIso` may arrive as a Date (pg parses timestamptz columns into Date
       // objects) — coerce to strict ISO 8601, which is what the OData filter needs.
