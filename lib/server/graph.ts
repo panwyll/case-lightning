@@ -218,7 +218,17 @@ export async function ensureMasterCategory(userId: string, displayName: string, 
   const client = await graphClientForUser(userId);
   try {
     const existing = await client.api('/me/outlook/masterCategories').get();
-    if ((existing.value ?? []).some((c: any) => c.displayName === displayName)) return;
+    const found = (existing.value ?? []).find((c: any) => c.displayName === displayName);
+    if (found) {
+      // The category exists — but it may have been created colourless (e.g. by
+      // Outlook auto-creating it on a message patch, or by an older build). When
+      // we have an explicit colour to pin and it has drifted, correct it so tags
+      // actually show their intended colour instead of staying uncoloured.
+      if (color && found.color !== color) {
+        await client.api(`/me/outlook/masterCategories/${found.id}`).patch({ color });
+      }
+      return;
+    }
     const chosen = color ?? CATEGORY_COLORS[Math.abs(hash(displayName)) % CATEGORY_COLORS.length];
     await client.api('/me/outlook/masterCategories').post({ displayName, color: chosen });
   } catch {

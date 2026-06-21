@@ -237,7 +237,7 @@ export async function runAutoRules(
 
   if (rule.do_categorize && message.id) {
     const label = rule.category_label ?? match.matterRef;
-    await ensureMasterCategory(user.userId, label);
+    await ensureMasterCategory(user.userId, label, MATTER_COLOR);
     await addMessageCategories(user.userId, message.id, [label]).catch(() => {});
     actions.push('categorized');
   }
