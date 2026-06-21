@@ -12,7 +12,7 @@
 import ExcelJS from 'exceljs';
 import { query, queryOne } from './db';
 import { config } from './config';
-import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey } from './graph';
+import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey, setRangeFills } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
@@ -152,7 +152,7 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }, { name: 'Colour' }], rows: statusVals.map((v) => [v, statusColours[v] ?? 'Grey']) });
   lists.addTable({ name: 'AssigneesTable', ref: 'F1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Assignee' }], rows: assigneeVals.map((v) => [v]) });
   const note = lists.getCell('H1');
-  note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically.';
+  note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically. Set a status Colour to colour-code the board; save and close the workbook for the colour to update on the next refresh.';
   note.font = { italic: true, color: { argb: 'FF64748B' } };
 
   // The StatusesTable "Colour" column (col D): a dropdown from a hidden colours
@@ -165,6 +165,9 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
       type: 'list',
       allowBlank: true,
       formulae: ['=INDIRECT("ColoursTable[Colour]")'],
+      showInputMessage: true,
+      promptTitle: 'Status colour',
+      prompt: 'Pick the colour for this status. Save and close the workbook for the board to pick up the change — colours update on the next refresh.',
       showErrorMessage: true,
       errorStyle: 'stop',
       errorTitle: 'Pick a colour',
@@ -221,23 +224,26 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
     }
   }
 
-  // Status colour via conditional formatting (it has precedence over the table
-  // banding, unlike a manual fill) — one rule per status, coloured from the
-  // firm's Colour mapping so the Colour list drives the board.
-  const cfFill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, bgColor: { argb } });
-  ws.addConditionalFormatting({
-    ref: 'D2:D1000',
-    rules: statusVals.map((v, i) => ({
-      type: 'containsText' as const,
-      operator: 'containsText' as const,
-      text: v,
-      priority: i + 1,
-      style: { fill: cfFill(fillFor(statusColours[v] ?? 'Grey')) },
-    })),
-  });
-
+  // Status colours are applied AFTER upload, via Graph cell fills (see
+  // colourBoardStatuses) — those override the table banding and update live, so
+  // the Colour list can drive them. (CF can't look a colour up from a list; an
+  // exceljs fill gets overridden by the table style.)
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out);
+}
+
+/** Re-fill the board's Status cells from a status→colourName map (Graph, live). */
+async function colourBoardStatuses(user: SessionUser, itemId: string, statusColour: Record<string, string>): Promise<void> {
+  try {
+    const cells = await listTableRows(user.userId, itemId, TABLE);
+    const fills = cells.map((r) => {
+      const label = (r.cells['Status'] ?? '').trim();
+      return { address: `D${r.rowIndex + 2}`, argb: fillFor(statusColour[label] ?? STATUS_COLOUR[label] ?? 'Grey') };
+    });
+    await setRangeFills(user.userId, 'Matters', itemId, fills);
+  } catch {
+    /* colouring is best-effort — never fail the sync over it */
+  }
 }
 
 /**
@@ -246,12 +252,12 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
  * to the board (updated_at > board_synced_at) the app wins; otherwise a differing
  * Excel cell is a human edit and is applied.
  */
-async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<void> {
+async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<{ coloursChanged: boolean }> {
   let rows: Awaited<ReturnType<typeof listTableRows>>;
   try {
     rows = await listTableRows(user.userId, itemId, TABLE);
   } catch {
-    return; // table not present yet / unreadable
+    return { coloursChanged: false }; // table not present yet / unreadable
   }
   const users = await query<{ id: string; name: string }>(
     `select id, coalesce(display_name, email) as name from app_user where tenant_id = $1`,
@@ -289,24 +295,31 @@ async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<vo
     }
   }
 
-  // Persist the Statuses list's Colour column so it drives the board CF on the
-  // next rebuild (and survives the file being deleted/regenerated).
+  // Persist the Statuses list's Colour column so it drives the board CF. Report
+  // whether the firm changed it so the caller can re-bake the template (the CF is
+  // baked at build time, so a colour edit only reaches the board on a rebuild).
   try {
+    const current = await getStatusColours(user.tenantId);
     const colours: Record<string, string> = {};
     for (const r of await listTableRows(user.userId, itemId, 'StatusesTable')) {
       const s = (r.cells['Status'] ?? '').trim();
       const c = (r.cells['Colour'] ?? '').trim();
       if (s && c) colours[s] = c;
     }
-    if (Object.keys(colours).length) {
+    if (!Object.keys(colours).length) return { coloursChanged: false };
+    const merged = { ...current, ...colours };
+    const coloursChanged = JSON.stringify(merged) !== JSON.stringify(current);
+    if (coloursChanged) {
       await query(
         `insert into policy_config (tenant_id, status_colours) values ($1, $2::jsonb)
          on conflict (tenant_id) do update set status_colours = $2::jsonb, updated_at = now()`,
-        [user.tenantId, JSON.stringify(colours)]
+        [user.tenantId, JSON.stringify(merged)]
       );
     }
+    return { coloursChanged };
   } catch {
     /* no StatusesTable (older file) — leave the saved colours as-is */
+    return { coloursChanged: false };
   }
 }
 
@@ -321,7 +334,10 @@ export async function getBoardUrl(user: SessionUser): Promise<string | null> {
  * the formatted template; later calls reconcile Excel edits in and upsert every
  * matter row in place (live, even while the workbook is open).
  */
-export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: string | null; matters: number; needsClose: boolean }> {
+export async function refreshMasterBoard(
+  user: SessionUser,
+  opts: { force?: boolean } = {}
+): Promise<{ webUrl: string | null; matters: number; needsClose: boolean }> {
   let item = await getDriveItemByPath(user.userId, MASTER_PATH);
 
   // Does it already have the live MattersTable? (Old "relic" files, and the
@@ -336,30 +352,48 @@ export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: s
     }
   }
 
-  if (!item || !hasTable) {
-    // Build/upgrade the formatted template. This is the one write that overwrites
-    // the whole file, so it 423s if the relic is open — tell the user to close it.
+  // Writing the formatted template overwrites the whole file, so it 423s if the
+  // file is open — that's surfaced to the user as needsClose so they can close it.
+  const rebakeTemplate = async (): Promise<{ done: false; needsClose: true } | { done: true }> => {
     const buffer = await buildTemplate(user.tenantId);
     try {
       item = await putDriveFile(user.userId, MASTER_PATH, buffer);
+      return { done: true };
     } catch (error) {
-      if ((error as { statusCode?: number })?.statusCode === 423 && item) {
-        const count = (await boardRows(user.tenantId)).length;
-        return { webUrl: item.webUrl ?? null, matters: count, needsClose: true };
-      }
+      if ((error as { statusCode?: number })?.statusCode === 423 && item) return { done: false, needsClose: true };
       throw error;
+    }
+  };
+
+  if (!item || !hasTable || opts.force) {
+    // Build/upgrade the formatted template (first-ever build, relic upgrade, or a
+    // forced regenerate — overwrites the file in place, so it 423s if it's open).
+    const r = await rebakeTemplate();
+    if (!r.done) {
+      const count = (await boardRows(user.tenantId)).length;
+      return { webUrl: item?.webUrl ?? null, matters: count, needsClose: true };
     }
   } else {
     // Live path: pull Excel edits in, then upsert every row in place (no 423).
-    await reconcileFromBoard(user, item.id);
-    const rows = await boardRows(user.tenantId);
-    await upsertTableRowsByKey(
-      user.userId,
-      item.id,
-      TABLE,
-      'Matter',
-      rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
-    );
+    const { coloursChanged } = await reconcileFromBoard(user, item.id);
+    if (coloursChanged) {
+      // The status→colour conditional formatting is baked at build time, so a
+      // colour edit only reaches the board by re-baking the template.
+      const r = await rebakeTemplate();
+      if (!r.done) {
+        const count = (await boardRows(user.tenantId)).length;
+        return { webUrl: item?.webUrl ?? null, matters: count, needsClose: true };
+      }
+    } else {
+      const rows = await boardRows(user.tenantId);
+      await upsertTableRowsByKey(
+        user.userId,
+        item.id,
+        TABLE,
+        'Matter',
+        rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
+      );
+    }
   }
 
   await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);

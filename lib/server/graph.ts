@@ -352,6 +352,18 @@ export async function getDriveItemByPath(userId: string, path: string): Promise<
   }
 }
 
+/** Deletes a file by OneDrive path. Returns true if it existed and was removed. */
+export async function deleteDriveItemByPath(userId: string, path: string): Promise<boolean> {
+  const client = await graphClientForUser(userId);
+  try {
+    await client.api(`/me/drive/root:/${encodePath(path)}`).delete();
+    return true;
+  } catch (error) {
+    if ((error as { statusCode?: number })?.statusCode === 404) return false;
+    throw error;
+  }
+}
+
 /** Downloads a file's bytes by OneDrive path, or null if it doesn't exist yet. */
 export async function getDriveFileByPath(userId: string, path: string): Promise<Buffer | null> {
   const client = await graphClientForUser(userId);
