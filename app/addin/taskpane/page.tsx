@@ -196,10 +196,14 @@ export default function Taskpane() {
   const [facts, setFacts] = useState<ExtractedFacts | null>(null);
   const [tone, setTone] = useState<Tone>('NEUTRAL');
 
-  // Which top-level view is showing. The taskpane is organised by what the user
-  // is doing (triage this email → manage the matter → set things up) rather than
-  // by feature, so the narrow pane stays focused instead of an endless scroll.
-  const [tab, setTab] = useState<'email' | 'matter'>('email');
+  // The taskpane renders by *situation*, not by feature tabs: open an email → it
+  // auto-analyses → we show what we found (matter? what's being asked?) and the
+  // handful of moves that make sense. `chosenAction` tracks which of the four
+  // canonical moves the user picked so its sub-panel expands; `linkOpen` toggles
+  // the (normally collapsed) link-to-a-different/new-matter drawer.
+  const [chosenAction, setChosenAction] = useState<'reply' | 'action' | 'delegate' | 'ignore' | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [ignored, setIgnored] = useState(false);
   // Setup (historical import + AI settings) isn't a tab — it's the initial state
   // for a firm that hasn't imported yet, and re-openable via the header gear.
   const [showSetup, setShowSetup] = useState(false);
@@ -407,8 +411,13 @@ export default function Taskpane() {
           if (item.from?.emailAddress) {
             setSender({ name: item.from.displayName || item.from.emailAddress, email: item.from.emailAddress });
           }
-          // Clear last email's assistant result so it doesn't linger on the new one.
+          // Clear last email's assistant result + per-email UI so nothing lingers.
           setAssist(null);
+          setTriage(null);
+          setChosenAction(null);
+          setIgnored(false);
+          setLinkOpen(false);
+          setDraft(null);
         };
         Office.onReady(() => {
           loadItem();
@@ -650,7 +659,9 @@ export default function Taskpane() {
       await api('/triage/apply', {
         method: 'POST',
         body: JSON.stringify({
-          triageId: triage?.triageId,
+          // Candidates can arrive from the auto-analyse (assist) or a manual
+          // "search again" (triage) — either carries a triageId to apply against.
+          triageId: assist?.triageId ?? triage?.triageId,
           matterId: c.matterId,
           messageId,
           conversationId,
@@ -660,9 +671,14 @@ export default function Taskpane() {
       });
       setMatterId(c.matterId);
       setTriage(null);
+      setLinkOpen(false);
+      setShowNewMatter(false);
       await loadMatter(c.matterId);
       setStatus(`Linked to ${c.matterRef}.`);
     });
+    // Re-read the email now we know the matter, so the situation + actions reflect
+    // the linked file's context rather than the no-matter analysis.
+    runAssist(c.matterId);
   }
 
   async function summarise() {
@@ -811,18 +827,21 @@ export default function Taskpane() {
   }
 
   // ── Assistant + tasks ────────────────────────────────────────────────────
-  async function runAssist() {
+  // `matterOverride` lets a just-linked matter be read immediately, before the
+  // matterId state update has flushed (the auto-run uses the current state).
+  async function runAssist(matterOverride?: string) {
+    const mid = matterOverride ?? matterId;
     const r = await run('Reading the email', async () => {
       requireThread();
       if (!messageId) throw new Error('Open an email first.');
       return api<AssistData>('/assist', {
         method: 'POST',
-        body: JSON.stringify({ messageId, conversationId, matterId: matterId || undefined, tone }),
+        body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined, tone }),
       });
     });
     if (r) {
       setAssist(r);
-      if (r.matter && !matterId) {
+      if (r.matter && !mid) {
         setMatterId(r.matter.id);
         loadMatter(r.matter.id);
       }
@@ -892,20 +911,60 @@ export default function Taskpane() {
   const onboardingBusy = !!obJob && (OB_ACTIVE.includes(obJob.status) || obJob.status === 'AWAITING_REVIEW');
   const setupView = !!me && (showSetup || onboardingBusy || (obFetched && !obJob && !obSkipped));
 
-  // The single most likely next step for the open email — shown as the hero
-  // action so the user isn't faced with a flat grid of equal-weight verbs.
-  // Mirrors Jira's "next transition": read-only updates → Summarise; anything
-  // that needs a response → Draft reply.
-  const emailActions: Array<{ key: string; label: string; onClick: () => void; needsMatter?: boolean }> = [
-    { key: 'draft', label: 'Draft reply', onClick: generateDraft },
-    { key: 'summarise', label: 'Summarise', onClick: summarise },
-    { key: 'facts', label: 'Extract facts', onClick: extractFacts },
-    { key: 'save', label: 'Save to matter', onClick: saveToMatter, needsMatter: true },
-  ];
-  const noReplyNeeded = triage?.classification?.needsAttention === false;
-  const primaryKey = noReplyNeeded ? 'summarise' : 'draft';
-  const primaryAction = emailActions.find((a) => a.key === primaryKey)!;
-  const otherActions = emailActions.filter((a) => a.key !== primaryKey);
+  // ── What did we find? ──────────────────────────────────────────────────────
+  // The hero is a single status the moment an email opens: do we know whose
+  // matter this is? `band` comes from the matcher (AUTO = nailed it, STRONG/WEAK
+  // = a guess to confirm, NONE = nothing). A linked matter always counts as found.
+  const hasMatter = !!matterId;
+  // A manual "search again" (triage) is the freshest signal when present; the
+  // auto-analysis (assist) is the default the moment an email opens.
+  const band: string | null = triage?.band ?? assist?.matchBand ?? null;
+  const candidates: any[] = (triage?.candidates ?? assist?.candidates ?? []) as any[];
+  const topCandidate = candidates[0];
+  const analysed = !!assist || !!triage;
+  const matchKind: 'found' | 'partial' | 'none' | 'pending' =
+    hasMatter || band === 'AUTO' ? 'found' : band === 'STRONG' || band === 'WEAK' ? 'partial' : analysed ? 'none' : 'pending';
+  // The link/create drawer is collapsed by default but always open when we have
+  // nothing to act on (no matter), or when the user taps the hero to change it.
+  const drawerOpen = linkOpen || matchKind === 'none';
+
+  // Once we know the matter, an incoming email only ever resolves one of four
+  // ways. We surface all four and pre-light the one the classifier implies:
+  // a pure FYI → Ignore; anything that wants a response → Reply; otherwise it's
+  // work to do (Action) or to hand off (Delegate).
+  const cls = assist?.classification;
+  const recommended: 'reply' | 'action' | 'delegate' | 'ignore' = !cls
+    ? 'reply'
+    : cls.needsAttention === false
+    ? 'ignore'
+    : assist?.draft
+    ? 'reply'
+    : (assist?.outstanding?.length ?? 0) > 0
+    ? 'delegate'
+    : 'action';
+  // The panel that's expanded: the user's explicit pick, else the recommendation.
+  const effectiveAction = chosenAction ?? recommended;
+
+  // "Ignore" needs no backend — the email's been read, there's just nothing to do.
+  function markIgnore() {
+    setIgnored(true);
+    setChosenAction('ignore');
+    setStatus('Marked as handled — no reply needed.');
+  }
+
+  // Auto-analyse the moment a message is opened (once per message). This is what
+  // makes the hero meaningful on arrival and lets the assistant "read the email
+  // in context and decide" without the user pressing anything.
+  const autoAnalysed = useRef<string>('');
+  useEffect(() => {
+    if (!me || setupView || !messageId || !conversationId) return;
+    if (autoAnalysed.current === messageId) return;
+    autoAnalysed.current = messageId;
+    runAssist();
+    // runAssist is stable enough for this purpose; keying on the message id is
+    // what actually gates re-runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, setupView, messageId, conversationId]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
@@ -915,12 +974,15 @@ export default function Taskpane() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {me && (
             <button
-              style={{ ...S.account, color: showSetup ? '#5A27E0' : '#64748b' }}
+              style={{ ...S.iconBtn, color: showSetup ? '#5A27E0' : '#94a3b8', background: showSetup ? '#EDE7FB' : 'transparent' }}
               onClick={() => setShowSetup((s) => !s)}
               title="Setup & settings"
+              aria-label="Setup & settings"
             >
-              <span style={{ fontSize: 15 }}>⚙</span>
-              <span style={S.user}>Setup</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
             </button>
           )}
         </div>
@@ -955,172 +1017,234 @@ export default function Taskpane() {
       {/* First run: bring the firm's existing cases in before anything else. */}
       {me && !setupView && (
         <>
-          {/* Top-level navigation — real tabs (underline), one job at a time. */}
-          <div style={S.tabBar} role="tablist">
-            {([
-              ['email', 'This email'],
-              ['matter', 'Matter'],
-            ] as const).map(([key, lbl]) => (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={tab === key}
-                style={tab === key ? { ...S.tab, ...S.tabActive } : S.tab}
-                onClick={() => setTab(key)}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
+          {/* Subject line — small, so the hero below can be the loud thing. */}
+          <div style={S.subjectLine}>{subject || '— open an email —'}</div>
 
-          {/* Thread context */}
-          <Card>
-            <Label>Current thread</Label>
-            <div style={S.threadSubject}>{subject || '— open an email —'}</div>
-            {matterInfo?.matter ? (
-              <div style={S.linkedMatter}>
-                <span>📁 {matterInfo.matter.matter_ref}</span>
-                <button style={S.tagX} onClick={() => { setMatterId(''); setMatterInfo(null); }} title="Unlink">×</button>
-              </div>
-            ) : (
-              <p style={S.muted}>No matter linked yet. Find a match, or create one.</p>
-            )}
-            <div style={S.rowWrap}>
-              <button style={S.secondary} onClick={findMatter} disabled={!messageId}>
-                Find matter
-              </button>
-              <button style={S.secondary} onClick={openNewMatter}>
-                {showNewMatter ? 'Cancel' : 'New matter'}
-              </button>
-              <button style={S.secondary} onClick={linkThread} disabled={!matterId || !conversationId}>
-                Link thread
-              </button>
-              <button style={S.secondary} onClick={() => loadMatter()} disabled={!matterId}>
-                Refresh
-              </button>
-            </div>
-          </Card>
-
-          {tab === 'email' && (
-          <>
-          {/* Assistant — the situation + the recommended move, in one pass. */}
-          <Card>
-            {!assist ? (
-              <>
-                <Label>AI assistant</Label>
-                <p style={S.muted}>Let CaseLightning read this email, pull what we already know, and prepare the reply.</p>
-                <button style={S.primary} onClick={runAssist} disabled={!messageId}>
-                  Analyse this email
-                </button>
-              </>
-            ) : (
-              <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-                  <span style={S.assistIcon}>✦</span>
-                  <span style={S.label}>Here&apos;s the situation</span>
-                </div>
-                <div style={S.rowWrap}>
-                  <span style={S.chip}>{assist.classification.intent.replace(/_/g, ' ')}</span>
-                  <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
-                    {assist.classification.needsAttention ? 'Needs you' : 'FYI'}
-                  </span>
-                  <span style={S.chip}>{assist.classification.urgency}</span>
-                </div>
-                <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
-                {assist.matter && (
-                  <div style={S.linkedMatter}><span>📁 {assist.matter.matterRef}</span></div>
-                )}
-
-                {assist.whatWeKnow.length > 0 && (
-                  <>
-                    <SubLabel>What we know</SubLabel>
-                    <ul style={S.ul}>{assist.whatWeKnow.map((w, i) => <li key={i}>{w}</li>)}</ul>
-                  </>
-                )}
-
-                {assist.outstanding.length > 0 && (
-                  <>
-                    <SubLabel>Blockers — assign to clear</SubLabel>
-                    {assist.outstanding.map((o, i) => (
-                      <div key={i} style={S.candidate}>
-                        <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{o}</div>
-                        <select
-                          style={{ ...S.input, marginBottom: 0 }}
-                          defaultValue=""
-                          onChange={(e) => {
-                            if (e.target.value) assignBlocker(o, e.target.value);
-                          }}
-                        >
-                          <option value="">{matterId ? 'Assign to…' : 'Link a matter to assign'}</option>
-                          {assignees.map((a) => (
-                            <option key={a.id} value={a.id}>{a.display_name || a.email}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
-                  </>
-                )}
-
-                {assist.draft ? (
-                  <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
-                ) : (
-                  <p style={{ ...S.muted, marginTop: 8 }}>No reply needed — looks like an update to note.</p>
-                )}
-                {assist.highlighted.length > 0 && (
-                  <p style={{ ...S.muted, marginTop: 10, marginBottom: 0 }}>
-                    🏷️ Highlighted in your inbox: {assist.highlighted.map((t) => t.replace('CaseLightning · ', '')).join(', ')}
-                  </p>
-                )}
-                <button style={{ ...S.secondary, marginTop: 6 }} onClick={runAssist}>Re-analyse</button>
-              </>
-            )}
-          </Card>
-
-          {triage && (
-            <Card>
-              <Label>Suggested match</Label>
-              <div style={S.rowWrap}>
-                <span style={S.chip}>{triage.classification?.intent}</span>
-                <span style={{ ...S.chip, background: triage.classification?.needsAttention ? '#fee2e2' : '#dcfce7' }}>
-                  {triage.classification?.needsAttention ? 'Needs attention' : 'No action needed'}
+          {/* ── Hero: what did we find? — the one status that drives everything ── */}
+          {(() => {
+            const ref = matterInfo?.matter?.matter_ref ?? assist?.matter?.matterRef ?? topCandidate?.matterRef ?? null;
+            const pct = topCandidate ? Math.round((topCandidate.score ?? 0) * 100) : null;
+            const meta: Record<typeof matchKind, { icon: string; title: string; sub: string; style: React.CSSProperties }> = {
+              found: { icon: '✓', title: 'Matter found', sub: ref ? `${ref} · 100% match` : '100% match', style: S.heroFound },
+              partial: { icon: '~', title: 'Partial match', sub: ref ? `${ref} · ${pct}% — tap to confirm` : `${pct ?? ''}% — tap to confirm`, style: S.heroPartial },
+              none: { icon: '✕', title: 'No matter found', sub: 'Link an existing matter or create one', style: S.heroNone },
+              pending: { icon: '…', title: messageId ? 'Reading this email…' : 'Open an email', sub: messageId ? 'Matching it to your matters' : 'Select a message to begin', style: S.heroPending },
+            };
+            const m = meta[matchKind];
+            return (
+              <button style={{ ...S.hero, ...m.style }} onClick={() => setLinkOpen((o) => !o)} title="Link to a different or new matter">
+                <span style={S.heroIcon}>{matchKind === 'pending' ? <span style={S.spinner} /> : m.icon}</span>
+                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.25, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13 }}>{m.title}</span>
+                  <span style={{ fontSize: 11, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 280 }}>{m.sub}</span>
                 </span>
-                <span style={S.chip}>{triage.classification?.urgency}</span>
-              </div>
-              <p style={S.muted}>{triage.classification?.reason}</p>
+                <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.7 }}>{drawerOpen ? '▲' : '▾'}</span>
+              </button>
+            );
+          })()}
 
-              {(triage.candidates ?? []).length === 0 && (
-                <p style={S.muted}>No candidate matters found from the thread. Create or link one manually.</p>
+          {/* Link drawer — collapsed when we found the matter, open when we didn't. */}
+          {drawerOpen && (
+            <Card>
+              {candidates.length > 0 && (
+                <>
+                  <Label>{matchKind === 'found' ? 'Linked matter' : 'Likely matters'}</Label>
+                  {candidates.map((c: any) => {
+                    const pct = Math.round((c.score ?? 0) * 100);
+                    const auto = c.band === 'AUTO';
+                    const isLinked = c.matterId === matterId;
+                    return (
+                      <div key={c.matterId} style={S.candidate}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: 13 }}>{c.matterRef}</strong>
+                          <span style={{ ...S.confidence, background: auto ? '#dcfce7' : pct >= 60 ? '#fef9c3' : '#fee2e2' }}>
+                            {pct}% · {c.band}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#475569' }}>{c.propertyAddress}</div>
+                        <ul style={{ ...S.ul, fontSize: 11, color: '#64748b' }}>
+                          {(c.signals ?? []).map((s: any, i: number) => <li key={i}>{s.detail}</li>)}
+                        </ul>
+                        {!auto && !isLinked && (
+                          <label style={{ display: 'flex', gap: 6, fontSize: 11, color: '#b91c1c', margin: '4px 0' }}>
+                            <input type="checkbox" checked={riskOk} onChange={(e) => setRiskOk(e.target.checked)} />
+                            Below the high-confidence bar — I accept this is a subpar match.
+                          </label>
+                        )}
+                        {isLinked ? (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>✓ Linked</span>
+                        ) : (
+                          <button style={S.secondary} onClick={() => useCandidate(c)} disabled={!auto && !riskOk}>
+                            Use this matter
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+              <div style={{ ...S.rowWrap, marginTop: candidates.length ? 8 : 0 }}>
+                <button style={S.secondary} onClick={openNewMatter}>
+                  {showNewMatter ? 'Cancel new matter' : '+ New matter'}
+                </button>
+                <button style={S.secondary} onClick={findMatter} disabled={!messageId}>
+                  Search again
+                </button>
+                {matterId && (
+                  <>
+                    <button style={S.secondary} onClick={linkThread} disabled={!conversationId}>
+                      Link this thread
+                    </button>
+                    <button style={S.secondary} onClick={() => { setMatterId(''); setMatterInfo(null); setAssist(null); }}>
+                      Unlink
+                    </button>
+                  </>
+                )}
+              </div>
+            </Card>
+          )}
+
+          {/* The situation + the four moves — only once we have a matter to act on. */}
+          {hasMatter && assist && (
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                <span style={S.assistIcon}>✦</span>
+                <span style={S.label}>Here&apos;s the situation</span>
+              </div>
+              <div style={S.rowWrap}>
+                <span style={S.chip}>{assist.classification.intent.replace(/_/g, ' ')}</span>
+                <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
+                  {assist.classification.needsAttention ? 'Needs you' : 'FYI'}
+                </span>
+                <span style={S.chip}>{assist.classification.urgency}</span>
+              </div>
+              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
+
+              {assist.whatWeKnow.length > 0 && (
+                <>
+                  <SubLabel>What we know</SubLabel>
+                  <ul style={S.ul}>{assist.whatWeKnow.map((w, i) => <li key={i}>{w}</li>)}</ul>
+                </>
               )}
 
-              {(triage.candidates ?? []).map((c: any) => {
-                const pct = Math.round((c.score ?? 0) * 100);
-                const auto = c.band === 'AUTO';
-                return (
-                  <div key={c.matterId} style={S.candidate}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <strong style={{ fontSize: 13 }}>{c.matterRef}</strong>
-                      <span style={{ ...S.confidence, background: auto ? '#dcfce7' : pct >= 60 ? '#fef9c3' : '#fee2e2' }}>
-                        {pct}% · {c.band}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 12, color: '#475569' }}>{c.propertyAddress}</div>
-                    <ul style={{ ...S.ul, fontSize: 11, color: '#64748b' }}>
-                      {(c.signals ?? []).map((s: any, i: number) => (
-                        <li key={i}>{s.detail}</li>
-                      ))}
-                    </ul>
-                    {!auto && (
-                      <label style={{ display: 'flex', gap: 6, fontSize: 11, color: '#b91c1c', margin: '4px 0' }}>
-                        <input type="checkbox" checked={riskOk} onChange={(e) => setRiskOk(e.target.checked)} />
-                        Below the high-confidence bar — I accept this is a subpar match.
-                      </label>
-                    )}
-                    <button style={S.secondary} onClick={() => useCandidate(c)} disabled={!auto && !riskOk}>
-                      Use this matter
+              {/* The four moves. The recommended one is pre-lit; pick any to expand it. */}
+              <SubLabel>What do you want to do?</SubLabel>
+              <div style={S.actionRow}>
+                {([
+                  ['reply', '↩', 'Reply'],
+                  ['action', '✓', 'Action'],
+                  ['delegate', '👤', 'Delegate'],
+                  ['ignore', '–', 'Ignore'],
+                ] as const).map(([key, icon, lbl]) => {
+                  const active = effectiveAction === key;
+                  const isRec = recommended === key;
+                  return (
+                    <button
+                      key={key}
+                      style={{ ...S.actionBtn, ...(active ? S.actionBtnActive : {}) }}
+                      onClick={() => (key === 'ignore' ? markIgnore() : setChosenAction(key))}
+                    >
+                      <span style={{ fontSize: 16 }}>{icon}</span>
+                      <span>{lbl}</span>
+                      {isRec && <span style={S.recDot} title="Suggested" />}
                     </button>
+                  );
+                })}
+              </div>
+
+              {/* Reply */}
+              {effectiveAction === 'reply' && (
+                <div style={S.actionPanel}>
+                  {assist.draft ? (
+                    <>
+                      <p style={S.muted}>A reply is drafted from the thread and this matter&apos;s facts. Open it to review before anything is sent.</p>
+                      <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={S.muted}>No reply was prepared — generate one now if you want to respond.</p>
+                      <button style={S.primary} onClick={generateDraft}>Draft a reply</button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Action — do something on the matter yourself */}
+              {effectiveAction === 'action' && (
+                <div style={S.actionPanel}>
+                  <p style={S.muted}>Record the work this email creates, or push its facts into the matter.</p>
+                  <div style={{ ...S.rowWrap, marginBottom: 8 }}>
+                    <input
+                      style={{ ...S.input, marginBottom: 0, flex: 1 }}
+                      placeholder="Add a task…"
+                      value={newTaskDetail}
+                      onChange={(e) => setNewTaskDetail(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+                    />
+                    <button style={S.secondary} onClick={addTask}>Add</button>
                   </div>
-                );
-              })}
+                  <div style={S.rowWrap}>
+                    <button style={S.secondary} onClick={extractFacts}>Extract facts → tracker</button>
+                    <button style={S.secondary} onClick={saveToMatter}>Save email to matter</button>
+                  </div>
+                </div>
+              )}
+
+              {/* Delegate — hand the open items (or the whole email) to a colleague */}
+              {effectiveAction === 'delegate' && (
+                <div style={S.actionPanel}>
+                  {assist.outstanding.length > 0 ? (
+                    <>
+                      <p style={S.muted}>Assign each open item to whoever should clear it — it lands in the Excel tracker.</p>
+                      {assist.outstanding.map((o, i) => (
+                        <div key={i} style={S.candidate}>
+                          <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{o}</div>
+                          <select
+                            style={{ ...S.input, marginBottom: 0 }}
+                            defaultValue=""
+                            onChange={(e) => { if (e.target.value) assignBlocker(o, e.target.value); }}
+                          >
+                            <option value="">Assign to…</option>
+                            {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <p style={S.muted}>Hand this email to a colleague to handle.</p>
+                      <select
+                        style={{ ...S.input, marginBottom: 0 }}
+                        defaultValue=""
+                        onChange={(e) => { if (e.target.value) assignBlocker(`Handle email: ${cleanSubject(subject) || 'this thread'}`, e.target.value); }}
+                      >
+                        <option value="">Delegate to…</option>
+                        {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                      </select>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Ignore — read, nothing to do */}
+              {effectiveAction === 'ignore' && (
+                <div style={S.actionPanel}>
+                  {ignored ? (
+                    <p style={{ ...S.muted, margin: 0, color: '#166534' }}>✓ Marked as handled — no reply needed.</p>
+                  ) : (
+                    <>
+                      <p style={S.muted}>Looks like an FYI. Mark it handled so it&apos;s clear there&apos;s nothing outstanding.</p>
+                      <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {assist.highlighted.length > 0 && (
+                <p style={{ ...S.muted, marginTop: 10, marginBottom: 0 }}>
+                  🏷️ Tagged in your inbox: {assist.highlighted.map((t) => t.replace('CaseLightning · ', '')).join(', ')}
+                </p>
+              )}
             </Card>
           )}
 
@@ -1208,11 +1332,9 @@ export default function Taskpane() {
               <button style={S.primary} onClick={createOutlookDraft}>Create Outlook draft</button>
             </Card>
           )}
-          </>
-          )}
 
-          {tab === 'matter' && (
-          <>
+          {/* ── Matter workspace — the firm tracker plus, once a matter is linked,
+                its tasks, stage, documents and review tools. ── */}
           <button
             style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
             onClick={buildBoard}
@@ -1221,12 +1343,6 @@ export default function Taskpane() {
             {boardLoading ? <span style={S.spinner} /> : <span>📊</span>}
             {boardLoading ? 'Syncing…' : 'Team tracker'}
           </button>
-
-          {!matterId && (
-            <Card>
-              <p style={S.muted}>Link or open a matter to manage its stage, tasks and documents below.</p>
-            </Card>
-          )}
 
           {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
           {matterId && (
@@ -1504,9 +1620,6 @@ export default function Taskpane() {
               )}
             </Card>
           )}
-
-          </>
-          )}
         </>
       )}
 
@@ -1768,19 +1881,65 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     padding: '2px 7px',
   },
-  tabBar: { display: 'flex', gap: 4, marginBottom: 12, borderBottom: '1px solid #e2e8f0' },
-  tab: {
-    padding: '9px 14px',
+  iconBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 30,
+    height: 30,
     border: 'none',
-    background: 'transparent',
-    fontSize: 13,
-    fontWeight: 600,
-    color: '#64748b',
+    borderRadius: 8,
     cursor: 'pointer',
-    borderBottom: '2px solid transparent',
-    marginBottom: -1,
+    padding: 0,
   },
-  tabActive: { color: '#5A27E0', borderBottom: '2px solid #5A27E0' },
+  subjectLine: { fontSize: 12, fontWeight: 600, color: '#475569', margin: '0 2px 8px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  hero: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    textAlign: 'left',
+    padding: '10px 12px',
+    border: '1px solid',
+    borderRadius: 10,
+    cursor: 'pointer',
+    marginBottom: 10,
+  },
+  heroIcon: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: 999,
+    background: 'rgba(255,255,255,0.6)',
+    fontSize: 14,
+    fontWeight: 700,
+    flex: 'none',
+  },
+  heroFound: { background: '#dcfce7', borderColor: '#86efac', color: '#166534' },
+  heroPartial: { background: '#fef9c3', borderColor: '#fde68a', color: '#854d0e' },
+  heroNone: { background: '#fee2e2', borderColor: '#fecaca', color: '#991b1b' },
+  heroPending: { background: '#f1f5f9', borderColor: '#e2e8f0', color: '#475569' },
+  actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
+  actionBtn: {
+    position: 'relative',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 3,
+    padding: '8px 4px',
+    background: '#fff',
+    border: '1px solid #cbd5e1',
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#334155',
+    cursor: 'pointer',
+  },
+  actionBtnActive: { background: '#5A27E0', borderColor: '#5A27E0', color: '#fff' },
+  recDot: { position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: 999, background: '#22c55e' },
+  actionPanel: { marginTop: 8, padding: 10, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 },
   spinner: {
     width: 12,
     height: 12,

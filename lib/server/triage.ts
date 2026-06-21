@@ -83,32 +83,53 @@ export async function runTriage(user: SessionUser, message: any): Promise<Triage
   return { triageId: row!.id, classification, candidates, top, band: top?.band ?? 'NONE' };
 }
 
-const INTENT_LABEL: Record<string, string> = {
-  STATUS_UPDATE: 'CaseLightning · Status update',
-  ACTION_REQUIRED: 'CaseLightning · Action required',
-  DOCUMENT_DELIVERY: 'CaseLightning · Documents',
-  ENQUIRY: 'CaseLightning · Enquiry',
-  CHASE: 'CaseLightning · Chase',
-  ADMIN: 'CaseLightning · Admin',
-  OTHER: 'CaseLightning · Other',
+/**
+ * Once a matter is in play, an email only ever resolves one of four ways —
+ * Reply, Action, Delegate or Ignore. We mark it on arrival with the move the
+ * classifier implies so the conveyancer can clear the inbox at a glance, and so
+ * the marking matches the taskpane's recommended action for the same email.
+ *
+ * Delegation is a human call (who picks it up depends on the firm, not the
+ * email), so the auto-mark only ever lands on Reply / Action / Ignore — the
+ * conveyancer re-tags to Delegate when they hand it off.
+ */
+export type RecommendedAction = 'REPLY' | 'ACTION' | 'DELEGATE' | 'IGNORE';
+
+// Mirrors the draft-worthiness rule in assist.ts: these intents have someone
+// waiting on a written response, so the suggested move is a reply.
+const REPLY_INTENTS = new Set<EmailIntent>(['ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
+
+export function recommendedAction(c: Classification): RecommendedAction {
+  if (!c.needsAttention) return 'IGNORE';
+  return REPLY_INTENTS.has(c.intent) ? 'REPLY' : 'ACTION';
+}
+
+const ACTION_LABEL: Record<RecommendedAction, string> = {
+  REPLY: 'CaseLightning · Reply',
+  ACTION: 'CaseLightning · Action',
+  DELEGATE: 'CaseLightning · Delegate',
+  IGNORE: 'CaseLightning · Ignore',
+};
+// Red = a response is owed, Orange = work to do, Blue = handed off, Steel = no-op.
+const ACTION_COLOR: Record<RecommendedAction, string> = {
+  REPLY: 'preset0',
+  ACTION: 'preset1',
+  DELEGATE: 'preset7',
+  IGNORE: 'preset10',
 };
 
 /**
- * Apply visible Outlook category tags from a triage result (best-effort): an
- * intent tag always, plus the matched matter ref when the match is AUTO-band.
- * Opting into auto-triage (the subscription) is the user's consent to tagging.
+ * Apply visible Outlook category tags from a triage result (best-effort): the
+ * recommended move always, plus the matched matter ref when the match is
+ * AUTO-band. Opting into auto-triage (the subscription) is the user's consent.
  */
-const ATTENTION_TAG = 'CaseLightning · Needs attention';
-
 export async function applyTriageTags(user: SessionUser, message: any, triage: TriageResult): Promise<string[]> {
   if (!message.id) return [];
-  const tags: string[] = [];
-  const intentTag = INTENT_LABEL[triage.classification.intent] ?? INTENT_LABEL.OTHER;
-  tags.push(intentTag);
+  const action = recommendedAction(triage.classification);
+  const actionTag = ACTION_LABEL[action];
+  const tags: string[] = [actionTag];
   if (triage.top && triage.top.band === 'AUTO') tags.push(`Matter ${triage.top.matterRef}`);
-  // The standout one: a red tag so emails needing a response pop in the list.
-  if (triage.classification.needsAttention) tags.push(ATTENTION_TAG);
-  for (const t of tags) await ensureMasterCategory(user.userId, t, t === ATTENTION_TAG ? 'preset0' : undefined);
+  for (const t of tags) await ensureMasterCategory(user.userId, t, t === actionTag ? ACTION_COLOR[action] : undefined);
   await addMessageCategories(user.userId, message.id, tags).catch(() => {});
   return tags;
 }
