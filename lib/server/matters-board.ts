@@ -228,6 +228,12 @@ async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<vo
   }
 }
 
+/** Just the board's URL if it already exists — fast, no sync (lets the button open it instantly). */
+export async function getBoardUrl(user: SessionUser): Promise<string | null> {
+  const item = await getDriveItemByPath(user.userId, MASTER_PATH);
+  return item?.webUrl ?? null;
+}
+
 /**
  * Ensure the board exists and is current, then return its URL. First call builds
  * the formatted template; later calls reconcile Excel edits in and upsert every

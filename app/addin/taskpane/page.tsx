@@ -206,6 +206,10 @@ export default function Taskpane() {
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [newTaskDetail, setNewTaskDetail] = useState('');
+  // Cache the master board's URL so the button can open it synchronously (no
+  // popup block, no blank tab) and sync in the background.
+  const [boardUrl, setBoardUrl] = useState<string | null>(null);
+  const [boardLoading, setBoardLoading] = useState(false);
   const [draft, setDraft] = useState<DraftPackage | null>(null);
   const [draftSubject, setDraftSubject] = useState('');
   const [draftBody, setDraftBody] = useState('');
@@ -595,26 +599,39 @@ export default function Taskpane() {
 
   // Open the firm-wide master Excel — syncs Excel edits in, builds it if missing,
   // and opens it. If it's already open in Excel (locked) we just open it.
+  // Look up the board's URL up front (no sync) so the button can open instantly.
+  const loadBoardUrl = useCallback(async () => {
+    try {
+      const r = await api<{ webUrl: string | null }>('/matters/board');
+      setBoardUrl(r.webUrl);
+    } catch {
+      /* not built yet — buildBoard will create it */
+    }
+  }, []);
+  useEffect(() => {
+    if (me) loadBoardUrl();
+  }, [me, loadBoardUrl]);
+
   async function buildBoard() {
-    // Open the tab synchronously (keeps the user-gesture so it isn't popup-blocked),
-    // then point it at the workbook once the sync returns. The sync can take a few
-    // seconds, which is past the gesture window if we opened after the await.
-    const win = typeof window !== 'undefined' ? window.open('', '_blank') : null;
-    const r = await run('Opening team tracker', async () =>
-      api<{ webUrl: string | null; matters: number; needsClose: boolean }>('/matters/board', { method: 'POST' })
-    );
-    if (!r) {
-      win?.close();
-      return;
+    // If we already know the file's URL, open it now (synchronous → no popup block,
+    // no blank tab) and sync in the background; the open sheet updates live as the
+    // rows upsert. Otherwise build it first (spinner), then open.
+    if (boardUrl) window.open(boardUrl, '_blank');
+    setBoardLoading(true);
+    try {
+      const r = await api<{ webUrl: string | null; matters: number; needsClose: boolean }>('/matters/board', { method: 'POST' });
+      if (r.needsClose) {
+        setStatus('Close the tracker in Excel, then click again — upgrading it to the live-updating version.');
+        return;
+      }
+      if (r.webUrl) setBoardUrl(r.webUrl);
+      if (r.webUrl && !boardUrl) window.open(r.webUrl, '_blank'); // first build: open once we have it
+      setStatus(`Team tracker synced — ${r.matters} open matter(s).`);
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setBoardLoading(false);
     }
-    if (r.needsClose) {
-      win?.close();
-      setStatus('Close the tracker in Excel, then click again — upgrading it to the live-updating version.');
-      return;
-    }
-    if (r.webUrl && win) win.location.href = r.webUrl;
-    else if (r.webUrl) window.open(r.webUrl, '_blank');
-    setStatus(`Team tracker synced — ${r.matters} open matter(s).`);
   }
 
   async function findMatter() {
@@ -891,6 +908,7 @@ export default function Taskpane() {
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
+      <style>{`@keyframes cl-spin{to{transform:rotate(360deg)}}`}</style>
       <header style={S.header}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true">
@@ -1220,10 +1238,12 @@ export default function Taskpane() {
           {tab === 'matter' && (
           <>
           <button
-            style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10 }}
+            style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
             onClick={buildBoard}
+            disabled={boardLoading}
           >
-            📊 Team tracker
+            {boardLoading ? <span style={S.spinner} /> : <span>📊</span>}
+            {boardLoading ? 'Syncing…' : 'Team tracker'}
           </button>
 
           {!matterId && (
@@ -1777,6 +1797,15 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   tabActive: { background: '#5A27E0', color: '#fff' },
+  spinner: {
+    width: 12,
+    height: 12,
+    borderRadius: '50%',
+    border: '2px solid #cbd5e1',
+    borderTopColor: '#5A27E0',
+    display: 'inline-block',
+    animation: 'cl-spin 0.7s linear infinite',
+  },
   assistIcon: {
     width: 20,
     height: 20,
