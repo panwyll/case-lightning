@@ -495,6 +495,68 @@ export async function upsertTrackerRowByRef(userId: string, itemId: string, r: T
   }
 }
 
+// ── Generic workbook table (the master board updates rows in place, live) ────
+
+/** Reads every row of a named table, mapped by header — works while the file is open. */
+export async function listTableRows(
+  userId: string,
+  itemId: string,
+  table: string
+): Promise<Array<{ rowIndex: number; cells: Record<string, string> }>> {
+  const client = await graphClientForUser(userId);
+  const wb = `/me/drive/items/${itemId}/workbook`;
+  const colsRes = await client.api(`${wb}/tables/${table}/columns`).get();
+  const names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
+  const rowsRes = await client.api(`${wb}/tables/${table}/rows`).get();
+  return ((rowsRes.value ?? []) as any[]).map((row) => {
+    const vals = (row.values?.[0] ?? []) as any[];
+    const cells: Record<string, string> = {};
+    names.forEach((n, i) => (cells[n] = String(vals[i] ?? '')));
+    return { rowIndex: row.index as number, cells };
+  });
+}
+
+/**
+ * Upserts many rows into a named table in ONE workbook session, keyed by a
+ * column. Updating table rows via the workbook API co-authors with an open file
+ * (no 423), so the board updates live while someone has it open.
+ */
+export async function upsertTableRowsByKey(
+  userId: string,
+  itemId: string,
+  table: string,
+  keyColumn: string,
+  items: Array<{ key: string; values: Record<string, string | number> }>
+): Promise<void> {
+  if (!items.length) return;
+  const client = await graphClientForUser(userId);
+  const wb = `/me/drive/items/${itemId}/workbook`;
+  const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
+  const sid = session.id as string;
+  const h = (req: any) => req.header('workbook-session-id', sid);
+  try {
+    const colsRes = await h(client.api(`${wb}/tables/${table}/columns`)).get();
+    const names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
+    const keyIdx = names.findIndex((n) => norm(n) === norm(keyColumn));
+    const rowsRes = await h(client.api(`${wb}/tables/${table}/rows`)).get();
+    const indexByKey = new Map<string, number>();
+    for (const row of (rowsRes.value ?? []) as any[]) {
+      indexByKey.set(String((row.values?.[0] ?? [])[keyIdx] ?? ''), row.index as number);
+    }
+    for (const it of items) {
+      const valuesArr = names.map((n) => (it.values[n] === undefined ? '' : it.values[n]));
+      const idx = indexByKey.get(it.key);
+      if (idx !== undefined) {
+        await h(client.api(`${wb}/tables/${table}/rows/itemAt(index=${idx})`)).patch({ values: [valuesArr] });
+      } else {
+        await h(client.api(`${wb}/tables/${table}/rows`)).post({ values: [valuesArr] });
+      }
+    }
+  } finally {
+    await h(client.api(`${wb}/closeSession`)).post({}).catch(() => {});
+  }
+}
+
 // ── Teams ───────────────────────────────────────────────────────────────────
 
 export async function postTeamsSummary(

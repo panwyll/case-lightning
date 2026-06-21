@@ -597,10 +597,15 @@ export default function Taskpane() {
   // and opens it. If it's already open in Excel (locked) we just open it.
   async function buildBoard() {
     const r = await run('Opening team tracker', async () =>
-      api<{ webUrl: string | null; matters: number; locked: boolean }>('/matters/board', { method: 'POST' })
+      api<{ webUrl: string | null; matters: number; needsClose: boolean }>('/matters/board', { method: 'POST' })
     );
-    if (r?.webUrl) window.open(r.webUrl, '_blank', 'noopener');
-    if (r) setStatus(r.locked ? 'Opened — close it in Excel to push app changes back.' : `Team tracker synced — ${r.matters} open matter(s).`);
+    if (!r) return;
+    if (r.needsClose) {
+      setStatus('Close the tracker in Excel, then click again — upgrading it to the live-updating version.');
+      return;
+    }
+    if (r.webUrl) window.open(r.webUrl, '_blank', 'noopener');
+    setStatus(`Team tracker synced — ${r.matters} open matter(s).`);
   }
 
   async function findMatter() {
