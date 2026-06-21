@@ -2,6 +2,8 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
+import { assistOnMessage } from '@/lib/server/assist';
+import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import type { SessionUser } from '@/lib/server/types';
 
 export const runtime = 'nodejs';
@@ -52,6 +54,25 @@ export async function POST(req: NextRequest) {
         const triage = await runTriage(user, message);
         await applyTriageTags(user, message, triage);
         await runAutoRules(user, message, triage);
+
+        // Precompute the full taskpane "situation" (thread summary + drafted
+        // reply) and cache it, so opening this email is instant. runTriage above
+        // already stored the classification, so assistOnMessage reuses it rather
+        // than re-classifying. Best-effort — a failure here never blocks triage.
+        //
+        // Only spend the summary/draft tokens on mail that's actually worth it:
+        // matched to a matter, or flagged as needing attention. Pure noise
+        // (newsletters, FYIs with no matter) stays lazy — the taskpane computes
+        // it on the rare open instead.
+        const worthPrecomputing = triage.top !== null || triage.classification.needsAttention;
+        if (worthPrecomputing) {
+          try {
+            const result = await assistOnMessage(user, { messageId, conversationId: message.conversationId });
+            await writeAssistCache(user.tenantId, messageId, result, 'READY');
+          } catch (assistError) {
+            await markAssistError(user.tenantId, messageId, (assistError as Error).message).catch(() => {});
+          }
+        }
       } catch (error) {
         console.error('[graph notification] processing failed', n.subscriptionId, (error as Error).message);
       }

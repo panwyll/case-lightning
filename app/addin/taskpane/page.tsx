@@ -57,6 +57,8 @@ interface AssistData {
   outstanding: string[];
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
   highlighted: string[];
+  /** False while the slow half (thread summary + draft) is still being prepared. */
+  ready: boolean;
 }
 
 interface MatterTask {
@@ -210,6 +212,9 @@ export default function Taskpane() {
 
   // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
   const [assist, setAssist] = useState<AssistData | null>(null);
+  // Tracks which message the assist poller is following; changing it cancels any
+  // in-flight poll so a fast email-switch never lands stale results.
+  const assistPollRef = useRef<string>('');
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [newTaskDetail, setNewTaskDetail] = useState('');
@@ -831,19 +836,45 @@ export default function Taskpane() {
   // matterId state update has flushed (the auto-run uses the current state).
   async function runAssist(matterOverride?: string) {
     const mid = matterOverride ?? matterId;
-    const r = await run('Reading the email', async () => {
+    const pollKey = messageId;
+    assistPollRef.current = pollKey; // cancels any in-flight poll for a prior email
+    const call = () =>
+      api<AssistData>('/assist', {
+        method: 'POST',
+        // Omit tone so the response matches the precomputed cache; tone-specific
+        // redrafts go through the dedicated draft-reply path.
+        body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined }),
+      });
+
+    // The first call returns fast — either the cached full result or just the
+    // fast half — so the spinner clears quickly and the situation shows at once.
+    const first = await run('Reading the email', async () => {
       requireThread();
       if (!messageId) throw new Error('Open an email first.');
-      return api<AssistData>('/assist', {
-        method: 'POST',
-        body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined, tone }),
-      });
+      return call();
     });
-    if (r) {
-      setAssist(r);
-      if (r.matter && !mid) {
-        setMatterId(r.matter.id);
-        loadMatter(r.matter.id);
+    if (!first) return;
+    setAssist(first);
+    if (first.matter && !mid) {
+      setMatterId(first.matter.id);
+      loadMatter(first.matter.id);
+    }
+
+    // Slow half (summary + draft) not ready yet → poll quietly until it lands,
+    // updating the panel in place. No blocking spinner; placeholders fill in.
+    let current = first;
+    let tries = 0;
+    while (!current.ready && assistPollRef.current === pollKey && tries < 40) {
+      await new Promise((res) => setTimeout(res, 1500));
+      if (assistPollRef.current !== pollKey) return; // a newer email took over
+      tries++;
+      try {
+        const next = await call();
+        if (assistPollRef.current !== pollKey) return;
+        setAssist(next);
+        current = next;
+      } catch {
+        /* transient — keep polling */
       }
     }
   }
@@ -1120,12 +1151,17 @@ export default function Taskpane() {
               </div>
               <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
 
-              {assist.whatWeKnow.length > 0 && (
+              {assist.whatWeKnow.length > 0 ? (
                 <>
                   <SubLabel>What we know</SubLabel>
                   <ul style={S.ul}>{assist.whatWeKnow.map((w, i) => <li key={i}>{w}</li>)}</ul>
                 </>
-              )}
+              ) : !assist.ready ? (
+                <>
+                  <SubLabel>What we know</SubLabel>
+                  <p style={S.muted}>Reading the thread…</p>
+                </>
+              ) : null}
 
               {/* The four moves. The recommended one is pre-lit; pick any to expand it. */}
               <SubLabel>What do you want to do?</SubLabel>
@@ -1160,6 +1196,8 @@ export default function Taskpane() {
                       <p style={S.muted}>A reply is drafted from the thread and this matter&apos;s facts. Open it to review before anything is sent.</p>
                       <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
                     </>
+                  ) : !assist.ready ? (
+                    <p style={S.muted}>Preparing a draft…</p>
                   ) : (
                     <>
                       <p style={S.muted}>No reply was prepared — generate one now if you want to respond.</p>
