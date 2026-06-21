@@ -10,9 +10,9 @@
  * next refresh. Postgres stays the source of truth.
  */
 import ExcelJS from 'exceljs';
-import { query } from './db';
+import { query, queryOne } from './db';
 import { config } from './config';
-import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey, setRangeFills } from './graph';
+import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
@@ -119,6 +119,15 @@ async function teamNames(tenantId: string): Promise<string[]> {
   return rows.map((r) => r.name).filter(Boolean);
 }
 
+/** The firm's status→colour map (defaults + any saved overrides), defaults first. */
+async function getStatusColours(tenantId: string): Promise<Record<string, string>> {
+  const row = await queryOne<{ status_colours: Record<string, string> | null }>(
+    `select status_colours from policy_config where tenant_id = $1`,
+    [tenantId]
+  );
+  return { ...STATUS_COLOUR, ...(row?.status_colours ?? {}) };
+}
+
 /** One-time formatted template: a real table + dropdowns + status colours. */
 async function buildTemplate(tenantId: string): Promise<Buffer> {
   const rows = await boardRows(tenantId);
@@ -130,8 +139,9 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   // can add their own stages / statuses / people just by typing a new row, and
   // the board dropdowns (which point at the table columns via INDIRECT) pick them
   // up automatically. Kept on its own visible tab so it's editable.
+  const statusColours = await getStatusColours(tenantId);
   const stageVals = STAGE_ORDER.map((s) => STAGE_LABELS[s]);
-  const statusVals = Object.values(STATUS_LABELS);
+  const statusVals = Object.keys(statusColours); // standard + firm-added statuses
   const assigneeVals = ['Unassigned', ...team];
   const lists = wb.addWorksheet('Lists');
   lists.getColumn(1).width = 28;
@@ -139,7 +149,7 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
   lists.getColumn(4).width = 12;
   lists.getColumn(6).width = 26;
   lists.addTable({ name: 'StagesTable', ref: 'A1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Stage' }], rows: stageVals.map((v) => [v]) });
-  lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }, { name: 'Colour' }], rows: statusVals.map((v) => [v, STATUS_COLOUR[v] ?? 'Grey']) });
+  lists.addTable({ name: 'StatusesTable', ref: 'C1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Status' }, { name: 'Colour' }], rows: statusVals.map((v) => [v, statusColours[v] ?? 'Grey']) });
   lists.addTable({ name: 'AssigneesTable', ref: 'F1', headerRow: true, style: { theme: 'TableStyleMedium4', showRowStripes: true }, columns: [{ name: 'Assignee' }], rows: assigneeVals.map((v) => [v]) });
   const note = lists.getCell('H1');
   note.value = 'Add your own stages / statuses / people by typing a new row in these tables — the board dropdowns update automatically.';
@@ -211,12 +221,19 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
     }
   }
 
-  // Status colour applied directly to each cell (not conditional formatting) so it
-  // matches the firm's Colour mapping — and live updates re-fill cells the same
-  // way via Graph (Excel CF can't look up a colour from the Colour list).
-  rows.forEach((r, i) => {
-    const label = STATUS_LABELS[r.status_flag] ?? r.status_flag;
-    ws.getCell(`D${i + 2}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillFor(STATUS_COLOUR[label] ?? 'Grey') } };
+  // Status colour via conditional formatting (it has precedence over the table
+  // banding, unlike a manual fill) — one rule per status, coloured from the
+  // firm's Colour mapping so the Colour list drives the board.
+  const cfFill = (argb: string) => ({ type: 'pattern' as const, pattern: 'solid' as const, bgColor: { argb } });
+  ws.addConditionalFormatting({
+    ref: 'D2:D1000',
+    rules: statusVals.map((v, i) => ({
+      type: 'containsText' as const,
+      operator: 'containsText' as const,
+      text: v,
+      priority: i + 1,
+      style: { fill: cfFill(fillFor(statusColours[v] ?? 'Grey')) },
+    })),
   });
 
   const out = await wb.xlsx.writeBuffer();
@@ -271,6 +288,26 @@ async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<vo
       ]);
     }
   }
+
+  // Persist the Statuses list's Colour column so it drives the board CF on the
+  // next rebuild (and survives the file being deleted/regenerated).
+  try {
+    const colours: Record<string, string> = {};
+    for (const r of await listTableRows(user.userId, itemId, 'StatusesTable')) {
+      const s = (r.cells['Status'] ?? '').trim();
+      const c = (r.cells['Colour'] ?? '').trim();
+      if (s && c) colours[s] = c;
+    }
+    if (Object.keys(colours).length) {
+      await query(
+        `insert into policy_config (tenant_id, status_colours) values ($1, $2::jsonb)
+         on conflict (tenant_id) do update set status_colours = $2::jsonb, updated_at = now()`,
+        [user.tenantId, JSON.stringify(colours)]
+      );
+    }
+  } catch {
+    /* no StatusesTable (older file) — leave the saved colours as-is */
+  }
 }
 
 /** Just the board's URL if it already exists — fast, no sync (lets the button open it instantly). */
@@ -323,26 +360,6 @@ export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: s
       'Matter',
       rows.map((r) => ({ key: r.matter_ref, values: rowValues(r) }))
     );
-
-    // Pull the firm's Colour mapping (from the Statuses list) through to the board:
-    // re-fill each Status cell with its colour. Live, even with the file open.
-    const statusColour = new Map<string, string>();
-    try {
-      for (const r of await listTableRows(user.userId, item.id, 'StatusesTable')) {
-        const s = (r.cells['Status'] ?? '').trim();
-        const c = (r.cells['Colour'] ?? '').trim();
-        if (s) statusColour.set(s, c || STATUS_COLOUR[s] || 'Grey');
-      }
-    } catch {
-      /* no StatusesTable (older file) — fall back to defaults below */
-    }
-    const boardCells = await listTableRows(user.userId, item.id, TABLE);
-    const fills = boardCells.map((r) => {
-      const label = (r.cells['Status'] ?? '').trim();
-      const colour = statusColour.get(label) ?? STATUS_COLOUR[label] ?? 'Grey';
-      return { address: `D${r.rowIndex + 2}`, argb: fillFor(colour) };
-    });
-    await setRangeFills(user.userId, 'Matters', item.id, fills).catch(() => {});
   }
 
   await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);
