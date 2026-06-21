@@ -200,14 +200,19 @@ export async function setMessageCategory(userId: string, messageId: string, cate
 // A small palette of Graph category colour presets we cycle through.
 const CATEGORY_COLORS = ['preset0', 'preset5', 'preset8', 'preset3', 'preset10', 'preset6'];
 
-/** Ensures a named Outlook category exists in the user's master list (coloured). */
-export async function ensureMasterCategory(userId: string, displayName: string): Promise<void> {
+/**
+ * Ensures a named Outlook category exists in the user's master list (coloured).
+ * Pass an explicit Graph preset (e.g. 'preset0' = red) to pin the colour;
+ * otherwise a stable colour is derived from the name so a given matter/label
+ * always shows the same colour in the message list.
+ */
+export async function ensureMasterCategory(userId: string, displayName: string, color?: string): Promise<void> {
   const client = await graphClientForUser(userId);
   try {
     const existing = await client.api('/me/outlook/masterCategories').get();
     if ((existing.value ?? []).some((c: any) => c.displayName === displayName)) return;
-    const color = CATEGORY_COLORS[Math.abs(hash(displayName)) % CATEGORY_COLORS.length];
-    await client.api('/me/outlook/masterCategories').post({ displayName, color });
+    const chosen = color ?? CATEGORY_COLORS[Math.abs(hash(displayName)) % CATEGORY_COLORS.length];
+    await client.api('/me/outlook/masterCategories').post({ displayName, color: chosen });
   } catch {
     /* category APIs can fail on some mailbox types — tagging is best-effort */
   }

@@ -12,7 +12,7 @@
  */
 import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
-import { runTriage } from './triage';
+import { runTriage, applyTriageTags } from './triage';
 import { summarizeThread, draftReply, retrieveMatterContext } from './ai';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
@@ -36,6 +36,8 @@ export interface AssistResult {
   outstanding: string[];
   /** A prepared reply, when the email warrants one; null otherwise. */
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  /** Outlook category tags applied to the message so it stands out in the list. */
+  highlighted: string[];
 }
 
 export async function assistOnMessage(
@@ -122,6 +124,15 @@ export async function assistOnMessage(
   // what the thread summary surfaced when there's no matter yet.
   const outstanding = matterOutstanding.length ? matterOutstanding : summary.outstanding;
 
+  // Highlight the email in the Outlook message list (coloured categories) so it
+  // stands out at a glance — best-effort, never fails the analysis.
+  let highlighted: string[] = [];
+  try {
+    highlighted = await applyTriageTags(user, message, triage);
+  } catch {
+    /* category APIs unavailable on this mailbox — skip silently */
+  }
+
   return {
     triageId: triage.triageId,
     classification: triage.classification,
@@ -132,5 +143,6 @@ export async function assistOnMessage(
     whatWeKnow: summary.happened,
     outstanding,
     draft,
+    highlighted,
   };
 }

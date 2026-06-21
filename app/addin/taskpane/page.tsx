@@ -56,6 +56,7 @@ interface AssistData {
   whatWeKnow: string[];
   outstanding: string[];
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  highlighted: string[];
 }
 
 interface MatterTask {
@@ -1022,6 +1023,11 @@ export default function Taskpane() {
                   <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
                 ) : (
                   <p style={{ ...S.muted, marginTop: 8 }}>No reply needed — looks like an update to note.</p>
+                )}
+                {assist.highlighted.length > 0 && (
+                  <p style={{ ...S.muted, marginTop: 10, marginBottom: 0 }}>
+                    🏷️ Highlighted in your inbox: {assist.highlighted.map((t) => t.replace('CaseLightning · ', '')).join(', ')}
+                  </p>
                 )}
                 <button style={{ ...S.secondary, marginTop: 6 }} onClick={runAssist}>Re-analyse</button>
               </>

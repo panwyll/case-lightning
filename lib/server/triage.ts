@@ -98,13 +98,17 @@ const INTENT_LABEL: Record<string, string> = {
  * intent tag always, plus the matched matter ref when the match is AUTO-band.
  * Opting into auto-triage (the subscription) is the user's consent to tagging.
  */
+const ATTENTION_TAG = 'CaseLightning · Needs attention';
+
 export async function applyTriageTags(user: SessionUser, message: any, triage: TriageResult): Promise<string[]> {
   if (!message.id) return [];
   const tags: string[] = [];
   const intentTag = INTENT_LABEL[triage.classification.intent] ?? INTENT_LABEL.OTHER;
   tags.push(intentTag);
   if (triage.top && triage.top.band === 'AUTO') tags.push(`Matter ${triage.top.matterRef}`);
-  for (const t of tags) await ensureMasterCategory(user.userId, t);
+  // The standout one: a red tag so emails needing a response pop in the list.
+  if (triage.classification.needsAttention) tags.push(ATTENTION_TAG);
+  for (const t of tags) await ensureMasterCategory(user.userId, t, t === ATTENTION_TAG ? 'preset0' : undefined);
   await addMessageCategories(user.userId, message.id, tags).catch(() => {});
   return tags;
 }
