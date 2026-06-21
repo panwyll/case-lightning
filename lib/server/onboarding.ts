@@ -344,13 +344,17 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
     }
 
     let proposal: Awaited<ReturnType<typeof proposeMatter>> | null = null;
+    let proposeError: string | null = null;
     try {
       proposal = await proposeMatter({ userId: user.userId, tenantId: user.tenantId, threadDigest: buildDigest(msgs) });
-    } catch {
-      proposal = null;
+    } catch (error) {
+      // Don't mask an AI failure as "not a conveyancing matter" — capture it so a
+      // systemic problem (bad key/model, rate limit) is visible instead of 0 cases.
+      proposeError = describeGraphError(error);
     }
 
     const isCase = !!proposal && proposal.isConveyancingCase && (proposal.confidence ?? 0) >= MIN_CONFIDENCE;
+    const rationale = proposal?.rationale ?? (proposeError ? `AI proposal failed — ${proposeError}` : 'Not recognised as a conveyancing matter.');
 
     await query(
       `insert into onboarding_case
@@ -369,7 +373,7 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
         isCase ? proposal!.counterpartySolicitor || null : null,
         isCase ? proposal!.counterpartyAgent || null : null,
         proposal?.confidence ?? null,
-        proposal?.rationale ?? 'Not recognised as a conveyancing matter.',
+        rationale,
         Math.max(1, new Set(convs).size),
         c.cnt,
         convs,
