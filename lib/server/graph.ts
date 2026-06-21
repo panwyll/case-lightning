@@ -342,6 +342,21 @@ export async function putDriveFile(userId: string, path: string, content: Buffer
   return client.api(`/me/drive/root:/${encodePath(path)}:/content`).put(content);
 }
 
+/** Downloads a file's bytes by OneDrive path, or null if it doesn't exist yet. */
+export async function getDriveFileByPath(userId: string, path: string): Promise<Buffer | null> {
+  const client = await graphClientForUser(userId);
+  try {
+    const stream = await client.api(`/me/drive/root:/${encodePath(path)}:/content`).getStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream as AsyncIterable<Buffer>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  } catch {
+    return null; // not found yet (first build) or unreadable — caller treats as "no edits"
+  }
+}
+
 /**
  * Ensures Tracker.xlsx exists in the matter folder, seeded from a template that
  * already contains the "TrackerTable" table. Returns the driveItem (id + webUrl).

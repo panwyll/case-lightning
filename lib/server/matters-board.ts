@@ -10,7 +10,7 @@
 import ExcelJS from 'exceljs';
 import { query } from './db';
 import { config } from './config';
-import { putDriveFile } from './graph';
+import { putDriveFile, getDriveFileByPath } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
@@ -195,10 +195,84 @@ async function buildWorkbook(tenantId: string): Promise<Buffer> {
   return Buffer.from(out);
 }
 
-/** Rebuild the master board and upload it; returns its OneDrive web URL. */
+const STAGE_BY_LABEL = Object.fromEntries(Object.entries(STAGE_LABELS).map(([k, v]) => [v, k]));
+const STATUS_BY_LABEL = Object.fromEntries(Object.entries(STATUS_LABELS).map(([k, v]) => [v, k]));
+
+function cellText(cell: ExcelJS.Cell): string {
+  const v = cell.value as any;
+  if (v == null) return '';
+  if (typeof v === 'object') return String(v.text ?? v.result ?? '').trim();
+  return String(v).trim();
+}
+
+/**
+ * Pull hand edits (stage / status / assignee) from the master workbook back into
+ * Postgres. Conflict policy: if the app changed a matter since we last wrote it
+ * to the board (updated_at > board_synced_at) the app wins and we skip it;
+ * otherwise a differing Excel cell is a human edit and is applied.
+ */
+async function reconcileFromBoard(user: SessionUser): Promise<void> {
+  const buf = await getDriveFileByPath(user.userId, MASTER_PATH);
+  if (!buf) return;
+  let ws: ExcelJS.Worksheet | undefined;
+  try {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf as unknown as ExcelJS.Buffer);
+    ws = wb.getWorksheet('Matters');
+  } catch {
+    return; // workbook unreadable — treat as no edits
+  }
+  if (!ws) return;
+
+  const users = await query<{ id: string; name: string }>(
+    `select id, coalesce(display_name, email) as name from app_user where tenant_id = $1`,
+    [user.tenantId]
+  );
+  const userIdByName = new Map(users.map((u) => [u.name, u.id]));
+
+  const matters = await query<{ id: string; matter_ref: string; stage: string; status_flag: string; assigned_to: string | null; updated_at: string; board_synced_at: string | null }>(
+    `select id, matter_ref, stage, status_flag, assigned_to, updated_at, board_synced_at
+     from matter where tenant_id = $1 and status = 'OPEN'`,
+    [user.tenantId]
+  );
+  const byRef = new Map(matters.map((m) => [m.matter_ref, m]));
+
+  const updates: Array<{ id: string; stage: string; status: string; assigned: string | null }> = [];
+  ws.eachRow((row, n) => {
+    if (n === 1) return; // header
+    const m = byRef.get(cellText(row.getCell(1)));
+    if (!m) return;
+    // App changed it since the last board push → app wins, leave it alone.
+    const synced = m.board_synced_at ? new Date(m.board_synced_at).getTime() : 0;
+    if (new Date(m.updated_at).getTime() > synced) return;
+
+    const stage = STAGE_BY_LABEL[cellText(row.getCell(3))] ?? m.stage;
+    const status = STATUS_BY_LABEL[cellText(row.getCell(4))] ?? m.status_flag;
+    const name = cellText(row.getCell(5));
+    const assigned = name === 'Unassigned' || name === '' ? null : userIdByName.get(name) ?? m.assigned_to;
+    if (stage !== m.stage || status !== m.status_flag || assigned !== m.assigned_to) {
+      updates.push({ id: m.id, stage, status, assigned });
+    }
+  });
+
+  for (const u of updates) {
+    await query(
+      `update matter set stage = $1, status_flag = $2, assigned_to = $3, updated_at = now() where id = $4 and tenant_id = $5`,
+      [u.stage, u.status, u.assigned, u.id, user.tenantId]
+    );
+  }
+}
+
+/**
+ * Two-way refresh: pull hand edits from the workbook into Postgres, regenerate
+ * the board from the (now-reconciled) source of truth, upload it, and stamp
+ * board_synced_at so the next edit-vs-app comparison is correct.
+ */
 export async function refreshMasterBoard(user: SessionUser): Promise<{ webUrl: string | null; matters: number }> {
+  await reconcileFromBoard(user);
   const buffer = await buildWorkbook(user.tenantId);
   const item = await putDriveFile(user.userId, MASTER_PATH, buffer);
+  await query(`update matter set board_synced_at = now() where tenant_id = $1 and status = 'OPEN'`, [user.tenantId]);
   const count = (await boardRows(user.tenantId)).length;
   return { webUrl: item?.webUrl ?? null, matters: count };
 }
