@@ -33,9 +33,17 @@ export const config = {
   azureRedirectUri:
     env('AZURE_REDIRECT_URI') ??
     `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/auth/callback`,
+  // Least-privilege Graph scopes so admin consent is easier for firms' IT:
+  //  - Mail.ReadWrite covers reading threads AND creating draft replies (no
+  //    separate Mail.Read needed; there is no send scope — draft-only by design).
+  //  - Files.ReadWrite is the user's own OneDrive (matter folder + Excel tracker).
+  //    We deliberately do NOT request Files.ReadWrite.All / Sites.ReadWrite.All —
+  //    nothing touches other users' files or SharePoint sites (all /me/drive).
+  //  - Team.ReadBasic.All + ChannelMessage.Send back the optional "post summary
+  //    to Teams" feature only.
   graphScopes: (
     env('GRAPH_SCOPES') ??
-    'User.Read Mail.Read Mail.ReadWrite Files.ReadWrite Sites.ReadWrite.All Team.ReadBasic.All ChannelMessage.Send'
+    'User.Read Mail.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
   ).split(/\s+/),
 
   // AI — Claude, tiered by task so we don't pay Opus rates to label emails:
