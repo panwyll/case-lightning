@@ -262,10 +262,12 @@ async function clusterJob(job: OnboardingJob): Promise<void> {
 // ── Step 3: propose ──────────────────────────────────────────────────────────────
 
 function buildDigest(
-  msgs: Array<{ subject: string | null; from_address: string | null; participants: string[]; body_preview: string | null; received_at: string | null }>
+  msgs: Array<{ subject: string | null; from_address: string | null; participants: string[]; body_preview: string | null; received_at: string | Date | null }>
 ): string {
   const parts = msgs.slice(0, 40).map((m) => {
-    const when = (m.received_at ?? '').slice(0, 10);
+    // pg returns timestamptz columns as Date objects, so coerce before slicing —
+    // calling .slice() on a Date throws and (until now) silently killed the proposal.
+    const when = m.received_at ? new Date(m.received_at).toISOString().slice(0, 10) : '';
     return `[${when}] from ${m.from_address ?? 'unknown'} | to ${(m.participants ?? []).join(', ')}\nSubject: ${m.subject ?? ''}\n${m.body_preview ?? ''}`;
   });
   return parts.join('\n---\n').slice(0, 8000);
