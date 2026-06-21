@@ -84,6 +84,9 @@ export function describeGraphError(error: unknown): string {
 
 export async function listThreadMessages(userId: string, conversationId: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
+  // Graph rejects $filter on conversationId combined with $orderby on a different
+  // property ("The restriction or sort order is too complex"), so fetch filtered
+  // and sort chronologically in memory instead.
   const result = await client
     .api('/me/messages')
     .filter(`conversationId eq '${conversationId.replace(/'/g, "''")}'`)
@@ -91,9 +94,13 @@ export async function listThreadMessages(userId: string, conversationId: string)
       'id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,conversationId,internetMessageId,categories,hasAttachments'
     )
     .top(200)
-    .orderby('receivedDateTime asc')
     .get();
-  return result.value ?? [];
+  const messages = (result.value ?? []) as any[];
+  return messages.sort((a, b) => {
+    const ta = new Date(a.receivedDateTime ?? a.sentDateTime ?? 0).getTime();
+    const tb = new Date(b.receivedDateTime ?? b.sentDateTime ?? 0).getTime();
+    return ta - tb;
+  });
 }
 
 /**
