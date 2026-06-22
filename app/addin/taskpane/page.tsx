@@ -274,6 +274,11 @@ export default function Taskpane() {
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
+  // The most recent draft we created (reply / update / forward), shown in an
+  // in-pane preview so it's visible immediately without hunting in Outlook.
+  const [preview, setPreview] = useState<{ kind: 'reply' | 'update' | 'forward'; to: string; subject: string; bodyHtml: string; webLink?: string | null } | null>(null);
+  const [delegateAssignee, setDelegateAssignee] = useState('');
+  const [delegateInstructions, setDelegateInstructions] = useState('');
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
   const [boardUrl, setBoardUrl] = useState<string | null>(null);
@@ -485,6 +490,9 @@ export default function Taskpane() {
           setChosenAction(null);
           setIgnored(false);
           setLinkOpen(false);
+          setPreview(null);
+          setDelegateAssignee('');
+          setDelegateInstructions('');
         };
         Office.onReady(() => {
           loadItem();
@@ -754,37 +762,6 @@ export default function Taskpane() {
     if (r) setSummary(r);
   }
 
-  async function extractFacts() {
-    const r = await run('Extracting facts', async () => {
-      requireThread();
-      return api<ExtractedFacts>(`/threads/${encodeURIComponent(conversationId)}/extract-facts`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId: matterId || undefined, conversationId }),
-      });
-    });
-    if (!r) return;
-    setFacts(r);
-    if (matterId) {
-      setStatus('Facts extracted; matter summary + Excel tracker updated.');
-      await loadMatter();
-    } else {
-      setStatus('Facts extracted. Link or create a matter to save them.');
-    }
-  }
-
-  async function saveToMatter() {
-    await run('Saving to OneDrive', async () => {
-      requireMatter();
-      requireThread();
-      if (!messageId) throw new Error('No message selected.');
-      const r = await api<{ savedDocs: any[] }>(`/threads/${encodeURIComponent(conversationId)}/save-to-matter`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId, messageId, includeAttachments: true }),
-      });
-      setStatus(`Saved ${r.savedDocs.length} file(s) to the matter's OneDrive folder.`);
-    });
-  }
-
   async function loadDocs() {
     await run('Loading documents', async () => {
       requireMatter();
@@ -902,11 +879,15 @@ export default function Taskpane() {
         subject = g.subject;
         bodyHtml = g.bodyHtml;
       }
-      await api<{ draftId: string }>(`/threads/${encodeURIComponent(conversationId)}/create-draft`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
-      });
-      setStatus('Reply draft created in Outlook — open it there to review and send.');
+      const r = await api<{ draftId: string; webLink?: string | null; subject: string; bodyHtml: string }>(
+        `/threads/${encodeURIComponent(conversationId)}/create-draft`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
+        }
+      );
+      setPreview({ kind: 'reply', to: sender?.email || 'the sender', subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
+      setStatus('Reply draft created in Outlook (never sent) — preview below.');
       return true;
     });
   }
@@ -926,19 +907,31 @@ export default function Taskpane() {
     if (matterId) loadTasks(matterId);
   }, [matterId, loadTasks]);
 
-  async function assignBlocker(detail: string, assigneeUserId: string) {
-    if (!matterId) {
-      setStatus('Link a matter first to assign work.');
-      return;
-    }
-    const a = assignees.find((x) => x.id === assigneeUserId);
-    await run('Assigning', async () => {
+  // Delegate to a colleague: assign it on the Excel tracker AND draft a forward of
+  // the email to them with instructions (draft only, never sent). Both effects are
+  // best-effort independent so a Graph hiccup on the forward still books the task.
+  async function delegateTo() {
+    if (!matterId) { setStatus('Link a matter first to delegate.'); return; }
+    const a = assignees.find((x) => x.id === delegateAssignee);
+    if (!a) return;
+    await run(`Delegating to ${a.display_name || a.email}`, async () => {
+      const detail = delegateInstructions.trim() || `Handle email: ${cleanSubject(subject) || 'this thread'}`;
       await api(`/matters/${matterId}/tasks`, {
         method: 'POST',
-        body: JSON.stringify({ type: 'ENQUIRY', detail, assignee: a ? a.display_name || a.email : null, assigneeUserId, source: 'ASSISTANT', status: 'OPEN' }),
+        body: JSON.stringify({ type: 'ENQUIRY', detail, assignee: a.display_name || a.email, assigneeUserId: a.id, source: 'ASSISTANT', status: 'OPEN' }),
       });
       await loadTasks();
-      setStatus('Assigned and written to the Excel tracker.');
+      if (messageId) {
+        const r = await api<{ draftId: string; webLink?: string | null; subject: string; instructions: string }>(
+          `/threads/${encodeURIComponent(conversationId)}/forward-draft`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ matterId, messageId, toEmail: a.email, instructions: delegateInstructions.trim() || undefined }),
+          }
+        );
+        setPreview({ kind: 'forward', to: a.display_name || a.email, subject: r.subject, bodyHtml: `<p>${escapeHtml(r.instructions)}</p><p style="color:#64748b">— original thread forwarded below —</p>`, webLink: r.webLink });
+      }
+      setStatus(`Assigned to ${a.display_name || a.email} on the tracker and a forward drafted in Outlook.`);
       return true;
     });
   }
@@ -1034,17 +1027,21 @@ export default function Taskpane() {
   async function draftUpdateTo(contact: { email: string; name?: string | null; role?: string }) {
     if (!matterId) return;
     await run(`Drafting an update to ${contact.name || contact.email}`, async () => {
-      const r = await api<{ draftId: string | null }>(`/matters/${matterId}/draft-update`, {
-        method: 'POST',
-        body: JSON.stringify({
-          toEmail: contact.email,
-          toName: contact.name || undefined,
-          role: contact.role || undefined,
-          messageId: messageId || undefined,
-          conversationId: conversationId || undefined,
-        }),
-      });
-      setStatus(`Update to ${contact.name || contact.email} drafted in Outlook — review and send it there.`);
+      const r = await api<{ draftId: string | null; webLink?: string | null; subject: string; bodyHtml: string }>(
+        `/matters/${matterId}/draft-update`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            toEmail: contact.email,
+            toName: contact.name || undefined,
+            role: contact.role || undefined,
+            messageId: messageId || undefined,
+            conversationId: conversationId || undefined,
+          }),
+        }
+      );
+      setPreview({ kind: 'update', to: contact.name || contact.email, subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
+      setStatus(`Update to ${contact.name || contact.email} drafted in Outlook (never sent) — preview below.`);
       return r;
     });
   }
@@ -1367,35 +1364,6 @@ export default function Taskpane() {
                 })}
               </div>
 
-              {/* Send an update to a different party. Data-driven from the matter's
-                  address book (people we've seen on its email), so it stays compact
-                  — one chip per real contact rather than a fixed grid of role buttons. */}
-              {(() => {
-                const people = (matterInfo?.contacts ?? []).filter((c: any) => c.role !== 'OUR_FIRM');
-                if (!people.length) return null;
-                return (
-                  <div style={S.updateRow}>
-                    <span style={S.updateLabel}>Send an update to</span>
-                    <div style={S.rowWrap}>
-                      {people.map((c: any) => {
-                        const roleLabel = CONTACT_ROLES.find(([v]) => v === (c.role || 'UNKNOWN'))?.[1];
-                        return (
-                          <button
-                            key={c.id}
-                            style={S.updateChip}
-                            title={`Draft an update to ${c.email}`}
-                            onClick={() => draftUpdateTo(c)}
-                          >
-                            {c.name || c.email}
-                            {roleLabel && roleLabel !== '—' && <span style={S.updateChipRole}>{roleLabel}</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-
               {/* Reply — clicking the move writes the draft straight to Outlook; the
                   only hint we show is while the draft is still being prepared. */}
               {effectiveAction === 'reply' && !assist.ready && !assist.draft && (
@@ -1404,47 +1372,60 @@ export default function Taskpane() {
                 </div>
               )}
 
-              {/* Action — do something on the matter yourself */}
-              {effectiveAction === 'action' && (
-                <div style={S.actionPanel}>
-                  <div style={S.rowWrap}>
-                    <button style={S.secondary} onClick={extractFacts}>Extract facts → tracker</button>
-                    <button style={S.secondary} onClick={saveToMatter}>Save email to matter</button>
+              {/* Action — send a fresh update to a party on the matter. Data-driven
+                  from the address book (one chip per real contact), so it stays
+                  compact rather than a fixed grid of role buttons. */}
+              {effectiveAction === 'action' && (() => {
+                const people = (matterInfo?.contacts ?? []).filter((c: any) => c.role !== 'OUR_FIRM');
+                return (
+                  <div style={S.actionPanel}>
+                    {people.length ? (
+                      <>
+                        <span style={S.updateLabel}>Draft an update to</span>
+                        <div style={S.rowWrap}>
+                          {people.map((c: any) => {
+                            const roleLabel = CONTACT_ROLES.find(([v]) => v === (c.role || 'UNKNOWN'))?.[1];
+                            return (
+                              <button key={c.id} style={S.updateChip} title={`Draft an update to ${c.email}`} onClick={() => draftUpdateTo(c)}>
+                                {c.name || c.email}
+                                {roleLabel && roleLabel !== '—' && <span style={S.updateChipRole}>{roleLabel}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <p style={{ ...S.muted, margin: 0 }}>No contacts yet — they’ll appear in the House tab as emails are matched to this case.</p>
+                    )}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {/* Delegate — hand the open items (or the whole email) to a colleague */}
+              {/* Delegate — assign it on the tracker + draft a forward to a colleague */}
               {effectiveAction === 'delegate' && (
                 <div style={S.actionPanel}>
-                  {assist.outstanding.length > 0 ? (
-                    <>
-                      {assist.outstanding.map((o, i) => (
-                        <div key={i} style={S.candidate}>
-                          <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{o}</div>
-                          <select
-                            style={{ ...S.input, marginBottom: 0 }}
-                            defaultValue=""
-                            onChange={(e) => { if (e.target.value) assignBlocker(o, e.target.value); }}
-                          >
-                            <option value="">Assign to…</option>
-                            {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
-                          </select>
-                        </div>
-                      ))}
-                    </>
-                  ) : (
-                    <>
-                      <select
-                        style={{ ...S.input, marginBottom: 0 }}
-                        defaultValue=""
-                        onChange={(e) => { if (e.target.value) assignBlocker(`Handle email: ${cleanSubject(subject) || 'this thread'}`, e.target.value); }}
-                      >
-                        <option value="">Delegate to…</option>
-                        {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
-                      </select>
-                    </>
-                  )}
+                  <select
+                    style={{ ...S.input, marginBottom: 6 }}
+                    value={delegateAssignee}
+                    onChange={(e) => setDelegateAssignee(e.target.value)}
+                  >
+                    <option value="">Delegate to…</option>
+                    {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                  </select>
+                  <textarea
+                    style={{ ...S.textarea, marginBottom: 6 }}
+                    rows={2}
+                    placeholder="Instructions (optional) — included on the forward and the tracker"
+                    value={delegateInstructions}
+                    onChange={(e) => setDelegateInstructions(e.target.value)}
+                  />
+                  <button
+                    style={{ ...S.primary, marginTop: 0, opacity: delegateAssignee ? 1 : 0.5 }}
+                    onClick={delegateTo}
+                    disabled={!delegateAssignee}
+                  >
+                    Assign on tracker + draft forward
+                  </button>
                 </div>
               )}
 
@@ -1457,6 +1438,24 @@ export default function Taskpane() {
                     <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
                   )}
                 </div>
+              )}
+            </Card>
+          )}
+
+          {/* Draft preview — the just-created Outlook draft, shown in-pane so it's
+              visible immediately (Outlook can take a moment to surface a new draft). */}
+          {tab === 'email' && preview && (
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Label>{preview.kind === 'reply' ? 'Reply draft' : preview.kind === 'update' ? 'Update draft' : 'Forward draft'}</Label>
+                <button style={{ ...S.iconAction, width: 26, height: 26 }} onClick={() => setPreview(null)} title="Dismiss" aria-label="Dismiss">✕</button>
+              </div>
+              <p style={{ ...S.muted, margin: '0 0 8px' }}>Created in Outlook · never sent — review &amp; send it there.</p>
+              <div style={S.kv}><span>To</span><span style={{ textAlign: 'right' }}>{preview.to}</span></div>
+              <div style={S.kv}><span>Subject</span><span style={{ textAlign: 'right' }}>{preview.subject || '—'}</span></div>
+              <div style={S.previewBody} dangerouslySetInnerHTML={{ __html: preview.bodyHtml }} />
+              {preview.webLink && (
+                <a style={{ ...S.secondary, display: 'inline-block', marginTop: 8, textDecoration: 'none' }} href={preview.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>
               )}
             </Card>
           )}
@@ -1766,6 +1765,10 @@ function fmtSize(n: number | null): string {
 function humanize(s: string): string {
   const t = s.replace(/[_-]+/g, ' ').trim().toLowerCase();
   return t ? t[0].toUpperCase() + t.slice(1) : s;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 }
 
 // Small inline SVG icons, stroke-based to match the header gear — keeps the
@@ -2191,10 +2194,10 @@ const S: Record<string, React.CSSProperties> = {
   actionBtnActive: { background: '#5A27E0', borderColor: '#5A27E0', color: '#fff' },
   recDot: { position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: 999, background: '#22c55e' },
   actionPanel: { marginTop: 8, padding: 10, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 },
-  updateRow: { marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e2e8f0' },
   updateLabel: { display: 'block', fontSize: 11, color: '#64748b', marginBottom: 6 },
   updateChip: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 999, fontSize: 12, color: '#5A27E0', cursor: 'pointer', fontWeight: 600 },
   updateChipRole: { fontSize: 10, fontWeight: 500, color: '#7c6fb0', background: '#fff', border: '1px solid #e9e4ff', borderRadius: 999, padding: '1px 6px' },
+  previewBody: { marginTop: 8, padding: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12, lineHeight: 1.5, color: '#0f172a', maxHeight: 240, overflow: 'auto' },
   spinner: {
     width: 12,
     height: 12,

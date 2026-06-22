@@ -357,7 +357,7 @@ export async function runAutoRules(
         policy.auto_send_enabled &&
         externalDomainsAllowed(recipients, policy.allowed_external_domains ?? []);
       if (sendOk) {
-        const id = await createAndSendReply(user.userId, message.id, draft.bodyHtml, draft.subject);
+        const id = await createAndSendReply(user.userId, message.id, draft.bodyHtml);
         actions.push('auto-sent');
         await writeAudit({
           tenantId: user.tenantId,
@@ -369,7 +369,7 @@ export async function runAutoRules(
         });
       } else {
         // Fail safe: degrade to a draft and record why the send was blocked.
-        await createReplyDraft(user.userId, message.id, draft.bodyHtml, draft.subject);
+        await createReplyDraft(user.userId, message.id, draft.bodyHtml);
         actions.push('auto-drafted (send blocked)');
         await writeAudit({
           tenantId: user.tenantId,
@@ -381,7 +381,7 @@ export async function runAutoRules(
         });
       }
     } else {
-      await createReplyDraft(user.userId, message.id, draft.bodyHtml, draft.subject);
+      await createReplyDraft(user.userId, message.id, draft.bodyHtml);
       actions.push('auto-drafted');
     }
   }

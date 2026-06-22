@@ -181,21 +181,52 @@ export async function getMessage(userId: string, messageId: string): Promise<any
     .get();
 }
 
-/** Creates a draft reply in Outlook and patches its body/subject. Never sends. */
+/**
+ * Creates a draft REPLY in Outlook (via Graph createReply, so it threads with the
+ * original conversation and pre-fills the right recipients) and patches in our
+ * drafted body. Never sends.
+ *
+ * We deliberately keep Outlook's native "RE: …" subject — overwriting it with a
+ * fresh subject makes Outlook treat the draft as a brand-new email rather than a
+ * reply. We only append the matter's case-ref token (for matching) when given.
+ */
 export async function createReplyDraft(
   userId: string,
   messageId: string,
   bodyHtml: string,
-  subject?: string
-): Promise<any> {
+  opts: { appendToken?: string } = {}
+): Promise<{ id: string; subject: string; webLink: string | null }> {
   const client = await graphClientForUser(userId);
   const draft = await client.api(`/me/messages/${messageId}/createReply`).post({ comment: '' });
   const updateBody: Record<string, unknown> = {
     body: { contentType: 'HTML', content: bodyHtml },
   };
-  if (subject) updateBody.subject = subject;
+  let subject: string = draft.subject ?? '';
+  if (opts.appendToken && !subject.includes(`[#${opts.appendToken}]`)) {
+    subject = `${subject} [#${opts.appendToken}]`;
+    updateBody.subject = subject;
+  }
   await client.api(`/me/messages/${draft.id}`).patch(updateBody);
-  return draft;
+  return { id: draft.id, subject, webLink: draft.webLink ?? null };
+}
+
+/**
+ * Creates a draft FORWARD of a message to a colleague (via Graph createForward, so
+ * the original thread is carried along) with an optional instruction comment.
+ * Used by Delegate. Never sends.
+ */
+export async function createForwardDraft(
+  userId: string,
+  messageId: string,
+  toEmail: string,
+  comment = ''
+): Promise<{ id: string; subject: string; webLink: string | null }> {
+  const client = await graphClientForUser(userId);
+  const draft = await client.api(`/me/messages/${messageId}/createForward`).post({
+    comment,
+    toRecipients: [{ emailAddress: { address: toEmail } }],
+  });
+  return { id: draft.id, subject: draft.subject ?? '', webLink: draft.webLink ?? null };
 }
 
 /** Creates a standalone draft email (not a reply) — draft-only, never sent. */
@@ -311,10 +342,9 @@ export async function deleteSubscription(userId: string, subscriptionId: string)
 export async function createAndSendReply(
   userId: string,
   messageId: string,
-  bodyHtml: string,
-  subject?: string
+  bodyHtml: string
 ): Promise<string> {
-  const draft = await createReplyDraft(userId, messageId, bodyHtml, subject);
+  const draft = await createReplyDraft(userId, messageId, bodyHtml);
   const client = await graphClientForUser(userId);
   await client.api(`/me/messages/${draft.id}/send`).post({});
   return draft.id;
