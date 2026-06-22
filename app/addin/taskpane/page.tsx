@@ -1658,29 +1658,42 @@ export default function Taskpane() {
           {tab === 'house' && matterInfo?.matter && (() => {
             const m = matterInfo.matter;
             const facts: Record<string, unknown> = matterInfo.summary?.facts ?? {};
-            // Surface a price from the extracted facts (no dedicated column) — the
-            // first fact whose key looks price-like.
+            // No price column historically — prefill from the first price-like fact.
             const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
             const join = (a?: string[]) => (a && a.length ? a.join(', ') : '');
-            const buyers = join(m.buyer_names);
-            const sellers = join(m.seller_names);
             const row = (label: string, val: unknown) =>
               val ? <div style={S.kv}><span>{label}</span><span style={{ textAlign: 'right' }}>{String(val)}</span></div> : null;
-            // Extracted facts not already shown as a structured row above.
+            // Editable, two-way: edits PATCH the matter on blur (only when changed
+            // from the stored baseline), then the panel reloads. Uncontrolled +
+            // keyed per matter so switching matters resets the inputs.
+            const edit = (label: string, field: string, display: string, baseline: string, type = 'text') => (
+              <label key={`${m.id}:${field}`} style={{ display: 'block', marginBottom: 6 }}>
+                <span style={S.fieldLabel}>{label}</span>
+                <input
+                  style={{ ...S.input, marginBottom: 0 }}
+                  type={type}
+                  defaultValue={display}
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v !== baseline) updateMatterField({ [field]: v }); }}
+                />
+              </label>
+            );
+            const date = (s: unknown) => (s ? String(s).slice(0, 10) : '');
             const extra = Object.entries(facts).filter(([k]) => k !== priceKey);
             return (
               <Card>
                 <Label>{m.matter_ref}</Label>
-                {row('Property', m.property_address)}
-                {priceKey && row('Purchase price', facts[priceKey])}
-                {row('Buyer(s)', buyers)}
-                {row('Seller(s)', sellers)}
-                {row('Other side (solicitor)', m.counterparty_solicitor)}
-                {row('Estate agent', m.counterparty_agent)}
-                {row('Lender', m.lender)}
-                {row('Chain', m.chain_position)}
-                {row('Exchange target', m.exchange_target_date ? String(m.exchange_target_date).slice(0, 10) : '')}
-                {row('Completion target', m.completion_target_date ? String(m.completion_target_date).slice(0, 10) : '')}
+                {edit('Property address', 'propertyAddress', m.property_address ?? '', m.property_address ?? '')}
+                {edit('Purchase price', 'purchasePrice', m.purchase_price ?? (priceKey ? String(facts[priceKey]) : ''), m.purchase_price ?? '')}
+                {row('Buyer(s)', join(m.buyer_names))}
+                {row('Seller(s)', join(m.seller_names))}
+                {edit('Other side (solicitor)', 'counterpartySolicitor', m.counterparty_solicitor ?? '', m.counterparty_solicitor ?? '')}
+                {edit('Estate agent', 'counterpartyAgent', m.counterparty_agent ?? '', m.counterparty_agent ?? '')}
+                {edit('Lender', 'lender', m.lender ?? '', m.lender ?? '')}
+                {edit('Chain position', 'chainPosition', m.chain_position ?? '', m.chain_position ?? '')}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {edit('Exchange target', 'exchangeTargetDate', date(m.exchange_target_date), date(m.exchange_target_date), 'date')}
+                  {edit('Completion target', 'completionTargetDate', date(m.completion_target_date), date(m.completion_target_date), 'date')}
+                </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                   <label style={{ flex: 1 }}>
                     <span style={S.fieldLabel}>Stage</span>
@@ -1747,13 +1760,28 @@ export default function Taskpane() {
                 <button style={S.secondary} onClick={loadDocs}>Refresh</button>
               </div>
               {docs.length > 0 ? (
-                <ul style={S.ul}>
-                  {docs.map((d) => (
-                    <li key={d.id}>
-                      {d.web_url ? <a style={S.link} href={d.web_url} target="_blank" rel="noreferrer">{d.file_name}</a> : d.file_name}
-                    </li>
-                  ))}
-                </ul>
+                <div style={S.fileList}>
+                  {[...docs]
+                    .sort((a, b) => String(a.file_name || '').localeCompare(String(b.file_name || '')))
+                    .map((d) => {
+                      const ext = (String(d.file_name || '').split('.').pop() || '').toUpperCase().slice(0, 4) || 'FILE';
+                      const when = d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : '';
+                      return (
+                        <a
+                          key={d.id}
+                          style={S.fileRow}
+                          href={d.web_url || undefined}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={d.file_name}
+                        >
+                          <span style={S.fileExt}>{ext}</span>
+                          <span style={S.fileName}>{d.file_name}</span>
+                          {when && <span style={S.fileMeta}>{when}</span>}
+                        </a>
+                      );
+                    })}
+                </div>
               ) : (
                 <p style={S.muted}>No files saved to this matter yet — save an email&apos;s attachments from the Email tab.</p>
               )}
@@ -2277,6 +2305,11 @@ const S: Record<string, React.CSSProperties> = {
   tabBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 6px', background: 'transparent', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer' },
   tabBtnActive: { background: '#fff', color: '#5A27E0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' },
   tabBtnLocked: { opacity: 0.4, cursor: 'not-allowed' },
+  fileList: { border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', marginTop: 4 },
+  fileRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderBottom: '1px solid #f1f5f9', textDecoration: 'none', color: '#0f172a', cursor: 'pointer' },
+  fileExt: { flex: 'none', width: 38, textAlign: 'center', fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: '#5A27E0', background: '#EDE7FB', borderRadius: 4, padding: '3px 0' },
+  fileName: { flex: 1, minWidth: 0, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  fileMeta: { flex: 'none', fontSize: 11, color: '#94a3b8' },
   actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
     position: 'relative',
