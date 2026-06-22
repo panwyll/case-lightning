@@ -142,11 +142,6 @@ const RAG_COLOR: Record<RagLevel, string> = {
   SOON: 'preset1',
   FYI: 'preset4',
 };
-const RAG_COLOR_BY_LABEL: Record<string, string> = {
-  [RAG_LABEL.URGENT]: RAG_COLOR.URGENT,
-  [RAG_LABEL.SOON]: RAG_COLOR.SOON,
-  [RAG_LABEL.FYI]: RAG_COLOR.FYI,
-};
 
 // Each matter gets its own stable pill colour, cycling through this palette
 // (matter N+1 loops back to the start). Deliberately excludes the RAG status
@@ -164,20 +159,13 @@ function hashRef(s: string): number {
 }
 
 /** Stable per-matter pill colour (same matter ref → same colour, always). */
-export function matterColor(matterRef: string): string {
+function matterColor(matterRef: string): string {
   return MATTER_PALETTE[hashRef(matterRef) % MATTER_PALETTE.length];
 }
 
 /** "Reply · Urgent", "Action · Soon", "Ignore · FYI", … — name encodes both. */
 function statusTagName(c: Classification): string {
   return `${ACTION_LABEL[recommendedAction(c)]} · ${RAG_LABEL[ragLevel(c)]}`;
-}
-
-/** Intended colour for a status category name, or null if it isn't one of ours. */
-export function statusTagColor(displayName: string): string | null {
-  const parts = displayName.split(' · ');
-  if (parts.length < 2) return null;
-  return RAG_COLOR_BY_LABEL[parts[parts.length - 1]] ?? null;
 }
 
 /**
