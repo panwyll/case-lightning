@@ -2010,7 +2010,6 @@ export default function Taskpane() {
       {(busy || status) && (
         <div style={{ ...S.toast, ...(busy ? S.toastBusy : {}) }}>{busy ? `${busy}…` : status}</div>
       )}
-      <footer style={S.footer}>Draft-only · matter-isolated · every action audited</footer>
     </div>
   );
 }
@@ -2433,5 +2432,4 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
   },
   toastBusy: { background: '#5A27E0' },
-  footer: { position: 'fixed', left: 0, right: 0, bottom: 0, textAlign: 'center', fontSize: 10, color: '#94a3b8', padding: 6, background: '#fff', borderTop: '1px solid #e2e8f0' },
 };
