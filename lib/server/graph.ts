@@ -17,7 +17,7 @@ interface UserTokenRow {
   token_expires_at: string | null;
 }
 
-export async function ensureAccessToken(userId: string): Promise<string> {
+async function ensureAccessToken(userId: string): Promise<string> {
   const row = await queryOne<UserTokenRow>(
     `select id, graph_access_token, graph_refresh_token, token_expires_at from app_user where id = $1`,
     [userId]
