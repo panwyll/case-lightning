@@ -873,6 +873,38 @@ export default function Taskpane() {
     loadFiles();
   }
 
+  // Upload a file straight into the matter's OneDrive folder, then run it through
+  // the same log-and-maybe-notify pipeline (the upload is the "file changed" event).
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  async function uploadFile(file: File) {
+    const contentBase64 = await new Promise<string>((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(String(reader.result).split(',')[1] ?? '');
+      reader.onerror = () => rej(new Error('Could not read the file.'));
+      reader.readAsDataURL(file);
+    });
+    const r = await run(`Uploading ${file.name}`, async () => {
+      requireMatter();
+      return api<{ drafted: boolean; draftSubject: string | null; reason: string | null }>(
+        `/matters/${matterId}/files/upload`,
+        { method: 'POST', body: JSON.stringify({ fileName: file.name, contentBase64, mimeType: file.type || undefined }) }
+      );
+    });
+    if (!r) return;
+    setStatus(
+      r.drafted
+        ? `Uploaded — tracker updated and a draft created in Outlook: “${r.draftSubject}”.`
+        : `Uploaded and logged to the tracker.${r.reason ? ' ' + r.reason : ''}`
+    );
+    loadFiles();
+  }
+
+  // Log every not-yet-logged file in the folder (e.g. ones dropped into OneDrive
+  // directly), each through the gated pipeline.
+  async function logNewFiles() {
+    for (const f of files.filter((x) => !x.processed)) await processFile(f);
+  }
+
   async function suggestAttachments() {
     const r = await run('Suggesting attachments', async () => {
       requireMatter();
@@ -1771,59 +1803,53 @@ export default function Taskpane() {
             );
           })()}
 
-          {/* ── FILES TAB — the literal files in the matter's OneDrive folder ── */}
+          {/* ── FILES TAB — a mini file explorer over the matter's OneDrive folder ── */}
           {tab === 'paperclip' && matterId && (
             <Card>
-              <Label>Files</Label>
-              <p style={S.muted}>The live contents of this matter&apos;s OneDrive folder. “Log” records a file in the tracker and drafts an update to the parties when the file is readable and substantive.</p>
-              <div style={S.rowWrap}>
-                {matterInfo?.matter?.folder_web_url && (
-                  <a
-                    style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-                    href={matterInfo.matter.folder_web_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Icon name="clip" size={14} /> Open folder
-                  </a>
-                )}
-                {matterInfo?.matter?.tracker_web_url && (
-                  <a
-                    style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-                    href={matterInfo.matter.tracker_web_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <Icon name="chart" size={14} /> Tracker.xlsx
-                  </a>
-                )}
-                <button style={S.secondary} onClick={() => loadFiles()}>Refresh</button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Label>Files</Label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {matterInfo?.matter?.folder_web_url && (
+                    <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
+                      <Icon name="clip" size={15} />
+                    </a>
+                  )}
+                  <button style={S.iconAction} onClick={() => fileInputRef.current?.click()} title="Upload a file" aria-label="Upload a file">
+                    <Icon name="upload" size={15} />
+                  </button>
+                  <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
+                    <Icon name="refresh" size={15} />
+                  </button>
+                </div>
               </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                style={{ display: 'none' }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
+              />
+              {files.some((f) => !f.processed) && (
+                <button style={{ ...S.secondary, marginBottom: 8 }} onClick={logNewFiles}>
+                  Log {files.filter((f) => !f.processed).length} new file(s) to tracker
+                </button>
+              )}
               {files.length > 0 ? (
                 <div style={S.fileList}>
                   {files.map((f) => {
-                    const ext = (f.name.split('.').pop() || '').toUpperCase().slice(0, 4) || 'FILE';
                     const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
+                    const size = fmtSize(f.size);
                     return (
-                      <div key={f.id} style={S.fileRow}>
-                        <span style={S.fileExt}>{ext}</span>
-                        <a style={S.fileName} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
-                          {f.name}
-                        </a>
+                      <a key={f.id} style={S.fileRow} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
+                        <span style={S.fileIcon}><Icon name="file" size={15} /></span>
+                        <span style={S.fileName}>{f.name}</span>
+                        {size && <span style={S.fileMeta}>{size}</span>}
                         {when && <span style={S.fileMeta}>{when}</span>}
-                        {f.processed ? (
-                          <span style={S.fileDone} title="Already logged to the tracker">✓ logged</span>
-                        ) : (
-                          <button style={S.fileBtn} onClick={() => processFile(f)} title="Log to tracker + draft an update if substantive">
-                            Log
-                          </button>
-                        )}
-                      </div>
+                      </a>
                     );
                   })}
                 </div>
               ) : (
-                <p style={S.muted}>This folder is empty — drop files into it, or save an email&apos;s attachments from the Email tab.</p>
+                <p style={S.muted}>This folder is empty — upload a file, or drop one into OneDrive.</p>
               )}
             </Card>
           )}
@@ -2121,6 +2147,14 @@ function btn(base: React.CSSProperties, dim: boolean): React.CSSProperties {
 // Turn an UPPER_SNAKE enum or snake_case key into human text for display:
 // "IN_PROGRESS" → "In progress", "completion_date" → "Completion date". The raw
 // value stays the source of truth — this only ever touches what the user reads.
+// Bytes → a short human size for the file-explorer rows.
+function fmtSize(n: number | null): string {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function humanize(s: string): string {
   const t = s.replace(/[_-]+/g, ' ').trim().toLowerCase();
   return t ? t[0].toUpperCase() + t.slice(1) : s;
@@ -2133,6 +2167,9 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     reply: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v4" /></>,
     mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 8 9 6 9-6" /></>,
     home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
+    file: <><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></>,
+    upload: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></>,
+    refresh: <><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
     user: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>,
@@ -2352,6 +2389,8 @@ const S: Record<string, React.CSSProperties> = {
   fileMeta: { flex: 'none', fontSize: 11, color: '#94a3b8' },
   fileBtn: { flex: 'none', padding: '3px 9px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' },
   fileDone: { flex: 'none', fontSize: 10, fontWeight: 700, color: '#166534', background: '#dcfce7', borderRadius: 999, padding: '2px 7px' },
+  iconAction: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff', color: '#475569', cursor: 'pointer', textDecoration: 'none' },
+  fileIcon: { flex: 'none', display: 'inline-flex', color: '#94a3b8' },
   actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
     position: 'relative',
