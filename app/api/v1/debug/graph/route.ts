@@ -92,7 +92,28 @@ export async function GET() {
       }
     }
 
-    return ok({ strippedMessages, deletedMasters, recolouredStatus, recolouredMatters });
+    // Post-repair snapshot: anything still uncoloured is a category that matched
+    // none of our rules (not an old tag, not a "X · Urgency" status, not a known
+    // matter ref) — its name tells us why it was missed.
+    const after: MasterCategory[] = [];
+    let aUrl: string | null = '/me/outlook/masterCategories?$top=100';
+    while (aUrl) {
+      const res: { value?: MasterCategory[]; '@odata.nextLink'?: string } = await client.api(aUrl).get();
+      for (const c of res.value ?? []) after.push(c);
+      const next = res['@odata.nextLink'];
+      aUrl = next ? next.replace('https://graph.microsoft.com/v1.0', '') : null;
+    }
+    const stillColourless = after.filter((c) => !c.color || c.color === 'none').map((c) => c.displayName);
+
+    return ok({
+      strippedMessages,
+      deletedMasters,
+      recolouredStatus,
+      recolouredMatters,
+      stillColourless,
+      knownMatterRefs: [...refs],
+      allCategories: after.map((c) => ({ displayName: c.displayName, color: c.color })),
+    });
   } catch (error) {
     return fail(error);
   }
