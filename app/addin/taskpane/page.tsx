@@ -227,7 +227,8 @@ export default function Taskpane() {
   // AI outputs
   const [summary, setSummary] = useState<{ happened: string[]; outstanding: string[] } | null>(null);
   const [facts, setFacts] = useState<ExtractedFacts | null>(null);
-  const [tone, setTone] = useState<Tone>('NEUTRAL');
+  // Reply tone — NEUTRAL by default; the slow phase auto-escalates to CHASING for chasers.
+  const [tone] = useState<Tone>('NEUTRAL');
 
   // The taskpane renders by *situation*, not by feature tabs: open an email → it
   // auto-analyses → we show what we found (matter? what's being asked?) and the
@@ -277,9 +278,6 @@ export default function Taskpane() {
   // popup block, no blank tab) and sync in the background.
   const [boardUrl, setBoardUrl] = useState<string | null>(null);
   const [boardLoading, setBoardLoading] = useState(false);
-  const [draft, setDraft] = useState<DraftPackage | null>(null);
-  const [draftSubject, setDraftSubject] = useState('');
-  const [draftBody, setDraftBody] = useState('');
 
   // Documents & sharing
   const [docs, setDocs] = useState<any[]>([]);
@@ -487,7 +485,6 @@ export default function Taskpane() {
           setChosenAction(null);
           setIgnored(false);
           setLinkOpen(false);
-          setDraft(null);
         };
         Office.onReady(() => {
           loadItem();
@@ -788,43 +785,6 @@ export default function Taskpane() {
     });
   }
 
-  async function generateDraft() {
-    // A matter is optional, but a draft written without one has no matter facts
-    // or saved documents to draw on — confirm before proceeding.
-    if (
-      !matterId &&
-      !window.confirm(
-        'No matter is linked. Draft a reply anyway?\n\nThe draft will be based only on this email thread — it won’t use matter facts or saved documents.'
-      )
-    ) {
-      return;
-    }
-    const r = await run('Drafting reply', async () => {
-      requireThread();
-      if (!messageId) throw new Error('No message selected.');
-      return api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone }),
-      });
-    });
-    if (r) {
-      setDraft(r);
-      setDraftSubject(r.subject);
-      setDraftBody(r.bodyHtml);
-    }
-  }
-
-  async function createOutlookDraft() {
-    await run('Creating Outlook draft', async () => {
-      requireThread();
-      const r = await api<{ draftId: string }>(`/threads/${encodeURIComponent(conversationId)}/create-draft`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId: matterId || undefined, messageId, subject: draftSubject || undefined, bodyHtml: draftBody }),
-      });
-      setStatus(`Draft created in Outlook (never sent). Draft id: ${r.draftId}`);
-    });
-  }
-
   async function loadDocs() {
     await run('Loading documents', async () => {
       requireMatter();
@@ -925,19 +885,30 @@ export default function Taskpane() {
     }
   }
 
-  function openAssistDraft() {
-    if (!assist?.draft) return;
-    setDraft({ subject: assist.draft.subject, bodyHtml: assist.draft.bodyHtml, why: assist.draft.why, actions: assist.draft.actions, referencedDocuments: [] });
-    setDraftSubject(assist.draft.subject);
-    setDraftBody(assist.draft.bodyHtml);
-    setStatus('Draft ready below — review it, then create the Outlook draft.');
-  }
-
-  // Clicking Reply opens a draft straight away: the precomputed one if it's ready,
-  // otherwise generate fresh (which also reviews any attachments against the case).
-  function openReply() {
-    if (assist?.draft) openAssistDraft();
-    else if (assist?.ready) generateDraft();
+  // Clicking Reply creates an actual draft reply in Outlook (never sent): use the
+  // precomputed draft if ready, otherwise generate one (which also reviews any
+  // attachments against the case), then write it straight to Outlook's drafts.
+  async function openReply() {
+    await run('Creating reply draft in Outlook', async () => {
+      requireThread();
+      if (!messageId) throw new Error('Open an email first.');
+      let subject = assist?.draft?.subject;
+      let bodyHtml = assist?.draft?.bodyHtml;
+      if (!bodyHtml) {
+        const g = await api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
+          method: 'POST',
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone }),
+        });
+        subject = g.subject;
+        bodyHtml = g.bodyHtml;
+      }
+      await api<{ draftId: string }>(`/threads/${encodeURIComponent(conversationId)}/create-draft`, {
+        method: 'POST',
+        body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
+      });
+      setStatus('Reply draft created in Outlook — open it there to review and send.');
+      return true;
+    });
   }
 
   const loadTasks = useCallback(async (mid = matterId) => {
@@ -1376,15 +1347,13 @@ export default function Taskpane() {
                 })}
               </div>
 
-              {/* Reply — clicking the move opens the draft below automatically. */}
+              {/* Reply — clicking the move writes a draft reply straight to Outlook. */}
               {effectiveAction === 'reply' && (
                 <div style={S.actionPanel}>
-                  {draft || assist.draft ? (
-                    <p style={{ ...S.muted, margin: 0 }}>Draft opened below — review it, then create the Outlook draft.</p>
-                  ) : !assist.ready ? (
-                    <p style={{ ...S.muted, margin: 0 }}>Preparing a draft…</p>
+                  {!assist.ready && !assist.draft ? (
+                    <p style={{ ...S.muted, margin: 0 }}>Preparing the reply…</p>
                   ) : (
-                    <button style={S.primary} onClick={generateDraft}>Draft a reply</button>
+                    <button style={S.primary} onClick={openReply}>Create reply draft in Outlook</button>
                   )}
                 </div>
               )}
@@ -1496,38 +1465,6 @@ export default function Taskpane() {
                   <ul style={S.ul}>{facts.risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
                 </>
               )}
-            </Card>
-          )}
-
-          {/* Draft workspace */}
-          {tab === 'email' && draft && (
-            <Card>
-              <Label>Draft reply — never auto-sent</Label>
-              <div style={S.rowWrap}>
-                {TONES.map((t) => (
-                  <button key={t} style={t === tone ? S.toneActive : S.tone} onClick={() => setTone(t)}>
-                    {humanize(t)}
-                  </button>
-                ))}
-                <button style={S.secondary} onClick={generateDraft}>Regenerate</button>
-              </div>
-              <SubLabel>Subject</SubLabel>
-              <input style={S.input} value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
-              <SubLabel>Body</SubLabel>
-              <textarea style={S.textarea} value={draftBody} onChange={(e) => setDraftBody(e.target.value)} rows={8} />
-              {draft.why.length > 0 && (
-                <>
-                  <SubLabel>Why this draft</SubLabel>
-                  <ul style={S.ul}>{draft.why.map((w, i) => <li key={i}>{w}</li>)}</ul>
-                </>
-              )}
-              {draft.actions.length > 0 && (
-                <>
-                  <SubLabel>Next actions</SubLabel>
-                  <ul style={S.ul}>{draft.actions.map((a, i) => <li key={i}>{a.owner}: {a.task} ({a.due})</li>)}</ul>
-                </>
-              )}
-              <button style={S.primary} onClick={createOutlookDraft}>Create Outlook draft</button>
             </Card>
           )}
 
