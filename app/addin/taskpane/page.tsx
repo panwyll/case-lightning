@@ -1347,14 +1347,11 @@ export default function Taskpane() {
                 })}
               </div>
 
-              {/* Reply — clicking the move writes a draft reply straight to Outlook. */}
-              {effectiveAction === 'reply' && (
+              {/* Reply — clicking the move writes the draft straight to Outlook; the
+                  only hint we show is while the draft is still being prepared. */}
+              {effectiveAction === 'reply' && !assist.ready && !assist.draft && (
                 <div style={S.actionPanel}>
-                  {!assist.ready && !assist.draft ? (
-                    <p style={{ ...S.muted, margin: 0 }}>Preparing the reply…</p>
-                  ) : (
-                    <button style={S.primary} onClick={openReply}>Create reply draft in Outlook</button>
-                  )}
+                  <p style={{ ...S.muted, margin: 0 }}>Preparing the reply…</p>
                 </div>
               )}
 
@@ -1506,12 +1503,15 @@ export default function Taskpane() {
 
           {/* ── HOUSE TAB — the property/transaction record (editable, validated) ── */}
           {tab === 'house' && matterInfo?.matter && (
-            <HousePanel
-              key={matterInfo.matter.id}
-              matter={matterInfo.matter}
-              facts={matterInfo.summary?.facts ?? {}}
-              onPatch={updateMatterField}
-            />
+            <>
+              <HousePanel
+                key={matterInfo.matter.id}
+                matter={matterInfo.matter}
+                facts={matterInfo.summary?.facts ?? {}}
+                onPatch={updateMatterField}
+              />
+              <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
+            </>
           )}
 
           {/* ── FILES TAB — a mini file explorer over the matter's OneDrive folder ── */}
@@ -1845,6 +1845,78 @@ function HousePanel({
           <button style={S.secondary} onClick={() => setDraft(baseline)}>Discard</button>
         </div>
       )}
+    </section>
+  );
+}
+
+const CONTACT_ROLES: [string, string][] = [
+  ['CLIENT', 'Client'],
+  ['OTHER_SIDE', 'Other side'],
+  ['AGENT', 'Estate agent'],
+  ['LENDER', 'Lender'],
+  ['OUR_FIRM', 'Our firm'],
+  ['OTHER', 'Other'],
+  ['UNKNOWN', '—'],
+];
+
+// The matter's address book: every party we've seen on its email traffic, each
+// taggable with a role so actions like "email the client" can target the right
+// person rather than only ever replying to the sender. Two-way: role edits and
+// manual adds persist; new addresses appear as emails are matched to the case.
+function ContactsPanel({ matterId, initial }: { matterId: string; initial: any[] }) {
+  const [contacts, setContacts] = useState<any[]>(initial);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  useEffect(() => setContacts(initial), [initial]);
+
+  const setRole = async (c: any, role: string) => {
+    setContacts((cs) => cs.map((x) => (x.id === c.id ? { ...x, role } : x)));
+    await api(`/matters/${matterId}/contacts`, { method: 'POST', body: JSON.stringify({ email: c.email, role }) }).catch(() => {});
+  };
+  const add = async () => {
+    const e = email.trim().toLowerCase();
+    if (!e.includes('@')) return;
+    await api(`/matters/${matterId}/contacts`, {
+      method: 'POST',
+      body: JSON.stringify({ email: e, name: name.trim() || undefined }),
+    }).catch(() => {});
+    const r = await api<{ contacts: any[] }>(`/matters/${matterId}/contacts`).catch(() => ({ contacts }));
+    setContacts(r.contacts);
+    setEmail('');
+    setName('');
+  };
+  const remove = async (c: any) => {
+    setContacts((cs) => cs.filter((x) => x.id !== c.id));
+    await api(`/matters/${matterId}/contacts?id=${c.id}`, { method: 'DELETE' }).catch(() => {});
+  };
+
+  return (
+    <section style={S.card}>
+      <Label>People</Label>
+      {contacts.length === 0 && (
+        <p style={{ ...S.muted, margin: '4px 0 8px' }}>No contacts yet — they’ll appear as emails are matched to this case.</p>
+      )}
+      {contacts.map((c) => (
+        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name || c.email}</div>
+            {c.name && <div style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.email}</div>}
+          </div>
+          <select
+            style={{ ...S.input, marginBottom: 0, width: 116, flex: '0 0 auto' }}
+            value={c.role || 'UNKNOWN'}
+            onChange={(e) => setRole(c, e.target.value)}
+          >
+            {CONTACT_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <button style={{ ...S.iconAction, width: 30, height: 30 }} onClick={() => remove(c)} title="Remove contact" aria-label="Remove contact">✕</button>
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
+        <input style={{ ...S.input, marginBottom: 0, flex: 1 }} placeholder="email@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input style={{ ...S.input, marginBottom: 0, width: 90 }} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        <button style={S.secondary} onClick={add}>Add</button>
+      </div>
     </section>
   );
 }
