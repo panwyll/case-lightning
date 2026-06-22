@@ -35,6 +35,23 @@ status. Metering is best-effort — a failed write never breaks the product path
 | `v_activity` | Raw union of audit actions + metered usage (tagged `source`) for ad-hoc exploration |
 | `v_user_sessions` | Gap-based sessions (>30 min = new session): start/end, action count, `action_sequence` |
 | `v_feature_funnel` | Feature adoption: distinct users/tenants/events per action |
+| `v_email_journey` | **Per email: how it was labelled vs. what the user did.** intent / urgency / needs-attention / recommended move / RAG status tag / matter match, the move the user actually chose, whether they `followed_recommendation`, and the downstream actions (draft, save, extract, review). Migration `016_email_journey.sql` |
+
+### Per-email labelling & actions (016_email_journey.sql)
+
+To understand *how an email was labelled and what the user did about it*, `v_email_journey`
+joins three audit signals (no schema change — all from `audit_log` jsonb payloads):
+
+- **`EMAIL_TRIAGED`** — the label, enriched in `lib/server/triage.ts`: `intent`, `urgency`,
+  `needsAttention`, `recommendedAction`, `statusTag` (the RAG tag applied), `band`, `confidence`, `matterRef`.
+- **`USER_ACTION_CHOSEN`** — the move the fee earner picked (`reply`/`action`/`delegate`/`ignore`),
+  written by `POST /api/v1/triage/action` from the taskpane. This is the only footprint moves like
+  *Ignore* leave, so the picture stays complete.
+- The granular follow-ons already audited (`DRAFT_GENERATED`, `OUTLOOK_DRAFT_CREATED`,
+  `FACTS_EXTRACTED`, `EMAIL_SAVED_TO_MATTER`, `DOCUMENT_REVIEWED`).
+
+Example — emails where the user overrode the recommendation:
+`select * from v_email_journey where followed_recommendation = false;`
 
 ### Notes on profit
 
