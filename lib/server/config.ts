@@ -36,6 +36,10 @@ export const config = {
   // Least-privilege Graph scopes so admin consent is easier for firms' IT:
   //  - Mail.ReadWrite covers reading threads AND creating draft replies (no
   //    separate Mail.Read needed; there is no send scope — draft-only by design).
+  //  - MailboxSettings.ReadWrite is required to manage the master category list
+  //    (create/colour the Reply/Action/Delegate tags). Without it Outlook still
+  //    lets us stamp category names onto a message via Mail.ReadWrite, but it
+  //    auto-creates them colourless — so triage tags would show up with no colour.
   //  - Files.ReadWrite is the user's own OneDrive (matter folder + Excel tracker).
   //    We deliberately do NOT request Files.ReadWrite.All / Sites.ReadWrite.All —
   //    nothing touches other users' files or SharePoint sites (all /me/drive).
@@ -43,7 +47,7 @@ export const config = {
   //    to Teams" feature only.
   graphScopes: (
     env('GRAPH_SCOPES') ??
-    'User.Read Mail.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
+    'User.Read Mail.ReadWrite MailboxSettings.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
   ).split(/\s+/),
 
   // AI — Claude, tiered by task so we don't pay Opus rates to label emails:
