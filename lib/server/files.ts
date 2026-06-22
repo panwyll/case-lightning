@@ -150,6 +150,54 @@ export async function processMatterFile(
 }
 
 /**
+ * Reviews an email's attachments against the matter and returns a compact context
+ * block to fold into a reply draft — so "reply to a document for review" actually
+ * reads the document. PDFs only (Claude reads them); capped at 2 to bound cost;
+ * best-effort (returns '' when nothing readable). Drives the "consider attachments
+ * in the reply" behaviour from both the assist precompute and manual re-drafts.
+ */
+export async function reviewAttachmentsContext(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  messageId: string
+): Promise<string> {
+  const attachments = await listMessageAttachments(user.userId, messageId).catch(() => [] as any[]);
+  const pdfs = attachments
+    .filter((a: any) => a.contentBytes && a.name && !a.isInline && (a.contentType === 'application/pdf' || /\.pdf$/i.test(a.name)))
+    .slice(0, 2);
+  if (!pdfs.length) return '';
+  const parts: string[] = [];
+  for (const a of pdfs) {
+    try {
+      const { review } = await reviewDocument({
+        userId: user.userId,
+        tenantId: user.tenantId,
+        matterId,
+        fileName: a.name,
+        mimeType: 'application/pdf',
+        pdfBase64: a.contentBytes,
+        expectations:
+          'Review this attached document against the matter. Surface what should shape the reply: key terms, any mismatch or missing item vs the matter, risks, and required next actions.',
+        retrievedContext: '',
+      });
+      const risks = (review.risks ?? []).map((r: { severity: string; issue: string }) => `${r.severity}: ${r.issue}`).join('; ');
+      const checks = (review.consistencyChecks ?? [])
+        .filter((c: { status: string }) => c.status === 'MISMATCH' || c.status === 'MISSING')
+        .map((c: { field: string; status: string }) => `${c.field} (${c.status})`)
+        .join('; ');
+      parts.push(
+        `ATTACHED DOCUMENT — ${a.name} [${review.documentType ?? 'document'}]: ${review.summary ?? ''}` +
+          (risks ? ` Risks: ${risks}.` : '') +
+          (checks ? ` Discrepancies vs matter: ${checks}.` : '')
+      );
+    } catch {
+      /* unreadable / provider can't read PDFs — skip */
+    }
+  }
+  return parts.length ? `ATTACHMENT REVIEW (consider in the reply):\n${parts.join('\n---\n')}` : '';
+}
+
+/**
  * Auto-saves a matched email's attachments into the matter's OneDrive folder
  * (records each as a document + RAG chunk, and notes the save on the tracker).
  * Called from the triage webhook when an incoming email matches a matter — so

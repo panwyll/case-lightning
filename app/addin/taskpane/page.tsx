@@ -933,6 +933,13 @@ export default function Taskpane() {
     setStatus('Draft ready below — review it, then create the Outlook draft.');
   }
 
+  // Clicking Reply opens a draft straight away: the precomputed one if it's ready,
+  // otherwise generate fresh (which also reviews any attachments against the case).
+  function openReply() {
+    if (assist?.draft) openAssistDraft();
+    else if (assist?.ready) generateDraft();
+  }
+
   const loadTasks = useCallback(async (mid = matterId) => {
     if (!mid) return;
     try {
@@ -1358,6 +1365,7 @@ export default function Taskpane() {
                         if (key === 'ignore') { markIgnore(); return; }
                         recordAction(key);
                         setChosenAction(key);
+                        if (key === 'reply') openReply();
                       }}
                     >
                       <Icon name={icon} size={18} />
@@ -1368,13 +1376,13 @@ export default function Taskpane() {
                 })}
               </div>
 
-              {/* Reply */}
+              {/* Reply — clicking the move opens the draft below automatically. */}
               {effectiveAction === 'reply' && (
                 <div style={S.actionPanel}>
-                  {assist.draft ? (
-                    <button style={S.primary} onClick={openAssistDraft}>Open draft for review</button>
+                  {draft || assist.draft ? (
+                    <p style={{ ...S.muted, margin: 0 }}>Draft opened below — review it, then create the Outlook draft.</p>
                   ) : !assist.ready ? (
-                    <p style={S.muted}>Preparing a draft…</p>
+                    <p style={{ ...S.muted, margin: 0 }}>Preparing a draft…</p>
                   ) : (
                     <button style={S.primary} onClick={generateDraft}>Draft a reply</button>
                   )}
