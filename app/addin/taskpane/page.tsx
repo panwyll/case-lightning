@@ -273,7 +273,6 @@ export default function Taskpane() {
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
-  const [newTaskDetail, setNewTaskDetail] = useState('');
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
   const [boardUrl, setBoardUrl] = useState<string | null>(null);
@@ -974,24 +973,6 @@ export default function Taskpane() {
     if (matterId) loadTasks(matterId);
   }, [matterId, loadTasks]);
 
-  async function addTask() {
-    if (!matterId || !newTaskDetail.trim()) return;
-    await run('Adding task', async () => {
-      await api(`/matters/${matterId}/tasks`, { method: 'POST', body: JSON.stringify({ detail: newTaskDetail.trim() }) });
-      setNewTaskDetail('');
-      await loadTasks();
-      return true;
-    });
-  }
-
-  async function patchTask(taskId: string, patch: Record<string, unknown>) {
-    await run('Updating task', async () => {
-      const r = await api<{ task: MatterTask }>(`/matters/${matterId}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(patch) });
-      setTasks((ts) => ts.map((t) => (t.id === taskId ? r.task : t)));
-      return true;
-    });
-  }
-
   async function assignBlocker(detail: string, assigneeUserId: string) {
     if (!matterId) {
       setStatus('Link a matter first to assign work.');
@@ -1390,20 +1371,7 @@ export default function Taskpane() {
               </div>
               <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
 
-              {assist.whatWeKnow.length > 0 ? (
-                <>
-                  <SubLabel>What we know</SubLabel>
-                  <ul style={S.ul}>{assist.whatWeKnow.map((w, i) => <li key={i}>{w}</li>)}</ul>
-                </>
-              ) : !assist.ready ? (
-                <>
-                  <SubLabel>What we know</SubLabel>
-                  <p style={S.muted}>Reading the thread…</p>
-                </>
-              ) : null}
-
               {/* The four moves. The recommended one is pre-lit; pick any to expand it. */}
-              <SubLabel>What do you want to do?</SubLabel>
               <div style={S.actionRow}>
                 {([
                   ['reply', 'reply', 'Reply'],
@@ -1588,26 +1556,45 @@ export default function Taskpane() {
 
           {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
           {tab === 'email' && matterId && (() => {
-            const open = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
             const flag = matterInfo?.matter?.status_flag || 'ON_TRACK';
             const flagBg = flag === 'BLOCKED' ? '#fee2e2' : flag === 'NEEDS_ATTENTION' ? '#fef9c3' : '#dcfce7';
             return (
               <Card>
                 <Label>Status</Label>
                 {matterInfo?.matter && (
-                  <div style={S.rowWrap}>
+                  <div style={{ ...S.rowWrap, marginBottom: 8 }}>
                     <span style={S.chip}>{humanize(matterInfo.matter.stage || 'INSTRUCTION')}</span>
                     <span style={{ ...S.chip, background: flagBg }}>{humanize(flag)}</span>
                   </div>
                 )}
-                {open.length > 0 ? (
-                  <ul style={S.ul}>{open.map((t) => <li key={t.id}>{t.detail}{t.assignee ? ` — ${t.assignee}` : ''}</li>)}</ul>
+                {tasks.length > 0 ? (
+                  <table style={S.trk}>
+                    <thead>
+                      <tr>
+                        <th style={S.trkH}>Status</th>
+                        <th style={S.trkH}>Assigned to</th>
+                        <th style={S.trkH}>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map((t) => {
+                        const bg = t.status === 'DONE' ? '#dcfce7' : t.status === 'IN_PROGRESS' ? '#fef9c3' : t.status === 'NOTED' ? '#e2e8f0' : '#fee2e2';
+                        return (
+                          <tr key={t.id}>
+                            <td style={S.trkC}><span style={{ ...S.chip, background: bg, textTransform: 'none' }}>{humanize(t.status)}</span></td>
+                            <td style={S.trkC}>{t.assignee || '—'}</td>
+                            <td style={S.trkC}>{t.detail}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 ) : (matterInfo?.summary?.outstanding_items?.length ?? 0) > 0 ? (
                   <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
                 ) : (
-                  <p style={S.muted}>Nothing outstanding on the tracker.</p>
+                  <p style={S.muted}>Nothing on the tracker yet.</p>
                 )}
-                <div style={S.rowWrap}>
+                <div style={{ ...S.rowWrap, marginTop: 8 }}>
                   <button style={S.secondary} onClick={buildBoard} disabled={boardLoading}>
                     {boardLoading ? 'Syncing…' : 'Open team board'}
                   </button>
@@ -1625,68 +1612,6 @@ export default function Taskpane() {
               </Card>
             );
           })()}
-
-          {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
-          {tab === 'email' && matterId && (
-            <Section title="Tasks" count={tasks.length}>
-              <p style={S.muted}>Two-way synced with the matter’s Excel tracker.</p>
-              {tasks.length === 0 && <p style={S.muted}>No tasks yet.</p>}
-              {tasks.map((t) => {
-                const assigneeId = assignees.find((a) => (a.display_name || a.email) === t.assignee)?.id || '';
-                const statusBg = t.status === 'DONE' ? '#dcfce7' : t.status === 'IN_PROGRESS' ? '#fef9c3' : t.status === 'NOTED' ? '#e2e8f0' : '#fee2e2';
-                return (
-                  <div key={t.id} style={S.candidate}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 11, color: '#64748b' }}>{t.ref} · {humanize(t.type)}</span>
-                      <select
-                        style={{ ...S.chip, background: statusBg, border: 'none', cursor: 'pointer', textTransform: 'none' }}
-                        value={t.status}
-                        onChange={(e) => patchTask(t.id, { status: e.target.value })}
-                      >
-                        {['OPEN', 'IN_PROGRESS', 'DONE', 'NOTED'].map((s) => (
-                          <option key={s} value={s}>{humanize(s)}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div style={{ fontSize: 13, color: '#0f172a', margin: '5px 0' }}>{t.detail}</div>
-                    <div style={S.rowWrap}>
-                      <select
-                        style={{ ...S.input, marginBottom: 0, flex: 1 }}
-                        value={assigneeId}
-                        onChange={(e) => {
-                          const a = assignees.find((x) => x.id === e.target.value);
-                          patchTask(t.id, { assignee: a ? a.display_name || a.email : null, assigneeUserId: a ? a.id : null });
-                        }}
-                      >
-                        <option value="">Unassigned</option>
-                        {assignees.map((a) => (
-                          <option key={a.id} value={a.id}>{a.display_name || a.email}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="date"
-                        style={{ ...S.input, marginBottom: 0, width: 132 }}
-                        value={t.due ? String(t.due).slice(0, 10) : ''}
-                        onChange={(e) => patchTask(t.id, { due: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-              <div style={{ ...S.rowWrap, marginTop: 4 }}>
-                <input
-                  style={{ ...S.input, marginBottom: 0, flex: 1 }}
-                  placeholder="Add a task…"
-                  value={newTaskDetail}
-                  onChange={(e) => setNewTaskDetail(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') addTask();
-                  }}
-                />
-                <button style={S.secondary} onClick={addTask}>Add</button>
-              </div>
-            </Section>
-          )}
 
           {/* ── HOUSE TAB — the property/transaction record (editable, validated) ── */}
           {tab === 'house' && matterInfo?.matter && (
@@ -2407,6 +2332,9 @@ const S: Record<string, React.CSSProperties> = {
   candidate: { border: '1px solid #e2e8f0', borderRadius: 8, padding: 8, marginBottom: 6, background: '#fff' },
   confidence: { fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, color: '#0f172a' },
   kv: { display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', color: '#334155', gap: 12 },
+  trk: { width: '100%', borderCollapse: 'collapse', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff' },
+  trkH: { textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
+  trkC: { fontSize: 12, color: '#0f172a', padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' },
   link: { display: 'block', fontSize: 12, color: '#5A27E0', margin: '6px 0', textDecoration: 'none', fontWeight: 600 },
   toast: {
     position: 'fixed',
