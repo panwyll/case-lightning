@@ -75,6 +75,15 @@ interface Assignee {
   email: string;
   display_name: string | null;
 }
+interface FileItem {
+  id: string;
+  name: string;
+  webUrl: string | null;
+  size: number | null;
+  lastModified: string | null;
+  mimeType: string | null;
+  processed: boolean;
+}
 
 interface ObJob {
   id: string;
@@ -275,6 +284,7 @@ export default function Taskpane() {
 
   // Documents & sharing
   const [docs, setDocs] = useState<any[]>([]);
+  const [files, setFiles] = useState<FileItem[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [attachmentIntent, setAttachmentIntent] = useState('');
 
@@ -832,6 +842,37 @@ export default function Taskpane() {
     });
   }
 
+  // Live contents of the matter's OneDrive folder (incl. files dropped in directly,
+  // not just app-saved ones) — quiet load so opening the Files tab isn't a spinner.
+  const loadFiles = useCallback(async (mid = matterId) => {
+    if (!mid) return;
+    try {
+      const r = await api<{ files: FileItem[] }>(`/matters/${mid}/files`);
+      setFiles(r.files ?? []);
+    } catch {
+      /* folder may not be provisioned yet — leave the list empty */
+    }
+  }, [matterId]);
+
+  // Log a OneDrive file to the tracker and, when it's readable + substantive,
+  // draft a "we now hold X" notification (draft-only). Gated server-side.
+  async function processFile(f: FileItem) {
+    const r = await run(`Logging ${f.name}`, async () => {
+      requireMatter();
+      return api<{ trackerUpdated: boolean; drafted: boolean; draftSubject: string | null; reason: string | null }>(
+        `/matters/${matterId}/files/process`,
+        { method: 'POST', body: JSON.stringify({ itemId: f.id, fileName: f.name, mimeType: f.mimeType ?? undefined }) }
+      );
+    });
+    if (!r) return;
+    setStatus(
+      r.drafted
+        ? `Tracker updated and a draft notification created in Outlook: “${r.draftSubject}”. Review before sending.`
+        : r.reason ?? 'Logged to the tracker.'
+    );
+    loadFiles();
+  }
+
   async function suggestAttachments() {
     const r = await run('Suggesting attachments', async () => {
       requireMatter();
@@ -1117,12 +1158,11 @@ export default function Taskpane() {
     if (!matterId && tab !== 'email') setTab('email');
   }, [matterId, tab]);
 
-  // Auto-load the OneDrive file list when the Files tab opens, so the literal
-  // files show without a click. Best-effort; keyed only on tab + matter.
+  // Auto-load the live OneDrive folder when the Files tab opens, so the literal
+  // files show without a click.
   useEffect(() => {
-    if (tab === 'paperclip' && matterId) loadDocs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, matterId]);
+    if (tab === 'paperclip' && matterId) loadFiles(matterId);
+  }, [tab, matterId, loadFiles]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
@@ -1735,7 +1775,7 @@ export default function Taskpane() {
           {tab === 'paperclip' && matterId && (
             <Card>
               <Label>Files</Label>
-              <p style={S.muted}>The documents saved to this matter&apos;s OneDrive folder.</p>
+              <p style={S.muted}>The live contents of this matter&apos;s OneDrive folder. “Log” records a file in the tracker and drafts an update to the parties when the file is readable and substantive.</p>
               <div style={S.rowWrap}>
                 {matterInfo?.matter?.folder_web_url && (
                   <a
@@ -1757,33 +1797,33 @@ export default function Taskpane() {
                     <Icon name="chart" size={14} /> Tracker.xlsx
                   </a>
                 )}
-                <button style={S.secondary} onClick={loadDocs}>Refresh</button>
+                <button style={S.secondary} onClick={() => loadFiles()}>Refresh</button>
               </div>
-              {docs.length > 0 ? (
+              {files.length > 0 ? (
                 <div style={S.fileList}>
-                  {[...docs]
-                    .sort((a, b) => String(a.file_name || '').localeCompare(String(b.file_name || '')))
-                    .map((d) => {
-                      const ext = (String(d.file_name || '').split('.').pop() || '').toUpperCase().slice(0, 4) || 'FILE';
-                      const when = d.created_at ? new Date(d.created_at).toLocaleDateString('en-GB') : '';
-                      return (
-                        <a
-                          key={d.id}
-                          style={S.fileRow}
-                          href={d.web_url || undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={d.file_name}
-                        >
-                          <span style={S.fileExt}>{ext}</span>
-                          <span style={S.fileName}>{d.file_name}</span>
-                          {when && <span style={S.fileMeta}>{when}</span>}
+                  {files.map((f) => {
+                    const ext = (f.name.split('.').pop() || '').toUpperCase().slice(0, 4) || 'FILE';
+                    const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
+                    return (
+                      <div key={f.id} style={S.fileRow}>
+                        <span style={S.fileExt}>{ext}</span>
+                        <a style={S.fileName} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
+                          {f.name}
                         </a>
-                      );
-                    })}
+                        {when && <span style={S.fileMeta}>{when}</span>}
+                        {f.processed ? (
+                          <span style={S.fileDone} title="Already logged to the tracker">✓ logged</span>
+                        ) : (
+                          <button style={S.fileBtn} onClick={() => processFile(f)} title="Log to tracker + draft an update if substantive">
+                            Log
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
-                <p style={S.muted}>No files saved to this matter yet — save an email&apos;s attachments from the Email tab.</p>
+                <p style={S.muted}>This folder is empty — drop files into it, or save an email&apos;s attachments from the Email tab.</p>
               )}
             </Card>
           )}
@@ -2310,6 +2350,8 @@ const S: Record<string, React.CSSProperties> = {
   fileExt: { flex: 'none', width: 38, textAlign: 'center', fontSize: 9, fontWeight: 700, letterSpacing: 0.3, color: '#5A27E0', background: '#EDE7FB', borderRadius: 4, padding: '3px 0' },
   fileName: { flex: 1, minWidth: 0, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
   fileMeta: { flex: 'none', fontSize: 11, color: '#94a3b8' },
+  fileBtn: { flex: 'none', padding: '3px 9px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' },
+  fileDone: { flex: 'none', fontSize: 10, fontWeight: 700, color: '#166534', background: '#dcfce7', borderRadius: 999, padding: '2px 7px' },
   actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
     position: 'relative',

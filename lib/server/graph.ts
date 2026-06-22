@@ -198,6 +198,21 @@ export async function createReplyDraft(
   return draft;
 }
 
+/** Creates a standalone draft email (not a reply) — draft-only, never sent. */
+export async function createDraftMessage(
+  userId: string,
+  subject: string,
+  bodyHtml: string,
+  toRecipients: string[] = []
+): Promise<any> {
+  const client = await graphClientForUser(userId);
+  return client.api('/me/messages').post({
+    subject,
+    body: { contentType: 'HTML', content: bodyHtml },
+    toRecipients: toRecipients.filter(Boolean).map((address) => ({ emailAddress: { address } })),
+  });
+}
+
 export async function setMessageCategory(userId: string, messageId: string, category: string): Promise<void> {
   const client = await graphClientForUser(userId);
   await client.api(`/me/messages/${messageId}`).patch({ categories: [category] });
