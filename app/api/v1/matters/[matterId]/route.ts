@@ -34,6 +34,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const body = z
       .object({
         propertyAddress: z.string().optional(),
+        purchasePrice: z.string().optional(),
         counterpartySolicitor: z.string().optional(),
         counterpartyAgent: z.string().optional(),
         exchangeTargetDate: z.string().optional(),
@@ -80,6 +81,20 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         user.tenantId,
       ]
     );
+
+    // purchase_price lives in a separate, guarded statement so a deploy that lands
+    // before migration 017 runs can't break the other (long-standing) field edits.
+    if (body.purchasePrice !== undefined) {
+      try {
+        await query(`update matter set purchase_price = $1, updated_at = now() where id = $2 and tenant_id = $3`, [
+          body.purchasePrice,
+          matterId,
+          user.tenantId,
+        ]);
+      } catch {
+        /* column not migrated yet — ignore until 017_purchase_price.sql is applied */
+      }
+    }
     return ok({ ok: true });
   } catch (error) {
     return fail(error);
