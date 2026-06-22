@@ -1117,6 +1117,13 @@ export default function Taskpane() {
     if (!matterId && tab !== 'email') setTab('email');
   }, [matterId, tab]);
 
+  // Auto-load the OneDrive file list when the Files tab opens, so the literal
+  // files show without a click. Best-effort; keyed only on tab + matter.
+  useEffect(() => {
+    if (tab === 'paperclip' && matterId) loadDocs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, matterId]);
+
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
     <div style={S.page}>
@@ -1342,7 +1349,7 @@ export default function Taskpane() {
               these switch what we show for it. House/Files need a linked matter. */}
           <div style={S.tabBar}>
             {([
-              ['email', 'reply', 'Email'],
+              ['email', 'mail', 'Email'],
               ['house', 'home', 'House'],
               ['paperclip', 'clip', 'Files'],
             ] as const).map(([key, icon, lbl]) => {
@@ -1355,10 +1362,10 @@ export default function Taskpane() {
                   onClick={() => { if (!locked) setTab(key); }}
                   disabled={locked}
                   title={locked ? 'Link a matter first' : lbl}
+                  aria-label={lbl}
                   aria-selected={active}
                 >
-                  <Icon name={icon} size={16} />
-                  <span>{lbl}</span>
+                  <Icon name={icon} size={18} />
                 </button>
               );
             })}
@@ -1573,8 +1580,8 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* ── HOUSE TAB — the transaction record: details, stage, tasks, tracker ── */}
-          {tab === 'house' && (
+          {/* ── Task management lives on the EMAIL tab (the work surface) ── */}
+          {tab === 'email' && (
             <button
               style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
               onClick={buildBoard}
@@ -1586,7 +1593,7 @@ export default function Taskpane() {
           )}
 
           {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
-          {tab === 'house' && matterId && (
+          {tab === 'email' && matterId && (
             <Section title="Tasks" count={tasks.length}>
               <p style={S.muted}>Two-way synced with the matter’s Excel tracker.</p>
               {tasks.length === 0 && <p style={S.muted}>No tasks yet.</p>}
@@ -1647,85 +1654,118 @@ export default function Taskpane() {
             </Section>
           )}
 
-          {/* Matter panel */}
-          {tab === 'house' && matterInfo?.matter && (
-            <Card>
-              <Label>Matter {matterInfo.matter.matter_ref}</Label>
-              <div style={S.kv}><span>Property</span><span>{matterInfo.matter.property_address}</span></div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <label style={{ flex: 1 }}>
-                  <span style={S.fieldLabel}>Stage</span>
-                  <select
-                    style={{ ...S.input, marginBottom: 0 }}
-                    value={matterInfo.matter.stage || 'INSTRUCTION'}
-                    onChange={(e) => updateMatterField({ stage: e.target.value })}
-                  >
-                    {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </label>
-                <label style={{ flex: 1 }}>
-                  <span style={S.fieldLabel}>Status</span>
-                  <select
-                    style={{ ...S.input, marginBottom: 0 }}
-                    value={matterInfo.matter.status_flag || 'ON_TRACK'}
-                    onChange={(e) => updateMatterField({ statusFlag: e.target.value })}
-                  >
-                    {STATUS_FLAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                </label>
-              </div>
-              {matterInfo.matter.tracker_web_url && (
-                <a
-                  style={{ ...S.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, textDecoration: 'none', marginTop: 8 }}
-                  href={matterInfo.matter.tracker_web_url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <Icon name="chart" size={15} /> Open case tracker (Excel)
-                </a>
-              )}
-              {matterInfo.matter.folder_web_url && (
-                <a style={S.link} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer">Open OneDrive folder →</a>
-              )}
-              {(matterInfo.summary?.outstanding_items?.length ?? 0) > 0 && (
-                <>
-                  <SubLabel>Outstanding</SubLabel>
-                  <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
-                </>
-              )}
-            </Card>
-          )}
+          {/* ── HOUSE TAB — the property/transaction record (details only) ── */}
+          {tab === 'house' && matterInfo?.matter && (() => {
+            const m = matterInfo.matter;
+            const facts: Record<string, unknown> = matterInfo.summary?.facts ?? {};
+            // Surface a price from the extracted facts (no dedicated column) — the
+            // first fact whose key looks price-like.
+            const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
+            const join = (a?: string[]) => (a && a.length ? a.join(', ') : '');
+            const buyers = join(m.buyer_names);
+            const sellers = join(m.seller_names);
+            const row = (label: string, val: unknown) =>
+              val ? <div style={S.kv}><span>{label}</span><span style={{ textAlign: 'right' }}>{String(val)}</span></div> : null;
+            // Extracted facts not already shown as a structured row above.
+            const extra = Object.entries(facts).filter(([k]) => k !== priceKey);
+            return (
+              <Card>
+                <Label>{m.matter_ref}</Label>
+                {row('Property', m.property_address)}
+                {priceKey && row('Purchase price', facts[priceKey])}
+                {row('Buyer(s)', buyers)}
+                {row('Seller(s)', sellers)}
+                {row('Other side (solicitor)', m.counterparty_solicitor)}
+                {row('Estate agent', m.counterparty_agent)}
+                {row('Lender', m.lender)}
+                {row('Chain', m.chain_position)}
+                {row('Exchange target', m.exchange_target_date ? String(m.exchange_target_date).slice(0, 10) : '')}
+                {row('Completion target', m.completion_target_date ? String(m.completion_target_date).slice(0, 10) : '')}
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <label style={{ flex: 1 }}>
+                    <span style={S.fieldLabel}>Stage</span>
+                    <select
+                      style={{ ...S.input, marginBottom: 0 }}
+                      value={m.stage || 'INSTRUCTION'}
+                      onChange={(e) => updateMatterField({ stage: e.target.value })}
+                    >
+                      {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+                  <label style={{ flex: 1 }}>
+                    <span style={S.fieldLabel}>Status</span>
+                    <select
+                      style={{ ...S.input, marginBottom: 0 }}
+                      value={m.status_flag || 'ON_TRACK'}
+                      onChange={(e) => updateMatterField({ statusFlag: e.target.value })}
+                    >
+                      {STATUS_FLAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </label>
+                </div>
+                {extra.length > 0 && (
+                  <>
+                    <SubLabel>Other extracted facts</SubLabel>
+                    {extra.map(([k, v]) => (
+                      <div key={k} style={S.kv}>
+                        <span>{humanize(k)}</span>
+                        <span style={{ textAlign: 'right' }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </Card>
+            );
+          })()}
 
-          {/* ── FILES TAB — documents on the matter + email-derived knowledge ── */}
-          {/* Transaction knowledge: distilled from the thread, not the raw email list. */}
-          {tab === 'paperclip' && matterInfo?.summary && (
-            <Card>
-              <Label>Transaction knowledge</Label>
-              <p style={S.muted}>Distilled from this matter&apos;s emails — kept here so the file carries its own history without the raw message list.</p>
-              {(matterInfo.summary.happened_items?.length ?? 0) > 0 && (
-                <>
-                  <SubLabel>What&apos;s happened</SubLabel>
-                  <ul style={S.ul}>{matterInfo.summary.happened_items.map((h: string, i: number) => <li key={i}>{h}</li>)}</ul>
-                </>
-              )}
-              {(matterInfo.summary.outstanding_items?.length ?? 0) > 0 && (
-                <>
-                  <SubLabel>Outstanding</SubLabel>
-                  <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
-                </>
-              )}
-            </Card>
-          )}
-
-          {/* Documents & sharing */}
+          {/* ── FILES TAB — the literal files in the matter's OneDrive folder ── */}
           {tab === 'paperclip' && matterId && (
-            <Section title="Documents & sharing" count={docs.length || undefined}>
+            <Card>
+              <Label>Files</Label>
+              <p style={S.muted}>The documents saved to this matter&apos;s OneDrive folder.</p>
               <div style={S.rowWrap}>
-                <button style={S.secondary} onClick={loadDocs}>List documents</button>
-                <button style={S.secondary} onClick={suggestAttachments}>Suggest attachments</button>
+                {matterInfo?.matter?.folder_web_url && (
+                  <a
+                    style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+                    href={matterInfo.matter.folder_web_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Icon name="clip" size={14} /> Open folder
+                  </a>
+                )}
+                {matterInfo?.matter?.tracker_web_url && (
+                  <a
+                    style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+                    href={matterInfo.matter.tracker_web_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <Icon name="chart" size={14} /> Tracker.xlsx
+                  </a>
+                )}
+                <button style={S.secondary} onClick={loadDocs}>Refresh</button>
               </div>
+              {docs.length > 0 ? (
+                <ul style={S.ul}>
+                  {docs.map((d) => (
+                    <li key={d.id}>
+                      {d.web_url ? <a style={S.link} href={d.web_url} target="_blank" rel="noreferrer">{d.file_name}</a> : d.file_name}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={S.muted}>No files saved to this matter yet — save an email&apos;s attachments from the Email tab.</p>
+              )}
+            </Card>
+          )}
+
+          {/* Find attachments & share — reply/collaboration helpers (Email tab). */}
+          {tab === 'email' && matterId && (
+            <Section title="Find attachments & share">
+              <button style={S.secondary} onClick={suggestAttachments}>Suggest attachments for a reply</button>
               <input
-                style={S.input}
+                style={{ ...S.input, marginTop: 6 }}
                 placeholder="What's the reply about? (improves suggestions)"
                 value={attachmentIntent}
                 onChange={(e) => setAttachmentIntent(e.target.value)}
@@ -1737,18 +1777,6 @@ export default function Taskpane() {
                     {suggestions.map((s) => (
                       <li key={s.id}>
                         {s.web_url ? <a style={S.link} href={s.web_url} target="_blank" rel="noreferrer">{s.file_name}</a> : s.file_name}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {docs.length > 0 && (
-                <>
-                  <SubLabel>All documents</SubLabel>
-                  <ul style={S.ul}>
-                    {docs.map((d) => (
-                      <li key={d.id}>
-                        {d.web_url ? <a style={S.link} href={d.web_url} target="_blank" rel="noreferrer">{d.file_name}</a> : d.file_name}
                       </li>
                     ))}
                   </ul>
@@ -2035,6 +2063,7 @@ function humanize(s: string): string {
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
     reply: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v4" /></>,
+    mail: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 8 9 6 9-6" /></>,
     home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
