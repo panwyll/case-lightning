@@ -216,21 +216,31 @@ const CATEGORY_COLORS = ['preset0', 'preset5', 'preset8', 'preset3', 'preset10',
  */
 export async function ensureMasterCategory(userId: string, displayName: string, color?: string): Promise<void> {
   const client = await graphClientForUser(userId);
+  const chosen = color ?? CATEGORY_COLORS[Math.abs(hash(displayName)) % CATEGORY_COLORS.length];
+  const findByName = async () =>
+    ((await client.api('/me/outlook/masterCategories').get()).value ?? []).find(
+      (c: any) => c.displayName === displayName
+    );
+  // Pin the colour on an existing category if it's drifted (e.g. it was created
+  // colourless by Outlook auto-creating it on a message patch, or by an older build).
+  const pin = async (cat: { id: string; color?: string }) => {
+    if (cat.color !== chosen) await client.api(`/me/outlook/masterCategories/${cat.id}`).patch({ color: chosen });
+  };
   try {
-    const existing = await client.api('/me/outlook/masterCategories').get();
-    const found = (existing.value ?? []).find((c: any) => c.displayName === displayName);
+    const found = await findByName();
     if (found) {
-      // The category exists — but it may have been created colourless (e.g. by
-      // Outlook auto-creating it on a message patch, or by an older build). When
-      // we have an explicit colour to pin and it has drifted, correct it so tags
-      // actually show their intended colour instead of staying uncoloured.
-      if (color && found.color !== color) {
-        await client.api(`/me/outlook/masterCategories/${found.id}`).patch({ color });
-      }
+      await pin(found);
       return;
     }
-    const chosen = color ?? CATEGORY_COLORS[Math.abs(hash(displayName)) % CATEGORY_COLORS.length];
-    await client.api('/me/outlook/masterCategories').post({ displayName, color: chosen });
+    try {
+      await client.api('/me/outlook/masterCategories').post({ displayName, color: chosen });
+    } catch {
+      // Race: a concurrent triage (or Outlook auto-creating it from a message
+      // patch) made the category first — usually colourless. Re-fetch and pin
+      // the colour so it doesn't stay grey.
+      const made = await findByName();
+      if (made) await pin(made);
+    }
   } catch {
     /* category APIs can fail on some mailbox types — tagging is best-effort */
   }

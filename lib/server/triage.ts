@@ -142,13 +142,42 @@ const RAG_COLOR: Record<RagLevel, string> = {
   SOON: 'preset1',
   FYI: 'preset4',
 };
-// Matter-name tags are always blue so "which matter" reads as a different kind
-// of tag from the RAG status tag ("what to do, how urgent").
-const MATTER_COLOR = 'preset7';
+const RAG_COLOR_BY_LABEL: Record<string, string> = {
+  [RAG_LABEL.URGENT]: RAG_COLOR.URGENT,
+  [RAG_LABEL.SOON]: RAG_COLOR.SOON,
+  [RAG_LABEL.FYI]: RAG_COLOR.FYI,
+};
+
+// Each matter gets its own stable pill colour, cycling through this palette
+// (matter N+1 loops back to the start). Deliberately excludes the RAG status
+// colours (red preset0 / amber preset1 / green preset4) and the grey/steel/black
+// presets, so a matter pill never reads as urgency or as "uncoloured".
+const MATTER_PALETTE = [
+  'preset7', 'preset8', 'preset5', 'preset3', 'preset9', 'preset6', 'preset2',
+  'preset16', 'preset18', 'preset19', 'preset20', 'preset22', 'preset15', 'preset23',
+];
+
+function hashRef(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** Stable per-matter pill colour (same matter ref → same colour, always). */
+export function matterColor(matterRef: string): string {
+  return MATTER_PALETTE[hashRef(matterRef) % MATTER_PALETTE.length];
+}
 
 /** "Reply · Urgent", "Action · Soon", "Ignore · FYI", … — name encodes both. */
 function statusTagName(c: Classification): string {
   return `${ACTION_LABEL[recommendedAction(c)]} · ${RAG_LABEL[ragLevel(c)]}`;
+}
+
+/** Intended colour for a status category name, or null if it isn't one of ours. */
+export function statusTagColor(displayName: string): string | null {
+  const parts = displayName.split(' · ');
+  if (parts.length < 2) return null;
+  return RAG_COLOR_BY_LABEL[parts[parts.length - 1]] ?? null;
 }
 
 /**
@@ -162,7 +191,7 @@ export async function applyTriageTags(user: SessionUser, message: any, triage: T
   const matterTag = triage.top && triage.top.band === 'AUTO' ? triage.top.matterRef : null;
   const tags: string[] = matterTag ? [statusTag, matterTag] : [statusTag];
   for (const t of tags) {
-    const color = t === statusTag ? RAG_COLOR[ragLevel(triage.classification)] : MATTER_COLOR;
+    const color = t === statusTag ? RAG_COLOR[ragLevel(triage.classification)] : matterColor(t);
     await ensureMasterCategory(user.userId, t, color);
   }
   await addMessageCategories(user.userId, message.id, tags).catch(() => {});
@@ -266,7 +295,7 @@ export async function runAutoRules(
 
   if (rule.do_categorize && message.id) {
     const label = rule.category_label ?? match.matterRef;
-    await ensureMasterCategory(user.userId, label, MATTER_COLOR);
+    await ensureMasterCategory(user.userId, label, matterColor(label));
     await addMessageCategories(user.userId, message.id, [label]).catch(() => {});
     actions.push('categorized');
   }
