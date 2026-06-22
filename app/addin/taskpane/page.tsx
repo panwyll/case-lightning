@@ -1586,17 +1586,45 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* ── Task management lives on the EMAIL tab (the work surface) ── */}
-          {tab === 'email' && (
-            <button
-              style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
-              onClick={buildBoard}
-              disabled={boardLoading}
-            >
-              {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
-              {boardLoading ? 'Syncing…' : 'Team tracker'}
-            </button>
-          )}
+          {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
+          {tab === 'email' && matterId && (() => {
+            const open = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
+            const flag = matterInfo?.matter?.status_flag || 'ON_TRACK';
+            const flagBg = flag === 'BLOCKED' ? '#fee2e2' : flag === 'NEEDS_ATTENTION' ? '#fef9c3' : '#dcfce7';
+            return (
+              <Card>
+                <Label>Status</Label>
+                {matterInfo?.matter && (
+                  <div style={S.rowWrap}>
+                    <span style={S.chip}>{humanize(matterInfo.matter.stage || 'INSTRUCTION')}</span>
+                    <span style={{ ...S.chip, background: flagBg }}>{humanize(flag)}</span>
+                  </div>
+                )}
+                {open.length > 0 ? (
+                  <ul style={S.ul}>{open.map((t) => <li key={t.id}>{t.detail}{t.assignee ? ` — ${t.assignee}` : ''}</li>)}</ul>
+                ) : (matterInfo?.summary?.outstanding_items?.length ?? 0) > 0 ? (
+                  <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
+                ) : (
+                  <p style={S.muted}>Nothing outstanding on the tracker.</p>
+                )}
+                <div style={S.rowWrap}>
+                  <button style={S.secondary} onClick={buildBoard} disabled={boardLoading}>
+                    {boardLoading ? 'Syncing…' : 'Open team board'}
+                  </button>
+                  {matterInfo?.matter?.tracker_web_url && (
+                    <a
+                      style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+                      href={matterInfo.matter.tracker_web_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open case tracker
+                    </a>
+                  )}
+                </div>
+              </Card>
+            );
+          })()}
 
           {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
           {tab === 'email' && matterId && (
@@ -1660,82 +1688,15 @@ export default function Taskpane() {
             </Section>
           )}
 
-          {/* ── HOUSE TAB — the property/transaction record (details only) ── */}
-          {tab === 'house' && matterInfo?.matter && (() => {
-            const m = matterInfo.matter;
-            const facts: Record<string, unknown> = matterInfo.summary?.facts ?? {};
-            // No price column historically — prefill from the first price-like fact.
-            const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
-            const join = (a?: string[]) => (a && a.length ? a.join(', ') : '');
-            const row = (label: string, val: unknown) =>
-              val ? <div style={S.kv}><span>{label}</span><span style={{ textAlign: 'right' }}>{String(val)}</span></div> : null;
-            // Editable, two-way: edits PATCH the matter on blur (only when changed
-            // from the stored baseline), then the panel reloads. Uncontrolled +
-            // keyed per matter so switching matters resets the inputs.
-            const edit = (label: string, field: string, display: string, baseline: string, type = 'text') => (
-              <label key={`${m.id}:${field}`} style={{ display: 'block', marginBottom: 6 }}>
-                <span style={S.fieldLabel}>{label}</span>
-                <input
-                  style={{ ...S.input, marginBottom: 0 }}
-                  type={type}
-                  defaultValue={display}
-                  onBlur={(e) => { const v = e.target.value.trim(); if (v !== baseline) updateMatterField({ [field]: v }); }}
-                />
-              </label>
-            );
-            const date = (s: unknown) => (s ? String(s).slice(0, 10) : '');
-            const extra = Object.entries(facts).filter(([k]) => k !== priceKey);
-            return (
-              <Card>
-                <Label>{m.matter_ref}</Label>
-                {edit('Property address', 'propertyAddress', m.property_address ?? '', m.property_address ?? '')}
-                {edit('Purchase price', 'purchasePrice', m.purchase_price ?? (priceKey ? String(facts[priceKey]) : ''), m.purchase_price ?? '')}
-                {row('Buyer(s)', join(m.buyer_names))}
-                {row('Seller(s)', join(m.seller_names))}
-                {edit('Other side (solicitor)', 'counterpartySolicitor', m.counterparty_solicitor ?? '', m.counterparty_solicitor ?? '')}
-                {edit('Estate agent', 'counterpartyAgent', m.counterparty_agent ?? '', m.counterparty_agent ?? '')}
-                {edit('Lender', 'lender', m.lender ?? '', m.lender ?? '')}
-                {edit('Chain position', 'chainPosition', m.chain_position ?? '', m.chain_position ?? '')}
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {edit('Exchange target', 'exchangeTargetDate', date(m.exchange_target_date), date(m.exchange_target_date), 'date')}
-                  {edit('Completion target', 'completionTargetDate', date(m.completion_target_date), date(m.completion_target_date), 'date')}
-                </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                  <label style={{ flex: 1 }}>
-                    <span style={S.fieldLabel}>Stage</span>
-                    <select
-                      style={{ ...S.input, marginBottom: 0 }}
-                      value={m.stage || 'INSTRUCTION'}
-                      onChange={(e) => updateMatterField({ stage: e.target.value })}
-                    >
-                      {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </label>
-                  <label style={{ flex: 1 }}>
-                    <span style={S.fieldLabel}>Status</span>
-                    <select
-                      style={{ ...S.input, marginBottom: 0 }}
-                      value={m.status_flag || 'ON_TRACK'}
-                      onChange={(e) => updateMatterField({ statusFlag: e.target.value })}
-                    >
-                      {STATUS_FLAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </label>
-                </div>
-                {extra.length > 0 && (
-                  <>
-                    <SubLabel>Other extracted facts</SubLabel>
-                    {extra.map(([k, v]) => (
-                      <div key={k} style={S.kv}>
-                        <span>{humanize(k)}</span>
-                        <span style={{ textAlign: 'right' }}>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </Card>
-            );
-          })()}
+          {/* ── HOUSE TAB — the property/transaction record (editable, validated) ── */}
+          {tab === 'house' && matterInfo?.matter && (
+            <HousePanel
+              key={matterInfo.matter.id}
+              matter={matterInfo.matter}
+              facts={matterInfo.summary?.facts ?? {}}
+              onPatch={updateMatterField}
+            />
+          )}
 
           {/* ── FILES TAB — a mini file explorer over the matter's OneDrive folder ── */}
           {tab === 'paperclip' && matterId && (
@@ -1974,6 +1935,106 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return <section style={S.card}>{children}</section>;
+}
+
+// The House tab's property record: controlled fields with validation and an
+// explicit Save / Discard (no silent save-on-blur). Keyed by matter id by the
+// caller so it re-initialises when the matter changes. Buyers/sellers are
+// read-only (the matter PATCH doesn't accept them); stage/status are enum selects
+// that apply immediately. Purchase price is validated as a money value.
+const MONEY_RE = /^£?\s*\d{1,3}(,\d{3})*(\.\d{1,2})?$|^£?\s*\d+(\.\d{1,2})?$/;
+function HousePanel({
+  matter,
+  facts,
+  onPatch,
+}: {
+  matter: any;
+  facts: Record<string, unknown>;
+  onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
+}) {
+  const dateStr = (s: unknown) => (s ? String(s).slice(0, 10) : '');
+  const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
+  const initial = {
+    propertyAddress: matter.property_address ?? '',
+    purchasePrice: matter.purchase_price ?? (priceKey ? String(facts[priceKey]) : ''),
+    counterpartySolicitor: matter.counterparty_solicitor ?? '',
+    counterpartyAgent: matter.counterparty_agent ?? '',
+    lender: matter.lender ?? '',
+    chainPosition: matter.chain_position ?? '',
+    exchangeTargetDate: dateStr(matter.exchange_target_date),
+    completionTargetDate: dateStr(matter.completion_target_date),
+  };
+  type Draft = typeof initial;
+  const [draft, setDraft] = useState<Draft>(initial);
+  const [baseline, setBaseline] = useState<Draft>(initial);
+  const set = (k: keyof Draft, v: string) => setDraft((d) => ({ ...d, [k]: v }));
+
+  const priceValid = !draft.purchasePrice.trim() || MONEY_RE.test(draft.purchasePrice.trim());
+  const keys = Object.keys(draft) as (keyof Draft)[];
+  const dirty = keys.some((k) => draft[k] !== baseline[k]);
+  const canSave = dirty && priceValid;
+  const join = (a?: string[]) => (a && a.length ? a.join(', ') : '');
+
+  const save = async () => {
+    const patch: Record<string, unknown> = {};
+    keys.forEach((k) => { if (draft[k] !== baseline[k]) patch[k] = draft[k].trim(); });
+    if (!Object.keys(patch).length) return;
+    await onPatch(patch);
+    setBaseline(draft);
+  };
+
+  const field = (label: string, k: keyof Draft, type = 'text', valid = true) => (
+    <label style={{ display: 'block', marginBottom: 6 }}>
+      <span style={S.fieldLabel}>{label}</span>
+      <input
+        style={{ ...S.input, marginBottom: 0, ...(valid ? {} : { borderColor: '#dc2626' }) }}
+        type={type}
+        value={draft[k]}
+        onChange={(e) => set(k, e.target.value)}
+      />
+      {!valid && <span style={{ fontSize: 11, color: '#dc2626' }}>Enter a valid amount, e.g. £210,000</span>}
+    </label>
+  );
+
+  return (
+    <section style={S.card}>
+      <Label>{matter.matter_ref}</Label>
+      {field('Property address', 'propertyAddress')}
+      {field('Purchase price', 'purchasePrice', 'text', priceValid)}
+      {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}
+      {join(matter.seller_names) && <div style={S.kv}><span>Seller(s)</span><span style={{ textAlign: 'right' }}>{join(matter.seller_names)}</span></div>}
+      {field('Other side (solicitor)', 'counterpartySolicitor')}
+      {field('Estate agent', 'counterpartyAgent')}
+      {field('Lender', 'lender')}
+      {field('Chain position', 'chainPosition')}
+      <div style={{ display: 'flex', gap: 6 }}>
+        {field('Exchange target', 'exchangeTargetDate', 'date')}
+        {field('Completion target', 'completionTargetDate', 'date')}
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <label style={{ flex: 1 }}>
+          <span style={S.fieldLabel}>Stage</span>
+          <select style={{ ...S.input, marginBottom: 0 }} value={matter.stage || 'INSTRUCTION'} onChange={(e) => onPatch({ stage: e.target.value })}>
+            {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+        <label style={{ flex: 1 }}>
+          <span style={S.fieldLabel}>Status</span>
+          <select style={{ ...S.input, marginBottom: 0 }} value={matter.status_flag || 'ON_TRACK'} onChange={(e) => onPatch({ statusFlag: e.target.value })}>
+            {STATUS_FLAGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </label>
+      </div>
+      {dirty && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+          <button style={{ ...S.primary, marginTop: 0, flex: 1, opacity: canSave ? 1 : 0.5 }} onClick={save} disabled={!canSave}>
+            Save changes
+          </button>
+          <button style={S.secondary} onClick={() => setDraft(baseline)}>Discard</button>
+        </div>
+      )}
+    </section>
+  );
 }
 
 // A collapsible card: the secondary surfaces (Tasks, Documents, Review) fold away
