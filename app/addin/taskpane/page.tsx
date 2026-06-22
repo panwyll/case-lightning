@@ -1362,14 +1362,7 @@ export default function Taskpane() {
           {/* The situation + the four moves — only once we have a matter to act on. */}
           {tab === 'email' && hasMatter && assist && (
             <Card>
-              <div style={S.rowWrap}>
-                <span style={S.chip}>{humanize(assist.classification.intent)}</span>
-                <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
-                  {assist.classification.needsAttention ? 'Needs you' : 'FYI'}
-                </span>
-                <span style={S.chip}>{humanize(assist.classification.urgency)}</span>
-              </div>
-              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '8px 0 10px' }}>{assist.ask}</p>
+              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 10px' }}>{assist.ask}</p>
 
               {/* The four moves. The recommended one is pre-lit; pick any to expand it. */}
               <div style={S.actionRow}>
@@ -1595,17 +1588,12 @@ export default function Taskpane() {
                   <p style={S.muted}>Nothing on the tracker yet.</p>
                 )}
                 <div style={{ ...S.rowWrap, marginTop: 8 }}>
-                  <button style={S.secondary} onClick={buildBoard} disabled={boardLoading}>
-                    {boardLoading ? 'Syncing…' : 'Open team board'}
+                  <button style={S.iconAction} onClick={buildBoard} disabled={boardLoading} title="Open team board" aria-label="Open team board">
+                    {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
                   </button>
                   {matterInfo?.matter?.tracker_web_url && (
-                    <a
-                      style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
-                      href={matterInfo.matter.tracker_web_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open case tracker
+                    <a style={S.iconAction} href={matterInfo.matter.tracker_web_url} target="_blank" rel="noreferrer" title="Open case tracker" aria-label="Open case tracker">
+                      <Icon name="file" size={15} />
                     </a>
                   )}
                 </div>
