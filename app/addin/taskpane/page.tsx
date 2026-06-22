@@ -845,25 +845,6 @@ export default function Taskpane() {
     }
   }, [matterId]);
 
-  // Log a OneDrive file to the tracker and, when it's readable + substantive,
-  // draft a "we now hold X" notification (draft-only). Gated server-side.
-  async function processFile(f: FileItem) {
-    const r = await run(`Logging ${f.name}`, async () => {
-      requireMatter();
-      return api<{ trackerUpdated: boolean; drafted: boolean; draftSubject: string | null; reason: string | null }>(
-        `/matters/${matterId}/files/process`,
-        { method: 'POST', body: JSON.stringify({ itemId: f.id, fileName: f.name, mimeType: f.mimeType ?? undefined }) }
-      );
-    });
-    if (!r) return;
-    setStatus(
-      r.drafted
-        ? `Tracker updated and a draft notification created in Outlook: “${r.draftSubject}”. Review before sending.`
-        : r.reason ?? 'Logged to the tracker.'
-    );
-    loadFiles();
-  }
-
   // Upload a file straight into the matter's OneDrive folder, then run it through
   // the same log-and-maybe-notify pipeline (the upload is the "file changed" event).
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -888,12 +869,6 @@ export default function Taskpane() {
         : `Uploaded and logged to the tracker.${r.reason ? ' ' + r.reason : ''}`
     );
     loadFiles();
-  }
-
-  // Log every not-yet-logged file in the folder (e.g. ones dropped into OneDrive
-  // directly), each through the gated pipeline.
-  async function logNewFiles() {
-    for (const f of files.filter((x) => !x.processed)) await processFile(f);
   }
 
   // ── Assistant + tasks ────────────────────────────────────────────────────
@@ -1362,6 +1337,7 @@ export default function Taskpane() {
           {/* The situation + the four moves — only once we have a matter to act on. */}
           {tab === 'email' && hasMatter && assist && (
             <Card>
+              <Label>Summary</Label>
               <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 10px' }}>{assist.ask}</p>
 
               {/* The four moves. The recommended one is pre-lit; pick any to expand it. */}
@@ -1549,51 +1525,46 @@ export default function Taskpane() {
 
           {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
           {tab === 'email' && matterId && (() => {
-            const flag = matterInfo?.matter?.status_flag || 'ON_TRACK';
-            const flagBg = flag === 'BLOCKED' ? '#fee2e2' : flag === 'NEEDS_ATTENTION' ? '#fef9c3' : '#dcfce7';
+            const flag = humanize(matterInfo?.matter?.status_flag || 'ON_TRACK');
+            const stage = humanize(matterInfo?.matter?.stage || 'INSTRUCTION');
+            const trackerUrl = matterInfo?.matter?.tracker_web_url;
+            const kv = (k: string, v: string) => (
+              <div style={S.kvRow}><span style={S.kvKey}>{k}</span><span style={S.kvVal}>{v}</span></div>
+            );
+            const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
             return (
               <Card>
-                <Label>Status</Label>
-                {matterInfo?.matter && (
-                  <div style={{ ...S.rowWrap, marginBottom: 8 }}>
-                    <span style={S.chip}>{humanize(matterInfo.matter.stage || 'INSTRUCTION')}</span>
-                    <span style={{ ...S.chip, background: flagBg }}>{humanize(flag)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Label>Status</Label>
+                  {trackerUrl && (
+                    <a style={S.iconAction} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the tracker externally" aria-label="Open the tracker externally">
+                      <Icon name="external" size={15} />
+                    </a>
+                  )}
+                </div>
+                {tasks.length > 0 ? (
+                  tasks.map((t) => (
+                    <div key={t.id} style={S.candidate}>
+                      {kv('Status', humanize(t.status))}
+                      {kv('Stage', stage)}
+                      {kv('Assigned to', t.assignee || '—')}
+                      {kv('Notes', t.detail || '—')}
+                    </div>
+                  ))
+                ) : (
+                  <div style={S.candidate}>
+                    {kv('Status', flag)}
+                    {kv('Stage', stage)}
+                    {kv('Notes', outstanding.length ? outstanding.join('; ') : 'Nothing outstanding')}
                   </div>
                 )}
-                {tasks.length > 0 ? (
-                  <table style={S.trk}>
-                    <thead>
-                      <tr>
-                        <th style={S.trkH}>Status</th>
-                        <th style={S.trkH}>Assigned to</th>
-                        <th style={S.trkH}>Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {tasks.map((t) => {
-                        const bg = t.status === 'DONE' ? '#dcfce7' : t.status === 'IN_PROGRESS' ? '#fef9c3' : t.status === 'NOTED' ? '#e2e8f0' : '#fee2e2';
-                        return (
-                          <tr key={t.id}>
-                            <td style={S.trkC}><span style={{ ...S.chip, background: bg, textTransform: 'none' }}>{humanize(t.status)}</span></td>
-                            <td style={S.trkC}>{t.assignee || '—'}</td>
-                            <td style={S.trkC}>{t.detail}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (matterInfo?.summary?.outstanding_items?.length ?? 0) > 0 ? (
-                  <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
-                ) : (
-                  <p style={S.muted}>Nothing on the tracker yet.</p>
-                )}
                 <div style={{ ...S.rowWrap, marginTop: 8 }}>
-                  <button style={S.iconAction} onClick={buildBoard} disabled={boardLoading} title="Open team board" aria-label="Open team board">
-                    {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
+                  <button style={S.secondary} onClick={buildBoard} disabled={boardLoading}>
+                    {boardLoading ? 'Syncing…' : 'Team tracker'}
                   </button>
-                  {matterInfo?.matter?.tracker_web_url && (
-                    <a style={S.iconAction} href={matterInfo.matter.tracker_web_url} target="_blank" rel="noreferrer" title="Open case tracker" aria-label="Open case tracker">
-                      <Icon name="file" size={15} />
+                  {trackerUrl && (
+                    <a style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} href={trackerUrl} target="_blank" rel="noreferrer">
+                      Case tracker
                     </a>
                   )}
                 </div>
@@ -1636,11 +1607,6 @@ export default function Taskpane() {
                 style={{ display: 'none' }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
               />
-              {files.some((f) => !f.processed) && (
-                <button style={{ ...S.secondary, marginBottom: 8 }} onClick={logNewFiles}>
-                  Log {files.filter((f) => !f.processed).length} new file(s) to tracker
-                </button>
-              )}
               {files.length > 0 ? (
                 <div style={S.fileList}>
                   {files.map((f) => {
@@ -1831,6 +1797,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     file: <><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></>,
     upload: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></>,
     refresh: <><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></>,
+    external: <><path d="M14 3h7v7" /><path d="M21 3l-9 9" /><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
     user: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>,
@@ -2323,6 +2290,9 @@ const S: Record<string, React.CSSProperties> = {
   trk: { width: '100%', borderCollapse: 'collapse', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff' },
   trkH: { textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
   trkC: { fontSize: 12, color: '#0f172a', padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' },
+  kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '2px 0', alignItems: 'baseline' },
+  kvKey: { flex: 'none', width: 84, color: '#64748b', fontWeight: 600 },
+  kvVal: { flex: 1, minWidth: 0, color: '#0f172a' },
   link: { display: 'block', fontSize: 12, color: '#5A27E0', margin: '6px 0', textDecoration: 'none', fontWeight: 600 },
   toast: {
     position: 'fixed',
