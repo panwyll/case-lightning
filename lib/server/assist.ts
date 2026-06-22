@@ -20,6 +20,7 @@ import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
 import { summarizeThread, draftReply, retrieveMatterContext } from './ai';
 import { reviewAttachmentsContext } from './files';
+import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
@@ -127,6 +128,10 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     );
     facts = summaryRow?.facts ?? {};
     matterOutstanding = summaryRow?.outstanding_items ?? [];
+
+    // Harvest every address on this email (sender + to/cc) into the matter's
+    // address book, so later actions can target the right party. Best-effort.
+    await recordContactsFromMessage(user, matterId, message).catch(() => {});
   }
 
   // Highlight the email in the Outlook message list (coloured categories) so it

@@ -192,9 +192,24 @@ export async function getMatterSummary(matterId: string, tenantId: string) {
     [matterId, tenantId]
   );
 
+  // The matter's harvested address book (sender/recipients seen on its email
+  // traffic). Guarded so a deploy landing before migration 018 doesn't 500.
+  let contacts: Record<string, unknown>[] = [];
+  try {
+    contacts = await query<Record<string, unknown>>(
+      `select id, email, name, role, source, last_seen_at
+       from matter_contact where matter_id = $1 and tenant_id = $2
+       order by role <> 'UNKNOWN' desc, last_seen_at desc`,
+      [matterId, tenantId]
+    );
+  } catch {
+    /* matter_contact not migrated yet — return none */
+  }
+
   return {
     matter,
     summary: summary ?? { facts: {}, outstanding_items: [], risks: [] },
     timeline,
+    contacts,
   };
 }
