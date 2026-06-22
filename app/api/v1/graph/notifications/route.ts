@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
+import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import type { SessionUser } from '@/lib/server/types';
@@ -54,6 +55,14 @@ export async function POST(req: NextRequest) {
         const triage = await runTriage(user, message);
         await applyTriageTags(user, message, triage);
         await runAutoRules(user, message, triage);
+
+        // Docs received by email on a matched case always get saved to the matter
+        // folder automatically (best-effort) — no manual "save to matter" step.
+        if (triage.top?.band === 'AUTO' && message.hasAttachments) {
+          await saveEmailAttachmentsToMatter(user, triage.top.matterId, messageId, message.subject).catch((e) =>
+            console.error('[graph notification] auto-save attachments failed', (e as Error).message)
+          );
+        }
 
         // Precompute the full taskpane "situation" (thread summary + drafted
         // reply) and cache it, so opening this email is instant. runTriage above

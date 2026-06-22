@@ -9,8 +9,8 @@
  * triggers a false "we've got the contract" email. Drafts are never sent.
  */
 import { query, queryOne } from './db';
-import { downloadDriveItem, appendTrackerRow, createDraftMessage } from './graph';
-import { reviewDocument } from './ai';
+import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, uploadToMatterFolder } from './graph';
+import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
@@ -147,4 +147,86 @@ export async function processMatterFile(
       ? 'File looks empty or uninformative — logged to the tracker, no notification drafted.'
       : 'This file type can’t be auto-read — logged to the tracker; draft an update manually if needed.',
   };
+}
+
+/**
+ * Auto-saves a matched email's attachments into the matter's OneDrive folder
+ * (records each as a document + RAG chunk, and notes the save on the tracker).
+ * Called from the triage webhook when an incoming email matches a matter — so
+ * "docs received by email on matched cases" always land in the folder without a
+ * manual step. Idempotent on (matter, file name); best-effort. Returns the count.
+ */
+export async function saveEmailAttachmentsToMatter(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  messageId: string,
+  subject?: string
+): Promise<number> {
+  const matter = await queryOne<{ folder_path: string | null; tracker_item_id: string | null }>(
+    `select folder_path, tracker_item_id from matter where id = $1 and tenant_id = $2`,
+    [matterId, user.tenantId]
+  );
+  if (!matter?.folder_path) return 0;
+
+  const attachments = await listMessageAttachments(user.userId, messageId);
+  let saved = 0;
+  for (const att of attachments) {
+    if (!att.contentBytes || !att.name || att.isInline) continue;
+    const exists = await queryOne<{ id: string }>(
+      `select id from document where matter_id = $1 and tenant_id = $2 and file_name = $3`,
+      [matterId, user.tenantId, att.name]
+    );
+    if (exists) continue; // already in the folder — don't re-save on a re-triage
+    const buffer = Buffer.from(att.contentBytes, 'base64');
+    const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, att.name, buffer);
+    const doc = await queryOne<{ id: string }>(
+      `insert into document
+        (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, doc_type, created_by)
+       values ($1,$2,'EMAIL_ATTACHMENT',$3,$4,$5,$6,$7,$8,$9,'EMAIL_ATTACHMENT',$10) returning id`,
+      [
+        user.tenantId,
+        matterId,
+        uploaded.parentReference?.driveId ?? null,
+        uploaded.id,
+        `${matter.folder_path}/${att.name}`,
+        uploaded.webUrl ?? null,
+        att.name,
+        att.contentType ?? null,
+        att.size ?? null,
+        user.userId,
+      ]
+    );
+    await upsertChunks({
+      tenantId: user.tenantId,
+      matterId,
+      sourceKind: 'DOCUMENT',
+      sourceId: doc!.id,
+      text: `${att.name}\n${att.contentType ?? ''}`,
+      metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT' },
+    }).catch(() => {});
+    saved += 1;
+  }
+
+  if (saved > 0 && matter.tracker_item_id) {
+    await appendTrackerRow(user.userId, matter.tracker_item_id, {
+      date: new Date().toISOString().slice(0, 10),
+      type: 'DOC_SAVED',
+      detail: `Auto-saved ${saved} attachment(s) from email: ${subject ?? ''}`.slice(0, 250),
+      owner: '',
+      due: '',
+      status: 'DONE',
+    }).catch(() => {});
+  }
+
+  if (saved > 0) {
+    await writeAudit({
+      tenantId: user.tenantId,
+      matterId,
+      actorUserId: user.userId,
+      actionType: 'EMAIL_SAVED_TO_MATTER',
+      actionStatus: 'SUCCESS',
+      payload: { messageId, count: saved, auto: true },
+    }).catch(() => {});
+  }
+  return saved;
 }
