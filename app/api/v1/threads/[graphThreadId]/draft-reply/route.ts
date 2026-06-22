@@ -6,6 +6,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
 import { draftReply, retrieveMatterContext } from '@/lib/server/ai';
+import { reviewAttachmentsContext } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -68,7 +69,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           limit: 10,
         })
       : [];
-    const retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
+    let retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
+    // Review any attachments on this email against the matter and fold the findings
+    // into the draft (e.g. replying to a document sent for review).
+    if (body.matterId) {
+      const attach = await reviewAttachmentsContext(user, body.matterId, body.messageId).catch(() => '');
+      if (attach) retrievedContext = retrievedContext ? `${retrievedContext}\n---\n${attach}` : attach;
+    }
     const templateText = `${template ? `${template.subject_template ?? ''}\n${template.body_template}` : ''}\n${
       policy?.default_disclaimer ?? ''
     }`;

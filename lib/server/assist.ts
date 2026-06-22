@@ -19,6 +19,7 @@ import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
 import { summarizeThread, draftReply, retrieveMatterContext } from './ai';
+import { reviewAttachmentsContext } from './files';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
@@ -193,7 +194,13 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
           limit: 10,
         })
       : [];
-    const retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
+    let retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
+    // If the email carries attachments, review them against the matter and fold the
+    // findings into the draft context (e.g. a document sent for review).
+    if (ctx.matterId && ctx.message?.hasAttachments && ctx.message?.id) {
+      const attach = await reviewAttachmentsContext(user, ctx.matterId, ctx.message.id).catch(() => '');
+      if (attach) retrievedContext = retrievedContext ? `${retrievedContext}\n---\n${attach}` : attach;
+    }
     const templateText = `${template ? `${template.subject_template ?? ''}\n${template.body_template}` : ''}\n${policy?.default_disclaimer ?? ''}`;
 
     const generated = await draftReply({
