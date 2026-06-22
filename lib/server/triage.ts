@@ -110,30 +110,59 @@ const ACTION_LABEL: Record<RecommendedAction, string> = {
   DELEGATE: 'Delegate',
   IGNORE: 'Ignore',
 };
-// Red = a response is owed, Orange = work to do, Blue = handed off, Steel = no-op.
-const ACTION_COLOR: Record<RecommendedAction, string> = {
-  REPLY: 'preset0',
-  ACTION: 'preset1',
-  DELEGATE: 'preset7',
-  IGNORE: 'preset10',
+
+// The status tag carries two things: what to do (the action) and how urgent it
+// is (the RAG level). Because Outlook ties one colour to one category NAME, the
+// urgency has to live in the name — so the tag is "<Action> · <Urgency>" and its
+// colour is driven by the urgency half. That yields a small action×urgency
+// matrix of categories, each created on demand.
+export type RagLevel = 'URGENT' | 'SOON' | 'FYI';
+
+/**
+ * RAG urgency for the status tag, by effect on the conveyancing critical path:
+ *  - URGENT (red): a response/decision is owed now or the chain is blocked —
+ *    high urgency, or someone is actively chasing us.
+ *  - SOON (amber): needs the fee earner, but isn't holding anything up yet.
+ *  - FYI (green): informational, no action needed.
+ */
+export function ragLevel(c: Classification): RagLevel {
+  if (!c.needsAttention) return 'FYI';
+  if (c.urgency === 'HIGH' || c.intent === 'CHASE') return 'URGENT';
+  return 'SOON';
+}
+
+const RAG_LABEL: Record<RagLevel, string> = {
+  URGENT: 'Urgent',
+  SOON: 'Soon',
+  FYI: 'FYI',
 };
-// Matter-name tags get their own colour so they read as a different kind of tag
-// (which matter) from the action tags (what to do). Purple = "which matter".
-const MATTER_COLOR = 'preset4';
+// Red = on the critical path, Amber = needs doing soon, Green = informational.
+const RAG_COLOR: Record<RagLevel, string> = {
+  URGENT: 'preset0',
+  SOON: 'preset1',
+  FYI: 'preset4',
+};
+// Matter-name tags are always blue so "which matter" reads as a different kind
+// of tag from the RAG status tag ("what to do, how urgent").
+const MATTER_COLOR = 'preset7';
+
+/** "Reply · Urgent", "Action · Soon", "Ignore · FYI", … — name encodes both. */
+function statusTagName(c: Classification): string {
+  return `${ACTION_LABEL[recommendedAction(c)]} · ${RAG_LABEL[ragLevel(c)]}`;
+}
 
 /**
  * Apply visible Outlook category tags from a triage result (best-effort): the
- * recommended move always, plus the matched matter ref when the match is
+ * RAG status tag always, plus the matched matter ref when the match is
  * AUTO-band. Opting into auto-triage (the subscription) is the user's consent.
  */
 export async function applyTriageTags(user: SessionUser, message: any, triage: TriageResult): Promise<string[]> {
   if (!message.id) return [];
-  const action = recommendedAction(triage.classification);
-  const actionTag = ACTION_LABEL[action];
+  const statusTag = statusTagName(triage.classification);
   const matterTag = triage.top && triage.top.band === 'AUTO' ? triage.top.matterRef : null;
-  const tags: string[] = matterTag ? [actionTag, matterTag] : [actionTag];
+  const tags: string[] = matterTag ? [statusTag, matterTag] : [statusTag];
   for (const t of tags) {
-    const color = t === actionTag ? ACTION_COLOR[action] : MATTER_COLOR;
+    const color = t === statusTag ? RAG_COLOR[ragLevel(triage.classification)] : MATTER_COLOR;
     await ensureMasterCategory(user.userId, t, color);
   }
   await addMessageCategories(user.userId, message.id, tags).catch(() => {});
