@@ -77,7 +77,21 @@ export async function runTriage(user: SessionUser, message: any): Promise<Triage
     actorUserId: user.userId,
     actionType: 'EMAIL_TRIAGED',
     actionStatus: 'SUCCESS',
-    payload: { messageId: message.id, band: top?.band ?? 'NONE', confidence: top?.score ?? 0, intent: classification.intent },
+    // The full labelling decision, so "how was this email labelled?" is answerable
+    // from one audit row (feeds v_email_journey): intent + urgency + needs-you, the
+    // recommended move and the RAG status tag we applied, plus the matter match.
+    payload: {
+      messageId: message.id,
+      conversationId: message.conversationId ?? null,
+      band: top?.band ?? 'NONE',
+      confidence: top?.score ?? 0,
+      matterRef: top?.matterRef ?? null,
+      intent: classification.intent,
+      urgency: classification.urgency,
+      needsAttention: classification.needsAttention,
+      recommendedAction: recommendedAction(classification),
+      statusTag: statusTagName(classification),
+    },
   });
 
   return { triageId: row!.id, classification, candidates, top, band: top?.band ?? 'NONE' };

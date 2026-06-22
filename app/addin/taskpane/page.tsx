@@ -239,6 +239,12 @@ export default function Taskpane() {
   // for a firm that hasn't imported yet, and re-openable via the header gear.
   const [showSetup, setShowSetup] = useState(false);
 
+  // Three tabs, sharing the matter pill at the top as a fixed anchor:
+  //   email     → what this email is about + what we're doing about it
+  //   house     → the transaction/matter record (details, stage, tasks) — editable
+  //   paperclip → files on the matter + the email-derived transaction knowledge
+  const [tab, setTab] = useState<'email' | 'house' | 'paperclip'>('email');
+
   // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
   const [assist, setAssist] = useState<AssistData | null>(null);
   // Tracks which message the assist poller is following; changing it cancels any
@@ -1071,10 +1077,23 @@ export default function Taskpane() {
   // The panel that's expanded: the user's explicit pick, else the recommendation.
   const effectiveAction = chosenAction ?? recommended;
 
-  // "Ignore" needs no backend — the email's been read, there's just nothing to do.
+  // Log the move the user picked — analytics only, never blocks the UI. This is
+  // the only footprint some moves leave (esp. Ignore, and Delegate before a task
+  // exists), so the label-vs-action picture in v_email_journey stays complete.
+  function recordAction(action: 'reply' | 'action' | 'delegate' | 'ignore') {
+    if (!messageId) return;
+    api('/triage/action', {
+      method: 'POST',
+      body: JSON.stringify({ messageId, conversationId: conversationId || undefined, matterId: matterId || undefined, action }),
+    }).catch(() => {});
+  }
+
+  // "Ignore" needs no other backend — the email's been read, there's just nothing
+  // to do — but we still record the decision (above) so it isn't invisible.
   function markIgnore() {
     setIgnored(true);
     setChosenAction('ignore');
+    recordAction('ignore');
     setStatus('Marked as handled — no reply needed.');
   }
 
@@ -1091,6 +1110,12 @@ export default function Taskpane() {
     // what actually gates re-runs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, setupView, messageId, conversationId]);
+
+  // House & Files only make sense with a linked matter — fall back to Email when
+  // there isn't one so those tabs never show an empty pane.
+  useEffect(() => {
+    if (!matterId && tab !== 'email') setTab('email');
+  }, [matterId, tab]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
@@ -1313,13 +1338,36 @@ export default function Taskpane() {
             </Card>
           )}
 
+          {/* Tab bar — the matter pill above is the fixed "which matter" anchor;
+              these switch what we show for it. House/Files need a linked matter. */}
+          <div style={S.tabBar}>
+            {([
+              ['email', 'reply', 'Email'],
+              ['house', 'home', 'House'],
+              ['paperclip', 'clip', 'Files'],
+            ] as const).map(([key, icon, lbl]) => {
+              const active = tab === key;
+              const locked = key !== 'email' && !hasMatter;
+              return (
+                <button
+                  key={key}
+                  style={{ ...S.tabBtn, ...(active ? S.tabBtnActive : {}), ...(locked ? S.tabBtnLocked : {}) }}
+                  onClick={() => { if (!locked) setTab(key); }}
+                  disabled={locked}
+                  title={locked ? 'Link a matter first' : lbl}
+                  aria-selected={active}
+                >
+                  <Icon name={icon} size={16} />
+                  <span>{lbl}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── EMAIL TAB — what this email is about + what we're doing about it ── */}
           {/* The situation + the four moves — only once we have a matter to act on. */}
-          {hasMatter && assist && (
+          {tab === 'email' && hasMatter && assist && (
             <Card>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-                <span style={S.assistIcon}><Icon name="sparkle" size={13} /></span>
-                <span style={S.label}>Here&apos;s the situation</span>
-              </div>
               <div style={S.rowWrap}>
                 <span style={S.chip}>{humanize(assist.classification.intent)}</span>
                 <span style={{ ...S.chip, background: assist.classification.needsAttention ? '#fee2e2' : '#dcfce7' }}>
@@ -1356,7 +1404,11 @@ export default function Taskpane() {
                     <button
                       key={key}
                       style={{ ...S.actionBtn, ...(active ? S.actionBtnActive : {}) }}
-                      onClick={() => (key === 'ignore' ? markIgnore() : setChosenAction(key))}
+                      onClick={() => {
+                        if (key === 'ignore') { markIgnore(); return; }
+                        recordAction(key);
+                        setChosenAction(key);
+                      }}
                     >
                       <Icon name={icon} size={18} />
                       <span>{lbl}</span>
@@ -1436,7 +1488,7 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {showNewMatter && (
+          {tab === 'email' && showNewMatter && (
             <Card>
               <Label>New matter</Label>
               <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder={`auto: ${suggestedRef()}`} />
@@ -1455,7 +1507,7 @@ export default function Taskpane() {
           )}
 
 
-          {summary && (
+          {tab === 'email' && summary && (
             <Card>
               <Label>Summary</Label>
               <SubLabel>Happened</SubLabel>
@@ -1465,7 +1517,7 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {facts && (
+          {tab === 'email' && facts && (
             <Card>
               <Label>Extracted facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
               {Object.entries(facts.facts).map(([k, v]) => (
@@ -1490,7 +1542,7 @@ export default function Taskpane() {
           )}
 
           {/* Draft workspace */}
-          {draft && (
+          {tab === 'email' && draft && (
             <Card>
               <Label>Draft reply — never auto-sent</Label>
               <div style={S.rowWrap}>
@@ -1521,19 +1573,20 @@ export default function Taskpane() {
             </Card>
           )}
 
-          {/* ── Matter workspace — the firm tracker plus, once a matter is linked,
-                its tasks, stage, documents and review tools. ── */}
-          <button
-            style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
-            onClick={buildBoard}
-            disabled={boardLoading}
-          >
-            {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
-            {boardLoading ? 'Syncing…' : 'Team tracker'}
-          </button>
+          {/* ── HOUSE TAB — the transaction record: details, stage, tasks, tracker ── */}
+          {tab === 'house' && (
+            <button
+              style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 10, opacity: boardLoading ? 0.7 : 1 }}
+              onClick={buildBoard}
+              disabled={boardLoading}
+            >
+              {boardLoading ? <span style={S.spinner} /> : <Icon name="chart" size={15} />}
+              {boardLoading ? 'Syncing…' : 'Team tracker'}
+            </button>
+          )}
 
           {/* Task board — lives in the matter's Excel tracker, two-way synced. */}
-          {matterId && (
+          {tab === 'house' && matterId && (
             <Section title="Tasks" count={tasks.length}>
               <p style={S.muted}>Two-way synced with the matter’s Excel tracker.</p>
               {tasks.length === 0 && <p style={S.muted}>No tasks yet.</p>}
@@ -1595,7 +1648,7 @@ export default function Taskpane() {
           )}
 
           {/* Matter panel */}
-          {matterInfo?.matter && (
+          {tab === 'house' && matterInfo?.matter && (
             <Card>
               <Label>Matter {matterInfo.matter.matter_ref}</Label>
               <div style={S.kv}><span>Property</span><span>{matterInfo.matter.property_address}</span></div>
@@ -1643,8 +1696,29 @@ export default function Taskpane() {
             </Card>
           )}
 
+          {/* ── FILES TAB — documents on the matter + email-derived knowledge ── */}
+          {/* Transaction knowledge: distilled from the thread, not the raw email list. */}
+          {tab === 'paperclip' && matterInfo?.summary && (
+            <Card>
+              <Label>Transaction knowledge</Label>
+              <p style={S.muted}>Distilled from this matter&apos;s emails — kept here so the file carries its own history without the raw message list.</p>
+              {(matterInfo.summary.happened_items?.length ?? 0) > 0 && (
+                <>
+                  <SubLabel>What&apos;s happened</SubLabel>
+                  <ul style={S.ul}>{matterInfo.summary.happened_items.map((h: string, i: number) => <li key={i}>{h}</li>)}</ul>
+                </>
+              )}
+              {(matterInfo.summary.outstanding_items?.length ?? 0) > 0 && (
+                <>
+                  <SubLabel>Outstanding</SubLabel>
+                  <ul style={S.ul}>{matterInfo.summary.outstanding_items.map((o: string, i: number) => <li key={i}>{o}</li>)}</ul>
+                </>
+              )}
+            </Card>
+          )}
+
           {/* Documents & sharing */}
-          {matterId && (
+          {tab === 'paperclip' && matterId && (
             <Section title="Documents & sharing" count={docs.length || undefined}>
               <div style={S.rowWrap}>
                 <button style={S.secondary} onClick={loadDocs}>List documents</button>
@@ -1692,7 +1766,7 @@ export default function Taskpane() {
           )}
 
           {/* Review a document */}
-          {matterId && (
+          {tab === 'email' && matterId && (
             <Section title="Review a document" count={attachments.length || undefined}>
               <button style={S.secondary} onClick={listAttachments} disabled={!messageId}>
                 List attachments on this email
@@ -1962,6 +2036,8 @@ function humanize(s: string): string {
 function Icon({ name, size = 18 }: { name: string; size?: number }) {
   const paths: Record<string, React.ReactNode> = {
     reply: <><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 5 5v4" /></>,
+    home: <><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></>,
+    clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
     user: <><circle cx="12" cy="8" r="4" /><path d="M5 21a7 7 0 0 1 14 0" /></>,
     minus: <path d="M5 12h14" />,
@@ -2169,6 +2245,10 @@ const S: Record<string, React.CSSProperties> = {
   heroPartial: { background: '#fef9c3', borderColor: '#fde68a', color: '#854d0e' },
   heroNone: { background: '#fee2e2', borderColor: '#fecaca', color: '#991b1b' },
   heroPending: { background: '#f1f5f9', borderColor: '#e2e8f0', color: '#475569' },
+  tabBar: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, marginBottom: 12, background: '#f1f5f9', padding: 4, borderRadius: 10 },
+  tabBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 6px', background: 'transparent', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer' },
+  tabBtnActive: { background: '#fff', color: '#5A27E0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' },
+  tabBtnLocked: { opacity: 0.4, cursor: 'not-allowed' },
   actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
     position: 'relative',
