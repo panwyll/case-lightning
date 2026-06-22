@@ -1029,6 +1029,26 @@ export default function Taskpane() {
     }).catch(() => {});
   }
 
+  // Draft a fresh outbound update to a specific party on the matter (not a reply
+  // to the sender) and create it as an Outlook draft addressed to them.
+  async function draftUpdateTo(contact: { email: string; name?: string | null; role?: string }) {
+    if (!matterId) return;
+    await run(`Drafting an update to ${contact.name || contact.email}`, async () => {
+      const r = await api<{ draftId: string | null }>(`/matters/${matterId}/draft-update`, {
+        method: 'POST',
+        body: JSON.stringify({
+          toEmail: contact.email,
+          toName: contact.name || undefined,
+          role: contact.role || undefined,
+          messageId: messageId || undefined,
+          conversationId: conversationId || undefined,
+        }),
+      });
+      setStatus(`Update to ${contact.name || contact.email} drafted in Outlook — review and send it there.`);
+      return r;
+    });
+  }
+
   // "Ignore" needs no other backend — the email's been read, there's just nothing
   // to do — but we still record the decision (above) so it isn't invisible.
   function markIgnore() {
@@ -1346,6 +1366,35 @@ export default function Taskpane() {
                   );
                 })}
               </div>
+
+              {/* Send an update to a different party. Data-driven from the matter's
+                  address book (people we've seen on its email), so it stays compact
+                  — one chip per real contact rather than a fixed grid of role buttons. */}
+              {(() => {
+                const people = (matterInfo?.contacts ?? []).filter((c: any) => c.role !== 'OUR_FIRM');
+                if (!people.length) return null;
+                return (
+                  <div style={S.updateRow}>
+                    <span style={S.updateLabel}>Send an update to</span>
+                    <div style={S.rowWrap}>
+                      {people.map((c: any) => {
+                        const roleLabel = CONTACT_ROLES.find(([v]) => v === (c.role || 'UNKNOWN'))?.[1];
+                        return (
+                          <button
+                            key={c.id}
+                            style={S.updateChip}
+                            title={`Draft an update to ${c.email}`}
+                            onClick={() => draftUpdateTo(c)}
+                          >
+                            {c.name || c.email}
+                            {roleLabel && roleLabel !== '—' && <span style={S.updateChipRole}>{roleLabel}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Reply — clicking the move writes the draft straight to Outlook; the
                   only hint we show is while the draft is still being prepared. */}
@@ -2142,6 +2191,10 @@ const S: Record<string, React.CSSProperties> = {
   actionBtnActive: { background: '#5A27E0', borderColor: '#5A27E0', color: '#fff' },
   recDot: { position: 'absolute', top: 5, right: 5, width: 6, height: 6, borderRadius: 999, background: '#22c55e' },
   actionPanel: { marginTop: 8, padding: 10, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 },
+  updateRow: { marginTop: 8, paddingTop: 8, borderTop: '1px dashed #e2e8f0' },
+  updateLabel: { display: 'block', fontSize: 11, color: '#64748b', marginBottom: 6 },
+  updateChip: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 999, fontSize: 12, color: '#5A27E0', cursor: 'pointer', fontWeight: 600 },
+  updateChipRole: { fontSize: 10, fontWeight: 500, color: '#7c6fb0', background: '#fff', border: '1px solid #e9e4ff', borderRadius: 999, padding: '1px 6px' },
   spinner: {
     width: 12,
     height: 12,
