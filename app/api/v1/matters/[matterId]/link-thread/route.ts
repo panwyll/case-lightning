@@ -4,6 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
+import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 
@@ -19,6 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       .object({
         graphThreadId: z.string(),
         graphConversationId: z.string().optional(),
+        messageId: z.string().optional(),
         subject: z.string().optional(),
         participants: z.array(z.string()).default([]),
         category: z.string().default('Matter Linked'),
@@ -46,6 +48,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         body.category,
       ]
     );
+
+    // Linking the email to a matter saves its attachments to the matter folder
+    // (best-effort; no-ops when there are none).
+    if (body.messageId) {
+      await saveEmailAttachmentsToMatter(user, matterId, body.messageId, body.subject).catch(() => {});
+    }
 
     await writeAudit({
       tenantId: user.tenantId,

@@ -6,6 +6,7 @@ import { query } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { upsertIdentifiers, domainOf } from '@/lib/server/matching';
 import { getMessage } from '@/lib/server/graph';
+import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 
@@ -62,6 +63,12 @@ export async function POST(req: NextRequest) {
       if (d) idents.push({ kind: 'DOMAIN', value: d });
     }
     await upsertIdentifiers(user.tenantId, body.matterId, idents);
+
+    // Linking the email to a matter saves its attachments to the matter folder
+    // (same as the auto-matched path) — best-effort, no-ops when there are none.
+    if (message.hasAttachments) {
+      await saveEmailAttachmentsToMatter(user, body.matterId, body.messageId, message.subject).catch(() => {});
+    }
 
     if (body.triageId) {
       await query(

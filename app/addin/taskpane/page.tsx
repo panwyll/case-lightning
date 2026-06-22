@@ -285,14 +285,6 @@ export default function Taskpane() {
   // Documents & sharing
   const [docs, setDocs] = useState<any[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [attachmentIntent, setAttachmentIntent] = useState('');
-
-  // Document review
-  const [attachments, setAttachments] = useState<any[]>([]);
-  const [docReview, setDocReview] = useState<any>(null);
-  const [teamId, setTeamId] = useState('');
-  const [channelId, setChannelId] = useState('');
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -648,7 +640,7 @@ export default function Taskpane() {
       if (conversationId) {
         await api(`/matters/${created.id}/link-thread`, {
           method: 'POST',
-          body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, subject }),
+          body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, messageId: messageId || undefined, subject }),
         });
       }
       setStatus('Matter created — OneDrive folder + Tracker.xlsx provisioned.');
@@ -744,7 +736,7 @@ export default function Taskpane() {
       if (!conversationId) throw new Error('Open an email to link it to a matter.');
       await api(`/matters/${m.id}/link-thread`, {
         method: 'POST',
-        body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, subject }),
+        body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, messageId: messageId || undefined, subject }),
       });
       setMatterId(m.id);
       setChanging(false);
@@ -903,64 +895,6 @@ export default function Taskpane() {
   // directly), each through the gated pipeline.
   async function logNewFiles() {
     for (const f of files.filter((x) => !x.processed)) await processFile(f);
-  }
-
-  async function suggestAttachments() {
-    const r = await run('Suggesting attachments', async () => {
-      requireMatter();
-      return api<{ suggestions: any[] }>(`/matters/${matterId}/documents/suggest-attachments`, {
-        method: 'POST',
-        body: JSON.stringify({ intent: attachmentIntent || 'respond to the current thread' }),
-      });
-    });
-    if (r) setSuggestions(r.suggestions);
-  }
-
-  async function postToTeams() {
-    await run('Posting to Teams', async () => {
-      requireMatter();
-      if (!teamId || !channelId) throw new Error('Team ID and Channel ID are required.');
-      await api(`/matters/${matterId}/teams/post-summary`, {
-        method: 'POST',
-        body: JSON.stringify({ teamId, channelId }),
-      });
-      setStatus('Posted matter summary to Teams.');
-    });
-  }
-
-  async function listAttachments() {
-    const r = await run('Loading attachments', async () => {
-      if (!messageId) throw new Error('Open an email with an attachment first.');
-      return api<{ attachments: any[] }>(
-        `/threads/${encodeURIComponent(conversationId || messageId)}/attachments?messageId=${encodeURIComponent(messageId)}`
-      );
-    });
-    if (r) {
-      setAttachments(r.attachments);
-      setDocReview(null);
-      if (!r.attachments.length) setStatus('No attachments on this email.');
-    }
-  }
-
-  async function reviewAttachment(att: any) {
-    const r = await run(`Reviewing ${att.name}`, async () => {
-      requireMatter();
-      if (!messageId) throw new Error('No message selected.');
-      return api<{ review: any; reviewId: string }>(`/matters/${matterId}/documents/review`, {
-        method: 'POST',
-        body: JSON.stringify({ messageId, attachmentId: att.id }),
-      });
-    });
-    if (r) setDocReview(r.review);
-  }
-
-  function useReviewDraft() {
-    if (!docReview?.draftReply) return;
-    const dr = docReview.draftReply;
-    setDraft({ subject: dr.subject, bodyHtml: dr.bodyHtml, why: [], actions: [], referencedDocuments: [] });
-    setDraftSubject(dr.subject);
-    setDraftBody(dr.bodyHtml);
-    setStatus('Draft loaded in the draft workspace below — review, then create the Outlook draft.');
   }
 
   // ── Assistant + tasks ────────────────────────────────────────────────────
