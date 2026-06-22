@@ -599,3 +599,61 @@ export async function draftReply(input: {
     )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nThread (DATA):\n${input.threadText}`
   );
 }
+
+/**
+ * Draft a fresh OUTBOUND update addressed to a specific party (e.g. tell the
+ * client the searches are back) — NOT a reply to whoever sent the triggering
+ * email. Same shape as draftReply so the caller can create an Outlook draft the
+ * same way; the recipient's name/role steer the salutation and framing.
+ */
+export async function draftUpdate(input: {
+  userId: string;
+  tenantId: string;
+  matterId?: string | null;
+  recipientName: string;
+  recipientRole: string;
+  threadText: string;
+  matterFacts: Record<string, unknown>;
+  retrievedContext: string;
+  templateText: string;
+}): Promise<{
+  subject: string;
+  bodyHtml: string;
+  why: string[];
+  actions: Array<{ owner: string; task: string; due: string }>;
+}> {
+  return structured(
+    input.userId,
+    'draft',
+    'DRAFT_UPDATE',
+    { tenantId: input.tenantId, matterId: input.matterId },
+    'draft_package',
+    'Produce a draft-only, fresh OUTBOUND conveyancing update email addressed to the named recipient — NOT a reply to the original sender. ' +
+      'Open by addressing the recipient, summarise the relevant development on this matter for them, and state plainly any action they need to take. ' +
+      'Return subject, HTML body, rationale bullets, and a next-actions checklist. Concise, compliance-safe professional language. Never claim the email has been sent.',
+    {
+      type: 'object',
+      properties: {
+        subject: { type: 'string' },
+        bodyHtml: { type: 'string' },
+        why: { type: 'array', items: { type: 'string' } },
+        actions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              owner: { type: 'string' },
+              task: { type: 'string' },
+              due: { type: 'string' },
+            },
+            required: ['owner', 'task', 'due'],
+          },
+        },
+      },
+      required: ['subject', 'bodyHtml', 'why', 'actions'],
+    },
+    `Recipient: ${input.recipientName} (role: ${input.recipientRole})\nFirm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
+      input.matterFacts
+    )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nTriggering thread for context (DATA):\n${input.threadText}`
+  );
+}

@@ -18,6 +18,7 @@ export type UsageFeature =
   | 'FACT_EXTRACT'
   | 'EMAIL_CLASSIFY'
   | 'DRAFT_REPLY'
+  | 'DRAFT_UPDATE'
   | 'DOC_REVIEW'
   | 'MATTER_PROPOSE'
   | 'EMBED';
