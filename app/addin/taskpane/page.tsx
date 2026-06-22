@@ -1528,46 +1528,33 @@ export default function Taskpane() {
             const flag = humanize(matterInfo?.matter?.status_flag || 'ON_TRACK');
             const stage = humanize(matterInfo?.matter?.stage || 'INSTRUCTION');
             const trackerUrl = matterInfo?.matter?.tracker_web_url;
+            const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
+            const open = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
+            const owner = assignees.find((a) => a.id === matterInfo?.matter?.assigned_to);
+            const assignedTo = owner ? owner.display_name || owner.email : open.find((t) => t.assignee)?.assignee || '—';
+            const notes = open.length ? open.map((t) => t.detail).join('; ') : outstanding.length ? outstanding.join('; ') : '—';
             const kv = (k: string, v: string) => (
               <div style={S.kvRow}><span style={S.kvKey}>{k}</span><span style={S.kvVal}>{v}</span></div>
             );
-            const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
             return (
               <Card>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
                   <Label>Status</Label>
-                  {trackerUrl && (
-                    <a style={S.iconAction} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the tracker externally" aria-label="Open the tracker externally">
-                      <Icon name="external" size={15} />
-                    </a>
-                  )}
-                </div>
-                {tasks.length > 0 ? (
-                  tasks.map((t) => (
-                    <div key={t.id} style={S.candidate}>
-                      {kv('Status', humanize(t.status))}
-                      {kv('Stage', stage)}
-                      {kv('Assigned to', t.assignee || '—')}
-                      {kv('Notes', t.detail || '—')}
-                    </div>
-                  ))
-                ) : (
-                  <div style={S.candidate}>
-                    {kv('Status', flag)}
-                    {kv('Stage', stage)}
-                    {kv('Notes', outstanding.length ? outstanding.join('; ') : 'Nothing outstanding')}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button style={S.pillBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
+                      {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={12} />
+                    </button>
+                    {trackerUrl && (
+                      <a style={S.pillBtn} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the case log in a new tab">
+                        Case log <Icon name="external" size={12} />
+                      </a>
+                    )}
                   </div>
-                )}
-                <div style={{ ...S.rowWrap, marginTop: 8 }}>
-                  <button style={S.secondary} onClick={buildBoard} disabled={boardLoading}>
-                    {boardLoading ? 'Syncing…' : 'Team tracker'}
-                  </button>
-                  {trackerUrl && (
-                    <a style={{ ...S.secondary, display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }} href={trackerUrl} target="_blank" rel="noreferrer">
-                      Case tracker
-                    </a>
-                  )}
                 </div>
+                {kv('Status', flag)}
+                {kv('Stage', stage)}
+                {kv('Assigned to', assignedTo)}
+                {kv('Notes', notes)}
               </Card>
             );
           })()}
@@ -2290,6 +2277,7 @@ const S: Record<string, React.CSSProperties> = {
   trk: { width: '100%', borderCollapse: 'collapse', fontSize: 12, border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff' },
   trkH: { textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
   trkC: { fontSize: 12, color: '#0f172a', padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' },
+  pillBtn: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' },
   kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '2px 0', alignItems: 'baseline' },
   kvKey: { flex: 'none', width: 84, color: '#64748b', fontWeight: 600 },
   kvVal: { flex: 1, minWidth: 0, color: '#0f172a' },
