@@ -42,11 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           [body.matterId, user.tenantId]
         )
       : null;
-    const token = matterRow?.case_ref_token;
-    let finalSubject = body.subject;
-    if (token && finalSubject && !finalSubject.includes(`[#${token}]`)) {
-      finalSubject = `${finalSubject} [#${token}]`;
-    }
+    const token = matterRow?.case_ref_token ?? undefined;
     const message = await getMessage(user.userId, body.messageId);
     const recipients = [
       ...(message.toRecipients ?? []).map((r: any) => r.emailAddress?.address),
@@ -65,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       return fail(new Error('One or more recipient domains are not allowed by policy'));
     }
 
-    const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, finalSubject);
+    const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, { appendToken: token });
 
     await writeAudit({
       tenantId: user.tenantId,
@@ -76,7 +72,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       payload: { draftId: draft.id, graphThreadId },
     });
 
-    return ok({ draftId: draft.id, webLink: draft.webLink ?? null });
+    return ok({ draftId: draft.id, webLink: draft.webLink, subject: draft.subject, bodyHtml: body.bodyHtml });
   } catch (error) {
     return fail(error);
   }

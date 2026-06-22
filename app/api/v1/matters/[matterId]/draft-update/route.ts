@@ -97,7 +97,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       payload: { kind: 'UPDATE', toEmail: body.toEmail, role: body.role ?? null },
     });
 
-    return ok({ draftId: created?.id ?? null, subject: draft.subject });
+    return ok({ draftId: created?.id ?? null, webLink: created?.webLink ?? null, subject: draft.subject, bodyHtml: draft.bodyHtml });
   } catch (error) {
     return fail(error);
   }
