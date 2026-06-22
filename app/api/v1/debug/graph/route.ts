@@ -1,6 +1,7 @@
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { graphClientForUser } from '@/lib/server/graph';
+import { matterColor, statusTagColor } from '@/lib/server/triage';
 import { query } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
 
@@ -10,7 +11,6 @@ export const dynamic = 'force-dynamic';
 // Pre-RAG single-word status tags, now orphaned by the "<Action> · <Urgency>"
 // rename. These were only ever applied by us, so stripping them is safe.
 const OLD_STATUS_TAGS = ['Reply', 'Action', 'Delegate', 'Ignore'];
-const MATTER_COLOR = 'preset7'; // blue — keep in sync with lib/server/triage.ts
 
 interface MasterCategory {
   id: string;
@@ -64,20 +64,35 @@ export async function GET() {
       deletedMasters.push(cat.displayName);
     }
 
-    // 3. Recolour drifted matter-ref categories to blue.
+    // 3. Recolour drifted categories to their intended colour, without needing a
+    //    re-triage: RAG status tags by their urgency suffix, matter-ref tags by
+    //    their stable per-matter palette colour.
     const matters = await query<{ matter_ref: string }>('select matter_ref from matter where tenant_id = $1', [
       user.tenantId,
     ]);
     const refs = new Set(matters.map((m) => m.matter_ref));
+    const recolouredStatus: string[] = [];
     const recolouredMatters: string[] = [];
     for (const cat of master) {
-      if (refs.has(cat.displayName) && cat.color !== MATTER_COLOR) {
-        await client.api(`/me/outlook/masterCategories/${cat.id}`).patch({ color: MATTER_COLOR });
-        recolouredMatters.push(cat.displayName);
+      if (OLD_STATUS_TAGS.includes(cat.displayName)) continue; // deleted above
+      const status = statusTagColor(cat.displayName);
+      if (status) {
+        if (cat.color !== status) {
+          await client.api(`/me/outlook/masterCategories/${cat.id}`).patch({ color: status });
+          recolouredStatus.push(cat.displayName);
+        }
+        continue;
+      }
+      if (refs.has(cat.displayName)) {
+        const want = matterColor(cat.displayName);
+        if (cat.color !== want) {
+          await client.api(`/me/outlook/masterCategories/${cat.id}`).patch({ color: want });
+          recolouredMatters.push(cat.displayName);
+        }
       }
     }
 
-    return ok({ strippedMessages, deletedMasters, recolouredMatters });
+    return ok({ strippedMessages, deletedMasters, recolouredStatus, recolouredMatters });
   } catch (error) {
     return fail(error);
   }
