@@ -190,7 +190,7 @@ export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
   const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
-  const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null } | null>(null);
+  const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null; needsReconnect?: boolean } | null>(null);
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState<string>('');
 
@@ -349,9 +349,16 @@ export default function Taskpane() {
       setAiConnected(null);
     }
     try {
-      setAutoTriage(await api<{ enabled: boolean; expiresAt: string | null }>('/graph/subscriptions'));
+      // Self-heal on open: re-arm the inbox subscription if it lapsed or is
+      // expiring, so on-receipt triage survives a missed renewal cron. Cheap
+      // (DB-only) when auto-triage is off or the subscription is healthy.
+      setAutoTriage(await api<{ enabled: boolean; expiresAt: string | null; needsReconnect?: boolean }>('/graph/subscriptions/ensure', { method: 'POST' }));
     } catch {
-      setAutoTriage(null);
+      try {
+        setAutoTriage(await api<{ enabled: boolean; expiresAt: string | null }>('/graph/subscriptions'));
+      } catch {
+        setAutoTriage(null);
+      }
     }
     try {
       const b = await api<{ plan: string | null; status: string }>('/billing/account');
@@ -1885,6 +1892,11 @@ export default function Taskpane() {
                 ? 'On — new inbox mail is auto-matched, tagged, and run through your firm’s auto-rules.'
                 : 'Off — turn on to triage & tag incoming mail automatically (requires the deployed app).'}
             </p>
+            {autoTriage?.needsReconnect && (
+              <p style={{ ...S.muted, color: '#b45309' }}>
+                Auto-triage is on but Outlook stopped letting us watch your inbox — reconnect your account, then turn it on again.
+              </p>
+            )}
             <button style={autoTriage?.enabled ? S.secondary : S.primary} onClick={toggleAutoTriage}>
               {autoTriage?.enabled ? 'Turn off auto-triage' : 'Turn on auto-triage'}
             </button>
