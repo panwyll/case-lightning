@@ -67,6 +67,20 @@ The product is multi-tenant; one firm must never see another's matters or data.
 - [x] Self-address matching exclusion is live (a firm's own mailbox/domain is never a match signal) — see [`tenantSelfAddresses`](../lib/server/matching.ts).
 - [ ] **Runtime verify with two tenants** (needs prod): as firm A, GET a firm-B matter id → expect "Matter not found or inaccessible"; confirm firm A's template/doc-pack list shows only firm A's templates.
 
+### 4a. Postgres RLS / Supabase Data API exposure — **review before launch**
+
+Tenant isolation today is enforced **in the application layer** (above): the app connects via one privileged pooled connection ([`db.ts`](../lib/server/db.ts)) and filters every query by `tenant_id`. There are **no RLS policies** and the app sets no per-request tenant context — so app queries don't rely on RLS, and that's fine *for the app's own path*.
+
+The risk is the **other door**: a Supabase project auto-exposes every table over its Data API (PostgREST/GraphQL), gated only by **RLS + the anon key**. Tables created via raw-SQL migrations have **RLS disabled by default**, so if that API is reachable with the project's anon key, a third party could read/write every firm's rows directly — bypassing all the app-layer checks in §4.
+
+- [ ] **Close the Data-API door** — do **one** of:
+  - (a) Disable the Supabase Data API for the project (Settings → API), if nothing uses it; **or**
+  - (b) Enable RLS with a **default-deny** policy on every table in the exposed schema (`alter table … enable row level security;` with no permissive policy), so the anon/`authenticated` roles get nothing and the only path to data stays the app's privileged server connection; **or**
+  - (c) Move app tables into a schema PostgREST doesn't expose.
+- [ ] **Verify the anon key isn't shipped to clients** — audited 2026-06-23: `supabase-js` is used **server-side only** with the secret key ([`waitlist`](../app/api/waitlist/route.ts), legacy [`health`](../app/api/health/route.ts)); no `NEXT_PUBLIC_SUPABASE_ANON_KEY` in any client bundle. Re-confirm none is added later. (`NEXT_PUBLIC_SUPABASE_URL` is just the project URL — not a secret, but it reveals the project ref, so the anon key must not be guessable/default-public with RLS off.)
+- [ ] **Least-privilege DB role** — confirm `DATABASE_URL` connects as a role scoped to the app schema, not a cluster superuser.
+- [ ] **Optional (post-launch hardening)**: true RLS enforcement *for the app too* would need a per-request tenant GUC — `SET LOCAL app.tenant_id = …` inside each transaction (compatible with the transaction pooler) plus policies keyed on `current_setting('app.tenant_id')`. Non-trivial with the current pooled raw-SQL design; treat as defense-in-depth after launch, not a blocker.
+
 ---
 
 ## 5. Auto-triage / Graph subscriptions / cron
