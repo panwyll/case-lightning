@@ -249,6 +249,36 @@ export async function setMessageCategory(userId: string, messageId: string, cate
   await client.api(`/me/messages/${messageId}`).patch({ categories: [category] });
 }
 
+// ── Per-matter mail folders ──────────────────────────────────────────────────
+
+/**
+ * Ensures an Inbox subfolder with the given display name exists, returning its id.
+ * Idempotent: reuses an existing child folder of the same name rather than making
+ * a duplicate. Used to give each matter its own Inbox subfolder.
+ */
+export async function ensureInboxSubfolder(userId: string, displayName: string): Promise<string> {
+  const client = await graphClientForUser(userId);
+  const existing = await client
+    .api(`/me/mailFolders/inbox/childFolders`)
+    .top(200)
+    .select('id,displayName')
+    .get();
+  const match = (existing.value ?? []).find((f: any) => f.displayName === displayName);
+  if (match) return match.id;
+  const created = await client.api(`/me/mailFolders/inbox/childFolders`).post({ displayName });
+  return created.id;
+}
+
+/**
+ * Moves a message into a folder. Returns the moved message's NEW id (Graph assigns
+ * a fresh id on move). Categories travel with the message. Best-effort caller.
+ */
+export async function moveMessageToFolder(userId: string, messageId: string, destinationId: string): Promise<string> {
+  const client = await graphClientForUser(userId);
+  const moved = await client.api(`/me/messages/${messageId}/move`).post({ destinationId });
+  return moved?.id ?? messageId;
+}
+
 // ── Outlook category tags ────────────────────────────────────────────────────
 
 // A small palette of Graph category colour presets we cycle through.

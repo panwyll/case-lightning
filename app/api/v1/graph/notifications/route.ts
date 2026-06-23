@@ -4,6 +4,7 @@ import { getMessage } from '@/lib/server/graph';
 import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
+import { fileEmailInMatterFolder } from '@/lib/server/matter';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import type { SessionUser } from '@/lib/server/types';
 
@@ -81,6 +82,15 @@ export async function POST(req: NextRequest) {
           } catch (assistError) {
             await markAssistError(user.tenantId, messageId, (assistError as Error).message).catch(() => {});
           }
+        }
+
+        // Auto-file a confidently-matched email into its matter's Inbox subfolder
+        // to keep the inbox clear. Done last: moving reassigns the message id, so
+        // tags + assist cache (keyed on the inbox id) are written first. Best-effort.
+        if (triage.top?.band === 'AUTO') {
+          await fileEmailInMatterFolder(user, triage.top.matterId, messageId).catch((e) =>
+            console.error('[graph notification] auto-file to matter folder failed', (e as Error).message)
+          );
         }
       } catch (error) {
         console.error('[graph notification] processing failed', n.subscriptionId, (error as Error).message);

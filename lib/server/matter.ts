@@ -1,10 +1,23 @@
 import { query, queryOne } from './db';
 import { config } from './config';
-import { ensureMatterFolder, ensureExcelTracker } from './graph';
+import { ensureMatterFolder, ensureExcelTracker, ensureInboxSubfolder, moveMessageToFolder } from './graph';
 import { matterSelfIdentifiers, upsertIdentifiers, domainOf } from './matching';
 import { writeAudit } from './audit';
 import { randomMatterRef } from '../ref-name';
 import type { SessionUser } from './types';
+
+/**
+ * Display name for a matter's Inbox subfolder, e.g. "Leaping Llama 14 Oak Street"
+ * — the humanised matter ref plus the first line of the property address.
+ */
+export function mailFolderName(matterRef: string, propertyAddress: string): string {
+  const ref = matterRef
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+  const firstLine = (propertyAddress || '').split(',')[0].trim();
+  return firstLine ? `${ref} ${firstLine}` : ref;
+}
 
 export function addressSlug(propertyAddress: string): string {
   return propertyAddress
@@ -131,15 +144,28 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
   const folder = await ensureMatterFolder(user.userId, folderPath);
   const tracker = await ensureExcelTracker(user.userId, folderPath);
 
+  // Give the matter its own Inbox subfolder so processed mail can be filed there.
+  // Best-effort — a mailbox without folder permissions shouldn't fail matter setup.
+  const folderDisplayName = mailFolderName(matterRef, input.propertyAddress);
+  let mailFolderId: string | null = null;
+  try {
+    mailFolderId = await ensureInboxSubfolder(user.userId, folderDisplayName);
+  } catch {
+    /* no folder permission / mailbox quirk — skip; mail just won't auto-file */
+  }
+
   await query(
     `update matter set drive_id = $1, folder_item_id = $2, folder_web_url = $3,
-       tracker_item_id = $4, tracker_web_url = $5 where id = $6 and tenant_id = $7`,
+       tracker_item_id = $4, tracker_web_url = $5, mail_folder_id = $6, mail_folder_name = $7
+     where id = $8 and tenant_id = $9`,
     [
       folder.parentReference?.driveId ?? null,
       folder.id ?? null,
       folder.webUrl ?? null,
       tracker.id ?? null,
       tracker.webUrl ?? null,
+      mailFolderId,
+      mailFolderId ? folderDisplayName : null,
       matterId,
       user.tenantId,
     ]
@@ -168,6 +194,29 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     folderWebUrl: folder.webUrl ?? null,
     trackerWebUrl: tracker.webUrl ?? null,
   };
+}
+
+/**
+ * Files a processed email into its matter's Inbox subfolder (clearing it from the
+ * inbox). Best-effort and idempotent-ish: no folder configured / move failure just
+ * leaves the email where it is. Returns true if the message was moved.
+ */
+export async function fileEmailInMatterFolder(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  messageId: string
+): Promise<boolean> {
+  const m = await queryOne<{ mail_folder_id: string | null }>(
+    `select mail_folder_id from matter where id = $1 and tenant_id = $2`,
+    [matterId, user.tenantId]
+  );
+  if (!m?.mail_folder_id) return false;
+  try {
+    await moveMessageToFolder(user.userId, messageId, m.mail_folder_id);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function getMatterSummary(matterId: string, tenantId: string) {
