@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { fileEmailInMatterFolder } from '@/lib/server/matter';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 
@@ -50,9 +51,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     );
 
     // Linking the email to a matter saves its attachments to the matter folder
-    // (best-effort; no-ops when there are none).
+    // and files the email into the matter's Inbox subfolder (both best-effort).
     if (body.messageId) {
       await saveEmailAttachmentsToMatter(user, matterId, body.messageId, body.subject).catch(() => {});
+      await fileEmailInMatterFolder(user, matterId, body.messageId).catch(() => {});
     }
 
     await writeAudit({
