@@ -293,6 +293,10 @@ export default function Taskpane() {
   // in-pane preview so it's visible immediately without hunting in Outlook.
   const [preview, setPreview] = useState<{ kind: 'reply' | 'update' | 'forward'; to: string; subject: string; bodyHtml: string; webLink?: string | null } | null>(null);
   const [delegateAssignee, setDelegateAssignee] = useState('');
+  // Referral popup (the gift icon in the header).
+  const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
+  const [showReferral, setShowReferral] = useState(false);
+  const [refCopied, setRefCopied] = useState(false);
   const [delegateInstructions, setDelegateInstructions] = useState('');
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
@@ -386,6 +390,30 @@ export default function Taskpane() {
   function openAccount() {
     const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
     window.open(t ? `/account#token=${encodeURIComponent(t)}` : '/account', '_blank', 'noopener');
+  }
+
+  // Referral popup — fetch the firm's link lazily the first time the gift is opened.
+  async function openReferral() {
+    setShowReferral(true);
+    setRefCopied(false);
+    if (referral) return;
+    try {
+      const r = await api<{ referralLink: string; referralCode: string; commissionPennies: number }>('/referrals');
+      setReferral({ referralLink: r.referralLink, referralCode: r.referralCode, commissionPennies: r.commissionPennies });
+    } catch {
+      /* leave null — the popup shows a gentle fallback */
+    }
+  }
+
+  async function copyReferral() {
+    if (!referral) return;
+    try {
+      await navigator.clipboard?.writeText(referral.referralLink);
+      setRefCopied(true);
+      setTimeout(() => setRefCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the input is still selectable for manual copy */
+    }
   }
 
   async function toggleAutoTriage() {
@@ -1218,6 +1246,16 @@ export default function Taskpane() {
               </svg>
             </button>
           )}
+          {me && (
+            <button
+              style={{ ...S.iconBtn, color: '#5A27E0' }}
+              onClick={openReferral}
+              title="Refer a firm, earn credit"
+              aria-label="Refer a firm, earn credit"
+            >
+              <Icon name="gift" size={18} />
+            </button>
+          )}
         </div>
         {me ? (
           <button style={S.account} onClick={openAccount} title="Manage account & billing">
@@ -1954,6 +1992,55 @@ export default function Taskpane() {
       {(busy || status) && (
         <div style={{ ...S.toast, ...(busy ? S.toastBusy : {}) }}>{busy ? `${busy}…` : status}</div>
       )}
+
+      {/* Referral popup — gift icon in the header. */}
+      {showReferral && (
+        <div style={S.modalOverlay} onClick={() => setShowReferral(false)}>
+          <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#5A27E0' }}><Icon name="gift" size={22} /></span>
+                <strong style={{ fontSize: 15, color: '#0f172a' }}>
+                  Earn £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'} every month for every referral
+                </strong>
+              </div>
+              <button style={{ ...S.iconAction, width: 26, height: 26, flex: 'none' }} onClick={() => setShowReferral(false)} title="Close" aria-label="Close">✕</button>
+            </div>
+            <p style={{ fontSize: 12, color: '#475569', margin: '8px 0 12px' }}>
+              Share your link. For every firm that subscribes, you get recurring account credit —
+              paid the month after each pays, for as long as they stay subscribed.
+            </p>
+            {referral ? (
+              <>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    style={{ ...S.input, marginBottom: 0, flex: 1, fontSize: 12 }}
+                    readOnly
+                    value={referral.referralLink}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <button style={{ ...S.primary, flex: 'none', padding: '8px 14px' }} onClick={copyReferral}>
+                    {refCopied ? 'Copied!' : 'Copy link'}
+                  </button>
+                </div>
+                <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0' }}>Your code: {referral.referralCode}</p>
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+                <span style={S.spinner} />
+                <span style={{ fontSize: 12, color: '#64748b' }}>Fetching your link…</span>
+              </div>
+            )}
+            <p style={{ fontSize: 10, color: '#94a3b8', margin: '12px 0 0', lineHeight: 1.5 }}>
+              Terms: credit accrues only after a referred firm’s first successful payment and is paid the
+              following month as account credit (not cash). One referrer per firm; self-referrals don’t
+              qualify. Credit is reversed (clawed back) if a referral refunds or cancels. Credit has no
+              cash value and may change or end with reasonable notice.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2005,6 +2092,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     sparkle: <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" />,
     alert: <><path d="M10.3 4 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 4a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></>,
     info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
+    gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M5 12v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" /><path d="M12 8v14" /><path d="M12 8H7.5a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8z" /><path d="M12 8h4.5a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8z" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}>
@@ -2539,6 +2627,25 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 13,
     fontFamily: 'inherit',
     resize: 'vertical',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(15,23,42,0.45)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    zIndex: 50,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: 12,
+    padding: 16,
+    boxShadow: '0 20px 50px -20px rgba(15,23,42,0.5)',
   },
   primary: {
     width: '100%',
