@@ -843,10 +843,16 @@ export default function Taskpane() {
     if (!matterId) return;
     setGenTemplateId(tpl.id);
     try {
+      // Raw fetch (not api()) so we can read the 409 conflict body — but we must
+      // still send the bearer token, since desktop Outlook doesn't share the cookie.
+      const token = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
       const res = await fetch(`/api/v1/matters/${matterId}/doc-pack`, {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ templateId: tpl.id, overwrite }),
       });
       if (res.status === 409) {
@@ -1692,16 +1698,21 @@ export default function Taskpane() {
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Label>Templates</Label>
-                  <a
-                    style={S.iconAction}
-                    href="/conveyi/doc-packs"
-                    target="_blank"
-                    rel="noreferrer"
-                    title="How document templates work"
-                    aria-label="How document templates work"
-                  >
-                    <Icon name="info" size={15} />
-                  </a>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <a
+                      style={S.iconAction}
+                      href="/conveyi/doc-packs"
+                      target="_blank"
+                      rel="noreferrer"
+                      title="How document templates work"
+                      aria-label="How document templates work"
+                    >
+                      <Icon name="info" size={15} />
+                    </a>
+                    <button style={S.iconAction} onClick={() => loadTemplates()} title="Refresh templates" aria-label="Refresh templates">
+                      <Icon name="refresh" size={15} />
+                    </button>
+                  </div>
                 </div>
                 {templates.length > 0 ? (
                   <div style={S.fileList}>
