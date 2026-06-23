@@ -322,6 +322,7 @@ export default function Taskpane() {
   const [obSel, setObSel] = useState<Record<string, boolean>>({});
   const [obRefEdit, setObRefEdit] = useState<Record<string, string>>({});
   const [obLookback, setObLookback] = useState<'3' | 'unlimited'>('3');
+  const [obSearch, setObSearch] = useState('');
   const obDriving = useRef(false);
   // First-run: until the firm has scanned its backlog (or chosen to skip), lead
   // with the import. obFetched gates it so the hero doesn't flash before we know.
@@ -1944,35 +1945,58 @@ export default function Taskpane() {
                   Found {obCases.filter((c) => c.status === 'PROPOSED').length} candidate case(s) across {obJob.messages_scanned}{' '}
                   emails. Tick the ones to onboard.
                 </p>
-                {obCases
-                  .filter((c) => c.status === 'PROPOSED')
-                  .map((c) => {
-                    const pct = Math.round((c.confidence ?? 0) * 100);
-                    const parties = [...(c.buyer_names || []), ...(c.seller_names || [])].filter(Boolean).join(', ');
-                    return (
-                      <div key={c.id} style={S.candidate}>
-                        <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={!!obSel[c.id]}
-                            onChange={(e) => setObSel((s) => ({ ...s, [c.id]: e.target.checked }))}
-                          />
-                          <strong style={{ fontSize: 13 }}>{c.property_address || 'Unknown property'}</strong>
-                        </label>
-                        {parties && <div style={{ fontSize: 12, color: '#475569' }}>{parties}</div>}
-                        <div style={{ fontSize: 11, color: '#64748b', margin: '2px 0' }}>
-                          {pct}% · {c.message_count} email(s) · {c.thread_count} thread(s)
-                        </div>
-                        {c.rationale && <div style={{ fontSize: 11, color: '#64748b' }}>{c.rationale}</div>}
+                {(() => {
+                  const proposed = obCases.filter((c) => c.status === 'PROPOSED');
+                  const q = obSearch.trim().toLowerCase();
+                  const shown = q
+                    ? proposed.filter((c) => {
+                        const hay = `${c.property_address || ''} ${[...(c.buyer_names || []), ...(c.seller_names || [])].join(' ')}`.toLowerCase();
+                        return hay.includes(q);
+                      })
+                    : proposed;
+                  return (
+                    <>
+                      {proposed.length > 6 && (
                         <input
-                          style={{ ...S.input, marginTop: 4 }}
-                          placeholder={`Matter ref (default: ${c.proposed_matter_ref || 'auto'})`}
-                          value={obRefEdit[c.id] ?? ''}
-                          onChange={(e) => setObRefEdit((r) => ({ ...r, [c.id]: e.target.value }))}
+                          style={{ ...S.input, marginBottom: 6 }}
+                          placeholder="Search address or party…"
+                          value={obSearch}
+                          onChange={(e) => setObSearch(e.target.value)}
                         />
+                      )}
+                      <div style={{ maxHeight: 360, overflowY: 'auto' }}>
+                        {shown.map((c) => {
+                          const pct = Math.round((c.confidence ?? 0) * 100);
+                          const parties = [...(c.buyer_names || []), ...(c.seller_names || [])].filter(Boolean).join(', ');
+                          return (
+                            <div key={c.id} style={S.candidate}>
+                              <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={!!obSel[c.id]}
+                                  onChange={(e) => setObSel((s) => ({ ...s, [c.id]: e.target.checked }))}
+                                />
+                                <strong style={{ fontSize: 13 }}>{c.property_address || 'Unknown property'}</strong>
+                              </label>
+                              {parties && <div style={{ fontSize: 12, color: '#475569' }}>{parties}</div>}
+                              <div style={{ fontSize: 11, color: '#64748b', margin: '2px 0' }}>
+                                {pct}% · {c.message_count} email(s) · {c.thread_count} thread(s)
+                              </div>
+                              {c.rationale && <div style={{ fontSize: 11, color: '#64748b' }}>{c.rationale}</div>}
+                              <input
+                                style={{ ...S.input, marginTop: 4 }}
+                                placeholder={`Matter ref (default: ${c.proposed_matter_ref || 'auto'})`}
+                                value={obRefEdit[c.id] ?? ''}
+                                onChange={(e) => setObRefEdit((r) => ({ ...r, [c.id]: e.target.value }))}
+                              />
+                            </div>
+                          );
+                        })}
+                        {shown.length === 0 && <p style={S.muted}>No candidates match “{obSearch.trim()}”.</p>}
                       </div>
-                    );
-                  })}
+                    </>
+                  );
+                })()}
                 <button style={S.primary} onClick={confirmOnboarding}>
                   Onboard selected
                 </button>
@@ -1982,18 +2006,32 @@ export default function Taskpane() {
               </>
             )}
 
-            {obJob?.status === 'COMPLETED' && obCases.some((c) => c.status === 'ONBOARDED') && (
-              <>
-                <SubLabel>Onboarded</SubLabel>
-                <ul style={S.ul}>
-                  {obCases
-                    .filter((c) => c.status === 'ONBOARDED')
-                    .map((c) => (
-                      <li key={c.id}>{c.property_address}</li>
+            {obJob?.status === 'COMPLETED' && obCases.some((c) => c.status === 'ONBOARDED') && (() => {
+              const onboarded = obCases.filter((c) => c.status === 'ONBOARDED');
+              const q = obSearch.trim().toLowerCase();
+              const shown = q ? onboarded.filter((c) => (c.property_address || '').toLowerCase().includes(q)) : onboarded;
+              return (
+                <>
+                  <SubLabel>Onboarded · {onboarded.length}</SubLabel>
+                  {onboarded.length > 8 && (
+                    <input
+                      style={{ ...S.input, marginBottom: 6 }}
+                      placeholder="Search address…"
+                      value={obSearch}
+                      onChange={(e) => setObSearch(e.target.value)}
+                    />
+                  )}
+                  <div style={S.scrollList}>
+                    {shown.map((c) => (
+                      <div key={c.id} style={S.scrollRow} title={c.property_address || ''}>
+                        {c.property_address || 'Unknown property'}
+                      </div>
                     ))}
-                </ul>
-              </>
-            )}
+                    {shown.length === 0 && <div style={{ ...S.scrollRow, color: '#94a3b8', borderBottom: 'none' }}>No matches.</div>}
+                  </div>
+                </>
+              );
+            })()}
           </Card>
 
           {/* AI engine + auto-triage */}
@@ -2707,6 +2745,22 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: '#5b21b6',
     fontWeight: 600,
+  },
+  scrollList: {
+    maxHeight: 240,
+    overflowY: 'auto',
+    border: '1px solid #e2e8f0',
+    borderRadius: 8,
+    background: '#fff',
+  },
+  scrollRow: {
+    padding: '7px 10px',
+    borderBottom: '1px solid #f1f5f9',
+    fontSize: 12,
+    color: '#334155',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   primary: {
     width: '100%',
