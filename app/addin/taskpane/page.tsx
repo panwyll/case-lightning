@@ -890,7 +890,11 @@ export default function Taskpane() {
         setStatus((j as any).error || `Couldn’t generate “${tpl.name}” (HTTP ${res.status}).`);
         return;
       }
-      setStatus(`Generated “${(j as any).file?.name ?? tpl.name}” — saved to Case files.`);
+      setStatus(
+        (j as any).capped
+          ? `Generated “${(j as any).file?.name ?? tpl.name}” — but you’ve hit your Pro monthly AI limit, so the AI sections were left blank. Upgrade to Enterprise for uncapped AI.`
+          : `Generated “${(j as any).file?.name ?? tpl.name}” — saved to Case files.`
+      );
       await loadFiles();
     } catch (e) {
       setStatus((e as Error).message);
@@ -1219,10 +1223,12 @@ export default function Taskpane() {
           <button style={S.account} onClick={openAccount} title="Manage account & billing">
             {plan && (
               <span style={S.planBadge}>
-                {plan.plan === 'team'
-                  ? 'Team'
-                  : plan.plan === 'standard'
-                  ? 'Standard'
+                {plan.plan === 'enterprise'
+                  ? 'Enterprise'
+                  : plan.plan === 'pro'
+                  ? 'Pro'
+                  : plan.plan === 'plus'
+                  ? 'Plus'
                   : plan.status === 'trialing'
                   ? 'Trial'
                   : 'Free'}

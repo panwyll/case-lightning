@@ -68,7 +68,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   canceled: { label: 'Canceled', cls: 'bg-red-100 text-red-700' },
 };
 
-const PLAN_LABEL: Record<string, string> = { standard: 'Standard', team: 'Team' };
+const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
 
 export default function AccountPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -116,7 +116,7 @@ export default function AccountPage() {
     }
   }
 
-  async function changePlanTo(plan: 'standard' | 'team') {
+  async function changePlanTo(plan: 'plus' | 'pro' | 'enterprise') {
     setBusy(true);
     try {
       const res = await api<{ url?: string; updated?: boolean }>('/billing/checkout', {
@@ -190,14 +190,23 @@ export default function AccountPage() {
 
         <div className="mt-4 flex flex-wrap gap-3">
           {/* Upgrade is an in-app prorated swap (or Checkout for new subscribers) —
-              no detour through the portal. Only shown when not already on Team. */}
-          {summary.plan !== 'team' && (
+              no detour through the portal. Offer the tiers above the current one. */}
+          {summary.plan !== 'pro' && summary.plan !== 'enterprise' && (
             <button
-              onClick={() => changePlanTo('team')}
+              onClick={() => changePlanTo('pro')}
               disabled={busy}
               className="rounded-lg bg-violet px-4 py-2 font-semibold text-white shadow-violet disabled:opacity-60"
             >
-              {busy ? 'Working…' : 'Upgrade to Team'}
+              {busy ? 'Working…' : 'Upgrade to Pro'}
+            </button>
+          )}
+          {summary.plan !== 'enterprise' && (
+            <button
+              onClick={() => changePlanTo('enterprise')}
+              disabled={busy}
+              className="rounded-lg bg-ink px-4 py-2 font-semibold text-white disabled:opacity-60"
+            >
+              {busy ? 'Working…' : 'Upgrade to Enterprise'}
             </button>
           )}
           <button
@@ -234,9 +243,9 @@ export default function AccountPage() {
           ))}
         </ul>
         <p className="mt-3 text-sm text-ink-soft">
-          {summary.plan === 'team'
+          {summary.plan === 'enterprise'
             ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account — they’re added to your firm automatically.'
-            : 'The Team plan adds shared matters and lets colleagues join your firm. Switch plans from “Manage subscription”.'}
+            : 'Plus and Pro are single-seat. The Enterprise plan adds team seats so colleagues can join your firm — upgrade above.'}
         </p>
       </Card>
 

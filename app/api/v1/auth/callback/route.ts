@@ -4,10 +4,19 @@ import { assertFeature, config } from '@/lib/server/config';
 import { exchangeCodeForToken } from '@/lib/server/oauth';
 import { transaction } from '@/lib/server/db';
 import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/session';
+import { hasTeamAccess } from '@/lib/server/plan';
 import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Thrown when a second+ colleague signs in to a firm on a single-seat plan. */
+class SeatLimitError extends Error {
+  constructor() {
+    super('single-seat-plan');
+    this.name = 'SeatLimitError';
+  }
+}
 
 function parseJwt(token: string): Record<string, unknown> {
   const [, payload] = token.split('.');
@@ -80,7 +89,19 @@ export async function GET(req: NextRequest) {
       const count = await client.query<{ n: string }>('select count(*)::text as n from app_user where tenant_id = $1', [
         tenant.id,
       ]);
-      const role = Number(count.rows[0]?.n ?? '0') === 0 ? 'ADMIN' : 'CONVEYANCER';
+      const seatCount = Number(count.rows[0]?.n ?? '0');
+      // Plus/Pro are single-seat; only Enterprise (team) admits additional colleagues.
+      // Fail OPEN on a plan-check error so a billing hiccup never locks a firm out.
+      if (seatCount > 0) {
+        let teamOk = true;
+        try {
+          teamOk = await hasTeamAccess(tenant.id);
+        } catch {
+          teamOk = true;
+        }
+        if (!teamOk) throw new SeatLimitError();
+      }
+      const role = seatCount === 0 ? 'ADMIN' : 'CONVEYANCER';
       const created = await client.query<{ id: string }>(
         `insert into app_user
           (tenant_id, entra_object_id, email, display_name, role, graph_access_token, graph_refresh_token, token_expires_at)
@@ -105,6 +126,15 @@ export async function GET(req: NextRequest) {
     res.cookies.delete(OAUTH_STATE_COOKIE);
     return res;
   } catch (error) {
+    if (error instanceof SeatLimitError) {
+      return NextResponse.json(
+        {
+          error:
+            'Your firm’s plan is single-seat. Ask your admin to upgrade to the Enterprise (team) plan to add colleagues.',
+        },
+        { status: 403 }
+      );
+    }
     return fail(error);
   }
 }

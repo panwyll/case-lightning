@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { isPremiumTenant } from '@/lib/server/plan';
+import { isPremiumTenant, canUseHeavyLlm } from '@/lib/server/plan';
 import { queryOne } from '@/lib/server/db';
 import { listMatterFiles, uploadToMatterFolder, appendTrackerRow } from '@/lib/server/graph';
 import {
@@ -66,8 +66,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     // Look up the output filename before generating, so a conflict short-circuits
     // the (potentially AI-billed) fill.
-    const tplRow = await queryOne<{ name: string }>(
-      `select name from doc_template where id = $1 and tenant_id = $2`,
+    const tplRow = await queryOne<{ name: string; has_llm_prompts: boolean }>(
+      `select name, has_llm_prompts from doc_template where id = $1 and tenant_id = $2`,
       [body.templateId, user.tenantId]
     );
     if (!tplRow) return fail(new Error('Template not found.'));
@@ -81,8 +81,20 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       }
     }
 
+    // Premium plans (Pro, Enterprise) get the AI [[prompt]] fills. Pro is usage-
+    // capped on heavy LLM per month — once over, we still generate the document but
+    // leave the AI sections blank and tell the user (graceful degrade, not a hard fail).
     const isPremium = await isPremiumTenant(user.tenantId);
-    const { buffer } = await generateTemplateForMatter(user, matterId, body.templateId, isPremium);
+    let useAi = isPremium;
+    let capped = false;
+    if (isPremium && tplRow.has_llm_prompts) {
+      const gate = await canUseHeavyLlm(user.tenantId);
+      if (!gate.allowed) {
+        useAi = false;
+        capped = true;
+      }
+    }
+    const { buffer } = await generateTemplateForMatter(user, matterId, body.templateId, useAi);
 
     const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, fileName, buffer);
 
@@ -98,7 +110,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       }).catch(() => {});
     }
 
-    return ok({ file: { id: uploaded.id, name: fileName, webUrl: uploaded.webUrl ?? null } });
+    return ok({ file: { id: uploaded.id, name: fileName, webUrl: uploaded.webUrl ?? null }, capped });
   } catch (error) {
     return fail(error);
   }

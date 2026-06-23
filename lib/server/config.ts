@@ -88,10 +88,18 @@ export const config = {
   stripeSecretKey: env('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET'),
   // Recurring price IDs per plan — power in-app upgrade/downgrade (Checkout for new
-  // subscribers, subscription-item swap for existing ones). Optional: when unset the
-  // checkout route 503s and plan changes are still possible via the Stripe portal.
-  stripePriceStandard: env('STRIPE_PRICE_STANDARD'),
-  stripePriceTeam: env('STRIPE_PRICE_TEAM'),
+  // subscribers, subscription-item swap for existing ones). Three tiers:
+  //   plus       — entry; no premium AI/automation, single seat
+  //   pro        — premium AI/automation, single seat, heavy-LLM usage capped
+  //   enterprise — premium AI/automation + team (multi-seat), uncapped
+  // Optional: when unset the checkout route 503s; plan changes still work via portal.
+  stripePricePlus: env('STRIPE_PRICE_PLUS'),
+  stripePricePro: env('STRIPE_PRICE_PRO'),
+  stripePriceEnterprise: env('STRIPE_PRICE_ENTERPRISE'),
+  // Pro tier is rate-limited on heavy LLM work (e.g. AI document generation). This
+  // caps the number of heavy-LLM calls (DOC_FILL) a Pro tenant can make per calendar
+  // month; Enterprise is uncapped. Tune without a deploy via env.
+  proHeavyLlmMonthlyCap: Number(env('PRO_HEAVY_LLM_MONTHLY_CAP') ?? '300'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

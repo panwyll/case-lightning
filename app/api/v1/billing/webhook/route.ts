@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
           const sub = event.data.object as Stripe.Subscription;
           const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
           const price = sub.items?.data?.[0]?.price;
-          const plan = planForPrice(price?.id ?? null, price?.unit_amount ?? null);
+          const plan = planForPrice(price?.id ?? null);
           if (customerId) {
             await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'SUBSCRIPTION', toStatus: sub.status, plan });
             await query(

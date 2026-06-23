@@ -9,7 +9,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z.object({ plan: z.enum(['standard', 'team']) });
+const Body = z.object({ plan: z.enum(['plus', 'pro', 'enterprise']) });
 
 // Change the signed-in firm's plan. Existing subscribers get an in-place,
 // prorated swap ({ updated: true }); new subscribers get a Checkout URL to

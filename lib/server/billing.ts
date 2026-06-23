@@ -16,9 +16,10 @@ import { config } from './config';
 import { query } from './db';
 import { stripe } from './stripe';
 import { accountForUser } from './referrals';
+import type { Plan } from './plan';
 import type { SessionUser } from './types';
 
-/** A seat = an app_user belonging to the tenant. The 'team' plan is multi-seat. */
+/** A seat = an app_user belonging to the tenant. Multi-seat needs the Enterprise plan. */
 export interface Seat {
   email: string;
   displayName: string | null;
@@ -26,7 +27,7 @@ export interface Seat {
 }
 
 export interface BillingSummary {
-  plan: string | null; // 'standard' | 'team' | null (no subscription yet)
+  plan: string | null; // 'plus' | 'pro' | 'enterprise' | null (no subscription yet)
   status: string; // trialing | active | past_due | canceled
   hasSubscription: boolean; // a Stripe customer exists → portal is available
   seats: Seat[];
@@ -108,22 +109,21 @@ export async function createBillingPortalSession(user: SessionUser): Promise<str
   return session.url;
 }
 
-export type PlanKey = 'standard' | 'team';
+export type PlanKey = Plan;
 
 /**
- * Resolve a subscription's plan from its Stripe price. Prefers an exact match
- * against the configured price IDs (robust to any pricing change); only falls
- * back to the price amount when the price isn't one we recognise (e.g. a future
- * annual price, a promo, or a legacy price), so a mis-set amount can't silently
- * flip a firm's tier. The £400 (40000p) boundary sits between Standard (£200)
- * and Team (£500).
+ * Resolve a subscription's plan from its Stripe price ID, matched against the
+ * configured price IDs. With three tiers the amount is no longer a reliable
+ * discriminator, so an unrecognised price falls back to the lowest tier (`plus`,
+ * least privilege) rather than guessing — a mis-set price can never over-grant.
  */
-export function planForPrice(priceId: string | null | undefined, unitAmountPennies: number | null | undefined): PlanKey {
+export function planForPrice(priceId: string | null | undefined): PlanKey {
   if (priceId) {
-    if (priceId === config.stripePriceTeam) return 'team';
-    if (priceId === config.stripePriceStandard) return 'standard';
+    if (priceId === config.stripePriceEnterprise) return 'enterprise';
+    if (priceId === config.stripePricePro) return 'pro';
+    if (priceId === config.stripePricePlus) return 'plus';
   }
-  return (unitAmountPennies ?? 0) >= 40000 ? 'team' : 'standard';
+  return 'plus';
 }
 
 /** Raised when STRIPE_PRICE_* env vars aren't configured → checkout 503s. */
@@ -135,7 +135,8 @@ export class PlanNotConfiguredError extends Error {
 }
 
 function priceFor(plan: PlanKey): string {
-  const price = plan === 'team' ? config.stripePriceTeam : config.stripePriceStandard;
+  const price =
+    plan === 'enterprise' ? config.stripePriceEnterprise : plan === 'pro' ? config.stripePricePro : config.stripePricePlus;
   if (!price) throw new PlanNotConfiguredError(plan);
   return price;
 }
@@ -143,7 +144,7 @@ function priceFor(plan: PlanKey): string {
 /**
  * Switch the signed-in firm to `plan`.
  *  - Existing subscriber → swap the subscription's price item in place (prorated),
- *    so an "Upgrade to Team" click takes effect immediately with no re-checkout.
+ *    so an "Upgrade to Pro/Enterprise" click takes effect immediately, no re-checkout.
  *    Returns { updated: true }.
  *  - No subscription yet → mint a Stripe Checkout session for that price (reusing
  *    the existing customer when there is one) and return its URL to redirect to.
