@@ -58,13 +58,14 @@ Billing is gated lazily: `isPremiumTenant()` ([`lib/server/plan.ts`](../lib/serv
 ## 4. Per-org isolation (multi-tenant gating) — verify, don't assume
 
 The product is multi-tenant; one firm must never see another's matters or data.
+**Code audit done 2026-06-23** (static; the two-tenant *runtime* test still needs prod).
 
-- [ ] **Every matter access goes through `assertMatterAccess(user, matterId)`** ([`lib/server/guard.ts`](../lib/server/guard.ts)), which requires `matter.tenant_id = user.tenantId`. Spot-check that new routes added since the last review call it (grep `assertMatterAccess` vs routes under `app/api/v1/matters/[matterId]/`).
-- [ ] **Every query is tenant-scoped.** Matching ([`matching.ts`](../lib/server/matching.ts)), RAG retrieval, documents, tasks, templates, triage — all filter `tenant_id = $1`. New `doc_template` queries are scoped (`tenant_id`), and the doc-pack route calls `assertMatterAccess`.
-- [ ] **RAG can't leak across matters.** `retrieveMatterContext` filters `where tenant_id = $1 and matter_id = $2` before the vector search — context is matter-AND-tenant scoped, never the whole tenant. Cross-matter retrieval is blocked unless an explicit `x-cross-matter` header + approval token is present (`assertCrossMatterAllowed`).
-- [ ] **Admin endpoints require `requireRole(['ADMIN'])`** and are tenant-scoped (templates, doc-templates, policies, users, rules).
-- [ ] **Verify with two tenants**: as firm A, attempt to GET a firm-B matter id → expect "Matter not found or inaccessible"; confirm firm A's template/doc-pack list shows only firm A's templates.
-- [ ] Self-address matching exclusion is live (a firm's own mailbox/domain is never a match signal) — see [`tenantSelfAddresses`](../lib/server/matching.ts).
+- [x] **Every matter access goes through `assertMatterAccess(user, matterId)`** ([`lib/server/guard.ts`](../lib/server/guard.ts)), which requires `matter.tenant_id = user.tenantId`. Audited: all 19 routes under `app/api/v1/matters/[matterId]/` call it.
+- [x] **Every query is tenant-scoped.** Matching ([`matching.ts`](../lib/server/matching.ts)), RAG retrieval, documents, tasks, templates, triage — all filter `tenant_id = $1`. `doc_template` queries scoped; doc-pack route calls `assertMatterAccess`.
+- [x] **RAG can't leak across matters.** `retrieveMatterContext` filters `where tenant_id = $1 and matter_id = $2` before the vector search — context is matter-AND-tenant scoped, never the whole tenant. Cross-matter retrieval is blocked unless an explicit `x-cross-matter` header + approval token is present (`assertCrossMatterAllowed`).
+- [x] **Admin endpoints require `requireRole(['ADMIN'])`** — audited: all `app/api/v1/admin/*` user routes role-gate. (`admin/analytics/refresh` is a CRON endpoint, protected by `CRON_SECRET`, not a user route — correct.)
+- [x] Self-address matching exclusion is live (a firm's own mailbox/domain is never a match signal) — see [`tenantSelfAddresses`](../lib/server/matching.ts).
+- [ ] **Runtime verify with two tenants** (needs prod): as firm A, GET a firm-B matter id → expect "Matter not found or inaccessible"; confirm firm A's template/doc-pack list shows only firm A's templates.
 
 ---
 
@@ -91,10 +92,10 @@ DPA in place and an entry in your **Record of Processing Activities**:
 - [ ] **Microsoft Graph / OneDrive** — email + documents are read from and written to the *user's own* M365 tenant (least-privilege `/me/drive`, no cross-user/SharePoint scopes). This stays within the firm's own Microsoft tenant — good — but document it.
 - [ ] **BYOK note**: when a user supplies their own Anthropic key, their data goes to *their* Anthropic account, not the firm's. Reflect this in the privacy notice.
 
-### Controls already in place (verify still true)
-- [ ] Email/document content is sent to models as **untrusted DATA, never instructions** (`SYSTEM_GUARD` prompt-injection defence) — reduces exfiltration-via-injection risk.
-- [ ] Personal data is **tenant- and matter-scoped** end to end (see §4) — no model call mixes two firms' data.
-- [ ] Per-call metering ([`usage_event`]) stores **token counts and cost, not message content** — confirm no raw PII is logged in `usage_event.metadata` or audit payloads.
+### Controls already in place (audited 2026-06-23)
+- [x] Email/document content is sent to models as **untrusted DATA, never instructions** (`SYSTEM_GUARD` prompt-injection defence in [`ai.ts`](../lib/server/ai.ts)) — reduces exfiltration-via-injection risk.
+- [x] Personal data is **tenant- and matter-scoped** end to end (see §4) — no model call mixes two firms' data.
+- [x] Per-call metering ([`usage_event`]) stores **token counts and cost, not message content**. Audited: `meta` only ever holds `{op, sourceKind}` / `{fileName}`; audit payloads carry IDs/categories only — no email or document body. Minor: `meta.fileName` and audit `toEmail` are identifiers (may contain a name/email) — acceptable for an audit trail, note in your ROPA.
 
 ### Policy / process
 - [ ] DPA executed with each sub-processor above; sub-processor list published.
@@ -129,8 +130,8 @@ orphans every install).
 ### 8a. Manifest must pass validation — code, no input needed
 - [x] Manifest passes `npx office-addin-manifest validate` (schema, HTTPS, icons, source location). Re-run after any manifest edit.
 - [x] Support URL resolves (was `/how-it-works` → 404; fixed to `/conveyi/how-it-works`). AppSource rejects unreachable support URLs.
-- [ ] Every URL is HTTPS and on the production origin (no localhost/preview URLs in the submitted manifest).
-- [ ] All five icon sizes (16/32/64/80/128) return 200 and are correct dimensions.
+- [x] Every functional URL is HTTPS on the production origin — audited: no localhost/preview `DefaultValue` URLs (the only `localhost` strings are in a dev-instructions comment; `http://schemas…` are XML namespaces, not links).
+- [x] All five icon sizes (16/32/64/80/128) return 200 and are correct dimensions (verified against prod).
 - [ ] `Version` is bumped on every resubmission (Store requires a higher version than the live one).
 - [ ] `AppDomains` lists every external domain the **taskpane itself** navigates to (the Entra sign-in happens in the Office dialog API, but verify nothing else navigates off-origin).
 - [ ] `Permissions` (`ReadWriteMailbox`) justified in the submission notes — it's a high scope; reviewers ask why (answer: read thread to draft, create draft replies, stamp categories).
@@ -141,8 +142,8 @@ orphans every install).
 - [x] Privacy & Terms linked from the site footer.
 - [ ] **Support contact**: dedicated support email/URL for the listing (currently SupportUrl → how-it-works). Decide a real support channel. *(needs your input)*
 
-### 8c. Listing assets — needs your input
-- [ ] **Store logo** 300×300 PNG (transparent), plus the listing tile. Existing `icon-128.png` is too small — needs a proper export. *(design input)*
+### 8c. Listing assets — partly done
+- [x] **Store logo** 300×300 PNG generated from the brand SVG at [`public/addin/store-logo-300.png`](../public/addin/store-logo-300.png) (transparent, crisp). Swap if design wants a different mark.
 - [ ] **Screenshots**: 1366×768 PNG, 1–10 of the add-in in Outlook. Requires the running add-in on a real mailbox. *(manual capture)*
 - [ ] Short description (≤100 chars) and long description (listing copy) — approve wording.
 - [ ] Optional promo video.
