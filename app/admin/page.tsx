@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface Template {
   id: string;
@@ -10,6 +10,17 @@ interface Template {
   bodyTemplate: string;
   styleTag: string;
   isActive: boolean;
+}
+
+interface DocTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  file_name: string;
+  file_size_bytes: number;
+  has_llm_prompts: boolean;
+  sort_order: number;
+  created_at: string;
 }
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -25,9 +36,13 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'templates' | 'team' | 'policy' | 'rules' | 'referrals' | 'audit'>('templates');
+  const [tab, setTab] = useState<'templates' | 'docpacks' | 'team' | 'policy' | 'rules' | 'referrals' | 'audit'>('templates');
   const [users, setUsers] = useState<any[]>([]);
   const [status, setStatus] = useState('');
+  const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
+  const [docUpload, setDocUpload] = useState({ name: '', description: '' });
+  const [docUploading, setDocUploading] = useState(false);
+  const docFileRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [policy, setPolicy] = useState<any>(null);
   const [audit, setAudit] = useState<any[]>([]);
@@ -48,6 +63,7 @@ export default function AdminPage() {
   const load = useCallback(async () => {
     try {
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
+      if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
       if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
@@ -90,6 +106,52 @@ export default function AdminPage() {
       });
       setRule({ ...rule, name: '', riskAccepted: false, riskAcknowledgement: '', enabled: false });
       await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
+  async function uploadDocTemplate() {
+    const file = docFileRef.current?.files?.[0];
+    if (!file) { setStatus('Select a .docx file first.'); return; }
+    if (!docUpload.name.trim()) { setStatus('Give the template a name.'); return; }
+    setDocUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('name', docUpload.name.trim());
+      form.append('description', docUpload.description.trim());
+      const res = await fetch('/api/v1/admin/doc-templates', {
+        method: 'POST',
+        credentials: 'include',
+        body: form,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setDocUpload({ name: '', description: '' });
+      if (docFileRef.current) docFileRef.current.value = '';
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setDocUploading(false);
+    }
+  }
+
+  async function deleteDocTemplate(id: string) {
+    try {
+      await api(`/admin/doc-templates/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
+  async function loadExampleTemplates() {
+    try {
+      await api('/admin/doc-templates/examples', { method: 'POST' });
+      await load();
+      setStatus('Example templates loaded.');
     } catch (e) {
       setStatus((e as Error).message);
     }
@@ -139,7 +201,8 @@ export default function AdminPage() {
         <h1 style={{ fontSize: 22, marginBottom: 4 }}>CONVEYi Admin</h1>
         <p style={{ color: '#64748b', marginTop: 0 }}>Firm playbook templates, policy and audit. Admin role required.</p>
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
-          <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Templates</button>
+          <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Email templates</button>
+          <button style={tabBtn(tab === 'docpacks')} onClick={() => setTab('docpacks')}>Doc packs</button>
           <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>Team</button>
           <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
           <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
@@ -168,6 +231,146 @@ export default function AdminPage() {
                 <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#334155' }}>{tpl.bodyTemplate}</p>
               </div>
             ))}
+          </>
+        )}
+
+        {tab === 'docpacks' && (
+          <>
+            {/* How it works */}
+            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+              <h3 style={{ marginTop: 0, fontSize: 15 }}>Document packs</h3>
+              <p style={{ fontSize: 13, color: '#334155', margin: '0 0 10px' }}>
+                Upload your firm&apos;s Word (.docx) templates here. When a conveyancer clicks{' '}
+                <strong>Generate doc pack</strong> on a matter, every template is filled with that
+                matter&apos;s data and downloaded as a zip.
+              </p>
+              <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Placeholder syntax</p>
+              <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
+                <tbody>
+                  {[
+                    ['{{matter_ref}}', 'Matter reference, e.g. CL-0042'],
+                    ['{{property_address}}', 'Full property address'],
+                    ['{{buyer_names}}', 'Comma-separated buyer names'],
+                    ['{{seller_names}}', 'Comma-separated seller names'],
+                    ['{{exchange_date}}', 'Target exchange date (formatted)'],
+                    ['{{completion_date}}', 'Target completion date (formatted)'],
+                    ['{{counterparty_solicitor}}', 'Other side\'s solicitor'],
+                    ['{{counterparty_agent}}', 'Estate agent'],
+                    ['{{lender}}', 'Lender name'],
+                    ['{{track}}', 'Purchase / Sale / Remortgage'],
+                    ['{{stage}}', 'Current stage name'],
+                    ['{{today}}', 'Today\'s date (formatted)'],
+                    ['{{firm_name}}', 'Your firm name'],
+                    ['{{assigned_to}}', 'Conveyancer handling the matter'],
+                  ].map(([placeholder, desc]) => (
+                    <tr key={placeholder} style={{ borderTop: '1px solid #e0f2fe' }}>
+                      <td style={{ padding: '3px 8px 3px 0', fontFamily: 'monospace', color: '#0369a1', whiteSpace: 'nowrap' }}>{placeholder}</td>
+                      <td style={{ padding: '3px 0', color: '#475569' }}>{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ fontSize: 12, color: '#64748b', marginTop: 10, marginBottom: 0 }}>
+                <strong>Team plan only:</strong> use{' '}
+                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>
+                  [[Write a short welcome paragraph for the client]]
+                </code>{' '}
+                to have Claude generate that section. Write any natural-language instruction between{' '}
+                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>[[</code> and{' '}
+                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>]]</code>.
+              </p>
+            </div>
+
+            {/* Upload form */}
+            <div style={card}>
+              <h3 style={{ marginTop: 0 }}>Upload template</h3>
+              <input
+                ref={docFileRef}
+                type="file"
+                accept=".docx"
+                style={{ ...input, padding: '6px 8px' }}
+              />
+              <input
+                style={input}
+                placeholder="Template name (e.g. Client care letter)"
+                value={docUpload.name}
+                onChange={(e) => setDocUpload({ ...docUpload, name: e.target.value })}
+              />
+              <input
+                style={input}
+                placeholder="Description (optional)"
+                value={docUpload.description}
+                onChange={(e) => setDocUpload({ ...docUpload, description: e.target.value })}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: docUploading ? 0.6 : 1 }}
+                  onClick={uploadDocTemplate}
+                  disabled={docUploading}
+                >
+                  {docUploading ? 'Uploading…' : 'Upload'}
+                </button>
+                {docTemplates.length === 0 && (
+                  <button
+                    style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                    onClick={loadExampleTemplates}
+                  >
+                    Load example templates
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Template list */}
+            {docTemplates.length === 0 && (
+              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>
+                No templates yet. Upload your first .docx or load the examples above.
+              </div>
+            )}
+            {docTemplates.map((tpl) => (
+              <div key={tpl.id} style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <strong>{tpl.name}</strong>
+                    {tpl.has_llm_prompts && (
+                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
+                        AI prompts · Team only
+                      </span>
+                    )}
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                      {tpl.file_name} · {(tpl.file_size_bytes / 1024).toFixed(0)} KB
+                    </div>
+                    {tpl.description && (
+                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{tpl.description}</div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <a
+                      href={`/api/v1/admin/doc-templates/${tpl.id}`}
+                      download={tpl.file_name}
+                      style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Download
+                    </a>
+                    <button
+                      style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                      onClick={() => deleteDocTemplate(tpl.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {docTemplates.length > 0 && (
+              <button
+                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                onClick={loadExampleTemplates}
+              >
+                + Add example templates
+              </button>
+            )}
           </>
         )}
 

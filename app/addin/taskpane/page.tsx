@@ -296,6 +296,7 @@ export default function Taskpane() {
   // Documents & sharing
   const [docs, setDocs] = useState<any[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
+  const [docPackLoading, setDocPackLoading] = useState(false);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -815,6 +816,37 @@ export default function Taskpane() {
         : `Uploaded and logged to the tracker.${r.reason ? ' ' + r.reason : ''}`
     );
     loadFiles();
+  }
+
+  async function downloadDocPack() {
+    if (!matterId) return;
+    setDocPackLoading(true);
+    try {
+      const res = await fetch(`/api/v1/matters/${matterId}/doc-pack`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        setStatus((j as any).error || `Failed to generate pack (HTTP ${res.status}).`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = res.headers.get('content-disposition') ?? '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      a.download = match?.[1] ?? 'doc-pack.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setDocPackLoading(false);
+    }
   }
 
   // ── Assistant + tasks ────────────────────────────────────────────────────
@@ -1602,6 +1634,14 @@ export default function Taskpane() {
                   </button>
                 </div>
               </div>
+              <button
+                style={{ ...S.secondary, width: '100%', marginBottom: 10, opacity: docPackLoading ? 0.6 : 1 }}
+                onClick={downloadDocPack}
+                disabled={docPackLoading}
+                title="Fill all document templates with this matter's data and download as a zip"
+              >
+                {docPackLoading ? 'Generating…' : '⬇ Generate doc pack'}
+              </button>
               <input
                 ref={fileInputRef}
                 type="file"

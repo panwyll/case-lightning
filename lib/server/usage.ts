@@ -20,6 +20,7 @@ export type UsageFeature =
   | 'DRAFT_REPLY'
   | 'DRAFT_UPDATE'
   | 'DOC_REVIEW'
+  | 'DOC_FILL'
   | 'MATTER_PROPOSE'
   | 'EMBED';
 
