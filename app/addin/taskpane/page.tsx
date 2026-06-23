@@ -305,6 +305,12 @@ export default function Taskpane() {
   const [templates, setTemplates] = useState<MatterTemplate[]>([]);
   const [templatesPremium, setTemplatesPremium] = useState(false);
   const [genTemplateId, setGenTemplateId] = useState<string | null>(null);
+  // Loading vs loaded so the panels show a spinner while fetching, not an empty
+  // state. `loaded` flips true after the first fetch settles for the current matter.
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [filesLoaded, setFilesLoaded] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -799,11 +805,15 @@ export default function Taskpane() {
   // not just app-saved ones) — quiet load so opening the Files tab isn't a spinner.
   const loadFiles = useCallback(async (mid = matterId) => {
     if (!mid) return;
+    setFilesLoading(true);
     try {
       const r = await api<{ files: FileItem[] }>(`/matters/${mid}/files`);
       setFiles(r.files ?? []);
     } catch {
       /* folder may not be provisioned yet — leave the list empty */
+    } finally {
+      setFilesLoading(false);
+      setFilesLoaded(true);
     }
   }, [matterId]);
 
@@ -835,12 +845,16 @@ export default function Taskpane() {
 
   const loadTemplates = useCallback(async (mid = matterId) => {
     if (!mid) return;
+    setTemplatesLoading(true);
     try {
       const r = await api<{ templates: MatterTemplate[]; isPremium: boolean }>(`/matters/${mid}/doc-pack`);
       setTemplates(r.templates ?? []);
       setTemplatesPremium(!!r.isPremium);
     } catch {
       /* no templates configured yet — leave the list empty */
+    } finally {
+      setTemplatesLoading(false);
+      setTemplatesLoaded(true);
     }
   }, [matterId]);
 
@@ -1164,14 +1178,22 @@ export default function Taskpane() {
     if (!matterId && tab !== 'email') setTab('email');
   }, [matterId, tab]);
 
-  // Auto-load the live OneDrive folder when the Files tab opens, so the literal
-  // files show without a click.
+  // Preload the matter's case files & templates as soon as an email is matched to
+  // a matter — not when the Files tab is opened — so the tab is ready instantly.
+  // Runs asynchronously in the background; the panels show a spinner until done.
   useEffect(() => {
-    if (tab === 'paperclip' && matterId) {
-      loadFiles(matterId);
-      loadTemplates(matterId);
+    if (!matterId) {
+      setFilesLoaded(false);
+      setTemplatesLoaded(false);
+      setFiles([]);
+      setTemplates([]);
+      return;
     }
-  }, [tab, matterId, loadFiles, loadTemplates]);
+    setFilesLoaded(false);
+    setTemplatesLoaded(false);
+    loadFiles(matterId);
+    loadTemplates(matterId);
+  }, [matterId, loadFiles, loadTemplates]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
@@ -1681,7 +1703,9 @@ export default function Taskpane() {
                   style={{ display: 'none' }}
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
                 />
-                {files.length > 0 ? (
+                {filesLoading || !filesLoaded ? (
+                  <LoadingRow label="Loading case files…" />
+                ) : files.length > 0 ? (
                   <div style={S.fileList}>
                     {files.map((f) => {
                       const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
@@ -1721,7 +1745,9 @@ export default function Taskpane() {
                     </button>
                   </div>
                 </div>
-                {templates.length > 0 ? (
+                {templatesLoading || !templatesLoaded ? (
+                  <LoadingRow label="Loading templates…" />
+                ) : templates.length > 0 ? (
                   <div style={S.fileList}>
                     {templates.map((tpl) => {
                       const busy = genTemplateId === tpl.id;
@@ -1968,6 +1994,15 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 
 function Card({ children }: { children: React.ReactNode }) {
   return <section style={S.card}>{children}</section>;
+}
+
+function LoadingRow({ label }: { label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px' }}>
+      <span style={S.spinner} />
+      <span style={{ fontSize: 12, color: '#64748b' }}>{label}</span>
+    </div>
+  );
 }
 
 // The House tab's property record: controlled fields with validation and an
