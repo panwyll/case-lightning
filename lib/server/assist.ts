@@ -18,7 +18,7 @@
 import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
-import { summarizeThread, draftReply, retrieveMatterContext } from './ai';
+import { summarizeThread, draftReply, retrieveMatterContext, actingForPhrase } from './ai';
 import { reviewAttachmentsContext } from './files';
 import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
@@ -74,6 +74,7 @@ interface AssistContext {
   matterId: string | null;
   facts: Record<string, unknown>;
   matterOutstanding: string[];
+  track: string | null;
   intent: string;
   needsAttention: boolean;
   tone?: AssistInput['tone'];
@@ -117,6 +118,7 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
   let matter: FastAssist['matter'] = null;
   let facts: Record<string, unknown> = {};
   let matterOutstanding: string[] = [];
+  let track: string | null = null;
   if (matterId) {
     matter = await queryOne<{ id: string; matterRef: string; propertyAddress: string | null }>(
       `select id, matter_ref as "matterRef", property_address as "propertyAddress" from matter where id = $1 and tenant_id = $2`,
@@ -128,6 +130,13 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     );
     facts = summaryRow?.facts ?? {};
     matterOutstanding = summaryRow?.outstanding_items ?? [];
+    // Which side we act for — guarded so a deploy before migration 020 still works.
+    try {
+      const t = await queryOne<{ track: string }>(`select track from matter where id = $1 and tenant_id = $2`, [matterId, user.tenantId]);
+      track = t?.track ?? null;
+    } catch {
+      /* track column not migrated yet */
+    }
 
     // Harvest every address on this email (sender + to/cc) into the matter's
     // address book, so later actions can target the right party. Best-effort.
@@ -158,6 +167,7 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     matterId,
     facts,
     matterOutstanding,
+    track,
     intent: triage.classification.intent,
     needsAttention: triage.classification.needsAttention,
     tone: input.tone,
@@ -213,6 +223,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       tenantId: user.tenantId,
       matterId: ctx.matterId,
       tone,
+      actingFor: actingForPhrase(ctx.track),
       threadText,
       matterFacts: ctx.facts,
       retrievedContext,

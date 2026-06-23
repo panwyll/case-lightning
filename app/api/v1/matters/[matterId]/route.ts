@@ -43,8 +43,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         chainPosition: z.string().optional(),
         status: z.string().optional(),
         assignedTo: z.string().uuid().nullable().optional(),
-        stage: z.enum(['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION']).optional(),
+        stage: z
+          .enum(['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'])
+          .optional(),
         statusFlag: z.enum(['ON_TRACK', 'NEEDS_ATTENTION', 'BLOCKED']).optional(),
+        track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
@@ -93,6 +96,19 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         ]);
       } catch {
         /* column not migrated yet — ignore until 017_purchase_price.sql is applied */
+      }
+    }
+
+    // track (PURCHASE/SALE/REMORTGAGE) — same guarded pattern, pending migration 020.
+    if (body.track !== undefined) {
+      try {
+        await query(`update matter set track = $1, updated_at = now() where id = $2 and tenant_id = $3`, [
+          body.track,
+          matterId,
+          user.tenantId,
+        ]);
+      } catch {
+        /* column not migrated yet — ignore until 020_matter_track.sql is applied */
       }
     }
     return ok({ ok: true });

@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages, createDraftMessage } from '@/lib/server/graph';
-import { draftUpdate, retrieveMatterContext } from '@/lib/server/ai';
+import { draftUpdate, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
 import { reviewAttachmentsContext } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
@@ -61,6 +61,15 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       [user.tenantId]
     );
 
+    // Which side we act for, to steer the draft. Guarded for pre-migration-020 deploys.
+    let actingFor: string | undefined;
+    try {
+      const t = await queryOne<{ track: string }>(`select track from matter where id = $1 and tenant_id = $2`, [matterId, user.tenantId]);
+      actingFor = actingForPhrase(t?.track);
+    } catch {
+      /* track column not migrated yet */
+    }
+
     const retrieved = await retrieveMatterContext({
       tenantId: user.tenantId,
       matterId,
@@ -80,6 +89,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       matterId,
       recipientName: body.toName || body.toEmail,
       recipientRole: ROLE_LABEL[body.role ?? 'UNKNOWN'] ?? 'a contact',
+      actingFor,
       threadText,
       matterFacts: matterSummary?.facts ?? {},
       retrievedContext,

@@ -551,11 +551,27 @@ export async function reviewDocument(input: {
   return { review: block.input as DocReview, model };
 }
 
+/** Map a matter's track to the "we act for …" phrase fed to the drafting AI. */
+export function actingForPhrase(track?: string | null): string | undefined {
+  switch (track) {
+    case 'PURCHASE':
+      return 'the buyer (purchase)';
+    case 'SALE':
+      return 'the seller (sale)';
+    case 'REMORTGAGE':
+      return 'the borrower (remortgage)';
+    default:
+      return undefined;
+  }
+}
+
 export async function draftReply(input: {
   userId: string;
   tenantId: string;
   matterId?: string | null;
   tone: 'NEUTRAL' | 'FIRM' | 'CHASING';
+  /** Which side we act for — e.g. "the buyer (purchase)". Steers the draft. */
+  actingFor?: string;
   threadText: string;
   matterFacts: Record<string, unknown>;
   retrievedContext: string;
@@ -594,7 +610,7 @@ export async function draftReply(input: {
       },
       required: ['subject', 'bodyHtml', 'why', 'actions'],
     },
-    `Tone: ${input.tone}\nFirm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
+    `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
       input.matterFacts
     )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nThread (DATA):\n${input.threadText}`
   );
@@ -612,6 +628,8 @@ export async function draftUpdate(input: {
   matterId?: string | null;
   recipientName: string;
   recipientRole: string;
+  /** Which side we act for — e.g. "the seller (sale)". Steers the draft. */
+  actingFor?: string;
   threadText: string;
   matterFacts: Record<string, unknown>;
   retrievedContext: string;
@@ -652,7 +670,7 @@ export async function draftUpdate(input: {
       },
       required: ['subject', 'bodyHtml', 'why', 'actions'],
     },
-    `Recipient: ${input.recipientName} (role: ${input.recipientRole})\nFirm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
+    `Recipient: ${input.recipientName} (role: ${input.recipientRole})\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
       input.matterFacts
     )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nTriggering thread for context (DATA):\n${input.threadText}`
   );
