@@ -173,7 +173,7 @@ function hashRef(s: string): number {
 }
 
 /** Stable per-matter pill colour (same matter ref → same colour, always). */
-function matterColor(matterRef: string): string {
+export function matterColor(matterRef: string): string {
   return MATTER_PALETTE[hashRef(matterRef) % MATTER_PALETTE.length];
 }
 
