@@ -110,6 +110,22 @@ export async function createBillingPortalSession(user: SessionUser): Promise<str
 
 export type PlanKey = 'standard' | 'team';
 
+/**
+ * Resolve a subscription's plan from its Stripe price. Prefers an exact match
+ * against the configured price IDs (robust to any pricing change); only falls
+ * back to the price amount when the price isn't one we recognise (e.g. a future
+ * annual price, a promo, or a legacy price), so a mis-set amount can't silently
+ * flip a firm's tier. The £400 (40000p) boundary sits between Standard (£200)
+ * and Team (£500).
+ */
+export function planForPrice(priceId: string | null | undefined, unitAmountPennies: number | null | undefined): PlanKey {
+  if (priceId) {
+    if (priceId === config.stripePriceTeam) return 'team';
+    if (priceId === config.stripePriceStandard) return 'standard';
+  }
+  return (unitAmountPennies ?? 0) >= 40000 ? 'team' : 'standard';
+}
+
 /** Raised when STRIPE_PRICE_* env vars aren't configured → checkout 503s. */
 export class PlanNotConfiguredError extends Error {
   constructor(plan: PlanKey) {

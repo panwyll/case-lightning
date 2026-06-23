@@ -11,6 +11,7 @@ import {
   clawbackByInvoice,
 } from '@/lib/server/referrals';
 import { recordSubscriptionEvent } from '@/lib/server/billing-events';
+import { planForPrice } from '@/lib/server/billing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -107,8 +108,8 @@ export async function POST(req: NextRequest) {
         case 'customer.subscription.created': {
           const sub = event.data.object as Stripe.Subscription;
           const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
-          const amount = sub.items?.data?.[0]?.price?.unit_amount ?? 0;
-          const plan = amount >= 40000 ? 'team' : 'standard';
+          const price = sub.items?.data?.[0]?.price;
+          const plan = planForPrice(price?.id ?? null, price?.unit_amount ?? null);
           if (customerId) {
             await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'SUBSCRIPTION', toStatus: sub.status, plan });
             await query(
