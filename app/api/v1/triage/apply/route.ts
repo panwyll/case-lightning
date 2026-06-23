@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { upsertIdentifiers, domainOf } from '@/lib/server/matching';
+import { upsertIdentifiers, domainOf, tenantSelfAddresses } from '@/lib/server/matching';
 import { getMessage } from '@/lib/server/graph';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { writeAudit } from '@/lib/server/audit';
@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
     );
 
     // Learn identifiers from the participants so the matcher gets stronger over time.
+    // Exclude the firm's OWN mailbox addresses/domains — they sit on every email and
+    // would otherwise make unrelated mail (e.g. marketing addressed to the firm)
+    // match this matter.
+    const self = await tenantSelfAddresses(user.tenantId);
     const participants = [
       message.from?.emailAddress?.address,
       ...(message.toRecipients ?? []).map((r: any) => r.emailAddress?.address),
@@ -58,9 +62,11 @@ export async function POST(req: NextRequest) {
     ].filter(Boolean) as string[];
     const idents: Array<{ kind: 'EMAIL' | 'DOMAIN'; value: string }> = [];
     for (const p of participants) {
-      idents.push({ kind: 'EMAIL', value: p.toLowerCase() });
+      const email = p.toLowerCase();
+      if (self.emails.has(email)) continue; // never index our own address
+      idents.push({ kind: 'EMAIL', value: email });
       const d = domainOf(p);
-      if (d) idents.push({ kind: 'DOMAIN', value: d });
+      if (d && !self.domains.has(d)) idents.push({ kind: 'DOMAIN', value: d });
     }
     await upsertIdentifiers(user.tenantId, body.matterId, idents);
 

@@ -64,6 +64,35 @@ export function extractCaseRefTokens(text: string): string[] {
   return Array.from(text.matchAll(CASE_REF_RE)).map((m) => m[1].toUpperCase());
 }
 
+export interface SelfAddresses {
+  emails: Set<string>;
+  domains: Set<string>;
+}
+
+/**
+ * The firm's own mailbox addresses (and their domains). These sit on (almost)
+ * every email — as the sender on outbound mail, the recipient on inbound — so
+ * they carry ZERO matter-discriminating signal. A marketing email merely
+ * addressed to the firm must never match a matter just because the firm's own
+ * address was once seen on that matter. We exclude them from both candidate
+ * narrowing and scoring, and never harvest them as identifiers.
+ */
+export async function tenantSelfAddresses(tenantId: string): Promise<SelfAddresses> {
+  const rows = await query<{ email: string | null }>(
+    `select lower(email) as email from app_user where tenant_id = $1 and email is not null`,
+    [tenantId]
+  );
+  const emails = new Set<string>();
+  const domains = new Set<string>();
+  for (const r of rows) {
+    if (!r.email) continue;
+    emails.add(r.email);
+    const d = domainOf(r.email);
+    if (d) domains.add(d);
+  }
+  return { emails, domains };
+}
+
 /** Build the structural fingerprint of an incoming message used for matching. */
 export function messageSignals(message: any): MessageSignals {
   const from = message.from?.emailAddress?.address?.toLowerCase();
@@ -101,8 +130,17 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
   const haystack = `${signals.subject}\n${signals.bodyText}`;
   const tokens = extractCaseRefTokens(haystack);
   const postcodes = extractPostcodes(haystack);
-  const participants = [signals.fromAddress, ...signals.recipientAddresses].filter(Boolean) as string[];
-  const domains = Array.from(new Set(participants.map(domainOf).filter(Boolean) as string[]));
+
+  // Drop the firm's own mailbox addresses/domains: they appear on virtually every
+  // email and so are not evidence of *which* matter this is. Without this, an
+  // email merely addressed to the firm matches every matter the firm's own
+  // address was ever recorded against.
+  const self = await tenantSelfAddresses(tenantId);
+  const participants = ([signals.fromAddress, ...signals.recipientAddresses].filter(Boolean) as string[])
+    .map((p) => p.toLowerCase())
+    .filter((p) => !self.emails.has(p));
+  const domains = Array.from(new Set(participants.map(domainOf).filter(Boolean) as string[]))
+    .filter((d) => !self.domains.has(d));
 
   // 1) Candidate narrowing — union of matters reachable via a hard signal.
   const candidateIds = new Set<string>();
@@ -188,9 +226,10 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
     if (nameHit) {
       signalsHit.push({ kind: 'NAME', detail: `Party name "${nameHit}" present`, weight: 0.2 });
     }
-    // Sender domain only — weak, never decisive
+    // Sender domain only — weak, never decisive. Never the firm's own domain.
     const senderDomain = domainOf(signals.fromAddress);
-    const domainMatch = senderDomain && mIdents.some((i) => i.kind === 'DOMAIN' && i.value === senderDomain);
+    const domainMatch =
+      senderDomain && !self.domains.has(senderDomain) && mIdents.some((i) => i.kind === 'DOMAIN' && i.value === senderDomain);
     if (domainMatch && !emailMatches.length) {
       signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this matter`, weight: 0.1 });
     }
