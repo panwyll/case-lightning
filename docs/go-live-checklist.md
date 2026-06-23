@@ -133,7 +133,7 @@ orphans every install).
 - [x] Every functional URL is HTTPS on the production origin — audited: no localhost/preview `DefaultValue` URLs (the only `localhost` strings are in a dev-instructions comment; `http://schemas…` are XML namespaces, not links).
 - [x] All five icon sizes (16/32/64/80/128) return 200 and are correct dimensions (verified against prod).
 - [ ] `Version` is bumped on every resubmission (Store requires a higher version than the live one).
-- [ ] `AppDomains` lists every external domain the **taskpane itself** navigates to (the Entra sign-in happens in the Office dialog API, but verify nothing else navigates off-origin).
+- [x] `AppDomains` — audited: the taskpane only navigates same-origin in-frame; OneDrive/account links open in a **new browser tab** (`_blank`), and Entra sign-in uses the Office dialog API — none require an AppDomain entry, so app-origin-only is correct.
 - [ ] `Permissions` (`ReadWriteMailbox`) justified in the submission notes — it's a high scope; reviewers ask why (answer: read thread to draft, create draft replies, stamp categories).
 
 ### 8b. Required listing URLs — code (drafts done, needs your review)
