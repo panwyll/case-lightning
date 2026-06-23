@@ -238,11 +238,16 @@ export default function AdminPage() {
           <>
             {/* How it works */}
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <h3 style={{ marginTop: 0, fontSize: 15 }}>Document packs</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+                <h3 style={{ marginTop: 0, fontSize: 15 }}>Document templates</h3>
+                <a href="/conveyi/doc-packs" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#0369a1', fontWeight: 600 }}>
+                  Full guide →
+                </a>
+              </div>
               <p style={{ fontSize: 13, color: '#334155', margin: '0 0 10px' }}>
-                Upload your firm&apos;s Word (.docx) templates here. When a conveyancer clicks{' '}
-                <strong>Generate doc pack</strong> on a matter, every template is filled with that
-                matter&apos;s data and downloaded as a zip.
+                Upload your firm&apos;s Word (.docx) templates here. On any matter, a conveyancer opens the{' '}
+                <strong>Files → Templates</strong> panel and clicks <strong>Generate</strong> — the template is
+                filled with that matter&apos;s data and saved straight into the case&apos;s OneDrive folder.
               </p>
               <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Placeholder syntax</p>
               <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>

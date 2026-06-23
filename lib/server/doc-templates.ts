@@ -12,7 +12,6 @@
 
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
-import JSZip from 'jszip';
 import { query, queryOne } from './db';
 import type { SessionUser } from './types';
 
@@ -219,68 +218,74 @@ export async function fillTemplate(templateBytes: Buffer, opts: FillOptions): Pr
   return Buffer.from(doc2.getZip().generate({ type: 'nodebuffer' }));
 }
 
-// ── Generate full doc pack as a zip ──────────────────────────────────────────
+// ── Per-matter template generation ────────────────────────────────────────────
 
-export async function generateDocPack(
+/** A safe .docx filename derived from the template name (the case-files name). */
+export function templateOutputName(templateName: string): string {
+  const safe = templateName.replace(/[^\w\s\-().]/g, '').replace(/\s+/g, ' ').trim();
+  return `${safe || 'document'}.docx`;
+}
+
+/** Loads matter + firm context and builds the {{variable}} map for filling. */
+async function loadMatterVars(
   user: SessionUser,
-  matterId: string,
-  isPremium: boolean
-): Promise<{ zip: Buffer; matterRef: string }> {
-  const [matterRow, tenantRow, assigneeRow, templates] = await Promise.all([
+  matterId: string
+): Promise<{ vars: Record<string, string>; matterRef: string }> {
+  const [matterRow, tenantRow, assigneeRow] = await Promise.all([
     queryOne<MatterRow & { assigned_to: string | null }>(
-      `select m.*, m.assigned_to
-       from matter m
-       where m.id = $1 and m.tenant_id = $2`,
+      `select m.* from matter m where m.id = $1 and m.tenant_id = $2`,
       [matterId, user.tenantId]
     ),
     queryOne<{ name: string }>(`select name from tenant where id = $1`, [user.tenantId]),
-    // Joined separately to avoid a complex lateral
     queryOne<{ display_name: string | null; email: string }>(
       `select u.display_name, u.email
-       from matter m
-       join app_user u on u.id = m.assigned_to
+       from matter m join app_user u on u.id = m.assigned_to
        where m.id = $1 and m.tenant_id = $2`,
       [matterId, user.tenantId]
     ),
-    query<{ id: string; name: string; file_name: string; file_content: Buffer }>(
-      `select id, name, file_name, file_content
-       from doc_template
-       where tenant_id = $1
-       order by sort_order, created_at`,
-      [user.tenantId]
-    ),
   ]);
-
   if (!matterRow) throw new Error('Matter not found.');
-  if (templates.length === 0) throw new Error('No document templates found. Upload templates in Admin → Doc packs.');
-
   const firmName = tenantRow?.name ?? 'Your firm';
   const assigneeName = assigneeRow?.display_name ?? assigneeRow?.email ?? '';
-  const vars = buildMatterVars(matterRow, firmName, assigneeName);
+  return {
+    vars: buildMatterVars(matterRow, firmName, assigneeName),
+    matterRef: matterRow.matter_ref ?? 'pack',
+  };
+}
 
-  const zip = new JSZip();
-
-  await Promise.all(
-    templates.map(async (tpl) => {
-      try {
-        const filled = await fillTemplate(Buffer.from(tpl.file_content), {
-          vars,
-          isPremium,
-          userId: user.userId,
-          tenantId: user.tenantId,
-        });
-        // Prefix with matter ref so files stay organised
-        const safeName = tpl.file_name.replace(/[^\w\s\-().]/g, '_');
-        zip.file(`${matterRow.matter_ref ?? 'pack'} — ${safeName}`, filled);
-      } catch (err) {
-        console.error(`[doc-pack] Failed to fill template ${tpl.id}: ${(err as Error).message}`);
-        // Skip broken templates rather than failing the whole pack
-      }
-    })
+/** Lists the firm's templates (no file bytes) for the matter's Templates panel. */
+export async function listTenantTemplates(tenantId: string) {
+  return query<{ id: string; name: string; description: string | null; has_llm_prompts: boolean }>(
+    `select id, name, description, has_llm_prompts
+     from doc_template where tenant_id = $1 order by sort_order, created_at`,
+    [tenantId]
   );
+}
 
-  const zipBuffer = Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }));
-  return { zip: zipBuffer, matterRef: matterRow.matter_ref ?? 'pack' };
+/**
+ * Fills a single template with the matter's data and returns the bytes plus the
+ * filename it should be saved under in the matter's OneDrive folder.
+ */
+export async function generateTemplateForMatter(
+  user: SessionUser,
+  matterId: string,
+  templateId: string,
+  isPremium: boolean
+): Promise<{ buffer: Buffer; fileName: string }> {
+  const tpl = await queryOne<{ name: string; file_content: Buffer }>(
+    `select name, file_content from doc_template where id = $1 and tenant_id = $2`,
+    [templateId, user.tenantId]
+  );
+  if (!tpl) throw new Error('Template not found.');
+
+  const { vars } = await loadMatterVars(user, matterId);
+  const buffer = await fillTemplate(Buffer.from(tpl.file_content), {
+    vars,
+    isPremium,
+    userId: user.userId,
+    tenantId: user.tenantId,
+  });
+  return { buffer, fileName: templateOutputName(tpl.name) };
 }
 
 // ── Example templates ─────────────────────────────────────────────────────────

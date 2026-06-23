@@ -84,6 +84,12 @@ interface FileItem {
   mimeType: string | null;
   processed: boolean;
 }
+interface MatterTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  has_llm_prompts: boolean;
+}
 
 interface ObJob {
   id: string;
@@ -296,7 +302,9 @@ export default function Taskpane() {
   // Documents & sharing
   const [docs, setDocs] = useState<any[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
-  const [docPackLoading, setDocPackLoading] = useState(false);
+  const [templates, setTemplates] = useState<MatterTemplate[]>([]);
+  const [templatesPremium, setTemplatesPremium] = useState(false);
+  const [genTemplateId, setGenTemplateId] = useState<string | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -818,34 +826,49 @@ export default function Taskpane() {
     loadFiles();
   }
 
-  async function downloadDocPack() {
+  const loadTemplates = useCallback(async (mid = matterId) => {
+    if (!mid) return;
+    try {
+      const r = await api<{ templates: MatterTemplate[]; isPremium: boolean }>(`/matters/${mid}/doc-pack`);
+      setTemplates(r.templates ?? []);
+      setTemplatesPremium(!!r.isPremium);
+    } catch {
+      /* no templates configured yet — leave the list empty */
+    }
+  }, [matterId]);
+
+  // Fill a template with this matter's data and save it into the OneDrive folder,
+  // so it shows up under Case files. If the name clashes, confirm before overwriting.
+  async function generateTemplate(tpl: MatterTemplate, overwrite = false) {
     if (!matterId) return;
-    setDocPackLoading(true);
+    setGenTemplateId(tpl.id);
     try {
       const res = await fetch(`/api/v1/matters/${matterId}/doc-pack`, {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ templateId: tpl.id, overwrite }),
       });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        setStatus((j as any).error || `Failed to generate pack (HTTP ${res.status}).`);
+      if (res.status === 409) {
+        const j = (await res.json().catch(() => ({}))) as { fileName?: string };
+        const name = j.fileName ?? `${tpl.name}.docx`;
+        if (window.confirm(`“${name}” already exists in Case files. Overwrite it with a freshly generated copy?`)) {
+          setGenTemplateId(null);
+          return generateTemplate(tpl, true);
+        }
         return;
       }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const disposition = res.headers.get('content-disposition') ?? '';
-      const match = disposition.match(/filename="([^"]+)"/);
-      a.download = match?.[1] ?? 'doc-pack.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus((j as any).error || `Couldn’t generate “${tpl.name}” (HTTP ${res.status}).`);
+        return;
+      }
+      setStatus(`Generated “${(j as any).file?.name ?? tpl.name}” — saved to Case files.`);
+      await loadFiles();
     } catch (e) {
       setStatus((e as Error).message);
     } finally {
-      setDocPackLoading(false);
+      setGenTemplateId(null);
     }
   }
 
@@ -1131,8 +1154,11 @@ export default function Taskpane() {
   // Auto-load the live OneDrive folder when the Files tab opens, so the literal
   // files show without a click.
   useEffect(() => {
-    if (tab === 'paperclip' && matterId) loadFiles(matterId);
-  }, [tab, matterId, loadFiles]);
+    if (tab === 'paperclip' && matterId) {
+      loadFiles(matterId);
+      loadTemplates(matterId);
+    }
+  }, [tab, matterId, loadFiles, loadTemplates]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
   return (
@@ -1615,58 +1641,116 @@ export default function Taskpane() {
             </>
           )}
 
-          {/* ── FILES TAB — a mini file explorer over the matter's OneDrive folder ── */}
+          {/* ── FILES TAB — Case files (live OneDrive folder) + Templates ── */}
           {tab === 'paperclip' && matterId && (
-            <Card>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Label>Files</Label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  {matterInfo?.matter?.folder_web_url && (
-                    <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
-                      <Icon name="clip" size={15} />
-                    </a>
-                  )}
-                  <button style={S.iconAction} onClick={() => fileInputRef.current?.click()} title="Upload a file" aria-label="Upload a file">
-                    <Icon name="upload" size={15} />
-                  </button>
-                  <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
-                    <Icon name="refresh" size={15} />
-                  </button>
-                </div>
-              </div>
-              <button
-                style={{ ...S.secondary, width: '100%', marginBottom: 10, opacity: docPackLoading ? 0.6 : 1 }}
-                onClick={downloadDocPack}
-                disabled={docPackLoading}
-                title="Fill all document templates with this matter's data and download as a zip"
-              >
-                {docPackLoading ? 'Generating…' : '⬇ Generate doc pack'}
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                style={{ display: 'none' }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
-              />
-              {files.length > 0 ? (
-                <div style={S.fileList}>
-                  {files.map((f) => {
-                    const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
-                    const size = fmtSize(f.size);
-                    return (
-                      <a key={f.id} style={S.fileRow} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
-                        <span style={S.fileIcon}><Icon name="file" size={15} /></span>
-                        <span style={S.fileName}>{f.name}</span>
-                        {size && <span style={S.fileMeta}>{size}</span>}
-                        {when && <span style={S.fileMeta}>{when}</span>}
+            <>
+              {/* Case files — the live contents of the matter's OneDrive folder. */}
+              <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Label>Case files</Label>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {matterInfo?.matter?.folder_web_url && (
+                      <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
+                        <Icon name="clip" size={15} />
                       </a>
-                    );
-                  })}
+                    )}
+                    <button style={S.iconAction} onClick={() => fileInputRef.current?.click()} title="Upload a file" aria-label="Upload a file">
+                      <Icon name="upload" size={15} />
+                    </button>
+                    <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
+                      <Icon name="refresh" size={15} />
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <p style={S.muted}>This folder is empty — upload a file, or drop one into OneDrive.</p>
-              )}
-            </Card>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  style={{ display: 'none' }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ''; }}
+                />
+                {files.length > 0 ? (
+                  <div style={S.fileList}>
+                    {files.map((f) => {
+                      const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
+                      const size = fmtSize(f.size);
+                      return (
+                        <a key={f.id} style={S.fileRow} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
+                          <span style={S.fileIcon}><Icon name="file" size={15} /></span>
+                          <span style={S.fileName}>{f.name}</span>
+                          {size && <span style={S.fileMeta}>{size}</span>}
+                          {when && <span style={S.fileMeta}>{when}</span>}
+                        </a>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={S.muted}>This folder is empty — upload a file, generate a template below, or drop one into OneDrive.</p>
+                )}
+              </Card>
+
+              {/* Templates — fill a firm template with this matter's data. */}
+              <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Label>Templates</Label>
+                  <a
+                    style={S.iconAction}
+                    href="/conveyi/doc-packs"
+                    target="_blank"
+                    rel="noreferrer"
+                    title="How document templates work"
+                    aria-label="How document templates work"
+                  >
+                    <Icon name="info" size={15} />
+                  </a>
+                </div>
+                {templates.length > 0 ? (
+                  <div style={S.fileList}>
+                    {templates.map((tpl) => {
+                      const busy = genTemplateId === tpl.id;
+                      const aiLocked = tpl.has_llm_prompts && !templatesPremium;
+                      return (
+                        <div key={tpl.id} style={{ ...S.fileRow, cursor: 'default' }} title={tpl.description || tpl.name}>
+                          <span style={S.fileIcon}><Icon name="file" size={15} /></span>
+                          <span style={S.fileName}>
+                            {tpl.name}
+                            {tpl.has_llm_prompts && (
+                              <span
+                                style={{ marginLeft: 6, fontSize: 10, color: aiLocked ? '#94a3b8' : '#6d28d9', fontWeight: 700 }}
+                                title={aiLocked ? 'Contains AI-written sections — Team plan only. They’ll be left blank on your plan.' : 'Contains AI-written sections'}
+                              >
+                                AI{aiLocked ? ' · Team only' : ''}
+                              </span>
+                            )}
+                          </span>
+                          <button
+                            style={{ ...S.pillBtn, opacity: busy ? 0.6 : 1 }}
+                            onClick={() => generateTemplate(tpl)}
+                            disabled={busy || !!genTemplateId}
+                            title="Fill this template with the matter's data and save it to Case files"
+                          >
+                            {busy ? 'Generating…' : 'Generate'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={S.muted}>
+                    No templates yet.{me?.role === 'ADMIN' ? ' Add your firm’s .docx templates from Manage templates.' : ' Ask your firm admin to add some.'}
+                  </p>
+                )}
+                {me?.role === 'ADMIN' && (
+                  <a
+                    href="/admin"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}
+                  >
+                    Manage templates →
+                  </a>
+                )}
+              </Card>
+            </>
           )}
 
         </>
@@ -1850,6 +1934,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     chart: <><path d="M4 4v16h16" /><path d="M8 17v-5" /><path d="M13 17V8" /><path d="M18 17v-3" /></>,
     sparkle: <path d="M12 3l1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7z" />,
     alert: <><path d="M10.3 4 2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 4a2 2 0 0 0-3.4 0z" /><path d="M12 9v4" /><path d="M12 17h.01" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 16v-4" /><path d="M12 8h.01" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}>

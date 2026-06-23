@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import PizZip from 'pizzip';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
@@ -43,8 +44,8 @@ export async function POST(req: NextRequest) {
 
     if (!file) return fail(Object.assign(new Error('No file uploaded.'), { status: 400 }));
     if (!name) return fail(Object.assign(new Error('Template name is required.'), { status: 400 }));
-    if (!file.name.endsWith('.docx')) {
-      return fail(Object.assign(new Error('Only .docx files are supported.'), { status: 400 }));
+    if (!/\.docx$/i.test(file.name)) {
+      return fail(Object.assign(new Error('Only Word (.docx) files are supported.'), { status: 400 }));
     }
     if (file.size > 10 * 1024 * 1024) {
       return fail(Object.assign(new Error('File too large (max 10 MB).'), { status: 400 }));
@@ -52,6 +53,19 @@ export async function POST(req: NextRequest) {
 
     const bytes = await file.arrayBuffer();
     const content = Buffer.from(bytes);
+
+    // Verify it's a genuine .docx (a zip containing word/document.xml), not a
+    // renamed PDF/other file — those would parse cleanly here but blow up at
+    // fill time. PizZip throws on a non-zip; a missing main part means it isn't
+    // a Word document.
+    try {
+      const zip = new PizZip(content);
+      if (!zip.file('word/document.xml')) {
+        return fail(Object.assign(new Error('That file isn’t a valid Word document.'), { status: 400 }));
+      }
+    } catch {
+      return fail(Object.assign(new Error('That file isn’t a valid .docx file.'), { status: 400 }));
+    }
 
     // Detect [[LLM prompt]] blocks in the raw docx XML (a heuristic — accurate
     // enough for the flag, docxtemplater does the proper parse at fill time).
