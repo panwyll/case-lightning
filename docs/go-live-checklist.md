@@ -114,3 +114,48 @@ DPA in place and an entry in your **Record of Processing Activities**:
 - [ ] Complete a live Stripe checkout → plan/gating correct.
 - [ ] `/internal` reachable only with `INTERNAL_DASHBOARD_KEY`.
 - [ ] Error monitoring/logging in place (Vercel logs retained; alert on 5xx).
+
+---
+
+## 8. Outlook add-in store (AppSource / Microsoft commercial marketplace)
+
+The add-in is distributed by submitting its manifest to **Partner Center →
+Microsoft 365 and Copilot** (formerly Office Store / AppSource). Manifest source:
+[`app/addin/manifest/route.ts`](../app/addin/manifest/route.ts) (dynamic) and the
+checked-in [`public/addin/manifest.xml`](../public/addin/manifest.xml) (what you
+upload). Keep the two in sync, and **keep `<Id>` constant forever** (changing it
+orphans every install).
+
+### 8a. Manifest must pass validation — code, no input needed
+- [x] Manifest passes `npx office-addin-manifest validate` (schema, HTTPS, icons, source location). Re-run after any manifest edit.
+- [x] Support URL resolves (was `/how-it-works` → 404; fixed to `/conveyi/how-it-works`). AppSource rejects unreachable support URLs.
+- [ ] Every URL is HTTPS and on the production origin (no localhost/preview URLs in the submitted manifest).
+- [ ] All five icon sizes (16/32/64/80/128) return 200 and are correct dimensions.
+- [ ] `Version` is bumped on every resubmission (Store requires a higher version than the live one).
+- [ ] `AppDomains` lists every external domain the **taskpane itself** navigates to (the Entra sign-in happens in the Office dialog API, but verify nothing else navigates off-origin).
+- [ ] `Permissions` (`ReadWriteMailbox`) justified in the submission notes — it's a high scope; reviewers ask why (answer: read thread to draft, create draft replies, stamp categories).
+
+### 8b. Required listing URLs — code (drafts done, needs your review)
+- [x] **Privacy policy** page live at `/conveyi/privacy` (AppSource mandatory). **Needs legal review** — fill placeholders: legal entity, contact email, ICO reg no., address.
+- [x] **Terms of use** page live at `/conveyi/terms` (AppSource mandatory). **Needs legal review.**
+- [x] Privacy & Terms linked from the site footer.
+- [ ] **Support contact**: dedicated support email/URL for the listing (currently SupportUrl → how-it-works). Decide a real support channel. *(needs your input)*
+
+### 8c. Listing assets — needs your input
+- [ ] **Store logo** 300×300 PNG (transparent), plus the listing tile. Existing `icon-128.png` is too small — needs a proper export. *(design input)*
+- [ ] **Screenshots**: 1366×768 PNG, 1–10 of the add-in in Outlook. Requires the running add-in on a real mailbox. *(manual capture)*
+- [ ] Short description (≤100 chars) and long description (listing copy) — approve wording.
+- [ ] Optional promo video.
+- [ ] Categories, search keywords, supported languages (en-GB).
+
+### 8d. Partner Center account & identity — needs your input
+- [ ] Microsoft **Partner Center** account enrolled in the commercial marketplace program (company verification, tax/payout profile — can take days).
+- [ ] **Publisher domain verified** and the Entra app registration is **multi-tenant** (firms sign in from their own tenants).
+- [ ] App registration redirect URIs include the production callback; admin-consent URL ready for firms whose IT locks down add-ins.
+- [ ] Decide listing type: free / trial / paid-via-Microsoft. (Billing is currently via Stripe in-app, so the listing is likely "free to install, sign-in required".)
+
+### 8e. Validation policies & certification — mixed
+- [ ] Meets [Commercial marketplace certification policy 1140](https://learn.microsoft.com/legal/marketplace/certification-policies) (functionality, security, no broken links, working test account).
+- [ ] Provide reviewer **test credentials** + clear test steps (how to reach a matched email, what to expect).
+- [ ] Works on Outlook on the web + Windows + Mac (manifest already targets these). Decide whether to opt into **mobile** (would need a MobileFormFactor + a mobile-friendly taskpane).
+- [ ] (Optional) Microsoft 365 Certification for enterprise trust — heavyweight security review; consider post-launch.

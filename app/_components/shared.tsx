@@ -89,6 +89,8 @@ export function SiteFooter() {
           <a href={ROUTES.howItWorks} className="hover:text-ink">How it works</a>
           <a href={ROUTES.pricing} className="hover:text-ink">Pricing</a>
           <a href={ROUTES.faq} className="hover:text-ink">FAQ</a>
+          <a href="/conveyi/privacy" className="hover:text-ink">Privacy</a>
+          <a href="/conveyi/terms" className="hover:text-ink">Terms</a>
           <a href={ROUTES.signup} className="hover:text-ink">Get started</a>
           <a href={ROUTES.home} className="hover:text-ink">{PARENT_BRAND}</a>
         </nav>

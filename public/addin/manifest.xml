@@ -21,7 +21,7 @@
   <Description DefaultValue="Case-aware AI email drafting and AI case management for UK conveyancers — inside Outlook."/>
   <IconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-128.png"/>
-  <SupportUrl DefaultValue="https://www.caselightning.co.uk/how-it-works"/>
+  <SupportUrl DefaultValue="https://www.caselightning.co.uk/conveyi/how-it-works"/>
 
   <AppDomains>
     <AppDomain>https://www.caselightning.co.uk</AppDomain>
