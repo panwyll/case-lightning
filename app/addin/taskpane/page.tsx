@@ -407,12 +407,43 @@ export default function Taskpane() {
 
   async function copyReferral() {
     if (!referral) return;
+    const text = referral.referralLink;
+    let ok = false;
+    // Async Clipboard API first — but it's often blocked/absent inside the Office
+    // add-in iframe (needs clipboard-write permission + secure context).
     try {
-      await navigator.clipboard?.writeText(referral.referralLink);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        ok = true;
+      }
+    } catch {
+      /* fall through to the legacy path */
+    }
+    // Legacy fallback — a hidden textarea + execCommand('copy'). Works in Outlook's
+    // embedded webview where the async API is unavailable.
+    if (!ok) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '0';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
       setRefCopied(true);
       setTimeout(() => setRefCopied(false), 2000);
-    } catch {
-      /* clipboard blocked — the input is still selectable for manual copy */
+    } else {
+      setStatus('Couldn’t copy automatically — your code is ' + referral.referralCode + '.');
     }
   }
 
