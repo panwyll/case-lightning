@@ -1325,6 +1325,19 @@ export default function Taskpane() {
               ) : (
                 // Chooser: candidates to pick from, or create a new matter.
                 <>
+                  {/* While creating a new matter, collapse the RAG candidate
+                      selection to a simple "New matter" header until the form
+                      below is submitted (createMatter clears showNewMatter). */}
+                  {showNewMatter ? (
+                    <div style={{ ...S.candidate, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>New matter</strong>
+                        <div style={{ fontSize: 12, color: '#64748b' }}>Complete the form below to create it.</div>
+                      </div>
+                      <button style={S.secondary} onClick={openNewMatter}>Cancel</button>
+                    </div>
+                  ) : (
+                  <>
                   {candidates.length > 0 ? (
                     <>
                       <Label>Likely matters</Label>
@@ -1404,13 +1417,15 @@ export default function Taskpane() {
                   })()}
 
                   <div style={{ ...S.rowWrap, marginTop: 8 }}>
-                    <button style={!matterId && !showNewMatter ? S.primary : S.secondary} onClick={openNewMatter}>
-                      {showNewMatter ? 'Cancel new matter' : '+ New matter'}
+                    <button style={!matterId ? S.primary : S.secondary} onClick={openNewMatter}>
+                      + New matter
                     </button>
                     {matterId && (
                       <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>
                     )}
                   </div>
+                  </>
+                  )}
                 </>
               )}
             </Card>
