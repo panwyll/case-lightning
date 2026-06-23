@@ -9,6 +9,8 @@ verifiable, not aspirational. "Verify" items have a concrete check.
 
 All read in [`lib/server/config.ts`](../lib/server/config.ts). Set for **Production**.
 
+> **Status:** prod `/api/v1/health` shows `db / auth / graph / ai` all green, so `DATABASE_URL`, `SESSION_JWT_SECRET`, the `AZURE_*` trio, and `ANTHROPIC_API_KEY` are present and the site is live on `APP_URL`. Not health-verifiable (confirm by hand): `APP_ENCRYPTION_KEY`, `GRAPH_SCOPES` contents, `VOYAGE_API_KEY`, `CRON_SECRET`, `INTERNAL_DASHBOARD_KEY`.
+
 ### Core
 - [ ] `APP_URL` — the live HTTPS domain (e.g. `https://www.caselightning.co.uk`). Drives OAuth callback, Stripe return URLs, and the Graph notification URL. Must be public (not localhost) or auto-triage refuses to arm.
 - [ ] `DATABASE_URL` — Supabase **pooler** connection string (pgvector needs pooling).
@@ -32,25 +34,33 @@ All read in [`lib/server/config.ts`](../lib/server/config.ts). Set for **Product
 
 ---
 
-## 2. Stripe (feature `billing`)
+## 2. Stripe (feature `billing`) — 3 tiers: plus / pro / enterprise
 
-Billing is gated lazily: `isPremiumTenant()` ([`lib/server/plan.ts`](../lib/server/plan.ts)) **returns `true` for everyone when `STRIPE_SECRET_KEY` is unset** (pilot mode). So until these are set, *premium gating is wide open*.
+Gating is lazy: `getTenantPlan()` ([`lib/server/plan.ts`](../lib/server/plan.ts)) **grants enterprise to everyone when `STRIPE_SECRET_KEY` is unset** (pilot mode). With it set, gating is live: premium = pro|enterprise, team seats = enterprise, Pro is heavy-LLM usage-capped.
 
-- [ ] `STRIPE_SECRET_KEY` — **live** key (`sk_live_…`, not test). This is the switch that turns gating on.
-- [ ] `STRIPE_WEBHOOK_SECRET` — from the live webhook endpoint (`whsec_…`).
-- [ ] `STRIPE_PRICE_STANDARD`, `STRIPE_PRICE_TEAM` — **live-mode** recurring price IDs. Test-mode IDs will 400 at checkout.
-- [ ] `BILLING_CURRENCY` — `gbp`.
+**Current state (test mode):** `billing:true` on prod — `STRIPE_SECRET_KEY` (test, rotated), `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_PLUS/PRO/ENTERPRISE` (test) all set; plan-detection verified against the real price IDs. Good enough to test the flow; **not** launch.
+
+Done (test):
+- [x] `STRIPE_SECRET_KEY` (test, rotated after exposure) + `STRIPE_WEBHOOK_SECRET` set → `billing:true`.
+- [x] `STRIPE_PRICE_PLUS` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_ENTERPRISE` set (Production). Plan resolves by price ID (4/4 verified).
+- [x] Webhook endpoint live + signature-enforced (probe returns 400 "missing signature", not 503).
+- [x] `BILLING_CURRENCY=gbp`.
+
+Remaining for launch:
+- [ ] **Swap test → live**: `sk_live_…`, a **live** webhook endpoint's `whsec_…`, and **live-mode** `price_…` IDs for all three tiers. (Test/live are separate worlds.)
+- [ ] Webhook subscribed to: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `invoice.voided`, `invoice.marked_uncollectible`.
+- [ ] **Configure the Stripe Billing Portal** (Settings → Billing): enable plan switching (add all 3 prices) + cancellation — powers the "Manage subscription" button.
+- [ ] `PRO_HEAVY_LLM_MONTHLY_CAP` — confirm the Pro monthly heavy-LLM cap (default `300`).
 - [ ] `REFERRAL_COMMISSION_PENNIES` — confirm (default `5000` = £50/mo).
-- [ ] Webhook endpoint created in Stripe → `https://<APP_URL>/api/v1/billing/webhook`, subscribed to at least: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`.
-- [ ] **Verify**: a real test purchase on the live keys → `billing_account.plan` flips to `team`/`standard` and `status=active`; then confirm a Standard tenant is blocked from premium (auto-send rules, unlimited onboarding) and a Team tenant is allowed.
-- [ ] Rotate any keys that were ever pasted into chat/logs/test deploys before going live.
+- [ ] Add the three price vars to the **Preview** env too (only Production took; CLI quirk).
+- [ ] **Verify with a test-card purchase** (`4242…`) → `billing_account.plan` = correct tier, `status=active`; Plus blocked from premium, Pro premium-but-single-seat + capped, Enterprise full.
 
 ---
 
 ## 3. Database & migrations
 
 - [ ] Run **all** migrations against prod (`db/migrations/0xx_*.sql`). Prod creds aren't readable from the dev box — run via `npm run migrate` with prod `DATABASE_URL`, or paste into the Supabase SQL editor.
-- [ ] Confirm the latest ones are applied: `021_doc_templates.sql` (doc packs) and `022_auto_triage_flag.sql` (auto-triage self-heal). Without 021 the Templates panel is empty; without 022 the subscription self-heal can't track intent.
+- [ ] Confirm the latest ones are applied: `021_doc_templates.sql` (doc packs), `022_auto_triage_flag.sql` (auto-triage self-heal), `023_three_tier_plans.sql` (plus/pro/enterprise remap). Without 021 the Templates panel is empty; without 022 self-heal can't track intent; without 023 old `standard`/`team` rows won't resolve to a tier.
 - [ ] `select max(version)` (or your migration ledger) matches the highest file number.
 
 ---
