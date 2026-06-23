@@ -2000,13 +2000,12 @@ export default function Taskpane() {
             <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowReferral(false)} title="Close" aria-label="Close">✕</button>
             <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
               <div style={{ fontSize: 30, lineHeight: 1 }}>🎉</div>
-              <div style={{ fontSize: 34, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 6 }}>
-                £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}<span style={{ fontSize: 16, fontWeight: 700, color: '#7c5ce0' }}>/mo</span>
+              <div style={{ fontSize: 40, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 6, lineHeight: 1 }}>
+                £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}
               </div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', marginTop: 2 }}>for every firm you refer</div>
-              <p style={{ fontSize: 12, color: '#475569', margin: '8px 4px 0', lineHeight: 1.5 }}>
-                Recurring credit off your bill — for as long as they stay. Most firms know another firm.
-              </p>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginTop: 6, lineHeight: 1.3 }}>
+                every month<br />for every referral you make
+              </div>
             </div>
 
             {referral ? (
