@@ -27,13 +27,14 @@ const STAGE_LABELS: Record<string, string> = {
   REVIEW_SIGNING: '4 · Review & signing',
   EXCHANGE: '5 · Exchange',
   COMPLETION: '6 · Completion',
+  POST_COMPLETION: '7 · Post-completion',
 };
 const STATUS_LABELS: Record<string, string> = {
   ON_TRACK: 'On track',
   NEEDS_ATTENTION: 'Needs attention',
   BLOCKED: 'Blocked',
 };
-const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION'];
+const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'];
 // The "Colour" option column on the Statuses list → drives the board's status
 // conditional formatting. Firms can see (and the board honours) the mapping.
 const STATUS_COLOUR: Record<string, string> = { 'On track': 'Green', 'Needs attention': 'Amber', 'Blocked': 'Red' };

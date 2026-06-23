@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
-import { draftReply, retrieveMatterContext } from '@/lib/server/ai';
+import { draftReply, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
 import { reviewAttachmentsContext } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
@@ -44,6 +44,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           [body.matterId, user.tenantId]
         )
       : null;
+
+    // Which side we act for, to steer the draft. Guarded for pre-migration-020 deploys.
+    let actingFor: string | undefined;
+    if (body.matterId) {
+      try {
+        const t = await queryOne<{ track: string }>(`select track from matter where id = $1 and tenant_id = $2`, [body.matterId, user.tenantId]);
+        actingFor = actingForPhrase(t?.track);
+      } catch {
+        /* track column not migrated yet */
+      }
+    }
 
     const template = body.templateId
       ? await queryOne<any>(`select * from template where id = $1 and tenant_id = $2 and is_active = true`, [
@@ -85,6 +96,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       tenantId: user.tenantId,
       matterId: body.matterId ?? null,
       tone: body.tone,
+      actingFor,
       threadText,
       matterFacts: matterSummary?.facts ?? {},
       retrievedContext,

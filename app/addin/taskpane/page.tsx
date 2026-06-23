@@ -121,6 +121,15 @@ const STAGES: Array<[string, string]> = [
   ['REVIEW_SIGNING', '4 · Review & signing'],
   ['EXCHANGE', '5 · Exchange'],
   ['COMPLETION', '6 · Completion'],
+  ['POST_COMPLETION', '7 · Post-completion'],
+];
+
+// Which side of the transaction we act for — frames the stage model and the
+// drafting AI (so it doesn't assume we're always the buyer).
+const TRACKS: Array<[string, string]> = [
+  ['PURCHASE', 'Purchase (acting for buyer)'],
+  ['SALE', 'Sale (acting for seller)'],
+  ['REMORTGAGE', 'Remortgage (acting for borrower)'],
 ];
 const STATUS_FLAGS: Array<[string, string]> = [
   ['ON_TRACK', 'On track'],
@@ -888,6 +897,7 @@ export default function Taskpane() {
       );
       setPreview({ kind: 'reply', to: sender?.email || 'the sender', subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
       setStatus('Reply draft created in Outlook (never sent) — preview below.');
+      fileCurrentEmail();
       return true;
     });
   }
@@ -932,6 +942,7 @@ export default function Taskpane() {
         setPreview({ kind: 'forward', to: a.display_name || a.email, subject: r.subject, bodyHtml: `<p>${escapeHtml(r.instructions)}</p><p style="color:#64748b">— original thread forwarded below —</p>`, webLink: r.webLink });
       }
       setStatus(`Assigned to ${a.display_name || a.email} on the tracker and a forward drafted in Outlook.`);
+      fileCurrentEmail();
       return true;
     });
   }
@@ -1022,6 +1033,14 @@ export default function Taskpane() {
     }).catch(() => {});
   }
 
+  // The inbox is an in-tray: once the user has actioned an email (replied,
+  // updated, delegated, marked handled) we file it into its matter's Outlook
+  // subfolder to clear it. Fire-and-forget; no-ops without a matter/folder.
+  function fileCurrentEmail() {
+    if (!matterId || !messageId) return;
+    api(`/matters/${matterId}/file-email`, { method: 'POST', body: JSON.stringify({ messageId }) }).catch(() => {});
+  }
+
   // Draft a fresh outbound update to a specific party on the matter (not a reply
   // to the sender) and create it as an Outlook draft addressed to them.
   async function draftUpdateTo(contact: { email: string; name?: string | null; role?: string }) {
@@ -1042,6 +1061,7 @@ export default function Taskpane() {
       );
       setPreview({ kind: 'update', to: contact.name || contact.email, subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
       setStatus(`Update to ${contact.name || contact.email} drafted in Outlook (never sent) — preview below.`);
+      fileCurrentEmail();
       return r;
     });
   }
@@ -1052,6 +1072,7 @@ export default function Taskpane() {
     setIgnored(true);
     setChosenAction('ignore');
     recordAction('ignore');
+    fileCurrentEmail();
     setStatus('Marked as handled — no reply needed.');
   }
 
@@ -1863,6 +1884,12 @@ function HousePanel({
   return (
     <section style={S.card}>
       <Label>{matter.matter_ref}</Label>
+      <label style={{ display: 'block', marginBottom: 6 }}>
+        <span style={S.fieldLabel}>Acting for</span>
+        <select style={{ ...S.input, marginBottom: 0 }} value={matter.track || 'PURCHASE'} onChange={(e) => onPatch({ track: e.target.value })}>
+          {TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </label>
       {field('Property address', 'propertyAddress')}
       {field('Purchase price', 'purchasePrice', 'text', priceValid)}
       {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}
