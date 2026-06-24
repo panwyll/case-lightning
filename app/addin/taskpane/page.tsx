@@ -322,6 +322,7 @@ export default function Taskpane() {
   const [pbSuggestion, setPbSuggestion] = useState<{ playbookId: string; reason: string } | null>(null);
   const suggestedFor = useRef<string>('');
   const [quick, setQuick] = useState<{ type: 'DELEGATE' | 'NOTIFY'; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
+  const [expandedPb, setExpandedPb] = useState<string | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -597,6 +598,7 @@ export default function Taskpane() {
           setPbSuggestion(null);
           setQuick(null);
           setPbResults(null);
+          setExpandedPb(null);
           setIgnored(false);
           setLinkOpen(false);
           setPreview(null);
@@ -1746,8 +1748,8 @@ export default function Taskpane() {
                         </label>
                       )}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                        <button style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }} onClick={runQuick} disabled={quick.type === 'DELEGATE' ? !quick.delegateToUserId : !quick.notifyEmail.trim()}>Run</button>
-                        <button style={S.secondary} onClick={() => setQuick(null)}>Cancel</button>
+                        <button style={{ ...S.primary, marginTop: 0, flex: 1, width: 'auto', padding: '8px 0' }} onClick={runQuick} disabled={quick.type === 'DELEGATE' ? !quick.delegateToUserId : !quick.notifyEmail.trim()}>Run</button>
+                        <button style={{ ...S.secondary, flex: 1 }} onClick={() => setQuick(null)}>Cancel</button>
                       </div>
                     </div>
                   )}
@@ -1764,18 +1766,31 @@ export default function Taskpane() {
                           .sort((a, b) => (b.id === pbSuggestion?.playbookId ? 1 : 0) - (a.id === pbSuggestion?.playbookId ? 1 : 0))
                           .map((p) => {
                             const suggested = p.id === pbSuggestion?.playbookId;
+                            const open = expandedPb === p.id;
                             return (
-                              <button
-                                key={p.id}
-                                style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, padding: '5px 9px', opacity: runningPb && runningPb !== p.id ? 0.5 : 1, ...(suggested ? { borderColor: '#5A27E0', background: '#f5f3ff' } : {}) }}
-                                onClick={() => runPlaybookFor(p)}
-                                disabled={!!runningPb}
-                                title={p.description || `Run ${p.name}`}
-                              >
-                                {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800, flex: 'none' }}>▶</span>}
-                                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
-                                {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
-                              </button>
+                              <div key={p.id} style={{ border: '1px solid', borderColor: suggested ? '#5A27E0' : '#cbd5e1', borderRadius: 7, overflow: 'hidden' }}>
+                                <button
+                                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 9px', border: 'none', background: suggested ? '#f5f3ff' : '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#0f172a' }}
+                                  onClick={() => setExpandedPb(open ? null : p.id)}
+                                  title={p.name}
+                                >
+                                  <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                  {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
+                                </button>
+                                {open && (
+                                  <div style={{ padding: '8px 9px', borderTop: '1px solid #f1f5f9' }}>
+                                    {p.description && <p style={{ fontSize: 12, color: '#475569', margin: '0 0 8px', lineHeight: 1.4 }}>{p.description}</p>}
+                                    <button
+                                      style={{ ...S.primary, marginTop: 0, width: 'auto', padding: '6px 18px' }}
+                                      onClick={() => runPlaybookFor(p)}
+                                      disabled={!!runningPb}
+                                    >
+                                      {runningPb === p.id ? 'Running…' : 'Run'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
                       </div>
@@ -1799,13 +1814,13 @@ export default function Taskpane() {
                           )}
                           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                             <button
-                              style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }}
+                              style={{ ...S.primary, marginTop: 0, flex: 1, width: 'auto', padding: '8px 0' }}
                               onClick={confirmRunInputs}
                               disabled={(pbInputs.needsDelegate && !pbInputs.delegateToUserId) || (pbInputs.needsNotify && !pbInputs.notifyEmail.trim())}
                             >
                               Run
                             </button>
-                            <button style={S.secondary} onClick={() => setPbInputs(null)}>Cancel</button>
+                            <button style={{ ...S.secondary, flex: 1 }} onClick={() => setPbInputs(null)}>Cancel</button>
                           </div>
                         </div>
                       )}
