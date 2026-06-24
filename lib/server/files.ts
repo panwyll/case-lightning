@@ -44,22 +44,24 @@ export async function processMatterFile(
 
   const buffer = opts.bytes ?? (await downloadDriveItem(user.userId, opts.itemId));
   const isPdf = opts.mimeType === 'application/pdf' || /\.pdf$/i.test(opts.fileName);
+  const isImage = /^image\/(png|jpe?g|gif|webp)$/i.test(opts.mimeType || '') || /\.(png|jpe?g|gif|webp)$/i.test(opts.fileName);
 
-  // Read + classify only what we can verify (PDF via Claude); anything else is
-  // logged but never auto-notified.
+  // Read + classify what we can verify (PDFs and images via Claude); anything else
+  // is logged but never auto-notified.
   let documentType = '';
   let substantive = false;
   let readable = false;
   let indexText = ''; // document content to embed into the matter's RAG index
-  if (isPdf) {
+  if (isPdf || isImage) {
     try {
       const { review } = await reviewDocument({
         userId: user.userId,
         tenantId: user.tenantId,
         matterId,
         fileName: opts.fileName,
-        mimeType: 'application/pdf',
-        pdfBase64: buffer.toString('base64'),
+        ...(isPdf
+          ? { pdfBase64: buffer.toString('base64'), mimeType: 'application/pdf' }
+          : { imageBase64: buffer.toString('base64'), mimeType: opts.mimeType || 'image/jpeg' }),
         expectations:
           'Identify the document type and whether it carries substantive content (as opposed to an empty, blank, or placeholder file).',
         retrievedContext: '',

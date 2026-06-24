@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
+import { hasDefinitiveSignal } from '@/lib/server/matching';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
@@ -56,9 +57,10 @@ export async function POST(req: NextRequest) {
         await applyTriageTags(user, message, triage);
         await runAutoRules(user, message, triage);
 
-        // Docs received by email on a matched case always get saved to the matter
-        // folder automatically (best-effort) — no manual "save to matter" step.
-        if (triage.top?.band === 'AUTO' && message.hasAttachments) {
+        // Auto-file attachments only on a DEFINITIVE match (linked thread / case-ref
+        // token) — never on a fuzzy corroboration-only AUTO match, or this email's
+        // documents could be filed into the wrong client's case. Best-effort.
+        if (triage.top?.band === 'AUTO' && hasDefinitiveSignal(triage.top) && message.hasAttachments) {
           await saveEmailAttachmentsToMatter(user, triage.top.matterId, messageId, message.subject).catch((e) =>
             console.error('[graph notification] auto-save attachments failed', (e as Error).message)
           );

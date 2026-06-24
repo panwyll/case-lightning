@@ -24,7 +24,7 @@ import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
-import type { Candidate } from './matching';
+import { hasDefinitiveSignal, type Candidate } from './matching';
 
 // Intents where a reply is the expected next step — so we spend the draft call.
 const REPLY_INTENTS = new Set(['ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
@@ -106,9 +106,13 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
   let triage = input.matterId ? null : await loadStoredTriage(user.tenantId, input.messageId);
   if (!triage) triage = await runTriage(user, message);
 
-  // Use an explicitly-linked matter if given, else the matched matter when the
-  // match is confident enough to act on (AUTO band).
-  const matterId = input.matterId ?? (triage.top?.band === 'AUTO' ? triage.top.matterId : null);
+  // Adopt a matter for DATA (facts, RAG, attachment review, the draft, contact
+  // harvest) only when the association is trustworthy: an explicit link, or a
+  // DEFINITIVE auto-match (linked thread / case-ref token). A fuzzy AUTO match
+  // (corroboration only) is shown as a suggestion to confirm — never injected —
+  // so one client's confidential data can't leak into another's email pre-link.
+  const definitiveMatch = triage.top?.band === 'AUTO' && hasDefinitiveSignal(triage.top);
+  const matterId = input.matterId ?? (definitiveMatch ? triage.top!.matterId : null);
 
   // Prefer the conversationId off the fetched message — it's Graph's own REST
   // value, whereas a client-supplied one may be an Office/EWS id that matches no
@@ -157,7 +161,10 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
   // match rather than whatever tenuous other-case the fuzzy matcher surfaced. The
   // linked matter leads the candidate list so the UI shows a perfect match.
   const explicitlyLinked = Boolean(input.matterId && matter);
-  const matchBand = explicitlyLinked ? 'AUTO' : triage.band;
+  // Present a fuzzy AUTO match (not adopted for data) as a STRONG suggestion to
+  // confirm, not a done deal — keeps the display honest with the no-inject gate.
+  const fuzzyAuto = !input.matterId && triage.top?.band === 'AUTO' && !definitiveMatch;
+  const matchBand = explicitlyLinked ? 'AUTO' : fuzzyAuto ? 'STRONG' : triage.band;
   const candidates = explicitlyLinked
     ? [
         {

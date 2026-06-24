@@ -111,6 +111,17 @@ export function messageSignals(message: any): MessageSignals {
   };
 }
 
+/**
+ * A "definitive" match is anchored on a signal that means the email genuinely
+ * belongs to the matter — an explicit thread link, or the firm's own case-ref token
+ * in the subject — NOT fuzzy corroboration (postcode/name/recurring participant),
+ * which can collide across cases. Matter-scoped WRITES and confidential-data
+ * INJECTION must require this; tagging/suggesting can use any AUTO match.
+ */
+export function hasDefinitiveSignal(c: { signals?: MatchSignal[] } | null | undefined): boolean {
+  return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD' || s.kind === 'CASE_REF_TOKEN');
+}
+
 function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
   const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN');
