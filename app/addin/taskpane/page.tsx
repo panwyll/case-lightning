@@ -575,7 +575,10 @@ export default function Taskpane() {
           if (item.from?.emailAddress) {
             setSender({ name: item.from.displayName || item.from.emailAddress, email: item.from.emailAddress });
           }
-          // Clear last email's assistant result + per-email UI so nothing lingers.
+          // Switching emails (incl. on a pinned task pane) = a clean slate: clear the
+          // previous email's analysis AND every matter-scoped panel, so nothing from
+          // the old case lingers. runAssist (keyed on messageId) then repopulates for
+          // the newly selected email.
           setAssist(null);
           setTriage(null);
           setChosenAction(null);
@@ -584,6 +587,18 @@ export default function Taskpane() {
           setPreview(null);
           setDelegateAssignee('');
           setDelegateInstructions('');
+          setMatterId('');
+          setMatterInfo(null);
+          setSummary(null);
+          setFacts(null);
+          setTasks([]);
+          setDocs([]);
+          setChanging(false);
+          setShowNewMatter(false);
+          setMatterSearch('');
+          setMatterResults([]);
+          setRiskOk(false);
+          setTab('email');
         };
         Office.onReady(() => {
           loadItem();
