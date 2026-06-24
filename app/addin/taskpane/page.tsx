@@ -1133,13 +1133,24 @@ export default function Taskpane() {
     const pollKey = messageId;
     assistPollRef.current = pollKey; // cancels any in-flight poll for a prior email
     setAssistError(false);
-    const call = () =>
-      api<AssistData>('/assist', {
-        method: 'POST',
-        // Omit tone so the response matches the precomputed cache; tone-specific
-        // redrafts go through the dedicated draft-reply path.
-        body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined }),
-      });
+    // Watchdog every /assist call: a request stalled in the Office webview would
+    // otherwise leave the "Reading the email…" toast hanging forever. Abort after
+    // 30s so the toast clears and the panel can show a retry.
+    const call = async (): Promise<AssistData> => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 30000);
+      try {
+        return await api<AssistData>('/assist', {
+          method: 'POST',
+          signal: ctrl.signal,
+          // Omit tone so the response matches the precomputed cache; tone-specific
+          // redrafts go through the dedicated draft-reply path.
+          body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined }),
+        });
+      } finally {
+        clearTimeout(t);
+      }
+    };
 
     // The first call returns fast — either the cached full result or just the
     // fast half — so the spinner clears quickly and the situation shows at once.
