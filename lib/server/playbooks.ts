@@ -150,6 +150,11 @@ export async function runPlaybook(user: SessionUser, playbookId: string, ctx: Ru
   if (!pb) throw new Error('Playbook not found or disabled.');
 
   const steps = Array.isArray(pb.steps) ? pb.steps : [];
+  return executeSteps(user, steps, ctx, inputs);
+}
+
+/** Run a list of steps directly — shared by saved playbooks and one-off actions. */
+export async function executeSteps(user: SessionUser, steps: PlaybookStep[], ctx: RunContext, inputs: RunInputs = {}): Promise<{ matterId: string | null; results: StepResult[] }> {
   let matterId = ctx.matterId ?? null;
   const results: StepResult[] = [];
 

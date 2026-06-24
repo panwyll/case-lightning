@@ -321,6 +321,7 @@ export default function Taskpane() {
   const [pbInputs, setPbInputs] = useState<{ p: { id: string; name: string; steps?: any[] }; needsDelegate: boolean; needsNotify: boolean; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
   const [pbSuggestion, setPbSuggestion] = useState<{ playbookId: string; reason: string } | null>(null);
   const suggestedFor = useRef<string>('');
+  const [quick, setQuick] = useState<{ type: 'DELEGATE' | 'NOTIFY'; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -594,6 +595,8 @@ export default function Taskpane() {
           setTriage(null);
           setChosenAction(null);
           setPbSuggestion(null);
+          setQuick(null);
+          setPbResults(null);
           setIgnored(false);
           setLinkOpen(false);
           setPreview(null);
@@ -1014,6 +1017,43 @@ export default function Taskpane() {
       notifyEmail: pbInputs.needsNotify ? pbInputs.notifyEmail.trim() || undefined : undefined,
       notifyName: pbInputs.needsNotify ? pbInputs.notifyName.trim() || undefined : undefined,
     });
+  }
+
+  // One-off Delegate / Notify actions (single workflow step, no saved workflow).
+  function openQuick(type: 'DELEGATE' | 'NOTIFY') {
+    const client = (matterInfo?.contacts ?? []).find((c: any) => c.role === 'CLIENT');
+    setPbResults(null);
+    setQuick({ type, delegateToUserId: assignees[0]?.id ?? '', notifyEmail: client?.email ?? '', notifyName: client?.name ?? '' });
+  }
+  async function runQuick() {
+    if (!quick) return;
+    setRunningPb('quick');
+    const a = assignees.find((x) => x.id === quick.delegateToUserId);
+    const inputs =
+      quick.type === 'DELEGATE'
+        ? { delegateToUserId: quick.delegateToUserId, delegateToEmail: a?.email, delegateToName: a?.display_name || a?.email }
+        : { notifyEmail: quick.notifyEmail.trim(), notifyName: quick.notifyName.trim() || undefined };
+    setQuick(null);
+    try {
+      const r = await api<{ results: Array<{ type: string; ok: boolean; detail: string }> }>('/playbooks/run-step', {
+        method: 'POST',
+        body: JSON.stringify({
+          step: { type: quick.type, config: {} },
+          messageId: messageId || undefined,
+          conversationId: conversationId || undefined,
+          subject: subject || undefined,
+          matterId: matterId || undefined,
+          inputs,
+        }),
+      });
+      setPbResults({ name: quick.type === 'DELEGATE' ? 'Delegate' : 'Notify', results: r.results });
+      loadTasks();
+      loadMatter();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setRunningPb(null);
+    }
   }
 
   const loadTemplates = useCallback(async (mid = matterId) => {
@@ -1677,97 +1717,120 @@ export default function Taskpane() {
               {/* Action — send a fresh update to a party on the matter. Data-driven
                   from the address book (one chip per real contact), so it stays
                   compact rather than a fixed grid of role buttons. */}
-              {effectiveAction === 'action' && (() => {
-                return (
-                  <div style={S.actionPanel}>
-                    {/* Workflows — named multi-step actions */}
-                    {(playbooks.length > 0 || me?.role === 'ADMIN') && (
-                      <div style={{ marginTop: 12 }}>
-                        <span style={S.updateLabel}>Workflows</span>
-                        {playbooks.length === 0 && (
-                          <p style={{ ...S.muted, margin: '4px 0 0' }}>No workflows yet — create one to run a set of steps in one go.</p>
-                        )}
-                        {pbSuggestion && (
-                          <p style={{ fontSize: 11, color: '#5A27E0', margin: '4px 0 0' }}>
-                            ✦ Suggested for this email{pbSuggestion.reason ? ` — ${pbSuggestion.reason}` : ''}
-                          </p>
-                        )}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-                          {[...playbooks]
-                            .sort((a, b) => (b.id === pbSuggestion?.playbookId ? 1 : 0) - (a.id === pbSuggestion?.playbookId ? 1 : 0))
-                            .map((p) => {
-                              const suggested = p.id === pbSuggestion?.playbookId;
-                              return (
-                                <button
-                                  key={p.id}
-                                  style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1, ...(suggested ? { borderColor: '#5A27E0', background: '#f5f3ff' } : {}) }}
-                                  onClick={() => runPlaybookFor(p)}
-                                  disabled={!!runningPb}
-                                  title={p.description || `Run ${p.name}`}
-                                >
-                                  {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
-                                  <span style={{ flex: 1, minWidth: 0 }}>
-                                    <span style={{ fontWeight: 700 }}>
-                                      {p.name}
-                                      {suggested && <span style={{ marginLeft: 6, fontSize: 10, color: '#5A27E0', fontWeight: 800 }}>SUGGESTED</span>}
-                                    </span>
-                                    {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                        </div>
-                        {pbInputs && (
-                          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
-                            <SubLabel>Run “{pbInputs.p.name}”</SubLabel>
-                            {pbInputs.needsDelegate && (
-                              <label style={{ display: 'block', marginBottom: 6 }}>
-                                <span style={S.fieldLabel}>Delegate to</span>
-                                <select style={{ ...S.input, marginBottom: 0 }} value={pbInputs.delegateToUserId} onChange={(e) => setPbInputs({ ...pbInputs, delegateToUserId: e.target.value })}>
-                                  <option value="">Choose a team member…</option>
-                                  {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
-                                </select>
-                              </label>
-                            )}
-                            {pbInputs.needsNotify && (
-                              <label style={{ display: 'block', marginBottom: 6 }}>
-                                <span style={S.fieldLabel}>Notify (email)</span>
-                                <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={pbInputs.notifyEmail} onChange={(e) => setPbInputs({ ...pbInputs, notifyEmail: e.target.value })} />
-                              </label>
-                            )}
-                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                              <button
-                                style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }}
-                                onClick={confirmRunInputs}
-                                disabled={(pbInputs.needsDelegate && !pbInputs.delegateToUserId) || (pbInputs.needsNotify && !pbInputs.notifyEmail.trim())}
-                              >
-                                Run
-                              </button>
-                              <button style={S.secondary} onClick={() => setPbInputs(null)}>Cancel</button>
-                            </div>
-                          </div>
-                        )}
-                        {pbResults && (
-                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
-                            <SubLabel>{pbResults.name} — done</SubLabel>
-                            <ul style={{ ...S.ul, fontSize: 12 }}>
-                              {pbResults.results.map((r, i) => (
-                                <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>{r.ok ? '✓' : '✕'} {r.detail}</li>
-                              ))}
-                            </ul>
-                            <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
-                          </div>
-                        )}
-                        {me?.role === 'ADMIN' && (
-                          <a href="/admin" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
-                            Manage workflows →
-                          </a>
-                        )}
-                      </div>
-                    )}
+              {effectiveAction === 'action' && (
+                <div style={S.actionPanel}>
+                  {/* One-off actions */}
+                  <span style={S.updateLabel}>Quick actions</span>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button style={{ ...S.secondary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => openQuick('DELEGATE')} disabled={!!runningPb}>
+                      <Icon name="user" size={14} /> Delegate
+                    </button>
+                    <button style={{ ...S.secondary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => openQuick('NOTIFY')} disabled={!!runningPb}>
+                      <Icon name="mail" size={14} /> Notify
+                    </button>
                   </div>
-                );
-              })()}
+                  {quick && (
+                    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
+                      {quick.type === 'DELEGATE' ? (
+                        <label style={{ display: 'block', marginBottom: 6 }}>
+                          <span style={S.fieldLabel}>Delegate to</span>
+                          <select style={{ ...S.input, marginBottom: 0 }} value={quick.delegateToUserId} onChange={(e) => setQuick({ ...quick, delegateToUserId: e.target.value })}>
+                            <option value="">Choose a team member…</option>
+                            {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                          </select>
+                        </label>
+                      ) : (
+                        <label style={{ display: 'block', marginBottom: 6 }}>
+                          <span style={S.fieldLabel}>Notify (email)</span>
+                          <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={quick.notifyEmail} onChange={(e) => setQuick({ ...quick, notifyEmail: e.target.value })} />
+                        </label>
+                      )}
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        <button style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }} onClick={runQuick} disabled={quick.type === 'DELEGATE' ? !quick.delegateToUserId : !quick.notifyEmail.trim()}>Run</button>
+                        <button style={S.secondary} onClick={() => setQuick(null)}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Workflows — named multi-step actions */}
+                  {(playbooks.length > 0 || me?.role === 'ADMIN') && (
+                    <div style={{ marginTop: 12 }}>
+                      <span style={S.updateLabel}>Workflows</span>
+                      {playbooks.length === 0 && (
+                        <p style={{ ...S.muted, margin: '4px 0 0' }}>No workflows yet.</p>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
+                        {[...playbooks]
+                          .sort((a, b) => (b.id === pbSuggestion?.playbookId ? 1 : 0) - (a.id === pbSuggestion?.playbookId ? 1 : 0))
+                          .map((p) => {
+                            const suggested = p.id === pbSuggestion?.playbookId;
+                            return (
+                              <button
+                                key={p.id}
+                                style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, padding: '5px 9px', opacity: runningPb && runningPb !== p.id ? 0.5 : 1, ...(suggested ? { borderColor: '#5A27E0', background: '#f5f3ff' } : {}) }}
+                                onClick={() => runPlaybookFor(p)}
+                                disabled={!!runningPb}
+                                title={p.description || `Run ${p.name}`}
+                              >
+                                {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800, flex: 'none' }}>▶</span>}
+                                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
+                              </button>
+                            );
+                          })}
+                      </div>
+                      {pbInputs && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
+                          <SubLabel>Run “{pbInputs.p.name}”</SubLabel>
+                          {pbInputs.needsDelegate && (
+                            <label style={{ display: 'block', marginBottom: 6 }}>
+                              <span style={S.fieldLabel}>Delegate to</span>
+                              <select style={{ ...S.input, marginBottom: 0 }} value={pbInputs.delegateToUserId} onChange={(e) => setPbInputs({ ...pbInputs, delegateToUserId: e.target.value })}>
+                                <option value="">Choose a team member…</option>
+                                {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                              </select>
+                            </label>
+                          )}
+                          {pbInputs.needsNotify && (
+                            <label style={{ display: 'block', marginBottom: 6 }}>
+                              <span style={S.fieldLabel}>Notify (email)</span>
+                              <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={pbInputs.notifyEmail} onChange={(e) => setPbInputs({ ...pbInputs, notifyEmail: e.target.value })} />
+                            </label>
+                          )}
+                          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                            <button
+                              style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }}
+                              onClick={confirmRunInputs}
+                              disabled={(pbInputs.needsDelegate && !pbInputs.delegateToUserId) || (pbInputs.needsNotify && !pbInputs.notifyEmail.trim())}
+                            >
+                              Run
+                            </button>
+                            <button style={S.secondary} onClick={() => setPbInputs(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
+                      {me?.role === 'ADMIN' && (
+                        <a href="/admin" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
+                          Manage workflows →
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Shared results — quick action or workflow */}
+                  {pbResults && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                      <SubLabel>{pbResults.name} — done</SubLabel>
+                      <ul style={{ ...S.ul, fontSize: 12 }}>
+                        {pbResults.results.map((r, i) => (
+                          <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>{r.ok ? '✓' : '✕'} {r.detail}</li>
+                        ))}
+                      </ul>
+                      <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Ignore — read, nothing to do */}
               {effectiveAction === 'ignore' && (
