@@ -316,6 +316,7 @@ export default function Taskpane() {
   const [filesLoaded, setFilesLoaded] = useState(false);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [attachingId, setAttachingId] = useState<string | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -938,6 +939,28 @@ export default function Taskpane() {
         : `Uploaded and logged to the tracker.${r.reason ? ' ' + r.reason : ''}`
     );
     loadFiles();
+  }
+
+  // Attach a case file to a reply on the current thread — reuses an existing draft
+  // reply if there is one, else creates a reply to the most recent email. Never sends.
+  async function attachToReply(f: FileItem) {
+    if (!matterId || !conversationId) return;
+    setAttachingId(f.id);
+    try {
+      const r = await api<{ reused: boolean; fileName: string }>(`/matters/${matterId}/files/attach-to-reply`, {
+        method: 'POST',
+        body: JSON.stringify({ fileId: f.id, fileName: f.name, mimeType: f.mimeType || undefined, conversationId }),
+      });
+      setStatus(
+        r.reused
+          ? `Attached “${f.name}” to your existing draft reply.`
+          : `Attached “${f.name}” to a new draft reply in Outlook.`
+      );
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setAttachingId(null);
+    }
   }
 
   const loadTemplates = useCallback(async (mid = matterId) => {
@@ -1615,8 +1638,7 @@ export default function Taskpane() {
                   aria-label={lbl}
                   aria-selected={active}
                 >
-                  <Icon name={icon} size={16} />
-                  <span>{lbl}</span>
+                  <Icon name={icon} size={18} />
                 </button>
               );
             })}
@@ -1909,12 +1931,28 @@ export default function Taskpane() {
                       const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
                       const size = fmtSize(f.size);
                       return (
-                        <a key={f.id} style={S.fileRow} href={f.webUrl || undefined} target="_blank" rel="noreferrer" title={f.name}>
-                          <span style={S.fileIcon}><Icon name="file" size={15} /></span>
-                          <span style={S.fileName}>{f.name}</span>
-                          {size && <span style={S.fileMeta}>{size}</span>}
-                          {when && <span style={S.fileMeta}>{when}</span>}
-                        </a>
+                        <div key={f.id} style={S.fileRow} title={f.name}>
+                          <a
+                            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit' }}
+                            href={f.webUrl || undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <span style={S.fileIcon}><Icon name="file" size={15} /></span>
+                            <span style={S.fileName}>{f.name}</span>
+                            {size && <span style={S.fileMeta}>{size}</span>}
+                            {when && <span style={S.fileMeta}>{when}</span>}
+                          </a>
+                          <button
+                            style={{ ...S.ghostIcon, flex: 'none', color: attachingId === f.id ? '#5A27E0' : '#94a3b8', opacity: conversationId ? 1 : 0.4 }}
+                            onClick={() => attachToReply(f)}
+                            disabled={!conversationId || attachingId === f.id}
+                            title={conversationId ? 'Attach to a reply' : 'Open an email to attach this to a reply'}
+                            aria-label="Attach to a reply"
+                          >
+                            <Icon name="clip" size={14} />
+                          </button>
+                        </div>
                       );
                     })}
                   </div>

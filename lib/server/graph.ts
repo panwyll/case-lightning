@@ -210,6 +210,89 @@ export async function createReplyDraft(
   return { id: draft.id, subject, webLink: draft.webLink ?? null };
 }
 
+/** Add a file as an attachment to a message; uses an upload session for >3 MB. */
+const ATTACH_SIMPLE_MAX = 3 * 1024 * 1024;
+export async function addAttachmentToMessage(
+  userId: string,
+  messageId: string,
+  name: string,
+  bytes: Buffer,
+  contentType?: string
+): Promise<void> {
+  const client = await graphClientForUser(userId);
+  const ct = contentType || 'application/octet-stream';
+  if (bytes.length <= ATTACH_SIMPLE_MAX) {
+    await client.api(`/me/messages/${messageId}/attachments`).post({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name,
+      contentBytes: bytes.toString('base64'),
+      contentType: ct,
+    });
+    return;
+  }
+  // Large attachment → chunked upload session.
+  const session = await client.api(`/me/messages/${messageId}/attachments/createUploadSession`).post({
+    AttachmentItem: { attachmentType: 'file', name, size: bytes.length, contentType: ct },
+  });
+  const uploadUrl = session.uploadUrl as string;
+  const CHUNK = 4 * 1024 * 1024;
+  for (let start = 0; start < bytes.length; start += CHUNK) {
+    const end = Math.min(start + CHUNK, bytes.length);
+    const slice = bytes.subarray(start, end);
+    const res = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/octet-stream', 'Content-Range': `bytes ${start}-${end - 1}/${bytes.length}` },
+      body: new Uint8Array(slice),
+    });
+    if (!res.ok && res.status !== 200 && res.status !== 201) {
+      throw new Error(`Attachment upload failed (HTTP ${res.status}).`);
+    }
+  }
+}
+
+/**
+ * Attach a OneDrive file to a reply on a thread. If a draft reply already exists
+ * in the conversation it's reused; otherwise a reply is created to the most recent
+ * message. Returns the draft's webLink and whether an existing draft was reused.
+ */
+export async function attachFileToThreadReply(
+  userId: string,
+  conversationId: string,
+  fileItemId: string,
+  fileName: string,
+  contentType?: string | null
+): Promise<{ webLink: string | null; reused: boolean }> {
+  const client = await graphClientForUser(userId);
+  const res = await client
+    .api('/me/messages')
+    .filter(`conversationId eq '${conversationId.replace(/'/g, "''")}'`)
+    .select('id,isDraft,receivedDateTime,sentDateTime,webLink')
+    .top(200)
+    .get();
+  const msgs = (res.value ?? []) as any[];
+  const time = (m: any) => new Date(m.receivedDateTime ?? m.sentDateTime ?? 0).getTime();
+  const draft = msgs.filter((m) => m.isDraft).sort((a, b) => time(b) - time(a))[0];
+  const latest = msgs.filter((m) => !m.isDraft).sort((a, b) => time(b) - time(a))[0];
+
+  let draftId: string;
+  let webLink: string | null;
+  let reused = false;
+  if (draft) {
+    draftId = draft.id;
+    webLink = draft.webLink ?? null;
+    reused = true;
+  } else {
+    if (!latest) throw new Error('There’s no email in this thread to reply to.');
+    const created = await client.api(`/me/messages/${latest.id}/createReply`).post({ comment: '' });
+    draftId = created.id;
+    webLink = created.webLink ?? null;
+  }
+
+  const bytes = await downloadDriveItem(userId, fileItemId);
+  await addAttachmentToMessage(userId, draftId, fileName, bytes, contentType ?? undefined);
+  return { webLink, reused };
+}
+
 /**
  * Creates a draft FORWARD of a message to a colleague (via Graph createForward, so
  * the original thread is carried along) with an optional instruction comment.
