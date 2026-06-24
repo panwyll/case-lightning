@@ -91,6 +91,27 @@ export interface StepResult {
   detail: string;
 }
 
+/**
+ * Seed the default workflows the first time a firm needs them. Concurrency-safe:
+ * only the caller that flips `playbooks_seeded` does the inserts, so two parallel
+ * loads can't duplicate. The flag means a deliberate delete-all isn't undone.
+ */
+export async function ensureDefaultPlaybooks(tenantId: string, userId: string): Promise<void> {
+  const won = await queryOne<{ id: string }>(
+    `update tenant set playbooks_seeded = true where id = $1 and playbooks_seeded = false returning id`,
+    [tenantId]
+  );
+  if (!won) return;
+  for (const pb of DEFAULT_PLAYBOOKS) {
+    const row = await queryOne<{ id: string }>(
+      `insert into playbook (tenant_id, name, description, steps, created_by)
+       values ($1,$2,$3,$4::jsonb,$5) returning id`,
+      [tenantId, pb.name, pb.description, JSON.stringify(pb.steps), userId]
+    );
+    if (row) await indexPlaybook(tenantId, row.id, pb.name, pb.description);
+  }
+}
+
 export async function listPlaybooks(tenantId: string): Promise<Playbook[]> {
   return query<Playbook>(
     `select id, name, description, steps, enabled, sort_order

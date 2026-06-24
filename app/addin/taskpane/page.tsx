@@ -1291,29 +1291,6 @@ export default function Taskpane() {
 
   // Draft a fresh outbound update to a specific party on the matter (not a reply
   // to the sender) and create it as an Outlook draft addressed to them.
-  async function draftUpdateTo(contact: { email: string; name?: string | null; role?: string }) {
-    if (!matterId) return;
-    await run(`Drafting an update to ${contact.name || contact.email}`, async () => {
-      const r = await api<{ draftId: string | null; webLink?: string | null; subject: string; bodyHtml: string }>(
-        `/matters/${matterId}/draft-update`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            toEmail: contact.email,
-            toName: contact.name || undefined,
-            role: contact.role || undefined,
-            messageId: messageId || undefined,
-            conversationId: conversationId || undefined,
-          }),
-        }
-      );
-      setPreview({ kind: 'update', to: contact.name || contact.email, subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
-      setStatus(`Update to ${contact.name || contact.email} drafted in Outlook (never sent) — preview below.`);
-      fileCurrentEmail();
-      return r;
-    });
-  }
-
   // "Ignore" needs no other backend — the email's been read, there's just nothing
   // to do — but we still record the decision (above) so it isn't invisible.
   function markIgnore() {
@@ -1701,29 +1678,9 @@ export default function Taskpane() {
                   from the address book (one chip per real contact), so it stays
                   compact rather than a fixed grid of role buttons. */}
               {effectiveAction === 'action' && (() => {
-                const people = (matterInfo?.contacts ?? []).filter((c: any) => c.role !== 'OUR_FIRM');
                 return (
                   <div style={S.actionPanel}>
-                    {people.length ? (
-                      <>
-                        <span style={S.updateLabel}>Draft an update to</span>
-                        <div style={S.rowWrap}>
-                          {people.map((c: any) => {
-                            const roleLabel = CONTACT_ROLES.find(([v]) => v === (c.role || 'UNKNOWN'))?.[1];
-                            return (
-                              <button key={c.id} style={S.updateChip} title={`Draft an update to ${c.email}`} onClick={() => draftUpdateTo(c)}>
-                                {c.name || c.email}
-                                {roleLabel && roleLabel !== '—' && <span style={S.updateChipRole}>{roleLabel}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : (
-                      <p style={{ ...S.muted, margin: 0 }}>No contacts yet — they’ll appear in the House tab as emails are matched to this case.</p>
-                    )}
-
-                    {/* Playbooks — named multi-step actions */}
+                    {/* Workflows — named multi-step actions */}
                     {(playbooks.length > 0 || me?.role === 'ADMIN') && (
                       <div style={{ marginTop: 12 }}>
                         <span style={S.updateLabel}>Workflows</span>
@@ -2801,7 +2758,7 @@ const S: Record<string, React.CSSProperties> = {
   fileDone: { flex: 'none', fontSize: 10, fontWeight: 700, color: '#166534', background: '#dcfce7', borderRadius: 999, padding: '2px 7px' },
   iconAction: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff', color: '#475569', cursor: 'pointer', textDecoration: 'none' },
   fileIcon: { flex: 'none', display: 'inline-flex', color: '#94a3b8' },
-  actionRow: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 4 },
+  actionRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
     position: 'relative',
     display: 'flex',

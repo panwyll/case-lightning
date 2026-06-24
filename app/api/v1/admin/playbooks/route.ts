@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
-import { listPlaybooks, indexPlaybook } from '@/lib/server/playbooks';
+import { listPlaybooks, indexPlaybook, ensureDefaultPlaybooks } from '@/lib/server/playbooks';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -15,6 +15,7 @@ export async function GET() {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
+    await ensureDefaultPlaybooks(user.tenantId, user.userId);
     return ok({ playbooks: await listPlaybooks(user.tenantId) });
   } catch (error) {
     return fail(error);
