@@ -325,6 +325,8 @@ export default function Taskpane() {
   const [pbInputs, setPbInputs] = useState<{ p: { id: string; name: string; steps?: any[] }; needsDelegate: boolean; needsNotify: boolean; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
   const [pbSuggestion, setPbSuggestion] = useState<{ playbookId: string; reason: string } | null>(null);
   const suggestedFor = useRef<string>('');
+  // The message we've already auto-drafted a reply for, so the auto-draft fires once.
+  const autoRepliedFor = useRef<string>('');
   const [quick, setQuick] = useState<{ type: 'DELEGATE' | 'NOTIFY'; delegateToUserId: string; notifyEmail: string; notifyName: string; notifyCustom: boolean } | null>(null);
   const [expandedPb, setExpandedPb] = useState<string | null>(null);
 
@@ -1321,6 +1323,17 @@ export default function Taskpane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAction, messageId, conversationId, playbooks.length]);
 
+  // When Reply is the recommended move, auto-draft it into the Outlook message the
+  // moment the cached draft is ready — once per email. The panel shows a spinner
+  // while it writes; no click needed.
+  useEffect(() => {
+    if (recommended !== 'reply' || !assist?.draft || !messageId || !conversationId) return;
+    if (autoRepliedFor.current === messageId || replyReady || busy) return;
+    autoRepliedFor.current = messageId;
+    openReply();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommended, assist?.draft, messageId, conversationId, replyReady]);
+
   // Log the move the user picked — analytics only, never blocks the UI. This is
   // the only footprint some moves leave (esp. Ignore, and Delegate before a task
   // exists), so the label-vs-action picture in v_email_journey stays complete.
@@ -1723,19 +1736,17 @@ export default function Taskpane() {
                 const replying = busy === REPLY_BUSY_CREATE || busy === REPLY_BUSY_REGEN;
                 return (
                   <div style={S.actionPanel}>
-                    {replying ? (
+                    {replyReady && !replying ? (
+                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply draft in Outlook — review &amp; send it there.</p>
+                    ) : replying ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Writing the draft into Outlook…
                       </p>
-                    ) : replyReady ? (
-                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply draft in Outlook — review &amp; send it there.</p>
-                    ) : !assist.ready && !assist.draft ? (
+                    ) : recommended === 'reply' || (!assist.ready && !assist.draft) ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Preparing the reply…
                       </p>
-                    ) : (
-                      <p style={{ ...S.muted, margin: 0 }}>Draft a reply into the Outlook message — never sent.</p>
-                    )}
+                    ) : null}
 
                     <div style={{ marginTop: 10 }}>
                       <span style={S.updateLabel}>Tone</span>
