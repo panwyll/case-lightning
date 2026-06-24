@@ -41,6 +41,23 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
+type TabKey = 'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit';
+
+// One entry per tab — the label on the pill and a subtitle that matches what the
+// section actually does, so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
+const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
+  templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
+  docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
+  playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
+  team: { label: 'Team', subtitle: 'Who can access the firm, and their roles.' },
+  policy: { label: 'Policy', subtitle: 'Firm-wide disclaimer, case-folder naming and allowed external domains.' },
+  rules: { label: 'Auto-rules', subtitle: 'Premium automation that fires only on very-high-confidence matches.' },
+  referrals: { label: 'Referrals', subtitle: 'Your referral link, credit balance and referred firms.' },
+  actions: { label: 'Actions', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
+  audit: { label: 'Audit', subtitle: 'Recent actions taken across the firm.' },
+};
+const TAB_KEYS = Object.keys(TAB_META) as TabKey[];
+
 // A matter search box with a results dropdown; calls onSelect with the chosen matter.
 function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSelect: (m: MatterHit | null) => void }) {
   const [q, setQ] = useState('');
@@ -91,7 +108,18 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit'>('templates');
+  const [tab, setTab] = useState<TabKey>('templates');
+  // Open the tab named in ?tab= so deep links from the add-in land in the right place.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as TabKey);
+  }, []);
+  function go(t: TabKey) {
+    setTab(t);
+    if (typeof window !== 'undefined') window.history.replaceState(null, '', `/admin?tab=${t}`);
+  }
+  const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
+  const [aiGenBusy, setAiGenBusy] = useState(false);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -200,6 +228,26 @@ export default function AdminPage() {
       setStatus((e as Error).message);
     } finally {
       setDocUploading(false);
+    }
+  }
+
+  async function generateAiTemplate() {
+    if (!aiGen.name.trim()) { setStatus('Give the template a name.'); return; }
+    if (aiGen.instructions.trim().length < 10) { setStatus('Describe what the document should contain (a sentence or two).'); return; }
+    setAiGenBusy(true);
+    setStatus('');
+    try {
+      const r = await api<{ name: string; hasLlmPrompts: boolean }>('/admin/doc-templates/generate', {
+        method: 'POST',
+        body: JSON.stringify({ name: aiGen.name.trim(), instructions: aiGen.instructions.trim() }),
+      });
+      setAiGen({ name: '', instructions: '' });
+      await load();
+      setStatus(`Created “${r.name}”${r.hasLlmPrompts ? ' (with AI sections)' : ''}. Download it to review before using.`);
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setAiGenBusy(false);
     }
   }
 
@@ -356,18 +404,12 @@ export default function AdminPage() {
   return (
     <div style={{ background: '#fff', minHeight: '100vh' }}>
       <div style={box}>
-        <h1 style={{ fontSize: 22, marginBottom: 4 }}>CONVEYi Admin</h1>
-        <p style={{ color: '#64748b', marginTop: 0 }}>Firm playbook templates, policy and audit. Admin role required.</p>
-        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
-          <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Email templates</button>
-          <button style={tabBtn(tab === 'docpacks')} onClick={() => setTab('docpacks')}>Doc packs</button>
-          <button style={tabBtn(tab === 'playbooks')} onClick={() => setTab('playbooks')}>Workflows</button>
-          <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>Team</button>
-          <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
-          <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
-          <button style={tabBtn(tab === 'referrals')} onClick={() => setTab('referrals')}>Referrals</button>
-          <button style={tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>Actions</button>
-          <button style={tabBtn(tab === 'audit')} onClick={() => setTab('audit')}>Audit</button>
+        <h1 style={{ fontSize: 22, marginBottom: 4 }}>CONVEYi Admin · {TAB_META[tab].label}</h1>
+        <p style={{ color: '#64748b', marginTop: 0 }}>{TAB_META[tab].subtitle}</p>
+        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16, flexWrap: 'wrap' }}>
+          {TAB_KEYS.map((k) => (
+            <button key={k} style={tabBtn(tab === k)} onClick={() => go(k)}>{TAB_META[k].label}</button>
+          ))}
         </div>
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca' }}>{status}</div>}
@@ -484,6 +526,39 @@ export default function AdminPage() {
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Create with AI */}
+            <div style={{ ...card, background: '#faf5ff', borderColor: '#e9d5ff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ marginTop: 0, marginBottom: 0 }}>Create a template with AI</h3>
+                <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>Beta</span>
+              </div>
+              <p style={{ fontSize: 13, color: '#475569', margin: '6px 0 10px' }}>
+                Describe the document in plain English. The AI drafts a reusable .docx using the firm’s
+                matter placeholders (and, on the Team plan, <code style={{ background: '#f3e8ff', padding: '1px 4px', borderRadius: 3 }}>[[AI sections]]</code> that
+                fill per matter). It never sends anything — the template is saved here for you to download and review first.
+              </p>
+              <input
+                style={input}
+                placeholder="Template name (e.g. Notice to complete)"
+                value={aiGen.name}
+                onChange={(e) => setAiGen({ ...aiGen, name: e.target.value })}
+              />
+              <textarea
+                style={{ ...input, minHeight: 90 }}
+                placeholder="What should this document say? e.g. 'A formal notice to complete addressed to the other side's solicitor, citing the missed completion date, giving 10 working days, and referencing the matter and property.'"
+                value={aiGen.instructions}
+                onChange={(e) => setAiGen({ ...aiGen, instructions: e.target.value })}
+                maxLength={4000}
+              />
+              <button
+                style={{ padding: '8px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: aiGenBusy ? 0.6 : 1 }}
+                onClick={generateAiTemplate}
+                disabled={aiGenBusy}
+              >
+                {aiGenBusy ? 'Generating…' : 'Generate template'}
+              </button>
             </div>
 
             {/* Template list */}

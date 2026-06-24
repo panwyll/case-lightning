@@ -21,6 +21,7 @@ export type UsageFeature =
   | 'DRAFT_UPDATE'
   | 'DOC_REVIEW'
   | 'DOC_FILL'
+  | 'DOC_TEMPLATE_GEN'
   | 'MATTER_PROPOSE'
   | 'PLAYBOOK_SUGGEST'
   | 'EMBED';

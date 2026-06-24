@@ -341,6 +341,86 @@ export function createMinimalDocx(paragraphs: string[]): Buffer {
   return Buffer.from(zip.generate({ type: 'nodebuffer' }));
 }
 
+// ── AI-generated templates ─────────────────────────────────────────────────────
+
+const ALLOWED_TEMPLATE_VARS = new Set([
+  'matter_ref', 'property_address', 'buyer_names', 'seller_names', 'exchange_date',
+  'completion_date', 'counterparty_solicitor', 'counterparty_agent', 'lender',
+  'track', 'stage', 'today', 'firm_name', 'assigned_to',
+]);
+
+/**
+ * Defence-in-depth on AI-generated template text: cap size, strip control chars,
+ * drop any {{placeholder}} that isn't on the allow-list, and remove [[AI blocks]]
+ * when the plan can't run them. This runs after the model's structured output, so
+ * even if a crafted description steered the model, the stored .docx stays bounded
+ * and only references real matter variables.
+ */
+function sanitizeTemplateParagraphs(paragraphs: string[], allowAiBlocks: boolean): string[] {
+  return (Array.isArray(paragraphs) ? paragraphs : [])
+    .slice(0, 200)
+    .map((p) => {
+      let s = String(p ?? '').slice(0, 4000);
+      s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ""); // strip control chars
+      // Keep known {{vars}}, blank out unknown ones.
+      s = s.replace(/\{\{\s*([\w]+)\s*\}\}/g, (_m, name) => (ALLOWED_TEMPLATE_VARS.has(name) ? `{{${name}}}` : ''));
+      if (!allowAiBlocks) s = s.replace(/\[\[[\s\S]*?\]\]/g, '');
+      return s;
+    });
+}
+
+/** True if both fill passes render without throwing (i.e. no unbalanced delimiters). */
+function templateRendersCleanly(content: Buffer): boolean {
+  try {
+    const d1 = new Docxtemplater(new PizZip(content), { delimiters: { start: '[[', end: ']]' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+    d1.render({});
+    const mid = Buffer.from(d1.getZip().generate({ type: 'nodebuffer' }));
+    const d2 = new Docxtemplater(new PizZip(mid), { delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+    d2.render({});
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Turn a firm's natural-language description into a stored-ready .docx template.
+ * The model only chooses CONTENT; we build the file, sanitise it, and guarantee it
+ * fills cleanly (stripping any stray delimiters that would otherwise break fill).
+ */
+export async function generateDocTemplate(
+  user: SessionUser,
+  name: string,
+  instructions: string,
+  allowAiBlocks: boolean
+): Promise<{ content: Buffer; fileName: string; hasLlmPrompts: boolean; description: string }> {
+  const { generateDocTemplateContent } = await import('./ai');
+  const { paragraphs, description } = await generateDocTemplateContent({
+    userId: user.userId,
+    tenantId: user.tenantId,
+    name,
+    instructions,
+    allowAiBlocks,
+  });
+
+  let finalParas = sanitizeTemplateParagraphs(paragraphs, allowAiBlocks);
+  if (!finalParas.some((s) => s.trim())) {
+    throw new Error('The AI returned an empty template — try a more specific description.');
+  }
+  let hasLlmPrompts = finalParas.some((s) => /\[\[[\s\S]+?\]\]/.test(s));
+  let content = createMinimalDocx(finalParas);
+
+  // If the model emitted unbalanced delimiters, neutralise them so per-matter fill
+  // can never throw — at the cost of those placeholders in the worst case.
+  if (!templateRendersCleanly(content)) {
+    finalParas = finalParas.map((s) => s.replace(/\{\{|\}\}|\[\[|\]\]/g, ''));
+    hasLlmPrompts = false;
+    content = createMinimalDocx(finalParas);
+  }
+
+  return { content, fileName: templateOutputName(name), hasLlmPrompts, description };
+}
+
 export interface ExampleTemplate {
   name: string;
   description: string;

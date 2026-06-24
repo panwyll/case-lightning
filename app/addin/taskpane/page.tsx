@@ -1940,7 +1940,7 @@ export default function Taskpane() {
                         </div>
                       )}
                       {me?.role === 'ADMIN' && (
-                        <a href="/admin" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
+                        <a href="/admin?tab=playbooks" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
                           Manage workflows →
                         </a>
                       )}
@@ -2225,7 +2225,7 @@ export default function Taskpane() {
                 )}
                 {me?.role === 'ADMIN' && (
                   <a
-                    href="/admin"
+                    href="/admin?tab=docpacks"
                     target="_blank"
                     rel="noreferrer"
                     style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}
