@@ -12,13 +12,13 @@
 import ExcelJS from 'exceljs';
 import { query, queryOne } from './db';
 import { config } from './config';
-import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey, setRangeFills } from './graph';
+import { putDriveFile, getDriveItemByPath, listTableRows, upsertTableRowsByKey, setRangeFills, getTableColumns } from './graph';
 import type { SessionUser } from './types';
 
 export const MASTER_WORKBOOK_NAME = 'CaseLightning — All matters.xlsx';
 const MASTER_PATH = `${config.oneDriveRoot}/${MASTER_WORKBOOK_NAME}`;
 const TABLE = 'MattersTable';
-const HEADERS = ['Matter', 'Property', 'Stage', 'Status', 'Assignee', 'Buyer', 'Seller', 'Exchange', 'Completion', 'Open tasks', 'Updated'];
+const HEADERS = ['Matter', 'Property', 'Stage', 'Status', 'Assignee', 'Buyer', 'Seller', 'Exchange', 'Completion', 'Open tasks', 'Updated', 'Case log'];
 
 const STAGE_LABELS: Record<string, string> = {
   INSTRUCTION: '1 · Instruction',
@@ -70,6 +70,7 @@ interface BoardRow {
   completion_target_date: string | null;
   open_tasks: number;
   updated_at: string;
+  tracker_web_url: string | null;
 }
 
 async function boardRows(tenantId: string): Promise<BoardRow[]> {
@@ -78,7 +79,7 @@ async function boardRows(tenantId: string): Promise<BoardRow[]> {
             coalesce(u.display_name, u.email) as assignee,
             m.buyer_names, m.seller_names, m.exchange_target_date, m.completion_target_date,
             (select count(*) from matter_task t where t.matter_id = m.id and t.status <> 'DONE')::int as open_tasks,
-            m.updated_at
+            m.updated_at, m.tracker_web_url
      from matter m
      left join app_user u on u.id = m.assigned_to
      where m.tenant_id = $1 and m.status = 'OPEN'
@@ -109,6 +110,10 @@ function rowValues(r: BoardRow): Record<string, string | number> {
     Completion: dateCell(r.completion_target_date),
     'Open tasks': r.open_tasks,
     Updated: dateCell(r.updated_at),
+    // A clickable link to the matter's own Tracker.xlsx (case log). Written as a
+    // HYPERLINK formula so the Graph live-sync path renders it as a link; the
+    // template build overwrites these cells with native exceljs hyperlinks too.
+    'Case log': r.tracker_web_url ? `=HYPERLINK("${r.tracker_web_url.replace(/"/g, '""')}","Open log")` : '',
   };
 }
 
@@ -201,8 +206,21 @@ async function buildTemplate(tenantId: string): Promise<Buffer> {
     rows: tableRows.length ? tableRows : [HEADERS.map(() => '')],
   });
 
-  const widths = [22, 38, 24, 18, 20, 22, 22, 13, 13, 11, 13];
+  const widths = [22, 38, 24, 18, 20, 22, 22, 13, 13, 11, 13, 14];
   widths.forEach((w, i) => (ws.getColumn(i + 1).width = w));
+
+  // addTable wrote the Case-log column as the literal "=HYPERLINK(…)" string;
+  // overwrite those cells with real exceljs formulas so the template itself
+  // renders clickable links (the Graph live-sync path handles its own rows).
+  const caseLogCol = HEADERS.indexOf('Case log') + 1;
+  rows.forEach((r, i) => {
+    if (r.tracker_web_url) {
+      ws.getCell(i + 2, caseLogCol).value = {
+        formula: `HYPERLINK("${r.tracker_web_url.replace(/"/g, '""')}","Open log")`,
+        result: 'Open log',
+      } as ExcelJS.CellFormulaValue;
+    }
+  });
 
   // Dropdowns on Stage (C) / Status (D) / Assignee (E) — over a generous range so
   // rows added later inherit them too. Reject off-list values.
@@ -353,6 +371,19 @@ export async function refreshMasterBoard(
     }
   }
 
+  // A board built before a column we now ship (e.g. "Case log") needs a one-time
+  // rebake to upgrade its structure — otherwise the live sync just drops the new
+  // column (it writes by column name, and that column doesn't exist yet).
+  let needsUpgrade = false;
+  if (item && hasTable) {
+    try {
+      const cols = await getTableColumns(user.userId, item.id, TABLE);
+      needsUpgrade = !HEADERS.every((h) => cols.includes(h));
+    } catch {
+      /* couldn't read columns — fall through to the live path */
+    }
+  }
+
   // Writing the formatted template overwrites the whole file, so it 423s if the
   // file is open — that's surfaced to the user as needsClose so they can close it.
   const rebakeTemplate = async (): Promise<{ done: false; needsClose: true } | { done: true }> => {
@@ -366,9 +397,9 @@ export async function refreshMasterBoard(
     }
   };
 
-  if (!item || !hasTable || opts.force) {
-    // Build/upgrade the formatted template (first-ever build, relic upgrade, or a
-    // forced regenerate — overwrites the file in place, so it 423s if it's open).
+  if (!item || !hasTable || needsUpgrade || opts.force) {
+    // Build/upgrade the formatted template (first-ever build, relic upgrade, a
+    // schema upgrade, or a forced regenerate — overwrites in place, 423s if open).
     const r = await rebakeTemplate();
     if (!r.done) {
       const count = (await boardRows(user.tenantId)).length;

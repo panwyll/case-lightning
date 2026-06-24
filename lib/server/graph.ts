@@ -605,6 +605,13 @@ export async function upsertTrackerRowByRef(userId: string, itemId: string, r: T
 // ── Generic workbook table (the master board updates rows in place, live) ────
 
 /** Reads every row of a named table, mapped by header — works while the file is open. */
+/** The table's column names, in order — used to detect a stale board schema. */
+export async function getTableColumns(userId: string, itemId: string, table: string): Promise<string[]> {
+  const client = await graphClientForUser(userId);
+  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${table}/columns`).get();
+  return ((res.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
+}
+
 export async function listTableRows(
   userId: string,
   itemId: string,
