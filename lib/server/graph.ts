@@ -177,7 +177,7 @@ export async function getMessage(userId: string, messageId: string): Promise<any
   const client = await graphClientForUser(userId);
   return client
     .api(`/me/messages/${messageId}`)
-    .select('id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId')
+    .select('id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments')
     .get();
 }
 

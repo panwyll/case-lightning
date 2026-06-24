@@ -152,12 +152,32 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     /* category APIs unavailable on this mailbox — skip silently */
   }
 
+  // An explicit matterId means the user deliberately linked (or just created) this
+  // matter for this email — that's authoritative, so present it as a definitive
+  // match rather than whatever tenuous other-case the fuzzy matcher surfaced. The
+  // linked matter leads the candidate list so the UI shows a perfect match.
+  const explicitlyLinked = Boolean(input.matterId && matter);
+  const matchBand = explicitlyLinked ? 'AUTO' : triage.band;
+  const candidates = explicitlyLinked
+    ? [
+        {
+          matterId: matter!.id,
+          matterRef: matter!.matterRef,
+          propertyAddress: matter!.propertyAddress ?? '',
+          score: 1,
+          band: 'AUTO' as const,
+          signals: [{ kind: 'LINKED_THREAD' as const, detail: 'Linked to this matter', weight: 1 }],
+        },
+        ...triage.candidates.filter((c) => c.matterId !== matter!.id),
+      ]
+    : triage.candidates;
+
   const fast: FastAssist = {
     triageId: triage.triageId,
     classification: triage.classification,
-    matchBand: triage.band,
+    matchBand,
     matter,
-    candidates: triage.candidates,
+    candidates,
     ask: triage.classification.reason,
     highlighted,
   };

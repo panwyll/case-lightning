@@ -1224,7 +1224,9 @@ export default function Taskpane() {
       );
       setReplyReady(true);
       setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
-      fileCurrentEmail();
+      // NB: we deliberately do NOT file (move) the email here. The reply is only a
+      // draft, and auto-drafting fires on open — filing here moved the source email
+      // out of the inbox, so it appeared to vanish. Filing stays a deliberate action.
       return true;
     });
     clearTimeout(watchdog);

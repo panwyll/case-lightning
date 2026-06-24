@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
-import { ensureMasterCategory, addMessageCategories } from '@/lib/server/graph';
+import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
 import { matterColor } from '@/lib/server/triage';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -40,6 +40,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     );
     const label = matterRow?.matter_ref ?? body.category;
 
+    // The matcher keys LINKED_THREAD on the message's Graph (REST) conversationId.
+    // The client may send an Office/EWS conversationId that never equals it, so the
+    // link would never fire. Resolve the canonical value from the message itself.
+    let conversationId = body.graphConversationId ?? body.graphThreadId;
+    if (body.messageId) {
+      try {
+        const msg = await getMessage(user.userId, body.messageId);
+        if (msg?.conversationId) conversationId = msg.conversationId;
+      } catch {
+        /* fall back to the client-supplied id */
+      }
+    }
+
     await query(
       `insert into email_thread (tenant_id, matter_id, graph_thread_id, graph_conversation_id, subject, participants, outlook_category)
        values ($1,$2,$3,$4,$5,$6::jsonb,$7)
@@ -53,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         user.tenantId,
         matterId,
         body.graphThreadId,
-        body.graphConversationId ?? body.graphThreadId,
+        conversationId,
         body.subject ?? null,
         JSON.stringify(body.participants),
         label,

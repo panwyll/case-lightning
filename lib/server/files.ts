@@ -8,6 +8,7 @@
  * files are logged and flagged for a human — so an empty contract.docx never
  * triggers a false "we've got the contract" email. Drafts are never sent.
  */
+import PizZip from 'pizzip';
 import { query, queryOne } from './db';
 import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
 import { reviewDocument, upsertChunks } from './ai';
@@ -162,22 +163,40 @@ export async function reviewAttachmentsContext(
   messageId: string
 ): Promise<string> {
   const attachments = await listMessageAttachments(user.userId, messageId).catch(() => [] as any[]);
-  const pdfs = attachments
-    .filter((a: any) => a.contentBytes && a.name && !a.isInline && (a.contentType === 'application/pdf' || /\.pdf$/i.test(a.name)))
-    .slice(0, 2);
-  if (!pdfs.length) return '';
+  const reviewable = attachments
+    .filter((a: any) => a.contentBytes && a.name && !a.isInline)
+    .filter((a: any) => {
+      const n = (a.name as string).toLowerCase();
+      return (
+        a.contentType === 'application/pdf' || n.endsWith('.pdf') ||
+        n.endsWith('.docx') || a.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        (typeof a.contentType === 'string' && a.contentType.startsWith('text/')) || n.endsWith('.txt')
+      );
+    })
+    .slice(0, 3);
+  if (!reviewable.length) return '';
   const parts: string[] = [];
-  for (const a of pdfs) {
+  for (const a of reviewable) {
+    const name = a.name as string;
+    const lower = name.toLowerCase();
+    const isPdf = a.contentType === 'application/pdf' || lower.endsWith('.pdf');
+    const isDocx = lower.endsWith('.docx') || a.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
     try {
+      // PDFs go to Claude as a document; .docx/text are extracted to plain text.
+      const docInput: { pdfBase64?: string; documentText?: string; mimeType: string } = isPdf
+        ? { pdfBase64: a.contentBytes, mimeType: 'application/pdf' }
+        : isDocx
+        ? { documentText: extractDocxText(a.contentBytes).slice(0, 20000), mimeType: 'text/plain' }
+        : { documentText: Buffer.from(a.contentBytes, 'base64').toString('utf8').slice(0, 20000), mimeType: 'text/plain' };
+      if (!isPdf && !docInput.documentText?.trim()) continue; // empty/unreadable doc
       const { review } = await reviewDocument({
         userId: user.userId,
         tenantId: user.tenantId,
         matterId,
-        fileName: a.name,
-        mimeType: 'application/pdf',
-        pdfBase64: a.contentBytes,
+        fileName: name,
+        ...docInput,
         expectations:
-          'Review this attached document against the matter. Surface what should shape the reply: key terms, any mismatch or missing item vs the matter, risks, and required next actions.',
+          'Review this attached document against the matter. Surface what should shape the reply: key terms, whether the document actually contains the substantive detail it purports to (not just a title/placeholder), any mismatch or missing item vs the matter, risks, and required next actions.',
         retrievedContext: '',
       });
       const risks = (review.risks ?? []).map((r: { severity: string; issue: string }) => `${r.severity}: ${r.issue}`).join('; ');
@@ -186,15 +205,35 @@ export async function reviewAttachmentsContext(
         .map((c: { field: string; status: string }) => `${c.field} (${c.status})`)
         .join('; ');
       parts.push(
-        `ATTACHED DOCUMENT — ${a.name} [${review.documentType ?? 'document'}]: ${review.summary ?? ''}` +
+        `ATTACHED DOCUMENT — ${name} [${review.documentType ?? 'document'}]: ${review.summary ?? ''}` +
           (risks ? ` Risks: ${risks}.` : '') +
           (checks ? ` Discrepancies vs matter: ${checks}.` : '')
       );
     } catch {
-      /* unreadable / provider can't read PDFs — skip */
+      /* unreadable / provider can't read this type — skip */
     }
   }
   return parts.length ? `ATTACHMENT REVIEW (consider in the reply):\n${parts.join('\n---\n')}` : '';
+}
+
+/** Best-effort plain-text extraction from a base64 .docx (word/document.xml). */
+function extractDocxText(base64: string): string {
+  try {
+    const zip = new PizZip(Buffer.from(base64, 'base64'));
+    const xml = zip.file('word/document.xml')?.asText() ?? '';
+    return xml
+      .replace(/<\/w:p>/g, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  } catch {
+    return '';
+  }
 }
 
 /**
