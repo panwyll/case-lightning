@@ -1829,10 +1829,13 @@ export default function Taskpane() {
             return (
               <Card>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  {/* Left: label + refresh, then the status rows */}
+                  {/* Left: the status itself (badge) + refresh, then the rest */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>Status</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        <span style={{ width: 7, height: 7, borderRadius: 999, background: fc.dot, flex: 'none' }} />
+                        {flag}
+                      </span>
                       <button
                         style={S.ghostIcon}
                         onClick={() => { loadMatter(); loadTasks(); }}
@@ -1843,12 +1846,6 @@ export default function Taskpane() {
                         <Icon name="refresh" size={13} />
                       </button>
                     </div>
-                    {kv('Status', (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 9px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 11, fontWeight: 700 }}>
-                        <span style={{ width: 6, height: 6, borderRadius: 999, background: fc.dot, flex: 'none' }} />
-                        {flag}
-                      </span>
-                    ))}
                     {kv('Stage', stage)}
                     {kv('Assigned to', assignedTo)}
                     {kv('Notes', notes)}
