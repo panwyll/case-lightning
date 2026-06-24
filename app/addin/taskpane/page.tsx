@@ -1754,7 +1754,14 @@ export default function Taskpane() {
 
           {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
           {tab === 'email' && matterId && (() => {
-            const flag = humanize(matterInfo?.matter?.status_flag || 'ON_TRACK');
+            const rawFlag = matterInfo?.matter?.status_flag || 'ON_TRACK';
+            const flag = humanize(rawFlag);
+            const fc =
+              rawFlag === 'BLOCKED'
+                ? { bg: '#fee2e2', fg: '#991b1b', dot: '#dc2626' }
+                : rawFlag === 'NEEDS_ATTENTION'
+                ? { bg: '#fef9c3', fg: '#854d0e', dot: '#f59e0b' }
+                : { bg: '#dcfce7', fg: '#166534', dot: '#16a34a' };
             const stage = humanize(matterInfo?.matter?.stage || 'INSTRUCTION');
             const trackerUrl = matterInfo?.matter?.tracker_web_url;
             const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
@@ -1762,16 +1769,16 @@ export default function Taskpane() {
             const owner = assignees.find((a) => a.id === matterInfo?.matter?.assigned_to);
             const assignedTo = owner ? owner.display_name || owner.email : open.find((t) => t.assignee)?.assignee || '—';
             const notes = open.length ? open.map((t) => t.detail).join('; ') : outstanding.length ? outstanding.join('; ') : '—';
-            const kv = (k: string, v: string) => (
+            const kv = (k: string, v: React.ReactNode) => (
               <div style={S.kvRow}><span style={S.kvKey}>{k}</span><span style={S.kvVal}>{v}</span></div>
             );
             return (
               <Card>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <Label>Status</Label>
                     <button
-                      style={{ ...S.iconAction, width: 24, height: 24 }}
+                      style={S.ghostIcon}
                       onClick={() => { loadMatter(); loadTasks(); }}
                       disabled={!!busy}
                       title="Refresh status"
@@ -1780,18 +1787,23 @@ export default function Taskpane() {
                       <Icon name="refresh" size={13} />
                     </button>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                    <button style={S.pillBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
-                      {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={12} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'stretch' }}>
+                    <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
+                      {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
                     </button>
                     {trackerUrl && (
-                      <a style={S.pillBtn} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the case log in a new tab">
-                        Case log <Icon name="external" size={12} />
+                      <a style={S.boardBtn} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the case log in a new tab">
+                        Case log <Icon name="external" size={11} />
                       </a>
                     )}
                   </div>
                 </div>
-                {kv('Status', flag)}
+                {kv('Status', (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 9px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 11, fontWeight: 700 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 999, background: fc.dot, flex: 'none' }} />
+                    {flag}
+                  </span>
+                ))}
                 {kv('Stage', stage)}
                 {kv('Assigned to', assignedTo)}
                 {kv('Notes', notes)}
@@ -2864,6 +2876,10 @@ const S: Record<string, React.CSSProperties> = {
   trkH: { textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
   trkC: { fontSize: 12, color: '#0f172a', padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' },
   pillBtn: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' },
+  // Light, tidy board links (Team tracker / Case log) — equal width when stacked.
+  boardBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 12px', background: '#f5f3ff', color: '#5A27E0', border: '1px solid #ddd6fe', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' },
+  // Borderless icon button (e.g. the status refresh) — no boxy outline.
+  ghostIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, padding: 0, background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', borderRadius: 6 },
   kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '2px 0', alignItems: 'baseline' },
   kvKey: { flex: 'none', width: 84, color: '#64748b', fontWeight: 600 },
   kvVal: { flex: 1, minWidth: 0, color: '#0f172a' },
