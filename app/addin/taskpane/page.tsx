@@ -409,9 +409,12 @@ export default function Taskpane() {
 
   // Billing lives on a full page (redirects need width). Hand the session token
   // over in the URL fragment so desktop Outlook's separate storage jar can auth.
-  function openAccount() {
+  // Open the admin/account area. The session token rides in the URL fragment so
+  // desktop Outlook (separate cookie jar) can authenticate the browser tab.
+  function openAdmin(tab = 'billing') {
     const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
-    window.open(t ? `/account#token=${encodeURIComponent(t)}` : '/account', '_blank', 'noopener');
+    const base = `/admin?tab=${tab}`;
+    window.open(t ? `${base}#token=${encodeURIComponent(t)}` : base, '_blank', 'noopener');
   }
 
   // Referral popup — fetch the firm's link lazily the first time the gift is opened.
@@ -1444,7 +1447,7 @@ export default function Taskpane() {
           )}
         </div>
         {me ? (
-          <button style={S.account} onClick={openAccount} title="Manage account & billing">
+          <button style={S.account} onClick={() => openAdmin('billing')} title="Manage account & billing">
             {plan && (
               <span style={S.planBadge}>
                 {plan.plan === 'enterprise'
@@ -1931,9 +1934,9 @@ export default function Taskpane() {
                         </div>
                       )}
                       {me?.role === 'ADMIN' && (
-                        <a href="/admin?tab=playbooks" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
+                        <button onClick={() => openAdmin('playbooks')} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
                           Manage workflows →
-                        </a>
+                        </button>
                       )}
                     </div>
                   )}
@@ -2215,14 +2218,12 @@ export default function Taskpane() {
                   </p>
                 )}
                 {me?.role === 'ADMIN' && (
-                  <a
-                    href="/admin?tab=docpacks"
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}
+                  <button
+                    onClick={() => openAdmin('docpacks')}
+                    style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}
                   >
                     Manage templates →
-                  </a>
+                  </button>
                 )}
               </Card>
             </>

@@ -29,23 +29,31 @@ interface DocTemplate {
   created_at: string;
 }
 
+const TOKEN_KEY = 'cl_token';
+
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+  const t = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
   const res = await fetch(`/api/v1${path}`, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(options.headers || {}) },
     ...options,
   });
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status}`), { status: res.status });
   return json as T;
 }
 
-type TabKey = 'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit';
+function money(pennies: number, currency: string): string {
+  return new Intl.NumberFormat('en-GB', { style: 'currency', currency: (currency || 'GBP').toUpperCase() }).format(pennies / 100);
+}
+
+type TabKey = 'billing' | 'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit';
 
 // One entry per tab — the label on the pill and a subtitle that matches what the
 // section actually does, so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
+  billing: { label: 'Billing', subtitle: 'Your plan, subscription and seats. Card, invoices and cancellation are handled by Stripe.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
   playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
@@ -57,6 +65,17 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   audit: { label: 'Audit', subtitle: 'Recent actions taken across the firm.' },
 };
 const TAB_KEYS = Object.keys(TAB_META) as TabKey[];
+// Tabs that need the ADMIN role. Billing & Referrals are per-user (requireUser),
+// so a non-admin who lands here from "click your name" still sees those.
+const ADMIN_ONLY: TabKey[] = ['templates', 'docpacks', 'playbooks', 'team', 'policy', 'rules', 'actions', 'audit'];
+
+const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
+const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
+  active: { label: 'Active', bg: '#dcfce7', color: '#166534' },
+  trialing: { label: 'Trial', bg: '#ede9fe', color: '#6d28d9' },
+  past_due: { label: 'Past due', bg: '#fef3c7', color: '#92400e' },
+  canceled: { label: 'Canceled', bg: '#fee2e2', color: '#b91c1c' },
+};
 
 // A matter search box with a results dropdown; calls onSelect with the chosen matter.
 function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSelect: (m: MatterHit | null) => void }) {
@@ -108,18 +127,39 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<TabKey>('templates');
-  // Open the tab named in ?tab= so deep links from the add-in land in the right place.
+  const [me, setMe] = useState<{ role: string; email: string; displayName: string | null; tenantName?: string } | null>(null);
+  const isAdmin = me?.role === 'ADMIN';
+  const visibleTabs = isAdmin ? TAB_KEYS : TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k));
+
+  const [tab, setTab] = useState<TabKey>('billing');
+  // Capture a token from the URL fragment (desktop deep-link), load the user, and
+  // open the tab named in ?tab= so links from the add-in land in the right place.
   useEffect(() => {
+    const m = window.location.hash.match(/token=([^&]+)/);
+    if (m) {
+      window.localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    api<{ role: string; email: string; displayName: string | null; tenantName?: string }>('/me')
+      .then(setMe)
+      .catch(() => {});
+    api('/billing/account').then(setBilling).catch(() => {});
     const t = new URLSearchParams(window.location.search).get('tab');
     if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as TabKey);
+    else setTab('billing');
   }, []);
+  // Never leave a non-admin parked on an admin-only tab.
+  useEffect(() => {
+    if (me && !isAdmin && ADMIN_ONLY.includes(tab)) setTab('billing');
+  }, [me, isAdmin, tab]);
   function go(t: TabKey) {
     setTab(t);
     if (typeof window !== 'undefined') window.history.replaceState(null, '', `/admin?tab=${t}`);
   }
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
+  const [billing, setBilling] = useState<any>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -151,6 +191,7 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     try {
+      if (tab === 'billing') setBilling(await api('/billing/account'));
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
@@ -228,6 +269,31 @@ export default function AdminPage() {
       setStatus((e as Error).message);
     } finally {
       setDocUploading(false);
+    }
+  }
+
+  async function manageSubscription() {
+    setBillingBusy(true);
+    try {
+      const { url } = await api<{ url: string }>('/billing/portal', { method: 'POST' });
+      window.location.href = url;
+    } catch (e: any) {
+      if (e.status === 409) { window.location.href = '/start-trial'; return; }
+      setStatus(e.message || 'Could not open the billing portal.');
+      setBillingBusy(false);
+    }
+  }
+
+  async function changePlanTo(plan: 'plus' | 'pro' | 'enterprise') {
+    setBillingBusy(true);
+    try {
+      const res = await api<{ url?: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
+      if (res.url) { window.location.href = res.url; return; }
+      await load(); // existing subscriber → in-place prorated swap; refresh
+    } catch (e: any) {
+      setStatus(e.message || 'Could not change your plan.');
+    } finally {
+      setBillingBusy(false);
     }
   }
 
@@ -388,31 +454,124 @@ export default function AdminPage() {
     }
   }
 
-  const box: React.CSSProperties = { maxWidth: 880, margin: '0 auto', padding: 24, color: '#0f172a' };
+  const box: React.CSSProperties = { maxWidth: 920, margin: '0 auto', padding: '0 20px', color: '#0f172a' };
   const tabBtn = (active: boolean): React.CSSProperties => ({
-    padding: '8px 14px',
+    padding: '7px 13px',
     border: 'none',
-    borderBottom: active ? '2px solid #5A27E0' : '2px solid transparent',
-    background: 'transparent',
+    borderRadius: 999,
+    background: active ? '#ede9fe' : 'transparent',
+    color: active ? '#5A27E0' : '#475569',
     fontWeight: active ? 700 : 500,
     cursor: 'pointer',
-    color: '#0f172a',
+    fontSize: 13,
+    whiteSpace: 'nowrap',
   });
-  const input: React.CSSProperties = { width: '100%', padding: 8, border: '1px solid #cbd5e1', borderRadius: 6, marginBottom: 8 };
-  const card: React.CSSProperties = { border: '1px solid #e2e8f0', borderRadius: 10, padding: 16, marginBottom: 12, background: '#f8fafc' };
+  const input: React.CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: 8, marginBottom: 8, fontSize: 14, boxSizing: 'border-box' };
+  const card: React.CSSProperties = { border: '1px solid #e8eaf0', borderRadius: 14, padding: 18, marginBottom: 14, background: '#fff', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' };
+  const btnPrimary: React.CSSProperties = { padding: '9px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14 };
+  const btnGhost: React.CSSProperties = { padding: '9px 16px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 9, fontWeight: 600, cursor: 'pointer', fontSize: 14 };
+  const overline: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#64748b' };
+  const planBadge: React.CSSProperties = { background: '#ede9fe', color: '#6d28d9', borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 800 };
 
   return (
-    <div style={{ background: '#fff', minHeight: '100vh' }}>
-      <div style={box}>
-        <h1 style={{ fontSize: 22, marginBottom: 4 }}>CONVEYi Admin · {TAB_META[tab].label}</h1>
-        <p style={{ color: '#64748b', marginTop: 0 }}>{TAB_META[tab].subtitle}</p>
-        <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16, flexWrap: 'wrap' }}>
-          {TAB_KEYS.map((k) => (
+    <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
+      {/* Sticky brand + tab bar */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #e8eaf0', position: 'sticky', top: 0, zIndex: 5 }}>
+        <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, padding: '13px 20px' }}>
+          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#5A27E0" />
+            <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
+          </svg>
+          <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
+          <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>Admin</span>
+          {me && (
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
+              <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
+            </div>
+          )}
+        </div>
+        <div style={{ ...box, display: 'flex', gap: 4, flexWrap: 'wrap', padding: '0 20px 10px' }}>
+          {visibleTabs.map((k) => (
             <button key={k} style={tabBtn(tab === k)} onClick={() => go(k)}>{TAB_META[k].label}</button>
           ))}
         </div>
+      </div>
 
-        {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca' }}>{status}</div>}
+      <div style={{ ...box, padding: '22px 20px 56px' }}>
+        <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>{TAB_META[tab].label}</h1>
+        <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>
+
+        {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
+
+        {tab === 'billing' && (
+          !billing ? (
+            <div style={card}>Loading your account…</div>
+          ) : (
+            <>
+              <div style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div>
+                    <div style={overline}>Your plan</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, marginTop: 2 }}>{billing.plan ? (PLAN_LABEL[billing.plan] ?? billing.plan) : 'No plan yet'}</div>
+                  </div>
+                  {(() => {
+                    const s = STATUS_STYLE[billing.status] ?? { label: billing.status, bg: '#f1f5f9', color: '#64748b' };
+                    return <span style={{ background: s.bg, color: s.color, borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>{s.label}</span>;
+                  })()}
+                </div>
+                {billing.status === 'past_due' && (
+                  <p style={{ background: '#fffbeb', color: '#92400e', borderRadius: 8, padding: '8px 10px', fontSize: 13, marginTop: 12 }}>
+                    Your last payment failed. Update your card to keep your team running.
+                  </p>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+                  {billing.plan !== 'pro' && billing.plan !== 'enterprise' && (
+                    <button style={btnPrimary} disabled={billingBusy} onClick={() => changePlanTo('pro')}>{billingBusy ? 'Working…' : 'Upgrade to Pro'}</button>
+                  )}
+                  {billing.plan !== 'enterprise' && (
+                    <button style={{ ...btnPrimary, background: '#0f172a' }} disabled={billingBusy} onClick={() => changePlanTo('enterprise')}>{billingBusy ? 'Working…' : 'Upgrade to Enterprise'}</button>
+                  )}
+                  <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>{billing.hasSubscription ? 'Manage subscription' : 'Choose a plan'}</button>
+                </div>
+                {billing.hasSubscription && (
+                  <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
+                    “Manage subscription” opens Stripe for your card, invoices, plan changes &amp; cancellation.
+                  </p>
+                )}
+              </div>
+
+              <div style={card}>
+                <div style={overline}>Team · {billing.seatCount} {billing.seatCount === 1 ? 'seat' : 'seats'}</div>
+                <div style={{ marginTop: 8 }}>
+                  {(billing.seats ?? []).map((s: any) => (
+                    <div key={s.email} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: '1px solid #f1f5f9' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14 }}>{s.displayName || s.email}</div>
+                        {s.displayName && <div style={{ fontSize: 12, color: '#64748b' }}>{s.email}</div>}
+                      </div>
+                      <span style={{ background: '#f1f5f9', color: '#475569', borderRadius: 999, padding: '2px 10px', fontSize: 12 }}>{String(s.role).toLowerCase()}</span>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
+                  {billing.plan === 'enterprise'
+                    ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account.'
+                    : 'Plus and Pro are single-seat. Enterprise adds team seats — upgrade above.'}
+                </p>
+              </div>
+
+              <div style={card}>
+                <div style={overline}>Referral credit</div>
+                <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{money(billing.creditBalancePennies, billing.currency)}</div>
+                <p style={{ color: '#64748b', fontSize: 13, marginTop: 4, marginBottom: 0 }}>
+                  {billing.referrals.active} active of {billing.referrals.total} referred firms.{' '}
+                  <button onClick={() => go('referrals')} style={{ background: 'none', border: 'none', color: '#5A27E0', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13 }}>Referral tools →</button>
+                </p>
+              </div>
+            </>
+          )
+        )}
 
         {tab === 'templates' && (
           <>
