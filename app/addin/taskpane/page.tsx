@@ -1561,7 +1561,8 @@ export default function Taskpane() {
                   aria-label={lbl}
                   aria-selected={active}
                 >
-                  <Icon name={icon} size={18} />
+                  <Icon name={icon} size={16} />
+                  <span>{lbl}</span>
                 </button>
               );
             })}
@@ -2627,9 +2628,9 @@ const S: Record<string, React.CSSProperties> = {
     padding: 12,
     background: '#f8fafc',
   },
-  tabBar: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, marginBottom: 12, background: '#f1f5f9', padding: 4, borderRadius: 10 },
-  tabBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 6px', background: 'transparent', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer' },
-  tabBtnActive: { background: '#fff', color: '#5A27E0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' },
+  tabBar: { display: 'flex', gap: 2, marginBottom: 12, borderBottom: '1px solid #e2e8f0' },
+  tabBtn: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 6px', background: 'transparent', border: 'none', borderBottom: '2px solid transparent', marginBottom: -1, fontSize: 12, fontWeight: 600, color: '#64748b', cursor: 'pointer' },
+  tabBtnActive: { color: '#5A27E0', borderBottomColor: '#5A27E0' },
   tabBtnLocked: { opacity: 0.4, cursor: 'not-allowed' },
   fileList: { border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden', background: '#fff', marginTop: 4 },
   fileRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderBottom: '1px solid #f1f5f9', textDecoration: 'none', color: '#0f172a', cursor: 'pointer' },
