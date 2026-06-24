@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { isPremiumTenant, canUseHeavyLlm } from '@/lib/server/plan';
+import { isPremiumTenant, canUseHeavyLlm, assertEntitled } from '@/lib/server/plan';
 import { queryOne } from '@/lib/server/db';
 import { listMatterFiles, uploadToMatterFolder, appendTrackerRow } from '@/lib/server/graph';
 import {
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     assertFeature('auth');
     const user = await requireUser();
+    await assertEntitled(user.tenantId);
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     const body = z
       .object({ templateId: z.string().uuid(), overwrite: z.boolean().optional() })

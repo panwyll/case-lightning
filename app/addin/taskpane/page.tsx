@@ -191,7 +191,7 @@ function hasSignInHint(): boolean {
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
-  const [plan, setPlan] = useState<{ plan: string | null; status: string } | null>(null);
+  const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean } | null>(null);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null; needsReconnect?: boolean } | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -388,8 +388,8 @@ export default function Taskpane() {
       }
     }
     try {
-      const b = await api<{ plan: string | null; status: string }>('/billing/account');
-      setPlan({ plan: b.plan, status: b.status });
+      const b = await api<{ plan: string | null; status: string; entitled: boolean; trialing: boolean }>('/billing/account');
+      setPlan({ plan: b.plan, status: b.status, entitled: b.entitled, trialing: b.trialing });
     } catch {
       setPlan(null);
     }
@@ -1428,6 +1428,14 @@ export default function Taskpane() {
   }, [matterId, loadFiles, loadTemplates]);
 
   // ── UI ───────────────────────────────────────────────────────────────────
+  // Boxed out: signed in, but the subscription/trial has lapsed. A full-pane
+  // paywall covers everything; the server also 402s the cost routes as a backstop.
+  const boxedOut = !!(me && plan && plan.entitled === false);
+  const boxedMsg =
+    plan?.status === 'past_due'
+      ? 'Your last payment failed. Update your card to keep using CONVEYi.'
+      : 'Your trial has ended. Subscribe to keep using CONVEYi — your matters and data are safe.';
+
   return (
     <div style={S.page}>
       <style>{`@keyframes cl-spin{to{transform:rotate(360deg)}}`}</style>
@@ -1479,6 +1487,27 @@ export default function Taskpane() {
           <span style={S.user}>{booting ? 'Connecting…' : connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
       </header>
+
+      {boxedOut && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(255,255,255,0.97)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ maxWidth: 320, textAlign: 'center' }}>
+            <div style={{ fontSize: 34, marginBottom: 8 }} aria-hidden>🔒</div>
+            <h2 style={{ fontSize: 18, margin: '0 0 6px', color: '#0f172a' }}>
+              {plan?.status === 'past_due' ? 'Payment needed' : 'Trial ended'}
+            </h2>
+            <p style={{ fontSize: 13, color: '#475569', margin: '0 0 16px', lineHeight: 1.5 }}>{boxedMsg}</p>
+            <button
+              style={{ ...S.primary, marginTop: 0 }}
+              onClick={() => openAdmin('billing')}
+            >
+              {plan?.status === 'past_due' ? 'Update payment' : 'Choose a plan'}
+            </button>
+            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 12 }}>
+              Opens your billing page in the browser. Nothing in your mailbox or cases is touched.
+            </p>
+          </div>
+        </div>
+      )}
 
       {!me && (
         <Card>

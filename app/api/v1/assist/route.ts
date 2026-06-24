@@ -2,6 +2,7 @@ import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
+import { assertEntitled } from '@/lib/server/plan';
 import { assistPhase1, assistPhase2, assistOnMessage, emptySlow } from '@/lib/server/assist';
 import { readAssistCache, writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import { ok, fail } from '@/lib/server/http';
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
     assertFeature('graph');
     assertFeature('ai');
     const user = await requireUser();
+    await assertEntitled(user.tenantId);
     const body = z
       .object({
         messageId: z.string(),

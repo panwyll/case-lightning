@@ -16,7 +16,7 @@ import { config } from './config';
 import { query } from './db';
 import { stripe } from './stripe';
 import { accountForUser } from './referrals';
-import type { Plan } from './plan';
+import { getTenantBilling, type Plan } from './plan';
 import type { SessionUser } from './types';
 
 /** A seat = an app_user belonging to the tenant. Multi-seat needs the Enterprise plan. */
@@ -29,6 +29,8 @@ export interface Seat {
 export interface BillingSummary {
   plan: string | null; // 'plus' | 'pro' | 'enterprise' | null (no subscription yet)
   status: string; // trialing | active | past_due | canceled
+  entitled: boolean; // may use the app at all (active/trialing/pilot)
+  trialing: boolean; // on a free trial (tier features, capped usage)
   hasSubscription: boolean; // a Stripe customer exists → portal is available
   seats: Seat[];
   seatCount: number;
@@ -63,10 +65,13 @@ export async function getBillingSummary(user: SessionUser): Promise<BillingSumma
   );
   const totalFor = (s: string) => Number(totals.find((t) => t.status === s)?.total ?? 0);
 
+  const billing = await getTenantBilling(user.tenantId);
   const appUrl = config.appUrl.replace(/\/$/, '');
   return {
     plan: account.plan,
     status: account.status,
+    entitled: billing.entitled,
+    trialing: billing.trialing,
     hasSubscription: Boolean(account.stripe_customer_id),
     seats: seats.map((s) => ({ email: s.email, displayName: s.display_name, role: s.role })),
     seatCount: seats.length,

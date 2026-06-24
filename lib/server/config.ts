@@ -100,6 +100,11 @@ export const config = {
   // caps the number of heavy-LLM calls (DOC_FILL) a Pro tenant can make per calendar
   // month; Enterprise is uncapped. Tune without a deploy via env.
   proHeavyLlmMonthlyCap: Number(env('PRO_HEAVY_LLM_MONTHLY_CAP') ?? '300'),
+  // Trial users get their chosen tier's features, but expensive AI work (doc fills,
+  // matter reconciliation) is capped to a few attempts so they get a flavour without
+  // running up cost. Trial backlog/onboarding lookback is also clamped (days).
+  trialExpensiveCap: Number(env('TRIAL_EXPENSIVE_CAP') ?? '3'),
+  trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '7'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

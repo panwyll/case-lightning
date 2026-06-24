@@ -7,6 +7,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
+import { assertEntitled } from '@/lib/server/plan';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { runPlaybook } from '@/lib/server/playbooks';
 import { ok, fail } from '@/lib/server/http';
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     assertFeature('auth');
     const user = await requireUser();
+    await assertEntitled(user.tenantId);
     const { id } = z.object({ id: z.string().uuid() }).parse(await params);
     const body = z
       .object({

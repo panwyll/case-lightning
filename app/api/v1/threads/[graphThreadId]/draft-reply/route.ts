@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
+import { assertEntitled } from '@/lib/server/plan';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
@@ -20,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     assertFeature('graph');
     assertFeature('ai');
     const user = await requireUser();
+    await assertEntitled(user.tenantId);
     const { graphThreadId } = await params;
     const body = z
       .object({

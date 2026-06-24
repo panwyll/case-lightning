@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { assertFeature } from '@/lib/server/config';
+import { assertFeature, config } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
-import { isPremiumTenant } from '@/lib/server/plan';
+import { getTenantBilling, EntitlementError } from '@/lib/server/plan';
 import { getActiveJob, getLatestJob, sinceForLookback, type OnboardingJob } from '@/lib/server/onboarding';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -29,12 +29,19 @@ export async function POST(req: NextRequest) {
       return fail(new Error('An onboarding scan is already in progress.'));
     }
 
-    const premium = await isPremiumTenant(user.tenantId);
+    const billing = await getTenantBilling(user.tenantId);
+    if (!billing.entitled) throw new EntitlementError();
+    const premium = billing.plan === 'pro' || billing.plan === 'enterprise';
     let months: number | null = body.lookbackMonths === undefined ? FREE_LOOKBACK_MONTHS : body.lookbackMonths;
     // Only premium tenants may look back further than the free window.
     if (!premium && (months === null || months > FREE_LOOKBACK_MONTHS)) months = FREE_LOOKBACK_MONTHS;
 
-    const since = sinceForLookback(months);
+    let since = sinceForLookback(months);
+    // Trial: clamp the backlog to a short window (a taste, not a full backfill) —
+    // regardless of the tier being trialled.
+    if (billing.trialing) {
+      since = new Date(Date.now() - config.trialLookbackDays * 86_400_000).toISOString();
+    }
     const job = await queryOne<OnboardingJob>(
       `insert into onboarding_job (tenant_id, user_id, status, lookback_months, since, started_at)
        values ($1,$2,'SCANNING',$3,$4, now())
