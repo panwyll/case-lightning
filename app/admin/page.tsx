@@ -108,6 +108,7 @@ export default function AdminPage() {
   const [referrals, setReferrals] = useState<any>(null);
   const [playbooks, setPlaybooks] = useState<any[]>([]);
   const [pb, setPb] = useState<{ name: string; description: string; steps: Array<{ type: string; config: any }> }>({ name: '', description: '', steps: [] });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [t, setT] = useState({ name: '', category: 'enquiry_response', subjectTemplate: '', bodyTemplate: '', styleTag: 'NEUTRAL' });
   const [rule, setRule] = useState({
     name: '',
@@ -296,13 +297,28 @@ export default function AdminPage() {
   async function savePlaybook() {
     if (!pb.name.trim() || !pb.steps.length) { setStatus('Give the workflow a name and at least one step.'); return; }
     try {
-      await api('/admin/playbooks', { method: 'POST', body: JSON.stringify({ name: pb.name.trim(), description: pb.description.trim() || undefined, steps: pb.steps }) });
+      const payload = JSON.stringify({ name: pb.name.trim(), description: pb.description.trim(), steps: pb.steps });
+      if (editingId) {
+        await api(`/admin/playbooks/${editingId}`, { method: 'PATCH', body: payload });
+      } else {
+        await api('/admin/playbooks', { method: 'POST', body: payload });
+      }
       setPb({ name: '', description: '', steps: [] });
+      setEditingId(null);
       await load();
-      setStatus('Workflow saved.');
+      setStatus(editingId ? 'Workflow updated.' : 'Workflow saved.');
     } catch (e) {
       setStatus((e as Error).message);
     }
+  }
+  function editPlaybook(p: any) {
+    setEditingId(p.id);
+    setPb({ name: p.name, description: p.description ?? '', steps: (p.steps ?? []).map((s: any) => ({ type: s.type, config: s.config ?? {} })) });
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setPb({ name: '', description: '', steps: [] });
   }
   async function deletePlaybook(id: string) {
     try {
@@ -690,7 +706,7 @@ export default function AdminPage() {
 
             {/* Builder */}
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>New workflow</h3>
+              <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit workflow' : 'New workflow'}</h3>
               <input style={input} placeholder="Name (e.g. Onboard client)" value={pb.name} onChange={(e) => setPb({ ...pb, name: e.target.value })} />
               <input style={input} placeholder="Description (helps the assistant suggest it)" value={pb.description} onChange={(e) => setPb({ ...pb, description: e.target.value })} />
 
@@ -747,11 +763,17 @@ export default function AdminPage() {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
-                  Save workflow
+                  {editingId ? 'Update workflow' : 'Save workflow'}
                 </button>
-                <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={loadExampleWorkflows}>
-                  Load example workflows
-                </button>
+                {editingId ? (
+                  <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                ) : (
+                  <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={loadExampleWorkflows}>
+                    Load example workflows
+                  </button>
+                )}
               </div>
             </div>
 
@@ -766,9 +788,14 @@ export default function AdminPage() {
                       {(p.steps ?? []).map((s: any, i: number) => `${i + 1}. ${STEP_LABEL[s.type] ?? s.type}`).join('  ·  ')}
                     </div>
                   </div>
-                  <button style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600, flexShrink: 0 }} onClick={() => deletePlaybook(p.id)}>
-                    Delete
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button style={{ padding: '4px 10px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} onClick={() => editPlaybook(p)}>
+                      Edit
+                    </button>
+                    <button style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} onClick={() => deletePlaybook(p.id)}>
+                      Delete
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
