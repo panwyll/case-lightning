@@ -1777,6 +1777,65 @@ export default function Taskpane() {
           </div>
 
           {/* ── EMAIL TAB — what this email is about + what we're doing about it ── */}
+          {/* "On this matter" — a proactive briefing the moment a matter is linked:
+              where the file is, the dates bearing down, and what needs the user. The
+              switched-on-employee heartbeat. */}
+          {tab === 'email' && hasMatter && matterInfo?.matter && (() => {
+            const m = matterInfo.matter;
+            const days = (d: string | null) => (d ? Math.ceil((new Date(d).getTime() - Date.now()) / 86_400_000) : null);
+            const dchip = (label: string, d: string | null) => {
+              const n = days(d);
+              if (n === null) return null;
+              const col = n < 0 ? '#94a3b8' : n <= 3 ? '#b91c1c' : n <= 10 ? '#9a3412' : '#166534';
+              const bg = n < 0 ? '#f1f5f9' : n <= 3 ? '#fef2f2' : n <= 10 ? '#fff7ed' : '#f0fdf4';
+              const when = n < 0 ? 'passed' : n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`;
+              return (
+                <span key={label} style={{ background: bg, color: col, borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  {label} {when}
+                </span>
+              );
+            };
+            const outstanding = (assist?.outstanding ?? []) as string[];
+            const issues = recon?.issues ?? [];
+            const needs = [
+              ...issues.slice(0, 3).map((t) => ({ t, kind: 'issue' as const })),
+              ...outstanding.slice(0, issues.length >= 3 ? 0 : 3 - issues.length).map((t) => ({ t, kind: 'todo' as const })),
+            ];
+            const stage = m.stage ? String(m.stage).replace(/_/g, ' ').toLowerCase() : null;
+            const chips = [dchip('Exchange', m.exchange_target_date), dchip('Completion', m.completion_target_date)].filter(Boolean);
+            if (!chips.length && !needs.length && !stage) return null;
+            return (
+              <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                  <Label>On this matter</Label>
+                  {stage && <span style={{ fontSize: 11, color: '#5A27E0', fontWeight: 700, textTransform: 'capitalize' }}>{stage}</span>}
+                </div>
+                {chips.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: needs.length ? 10 : 0 }}>{chips}</div>}
+                {needs.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', marginBottom: 4 }}>Needs you</div>
+                    {needs.map((it, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBottom: 3 }}>
+                        <span style={{ color: it.kind === 'issue' ? '#b91c1c' : '#5A27E0', fontWeight: 700, fontSize: 12 }}>{it.kind === 'issue' ? '⚠' : '•'}</span>
+                        <span style={{ fontSize: 12, color: '#334155', lineHeight: 1.4 }}>{it.t}</span>
+                      </div>
+                    ))}
+                    {recon && issues.length > 3 && (
+                      <button onClick={() => setTab('paperclip')} style={{ background: 'none', border: 'none', color: '#5A27E0', fontWeight: 600, fontSize: 12, cursor: 'pointer', padding: '2px 0 0' }}>
+                        +{issues.length - 3} more discrepancies →
+                      </button>
+                    )}
+                    {!recon && (
+                      <button onClick={() => setTab('paperclip')} style={{ background: 'none', border: 'none', color: '#5A27E0', fontWeight: 600, fontSize: 12, cursor: 'pointer', padding: '2px 0 0' }}>
+                        Check the file for discrepancies →
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
+
           {/* The situation + the four moves — only once we have a matter to act on. */}
           {tab === 'email' && hasMatter && assist && (
             <Card>
