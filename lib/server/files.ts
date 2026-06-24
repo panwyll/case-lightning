@@ -207,8 +207,8 @@ export async function reviewAttachmentsContext(
         : isImage
         ? { imageBase64: a.contentBytes, mimeType: a.contentType || (lower.endsWith('.png') ? 'image/png' : 'image/jpeg') }
         : isDocx
-        ? { documentText: extractDocxText(a.contentBytes).slice(0, 20000), mimeType: 'text/plain' }
-        : { documentText: Buffer.from(a.contentBytes, 'base64').toString('utf8').slice(0, 20000), mimeType: 'text/plain' };
+        ? { documentText: extractDocxText(a.contentBytes).slice(0, 40000), mimeType: 'text/plain' }
+        : { documentText: Buffer.from(a.contentBytes, 'base64').toString('utf8').slice(0, 40000), mimeType: 'text/plain' };
       if (!isPdf && !isImage && !docInput.documentText?.trim()) continue; // empty/unreadable doc
       const { review } = await reviewDocument({
         userId: user.userId,
