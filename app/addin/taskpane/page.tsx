@@ -1778,7 +1778,7 @@ export default function Taskpane() {
                           return (
                             <button
                               key={t}
-                              onClick={() => { setTone(t); if (replyReady) openReply({ regen: true }); }}
+                              onClick={() => setTone(t)}
                               disabled={replying}
                               style={{ flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: replying ? 'default' : 'pointer', border: '1px solid', borderColor: on ? '#5A27E0' : '#cbd5e1', background: on ? '#5A27E0' : '#fff', color: on ? '#fff' : '#475569' }}
                             >
