@@ -316,6 +316,10 @@ export default function Taskpane() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const [attachingId, setAttachingId] = useState<string | null>(null);
+  // Playbooks (named multi-step actions)
+  const [playbooks, setPlaybooks] = useState<Array<{ id: string; name: string; description: string | null; steps: any[] }>>([]);
+  const [runningPb, setRunningPb] = useState<string | null>(null);
+  const [pbResults, setPbResults] = useState<{ name: string; results: Array<{ type: string; ok: boolean; detail: string }> } | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -377,6 +381,11 @@ export default function Taskpane() {
       setPlan({ plan: b.plan, status: b.status });
     } catch {
       setPlan(null);
+    }
+    try {
+      setPlaybooks((await api<{ playbooks: any[] }>('/playbooks')).playbooks ?? []);
+    } catch {
+      setPlaybooks([]);
     }
   }, []);
 
@@ -938,6 +947,37 @@ export default function Taskpane() {
       setStatus((e as Error).message);
     } finally {
       setAttachingId(null);
+    }
+  }
+
+  // Run a playbook against the open email/matter. Run-all-then-review: nothing sends.
+  async function runPlaybookFor(p: { id: string; name: string }) {
+    setRunningPb(p.id);
+    setPbResults(null);
+    try {
+      const r = await api<{ matterId: string | null; results: Array<{ type: string; ok: boolean; detail: string }> }>(
+        `/playbooks/${p.id}/run`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            messageId: messageId || undefined,
+            conversationId: conversationId || undefined,
+            subject: subject || undefined,
+            matterId: matterId || undefined,
+          }),
+        }
+      );
+      setPbResults({ name: p.name, results: r.results });
+      if (r.matterId && r.matterId !== matterId) {
+        setMatterId(r.matterId);
+        await loadMatter(r.matterId);
+      }
+      loadFiles();
+      loadTasks();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setRunningPb(null);
     }
   }
 
@@ -1828,6 +1868,43 @@ export default function Taskpane() {
               </Card>
             );
           })()}
+
+          {/* ── Playbooks — named multi-step actions run against this email ── */}
+          {tab === 'email' && messageId && playbooks.length > 0 && (
+            <Card>
+              <Label>Playbooks</Label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {playbooks.map((p) => (
+                  <button
+                    key={p.id}
+                    style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
+                    onClick={() => runPlaybookFor(p)}
+                    disabled={!!runningPb}
+                    title={p.description || `Run ${p.name}`}
+                  >
+                    {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 700 }}>{p.name}</span>
+                      {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {pbResults && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                  <SubLabel>{pbResults.name} — done</SubLabel>
+                  <ul style={{ ...S.ul, fontSize: 12 }}>
+                    {pbResults.results.map((r, i) => (
+                      <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>
+                        {r.ok ? '✓' : '✕'} {r.detail}
+                      </li>
+                    ))}
+                  </ul>
+                  <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
+                </div>
+              )}
+            </Card>
+          )}
 
           {/* ── HOUSE TAB — the property/transaction record (editable, validated) ── */}
           {tab === 'house' && matterInfo?.matter && (

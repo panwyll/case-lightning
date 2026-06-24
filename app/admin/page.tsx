@@ -91,7 +91,7 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'templates' | 'docpacks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit'>('templates');
+  const [tab, setTab] = useState<'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit'>('templates');
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -106,6 +106,8 @@ export default function AdminPage() {
   const [audit, setAudit] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [referrals, setReferrals] = useState<any>(null);
+  const [playbooks, setPlaybooks] = useState<any[]>([]);
+  const [pb, setPb] = useState<{ name: string; description: string; steps: Array<{ type: string; config: any }> }>({ name: '', description: '', steps: [] });
   const [t, setT] = useState({ name: '', category: 'enquiry_response', subjectTemplate: '', bodyTemplate: '', styleTag: 'NEUTRAL' });
   const [rule, setRule] = useState({
     name: '',
@@ -127,6 +129,10 @@ export default function AdminPage() {
       if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
       if (tab === 'referrals') setReferrals(await api('/referrals'));
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
+      if (tab === 'playbooks') {
+        setPlaybooks((await api<{ playbooks: any[] }>('/admin/playbooks')).playbooks);
+        setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
+      }
       setStatus('');
     } catch (e) {
       setStatus((e as Error).message);
@@ -260,6 +266,52 @@ export default function AdminPage() {
     }
   }
 
+  // ── Playbooks ──────────────────────────────────────────────────────────────
+  const STEP_LABEL: Record<string, string> = {
+    CREATE_MATTER: 'Create matter (from the email)',
+    GENERATE_DOCS: 'Generate documents',
+    CREATE_TASK: 'Create a task',
+    DRAFT_REPLY: 'Draft a reply',
+  };
+  function addStep(type: string) {
+    const config = type === 'DRAFT_REPLY' ? { tone: 'NEUTRAL' } : type === 'CREATE_TASK' ? { detail: '', dueOffsetDays: '' } : type === 'GENERATE_DOCS' ? { templateIds: [] } : {};
+    setPb((p) => ({ ...p, steps: [...p.steps, { type, config }] }));
+  }
+  function setStepConfig(i: number, config: any) {
+    setPb((p) => ({ ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, config } : s)) }));
+  }
+  function removeStep(i: number) {
+    setPb((p) => ({ ...p, steps: p.steps.filter((_, j) => j !== i) }));
+  }
+  function moveStep(i: number, dir: -1 | 1) {
+    setPb((p) => {
+      const steps = [...p.steps];
+      const j = i + dir;
+      if (j < 0 || j >= steps.length) return p;
+      [steps[i], steps[j]] = [steps[j], steps[i]];
+      return { ...p, steps };
+    });
+  }
+  async function savePlaybook() {
+    if (!pb.name.trim() || !pb.steps.length) { setStatus('Give the playbook a name and at least one step.'); return; }
+    try {
+      await api('/admin/playbooks', { method: 'POST', body: JSON.stringify({ name: pb.name.trim(), description: pb.description.trim() || undefined, steps: pb.steps }) });
+      setPb({ name: '', description: '', steps: [] });
+      await load();
+      setStatus('Playbook saved.');
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+  async function deletePlaybook(id: string) {
+    try {
+      await api(`/admin/playbooks/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
   const box: React.CSSProperties = { maxWidth: 880, margin: '0 auto', padding: 24, color: '#0f172a' };
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '8px 14px',
@@ -281,6 +333,7 @@ export default function AdminPage() {
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
           <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Email templates</button>
           <button style={tabBtn(tab === 'docpacks')} onClick={() => setTab('docpacks')}>Doc packs</button>
+          <button style={tabBtn(tab === 'playbooks')} onClick={() => setTab('playbooks')}>Playbooks</button>
           <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>Team</button>
           <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
           <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
@@ -611,6 +664,98 @@ export default function AdminPage() {
                 <p style={{ fontSize: 12, color: '#b91c1c' }}>£{(referrals.commissions.clawedBackPennies / 100).toFixed(2)} clawed back (refunds/cancellations).</p>
               )}
             </div>
+          </>
+        )}
+
+        {tab === 'playbooks' && (
+          <>
+            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+              <h3 style={{ marginTop: 0, fontSize: 15 }}>Playbooks</h3>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                A playbook is a named set of actions your team runs against an email in one click
+                (e.g. <strong>Onboard client</strong>). Add steps in order; running it creates/drafts
+                everything for review — nothing is sent. Playbooks are suggested by the assistant.
+              </p>
+            </div>
+
+            {/* Builder */}
+            <div style={card}>
+              <h3 style={{ marginTop: 0 }}>New playbook</h3>
+              <input style={input} placeholder="Name (e.g. Onboard client)" value={pb.name} onChange={(e) => setPb({ ...pb, name: e.target.value })} />
+              <input style={input} placeholder="Description (helps the assistant suggest it)" value={pb.description} onChange={(e) => setPb({ ...pb, description: e.target.value })} />
+
+              {pb.steps.map((s, i) => (
+                <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8, background: '#fff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 13 }}>{i + 1}. {STEP_LABEL[s.type] ?? s.type}</strong>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button style={{ padding: '2px 7px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => moveStep(i, -1)}>↑</button>
+                      <button style={{ padding: '2px 7px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => moveStep(i, 1)}>↓</button>
+                      <button style={{ padding: '2px 7px', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => removeStep(i)}>✕</button>
+                    </div>
+                  </div>
+                  {s.type === 'DRAFT_REPLY' && (
+                    <select style={{ ...input, marginTop: 8, marginBottom: 0 }} value={s.config.tone ?? 'NEUTRAL'} onChange={(e) => setStepConfig(i, { ...s.config, tone: e.target.value })}>
+                      <option value="NEUTRAL">Neutral tone</option>
+                      <option value="FIRM">Firm tone</option>
+                      <option value="CHASING">Chasing tone</option>
+                    </select>
+                  )}
+                  {s.type === 'CREATE_TASK' && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <input style={{ ...input, marginBottom: 0, flex: 2 }} placeholder="Task detail" value={s.config.detail ?? ''} onChange={(e) => setStepConfig(i, { ...s.config, detail: e.target.value })} />
+                      <input style={{ ...input, marginBottom: 0, flex: 1 }} type="number" placeholder="Due in N days" value={s.config.dueOffsetDays ?? ''} onChange={(e) => setStepConfig(i, { ...s.config, dueOffsetDays: e.target.value })} />
+                    </div>
+                  )}
+                  {s.type === 'GENERATE_DOCS' && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Templates to generate:</div>
+                      {docTemplates.length === 0 && <div style={{ fontSize: 12, color: '#94a3b8' }}>No templates yet — add some in Doc packs first.</div>}
+                      {docTemplates.map((tpl) => {
+                        const ids: string[] = s.config.templateIds ?? [];
+                        const on = ids.includes(tpl.id);
+                        return (
+                          <label key={tpl.id} style={{ display: 'flex', gap: 6, fontSize: 13, marginBottom: 2 }}>
+                            <input type="checkbox" checked={on} onChange={(e) => setStepConfig(i, { ...s.config, templateIds: e.target.checked ? [...ids, tpl.id] : ids.filter((x) => x !== tpl.id) })} />
+                            {tpl.name}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {s.type === 'CREATE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Provisions a matter from the email (no setup needed).</div>}
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
+                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY'] as const).map((tp) => (
+                  <button key={tp} style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 7, background: '#f8fafc', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => addStep(tp)}>
+                    + {STEP_LABEL[tp]}
+                  </button>
+                ))}
+              </div>
+              <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
+                Save playbook
+              </button>
+            </div>
+
+            {/* Existing */}
+            {playbooks.map((p) => (
+              <div key={p.id} style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <strong>{p.name}</strong>
+                    {p.description && <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{p.description}</div>}
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
+                      {(p.steps ?? []).map((s: any, i: number) => `${i + 1}. ${STEP_LABEL[s.type] ?? s.type}`).join('  ·  ')}
+                    </div>
+                  </div>
+                  <button style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600, flexShrink: 0 }} onClick={() => deletePlaybook(p.id)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
           </>
         )}
 

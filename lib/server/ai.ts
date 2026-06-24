@@ -184,7 +184,7 @@ function chunkText(input: string, maxChars = 2400): string[] {
 export async function upsertChunks(args: {
   tenantId: string;
   matterId?: string;
-  sourceKind: 'EMAIL' | 'DOCUMENT' | 'TEMPLATE' | 'POLICY';
+  sourceKind: 'EMAIL' | 'DOCUMENT' | 'TEMPLATE' | 'POLICY' | 'PLAYBOOK';
   sourceId?: string;
   text: string;
   metadata: Record<string, unknown>;
