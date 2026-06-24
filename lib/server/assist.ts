@@ -24,7 +24,7 @@ import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
-import { hasDefinitiveSignal, type Candidate } from './matching';
+import { hasDefinitiveSignal, hasTrustedLink, type Candidate } from './matching';
 
 // Intents where a reply is the expected next step — so we spend the draft call.
 const REPLY_INTENTS = new Set(['ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
@@ -106,13 +106,16 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
   let triage = input.matterId ? null : await loadStoredTriage(user.tenantId, input.messageId);
   if (!triage) triage = await runTriage(user, message);
 
-  // Adopt a matter for DATA (facts, RAG, attachment review, the draft, contact
-  // harvest) only when the association is trustworthy: an explicit link, or a
-  // DEFINITIVE auto-match (linked thread / case-ref token). A fuzzy AUTO match
-  // (corroboration only) is shown as a suggestion to confirm — never injected —
-  // so one client's confidential data can't leak into another's email pre-link.
+  // READ a matter into the draft (facts, RAG, attachment review) on an explicit link
+  // or a DEFINITIVE match (linked thread / case-ref token) — these only surface case
+  // data to the firm's own reviewer. A fuzzy AUTO match (corroboration only) is shown
+  // as a suggestion, never injected.
   const definitiveMatch = triage.top?.band === 'AUTO' && hasDefinitiveSignal(triage.top);
   const matterId = input.matterId ?? (definitiveMatch ? triage.top!.matterId : null);
+  // WRITE to a matter (harvest contacts here; attachments are auto-filed in the
+  // webhook) only on a TRUSTED LINK the firm created — never the case-ref token,
+  // which lives in attacker-controlled email content and could poison the case.
+  const writeMatterId = input.matterId ?? (hasTrustedLink(triage.top) ? triage.top!.matterId : null);
 
   // Prefer the conversationId off the fetched message — it's Graph's own REST
   // value, whereas a client-supplied one may be an Office/EWS id that matches no
@@ -142,9 +145,9 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
       /* track column not migrated yet */
     }
 
-    // Harvest every address on this email (sender + to/cc) into the matter's
-    // address book, so later actions can target the right party. Best-effort.
-    await recordContactsFromMessage(user, matterId, message).catch(() => {});
+    // Harvest contacts into the matter's address book only on a trusted link — never
+    // on a token/fuzzy match (a persisted write off attacker-controllable content).
+    if (writeMatterId) await recordContactsFromMessage(user, writeMatterId, message).catch(() => {});
   }
 
   // Highlight the email in the Outlook message list (coloured categories) so it

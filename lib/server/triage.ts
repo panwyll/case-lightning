@@ -4,7 +4,7 @@
  * has opted in. Both paths are fully audited and matter-isolated.
  */
 import { query, queryOne } from './db';
-import { matchMessage, messageSignals, type Candidate } from './matching';
+import { matchMessage, messageSignals, hasTrustedLink, type Candidate } from './matching';
 import { classifyEmail, draftReply, retrieveMatterContext, type EmailIntent } from './ai';
 import {
   createReplyDraft,
@@ -242,6 +242,12 @@ export async function runAutoRules(
 ): Promise<AutoOutcome> {
   if (!triage.top || triage.top.band !== 'AUTO') {
     return { applied: false, actions: [], reason: 'No AUTO-band match; left for human review.' };
+  }
+  // Auto-rules link/categorise/draft/SEND, so they may only act on a TRUSTED LINK
+  // the firm created — never a case-ref token (attacker-injectable from the email
+  // body) or fuzzy corroboration. Token/fuzzy matches wait for a human to link.
+  if (!hasTrustedLink(triage.top)) {
+    return { applied: false, actions: [], reason: 'Match is not an explicitly-linked thread; auto-rules require a confirmed link.' };
   }
 
   const policy = await queryOne<{ automation_enabled: boolean; auto_send_enabled: boolean; allowed_external_domains: string[] }>(

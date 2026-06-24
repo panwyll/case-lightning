@@ -122,6 +122,19 @@ export function hasDefinitiveSignal(c: { signals?: MatchSignal[] } | null | unde
   return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD' || s.kind === 'CASE_REF_TOKEN');
 }
 
+/**
+ * The ONLY match signal safe to authorise a persisted matter WRITE (filing docs to
+ * a case's knowledge base, harvesting contacts, auto-rules). It means the firm
+ * itself linked this conversation to the matter (email_thread) — server-side state
+ * a sender cannot forge. CASE_REF_TOKEN is deliberately excluded: it's matched from
+ * the email's subject/body, which is attacker-controlled and the tokens are
+ * guessable, so it could be injected to poison a victim case's KB. Token/fuzzy
+ * matches may suggest and (for reviewed drafts) inject, but never write.
+ */
+export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined): boolean {
+  return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD');
+}
+
 function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
   const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN');
