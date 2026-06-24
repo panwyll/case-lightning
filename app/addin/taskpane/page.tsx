@@ -1775,20 +1775,33 @@ export default function Taskpane() {
             );
             return (
               <Card>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Label>Status</Label>
-                    <button
-                      style={S.ghostIcon}
-                      onClick={() => { loadMatter(); loadTasks(); }}
-                      disabled={!!busy}
-                      title="Refresh status"
-                      aria-label="Refresh status"
-                    >
-                      <Icon name="refresh" size={13} />
-                    </button>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  {/* Left: label + refresh, then the status rows */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+                      <Label>Status</Label>
+                      <button
+                        style={S.ghostIcon}
+                        onClick={() => { loadMatter(); loadTasks(); }}
+                        disabled={!!busy}
+                        title="Refresh status"
+                        aria-label="Refresh status"
+                      >
+                        <Icon name="refresh" size={13} />
+                      </button>
+                    </div>
+                    {kv('Status', (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 9px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 11, fontWeight: 700 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 999, background: fc.dot, flex: 'none' }} />
+                        {flag}
+                      </span>
+                    ))}
+                    {kv('Stage', stage)}
+                    {kv('Assigned to', assignedTo)}
+                    {kv('Notes', notes)}
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'stretch' }}>
+                  {/* Right: board links, stacked, pinned to the top corner */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'stretch', flex: 'none' }}>
                     <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
                       {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
                     </button>
@@ -1799,15 +1812,6 @@ export default function Taskpane() {
                     )}
                   </div>
                 </div>
-                {kv('Status', (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '1px 9px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 11, fontWeight: 700 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: 999, background: fc.dot, flex: 'none' }} />
-                    {flag}
-                  </span>
-                ))}
-                {kv('Stage', stage)}
-                {kv('Assigned to', assignedTo)}
-                {kv('Notes', notes)}
               </Card>
             );
           })()}
