@@ -2394,8 +2394,8 @@ export default function Taskpane() {
             <SubLabel>Auto-triage</SubLabel>
             <p style={S.muted}>
               {autoTriage?.enabled
-                ? 'On — new inbox mail is auto-matched, tagged, and run through your firm’s auto-rules.'
-                : 'Off — turn on to triage & tag incoming mail automatically (requires the deployed app).'}
+                ? 'On — incoming mail is auto-matched to a case, tagged, and pre-analysed so each email opens ready. It never sends a reply.'
+                : 'Off — we recommend leaving this on. It matches, tags & pre-analyses incoming mail (never sends). Requires the deployed app.'}
             </p>
             {autoTriage?.needsReconnect && (
               <p style={{ ...S.muted, color: '#b45309' }}>
