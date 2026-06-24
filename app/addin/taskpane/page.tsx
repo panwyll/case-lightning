@@ -1889,13 +1889,9 @@ export default function Taskpane() {
                 <Label>{preview.kind === 'reply' ? 'Reply draft' : preview.kind === 'update' ? 'Update draft' : 'Forward draft'}</Label>
                 <button style={{ ...S.iconAction, width: 26, height: 26 }} onClick={() => setPreview(null)} title="Dismiss" aria-label="Dismiss">✕</button>
               </div>
-              <p style={{ ...S.muted, margin: '0 0 8px' }}>Created in Outlook · never sent — review &amp; send it there.</p>
               <div style={S.kv}><span>To</span><span style={{ textAlign: 'right' }}>{preview.to}</span></div>
               <div style={S.kv}><span>Subject</span><span style={{ textAlign: 'right' }}>{preview.subject || '—'}</span></div>
               <div style={S.previewBody} dangerouslySetInnerHTML={{ __html: preview.bodyHtml }} />
-              {preview.webLink && (
-                <a style={{ ...S.secondary, display: 'inline-block', marginTop: 8, textDecoration: 'none' }} href={preview.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>
-              )}
             </Card>
           )}
 

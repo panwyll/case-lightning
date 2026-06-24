@@ -197,17 +197,42 @@ export async function createReplyDraft(
   opts: { appendToken?: string } = {}
 ): Promise<{ id: string; subject: string; webLink: string | null }> {
   const client = await graphClientForUser(userId);
-  const draft = await client.api(`/me/messages/${messageId}/createReply`).post({ comment: '' });
+
+  // Reuse an existing reply draft in this conversation rather than piling up a new
+  // draft every time the user re-runs the reply action. We only adopt a draft whose
+  // subject is a reply ("RE: …") so we never clobber a forward/new-message draft.
+  let draft: { id: string; subject?: string; webLink?: string | null } | null = null;
+  try {
+    const src = await client.api(`/me/messages/${messageId}`).select('conversationId').get();
+    const conversationId: string | undefined = src?.conversationId;
+    if (conversationId) {
+      const res = await client
+        .api('/me/messages')
+        .filter(`conversationId eq '${conversationId.replace(/'/g, "''")}'`)
+        .select('id,subject,isDraft,webLink,createdDateTime')
+        .top(50)
+        .get();
+      const time = (m: any) => new Date(m.createdDateTime ?? 0).getTime();
+      draft =
+        ((res.value ?? []) as any[])
+          .filter((m) => m.isDraft && /^\s*re\s*:/i.test(m.subject ?? ''))
+          .sort((a, b) => time(b) - time(a))[0] ?? null;
+    }
+  } catch {
+    // Best-effort dedup — fall through to creating a fresh reply.
+  }
+
+  const reply = draft ?? (await client.api(`/me/messages/${messageId}/createReply`).post({ comment: '' }));
   const updateBody: Record<string, unknown> = {
     body: { contentType: 'HTML', content: bodyHtml },
   };
-  let subject: string = draft.subject ?? '';
+  let subject: string = reply.subject ?? '';
   if (opts.appendToken && !subject.includes(`[#${opts.appendToken}]`)) {
     subject = `${subject} [#${opts.appendToken}]`;
     updateBody.subject = subject;
   }
-  await client.api(`/me/messages/${draft.id}`).patch(updateBody);
-  return { id: draft.id, subject, webLink: draft.webLink ?? null };
+  await client.api(`/me/messages/${reply.id}`).patch(updateBody);
+  return { id: reply.id, subject, webLink: reply.webLink ?? null };
 }
 
 /** Add a file as an attachment to a message; uses an upload session for >3 MB. */
