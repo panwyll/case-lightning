@@ -27,17 +27,31 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         conversationId: z.string().optional(),
         subject: z.string().optional(),
         matterId: z.string().uuid().optional(),
+        inputs: z
+          .object({
+            delegateToUserId: z.string().optional(),
+            delegateToEmail: z.string().optional(),
+            delegateToName: z.string().optional(),
+            notifyEmail: z.string().optional(),
+            notifyName: z.string().optional(),
+          })
+          .optional(),
       })
       .parse(await req.json());
 
     if (body.matterId) await assertMatterAccess(user, body.matterId);
 
-    const result = await runPlaybook(user, id, {
-      messageId: body.messageId ?? null,
-      conversationId: body.conversationId ?? null,
-      subject: body.subject ?? null,
-      matterId: body.matterId ?? null,
-    });
+    const result = await runPlaybook(
+      user,
+      id,
+      {
+        messageId: body.messageId ?? null,
+        conversationId: body.conversationId ?? null,
+        subject: body.subject ?? null,
+        matterId: body.matterId ?? null,
+      },
+      body.inputs ?? {}
+    );
     return ok(result);
   } catch (error) {
     return fail(error);

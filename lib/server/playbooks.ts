@@ -13,15 +13,24 @@
 import { query, queryOne } from './db';
 import { threadToText } from './text';
 import { randomMatterRef } from '../ref-name';
-import { listThreadMessages, createReplyDraft, uploadToMatterFolder } from './graph';
-import { proposeMatter, draftReply, upsertChunks } from './ai';
+import { listThreadMessages, createReplyDraft, uploadToMatterFolder, createForwardDraft, createDraftMessage } from './graph';
+import { proposeMatter, draftReply, draftUpdate, upsertChunks } from './ai';
 import { createMatter } from './matter';
 import { createTask } from './tasks';
 import { generateTemplateForMatter } from './doc-templates';
 import { isPremiumTenant } from './plan';
 import type { SessionUser } from './types';
 
-export type PlaybookStepType = 'CREATE_MATTER' | 'GENERATE_DOCS' | 'CREATE_TASK' | 'DRAFT_REPLY' | 'ARCHIVE_MATTER';
+export type PlaybookStepType = 'CREATE_MATTER' | 'GENERATE_DOCS' | 'CREATE_TASK' | 'DRAFT_REPLY' | 'ARCHIVE_MATTER' | 'DELEGATE' | 'NOTIFY';
+
+/** Run-time inputs collected from the user before running (dynamic step targets). */
+export interface RunInputs {
+  delegateToUserId?: string;
+  delegateToEmail?: string;
+  delegateToName?: string;
+  notifyEmail?: string;
+  notifyName?: string;
+}
 
 /** Starter workflows a firm can load with one click (template IDs are firm-specific,
  *  so the defaults avoid the docs step — admins add it once templates exist). */
@@ -112,7 +121,7 @@ function addDays(days: number): string {
  * abort the rest (each is best-effort + reported), so one bad step doesn't sink
  * the run. `matterId` flows: a CREATE_MATTER step sets it for later steps.
  */
-export async function runPlaybook(user: SessionUser, playbookId: string, ctx: RunContext): Promise<{ matterId: string | null; results: StepResult[] }> {
+export async function runPlaybook(user: SessionUser, playbookId: string, ctx: RunContext, inputs: RunInputs = {}): Promise<{ matterId: string | null; results: StepResult[] }> {
   const pb = await queryOne<{ steps: PlaybookStep[] }>(
     `select steps from playbook where id = $1 and tenant_id = $2 and enabled = true`,
     [playbookId, user.tenantId]
@@ -125,7 +134,7 @@ export async function runPlaybook(user: SessionUser, playbookId: string, ctx: Ru
 
   // Read the thread once if we'll need it.
   let threadText = '';
-  const needsThread = steps.some((s) => s.type === 'CREATE_MATTER' || s.type === 'DRAFT_REPLY');
+  const needsThread = steps.some((s) => s.type === 'CREATE_MATTER' || s.type === 'DRAFT_REPLY' || s.type === 'NOTIFY');
   if (needsThread && ctx.conversationId) {
     threadText = threadToText(await listThreadMessages(user.userId, ctx.conversationId)).slice(0, 12000);
   }
@@ -212,6 +221,36 @@ export async function runPlaybook(user: SessionUser, playbookId: string, ctx: Ru
           [user.tenantId, matterId]
         ).catch(() => {});
         results.push({ type: step.type, ok: true, detail: 'Matter archived (closed)' });
+      } else if (step.type === 'DELEGATE') {
+        if (!matterId) throw new Error('no matter to delegate');
+        const uid = inputs.delegateToUserId || step.config.assigneeUserId;
+        const email = inputs.delegateToEmail || step.config.email;
+        if (!email) throw new Error('no team member chosen');
+        if (uid) {
+          await query(`update matter set assigned_to = $1, updated_at = now() where id = $2 and tenant_id = $3`, [uid, matterId, user.tenantId]);
+        }
+        if (ctx.messageId) {
+          await createForwardDraft(user.userId, ctx.messageId, email, step.config.note || '');
+        }
+        results.push({ type: step.type, ok: true, detail: `Assigned to ${inputs.delegateToName || email}${ctx.messageId ? ' and forwarded' : ''}` });
+      } else if (step.type === 'NOTIFY') {
+        if (!matterId) throw new Error('no matter for the notification');
+        const email = inputs.notifyEmail || step.config.email;
+        if (!email) throw new Error('no recipient chosen');
+        const name = inputs.notifyName || email;
+        const draft = await draftUpdate({
+          userId: user.userId,
+          tenantId: user.tenantId,
+          matterId,
+          recipientName: name,
+          recipientRole: 'a contact',
+          threadText,
+          matterFacts: {},
+          retrievedContext: '',
+          templateText: '',
+        });
+        await createDraftMessage(user.userId, draft.subject, draft.bodyHtml, [email]);
+        results.push({ type: step.type, ok: true, detail: `Update to ${name} drafted in Outlook` });
       }
     } catch (e) {
       results.push({ type: step.type, ok: false, detail: (e as Error).message });

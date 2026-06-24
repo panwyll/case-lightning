@@ -9,7 +9,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Step = z.object({ type: z.enum(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER']), config: z.record(z.any()).default({}) });
+const Step = z.object({ type: z.enum(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY']), config: z.record(z.any()).default({}) });
 
 export async function GET() {
   try {

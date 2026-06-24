@@ -320,6 +320,7 @@ export default function Taskpane() {
   const [playbooks, setPlaybooks] = useState<Array<{ id: string; name: string; description: string | null; steps: any[] }>>([]);
   const [runningPb, setRunningPb] = useState<string | null>(null);
   const [pbResults, setPbResults] = useState<{ name: string; results: Array<{ type: string; ok: boolean; detail: string }> } | null>(null);
+  const [pbInputs, setPbInputs] = useState<{ p: { id: string; name: string; steps?: any[] }; needsDelegate: boolean; needsNotify: boolean; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -950,10 +951,32 @@ export default function Taskpane() {
     }
   }
 
-  // Run a playbook against the open email/matter. Run-all-then-review: nothing sends.
-  async function runPlaybookFor(p: { id: string; name: string }) {
+  // A workflow with a Delegate/Notify step needs a target chosen at run time. If so,
+  // open the inputs form; otherwise run straight away.
+  function runPlaybookFor(p: { id: string; name: string; steps?: any[] }) {
+    const steps = p.steps ?? [];
+    const needsDelegate = steps.some((s: any) => s.type === 'DELEGATE');
+    const needsNotify = steps.some((s: any) => s.type === 'NOTIFY');
+    if (needsDelegate || needsNotify) {
+      const client = (matterInfo?.contacts ?? []).find((c: any) => c.role === 'CLIENT');
+      setPbInputs({
+        p,
+        needsDelegate,
+        needsNotify,
+        delegateToUserId: assignees[0]?.id ?? '',
+        notifyEmail: client?.email ?? '',
+        notifyName: client?.name ?? '',
+      });
+      return;
+    }
+    doRunPlaybook(p, {});
+  }
+
+  // Run-all-then-review: nothing sends.
+  async function doRunPlaybook(p: { id: string; name: string }, inputs: Record<string, string | undefined>) {
     setRunningPb(p.id);
     setPbResults(null);
+    setPbInputs(null);
     try {
       const r = await api<{ matterId: string | null; results: Array<{ type: string; ok: boolean; detail: string }> }>(
         `/playbooks/${p.id}/run`,
@@ -964,6 +987,7 @@ export default function Taskpane() {
             conversationId: conversationId || undefined,
             subject: subject || undefined,
             matterId: matterId || undefined,
+            inputs,
           }),
         }
       );
@@ -979,6 +1003,18 @@ export default function Taskpane() {
     } finally {
       setRunningPb(null);
     }
+  }
+
+  function confirmRunInputs() {
+    if (!pbInputs) return;
+    const a = assignees.find((x) => x.id === pbInputs.delegateToUserId);
+    doRunPlaybook(pbInputs.p, {
+      delegateToUserId: pbInputs.needsDelegate ? pbInputs.delegateToUserId || undefined : undefined,
+      delegateToEmail: pbInputs.needsDelegate ? a?.email : undefined,
+      delegateToName: pbInputs.needsDelegate ? a?.display_name || a?.email : undefined,
+      notifyEmail: pbInputs.needsNotify ? pbInputs.notifyEmail.trim() || undefined : undefined,
+      notifyName: pbInputs.needsNotify ? pbInputs.notifyName.trim() || undefined : undefined,
+    });
   }
 
   const loadTemplates = useCallback(async (mid = matterId) => {
@@ -1241,7 +1277,7 @@ export default function Taskpane() {
     : assist?.draft
     ? 'reply'
     : (assist?.outstanding?.length ?? 0) > 0
-    ? 'delegate'
+    ? 'action'
     : 'action';
   // The panel that's expanded: the user's explicit pick, else the recommendation.
   const effectiveAction = chosenAction ?? recommended;
@@ -1642,7 +1678,6 @@ export default function Taskpane() {
                 {([
                   ['reply', 'reply', 'Reply'],
                   ['action', 'check', 'Action'],
-                  ['delegate', 'user', 'Delegate'],
                   ['ignore', 'minus', 'Ignore'],
                 ] as const).map(([key, icon, lbl]) => {
                   const active = effectiveAction === key;
@@ -1724,6 +1759,36 @@ export default function Taskpane() {
                             </button>
                           ))}
                         </div>
+                        {pbInputs && (
+                          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
+                            <SubLabel>Run “{pbInputs.p.name}”</SubLabel>
+                            {pbInputs.needsDelegate && (
+                              <label style={{ display: 'block', marginBottom: 6 }}>
+                                <span style={S.fieldLabel}>Delegate to</span>
+                                <select style={{ ...S.input, marginBottom: 0 }} value={pbInputs.delegateToUserId} onChange={(e) => setPbInputs({ ...pbInputs, delegateToUserId: e.target.value })}>
+                                  <option value="">Choose a team member…</option>
+                                  {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                                </select>
+                              </label>
+                            )}
+                            {pbInputs.needsNotify && (
+                              <label style={{ display: 'block', marginBottom: 6 }}>
+                                <span style={S.fieldLabel}>Notify (email)</span>
+                                <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={pbInputs.notifyEmail} onChange={(e) => setPbInputs({ ...pbInputs, notifyEmail: e.target.value })} />
+                              </label>
+                            )}
+                            <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                              <button
+                                style={{ ...S.primary, marginTop: 0, flex: 'none', padding: '8px 16px' }}
+                                onClick={confirmRunInputs}
+                                disabled={(pbInputs.needsDelegate && !pbInputs.delegateToUserId) || (pbInputs.needsNotify && !pbInputs.notifyEmail.trim())}
+                              >
+                                Run
+                              </button>
+                              <button style={S.secondary} onClick={() => setPbInputs(null)}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
                         {pbResults && (
                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
                             <SubLabel>{pbResults.name} — done</SubLabel>
@@ -1745,34 +1810,6 @@ export default function Taskpane() {
                   </div>
                 );
               })()}
-
-              {/* Delegate — assign it on the tracker + draft a forward to a colleague */}
-              {effectiveAction === 'delegate' && (
-                <div style={S.actionPanel}>
-                  <select
-                    style={{ ...S.input, marginBottom: 6 }}
-                    value={delegateAssignee}
-                    onChange={(e) => setDelegateAssignee(e.target.value)}
-                  >
-                    <option value="">Delegate to…</option>
-                    {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
-                  </select>
-                  <textarea
-                    style={{ ...S.textarea, marginBottom: 6 }}
-                    rows={2}
-                    placeholder="Instructions (optional) — included on the forward and the tracker"
-                    value={delegateInstructions}
-                    onChange={(e) => setDelegateInstructions(e.target.value)}
-                  />
-                  <button
-                    style={{ ...S.primary, marginTop: 0, opacity: delegateAssignee ? 1 : 0.5 }}
-                    onClick={delegateTo}
-                    disabled={!delegateAssignee}
-                  >
-                    Assign on tracker + draft forward
-                  </button>
-                </div>
-              )}
 
               {/* Ignore — read, nothing to do */}
               {effectiveAction === 'ignore' && (

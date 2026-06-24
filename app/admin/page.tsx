@@ -274,6 +274,8 @@ export default function AdminPage() {
     CREATE_TASK: 'Create a task',
     DRAFT_REPLY: 'Draft a reply',
     ARCHIVE_MATTER: 'Archive matter (close it)',
+    DELEGATE: 'Delegate (assign + forward)',
+    NOTIFY: 'Notify someone',
   };
   function addStep(type: string) {
     const config = type === 'DRAFT_REPLY' ? { tone: 'NEUTRAL' } : type === 'CREATE_TASK' ? { detail: '', dueOffsetDays: '' } : type === 'GENERATE_DOCS' ? { templateIds: [] } : {};
@@ -751,11 +753,13 @@ export default function AdminPage() {
                   )}
                   {s.type === 'CREATE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Provisions a matter from the email (no setup needed).</div>}
                   {s.type === 'ARCHIVE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Closes the matter so it drops off the live board (no setup needed).</div>}
+                  {s.type === 'DELEGATE' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Assigns the matter on the tracker and forwards the email. You pick the team member when you run it.</div>}
+                  {s.type === 'NOTIFY' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Drafts an update email. You choose the recipient (client or any address) when you run it.</div>}
                 </div>
               ))}
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
-                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER'] as const).map((tp) => (
+                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY'] as const).map((tp) => (
                   <button key={tp} style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 7, background: '#f8fafc', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => addStep(tp)}>
                     + {STEP_LABEL[tp]}
                   </button>
