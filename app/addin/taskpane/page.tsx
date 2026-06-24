@@ -1345,11 +1345,14 @@ export default function Taskpane() {
   // present, otherwise generates one; the panel shows a spinner the whole time.
   useEffect(() => {
     if (recommended !== 'reply' || !assist?.ready || !messageId || !conversationId) return;
+    // `busy` is in the deps so that if another action (e.g. loadMatter) is mid-flight
+    // when analysis lands, this re-runs and fires once that clears — otherwise the
+    // panel hangs on "Preparing the reply…" forever.
     if (autoRepliedFor.current === messageId || replyReady || busy) return;
     autoRepliedFor.current = messageId;
     openReply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommended, assist?.ready, messageId, conversationId, replyReady]);
+  }, [recommended, assist?.ready, messageId, conversationId, replyReady, busy]);
 
   // Log the move the user picked — analytics only, never blocks the UI. This is
   // the only footprint some moves leave (esp. Ignore, and Delegate before a task
