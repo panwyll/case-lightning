@@ -50,6 +50,7 @@ export async function processMatterFile(
   let documentType = '';
   let substantive = false;
   let readable = false;
+  let indexText = ''; // document content to embed into the matter's RAG index
   if (isPdf) {
     try {
       const { review } = await reviewDocument({
@@ -67,9 +68,14 @@ export async function processMatterFile(
       documentType = (review.documentType || '').trim();
       const detail = (review.keyDetails?.length ?? 0) > 0 || (review.summary || '').trim().length > 40;
       substantive = !!documentType && detail;
+      indexText = reviewToIndexText(review); // reuse this review — no second LLM call
     } catch {
       /* couldn't read it — fall through to log-only */
     }
+  } else if (/\.docx$/i.test(opts.fileName) || opts.mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    indexText = extractDocxText(buffer.toString('base64')).slice(0, 40000);
+  } else if ((opts.mimeType || '').startsWith('text/') || /\.txt$/i.test(opts.fileName)) {
+    indexText = buffer.toString('utf8').slice(0, 40000);
   }
 
   // Record the file so it isn't reprocessed (idempotent on graph_item_id).
@@ -78,9 +84,9 @@ export async function processMatterFile(
     [matterId, user.tenantId, opts.itemId]
   );
   if (!existing) {
-    await query(
+    const doc = await queryOne<{ id: string }>(
       `insert into document (tenant_id, matter_id, source_type, graph_item_id, storage_path, file_name, mime_type, hash_sha256, doc_type, created_by)
-       values ($1,$2,'ONEDRIVE_UPLOAD',$3,$4,$5,$6,$7,$8,$9)`,
+       values ($1,$2,'ONEDRIVE_UPLOAD',$3,$4,$5,$6,$7,$8,$9) returning id`,
       [
         user.tenantId,
         matterId,
@@ -93,6 +99,15 @@ export async function processMatterFile(
         user.userId,
       ]
     );
+    // Index the content so manually-added case files are searchable by the drafter.
+    await upsertChunks({
+      tenantId: user.tenantId,
+      matterId,
+      sourceKind: 'DOCUMENT',
+      sourceId: doc!.id,
+      text: indexText ? `${opts.fileName}\n${indexText}` : `${opts.fileName}\n${opts.mimeType ?? ''}`,
+      metadata: { fileName: opts.fileName, graphItemId: opts.itemId, source: 'ONEDRIVE_UPLOAD', indexed: indexText ? 'content' : 'name' },
+    }).catch(() => {});
   }
 
   // Always reflect the arrival in the Excel tracker.
@@ -242,6 +257,61 @@ function extractDocxText(base64: string): string {
   }
 }
 
+/** Compact, retrieval-friendly text from a document review (type + summary + facts). */
+function reviewToIndexText(review: {
+  documentType?: string;
+  summary?: string;
+  keyDetails?: Array<{ label: string; value: string }>;
+}): string {
+  const details = (review.keyDetails ?? []).map((k) => `${k.label}: ${k.value}`).join('; ');
+  return [`[${review.documentType ?? 'document'}] ${review.summary ?? ''}`.trim(), details].filter(Boolean).join('\n').slice(0, 40000);
+}
+
+/**
+ * Text to EMBED for a saved document, so the matter's RAG index knows its content
+ * (not just its filename). docx/text are extracted locally; PDFs and images are
+ * summarised by Claude into a compact, salient representation that retrieves well.
+ * Best-effort — returns '' when nothing can be read.
+ */
+async function buildDocIndexText(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  fileName: string,
+  contentType: string | null | undefined,
+  base64: string
+): Promise<string> {
+  const lower = fileName.toLowerCase();
+  const ct = (contentType || '').toLowerCase();
+  try {
+    if (lower.endsWith('.docx') || ct === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      return extractDocxText(base64).slice(0, 40000);
+    }
+    if (ct.startsWith('text/') || lower.endsWith('.txt')) {
+      return Buffer.from(base64, 'base64').toString('utf8').slice(0, 40000);
+    }
+    const isPdf = ct === 'application/pdf' || lower.endsWith('.pdf');
+    const isImage = /^image\/(png|jpe?g|gif|webp)$/i.test(ct) || /\.(png|jpe?g|gif|webp)$/i.test(lower);
+    if (isPdf || isImage) {
+      const { review } = await reviewDocument({
+        userId: user.userId,
+        tenantId: user.tenantId,
+        matterId,
+        fileName,
+        ...(isPdf
+          ? { pdfBase64: base64, mimeType: 'application/pdf' }
+          : { imageBase64: base64, mimeType: contentType || 'image/jpeg' }),
+        expectations:
+          'Identify this document and capture its substantive content for a searchable case index: the type, a faithful summary, and the key details (dates, amounts, parties, addresses, references).',
+        retrievedContext: '',
+      });
+      return reviewToIndexText(review);
+    }
+  } catch {
+    /* unreadable / provider can’t read it — fall back to filename-only index */
+  }
+  return '';
+}
+
 /**
  * Ground truth about what is *actually* attached to an email, so the drafter never
  * pretends to have received documents that aren't there. `hasAttachments === false`
@@ -314,13 +384,16 @@ export async function saveEmailAttachmentsToMatter(
         user.userId,
       ]
     );
+    // Index the document's CONTENT (not just its filename) so the drafter is
+    // case-aware across the matter's documents, not only the current email.
+    const indexText = await buildDocIndexText(user, matterId, att.name, att.contentType, att.contentBytes);
     await upsertChunks({
       tenantId: user.tenantId,
       matterId,
       sourceKind: 'DOCUMENT',
       sourceId: doc!.id,
-      text: `${att.name}\n${att.contentType ?? ''}`,
-      metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT' },
+      text: indexText ? `${att.name}\n${indexText}` : `${att.name}\n${att.contentType ?? ''}`,
+      metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
     }).catch(() => {});
     saved += 1;
   }
