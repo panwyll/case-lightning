@@ -6,13 +6,10 @@
  * but a cron can be missed (Hobby plan is best-effort) or a renewal can fail
  * (the user's M365 token lapsed), after which firing silently dies.
  *
- * To make firing robust regardless of the cron, we separate INTENT from STATE:
- *   - app_user.auto_triage_enabled  → the user opted in (survives subscription loss)
- *   - graph_subscription            → the live subscription (transient)
- *
- * `ensureSubscription` reconciles the two: if the user wants auto-triage but the
- * subscription is missing or expiring soon, it renews or recreates it. The
- * taskpane calls this on open (so active users self-heal), and so does the cron.
+ * Auto-triage is always on (no opt-out — see isAutoTriageDesired), so the only
+ * transient state is the `graph_subscription` row. `ensureSubscription` reconciles
+ * it: if the subscription is missing or expiring soon, it renews or recreates it.
+ * The taskpane calls this on open (so active users self-heal), and so does the cron.
  */
 import { config } from './config';
 import { query, queryOne } from './db';
@@ -54,17 +51,11 @@ export function humanizeSubscriptionError(error: unknown): SubscriptionSetupErro
 }
 
 /** True once the user has opted in (intent flag). */
-export async function isAutoTriageDesired(userId: string): Promise<boolean> {
-  const row = await queryOne<{ auto_triage_enabled: boolean }>(
-    `select auto_triage_enabled from app_user where id = $1`,
-    [userId]
-  );
-  return !!row?.auto_triage_enabled;
-}
-
-/** Persist the opt-in intent (does not touch the live subscription). */
-export async function setAutoTriageDesired(userId: string, desired: boolean): Promise<void> {
-  await query(`update app_user set auto_triage_enabled = $1 where id = $2`, [desired, userId]);
+// Auto-triage is always on — it only matches/tags/pre-analyses incoming mail and
+// never sends, so there's no opt-out. (A future premium auto-PROCESS feature, which
+// would actually act on mail, will be a separate opt-in — wired another time.)
+export async function isAutoTriageDesired(_userId: string): Promise<boolean> {
+  return true;
 }
 
 /**

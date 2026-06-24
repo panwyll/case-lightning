@@ -24,10 +24,10 @@ export async function GET(req: NextRequest) {
       return fail(new Error('Unauthorized'));
     }
 
-    // Everyone who opted in — not just rows that exist — so we also rebuild
-    // subscriptions that were lost entirely.
+    // Auto-triage is always on, so arm every Graph-connected user — not just rows
+    // that already have a subscription — to also rebuild ones lost entirely.
     const users = await query<{ id: string; tenant_id: string }>(
-      `select id, tenant_id from app_user where auto_triage_enabled = true`
+      `select id, tenant_id from app_user where graph_refresh_token is not null`
     );
 
     let healthy = 0;

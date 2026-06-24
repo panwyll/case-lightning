@@ -469,13 +469,6 @@ export default function Taskpane() {
     }
   }
 
-  async function toggleAutoTriage() {
-    await run(autoTriage?.enabled ? 'Disabling auto-triage' : 'Enabling auto-triage', async () => {
-      await api('/graph/subscriptions', { method: autoTriage?.enabled ? 'DELETE' : 'POST' });
-      setAutoTriage(await api('/graph/subscriptions'));
-      setStatus(autoTriage?.enabled ? 'Auto-triage off.' : 'Auto-triage on — new inbox mail will be tagged & matched.');
-    });
-  }
 
   // ── Onboarding ───────────────────────────────────────────────────────────────
   const refreshOnboarding = useCallback(async (): Promise<ObJob | null> => {
@@ -2393,18 +2386,14 @@ export default function Taskpane() {
             </p>
             <SubLabel>Auto-triage</SubLabel>
             <p style={S.muted}>
-              {autoTriage?.enabled
-                ? 'On — incoming mail is auto-matched to a case, tagged, and pre-analysed so each email opens ready. It never sends a reply.'
-                : 'Off — we recommend leaving this on. It matches, tags & pre-analyses incoming mail (never sends). Requires the deployed app.'}
+              Always on — incoming mail is auto-matched to a case, tagged, and pre-analysed so each email
+              opens ready. It never sends a reply.
             </p>
             {autoTriage?.needsReconnect && (
               <p style={{ ...S.muted, color: '#b45309' }}>
-                Auto-triage is on but Outlook stopped letting us watch your inbox — reconnect your account, then turn it on again.
+                Outlook stopped letting us watch your inbox — reconnect your account to resume auto-triage.
               </p>
             )}
-            <button style={autoTriage?.enabled ? S.secondary : S.primary} onClick={toggleAutoTriage}>
-              {autoTriage?.enabled ? 'Turn off auto-triage' : 'Turn on auto-triage'}
-            </button>
           </Card>
         </>
       )}
