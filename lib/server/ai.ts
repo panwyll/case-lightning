@@ -15,6 +15,7 @@
  * Security: thread/document content is always presented as untrusted DATA, never
  * as instructions (prompt-injection defence carried over from the original build).
  */
+import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config';
 import { query, queryOne } from './db';
@@ -490,6 +491,23 @@ export async function reviewDocument(input: {
   expectations: string;
   retrievedContext: string;
 }): Promise<{ review: DocReview; model: string }> {
+  // Content-addressed review cache: the same document on the same matter is reviewed
+  // once and shared across ingest indexing, draft-time review and regenerates. Keyed
+  // by matter because the consistency-checks are matter-relative; a 14-day TTL bounds
+  // staleness against changing matter facts.
+  const cacheContent = input.pdfBase64 || input.imageBase64 || input.documentText || '';
+  const canCache = Boolean(input.matterId && cacheContent);
+  const contentHash = canCache ? crypto.createHash('sha256').update(cacheContent).digest('hex') : '';
+  if (canCache) {
+    const hit = await queryOne<{ review: DocReview; model: string | null }>(
+      `select review, model from doc_review_cache
+        where tenant_id = $1 and matter_id = $2 and content_hash = $3
+          and created_at > now() - interval '14 days'`,
+      [input.tenantId, input.matterId, contentHash]
+    ).catch(() => null);
+    if (hit?.review) return { review: hit.review, model: hit.model ?? 'cache' };
+  }
+
   const { provider, apiKey, byok } = await resolveProvider(input.userId);
   if (provider !== 'anthropic') {
     throw new Error(
@@ -590,7 +608,17 @@ export async function reviewDocument(input: {
   await recordAiUsage({ ctx, provider, model, tier: 'draft', usage: anthropicUsage(resp.usage), byok, status: 'SUCCESS', latencyMs: Date.now() - startedAt, meta: { fileName: input.fileName } });
   const block = resp.content.find((b) => b.type === 'tool_use');
   if (!block || block.type !== 'tool_use') throw new Error('Model did not return a structured review');
-  return { review: block.input as DocReview, model };
+  const review = block.input as DocReview;
+  if (canCache) {
+    await query(
+      `insert into doc_review_cache (tenant_id, matter_id, content_hash, review, model)
+       values ($1,$2,$3,$4::jsonb,$5)
+       on conflict (tenant_id, matter_id, content_hash)
+       do update set review = excluded.review, model = excluded.model, created_at = now()`,
+      [input.tenantId, input.matterId, contentHash, JSON.stringify(review), model]
+    ).catch(() => {});
+  }
+  return { review, model };
 }
 
 /** Map a matter's track to the "we act for …" phrase fed to the drafting AI. */
