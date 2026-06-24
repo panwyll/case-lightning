@@ -1703,9 +1703,9 @@ export default function Taskpane() {
                     {/* Playbooks — named multi-step actions */}
                     {(playbooks.length > 0 || me?.role === 'ADMIN') && (
                       <div style={{ marginTop: 12 }}>
-                        <span style={S.updateLabel}>Playbooks</span>
+                        <span style={S.updateLabel}>Workflows</span>
                         {playbooks.length === 0 && (
-                          <p style={{ ...S.muted, margin: '4px 0 0' }}>No playbooks yet — create one to run a set of actions in one go.</p>
+                          <p style={{ ...S.muted, margin: '4px 0 0' }}>No workflows yet — create one to run a set of steps in one go.</p>
                         )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
                           {playbooks.map((p) => (
@@ -1737,7 +1737,7 @@ export default function Taskpane() {
                         )}
                         {me?.role === 'ADMIN' && (
                           <a href="/admin" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
-                            Manage actions →
+                            Manage workflows →
                           </a>
                         )}
                       </div>

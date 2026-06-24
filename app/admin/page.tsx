@@ -293,12 +293,12 @@ export default function AdminPage() {
     });
   }
   async function savePlaybook() {
-    if (!pb.name.trim() || !pb.steps.length) { setStatus('Give the playbook a name and at least one step.'); return; }
+    if (!pb.name.trim() || !pb.steps.length) { setStatus('Give the workflow a name and at least one step.'); return; }
     try {
       await api('/admin/playbooks', { method: 'POST', body: JSON.stringify({ name: pb.name.trim(), description: pb.description.trim() || undefined, steps: pb.steps }) });
       setPb({ name: '', description: '', steps: [] });
       await load();
-      setStatus('Playbook saved.');
+      setStatus('Workflow saved.');
     } catch (e) {
       setStatus((e as Error).message);
     }
@@ -333,7 +333,7 @@ export default function AdminPage() {
         <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid #e2e8f0', marginBottom: 16 }}>
           <button style={tabBtn(tab === 'templates')} onClick={() => setTab('templates')}>Email templates</button>
           <button style={tabBtn(tab === 'docpacks')} onClick={() => setTab('docpacks')}>Doc packs</button>
-          <button style={tabBtn(tab === 'playbooks')} onClick={() => setTab('playbooks')}>Playbooks</button>
+          <button style={tabBtn(tab === 'playbooks')} onClick={() => setTab('playbooks')}>Workflows</button>
           <button style={tabBtn(tab === 'team')} onClick={() => setTab('team')}>Team</button>
           <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
           <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
@@ -670,17 +670,17 @@ export default function AdminPage() {
         {tab === 'playbooks' && (
           <>
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <h3 style={{ marginTop: 0, fontSize: 15 }}>Playbooks</h3>
+              <h3 style={{ marginTop: 0, fontSize: 15 }}>Workflows</h3>
               <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                A playbook is a named set of actions your team runs against an email in one click
+                A workflow is a named sequence of steps your team runs against an email in one click
                 (e.g. <strong>Onboard client</strong>). Add steps in order; running it creates/drafts
-                everything for review — nothing is sent. Playbooks are suggested by the assistant.
+                everything for review — nothing is sent. Workflows are suggested by the assistant.
               </p>
             </div>
 
             {/* Builder */}
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>New playbook</h3>
+              <h3 style={{ marginTop: 0 }}>New workflow</h3>
               <input style={input} placeholder="Name (e.g. Onboard client)" value={pb.name} onChange={(e) => setPb({ ...pb, name: e.target.value })} />
               <input style={input} placeholder="Description (helps the assistant suggest it)" value={pb.description} onChange={(e) => setPb({ ...pb, description: e.target.value })} />
 
@@ -735,7 +735,7 @@ export default function AdminPage() {
                 ))}
               </div>
               <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
-                Save playbook
+                Save workflow
               </button>
             </div>
 
