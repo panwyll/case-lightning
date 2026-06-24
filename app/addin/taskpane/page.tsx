@@ -1768,8 +1768,19 @@ export default function Taskpane() {
             return (
               <Card>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                  <Label>Status</Label>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Label>Status</Label>
+                    <button
+                      style={{ ...S.iconAction, width: 24, height: 24 }}
+                      onClick={() => { loadMatter(); loadTasks(); }}
+                      disabled={!!busy}
+                      title="Refresh status"
+                      aria-label="Refresh status"
+                    >
+                      <Icon name="refresh" size={13} />
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
                     <button style={S.pillBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
                       {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={12} />
                     </button>
