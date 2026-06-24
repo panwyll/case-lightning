@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+interface MatterHit {
+  id: string;
+  matterRef: string;
+  propertyAddress: string | null;
+}
+
 interface Template {
   id: string;
   name: string;
@@ -35,8 +41,60 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
+// A matter search box with a results dropdown; calls onSelect with the chosen matter.
+function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSelect: (m: MatterHit | null) => void }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState<MatterHit[]>([]);
+  useEffect(() => {
+    if (selected) return; // collapsed once chosen
+    let active = true;
+    if (q.trim().length < 1) { setResults([]); return; }
+    const id = setTimeout(() => {
+      api<{ matters: MatterHit[] }>(`/matters?q=${encodeURIComponent(q.trim())}`)
+        .then((r) => { if (active) setResults(r.matters ?? []); })
+        .catch(() => {});
+    }, 200);
+    return () => { active = false; clearTimeout(id); };
+  }, [q, selected]);
+
+  const card: React.CSSProperties = { border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', marginBottom: 4 };
+  const inp: React.CSSProperties = { width: '100%', padding: 8, border: '1px solid #cbd5e1', borderRadius: 6 };
+
+  if (selected) {
+    return (
+      <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <div>
+          <strong style={{ fontSize: 13 }}>{selected.matterRef}</strong>
+          {selected.propertyAddress && <div style={{ fontSize: 12, color: '#64748b' }}>{selected.propertyAddress}</div>}
+        </div>
+        <button style={{ padding: '4px 10px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => { onSelect(null); setQ(''); }}>
+          Change
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <input style={inp} placeholder="Search reference or address…" value={q} onChange={(e) => setQ(e.target.value)} />
+      {results.map((m) => (
+        <div
+          key={m.id}
+          style={{ ...card, marginTop: 4, cursor: 'pointer' }}
+          onClick={() => { onSelect(m); setResults([]); }}
+        >
+          <strong style={{ fontSize: 13 }}>{m.matterRef}</strong>
+          {m.propertyAddress && <div style={{ fontSize: 12, color: '#64748b' }}>{m.propertyAddress}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminPage() {
-  const [tab, setTab] = useState<'templates' | 'docpacks' | 'team' | 'policy' | 'rules' | 'referrals' | 'audit'>('templates');
+  const [tab, setTab] = useState<'templates' | 'docpacks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit'>('templates');
+  const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
+  const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [status, setStatus] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
@@ -182,6 +240,26 @@ export default function AdminPage() {
     }
   }
 
+  async function mergeCases() {
+    if (!mergeKeep || !mergeAway) return;
+    if (mergeKeep.id === mergeAway.id) { setStatus('Pick two different matters.'); return; }
+    if (!window.confirm(`Merge ${mergeAway.matterRef} into ${mergeKeep.matterRef}? All of ${mergeAway.matterRef}’s emails, documents, tasks and contacts move to ${mergeKeep.matterRef}, and ${mergeAway.matterRef} is archived. This can’t be undone automatically.`)) return;
+    setMergeBusy(true);
+    try {
+      const r = await api<{ keepRef: string; mergedRef: string }>('/matters/merge', {
+        method: 'POST',
+        body: JSON.stringify({ keepId: mergeKeep.id, mergeId: mergeAway.id }),
+      });
+      setStatus(`Merged ${r.mergedRef} into ${r.keepRef}.`);
+      setMergeKeep(null);
+      setMergeAway(null);
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setMergeBusy(false);
+    }
+  }
+
   const box: React.CSSProperties = { maxWidth: 880, margin: '0 auto', padding: 24, color: '#0f172a' };
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '8px 14px',
@@ -207,6 +285,7 @@ export default function AdminPage() {
           <button style={tabBtn(tab === 'policy')} onClick={() => setTab('policy')}>Policy</button>
           <button style={tabBtn(tab === 'rules')} onClick={() => setTab('rules')}>Auto-rules</button>
           <button style={tabBtn(tab === 'referrals')} onClick={() => setTab('referrals')}>Referrals</button>
+          <button style={tabBtn(tab === 'actions')} onClick={() => setTab('actions')}>Actions</button>
           <button style={tabBtn(tab === 'audit')} onClick={() => setTab('audit')}>Audit</button>
         </div>
 
@@ -531,6 +610,36 @@ export default function AdminPage() {
               {referrals.commissions.clawedBackPennies > 0 && (
                 <p style={{ fontSize: 12, color: '#b91c1c' }}>£{(referrals.commissions.clawedBackPennies / 100).toFixed(2)} clawed back (refunds/cancellations).</p>
               )}
+            </div>
+          </>
+        )}
+
+        {tab === 'actions' && (
+          <>
+            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
+              <h3 style={{ marginTop: 0, fontSize: 15 }}>Merge cases</h3>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                If the same case was created as two separate matters, merge the duplicate into the one
+                you want to keep. All emails, documents, tasks, contacts and identifiers move across; the
+                duplicate is archived (its OneDrive folder is left in place and noted on the survivor’s case log).
+              </p>
+            </div>
+            <div style={card}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Keep this matter</label>
+              <div style={{ marginTop: 4, marginBottom: 12 }}>
+                <MatterPicker selected={mergeKeep} onSelect={setMergeKeep} />
+              </div>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Merge this one into it (archived)</label>
+              <div style={{ marginTop: 4, marginBottom: 12 }}>
+                <MatterPicker selected={mergeAway} onSelect={setMergeAway} />
+              </div>
+              <button
+                style={{ padding: '8px 16px', background: '#b91c1c', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: !mergeKeep || !mergeAway || mergeBusy ? 0.5 : 1 }}
+                onClick={mergeCases}
+                disabled={!mergeKeep || !mergeAway || mergeBusy}
+              >
+                {mergeBusy ? 'Merging…' : 'Merge cases'}
+              </button>
             </div>
           </>
         )}

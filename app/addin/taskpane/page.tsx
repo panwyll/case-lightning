@@ -255,6 +255,7 @@ export default function Taskpane() {
   // When a matter is linked, the drawer shows just the matter + "Change matter".
   // Setting this reveals the candidate/create chooser so they can pick another.
   const [changing, setChanging] = useState(false);
+  const [merging, setMerging] = useState(false);
   // Free-text search over all the firm's matters — for linking to one the
   // auto-matcher didn't surface as a candidate.
   const [matterSearch, setMatterSearch] = useState('');
@@ -594,6 +595,7 @@ export default function Taskpane() {
           setTasks([]);
           setDocs([]);
           setChanging(false);
+          setMerging(false);
           setShowNewMatter(false);
           setMatterSearch('');
           setMatterResults([]);
@@ -855,6 +857,26 @@ export default function Taskpane() {
       setStatus(`Linked to ${m.matterRef}.`);
     });
     runAssist(m.id);
+  }
+
+  // Merge the CURRENT matter into the picked one (current is archived). Used by the
+  // "Merge into another matter…" entry when two matters are really one case.
+  async function mergeInto(target: { id: string; matterRef: string }) {
+    if (!matterId) return;
+    if (!window.confirm(`Merge this matter into ${target.matterRef}? All of its emails, documents, tasks and contacts move to ${target.matterRef}, and this matter is archived. This can’t be undone automatically.`)) return;
+    const ok = await run(`Merging into ${target.matterRef}`, async () => {
+      await api('/matters/merge', { method: 'POST', body: JSON.stringify({ keepId: target.id, mergeId: matterId }) });
+      return true;
+    });
+    if (!ok) return;
+    setMerging(false);
+    setChanging(false);
+    setLinkOpen(false);
+    setMatterSearch('');
+    setMatterId(target.id);
+    await loadMatter(target.id);
+    setStatus(`Merged into ${target.matterRef}.`);
+    runAssist(target.id);
   }
 
   async function summarise() {
@@ -1152,7 +1174,7 @@ export default function Taskpane() {
   // query returns recent matters, so the list is useful the moment it opens.
   const choosing = drawerOpen && (changing || !matterId);
   useEffect(() => {
-    if (!choosing) return;
+    if (!choosing && !merging) return;
     const t = setTimeout(async () => {
       try {
         const r = await api<{ matters: Array<{ id: string; matterRef: string; propertyAddress: string }> }>(
@@ -1164,7 +1186,7 @@ export default function Taskpane() {
       }
     }, 250);
     return () => clearTimeout(t);
-  }, [choosing, matterSearch]);
+  }, [choosing, merging, matterSearch]);
 
   // Once we know the matter, an incoming email only ever resolves one of four
   // ways. We surface all four and pre-light the one the classifier implies:
@@ -1431,6 +1453,38 @@ export default function Taskpane() {
                     {linkedAddr && <div style={{ fontSize: 12, color: '#475569' }}>{linkedAddr}</div>}
                   </div>
                   <button style={S.secondary} onClick={() => setChanging(true)}>Change matter</button>
+                  {!merging ? (
+                    <button
+                      style={{ display: 'block', marginTop: 8, background: 'transparent', border: 'none', color: '#b91c1c', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                      onClick={() => { setMerging(true); setMatterSearch(''); setMatterResults([]); }}
+                    >
+                      Merge into another matter…
+                    </button>
+                  ) : (
+                    <div style={{ marginTop: 10 }}>
+                      <SubLabel>Merge this matter into… (this one is archived)</SubLabel>
+                      <input
+                        style={S.input}
+                        placeholder="Search reference or address…"
+                        value={matterSearch}
+                        onChange={(e) => setMatterSearch(e.target.value)}
+                      />
+                      {matterResults.filter((m) => m.id !== matterId).slice(0, 6).map((m) => (
+                        <div key={m.id} style={S.candidate}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <strong style={{ fontSize: 13 }}>{m.matterRef}</strong>
+                              {m.propertyAddress && (
+                                <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                              )}
+                            </div>
+                            <button style={{ ...S.secondary, color: '#b91c1c', borderColor: '#fecaca', flex: 'none' }} onClick={() => mergeInto(m)}>Merge</button>
+                          </div>
+                        </div>
+                      ))}
+                      <button style={{ ...S.secondary, marginTop: 6 }} onClick={() => { setMerging(false); setMatterSearch(''); }}>Cancel</button>
+                    </div>
+                  )}
                 </>
               ) : (
                 // Chooser: candidates to pick from, or create a new matter.
