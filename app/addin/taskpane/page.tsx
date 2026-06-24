@@ -1764,7 +1764,6 @@ export default function Taskpane() {
                 ? { bg: '#fef9c3', fg: '#854d0e', dot: '#f59e0b' }
                 : { bg: '#dcfce7', fg: '#166534', dot: '#16a34a' };
             const stage = humanize(matterInfo?.matter?.stage || 'INSTRUCTION');
-            const trackerUrl = matterInfo?.matter?.tracker_web_url;
             const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
             const open = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
             const owner = assignees.find((a) => a.id === matterInfo?.matter?.assigned_to);
@@ -1778,8 +1777,8 @@ export default function Taskpane() {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   {/* Left: label + refresh, then the status rows */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
-                      <Label>Status</Label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>Status</span>
                       <button
                         style={S.ghostIcon}
                         onClick={() => { loadMatter(); loadTasks(); }}
@@ -1800,16 +1799,11 @@ export default function Taskpane() {
                     {kv('Assigned to', assignedTo)}
                     {kv('Notes', notes)}
                   </div>
-                  {/* Right: board links, stacked, pinned to the top corner */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'stretch', flex: 'none' }}>
+                  {/* Right: open the firm-wide team tracker, pinned to the top corner */}
+                  <div style={{ flex: 'none' }}>
                     <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
                       {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
                     </button>
-                    {trackerUrl && (
-                      <a style={S.boardBtn} href={trackerUrl} target="_blank" rel="noreferrer" title="Open the case log in a new tab">
-                        Case log <Icon name="external" size={11} />
-                      </a>
-                    )}
                   </div>
                 </div>
               </Card>
