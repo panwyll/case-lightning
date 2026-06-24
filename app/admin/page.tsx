@@ -48,12 +48,13 @@ function money(pennies: number, currency: string): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: (currency || 'GBP').toUpperCase() }).format(pennies / 100);
 }
 
-type TabKey = 'billing' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'billing' | 'board' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
+  board: { label: 'Matter board', subtitle: 'Every live matter by stage — oversight at a glance, without living in the inbox. Read-only for now.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
   playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
@@ -68,6 +69,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   { label: 'Account', tabs: ['billing'] },
+  { label: 'Oversight', tabs: ['board'] },
   { label: 'Automation & templates', tabs: ['templates', 'docpacks', 'playbooks', 'rules'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
@@ -76,7 +78,20 @@ const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['board', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
+
+// Conveyancing stage model — the board's columns, in workflow order.
+const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
+const STAGE_LABEL: Record<string, string> = {
+  INSTRUCTION: 'Instruction',
+  CONTRACT_PACK: 'Contract pack',
+  SEARCHES_ENQUIRIES: 'Searches & enquiries',
+  REVIEW_SIGNING: 'Review & signing',
+  EXCHANGE: 'Exchange',
+  COMPLETION: 'Completion',
+  POST_COMPLETION: 'Post-completion',
+};
+const FLAG_DOT: Record<string, string> = { ON_TRACK: '#16a34a', NEEDS_ATTENTION: '#f59e0b', BLOCKED: '#dc2626' };
 
 const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
@@ -170,6 +185,7 @@ export default function AdminPage() {
   const aiGenFileRef = useRef<HTMLInputElement>(null);
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
+  const [board, setBoard] = useState<any[]>([]);
   const [copiedRef, setCopiedRef] = useState(false);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
@@ -206,6 +222,7 @@ export default function AdminPage() {
         setBilling(await api('/billing/account'));
         setReferrals(await api('/referrals'));
       }
+      if (tab === 'board') setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
@@ -380,6 +397,7 @@ export default function AdminPage() {
           defaultDisclaimer: policy.default_disclaimer ?? '',
           folderNamingPattern: policy.folder_naming_pattern ?? '{matter_ref}',
           allowedExternalDomains: policy.allowed_external_domains ?? [],
+          mailSubfoldersEnabled: !!policy.mail_subfolders_enabled,
         }),
       });
       setStatus('Policy saved.');
@@ -693,6 +711,52 @@ export default function AdminPage() {
           </>
         )}
 
+        {tab === 'board' && (
+          <>
+            {board.length === 0 ? (
+              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>No live matters yet.</div>
+            ) : (
+              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start' }}>
+                {STAGE_ORDER.map((stage) => {
+                  const col = board.filter((m) => (m.stage || 'INSTRUCTION') === stage);
+                  return (
+                    <div key={stage} style={{ flex: '0 0 230px', minWidth: 230 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px 8px' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{STAGE_LABEL[stage] ?? stage}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>{col.length}</span>
+                      </div>
+                      <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 8, minHeight: 60 }}>
+                        {col.length === 0 ? (
+                          <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
+                        ) : (
+                          col.map((m) => {
+                            const date = m.completionTargetDate || m.exchangeTargetDate;
+                            return (
+                              <div key={m.id} style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
+                                  <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
+                                </div>
+                                {m.propertyAddress && (
+                                  <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                                )}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginTop: 6, fontSize: 11, color: '#64748b' }}>
+                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assignee || 'Unassigned'}</span>
+                                  {date && <span style={{ whiteSpace: 'nowrap', color: '#475569' }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
         {tab === 'templates' && (
           <>
             <div style={card}>
@@ -917,6 +981,19 @@ export default function AdminPage() {
               value={(policy.allowed_external_domains ?? []).join(',')}
               onChange={(e) => setPolicy({ ...policy, allowed_external_domains: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })}
             />
+            <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13, margin: '6px 0 12px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={!!policy.mail_subfolders_enabled}
+                onChange={(e) => setPolicy({ ...policy, mail_subfolders_enabled: e.target.checked })}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                <strong>Per-matter Inbox subfolders.</strong> Give each matter its own Outlook Inbox subfolder and
+                move matched emails into it as they’re actioned. Off keeps your inbox untouched (matched mail is still
+                tagged, just not moved).
+              </span>
+            </label>
             <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePolicy}>
               Save policy
             </button>

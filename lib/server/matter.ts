@@ -79,8 +79,8 @@ export interface CreateMatterResult {
  * several cases at once).
  */
 export async function createMatter(user: SessionUser, input: CreateMatterInput): Promise<CreateMatterResult> {
-  const policy = await queryOne<{ folder_naming_pattern: string }>(
-    `select folder_naming_pattern from policy_config where tenant_id = $1`,
+  const policy = await queryOne<{ folder_naming_pattern: string; mail_subfolders_enabled: boolean }>(
+    `select folder_naming_pattern, mail_subfolders_enabled from policy_config where tenant_id = $1`,
     [user.tenantId]
   );
 
@@ -144,14 +144,17 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
   const folder = await ensureMatterFolder(user.userId, folderPath);
   const tracker = await ensureExcelTracker(user.userId, folderPath);
 
-  // Give the matter its own Inbox subfolder so processed mail can be filed there.
+  // Give the matter its own Inbox subfolder so processed mail can be filed there —
+  // but only when the firm has opted in (off by default; toggled in Admin → Policy).
   // Best-effort — a mailbox without folder permissions shouldn't fail matter setup.
   const folderDisplayName = mailFolderName(matterRef, input.propertyAddress);
   let mailFolderId: string | null = null;
-  try {
-    mailFolderId = await ensureInboxSubfolder(user.userId, folderDisplayName);
-  } catch {
-    /* no folder permission / mailbox quirk — skip; mail just won't auto-file */
+  if (policy?.mail_subfolders_enabled) {
+    try {
+      mailFolderId = await ensureInboxSubfolder(user.userId, folderDisplayName);
+    } catch {
+      /* no folder permission / mailbox quirk — skip; mail just won't auto-file */
+    }
   }
 
   await query(

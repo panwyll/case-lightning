@@ -342,6 +342,8 @@ export default function Taskpane() {
   const [obRefEdit, setObRefEdit] = useState<Record<string, string>>({});
   const [obLookback, setObLookback] = useState<'3' | 'unlimited'>('3');
   const [obSearch, setObSearch] = useState('');
+  // Per-matter Inbox subfolders — opt-in; nudge the admin once at first import.
+  const [subfolderPref, setSubfolderPref] = useState<{ enabled: boolean; prompted: boolean } | null>(null);
   const obDriving = useRef(false);
   // First-run: until the firm has scanned its backlog (or chosen to skip), lead
   // with the import. obFetched gates it so the hero doesn't flash before we know.
@@ -518,6 +520,22 @@ export default function Taskpane() {
       obDriving.current = false;
     }
   }, [refreshOnboarding]);
+
+  // Load the subfolder preference once we know the user is an admin (only admins can
+  // set it, and only they see the nudge).
+  useEffect(() => {
+    if (me?.role !== 'ADMIN') return;
+    api<{ enabled: boolean; prompted: boolean }>('/settings/mail-subfolders').then(setSubfolderPref).catch(() => {});
+  }, [me]);
+
+  async function chooseSubfolders(enabled: boolean) {
+    try {
+      await api('/settings/mail-subfolders', { method: 'POST', body: JSON.stringify({ enabled }) });
+    } catch {
+      /* best-effort — the choice is a nudge, not a blocker */
+    }
+    setSubfolderPref({ enabled, prompted: true });
+  }
 
   async function startOnboarding() {
     const started = await run('Starting scan', async () => {
@@ -2420,6 +2438,22 @@ export default function Taskpane() {
                   <option value="3">Last 3 months</option>
                   <option value="unlimited">All history (premium)</option>
                 </select>
+
+                {/* One-time nudge: per-matter Inbox subfolders are opt-in. */}
+                {subfolderPref && !subfolderPref.prompted && me?.role === 'ADMIN' && (
+                  <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#075985', marginBottom: 4 }}>Tidy matched mail into matter folders?</div>
+                    <p style={{ fontSize: 12, color: '#334155', margin: '0 0 8px', lineHeight: 1.45 }}>
+                      CONVEYi can give each matter its own Inbox subfolder and move matched emails into it as you
+                      action them. Off by default — change it any time in <strong>Admin → Policy</strong>.
+                    </p>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button style={{ ...S.primary, marginTop: 0, flex: 1, width: 'auto', padding: '7px 0' }} onClick={() => chooseSubfolders(true)}>Enable</button>
+                      <button style={{ ...S.secondary, flex: 1 }} onClick={() => chooseSubfolders(false)}>Not now</button>
+                    </div>
+                  </div>
+                )}
+
                 <button style={S.primary} onClick={startOnboarding}>
                   Scan my inbox
                 </button>
