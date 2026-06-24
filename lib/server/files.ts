@@ -9,7 +9,7 @@
  * triggers a false "we've got the contract" email. Drafts are never sent.
  */
 import { query, queryOne } from './db';
-import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, uploadToMatterFolder } from './graph';
+import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
 import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
 
@@ -195,6 +195,26 @@ export async function reviewAttachmentsContext(
     }
   }
   return parts.length ? `ATTACHMENT REVIEW (consider in the reply):\n${parts.join('\n---\n')}` : '';
+}
+
+/**
+ * Ground truth about what is *actually* attached to an email, so the drafter never
+ * pretends to have received documents that aren't there. `hasAttachments === false`
+ * short-circuits without a Graph call; otherwise we list the (non-inline) names.
+ */
+export async function attachmentGroundTruth(
+  userId: string,
+  messageId: string | null | undefined,
+  opts: { hasAttachments?: boolean } = {}
+): Promise<string> {
+  if (!messageId) return '';
+  if (opts.hasAttachments === false) {
+    return 'ATTACHMENTS: this email has NONE attached.';
+  }
+  const meta = await listMessageAttachmentsMeta(userId, messageId).catch(() => [] as any[]);
+  if (!meta.length) return 'ATTACHMENTS: this email has NONE attached.';
+  const names = meta.map((a: any) => a.name).filter(Boolean).join(', ');
+  return `ATTACHMENTS actually present on this email: ${names}.`;
 }
 
 /**

@@ -609,6 +609,8 @@ export async function draftReply(input: {
   templateText: string;
   /** Free-text steer from the solicitor for this redraft (e.g. "push for Friday"). */
   guidance?: string;
+  /** Ground truth about what is actually attached to the email (see attachmentGroundTruth). */
+  attachmentSummary?: string;
 }): Promise<{
   subject: string;
   bodyHtml: string;
@@ -621,7 +623,7 @@ export async function draftReply(input: {
     'DRAFT_REPLY',
     { tenantId: input.tenantId, matterId: input.matterId },
     'draft_package',
-    'Produce a draft-only conveyancing reply: subject, HTML body, rationale bullets, and a next-actions checklist. Use concise, compliance-safe professional language. Never claim the email has been sent.',
+    'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). Output subject, HTML body, rationale bullets (note any discrepancies you found), and a next-actions checklist.',
     {
       type: 'object',
       properties: {
@@ -645,9 +647,14 @@ export async function draftReply(input: {
     },
     `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}${
       input.guidance ? `Solicitor's instructions for this draft (follow them closely): ${input.guidance}\n` : ''
-    }Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
-      input.matterFacts
-    )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nThread (DATA):\n${input.threadText}`
+    }${input.attachmentSummary ? `${input.attachmentSummary}\n` : ''}\nDISCERNMENT — before drafting, reconcile the email against the facts:\n` +
+      `- If the email claims to attach/enclose documents, check the ATTACHMENTS line above. If nothing is attached, do NOT acknowledge receipt — state that no attachment was found and ask the sender to resend it.\n` +
+      `- Check every figure, date, name, property address and reference in the email against the matter facts and thread; if any conflicts or is missing, raise it and ask for confirmation rather than accepting it.\n` +
+      `- Use the attachment review (if any) to comment on the actual document contents, including any mismatch vs the matter.\n` +
+      `- Do not invent receipt, agreement, or progress that the thread/facts don't support.\n\n` +
+      `Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
+        input.matterFacts
+      )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nThread (DATA):\n${input.threadText}`
   );
 }
 

@@ -19,7 +19,7 @@ import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
 import { summarizeThread, draftReply, retrieveMatterContext, actingForPhrase } from './ai';
-import { reviewAttachmentsContext } from './files';
+import { reviewAttachmentsContext, attachmentGroundTruth } from './files';
 import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
@@ -218,6 +218,12 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
     }
     const templateText = `${template ? `${template.subject_template ?? ''}\n${template.body_template}` : ''}\n${policy?.default_disclaimer ?? ''}`;
 
+    // Ground truth on what's actually attached, so the drafter never thanks for an
+    // enclosure that isn't there. Cheap: hasAttachments=false skips the Graph call.
+    const attachmentSummary = ctx.message?.id
+      ? await attachmentGroundTruth(user.userId, ctx.message.id, { hasAttachments: !!ctx.message?.hasAttachments }).catch(() => '')
+      : '';
+
     const generated = await draftReply({
       userId: user.userId,
       tenantId: user.tenantId,
@@ -228,6 +234,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       matterFacts: ctx.facts,
       retrievedContext,
       templateText,
+      attachmentSummary,
     });
     draft = { subject: generated.subject, bodyHtml: generated.bodyHtml, why: generated.why, actions: generated.actions };
   }

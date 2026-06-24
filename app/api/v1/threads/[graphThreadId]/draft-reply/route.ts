@@ -6,7 +6,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
 import { draftReply, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
-import { reviewAttachmentsContext } from '@/lib/server/files';
+import { reviewAttachmentsContext, attachmentGroundTruth } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -92,6 +92,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       policy?.default_disclaimer ?? ''
     }`;
 
+    // Ground truth on what's actually attached, so the drafter doesn't acknowledge
+    // enclosures that aren't there.
+    const attachmentSummary = await attachmentGroundTruth(user.userId, body.messageId).catch(() => '');
+
     const draft = await draftReply({
       userId: user.userId,
       tenantId: user.tenantId,
@@ -103,6 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       retrievedContext,
       templateText,
       guidance: body.guidance,
+      attachmentSummary,
     });
 
     const docs = body.matterId
