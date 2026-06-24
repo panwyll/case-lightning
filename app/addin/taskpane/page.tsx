@@ -1195,6 +1195,11 @@ export default function Taskpane() {
   // the current tone + guidance, which create-draft folds into the SAME Outlook draft.
   async function openReply(opts: { regen?: boolean } = {}) {
     setReplyFailed(false);
+    // Watchdog: drafting goes through the LLM + Graph, so bound it. If it stalls,
+    // abort the request so the spinner releases and the panel offers a retry rather
+    // than spinning forever.
+    const ctrl = new AbortController();
+    const watchdog = setTimeout(() => ctrl.abort(), 40000);
     const done = await run(opts.regen ? REPLY_BUSY_REGEN : REPLY_BUSY_CREATE, async () => {
       requireThread();
       if (!messageId) throw new Error('Open an email first.');
@@ -1203,6 +1208,7 @@ export default function Taskpane() {
       if (!bodyHtml) {
         const g = await api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
           method: 'POST',
+          signal: ctrl.signal,
           body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone, guidance: guidance.trim() || undefined }),
         });
         subject = g.subject;
@@ -1212,6 +1218,7 @@ export default function Taskpane() {
         `/threads/${encodeURIComponent(conversationId)}/create-draft`,
         {
           method: 'POST',
+          signal: ctrl.signal,
           body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
         }
       );
@@ -1220,6 +1227,7 @@ export default function Taskpane() {
       fileCurrentEmail();
       return true;
     });
+    clearTimeout(watchdog);
     if (!done) setReplyFailed(true);
   }
 
