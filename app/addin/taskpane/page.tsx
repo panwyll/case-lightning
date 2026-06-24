@@ -1930,6 +1930,9 @@ export default function Taskpane() {
                     {files.map((f) => {
                       const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
                       const size = fmtSize(f.size);
+                      // The matter's own case log (Tracker.xlsx) isn't an attachable document.
+                      const isTracker = f.id === matterInfo?.matter?.tracker_item_id || /^Tracker\.xlsx$/i.test(f.name);
+                      const attaching = attachingId === f.id;
                       return (
                         <div key={f.id} style={S.fileRow} title={f.name}>
                           <a
@@ -1943,15 +1946,17 @@ export default function Taskpane() {
                             {size && <span style={S.fileMeta}>{size}</span>}
                             {when && <span style={S.fileMeta}>{when}</span>}
                           </a>
-                          <button
-                            style={{ ...S.ghostIcon, flex: 'none', color: attachingId === f.id ? '#5A27E0' : '#94a3b8', opacity: conversationId ? 1 : 0.4 }}
-                            onClick={() => attachToReply(f)}
-                            disabled={!conversationId || attachingId === f.id}
-                            title={conversationId ? 'Attach to a reply' : 'Open an email to attach this to a reply'}
-                            aria-label="Attach to a reply"
-                          >
-                            <Icon name="clip" size={14} />
-                          </button>
+                          {!isTracker && (
+                            <button
+                              style={{ ...S.ghostIcon, flex: 'none', color: attaching ? '#5A27E0' : '#94a3b8', opacity: conversationId ? 1 : 0.4 }}
+                              onClick={() => attachToReply(f)}
+                              disabled={!conversationId || !!attachingId}
+                              title={attaching ? 'Attaching…' : conversationId ? 'Attach to a reply' : 'Open an email to attach this to a reply'}
+                              aria-label="Attach to a reply"
+                            >
+                              {attaching ? <span style={S.spinner} /> : <Icon name="clip" size={14} />}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
