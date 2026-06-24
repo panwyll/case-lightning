@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
-const Step = z.object({ type: z.enum(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY']), config: z.record(z.any()).default({}) });
+const Step = z.object({ type: z.enum(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER']), config: z.record(z.any()).default({}) });
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   try {

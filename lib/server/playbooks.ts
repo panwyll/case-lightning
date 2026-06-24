@@ -21,7 +21,39 @@ import { generateTemplateForMatter } from './doc-templates';
 import { isPremiumTenant } from './plan';
 import type { SessionUser } from './types';
 
-export type PlaybookStepType = 'CREATE_MATTER' | 'GENERATE_DOCS' | 'CREATE_TASK' | 'DRAFT_REPLY';
+export type PlaybookStepType = 'CREATE_MATTER' | 'GENERATE_DOCS' | 'CREATE_TASK' | 'DRAFT_REPLY' | 'ARCHIVE_MATTER';
+
+/** Starter workflows a firm can load with one click (template IDs are firm-specific,
+ *  so the defaults avoid the docs step — admins add it once templates exist). */
+export const DEFAULT_PLAYBOOKS: Array<{ name: string; description: string; steps: PlaybookStep[] }> = [
+  {
+    name: 'Onboard client',
+    description: 'New instruction → create the matter, open first tasks, and acknowledge by email.',
+    steps: [
+      { type: 'CREATE_MATTER', config: {} },
+      { type: 'CREATE_TASK', config: { detail: 'Open file & run conflict check', dueOffsetDays: 1 } },
+      { type: 'CREATE_TASK', config: { detail: 'Send client care letter & request ID/AML documents', dueOffsetDays: 2 } },
+      { type: 'DRAFT_REPLY', config: { tone: 'NEUTRAL' } },
+    ],
+  },
+  {
+    name: 'Archive case',
+    description: 'Completion/closure → log a final file check, archive the matter, and confirm.',
+    steps: [
+      { type: 'CREATE_TASK', config: { detail: 'Final file check, account & store/destroy per policy', dueOffsetDays: 7 } },
+      { type: 'ARCHIVE_MATTER', config: {} },
+      { type: 'DRAFT_REPLY', config: { tone: 'NEUTRAL' } },
+    ],
+  },
+  {
+    name: 'Chase the other side',
+    description: 'Outstanding response → draft a chasing reply and set a follow-up task.',
+    steps: [
+      { type: 'DRAFT_REPLY', config: { tone: 'CHASING' } },
+      { type: 'CREATE_TASK', config: { detail: 'Chase outstanding enquiries / response', dueOffsetDays: 3 } },
+    ],
+  },
+];
 
 export interface PlaybookStep {
   type: PlaybookStepType;
@@ -168,6 +200,18 @@ export async function runPlaybook(user: SessionUser, playbookId: string, ctx: Ru
         });
         await createReplyDraft(user.userId, ctx.messageId, draft.bodyHtml);
         results.push({ type: step.type, ok: true, detail: 'Draft reply created in Outlook' });
+      } else if (step.type === 'ARCHIVE_MATTER') {
+        if (!matterId) throw new Error('no matter to archive');
+        await query(
+          `update matter set status = 'CLOSED', updated_at = now() where id = $1 and tenant_id = $2`,
+          [matterId, user.tenantId]
+        );
+        await query(
+          `insert into matter_timeline_event (tenant_id, matter_id, event_at, event_type, title)
+           values ($1, $2, now(), 'MATTER_ARCHIVED', 'Matter archived')`,
+          [user.tenantId, matterId]
+        ).catch(() => {});
+        results.push({ type: step.type, ok: true, detail: 'Matter archived (closed)' });
       }
     } catch (e) {
       results.push({ type: step.type, ok: false, detail: (e as Error).message });

@@ -272,6 +272,7 @@ export default function AdminPage() {
     GENERATE_DOCS: 'Generate documents',
     CREATE_TASK: 'Create a task',
     DRAFT_REPLY: 'Draft a reply',
+    ARCHIVE_MATTER: 'Archive matter (close it)',
   };
   function addStep(type: string) {
     const config = type === 'DRAFT_REPLY' ? { tone: 'NEUTRAL' } : type === 'CREATE_TASK' ? { detail: '', dueOffsetDays: '' } : type === 'GENERATE_DOCS' ? { templateIds: [] } : {};
@@ -307,6 +308,15 @@ export default function AdminPage() {
     try {
       await api(`/admin/playbooks/${id}`, { method: 'DELETE' });
       await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+  async function loadExampleWorkflows() {
+    try {
+      const r = await api<{ added: string[] }>('/admin/playbooks/examples', { method: 'POST' });
+      await load();
+      setStatus(r.added.length ? `Added: ${r.added.join(', ')}.` : 'Example workflows already present.');
     } catch (e) {
       setStatus((e as Error).message);
     }
@@ -724,19 +734,25 @@ export default function AdminPage() {
                     </div>
                   )}
                   {s.type === 'CREATE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Provisions a matter from the email (no setup needed).</div>}
+                  {s.type === 'ARCHIVE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Closes the matter so it drops off the live board (no setup needed).</div>}
                 </div>
               ))}
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
-                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY'] as const).map((tp) => (
+                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER'] as const).map((tp) => (
                   <button key={tp} style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 7, background: '#f8fafc', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => addStep(tp)}>
                     + {STEP_LABEL[tp]}
                   </button>
                 ))}
               </div>
-              <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
-                Save workflow
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
+                  Save workflow
+                </button>
+                <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={loadExampleWorkflows}>
+                  Load example workflows
+                </button>
+              </div>
             </div>
 
             {/* Existing */}
