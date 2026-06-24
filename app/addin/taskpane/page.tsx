@@ -1367,7 +1367,7 @@ export default function Taskpane() {
             const showSpinner = matchKind === 'pending' && !assistError;
             return (
               <button
-                style={{ ...S.hero, ...m.style }}
+                style={{ ...S.hero, ...m.style, ...(drawerOpen ? S.heroOpen : null) }}
                 onClick={() => setLinkOpen((o) => !o)}
                 title="Show matter options"
                 aria-expanded={drawerOpen}
@@ -1415,7 +1415,13 @@ export default function Taskpane() {
           {/* Matter drawer — two states only: confirm the linked matter, or choose
               a different one (pick a candidate / create new). */}
           {drawerOpen && (
-            <Card>
+            <div
+              style={{
+                ...S.matterDrawer,
+                borderColor:
+                  matchKind === 'found' ? '#86efac' : matchKind === 'partial' ? '#fde68a' : matchKind === 'none' ? '#fecaca' : '#e2e8f0',
+              }}
+            >
               {matterId && !changing ? (
                 // Linked: show the matter, one way to change it.
                 <>
@@ -1532,7 +1538,7 @@ export default function Taskpane() {
                   )}
                 </>
               )}
-            </Card>
+            </div>
           )}
 
           {/* Tab bar — the matter pill above is the fixed "which matter" anchor;
@@ -2583,6 +2589,21 @@ const S: Record<string, React.CSSProperties> = {
   heroPartial: { background: '#fef9c3', borderColor: '#fde68a', color: '#854d0e' },
   heroNone: { background: '#fee2e2', borderColor: '#fecaca', color: '#991b1b' },
   heroPending: { background: '#f1f5f9', borderColor: '#e2e8f0', color: '#475569' },
+  // When the drawer is open the pill becomes the header of a single connected
+  // container: square off the bottom and drop the gap so the drawer joins onto it.
+  heroOpen: { borderRadius: '14px 14px 0 0', marginBottom: 0 },
+  // The drawer, rendered as the body of that container — flat top, no top border
+  // (the pill's bottom edge is the divider), same coloured outline as the pill.
+  matterDrawer: {
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderTopWidth: 0,
+    borderRadius: '0 0 14px 14px',
+    marginTop: 0,
+    marginBottom: 10,
+    padding: 12,
+    background: '#f8fafc',
+  },
   tabBar: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, marginBottom: 12, background: '#f1f5f9', padding: 4, borderRadius: 10 },
   tabBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 6px', background: 'transparent', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer' },
   tabBtnActive: { background: '#fff', color: '#5A27E0', boxShadow: '0 1px 2px rgba(0,0,0,0.06)' },
