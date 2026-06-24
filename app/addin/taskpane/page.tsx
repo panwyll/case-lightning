@@ -2302,6 +2302,7 @@ function HousePanel({
   const dateStr = (s: unknown) => (s ? String(s).slice(0, 10) : '');
   const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
   const initial = {
+    track: matter.track || 'PURCHASE',
     propertyAddress: matter.property_address ?? '',
     purchasePrice: matter.purchase_price ?? (priceKey ? String(facts[priceKey]) : ''),
     counterpartySolicitor: matter.counterparty_solicitor ?? '',
@@ -2348,7 +2349,7 @@ function HousePanel({
       <Label>{matter.matter_ref}</Label>
       <label style={{ display: 'block', marginBottom: 6 }}>
         <span style={S.fieldLabel}>Acting for</span>
-        <select style={{ ...S.input, marginBottom: 0 }} value={matter.track || 'PURCHASE'} onChange={(e) => onPatch({ track: e.target.value })}>
+        <select style={{ ...S.input, marginBottom: 0 }} value={draft.track} onChange={(e) => set('track', e.target.value)}>
           {TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
