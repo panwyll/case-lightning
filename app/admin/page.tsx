@@ -167,6 +167,7 @@ export default function AdminPage() {
   }
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
+  const aiGenFileRef = useRef<HTMLInputElement>(null);
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [copiedRef, setCopiedRef] = useState(false);
@@ -310,18 +311,32 @@ export default function AdminPage() {
   }
 
   async function generateAiTemplate() {
+    const file = aiGenFileRef.current?.files?.[0] ?? null;
     if (!aiGen.name.trim()) { setStatus('Give the template a name.'); return; }
-    if (aiGen.instructions.trim().length < 10) { setStatus('Describe what the document should contain (a sentence or two).'); return; }
+    if (!file && aiGen.instructions.trim().length < 10) {
+      setStatus('Describe the document, or upload an existing one to turn into a template.');
+      return;
+    }
     setAiGenBusy(true);
     setStatus('');
     try {
-      const r = await api<{ name: string; hasLlmPrompts: boolean }>('/admin/doc-templates/generate', {
+      const form = new FormData();
+      form.append('name', aiGen.name.trim());
+      form.append('instructions', aiGen.instructions.trim());
+      if (file) form.append('file', file);
+      const tok = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
+      const res = await fetch('/api/v1/admin/doc-templates/generate', {
         method: 'POST',
-        body: JSON.stringify({ name: aiGen.name.trim(), instructions: aiGen.instructions.trim() }),
+        credentials: 'include',
+        headers: { ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
+        body: form,
       });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
       setAiGen({ name: '', instructions: '' });
+      if (aiGenFileRef.current) aiGenFileRef.current.value = '';
       await load();
-      setStatus(`Created “${r.name}”${r.hasLlmPrompts ? ' (with AI sections)' : ''}. Download it to review before using.`);
+      setStatus(`Created “${r.name}”${r.fromDocument ? ' from your document' : ''}${r.hasLlmPrompts ? ' (with AI sections)' : ''}. Download it to review before using.`);
     } catch (e) {
       setStatus((e as Error).message);
     } finally {
@@ -702,6 +717,51 @@ export default function AdminPage() {
 
         {tab === 'docpacks' && (
           <>
+            {/* Create with AI — the headline feature, up top */}
+            <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 18 }} aria-hidden>✨</span>
+                <h2 style={{ margin: 0, fontSize: 18 }}>Create a template with AI</h2>
+                <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>Beta</span>
+              </div>
+              <p style={{ fontSize: 13, color: '#475569', margin: '8px 0 14px' }}>
+                Two ways: <strong>upload an existing Word document</strong> and we’ll turn it into a fillable
+                template — keeping your wording and swapping the client/property/date details for matter
+                placeholders automatically — <strong>or describe</strong> the document and we’ll draft it from
+                scratch. Nothing is sent; the template is saved here to download and review first.
+              </p>
+
+              <input
+                style={input}
+                placeholder="Template name (e.g. Notice to complete)"
+                value={aiGen.name}
+                onChange={(e) => setAiGen({ ...aiGen, name: e.target.value })}
+              />
+
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6d28d9', margin: '8px 0 4px' }}>
+                Turn an existing document into a template
+              </label>
+              <input ref={aiGenFileRef} type="file" accept=".docx,.txt" style={{ ...input, padding: '7px 8px' }} />
+
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6d28d9', margin: '8px 0 4px' }}>
+                …or describe it (and add notes to refine an upload)
+              </label>
+              <textarea
+                style={{ ...input, minHeight: 84 }}
+                placeholder="e.g. 'A formal notice to complete to the other side's solicitor, citing the missed completion date and giving 10 working days.'  — optional if you uploaded a file"
+                value={aiGen.instructions}
+                onChange={(e) => setAiGen({ ...aiGen, instructions: e.target.value })}
+                maxLength={4000}
+              />
+              <button
+                style={{ padding: '9px 18px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: aiGenBusy ? 0.6 : 1 }}
+                onClick={generateAiTemplate}
+                disabled={aiGenBusy}
+              >
+                {aiGenBusy ? 'Generating…' : 'Generate template'}
+              </button>
+            </div>
+
             {/* How it works */}
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
@@ -790,39 +850,6 @@ export default function AdminPage() {
                   </button>
                 )}
               </div>
-            </div>
-
-            {/* Create with AI */}
-            <div style={{ ...card, background: '#faf5ff', borderColor: '#e9d5ff' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <h3 style={{ marginTop: 0, marginBottom: 0 }}>Create a template with AI</h3>
-                <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>Beta</span>
-              </div>
-              <p style={{ fontSize: 13, color: '#475569', margin: '6px 0 10px' }}>
-                Describe the document in plain English. The AI drafts a reusable .docx using the firm’s
-                matter placeholders (and, on the Team plan, <code style={{ background: '#f3e8ff', padding: '1px 4px', borderRadius: 3 }}>[[AI sections]]</code> that
-                fill per matter). It never sends anything — the template is saved here for you to download and review first.
-              </p>
-              <input
-                style={input}
-                placeholder="Template name (e.g. Notice to complete)"
-                value={aiGen.name}
-                onChange={(e) => setAiGen({ ...aiGen, name: e.target.value })}
-              />
-              <textarea
-                style={{ ...input, minHeight: 90 }}
-                placeholder="What should this document say? e.g. 'A formal notice to complete addressed to the other side's solicitor, citing the missed completion date, giving 10 working days, and referencing the matter and property.'"
-                value={aiGen.instructions}
-                onChange={(e) => setAiGen({ ...aiGen, instructions: e.target.value })}
-                maxLength={4000}
-              />
-              <button
-                style={{ padding: '8px 16px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: aiGenBusy ? 0.6 : 1 }}
-                onClick={generateAiTemplate}
-                disabled={aiGenBusy}
-              >
-                {aiGenBusy ? 'Generating…' : 'Generate template'}
-              </button>
             </div>
 
             {/* Template list */}

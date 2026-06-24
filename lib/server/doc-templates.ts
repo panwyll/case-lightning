@@ -343,6 +343,26 @@ export function createMinimalDocx(paragraphs: string[]): Buffer {
 
 // ── AI-generated templates ─────────────────────────────────────────────────────
 
+/** Plain-text extraction from a .docx buffer (word/document.xml), for templatising. */
+function docxToText(bytes: Buffer): string {
+  try {
+    const zip = new PizZip(bytes);
+    const xml = zip.file('word/document.xml')?.asText() ?? '';
+    return xml
+      .replace(/<\/w:p>/g, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  } catch {
+    return '';
+  }
+}
+
 const ALLOWED_TEMPLATE_VARS = new Set([
   'matter_ref', 'property_address', 'buyer_names', 'seller_names', 'exchange_date',
   'completion_date', 'counterparty_solicitor', 'counterparty_agent', 'lender',
@@ -392,8 +412,18 @@ export async function generateDocTemplate(
   user: SessionUser,
   name: string,
   instructions: string,
-  allowAiBlocks: boolean
+  allowAiBlocks: boolean,
+  source?: { fileName: string; bytes: Buffer }
 ): Promise<{ content: Buffer; fileName: string; hasLlmPrompts: boolean; description: string }> {
+  // When an existing document is supplied, extract its text so the AI can turn it
+  // into a template (preserving wording) rather than writing one from scratch.
+  let sourceText = '';
+  if (source) {
+    if (/\.docx$/i.test(source.fileName)) sourceText = docxToText(source.bytes);
+    else if (/\.txt$/i.test(source.fileName)) sourceText = source.bytes.toString('utf8');
+    sourceText = sourceText.slice(0, 30000);
+  }
+
   const { generateDocTemplateContent } = await import('./ai');
   const { paragraphs, description } = await generateDocTemplateContent({
     userId: user.userId,
@@ -401,6 +431,7 @@ export async function generateDocTemplate(
     name,
     instructions,
     allowAiBlocks,
+    sourceText: sourceText.trim() || undefined,
   });
 
   let finalParas = sanitizeTemplateParagraphs(paragraphs, allowAiBlocks);
