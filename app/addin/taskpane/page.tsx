@@ -321,7 +321,7 @@ export default function Taskpane() {
   const [pbInputs, setPbInputs] = useState<{ p: { id: string; name: string; steps?: any[] }; needsDelegate: boolean; needsNotify: boolean; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
   const [pbSuggestion, setPbSuggestion] = useState<{ playbookId: string; reason: string } | null>(null);
   const suggestedFor = useRef<string>('');
-  const [quick, setQuick] = useState<{ type: 'DELEGATE' | 'NOTIFY'; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
+  const [quick, setQuick] = useState<{ type: 'DELEGATE' | 'NOTIFY'; delegateToUserId: string; notifyEmail: string; notifyName: string; notifyCustom: boolean } | null>(null);
   const [expandedPb, setExpandedPb] = useState<string | null>(null);
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
@@ -1025,7 +1025,7 @@ export default function Taskpane() {
   function openQuick(type: 'DELEGATE' | 'NOTIFY') {
     const client = (matterInfo?.contacts ?? []).find((c: any) => c.role === 'CLIENT');
     setPbResults(null);
-    setQuick({ type, delegateToUserId: assignees[0]?.id ?? '', notifyEmail: client?.email ?? '', notifyName: client?.name ?? '' });
+    setQuick({ type, delegateToUserId: assignees[0]?.id ?? '', notifyEmail: client?.email ?? '', notifyName: client?.name ?? '', notifyCustom: false });
   }
   async function runQuick() {
     if (!quick) return;
@@ -1724,10 +1724,10 @@ export default function Taskpane() {
                   {/* One-off actions */}
                   <span style={S.updateLabel}>Quick actions</span>
                   <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <button style={{ ...S.secondary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => openQuick('DELEGATE')} disabled={!!runningPb}>
+                    <button style={S.quickAct} onClick={() => openQuick('DELEGATE')} disabled={!!runningPb}>
                       <Icon name="user" size={14} /> Delegate
                     </button>
-                    <button style={{ ...S.secondary, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }} onClick={() => openQuick('NOTIFY')} disabled={!!runningPb}>
+                    <button style={S.quickAct} onClick={() => openQuick('NOTIFY')} disabled={!!runningPb}>
                       <Icon name="mail" size={14} /> Notify
                     </button>
                   </div>
@@ -1742,10 +1742,30 @@ export default function Taskpane() {
                           </select>
                         </label>
                       ) : (
-                        <label style={{ display: 'block', marginBottom: 6 }}>
-                          <span style={S.fieldLabel}>Notify (email)</span>
-                          <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={quick.notifyEmail} onChange={(e) => setQuick({ ...quick, notifyEmail: e.target.value })} />
-                        </label>
+                        <>
+                          <label style={{ display: 'block', marginBottom: 6 }}>
+                            <span style={S.fieldLabel}>Notify</span>
+                            <select
+                              style={{ ...S.input, marginBottom: 0 }}
+                              value={quick.notifyCustom ? '__custom__' : quick.notifyEmail}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '__custom__') { setQuick({ ...quick, notifyCustom: true, notifyEmail: '', notifyName: '' }); return; }
+                                const c = (matterInfo?.contacts ?? []).find((x: any) => x.email === v);
+                                setQuick({ ...quick, notifyCustom: false, notifyEmail: v, notifyName: c?.name ?? '' });
+                              }}
+                            >
+                              <option value="">Choose a contact…</option>
+                              {(matterInfo?.contacts ?? []).filter((c: any) => c.email && c.role !== 'OUR_FIRM').map((c: any) => (
+                                <option key={c.id} value={c.email}>{c.name || c.email}{c.role && c.role !== 'UNKNOWN' ? ` (${humanize(c.role)})` : ''}</option>
+                              ))}
+                              <option value="__custom__">Custom email…</option>
+                            </select>
+                          </label>
+                          {quick.notifyCustom && (
+                            <input style={{ ...S.input, marginBottom: 6 }} placeholder="name@example.com" value={quick.notifyEmail} onChange={(e) => setQuick({ ...quick, notifyEmail: e.target.value })} />
+                          )}
+                        </>
                       )}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                         <button style={{ ...S.primary, marginTop: 0, flex: 1, width: 'auto', padding: '8px 0' }} onClick={runQuick} disabled={quick.type === 'DELEGATE' ? !quick.delegateToUserId : !quick.notifyEmail.trim()}>Run</button>
@@ -1769,25 +1789,26 @@ export default function Taskpane() {
                             const open = expandedPb === p.id;
                             return (
                               <div key={p.id} style={{ border: '1px solid', borderColor: suggested ? '#5A27E0' : '#cbd5e1', borderRadius: 7, overflow: 'hidden' }}>
-                                <button
-                                  style={{ width: '100%', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 7, padding: '6px 9px', border: 'none', background: suggested ? '#f5f3ff' : '#fff', cursor: 'pointer', fontFamily: 'inherit', color: '#0f172a' }}
-                                  onClick={() => setExpandedPb(open ? null : p.id)}
-                                  title={p.name}
-                                >
-                                  <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
-                                  {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
-                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
-                                </button>
-                                {open && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '5px 5px 5px 9px', background: suggested ? '#f5f3ff' : '#fff' }}>
+                                  <button
+                                    style={{ flex: 1, minWidth: 0, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: '#0f172a', padding: '3px 0' }}
+                                    onClick={() => setExpandedPb(open ? null : p.id)}
+                                    title="Show details"
+                                  >
+                                    <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</span>
+                                    {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
+                                  </button>
+                                  <button
+                                    style={{ flex: 'none', padding: '4px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
+                                    onClick={() => runPlaybookFor(p)}
+                                    disabled={!!runningPb}
+                                  >
+                                    {runningPb === p.id ? '…' : 'Run'}
+                                  </button>
+                                </div>
+                                {open && p.description && (
                                   <div style={{ padding: '8px 9px', borderTop: '1px solid #f1f5f9' }}>
-                                    {p.description && <p style={{ fontSize: 12, color: '#475569', margin: '0 0 8px', lineHeight: 1.4 }}>{p.description}</p>}
-                                    <button
-                                      style={{ ...S.primary, marginTop: 0, width: 'auto', padding: '6px 18px' }}
-                                      onClick={() => runPlaybookFor(p)}
-                                      disabled={!!runningPb}
-                                    >
-                                      {runningPb === p.id ? 'Running…' : 'Run'}
-                                    </button>
+                                    <p style={{ fontSize: 12, color: '#475569', margin: 0, lineHeight: 1.4 }}>{p.description}</p>
                                   </div>
                                 )}
                               </div>
@@ -3074,6 +3095,8 @@ const S: Record<string, React.CSSProperties> = {
   pillBtn: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' },
   // Light, tidy board links (Team tracker / Case log) — equal width when stacked.
   boardBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 12px', background: '#f5f3ff', color: '#5A27E0', border: '1px solid #ddd6fe', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' },
+  // Quick-action buttons (Delegate / Notify) — white on purple.
+  quickAct: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' },
   // Borderless icon button (e.g. the status refresh) — no boxy outline.
   ghostIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, padding: 0, background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', borderRadius: 6 },
   kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '2px 0', alignItems: 'baseline' },
