@@ -48,26 +48,35 @@ function money(pennies: number, currency: string): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: (currency || 'GBP').toUpperCase() }).format(pennies / 100);
 }
 
-type TabKey = 'billing' | 'templates' | 'docpacks' | 'playbooks' | 'team' | 'policy' | 'rules' | 'referrals' | 'actions' | 'audit';
+type TabKey = 'billing' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
-// One entry per tab — the label on the pill and a subtitle that matches what the
-// section actually does, so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
+// One entry per tab — the label and a subtitle that matches what the section does,
+// so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
-  billing: { label: 'Billing', subtitle: 'Your plan, subscription and seats. Card, invoices and cancellation are handled by Stripe.' },
+  billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
   playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
+  rules: { label: 'Auto-rules', subtitle: 'Premium automation that fires only on very-high-confidence matches.' },
   team: { label: 'Team', subtitle: 'Who can access the firm, and their roles.' },
   policy: { label: 'Policy', subtitle: 'Firm-wide disclaimer, case-folder naming and allowed external domains.' },
-  rules: { label: 'Auto-rules', subtitle: 'Premium automation that fires only on very-high-confidence matches.' },
-  referrals: { label: 'Referrals', subtitle: 'Your referral link, credit balance and referred firms.' },
-  actions: { label: 'Actions', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
-  audit: { label: 'Audit', subtitle: 'Recent actions taken across the firm.' },
+  actions: { label: 'Tools', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
+  audit: { label: 'Audit log', subtitle: 'Recent actions taken across the firm.' },
+  help: { label: 'Help & support', subtitle: 'Common questions and how to reach us.' },
 };
-const TAB_KEYS = Object.keys(TAB_META) as TabKey[];
-// Tabs that need the ADMIN role. Billing & Referrals are per-user (requireUser),
-// so a non-admin who lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['templates', 'docpacks', 'playbooks', 'team', 'policy', 'rules', 'actions', 'audit'];
+
+// Grouped left-nav. Empty groups (after role filtering) are hidden.
+const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
+  { label: 'Account', tabs: ['billing'] },
+  { label: 'Automation & templates', tabs: ['templates', 'docpacks', 'playbooks', 'rules'] },
+  { label: 'Firm', tabs: ['team', 'policy'] },
+  { label: 'Tools', tabs: ['actions', 'audit'] },
+  { label: 'Help', tabs: ['help'] },
+];
+const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
+// Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
+// lands here from "click your name" still sees those.
+const ADMIN_ONLY: TabKey[] = ['templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
 
 const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
@@ -160,6 +169,8 @@ export default function AdminPage() {
   const [aiGenBusy, setAiGenBusy] = useState(false);
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
+  const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
@@ -173,7 +184,6 @@ export default function AdminPage() {
   const [policy, setPolicy] = useState<any>(null);
   const [audit, setAudit] = useState<any[]>([]);
   const [rules, setRules] = useState<any[]>([]);
-  const [referrals, setReferrals] = useState<any>(null);
   const [playbooks, setPlaybooks] = useState<any[]>([]);
   const [pb, setPb] = useState<{ name: string; description: string; steps: Array<{ type: string; config: any }> }>({ name: '', description: '', steps: [] });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -191,13 +201,15 @@ export default function AdminPage() {
 
   const load = useCallback(async () => {
     try {
-      if (tab === 'billing') setBilling(await api('/billing/account'));
+      if (tab === 'billing') {
+        setBilling(await api('/billing/account'));
+        setReferrals(await api('/referrals'));
+      }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
       if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
-      if (tab === 'referrals') setReferrals(await api('/referrals'));
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
       if (tab === 'playbooks') {
         setPlaybooks((await api<{ playbooks: any[] }>('/admin/playbooks')).playbooks);
@@ -454,17 +466,21 @@ export default function AdminPage() {
     }
   }
 
-  const box: React.CSSProperties = { maxWidth: 920, margin: '0 auto', padding: '0 20px', color: '#0f172a' };
-  const tabBtn = (active: boolean): React.CSSProperties => ({
-    padding: '7px 13px',
+  const box: React.CSSProperties = { maxWidth: 1040, margin: '0 auto', padding: '0 20px', color: '#0f172a' };
+  const navItem = (active: boolean): React.CSSProperties => ({
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '7px 10px',
+    borderRadius: 8,
     border: 'none',
-    borderRadius: 999,
     background: active ? '#ede9fe' : 'transparent',
-    color: active ? '#5A27E0' : '#475569',
+    color: active ? '#5A27E0' : '#334155',
     fontWeight: active ? 700 : 500,
-    cursor: 'pointer',
     fontSize: 13,
-    whiteSpace: 'nowrap',
+    cursor: 'pointer',
+    marginBottom: 2,
+    fontFamily: 'inherit',
   });
   const input: React.CSSProperties = { width: '100%', padding: '9px 11px', border: '1px solid #cbd5e1', borderRadius: 8, marginBottom: 8, fontSize: 14, boxSizing: 'border-box' };
   const card: React.CSSProperties = { border: '1px solid #e8eaf0', borderRadius: 14, padding: 18, marginBottom: 14, background: '#fff', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' };
@@ -475,7 +491,7 @@ export default function AdminPage() {
 
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
-      {/* Sticky brand + tab bar */}
+      {/* Sticky brand bar */}
       <div style={{ background: '#fff', borderBottom: '1px solid #e8eaf0', position: 'sticky', top: 0, zIndex: 5 }}>
         <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, padding: '13px 20px' }}>
           <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
@@ -491,14 +507,27 @@ export default function AdminPage() {
             </div>
           )}
         </div>
-        <div style={{ ...box, display: 'flex', gap: 4, flexWrap: 'wrap', padding: '0 20px 10px' }}>
-          {visibleTabs.map((k) => (
-            <button key={k} style={tabBtn(tab === k)} onClick={() => go(k)}>{TAB_META[k].label}</button>
-          ))}
-        </div>
       </div>
 
-      <div style={{ ...box, padding: '22px 20px 56px' }}>
+      <div style={{ ...box, display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 20px 56px' }}>
+        {/* Grouped left nav */}
+        <nav style={{ width: 200, flexShrink: 0 }}>
+          {NAV_GROUPS.map((grp) => {
+            const items = grp.tabs.filter((k) => visibleTabs.includes(k));
+            if (!items.length) return null;
+            return (
+              <div key={grp.label} style={{ marginBottom: 14 }}>
+                <div style={{ ...overline, padding: '0 10px 6px' }}>{grp.label}</div>
+                {items.map((k) => (
+                  <button key={k} style={navItem(tab === k)} onClick={() => go(k)}>{TAB_META[k].label}</button>
+                ))}
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* Content */}
+        <div style={{ flex: 1, minWidth: 300 }}>
         <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>{TAB_META[tab].label}</h1>
         <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>
 
@@ -561,16 +590,91 @@ export default function AdminPage() {
                 </p>
               </div>
 
+              {/* Referrals — merged in under Billing. */}
               <div style={card}>
-                <div style={overline}>Referral credit</div>
-                <div style={{ fontSize: 22, fontWeight: 800, marginTop: 4 }}>{money(billing.creditBalancePennies, billing.currency)}</div>
-                <p style={{ color: '#64748b', fontSize: 13, marginTop: 4, marginBottom: 0 }}>
-                  {billing.referrals.active} active of {billing.referrals.total} referred firms.{' '}
-                  <button onClick={() => go('referrals')} style={{ background: 'none', border: 'none', color: '#5A27E0', fontWeight: 600, cursor: 'pointer', padding: 0, fontSize: 13 }}>Referral tools →</button>
+                <div style={overline}>Refer a firm, earn credit</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 6, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>{money(billing.creditBalancePennies, billing.currency)}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Credit balance</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 22, fontWeight: 800 }}>{billing.referrals.active} / {billing.referrals.total}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Active / referred</div>
+                  </div>
+                  {referrals?.commissions && (
+                    <div>
+                      <div style={{ fontSize: 22, fontWeight: 800 }}>{money(referrals.commissions.appliedPennies, billing.currency)}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Earned to date</div>
+                    </div>
+                  )}
+                </div>
+                <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 8px' }}>
+                  Earn {money(billing.commissionPennies, billing.currency)}/month for every firm you refer, for as long as they stay subscribed.
                 </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  <input readOnly value={billing.referralLink} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} />
+                  <button
+                    style={btnGhost}
+                    onClick={() => navigator.clipboard?.writeText(billing.referralLink).then(() => { setCopiedRef(true); setTimeout(() => setCopiedRef(false), 1600); })}
+                  >
+                    {copiedRef ? 'Copied!' : 'Copy link'}
+                  </button>
+                </div>
+                {referrals?.referrals?.list?.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    {referrals.referrals.list.map((r: any, i: number) => (
+                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #f1f5f9', padding: '6px 0', fontSize: 13 }}>
+                        <span>{r.plan ?? '—'} · joined {new Date(r.created_at).toLocaleDateString()}</span>
+                        <span style={{ color: r.status === 'active' ? '#16a34a' : '#94a3b8' }}>{r.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )
+        )}
+
+        {tab === 'help' && (
+          <>
+            <div style={card}>
+              <div style={overline}>Frequently asked</div>
+              <div style={{ marginTop: 6 }}>
+                {[
+                  ['Does CONVEYi ever send email on my behalf?', 'No. Everything it produces — replies, updates, notifications — is created as an Outlook draft for you to review and send. Auto-rules default to draft-only; only an explicitly enabled auto-SEND rule (which requires a signed risk acknowledgement) ever sends.'],
+                  ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
+                  ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
+                  ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
+                  ['How is billing handled?', 'Plans and seats are shown here; the card, invoices, plan changes and cancellation are handled securely by Stripe via “Manage subscription”.'],
+                  ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive/Excel) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
+                ].map(([q, a]) => (
+                  <details key={q} style={{ borderTop: '1px solid #f1f5f9', padding: '10px 0' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>{q}</summary>
+                    <p style={{ color: '#475569', fontSize: 13, lineHeight: 1.5, margin: '8px 0 0' }}>{a}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+
+            <div style={card}>
+              <div style={overline}>Support</div>
+              <p style={{ color: '#475569', fontSize: 14, margin: '8px 0 12px' }}>
+                Stuck or have a question we haven’t covered? We’re happy to help — typically within one business day.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <a href={`mailto:support@conveyi.app?subject=${encodeURIComponent('CONVEYi support' + (me?.email ? ` — ${me.email}` : ''))}`} style={{ ...btnPrimary, textDecoration: 'none', display: 'inline-block' }}>
+                  Email support
+                </a>
+                <a href="mailto:hello@conveyi.app?subject=Sales%20enquiry" style={{ ...btnGhost, textDecoration: 'none', display: 'inline-block' }}>
+                  Contact sales
+                </a>
+              </div>
+              <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 12, marginBottom: 0 }}>
+                When emailing, include your firm and a short description — it helps us resolve things faster.
+              </p>
+            </div>
+          </>
         )}
 
         {tab === 'templates' && (
@@ -880,55 +984,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {tab === 'referrals' && referrals && (
-          <>
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Your referral link</h3>
-              <p style={{ fontSize: 13, color: '#475569' }}>
-                Earn <strong>£{(referrals.commissionPennies / 100).toFixed(0)}/month</strong> in account credit for every
-                firm you refer — recurring, paid the month after each pays, for as long as they stay subscribed.
-              </p>
-              <input style={input} readOnly value={referrals.referralLink} onClick={(e) => (e.target as HTMLInputElement).select()} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}
-                  onClick={() => navigator.clipboard?.writeText(referrals.referralLink)}
-                >
-                  Copy link
-                </button>
-                <span style={{ alignSelf: 'center', color: '#64748b', fontSize: 13 }}>Code: <strong>{referrals.referralCode}</strong></span>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <div style={card}>
-                <div style={{ fontSize: 12, color: '#64748b' }}>Credit balance</div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>£{(referrals.creditBalancePennies / 100).toFixed(2)}</div>
-              </div>
-              <div style={card}>
-                <div style={{ fontSize: 12, color: '#64748b' }}>Active referrals</div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>{referrals.referrals.active} / {referrals.referrals.total}</div>
-              </div>
-              <div style={card}>
-                <div style={{ fontSize: 12, color: '#64748b' }}>Earned to date</div>
-                <div style={{ fontSize: 24, fontWeight: 800 }}>£{(referrals.commissions.appliedPennies / 100).toFixed(2)}</div>
-              </div>
-            </div>
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Referred firms</h3>
-              {referrals.referrals.list.length === 0 && <p style={{ color: '#64748b' }}>No referrals yet — share your link above.</p>}
-              {referrals.referrals.list.map((r: any, i: number) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #e2e8f0', padding: '6px 0', fontSize: 13 }}>
-                  <span>{r.plan ?? '—'} · joined {new Date(r.created_at).toLocaleDateString()}</span>
-                  <span style={{ color: r.status === 'active' ? '#16a34a' : '#94a3b8' }}>{r.status}</span>
-                </div>
-              ))}
-              {referrals.commissions.clawedBackPennies > 0 && (
-                <p style={{ fontSize: 12, color: '#b91c1c' }}>£{(referrals.commissions.clawedBackPennies / 100).toFixed(2)} clawed back (refunds/cancellations).</p>
-              )}
-            </div>
-          </>
-        )}
-
         {tab === 'playbooks' && (
           <>
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
@@ -1092,6 +1147,7 @@ export default function AdminPage() {
             </table>
           </div>
         )}
+        </div>
       </div>
     </div>
   );
