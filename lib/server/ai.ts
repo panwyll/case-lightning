@@ -484,6 +484,8 @@ export async function reviewDocument(input: {
   fileName: string;
   mimeType: string;
   pdfBase64?: string;
+  /** Base64 of an image attachment (jpeg/png/gif/webp) — read by Claude vision. */
+  imageBase64?: string;
   documentText?: string;
   expectations: string;
   retrievedContext: string;
@@ -557,6 +559,15 @@ export async function reviewDocument(input: {
   const content: Anthropic.ContentBlockParam[] = [];
   if (input.pdfBase64) {
     content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: input.pdfBase64 } });
+  } else if (input.imageBase64) {
+    const mt: 'image/png' | 'image/gif' | 'image/webp' | 'image/jpeg' = /png/i.test(input.mimeType)
+      ? 'image/png'
+      : /gif/i.test(input.mimeType)
+      ? 'image/gif'
+      : /webp/i.test(input.mimeType)
+      ? 'image/webp'
+      : 'image/jpeg';
+    content.push({ type: 'image', source: { type: 'base64', media_type: mt, data: input.imageBase64 } });
   } else if (input.documentText) {
     content.push({ type: 'text', text: `Document (DATA):\n${input.documentText.slice(0, 100_000)}` });
   }

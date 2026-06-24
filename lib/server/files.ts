@@ -8,6 +8,7 @@
  * files are logged and flagged for a human — so an empty contract.docx never
  * triggers a false "we've got the contract" email. Drafts are never sent.
  */
+import crypto from 'node:crypto';
 import PizZip from 'pizzip';
 import { query, queryOne } from './db';
 import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
@@ -78,8 +79,8 @@ export async function processMatterFile(
   );
   if (!existing) {
     await query(
-      `insert into document (tenant_id, matter_id, source_type, graph_item_id, storage_path, file_name, mime_type, doc_type, created_by)
-       values ($1,$2,'ONEDRIVE_UPLOAD',$3,$4,$5,$6,$7,$8)`,
+      `insert into document (tenant_id, matter_id, source_type, graph_item_id, storage_path, file_name, mime_type, hash_sha256, doc_type, created_by)
+       values ($1,$2,'ONEDRIVE_UPLOAD',$3,$4,$5,$6,$7,$8,$9)`,
       [
         user.tenantId,
         matterId,
@@ -87,6 +88,7 @@ export async function processMatterFile(
         matter.folder_path ? `${matter.folder_path}/${opts.fileName}` : opts.fileName,
         opts.fileName,
         opts.mimeType ?? null,
+        crypto.createHash('sha256').update(buffer).digest('hex'),
         documentType || null,
         user.userId,
       ]
@@ -170,6 +172,7 @@ export async function reviewAttachmentsContext(
       return (
         a.contentType === 'application/pdf' || n.endsWith('.pdf') ||
         n.endsWith('.docx') || a.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        /^image\/(png|jpe?g|gif|webp)$/i.test(a.contentType || '') || /\.(png|jpe?g|gif|webp)$/i.test(n) ||
         (typeof a.contentType === 'string' && a.contentType.startsWith('text/')) || n.endsWith('.txt')
       );
     })
@@ -181,14 +184,17 @@ export async function reviewAttachmentsContext(
     const lower = name.toLowerCase();
     const isPdf = a.contentType === 'application/pdf' || lower.endsWith('.pdf');
     const isDocx = lower.endsWith('.docx') || a.contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    const isImage = /^image\/(png|jpe?g|gif|webp)$/i.test(a.contentType || '') || /\.(png|jpe?g|gif|webp)$/i.test(lower);
     try {
-      // PDFs go to Claude as a document; .docx/text are extracted to plain text.
-      const docInput: { pdfBase64?: string; documentText?: string; mimeType: string } = isPdf
+      // PDFs → document block; images → vision; .docx/text → extracted plain text.
+      const docInput: { pdfBase64?: string; imageBase64?: string; documentText?: string; mimeType: string } = isPdf
         ? { pdfBase64: a.contentBytes, mimeType: 'application/pdf' }
+        : isImage
+        ? { imageBase64: a.contentBytes, mimeType: a.contentType || (lower.endsWith('.png') ? 'image/png' : 'image/jpeg') }
         : isDocx
         ? { documentText: extractDocxText(a.contentBytes).slice(0, 20000), mimeType: 'text/plain' }
         : { documentText: Buffer.from(a.contentBytes, 'base64').toString('utf8').slice(0, 20000), mimeType: 'text/plain' };
-      if (!isPdf && !docInput.documentText?.trim()) continue; // empty/unreadable doc
+      if (!isPdf && !isImage && !docInput.documentText?.trim()) continue; // empty/unreadable doc
       const { review } = await reviewDocument({
         userId: user.userId,
         tenantId: user.tenantId,
@@ -279,17 +285,21 @@ export async function saveEmailAttachmentsToMatter(
   let saved = 0;
   for (const att of attachments) {
     if (!att.contentBytes || !att.name || att.isInline) continue;
-    const exists = await queryOne<{ id: string }>(
-      `select id from document where matter_id = $1 and tenant_id = $2 and file_name = $3`,
-      [matterId, user.tenantId, att.name]
-    );
-    if (exists) continue; // already in the folder — don't re-save on a re-triage
     const buffer = Buffer.from(att.contentBytes, 'base64');
+    // Content-address by SHA-256: dedup on the bytes, not the filename — so a
+    // renamed duplicate is skipped, while a changed file sharing a name is treated
+    // as genuinely new (the old filename check silently dropped updated files).
+    const hash = crypto.createHash('sha256').update(buffer).digest('hex');
+    const exists = await queryOne<{ id: string }>(
+      `select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`,
+      [matterId, user.tenantId, hash]
+    );
+    if (exists) continue; // identical content already filed
     const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, att.name, buffer);
     const doc = await queryOne<{ id: string }>(
       `insert into document
-        (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, doc_type, created_by)
-       values ($1,$2,'EMAIL_ATTACHMENT',$3,$4,$5,$6,$7,$8,$9,'EMAIL_ATTACHMENT',$10) returning id`,
+        (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, hash_sha256, doc_type, created_by)
+       values ($1,$2,'EMAIL_ATTACHMENT',$3,$4,$5,$6,$7,$8,$9,$10,'EMAIL_ATTACHMENT',$11) returning id`,
       [
         user.tenantId,
         matterId,
@@ -300,6 +310,7 @@ export async function saveEmailAttachmentsToMatter(
         att.name,
         att.contentType ?? null,
         att.size ?? null,
+        hash,
         user.userId,
       ]
     );
