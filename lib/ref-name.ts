@@ -1,55 +1,48 @@
 /**
  * Human-friendly matter references.
  *
- * Instead of opaque numbers (e.g. "20458282380320") or ugly surname+address
- * mashups (e.g. "ANWYL_14-oak-street"), an auto-generated matter gets a
- * memorable two-word codename in the "adjective-animal" style — e.g.
- * "jumping-frog", "illustrious-owl", "swift-otter". Easy to say on the phone,
- * easy to spot in a folder list, and fun. Collisions are rare, and the
- * matter-create path already retries with a numeric suffix when they happen.
+ * An auto-generated matter is named after the people and place it concerns —
+ * a truncated CLIENT-ADDRESS ref like "SMITH-14OAK" or "JONES-SW1A". That's how
+ * conveyancers actually refer to a file, and it's far easier to remember and spot
+ * than an opaque number or a random codename. When there's genuinely no client or
+ * address to go on, we fall back to a short neutral token ("MATTER-K7Q2").
  *
  * Pure and isomorphic: safe to import from both server code and client
  * components (no Node-only or browser-only APIs).
  */
 
-const ADJECTIVES = [
-  'amber', 'bold', 'brave', 'bright', 'brisk', 'calm', 'clever', 'cosmic',
-  'crimson', 'dapper', 'daring', 'dashing', 'eager', 'electric', 'fearless',
-  'fierce', 'gallant', 'gentle', 'giddy', 'gilded', 'glowing', 'golden',
-  'graceful', 'grand', 'happy', 'hardy', 'humble', 'illustrious', 'jolly',
-  'jovial', 'jumping', 'keen', 'leaping', 'lively', 'lucky', 'lunar', 'mellow',
-  'merry', 'mighty', 'nimble', 'noble', 'plucky', 'prancing', 'proud', 'quirky',
-  'radiant', 'rapid', 'regal', 'roaming', 'royal', 'rustic', 'sage', 'scarlet',
-  'soaring', 'spry', 'sterling', 'stoic', 'sunny', 'swift', 'valiant', 'velvet',
-  'vivid', 'witty', 'zesty',
-];
+/**
+ * Build a matter ref from the client surname + a short locator from the address.
+ * Returns '' when there's nothing to build from, so callers can fall back.
+ * e.g. {buyerNames:['Jane Smith'], propertyAddress:'14 Oak Street, SW1A 1AA'} → "SMITH-SW1A".
+ */
+export function matterRefFrom(input: {
+  buyerNames?: string[] | null;
+  sellerNames?: string[] | null;
+  propertyAddress?: string | null;
+}): string {
+  const surname = ((input.buyerNames?.[0] || input.sellerNames?.[0]) ?? '').trim().split(/\s+/).pop() || '';
+  const who = surname.replace(/[^A-Za-z-]/g, '').toUpperCase();
 
-const ANIMALS = [
-  'badger', 'beaver', 'bison', 'falcon', 'ferret', 'finch', 'fox', 'frog',
-  'gecko', 'hare', 'heron', 'ibis', 'jay', 'kestrel', 'kingfisher', 'koala',
-  'lark', 'lemur', 'leopard', 'lion', 'lynx', 'magpie', 'marmot', 'marten',
-  'mink', 'mole', 'moose', 'narwhal', 'newt', 'ocelot', 'osprey', 'otter',
-  'owl', 'panda', 'panther', 'pelican', 'puffin', 'quail', 'rabbit', 'raven',
-  'robin', 'salmon', 'seal', 'shrew', 'sparrow', 'stag', 'stoat', 'swan',
-  'tiger', 'toad', 'vole', 'walrus', 'weasel', 'whale', 'wolf', 'wombat',
-  'wren',
-];
+  const addr = (input.propertyAddress ?? '').toUpperCase();
+  const pc = addr.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/); // postcode outward code
+  const street = addr.match(/\b(\d+)\s+([A-Z]+)/); // "14 OAK"
+  const word = addr.match(/[A-Z]{2,}/); // first real word as a last resort
+  const where = pc ? pc[1] : street ? `${street[1]}${street[2]}` : word ? word[0] : '';
 
-function pick<T>(list: T[]): T {
-  return list[Math.floor(Math.random() * list.length)];
+  const parts = [who, where].filter(Boolean);
+  return parts.length ? parts.join('-').slice(0, 24) : '';
 }
 
-/** A memorable matter reference, e.g. "jumping-frog" or "illustrious-owl". */
-export function randomMatterRef(): string {
-  // adjective + animal → 65 × 57 ≈ 3.7k combinations; the matter-create path
-  // retries with a numeric suffix on the rare collision.
-  return `${pick(ADJECTIVES)}-${pick(ANIMALS)}`;
+/** A short neutral ref for when there's no client/address to derive one from. */
+export function fallbackMatterRef(): string {
+  return `MATTER-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
 /**
  * True when a candidate reference is human-meaningful rather than machine junk.
  * Used to reject AI-proposed refs like a stray "20458282380320" lifted from an
- * email so we fall back to a friendly codename instead.
+ * email so we fall back to a derived ref instead.
  */
 export function isMeaningfulRef(ref: string | null | undefined): boolean {
   const r = (ref ?? '').trim();

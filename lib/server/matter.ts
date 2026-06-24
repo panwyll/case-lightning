@@ -3,7 +3,7 @@ import { config } from './config';
 import { ensureMatterFolder, ensureExcelTracker, ensureInboxSubfolder, moveMessageToFolder } from './graph';
 import { matterSelfIdentifiers, upsertIdentifiers, domainOf } from './matching';
 import { writeAudit } from './audit';
-import { randomMatterRef } from '../ref-name';
+import { matterRefFrom, fallbackMatterRef } from '../ref-name';
 import type { SessionUser } from './types';
 
 /**
@@ -86,7 +86,7 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
 
   const buyerNames = input.buyerNames ?? [];
   const sellerNames = input.sellerNames ?? [];
-  const baseRef = input.matterRef.trim() || randomMatterRef();
+  const baseRef = input.matterRef.trim() || matterRefFrom(input) || fallbackMatterRef();
 
   // Settle on a tenant-unique matter ref, then provision against that ref.
   let matterId: string | null = null;

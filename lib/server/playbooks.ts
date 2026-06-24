@@ -12,7 +12,7 @@
  */
 import { query, queryOne } from './db';
 import { threadToText } from './text';
-import { randomMatterRef } from '../ref-name';
+import { isMeaningfulRef } from '../ref-name';
 import { listThreadMessages, createReplyDraft, uploadToMatterFolder, createForwardDraft, createDraftMessage } from './graph';
 import { proposeMatter, draftReply, draftUpdate, upsertChunks } from './ai';
 import { createMatter } from './matter';
@@ -178,7 +178,8 @@ export async function executeSteps(user: SessionUser, steps: PlaybookStep[], ctx
           threadDigest: threadText || ctx.subject || '',
         });
         const created = await createMatter(user, {
-          matterRef: prop.suggestedRef?.trim() || randomMatterRef(),
+          // Empty → createMatter derives a client-address ref from the parties + address.
+          matterRef: isMeaningfulRef(prop.suggestedRef) ? prop.suggestedRef!.trim() : '',
           propertyAddress: prop.propertyAddress || ctx.subject || 'New matter',
           buyerNames: prop.buyerNames ?? [],
           sellerNames: prop.sellerNames ?? [],

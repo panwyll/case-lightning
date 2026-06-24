@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { randomMatterRef } from '@/lib/ref-name';
+import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 
 // ── Minimal Office.js typings (we only touch the mailbox item) ───────────────
 declare global {
@@ -218,7 +218,7 @@ export default function Taskpane() {
   const [showNewMatter, setShowNewMatter] = useState(false);
   // A stable codename used as the matter ref when we can't derive one from the
   // names/address — generated once so the placeholder doesn't flicker on edits.
-  const [fallbackRef] = useState(() => randomMatterRef());
+  const [fallbackRef] = useState(() => fallbackMatterRef());
   const [sender, setSender] = useState<{ name: string; email: string } | null>(null);
   const [form, setForm] = useState<{
     matterRef: string;
@@ -724,14 +724,10 @@ export default function Taskpane() {
   // "amber-cedar-harbor") when we know nothing yet — never a bare number.
   // Recomputed live so the placeholder shows what will actually be used.
   function suggestedRef(): string {
-    const surname = (form.buyerNames[0] || form.sellerNames[0] || '').trim().split(/\s+/).pop() || '';
-    const who = surname.replace(/[^A-Za-z-]/g, '').toUpperCase();
-    const addr = form.propertyAddress.toUpperCase();
-    const pc = addr.match(/\b([A-Z]{1,2}\d[A-Z\d]?)\s*\d[A-Z]{2}\b/);
-    const street = addr.match(/\b(\d+)\s+([A-Z]+)/);
-    const where = pc ? pc[1] : street ? `${street[1]}${street[2]}` : '';
-    const parts = [who, where].filter(Boolean);
-    return parts.length ? parts.join('-') : fallbackRef;
+    return (
+      matterRefFrom({ buyerNames: form.buyerNames, sellerNames: form.sellerNames, propertyAddress: form.propertyAddress }) ||
+      fallbackRef
+    );
   }
 
   // Open the New-matter form, pre-filling what we can read from the open email:
