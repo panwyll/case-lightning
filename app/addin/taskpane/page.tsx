@@ -1653,23 +1653,26 @@ export default function Taskpane() {
                           value={matterSearch}
                           onChange={(e) => setMatterSearch(e.target.value)}
                         />
-                        {others.slice(0, 8).map((m) => (
-                          <div key={m.id} style={S.candidate}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                              <div style={{ minWidth: 0 }}>
-                                <strong style={{ fontSize: 13 }}>{m.matterRef}</strong>
-                                {m.propertyAddress && (
-                                  <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {m.propertyAddress}
-                                  </div>
-                                )}
+                        {/* Cap the list at ~4 rows tall; the rest scrolls. Search narrows it. */}
+                        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                          {others.map((m) => (
+                            <div key={m.id} style={S.candidate}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <strong style={{ fontSize: 13 }}>{m.matterRef}</strong>
+                                  {m.propertyAddress && (
+                                    <div style={{ fontSize: 12, color: '#475569', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {m.propertyAddress}
+                                    </div>
+                                  )}
+                                </div>
+                                <button style={S.secondary} onClick={() => linkExistingMatter(m)} disabled={!conversationId}>
+                                  Link
+                                </button>
                               </div>
-                              <button style={S.secondary} onClick={() => linkExistingMatter(m)} disabled={!conversationId}>
-                                Link
-                              </button>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                         {matterSearch.trim() && others.length === 0 && (
                           <p style={S.muted}>No matters match “{matterSearch.trim()}”.</p>
                         )}
