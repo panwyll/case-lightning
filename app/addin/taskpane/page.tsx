@@ -1699,6 +1699,49 @@ export default function Taskpane() {
                     ) : (
                       <p style={{ ...S.muted, margin: 0 }}>No contacts yet — they’ll appear in the House tab as emails are matched to this case.</p>
                     )}
+
+                    {/* Playbooks — named multi-step actions */}
+                    {(playbooks.length > 0 || me?.role === 'ADMIN') && (
+                      <div style={{ marginTop: 12 }}>
+                        <span style={S.updateLabel}>Playbooks</span>
+                        {playbooks.length === 0 && (
+                          <p style={{ ...S.muted, margin: '4px 0 0' }}>No playbooks yet — create one to run a set of actions in one go.</p>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+                          {playbooks.map((p) => (
+                            <button
+                              key={p.id}
+                              style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
+                              onClick={() => runPlaybookFor(p)}
+                              disabled={!!runningPb}
+                              title={p.description || `Run ${p.name}`}
+                            >
+                              {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
+                              <span style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontWeight: 700 }}>{p.name}</span>
+                                {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                        {pbResults && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
+                            <SubLabel>{pbResults.name} — done</SubLabel>
+                            <ul style={{ ...S.ul, fontSize: 12 }}>
+                              {pbResults.results.map((r, i) => (
+                                <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>{r.ok ? '✓' : '✕'} {r.detail}</li>
+                              ))}
+                            </ul>
+                            <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
+                          </div>
+                        )}
+                        {me?.role === 'ADMIN' && (
+                          <a href="/admin" target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}>
+                            Manage actions →
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1868,56 +1911,6 @@ export default function Taskpane() {
               </Card>
             );
           })()}
-
-          {/* ── Playbooks — named multi-step actions run against this email ── */}
-          {tab === 'email' && messageId && (playbooks.length > 0 || me?.role === 'ADMIN') && (
-            <Card>
-              <Label>Playbooks</Label>
-              {playbooks.length === 0 && (
-                <p style={{ ...S.muted, margin: '0 0 4px' }}>No playbooks yet — create one to run a set of actions in one go.</p>
-              )}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {playbooks.map((p) => (
-                  <button
-                    key={p.id}
-                    style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
-                    onClick={() => runPlaybookFor(p)}
-                    disabled={!!runningPb}
-                    title={p.description || `Run ${p.name}`}
-                  >
-                    {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
-                    <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontWeight: 700 }}>{p.name}</span>
-                      {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {pbResults && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e2e8f0' }}>
-                  <SubLabel>{pbResults.name} — done</SubLabel>
-                  <ul style={{ ...S.ul, fontSize: 12 }}>
-                    {pbResults.results.map((r, i) => (
-                      <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>
-                        {r.ok ? '✓' : '✕'} {r.detail}
-                      </li>
-                    ))}
-                  </ul>
-                  <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
-                </div>
-              )}
-              {me?.role === 'ADMIN' && (
-                <a
-                  href="/admin"
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, textDecoration: 'none' }}
-                >
-                  Manage actions →
-                </a>
-              )}
-            </Card>
-          )}
 
           {/* ── HOUSE TAB — the property/transaction record (editable, validated) ── */}
           {tab === 'house' && matterInfo?.matter && (
