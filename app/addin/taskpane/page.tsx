@@ -164,8 +164,9 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) {
-    const err = new Error(json.error || `HTTP ${res.status}`) as Error & { status?: number };
+    const err = new Error(json.error || `HTTP ${res.status}`) as Error & { status?: number; action?: string };
     err.status = res.status;
+    err.action = json.action;
     throw err;
   }
   return json as T;
@@ -344,6 +345,7 @@ export default function Taskpane() {
   const [obSearch, setObSearch] = useState('');
   // Per-matter Inbox subfolders — opt-in; nudge the admin once at first import.
   const [subfolderPref, setSubfolderPref] = useState<{ enabled: boolean; prompted: boolean } | null>(null);
+  const [obUpsell, setObUpsell] = useState(false); // monthly backlog-scan cap hit (non-pro)
   const obDriving = useRef(false);
   // First-run: until the firm has scanned its backlog (or chosen to skip), lead
   // with the import. obFetched gates it so the hero doesn't flash before we know.
@@ -538,15 +540,26 @@ export default function Taskpane() {
   }
 
   async function startOnboarding() {
+    setObUpsell(false);
     const started = await run('Starting scan', async () => {
       const lookbackMonths = obLookback === 'unlimited' ? null : 3;
-      const r = await api<{ job: ObJob }>('/onboarding', { method: 'POST', body: JSON.stringify({ lookbackMonths }) });
-      setObJob(r.job);
-      setObCases([]);
-      setObSel({});
-      setObRefEdit({});
-      setStatus('Scanning your mailbox…');
-      return true;
+      try {
+        const r = await api<{ job: ObJob }>('/onboarding', { method: 'POST', body: JSON.stringify({ lookbackMonths }) });
+        setObJob(r.job);
+        setObCases([]);
+        setObSel({});
+        setObRefEdit({});
+        setStatus('Scanning your mailbox…');
+        return true;
+      } catch (e) {
+        // Monthly backlog-scan cap → show the message (and an upsell when not on Pro).
+        if ((e as { status?: number }).status === 429) {
+          if ((e as { action?: string }).action === 'upgrade') setObUpsell(true);
+          setStatus((e as Error).message);
+          return false;
+        }
+        throw e;
+      }
     });
     if (started) driveOnboarding(); // the setup view stays open while the scan runs
   }
@@ -2457,6 +2470,18 @@ export default function Taskpane() {
                 <button style={S.primary} onClick={startOnboarding}>
                   Scan my inbox
                 </button>
+                {obUpsell && (
+                  <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '10px 12px', marginTop: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9', marginBottom: 4 }}>You’ve used this month’s backlog scan</div>
+                    <p style={{ fontSize: 12, color: '#475569', margin: '0 0 8px', lineHeight: 1.45 }}>
+                      Re-scanning the whole mailbox is heavy, so it’s limited per month. Pro firms get more scans a month
+                      (and all-history lookback).
+                    </p>
+                    <button style={{ ...S.primary, marginTop: 0, background: '#7c3aed' }} onClick={() => openAdmin('billing')}>
+                      Upgrade to Pro
+                    </button>
+                  </div>
+                )}
                 {obJob?.status === 'COMPLETED' && (
                   <p style={{ ...S.muted, marginTop: 8 }}>Last run onboarded {obJob.cases_onboarded} case(s).</p>
                 )}

@@ -40,6 +40,12 @@ export function fail(error: unknown) {
   if (error instanceof GraphError) {
     return NextResponse.json({ error: describeGraphError(error) }, { status: 502 });
   }
+  // Errors carrying an explicit HTTP status (e.g. EntitlementError 402, a route's
+  // 409/429) — honour it and pass through any `action` hint for the client.
+  if (error instanceof Error && typeof (error as { status?: unknown }).status === 'number') {
+    const e = error as Error & { status: number; action?: string };
+    return NextResponse.json(e.action ? { error: e.message, action: e.action } : { error: e.message }, { status: e.status });
+  }
   // describeGraphError also covers plain Errors (falls back to name) and unknown
   // throwables, so the client never receives an empty error string.
   return NextResponse.json({ error: describeGraphError(error) }, { status: 500 });

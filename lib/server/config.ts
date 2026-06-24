@@ -105,6 +105,10 @@ export const config = {
   // running up cost. Trial backlog/onboarding lookback is also clamped (days).
   trialExpensiveCap: Number(env('TRIAL_EXPENSIVE_CAP') ?? '3'),
   trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '7'),
+  // Historical-import (backlog scan) is heavy, so cap it per calendar month. Non-pro
+  // gets fewer with an upsell; pro/enterprise get more.
+  onboardingMonthlyCapFree: Number(env('ONBOARDING_MONTHLY_CAP_FREE') ?? '1'),
+  onboardingMonthlyCapPremium: Number(env('ONBOARDING_MONTHLY_CAP_PREMIUM') ?? '3'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

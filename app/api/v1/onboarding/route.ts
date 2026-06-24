@@ -32,6 +32,22 @@ export async function POST(req: NextRequest) {
     const billing = await getTenantBilling(user.tenantId);
     if (!billing.entitled) throw new EntitlementError();
     const premium = billing.plan === 'pro' || billing.plan === 'enterprise';
+
+    // A full backlog scan is heavy — cap it per calendar month (failed/cancelled runs
+    // don't count). Non-pro gets fewer with a Pro upsell.
+    const cap = premium ? config.onboardingMonthlyCapPremium : config.onboardingMonthlyCapFree;
+    const ran = await queryOne<{ n: number }>(
+      `select count(*)::int as n from onboarding_job
+       where tenant_id = $1 and created_at >= date_trunc('month', now())
+         and status not in ('FAILED', 'CANCELLED')`,
+      [user.tenantId]
+    );
+    if ((ran?.n ?? 0) >= cap) {
+      const msg = premium
+        ? `You've used all ${cap} backlog scans this month. The limit resets on the 1st.`
+        : `You've used your backlog scan for this month. Upgrade to Pro for ${config.onboardingMonthlyCapPremium} scans a month.`;
+      return fail(Object.assign(new Error(msg), { status: 429, action: premium ? undefined : 'upgrade' }));
+    }
     let months: number | null = body.lookbackMonths === undefined ? FREE_LOOKBACK_MONTHS : body.lookbackMonths;
     // Only premium tenants may look back further than the free window.
     if (!premium && (months === null || months > FREE_LOOKBACK_MONTHS)) months = FREE_LOOKBACK_MONTHS;
