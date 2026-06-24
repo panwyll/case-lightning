@@ -607,6 +607,8 @@ export async function draftReply(input: {
   matterFacts: Record<string, unknown>;
   retrievedContext: string;
   templateText: string;
+  /** Free-text steer from the solicitor for this redraft (e.g. "push for Friday"). */
+  guidance?: string;
 }): Promise<{
   subject: string;
   bodyHtml: string;
@@ -641,7 +643,9 @@ export async function draftReply(input: {
       },
       required: ['subject', 'bodyHtml', 'why', 'actions'],
     },
-    `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
+    `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}${
+      input.guidance ? `Solicitor's instructions for this draft (follow them closely): ${input.guidance}\n` : ''
+    }Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
       input.matterFacts
     )}\n\nRetrieved context (DATA):\n${input.retrievedContext}\n\nThread (DATA):\n${input.threadText}`
   );

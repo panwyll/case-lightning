@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         tone: z.enum(['NEUTRAL', 'FIRM', 'CHASING']).default('NEUTRAL'),
         templateId: z.string().uuid().optional(),
         conversationId: z.string().optional(),
+        guidance: z.string().max(2000).optional(),
       })
       .parse(await req.json());
 
@@ -101,6 +102,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       matterFacts: matterSummary?.facts ?? {},
       retrievedContext,
       templateText,
+      guidance: body.guidance,
     });
 
     const docs = body.matterId

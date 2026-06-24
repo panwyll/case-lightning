@@ -119,6 +119,9 @@ const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
 
 const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
 type Tone = (typeof TONES)[number];
+// run() busy labels for the reply flow — also used to drive the panel's spinner.
+const REPLY_BUSY_CREATE = 'Writing the reply into Outlook';
+const REPLY_BUSY_REGEN = 'Updating the reply in Outlook';
 
 const STAGES: Array<[string, string]> = [
   ['INSTRUCTION', '1 · Instruction'],
@@ -242,8 +245,12 @@ export default function Taskpane() {
   // AI outputs
   const [summary, setSummary] = useState<{ happened: string[]; outstanding: string[] } | null>(null);
   const [facts, setFacts] = useState<ExtractedFacts | null>(null);
-  // Reply tone — NEUTRAL by default; the slow phase auto-escalates to CHASING for chasers.
-  const [tone] = useState<Tone>('NEUTRAL');
+  // Reply tone — NEUTRAL by default; the user can switch it and regenerate.
+  const [tone, setTone] = useState<Tone>('NEUTRAL');
+  // Free-text steer for the reply redraft, and whether a reply draft now exists in
+  // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
+  const [guidance, setGuidance] = useState('');
+  const [replyReady, setReplyReady] = useState(false);
 
   // The taskpane renders by *situation*, not by feature tabs: open an email → it
   // auto-analyses → we show what we found (matter? what's being asked?) and the
@@ -289,9 +296,6 @@ export default function Taskpane() {
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
-  // The most recent draft we created (reply / update / forward), shown in an
-  // in-pane preview so it's visible immediately without hunting in Outlook.
-  const [preview, setPreview] = useState<{ kind: 'reply' | 'update' | 'forward'; to: string; subject: string; bodyHtml: string; webLink?: string | null } | null>(null);
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
@@ -601,7 +605,9 @@ export default function Taskpane() {
           setExpandedPb(null);
           setIgnored(false);
           setLinkOpen(false);
-          setPreview(null);
+          setReplyReady(false);
+          setGuidance('');
+          setTone('NEUTRAL');
           setMatterId('');
           setMatterInfo(null);
           setSummary(null);
@@ -1175,29 +1181,32 @@ export default function Taskpane() {
   // Clicking Reply creates an actual draft reply in Outlook (never sent): use the
   // precomputed draft if ready, otherwise generate one (which also reviews any
   // attachments against the case), then write it straight to Outlook's drafts.
-  async function openReply() {
-    await run('Creating reply draft in Outlook', async () => {
+  // Writes the reply straight into the Outlook draft — no in-pane preview. The first
+  // call reuses the cached assist draft (instant); `regen` forces a fresh draft with
+  // the current tone + guidance, which create-draft folds into the SAME Outlook draft.
+  async function openReply(opts: { regen?: boolean } = {}) {
+    await run(opts.regen ? REPLY_BUSY_REGEN : REPLY_BUSY_CREATE, async () => {
       requireThread();
       if (!messageId) throw new Error('Open an email first.');
-      let subject = assist?.draft?.subject;
-      let bodyHtml = assist?.draft?.bodyHtml;
+      let subject = opts.regen ? undefined : assist?.draft?.subject;
+      let bodyHtml = opts.regen ? undefined : assist?.draft?.bodyHtml;
       if (!bodyHtml) {
         const g = await api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
           method: 'POST',
-          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone }),
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone, guidance: guidance.trim() || undefined }),
         });
         subject = g.subject;
         bodyHtml = g.bodyHtml;
       }
-      const r = await api<{ draftId: string; webLink?: string | null; subject: string; bodyHtml: string }>(
+      await api<{ draftId: string; webLink?: string | null; subject: string; bodyHtml: string }>(
         `/threads/${encodeURIComponent(conversationId)}/create-draft`,
         {
           method: 'POST',
           body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
         }
       );
-      setPreview({ kind: 'reply', to: sender?.email || 'the sender', subject: r.subject, bodyHtml: r.bodyHtml, webLink: r.webLink });
-      setStatus('Reply draft created in Outlook (never sent) — preview below.');
+      setReplyReady(true);
+      setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
       fileCurrentEmail();
       return true;
     });
@@ -1708,13 +1717,65 @@ export default function Taskpane() {
                 })}
               </div>
 
-              {/* Reply — clicking the move writes the draft straight to Outlook; the
-                  only hint we show is while the draft is still being prepared. */}
-              {effectiveAction === 'reply' && !assist.ready && !assist.draft && (
-                <div style={S.actionPanel}>
-                  <p style={{ ...S.muted, margin: 0 }}>Preparing the reply…</p>
-                </div>
-              )}
+              {/* Reply — the draft lives in Outlook, never previewed here. This panel
+                  is the control surface: status, tone, guidance and regenerate. */}
+              {effectiveAction === 'reply' && (() => {
+                const replying = busy === REPLY_BUSY_CREATE || busy === REPLY_BUSY_REGEN;
+                return (
+                  <div style={S.actionPanel}>
+                    {replying ? (
+                      <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={S.spinner} /> Writing the draft into Outlook…
+                      </p>
+                    ) : replyReady ? (
+                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply draft in Outlook — review &amp; send it there.</p>
+                    ) : !assist.ready && !assist.draft ? (
+                      <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={S.spinner} /> Preparing the reply…
+                      </p>
+                    ) : (
+                      <p style={{ ...S.muted, margin: 0 }}>Draft a reply into the Outlook message — never sent.</p>
+                    )}
+
+                    <div style={{ marginTop: 10 }}>
+                      <span style={S.updateLabel}>Tone</span>
+                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        {TONES.map((t) => {
+                          const on = tone === t;
+                          return (
+                            <button
+                              key={t}
+                              onClick={() => { setTone(t); if (replyReady) openReply({ regen: true }); }}
+                              disabled={replying}
+                              style={{ flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: replying ? 'default' : 'pointer', border: '1px solid', borderColor: on ? '#5A27E0' : '#cbd5e1', background: on ? '#5A27E0' : '#fff', color: on ? '#fff' : '#475569' }}
+                            >
+                              {humanize(t)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: 10 }}>
+                      <span style={S.updateLabel}>Add guidance</span>
+                      <textarea
+                        value={guidance}
+                        onChange={(e) => setGuidance(e.target.value)}
+                        placeholder="e.g. push for completion by Friday; mention the survey is attached"
+                        style={{ ...S.input, marginTop: 4, marginBottom: 0, minHeight: 52, resize: 'vertical', fontFamily: 'inherit' }}
+                      />
+                    </div>
+
+                    <button
+                      style={{ ...S.primary, marginTop: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={() => openReply({ regen: replyReady || !!guidance.trim() })}
+                      disabled={replying}
+                    >
+                      {replying ? <span style={S.spinnerLight} /> : replyReady ? 'Regenerate' : 'Draft reply'}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Action — send a fresh update to a party on the matter. Data-driven
                   from the address book (one chip per real contact), so it stays
@@ -1878,20 +1939,6 @@ export default function Taskpane() {
                   )}
                 </div>
               )}
-            </Card>
-          )}
-
-          {/* Draft preview — the just-created Outlook draft, shown in-pane so it's
-              visible immediately (Outlook can take a moment to surface a new draft). */}
-          {tab === 'email' && preview && (
-            <Card>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <Label>{preview.kind === 'reply' ? 'Reply draft' : preview.kind === 'update' ? 'Update draft' : 'Forward draft'}</Label>
-                <button style={{ ...S.iconAction, width: 26, height: 26 }} onClick={() => setPreview(null)} title="Dismiss" aria-label="Dismiss">✕</button>
-              </div>
-              <div style={S.kv}><span>To</span><span style={{ textAlign: 'right' }}>{preview.to}</span></div>
-              <div style={S.kv}><span>Subject</span><span style={{ textAlign: 'right' }}>{preview.subject || '—'}</span></div>
-              <div style={S.previewBody} dangerouslySetInnerHTML={{ __html: preview.bodyHtml }} />
             </Card>
           )}
 
