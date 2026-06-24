@@ -1799,11 +1799,11 @@ export default function Taskpane() {
                                     {suggested && <span style={{ fontSize: 9, color: '#5A27E0', fontWeight: 800, flex: 'none' }}>SUGGESTED</span>}
                                   </button>
                                   <button
-                                    style={{ flex: 'none', padding: '4px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
+                                    style={{ flex: 'none', minWidth: 58, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: '0 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
                                     onClick={() => runPlaybookFor(p)}
                                     disabled={!!runningPb}
                                   >
-                                    {runningPb === p.id ? '…' : 'Run'}
+                                    {runningPb === p.id ? <span style={S.spinnerLight} /> : 'Run'}
                                   </button>
                                 </div>
                                 {open && p.description && (
