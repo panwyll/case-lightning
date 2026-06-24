@@ -250,7 +250,7 @@ export default function Taskpane() {
   // handful of moves that make sense. `chosenAction` tracks which of the four
   // canonical moves the user picked so its sub-panel expands; `linkOpen` toggles
   // the (normally collapsed) link-to-a-different/new-matter drawer.
-  const [chosenAction, setChosenAction] = useState<'reply' | 'action' | 'delegate' | 'ignore' | null>(null);
+  const [chosenAction, setChosenAction] = useState<'reply' | 'action' | 'ignore' | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
   // When a matter is linked, the drawer shows just the matter + "Change matter".
   // Setting this reveals the candidate/create chooser so they can pick another.
@@ -292,12 +292,10 @@ export default function Taskpane() {
   // The most recent draft we created (reply / update / forward), shown in an
   // in-pane preview so it's visible immediately without hunting in Outlook.
   const [preview, setPreview] = useState<{ kind: 'reply' | 'update' | 'forward'; to: string; subject: string; bodyHtml: string; webLink?: string | null } | null>(null);
-  const [delegateAssignee, setDelegateAssignee] = useState('');
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
   const [refCopied, setRefCopied] = useState(false);
-  const [delegateInstructions, setDelegateInstructions] = useState('');
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
   const [boardUrl, setBoardUrl] = useState<string | null>(null);
@@ -321,6 +319,8 @@ export default function Taskpane() {
   const [runningPb, setRunningPb] = useState<string | null>(null);
   const [pbResults, setPbResults] = useState<{ name: string; results: Array<{ type: string; ok: boolean; detail: string }> } | null>(null);
   const [pbInputs, setPbInputs] = useState<{ p: { id: string; name: string; steps?: any[] }; needsDelegate: boolean; needsNotify: boolean; delegateToUserId: string; notifyEmail: string; notifyName: string } | null>(null);
+  const [pbSuggestion, setPbSuggestion] = useState<{ playbookId: string; reason: string } | null>(null);
+  const suggestedFor = useRef<string>('');
 
   // Onboarding (bulk-import existing cases from the mailbox backlog)
   const [obJob, setObJob] = useState<ObJob | null>(null);
@@ -593,11 +593,10 @@ export default function Taskpane() {
           setAssist(null);
           setTriage(null);
           setChosenAction(null);
+          setPbSuggestion(null);
           setIgnored(false);
           setLinkOpen(false);
           setPreview(null);
-          setDelegateAssignee('');
-          setDelegateInstructions('');
           setMatterId('');
           setMatterInfo(null);
           setSummary(null);
@@ -1180,33 +1179,6 @@ export default function Taskpane() {
   // Delegate to a colleague: assign it on the Excel tracker AND draft a forward of
   // the email to them with instructions (draft only, never sent). Both effects are
   // best-effort independent so a Graph hiccup on the forward still books the task.
-  async function delegateTo() {
-    if (!matterId) { setStatus('Link a matter first to delegate.'); return; }
-    const a = assignees.find((x) => x.id === delegateAssignee);
-    if (!a) return;
-    await run(`Delegating to ${a.display_name || a.email}`, async () => {
-      const detail = delegateInstructions.trim() || `Handle email: ${cleanSubject(subject) || 'this thread'}`;
-      await api(`/matters/${matterId}/tasks`, {
-        method: 'POST',
-        body: JSON.stringify({ type: 'ENQUIRY', detail, assignee: a.display_name || a.email, assigneeUserId: a.id, source: 'ASSISTANT', status: 'OPEN' }),
-      });
-      await loadTasks();
-      if (messageId) {
-        const r = await api<{ draftId: string; webLink?: string | null; subject: string; instructions: string }>(
-          `/threads/${encodeURIComponent(conversationId)}/forward-draft`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ matterId, messageId, toEmail: a.email, instructions: delegateInstructions.trim() || undefined }),
-          }
-        );
-        setPreview({ kind: 'forward', to: a.display_name || a.email, subject: r.subject, bodyHtml: `<p>${escapeHtml(r.instructions)}</p><p style="color:#64748b">— original thread forwarded below —</p>`, webLink: r.webLink });
-      }
-      setStatus(`Assigned to ${a.display_name || a.email} on the tracker and a forward drafted in Outlook.`);
-      fileCurrentEmail();
-      return true;
-    });
-  }
-
   // The setup state: shown automatically until the firm has imported (or skipped),
   // while a scan is running/awaiting review, or whenever re-opened via the gear.
   const onboardingBusy = !!obJob && (OB_ACTIVE.includes(obJob.status) || obJob.status === 'AWAITING_REVIEW');
@@ -1270,7 +1242,7 @@ export default function Taskpane() {
   // a pure FYI → Ignore; anything that wants a response → Reply; otherwise it's
   // work to do (Action) or to hand off (Delegate).
   const cls = assist?.classification;
-  const recommended: 'reply' | 'action' | 'delegate' | 'ignore' = !cls
+  const recommended: 'reply' | 'action' | 'ignore' = !cls
     ? 'reply'
     : cls.needsAttention === false
     ? 'ignore'
@@ -1282,10 +1254,26 @@ export default function Taskpane() {
   // The panel that's expanded: the user's explicit pick, else the recommendation.
   const effectiveAction = chosenAction ?? recommended;
 
+  // When the Action panel is shown, ask the assistant which workflow fits this
+  // email (once per email). Lazy so we only spend the call when it's relevant.
+  useEffect(() => {
+    if (effectiveAction !== 'action' || !messageId || !conversationId || playbooks.length === 0) return;
+    if (suggestedFor.current === messageId) return;
+    suggestedFor.current = messageId;
+    setPbSuggestion(null);
+    api<{ playbookId: string | null; reason: string }>('/playbooks/suggest', {
+      method: 'POST',
+      body: JSON.stringify({ messageId, conversationId, subject: subject || undefined }),
+    })
+      .then((r) => { if (r.playbookId) setPbSuggestion({ playbookId: r.playbookId, reason: r.reason }); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveAction, messageId, conversationId, playbooks.length]);
+
   // Log the move the user picked — analytics only, never blocks the UI. This is
   // the only footprint some moves leave (esp. Ignore, and Delegate before a task
   // exists), so the label-vs-action picture in v_email_journey stays complete.
-  function recordAction(action: 'reply' | 'action' | 'delegate' | 'ignore') {
+  function recordAction(action: 'reply' | 'action' | 'ignore') {
     if (!messageId) return;
     api('/triage/action', {
       method: 'POST',
@@ -1742,22 +1730,35 @@ export default function Taskpane() {
                         {playbooks.length === 0 && (
                           <p style={{ ...S.muted, margin: '4px 0 0' }}>No workflows yet — create one to run a set of steps in one go.</p>
                         )}
+                        {pbSuggestion && (
+                          <p style={{ fontSize: 11, color: '#5A27E0', margin: '4px 0 0' }}>
+                            ✦ Suggested for this email{pbSuggestion.reason ? ` — ${pbSuggestion.reason}` : ''}
+                          </p>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-                          {playbooks.map((p) => (
-                            <button
-                              key={p.id}
-                              style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1 }}
-                              onClick={() => runPlaybookFor(p)}
-                              disabled={!!runningPb}
-                              title={p.description || `Run ${p.name}`}
-                            >
-                              {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
-                              <span style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ fontWeight: 700 }}>{p.name}</span>
-                                {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
-                              </span>
-                            </button>
-                          ))}
+                          {[...playbooks]
+                            .sort((a, b) => (b.id === pbSuggestion?.playbookId ? 1 : 0) - (a.id === pbSuggestion?.playbookId ? 1 : 0))
+                            .map((p) => {
+                              const suggested = p.id === pbSuggestion?.playbookId;
+                              return (
+                                <button
+                                  key={p.id}
+                                  style={{ ...S.secondary, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8, opacity: runningPb && runningPb !== p.id ? 0.5 : 1, ...(suggested ? { borderColor: '#5A27E0', background: '#f5f3ff' } : {}) }}
+                                  onClick={() => runPlaybookFor(p)}
+                                  disabled={!!runningPb}
+                                  title={p.description || `Run ${p.name}`}
+                                >
+                                  {runningPb === p.id ? <span style={S.spinner} /> : <span style={{ color: '#5A27E0', fontWeight: 800 }}>▶</span>}
+                                  <span style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ fontWeight: 700 }}>
+                                      {p.name}
+                                      {suggested && <span style={{ marginLeft: 6, fontSize: 10, color: '#5A27E0', fontWeight: 800 }}>SUGGESTED</span>}
+                                    </span>
+                                    {p.description && <span style={{ display: 'block', fontSize: 11, color: '#64748b' }}>{p.description}</span>}
+                                  </span>
+                                </button>
+                              );
+                            })}
                         </div>
                         {pbInputs && (
                           <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>

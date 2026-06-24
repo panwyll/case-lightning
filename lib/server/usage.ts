@@ -22,6 +22,7 @@ export type UsageFeature =
   | 'DOC_REVIEW'
   | 'DOC_FILL'
   | 'MATTER_PROPOSE'
+  | 'PLAYBOOK_SUGGEST'
   | 'EMBED';
 
 export interface UsageContext {
