@@ -251,6 +251,8 @@ export default function Taskpane() {
   // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
   const [guidance, setGuidance] = useState('');
   const [replyReady, setReplyReady] = useState(false);
+  // Set when a reply draft attempt errors, so the panel stops spinning and offers a retry.
+  const [replyFailed, setReplyFailed] = useState(false);
 
   // The taskpane renders by *situation*, not by feature tabs: open an email → it
   // auto-analyses → we show what we found (matter? what's being asked?) and the
@@ -608,6 +610,7 @@ export default function Taskpane() {
           setIgnored(false);
           setLinkOpen(false);
           setReplyReady(false);
+          setReplyFailed(false);
           setGuidance('');
           setTone('NEUTRAL');
           setMatterId('');
@@ -1187,7 +1190,8 @@ export default function Taskpane() {
   // call reuses the cached assist draft (instant); `regen` forces a fresh draft with
   // the current tone + guidance, which create-draft folds into the SAME Outlook draft.
   async function openReply(opts: { regen?: boolean } = {}) {
-    await run(opts.regen ? REPLY_BUSY_REGEN : REPLY_BUSY_CREATE, async () => {
+    setReplyFailed(false);
+    const done = await run(opts.regen ? REPLY_BUSY_REGEN : REPLY_BUSY_CREATE, async () => {
       requireThread();
       if (!messageId) throw new Error('Open an email first.');
       let subject = opts.regen ? undefined : assist?.draft?.subject;
@@ -1212,6 +1216,7 @@ export default function Taskpane() {
       fileCurrentEmail();
       return true;
     });
+    if (!done) setReplyFailed(true);
   }
 
   const loadTasks = useCallback(async (mid = matterId) => {
@@ -1323,16 +1328,16 @@ export default function Taskpane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAction, messageId, conversationId, playbooks.length]);
 
-  // When Reply is the recommended move, auto-draft it into the Outlook message the
-  // moment the cached draft is ready — once per email. The panel shows a spinner
-  // while it writes; no click needed.
+  // When Reply is the recommended move, auto-draft it into the Outlook message as
+  // soon as analysis is ready — once per email. openReply uses the cached draft when
+  // present, otherwise generates one; the panel shows a spinner the whole time.
   useEffect(() => {
-    if (recommended !== 'reply' || !assist?.draft || !messageId || !conversationId) return;
+    if (recommended !== 'reply' || !assist?.ready || !messageId || !conversationId) return;
     if (autoRepliedFor.current === messageId || replyReady || busy) return;
     autoRepliedFor.current = messageId;
     openReply();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommended, assist?.draft, messageId, conversationId, replyReady]);
+  }, [recommended, assist?.ready, messageId, conversationId, replyReady]);
 
   // Log the move the user picked — analytics only, never blocks the UI. This is
   // the only footprint some moves leave (esp. Ignore, and Delegate before a task
@@ -1742,7 +1747,9 @@ export default function Taskpane() {
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Writing the draft into Outlook…
                       </p>
-                    ) : recommended === 'reply' || (!assist.ready && !assist.draft) ? (
+                    ) : replyFailed ? (
+                      <p style={{ margin: 0, fontSize: 12, color: '#b91c1c', fontWeight: 600 }}>Couldn’t draft the reply — try again below.</p>
+                    ) : (recommended === 'reply' || (!assist.ready && !assist.draft)) ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Preparing the reply…
                       </p>
