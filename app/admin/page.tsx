@@ -499,7 +499,9 @@ export default function AdminPage() {
     }
   }
 
-  const box: React.CSSProperties = { maxWidth: 1040, margin: '0 auto', padding: '0 20px', color: '#0f172a' };
+  // Full width — no artificial cap, so wide content (the matter board, the doc grid)
+  // uses the space instead of scrolling horizontally when there's room.
+  const box: React.CSSProperties = { width: '100%', margin: 0, padding: '0 24px', color: '#0f172a', boxSizing: 'border-box' };
   const navItem = (active: boolean): React.CSSProperties => ({
     display: 'block',
     width: '100%',
@@ -561,7 +563,7 @@ export default function AdminPage() {
         </nav>
 
         {/* Content */}
-        <div style={{ flex: 1, minWidth: 300 }}>
+        <div style={{ flex: 1, minWidth: 300, maxWidth: tab === 'board' || tab === 'audit' ? 'none' : 880 }}>
         <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>{TAB_META[tab].label}</h1>
         <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>
 
