@@ -192,6 +192,9 @@ function hasSignInHint(): boolean {
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
   const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean } | null>(null);
+  // Matter reconciliation grid ("is my file right?").
+  const [recon, setRecon] = useState<{ rows: any[]; issues: string[]; documents: string[]; skipped: string[] } | null>(null);
+  const [reconBusy, setReconBusy] = useState(false);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null; needsReconnect?: boolean } | null>(null);
   const [status, setStatus] = useState<string>('');
@@ -899,6 +902,24 @@ export default function Taskpane() {
   }
 
   // Live contents of the matter's OneDrive folder (incl. files dropped in directly,
+  // Cross-document reconciliation: "check this file is right" across the matter's docs.
+  async function runReconcile() {
+    if (!matterId) return;
+    setReconBusy(true);
+    try {
+      const r = await api<{ rows: any[]; issues: string[]; documents: string[]; skipped: string[] }>(
+        `/matters/${matterId}/reconcile`,
+        { method: 'POST' }
+      );
+      setRecon(r);
+      setStatus('');
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setReconBusy(false);
+    }
+  }
+
   // not just app-saved ones) — quiet load so opening the Files tab isn't a spinner.
   const loadFiles = useCallback(async (mid = matterId) => {
     if (!mid) return;
@@ -1423,6 +1444,7 @@ export default function Taskpane() {
     }
     setFilesLoaded(false);
     setTemplatesLoaded(false);
+    setRecon(null);
     loadFiles(matterId);
     loadTemplates(matterId);
   }, [matterId, loadFiles, loadTemplates]);
@@ -1430,6 +1452,8 @@ export default function Taskpane() {
   // ── UI ───────────────────────────────────────────────────────────────────
   // Boxed out: signed in, but the subscription/trial has lapsed. A full-pane
   // paywall covers everything; the server also 402s the cost routes as a backstop.
+  const reconTh: React.CSSProperties = { textAlign: 'left', padding: '6px 8px', color: '#64748b', fontWeight: 700, fontSize: 11, borderBottom: '1px solid #e2e8f0' };
+  const reconTd: React.CSSProperties = { padding: '6px 8px', verticalAlign: 'top', color: '#334155' };
   const boxedOut = !!(me && plan && plan.entitled === false);
   const boxedMsg =
     plan?.status === 'past_due'
@@ -2135,6 +2159,93 @@ export default function Taskpane() {
           {/* ── FILES TAB — Case files (live OneDrive folder) + Templates ── */}
           {tab === 'paperclip' && matterId && (
             <>
+              {/* Reconciliation — "is my file right?" across the matter's documents. */}
+              <Card>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: recon ? 8 : 4 }}>
+                  <Label>Check the file</Label>
+                  <button
+                    style={{ ...S.primary, width: 'auto', marginTop: 0, padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={runReconcile}
+                    disabled={reconBusy}
+                  >
+                    {reconBusy ? <span style={S.spinnerLight} /> : null}
+                    {reconBusy ? 'Checking…' : recon ? 'Re-check' : 'Reconcile documents'}
+                  </button>
+                </div>
+                {!recon && !reconBusy && (
+                  <p style={{ ...S.muted, margin: 0 }}>
+                    Cross-checks the case documents against each other and the matter — price, dates, parties, tenure,
+                    lender, SDLT — and flags every mismatch or missing item before exchange.
+                  </p>
+                )}
+                {recon && (
+                  <>
+                    {/* Issues first — the "what needs you" headline. */}
+                    {recon.issues.length > 0 ? (
+                      <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#9a3412', marginBottom: 4 }}>
+                          {recon.issues.length} thing{recon.issues.length === 1 ? '' : 's'} to resolve
+                        </div>
+                        <ul style={{ margin: 0, paddingLeft: 16 }}>
+                          {recon.issues.map((it, i) => (
+                            <li key={i} style={{ fontSize: 12, color: '#7c2d12', lineHeight: 1.45 }}>{it}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : (
+                      <p style={{ fontSize: 12, color: '#166534', fontWeight: 600, margin: '0 0 10px' }}>✓ No discrepancies found across the file.</p>
+                    )}
+
+                    {/* The grid: one row per fact, matter value + each document, mismatches lit. */}
+                    {recon.rows.length > 0 && (
+                      <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: '#f8fafc' }}>
+                              <th style={reconTh}>Fact</th>
+                              <th style={reconTh}>Matter</th>
+                              <th style={reconTh}>Documents</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {recon.rows.map((row: any, i: number) => {
+                              const bad = row.status === 'MISMATCH';
+                              const miss = row.status === 'MISSING';
+                              return (
+                                <tr key={i} style={{ borderTop: '1px solid #eef2f7', background: bad ? '#fef2f2' : miss ? '#fffbeb' : '#fff' }}>
+                                  <td style={{ ...reconTd, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                    {bad ? '⚠ ' : miss ? '• ' : ''}{row.field}
+                                  </td>
+                                  <td style={reconTd}>{row.matterValue || '—'}</td>
+                                  <td style={reconTd}>
+                                    {(row.cells ?? []).length === 0 ? (
+                                      <span style={{ color: '#94a3b8' }}>—</span>
+                                    ) : (
+                                      (row.cells ?? []).map((c: any, j: number) => (
+                                        <div key={j} style={{ marginBottom: 2 }}>
+                                          <span style={{ color: '#0f172a' }}>{c.value}</span>{' '}
+                                          <span style={{ color: '#64748b' }} title={c.quote || ''}>· {c.doc}</span>
+                                        </div>
+                                      ))
+                                    )}
+                                    {row.note && <div style={{ color: bad ? '#b91c1c' : '#64748b', fontStyle: 'italic', marginTop: 2 }}>{row.note}</div>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {recon.skipped.length > 0 && (
+                      <p style={{ ...S.muted, margin: '8px 0 0', fontSize: 11 }}>
+                        Not yet read (excluded): {recon.skipped.join(', ')}.
+                      </p>
+                    )}
+                  </>
+                )}
+              </Card>
+
               {/* Case files — the live contents of the matter's OneDrive folder. */}
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>

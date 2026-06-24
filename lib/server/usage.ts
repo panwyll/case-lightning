@@ -22,6 +22,7 @@ export type UsageFeature =
   | 'DOC_REVIEW'
   | 'DOC_FILL'
   | 'DOC_TEMPLATE_GEN'
+  | 'RECONCILE'
   | 'MATTER_PROPOSE'
   | 'PLAYBOOK_SUGGEST'
   | 'EMBED';
