@@ -577,13 +577,17 @@ export default function Taskpane() {
       if (window.Office && !officeReady.current) {
         officeReady.current = true;
         const Office = window.Office as any;
-        // Read the open message; convert Office's EWS id to the REST id Graph needs.
+        // Read the open message; Graph needs a REST id. Classic Outlook (Win/Mac)
+        // hands back an EWS id that must be converted; OWA / new Outlook already
+        // give a REST id, and converting THAT yields an "id malformed" 400 from
+        // Graph. EWS ids are standard base64 (contain + / =); REST ids are base64url
+        // (never do), so only convert when the id actually looks like EWS.
         const loadItem = () => {
           const mailbox = Office?.context?.mailbox;
           const item = mailbox?.item;
           if (!item) return;
           let id = item.itemId as string | undefined;
-          if (id && typeof mailbox.convertToRestId === 'function') {
+          if (id && /[+/=]/.test(id) && typeof mailbox.convertToRestId === 'function') {
             try {
               id = mailbox.convertToRestId(id, Office?.MailboxEnums?.RestVersion?.v2_0);
             } catch {
