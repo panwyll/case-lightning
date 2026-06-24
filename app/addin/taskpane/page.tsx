@@ -1625,6 +1625,15 @@ export default function Taskpane() {
                     <p style={{ ...S.muted, marginBottom: 8 }}>No suggested matter for this email.</p>
                   )}
 
+                  <div style={S.rowWrap}>
+                    <button style={!matterId ? S.primary : S.secondary} onClick={openNewMatter}>
+                      + New matter
+                    </button>
+                    {matterId && (
+                      <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>
+                    )}
+                  </div>
+
                   {/* Link to any existing matter, including ones the matcher missed. */}
                   {(() => {
                     const others = matterResults.filter(
@@ -1662,15 +1671,6 @@ export default function Taskpane() {
                       </>
                     );
                   })()}
-
-                  <div style={{ ...S.rowWrap, marginTop: 8 }}>
-                    <button style={!matterId ? S.primary : S.secondary} onClick={openNewMatter}>
-                      + New matter
-                    </button>
-                    {matterId && (
-                      <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>
-                    )}
-                  </div>
                   </>
                   )}
                 </>
