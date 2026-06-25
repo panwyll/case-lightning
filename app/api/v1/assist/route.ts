@@ -2,7 +2,7 @@ import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
-import { assertEntitled } from '@/lib/server/plan';
+import { assertEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { assistPhase1, assistPhase2, assistOnMessage, emptySlow } from '@/lib/server/assist';
 import { readAssistCache, writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import { ok, fail } from '@/lib/server/http';
@@ -52,6 +52,14 @@ export async function POST(req: NextRequest) {
     if (cached?.status === 'PARTIAL') {
       // Slow half is already computing from the first open; keep polling.
       return ok({ ...cached.result, ready: false });
+    }
+
+    // Cold open = NEW work. If the firm is over its monthly email cap, don't process
+    // it — tell the taskpane to show the upgrade nudge. Already-seen emails (cached
+    // above) always open; only new emails count and can be blocked.
+    const quota = await emailQuotaStatus(user.tenantId);
+    if (!quota.allowed) {
+      return ok({ overQuota: true, emailsUsed: quota.used, emailsCap: quota.cap, hoursSavedThisMonth: quota.hoursSavedThisMonth, ready: true });
     }
 
     // Cold open: compute the fast half now, fill the slow half in the background.

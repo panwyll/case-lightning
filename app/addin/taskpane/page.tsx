@@ -305,6 +305,7 @@ export default function Taskpane() {
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
+  const [quotaModal, setQuotaModal] = useState<{ used: number; cap: number; hoursSaved: number } | null>(null);
   const [refCopied, setRefCopied] = useState(false);
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
@@ -1215,6 +1216,14 @@ export default function Taskpane() {
       // Only surface the error when the email is still the one we tried to read —
       // a fast switch to another message shouldn't flash a stale failure.
       if (assistPollRef.current === pollKey) setAssistError(true);
+      return;
+    }
+    // Hit the monthly email cap → show the time-saving + upgrade nudge, don't analyse.
+    if ((first as any).overQuota) {
+      if (assistPollRef.current === pollKey) {
+        setQuotaModal({ used: (first as any).emailsUsed ?? 0, cap: (first as any).emailsCap ?? 0, hoursSaved: (first as any).hoursSavedThisMonth ?? 0 });
+        setAssistError(true);
+      }
       return;
     }
     setAssist(first);
@@ -2628,6 +2637,34 @@ export default function Taskpane() {
 
       {(busy || status) && (
         <div style={{ ...S.toast, ...(busy ? S.toastBusy : {}) }}>{busy ? `${busy}…` : status}</div>
+      )}
+
+      {/* Monthly email-cap reached — time saved so far + upgrade. */}
+      {quotaModal && (
+        <div style={S.modalOverlay} onClick={() => setQuotaModal(null)}>
+          <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
+            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setQuotaModal(null)} title="Close" aria-label="Close">✕</button>
+            <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
+              <div style={{ fontSize: 30, lineHeight: 1 }}>🚀</div>
+              <h2 style={{ fontSize: 18, margin: '10px 0 4px', color: '#0f172a' }}>You’ve hit this month’s limit</h2>
+              <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
+                You’ve processed {quotaModal.used.toLocaleString()} of {quotaModal.cap.toLocaleString()} emails this month
+                {quotaModal.hoursSaved > 0 && (
+                  <> — and CONVEYi’s drafting has saved you an estimated <strong>~{quotaModal.hoursSaved.toLocaleString()} hours</strong> of writing</>
+                )}.
+              </p>
+              <p style={{ fontSize: 13, color: '#475569', margin: '0 0 16px', lineHeight: 1.5 }}>
+                Upgrade for <strong>unlimited</strong> emails — new mail keeps being triaged, matched and drafted with no monthly cap.
+              </p>
+              <button style={{ ...S.primary, marginTop: 0 }} onClick={() => { setQuotaModal(null); openAdmin('billing'); }}>
+                Upgrade for unlimited
+              </button>
+              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10 }}>
+                Already-opened emails still work. Your limit resets on the 1st.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Referral popup — gift icon in the header. */}

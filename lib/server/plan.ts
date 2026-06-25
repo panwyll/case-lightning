@@ -83,6 +83,36 @@ export async function isPremiumTenant(tenantId: string): Promise<boolean> {
   return plan !== null && PREMIUM_PLANS.has(plan);
 }
 
+/** Monthly cap on emails processed (triage/analyse) for a plan. null = unlimited. */
+export function emailMonthlyCap(plan: Plan | null): number | null {
+  const c = plan === 'plus' ? config.emailCapPlus : plan === 'pro' ? config.emailCapPro : plan === 'enterprise' ? config.emailCapEnterprise : 0;
+  return c && c > 0 ? c : null;
+}
+
+/**
+ * Where the tenant stands against its monthly email cap, plus the hours its drafting
+ * has saved this month (for the upgrade nudge). Emails are metered by EMAIL_CLASSIFY
+ * (one per email triaged); a cached re-open does no new work and isn't counted.
+ */
+export async function emailQuotaStatus(
+  tenantId: string
+): Promise<{ allowed: boolean; used: number; cap: number | null; hoursSavedThisMonth: number; plan: Plan | null }> {
+  const billing = await getTenantBilling(tenantId);
+  const cap = emailMonthlyCap(billing.plan);
+  if (!cap) return { allowed: true, used: 0, cap: null, hoursSavedThisMonth: 0, plan: billing.plan };
+  const row = await queryOne<{ emails: number; drafts: number }>(
+    `select
+       count(*) filter (where event_type = 'EMAIL_CLASSIFY')::int as emails,
+       count(*) filter (where event_type = 'DRAFT_REPLY')::int   as drafts
+     from usage_event
+     where tenant_id = $1 and created_at >= date_trunc('month', now())`,
+    [tenantId]
+  );
+  const used = row?.emails ?? 0;
+  const hoursSavedThisMonth = Math.round(((row?.drafts ?? 0) * config.estimatedMinutesSavedPerReply) / 60);
+  return { allowed: used < cap, used, cap, hoursSavedThisMonth, plan: billing.plan };
+}
+
 /**
  * Expensive-feature gate for TRIAL users: give a flavour, don't run up cost. During
  * a trial each pricey feature (doc fills, matter reconciliation) is capped to a few

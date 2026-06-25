@@ -3,7 +3,7 @@ import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
 import { hasTrustedLink } from '@/lib/server/matching';
-import { isEntitled } from '@/lib/server/plan';
+import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
         // Don't spend AI on a lapsed tenant — on-receipt triage/precompute is gated
         // by entitlement just like the interactive paths.
         if (!(await isEntitled(user.tenantId))) continue;
+        // Over the monthly email cap → stop processing new mail until next month/upgrade.
+        if (!(await emailQuotaStatus(user.tenantId)).allowed) continue;
 
         const messageId = n.resourceData?.id;
         if (!messageId) continue;

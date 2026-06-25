@@ -112,6 +112,12 @@ export const config = {
   // Minutes a drafted reply saves vs writing from scratch — used only for the clearly
   // labelled "estimated time saved" in the import-impact report. Tune via env.
   estimatedMinutesSavedPerReply: Number(env('ESTIMATED_MINUTES_SAVED_PER_REPLY') ?? '8'),
+  // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
+  // Default: the entry paid tier (plus) is capped; pro/enterprise are unlimited. Adjust
+  // per your price→tier mapping (e.g. set EMAIL_CAP_PRO if Pro is the £200 tier).
+  emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
+  emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
+  emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
