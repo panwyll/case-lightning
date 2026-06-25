@@ -46,10 +46,15 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
   if (!config.stripeSecretKey) {
     return { plan: 'enterprise', status: 'pilot', entitled: true, trialing: false, pilot: true };
   }
-  const account = await queryOne<{ plan: string | null; status: string }>(
-    `select plan, status from billing_account where tenant_id = $1 order by updated_at desc limit 1`,
+  const account = await queryOne<{ plan: string | null; status: string; comp_plan: string | null }>(
+    `select plan, status, comp_plan from billing_account where tenant_id = $1 order by updated_at desc limit 1`,
     [tenantId]
   );
+  // Comp override (test / pilot / internal) — full tier access for free, above Stripe,
+  // so a webhook resync can't clobber it. See migration 032.
+  if (account?.comp_plan && PLANS.includes(account.comp_plan as Plan)) {
+    return { plan: account.comp_plan as Plan, status: 'active', entitled: true, trialing: false, pilot: false };
+  }
   const status = account?.status ?? 'none';
   const entitled = status === 'active' || status === 'trialing';
   const trialing = status === 'trialing';
