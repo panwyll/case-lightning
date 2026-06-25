@@ -194,8 +194,8 @@ export async function createReplyDraft(
   userId: string,
   messageId: string,
   bodyHtml: string,
-  opts: { appendToken?: string } = {}
-): Promise<{ id: string; subject: string; webLink: string | null }> {
+  opts: { appendToken?: string; skipBodyIfExists?: boolean } = {}
+): Promise<{ id: string; subject: string; webLink: string | null; reused: boolean }> {
   const client = await graphClientForUser(userId);
 
   // Reuse an existing reply draft in this conversation rather than piling up a new
@@ -222,6 +222,13 @@ export async function createReplyDraft(
     // Best-effort dedup — fall through to creating a fresh reply.
   }
 
+  // A reply draft already exists and the caller only wants one to EXIST (the auto
+  // draft-on-open) — leave it, and any edits the user made, untouched. Don't rewrite,
+  // don't claim we generated anything.
+  if (draft && opts.skipBodyIfExists) {
+    return { id: draft.id, subject: draft.subject ?? '', webLink: draft.webLink ?? null, reused: true };
+  }
+
   const reply = draft ?? (await client.api(`/me/messages/${messageId}/createReply`).post({ comment: '' }));
   const updateBody: Record<string, unknown> = {
     body: { contentType: 'HTML', content: bodyHtml },
@@ -232,7 +239,7 @@ export async function createReplyDraft(
     updateBody.subject = subject;
   }
   await client.api(`/me/messages/${reply.id}`).patch(updateBody);
-  return { id: reply.id, subject, webLink: reply.webLink ?? null };
+  return { id: reply.id, subject, webLink: reply.webLink ?? null, reused: Boolean(draft) };
 }
 
 /** Add a file as an attachment to a message; uses an upload session for >3 MB. */

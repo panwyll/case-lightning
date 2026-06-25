@@ -1248,7 +1248,7 @@ export default function Taskpane() {
   // Writes the reply straight into the Outlook draft — no in-pane preview. The first
   // call reuses the cached assist draft (instant); `regen` forces a fresh draft with
   // the current tone + guidance, which create-draft folds into the SAME Outlook draft.
-  async function openReply(opts: { regen?: boolean } = {}) {
+  async function openReply(opts: { regen?: boolean; auto?: boolean } = {}) {
     setReplyFailed(false);
     // Watchdog: drafting goes through the LLM + Graph, so bound it. If it stalls,
     // abort the request so the spinner releases and the panel offers a retry rather
@@ -1269,16 +1269,22 @@ export default function Taskpane() {
         subject = g.subject;
         bodyHtml = g.bodyHtml;
       }
-      await api<{ draftId: string; webLink?: string | null; subject: string; bodyHtml: string }>(
+      const r = await api<{ draftId: string; webLink?: string | null; subject: string; bodyHtml: string; reused?: boolean }>(
         `/threads/${encodeURIComponent(conversationId)}/create-draft`,
         {
           method: 'POST',
           signal: ctrl.signal,
-          body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml }),
+          // Auto draft-on-open: if a draft already exists, leave it as-is (don't
+          // overwrite the user's edits, and don't claim we generated anything).
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, subject, bodyHtml, skipIfExists: opts.auto || undefined }),
         }
       );
       setReplyReady(true);
-      setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
+      // The auto draft-on-open is a background action — the green panel state says it
+      // all, so stay quiet (and never toast when an existing draft was left untouched).
+      if (!opts.auto && !r.reused) {
+        setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
+      }
       // NB: we deliberately do NOT file (move) the email here. The reply is only a
       // draft, and auto-drafting fires on open — filing here moved the source email
       // out of the inbox, so it appeared to vanish. Filing stays a deliberate action.
@@ -1407,7 +1413,7 @@ export default function Taskpane() {
     // panel hangs on "Preparing the reply…" forever.
     if (autoRepliedFor.current === messageId || replyReady || busy) return;
     autoRepliedFor.current = messageId;
-    openReply();
+    openReply({ auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recommended, assist?.ready, messageId, conversationId, replyReady, busy]);
 

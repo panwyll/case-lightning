@@ -24,6 +24,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         messageId: z.string(),
         subject: z.string().optional(),
         bodyHtml: z.string().min(1),
+        // Auto draft-on-open: if a reply draft already exists, leave it as-is.
+        skipIfExists: z.boolean().optional(),
       })
       .parse(await req.json());
 
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       return fail(new Error('One or more recipient domains are not allowed by policy'));
     }
 
-    const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, { appendToken: token });
+    const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, { appendToken: token, skipBodyIfExists: body.skipIfExists });
 
     await writeAudit({
       tenantId: user.tenantId,
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       payload: { draftId: draft.id, graphThreadId },
     });
 
-    return ok({ draftId: draft.id, webLink: draft.webLink, subject: draft.subject, bodyHtml: body.bodyHtml });
+    return ok({ draftId: draft.id, webLink: draft.webLink, subject: draft.subject, bodyHtml: body.bodyHtml, reused: draft.reused });
   } catch (error) {
     return fail(error);
   }
