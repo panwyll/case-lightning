@@ -152,6 +152,7 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 
 export default function AdminPage() {
   const [me, setMe] = useState<{ role: string; email: string; displayName: string | null; tenantName?: string } | null>(null);
+  const [meLoading, setMeLoading] = useState(true);
   const isAdmin = me?.role === 'ADMIN';
   // Show the full nav immediately (static) — only collapse it once we've CONFIRMED a
   // non-admin. Gating on the async /me would otherwise pop the sidebar from 2 → all.
@@ -168,7 +169,8 @@ export default function AdminPage() {
     }
     api<{ role: string; email: string; displayName: string | null; tenantName?: string }>('/me')
       .then(setMe)
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setMeLoading(false));
     api('/billing/account').then(setBilling).catch(() => {});
     const t = new URLSearchParams(window.location.search).get('tab');
     if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as TabKey);
@@ -191,6 +193,7 @@ export default function AdminPage() {
   const [boardLoading, setBoardLoading] = useState(false);
   const [boardAssignee, setBoardAssignee] = useState('');
   const [boardFlag, setBoardFlag] = useState('');
+  const [boardSort, setBoardSort] = useState<'stage_age' | 'completion' | 'ref' | 'updated'>('stage_age');
   const [copiedRef, setCopiedRef] = useState(false);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
@@ -540,6 +543,39 @@ export default function AdminPage() {
   const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 6px', marginBottom: 6, borderBottom: '1px solid #eef1f5' };
   const planBadge: React.CSSProperties = { background: '#ede9fe', color: '#6d28d9', borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 800 };
 
+  // Gate the whole page on auth: a 'logging you in' spinner while /me is in flight,
+  // a sign-in prompt if unauthenticated. Don't show the shell to a stranger.
+  if (meLoading || !me) {
+    const brand = (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+        <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+          <rect width="32" height="32" rx="7" fill="#5A27E0" />
+          <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
+        </svg>
+        <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
+      </div>
+    );
+    return (
+      <div style={{ background: '#f8fafc', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <style>{`@keyframes adm-spin{to{transform:rotate(360deg)}}`}</style>
+        <div style={{ textAlign: 'center', color: '#475569' }}>
+          {brand}
+          {meLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#64748b' }}>
+              <span style={spinnerStyle} /> Logging you in…
+            </div>
+          ) : (
+            <>
+              <h2 style={{ fontSize: 18, margin: '0 0 6px', color: '#0f172a' }}>Please sign in</h2>
+              <p style={{ fontSize: 13, margin: '0 0 16px' }}>Open the CONVEYi add-in in Outlook and connect your Microsoft 365 account, then return here.</p>
+              <a href="/api/v1/auth/login" style={{ ...btnPrimary, textDecoration: 'none', display: 'inline-block' }}>Sign in</a>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
       {/* Sticky brand bar */}
@@ -740,11 +776,23 @@ export default function AdminPage() {
             ) : (() => {
               const assigneeOpts = Array.from(new Set(board.map((m) => m.assignee).filter(Boolean))).sort();
               const hasUnassigned = board.some((m) => !m.assignee);
-              const visible = board.filter(
-                (m) =>
-                  (boardAssignee === '' || (boardAssignee === '__un' ? !m.assignee : m.assignee === boardAssignee)) &&
-                  (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag)
-              );
+              const stageMs = (m: any) => new Date(m.stageEnteredAt || m.updatedAt).getTime();
+              const visible = board
+                .filter(
+                  (m) =>
+                    (boardAssignee === '' || (boardAssignee === '__un' ? !m.assignee : m.assignee === boardAssignee)) &&
+                    (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag)
+                )
+                .sort((a, b) => {
+                  if (boardSort === 'stage_age') return stageMs(a) - stageMs(b); // oldest in stage first (most dots)
+                  if (boardSort === 'completion') {
+                    const av = a.completionTargetDate ? new Date(a.completionTargetDate).getTime() : Infinity;
+                    const bv = b.completionTargetDate ? new Date(b.completionTargetDate).getTime() : Infinity;
+                    return av - bv; // soonest completion first
+                  }
+                  if (boardSort === 'ref') return String(a.matterRef || '').localeCompare(String(b.matterRef || ''));
+                  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); // most recently updated first
+                });
               return (
                 <>
                   {/* Filters */}
@@ -753,6 +801,12 @@ export default function AdminPage() {
                       <option value="">All assignees</option>
                       {assigneeOpts.map((a) => <option key={a} value={a}>{a}</option>)}
                       {hasUnassigned && <option value="__un">Unassigned</option>}
+                    </select>
+                    <select value={boardSort} onChange={(e) => setBoardSort(e.target.value as typeof boardSort)} style={filterSelect}>
+                      <option value="stage_age">Sort: longest in stage</option>
+                      <option value="completion">Sort: completion date</option>
+                      <option value="updated">Sort: recently updated</option>
+                      <option value="ref">Sort: matter ref</option>
                     </select>
                     <select value={boardFlag} onChange={(e) => setBoardFlag(e.target.value)} style={filterSelect}>
                       <option value="">All statuses</option>
