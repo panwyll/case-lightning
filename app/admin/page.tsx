@@ -718,14 +718,14 @@ export default function AdminPage() {
             {board.length === 0 ? (
               <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>No live matters yet.</div>
             ) : (
-              <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 8, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
                 {STAGE_ORDER.map((stage) => {
                   const col = board.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                   return (
-                    <div key={stage} style={{ flex: '0 0 230px', minWidth: 230 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px 8px' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{STAGE_LABEL[stage] ?? stage}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8' }}>{col.length}</span>
+                    <div key={stage} style={{ flex: '1 1 0', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={STAGE_LABEL[stage] ?? stage}>{STAGE_LABEL[stage] ?? stage}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
                       </div>
                       <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 8, minHeight: 60 }}>
                         {col.length === 0 ? (
