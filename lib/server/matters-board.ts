@@ -304,7 +304,7 @@ async function reconcileFromBoard(user: SessionUser, itemId: string): Promise<{ 
     const name = (row.cells['Assignee'] ?? '').trim();
     const assigned = name === 'Unassigned' || name === '' ? null : userIdByName.get(name) ?? m.assigned_to;
     if (stage !== m.stage || status !== m.status_flag || assigned !== m.assigned_to) {
-      await query(`update matter set stage = $1, status_flag = $2, assigned_to = $3, updated_at = now() where id = $4 and tenant_id = $5`, [
+      await query(`update matter set stage_entered_at = case when $1 <> stage then now() else stage_entered_at end, stage = $1, status_flag = $2, assigned_to = $3, updated_at = now() where id = $4 and tenant_id = $5`, [
         stage,
         status,
         assigned,

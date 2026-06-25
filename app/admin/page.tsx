@@ -781,7 +781,7 @@ export default function AdminPage() {
                             ) : (
                               col.map((m) => {
                                 const date = m.completionTargetDate || m.exchangeTargetDate;
-                                const days = Math.max(0, Math.floor((Date.now() - new Date(m.updatedAt).getTime()) / 86_400_000));
+                                const days = Math.max(0, Math.floor((Date.now() - new Date(m.stageEnteredAt || m.updatedAt).getTime()) / 86_400_000));
                                 const dotN = Math.min(Math.max(days, 1), 14);
                                 const dotC = days <= 7 ? '#cbd5e1' : days <= 21 ? '#f59e0b' : '#ef4444';
                                 return (
@@ -797,8 +797,8 @@ export default function AdminPage() {
                                       <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assignee || 'Unassigned'}</span>
                                       {date && <span style={{ whiteSpace: 'nowrap', color: '#475569' }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                                     </div>
-                                    {/* Age dots — days since last activity (staleness at a glance). */}
-                                    <div title={`${days} day${days === 1 ? '' : 's'} since last activity`} style={{ display: 'flex', gap: 2, marginTop: 7, flexWrap: 'wrap' }}>
+                                    {/* Age dots — true days in the current stage. */}
+                                    <div title={`${days} day${days === 1 ? '' : 's'} in ${STAGE_LABEL[stage] ?? stage}`} style={{ display: 'flex', gap: 2, marginTop: 7, flexWrap: 'wrap' }}>
                                       {Array.from({ length: dotN }).map((_, i) => (
                                         <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: dotC }} />
                                       ))}

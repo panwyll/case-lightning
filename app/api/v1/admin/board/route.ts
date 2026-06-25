@@ -24,6 +24,7 @@ export async function GET() {
       completionTargetDate: string | null;
       assignee: string | null;
       updatedAt: string;
+      stageEnteredAt: string;
     }>(
       `select m.id,
               m.matter_ref           as "matterRef",
@@ -33,7 +34,8 @@ export async function GET() {
               m.exchange_target_date as "exchangeTargetDate",
               m.completion_target_date as "completionTargetDate",
               coalesce(u.display_name, u.email) as assignee,
-              m.updated_at           as "updatedAt"
+              m.updated_at           as "updatedAt",
+              m.stage_entered_at     as "stageEnteredAt"
          from matter m
          left join app_user u on u.id = m.assigned_to
         where m.tenant_id = $1 and coalesce(m.status, 'ACTIVE') <> 'CLOSED'
