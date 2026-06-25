@@ -153,7 +153,9 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 export default function AdminPage() {
   const [me, setMe] = useState<{ role: string; email: string; displayName: string | null; tenantName?: string } | null>(null);
   const isAdmin = me?.role === 'ADMIN';
-  const visibleTabs = isAdmin ? TAB_KEYS : TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k));
+  // Show the full nav immediately (static) — only collapse it once we've CONFIRMED a
+  // non-admin. Gating on the async /me would otherwise pop the sidebar from 2 → all.
+  const visibleTabs = me && !isAdmin ? TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k)) : TAB_KEYS;
 
   const [tab, setTab] = useState<TabKey>('billing');
   // Capture a token from the URL fragment (desktop deep-link), load the user, and
