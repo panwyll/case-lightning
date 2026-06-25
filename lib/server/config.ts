@@ -109,6 +109,9 @@ export const config = {
   // gets fewer with an upsell; pro/enterprise get more.
   onboardingMonthlyCapFree: Number(env('ONBOARDING_MONTHLY_CAP_FREE') ?? '1'),
   onboardingMonthlyCapPremium: Number(env('ONBOARDING_MONTHLY_CAP_PREMIUM') ?? '3'),
+  // Minutes a drafted reply saves vs writing from scratch — used only for the clearly
+  // labelled "estimated time saved" in the import-impact report. Tune via env.
+  estimatedMinutesSavedPerReply: Number(env('ESTIMATED_MINUTES_SAVED_PER_REPLY') ?? '8'),
   // Recurring single-level referral commission, in pennies (£50 = 5000).
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

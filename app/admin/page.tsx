@@ -48,6 +48,14 @@ function money(pennies: number, currency: string): string {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: (currency || 'GBP').toUpperCase() }).format(pennies / 100);
 }
 
+function fmtDuration(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = mins / 60;
+  if (h < 24) return `${h < 10 ? h.toFixed(1) : Math.round(h)} hr${h >= 2 ? 's' : ''}`;
+  const d = h / 24;
+  return `${d < 10 ? d.toFixed(1) : Math.round(d)} day${d >= 2 ? 's' : ''}`;
+}
+
 type TabKey = 'billing' | 'board' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
@@ -189,6 +197,7 @@ export default function AdminPage() {
   const aiGenFileRef = useRef<HTMLInputElement>(null);
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
+  const [importStats, setImportStats] = useState<any>(null);
   const [board, setBoard] = useState<any[]>([]);
   const [boardLoading, setBoardLoading] = useState(false);
   const [boardAssignee, setBoardAssignee] = useState('');
@@ -229,6 +238,7 @@ export default function AdminPage() {
       if (tab === 'billing') {
         setBilling(await api('/billing/account'));
         setReferrals(await api('/referrals'));
+        api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
       if (tab === 'board') {
         setBoardLoading(true);
@@ -656,6 +666,32 @@ export default function AdminPage() {
                   </p>
                 )}
               </div>
+
+              {/* Impact — response-time stats from the historical import (renewal value). */}
+              {importStats?.available && (
+                <div style={card}>
+                  <div style={overline}>Your correspondence, from the import</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, marginTop: 12 }}>
+                    <div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a' }}>{fmtDuration(importStats.medianResponseMins)}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Typical time to reply</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a' }}>{fmtDuration(importStats.avgCaseResponseMins)}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Avg reply time per case</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 24, fontWeight: 800, color: '#0f172a' }}>{importStats.responses.toLocaleString()}</div>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>replies · {importStats.cases.toLocaleString()} cases</div>
+                    </div>
+                  </div>
+                  <p style={{ color: '#475569', fontSize: 13, margin: '14px 0 0', lineHeight: 1.5 }}>
+                    Across the case emails you actually replied to. For this volume of replies, CONVEYi’s drafting
+                    saves an estimated <strong>~{importStats.estimatedHoursSaved.toLocaleString()} hours</strong> of
+                    writing — and helps you reply faster.
+                  </p>
+                </div>
+              )}
 
               <div style={card}>
                 <div style={overline}>Team · {billing.seatCount} {billing.seatCount === 1 ? 'seat' : 'seats'}</div>
