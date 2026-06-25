@@ -186,6 +186,9 @@ export default function AdminPage() {
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [board, setBoard] = useState<any[]>([]);
+  const [boardLoading, setBoardLoading] = useState(false);
+  const [boardAssignee, setBoardAssignee] = useState('');
+  const [boardFlag, setBoardFlag] = useState('');
   const [copiedRef, setCopiedRef] = useState(false);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
@@ -222,7 +225,14 @@ export default function AdminPage() {
         setBilling(await api('/billing/account'));
         setReferrals(await api('/referrals'));
       }
-      if (tab === 'board') setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
+      if (tab === 'board') {
+        setBoardLoading(true);
+        try {
+          setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
+        } finally {
+          setBoardLoading(false);
+        }
+      }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
@@ -502,6 +512,9 @@ export default function AdminPage() {
   // Full width — no artificial cap, so wide content (the matter board, the doc grid)
   // uses the space instead of scrolling horizontally when there's room.
   const box: React.CSSProperties = { width: '100%', margin: 0, padding: '0 24px', color: '#0f172a', boxSizing: 'border-box' };
+  const spinnerStyle: React.CSSProperties = { width: 16, height: 16, borderRadius: 999, border: '2px solid #e2e8f0', borderTopColor: '#5A27E0', animation: 'adm-spin 0.7s linear infinite', display: 'inline-block' };
+  const filterSelect: React.CSSProperties = { padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, background: '#fff', color: '#0f172a' };
+  const clearBtn: React.CSSProperties = { padding: '5px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12, background: '#fff', color: '#475569', cursor: 'pointer' };
   const navItem = (active: boolean): React.CSSProperties => ({
     display: 'block',
     width: '100%',
@@ -715,47 +728,93 @@ export default function AdminPage() {
 
         {tab === 'board' && (
           <>
-            {board.length === 0 ? (
-              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>No live matters yet.</div>
-            ) : (
-              <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
-                {STAGE_ORDER.map((stage) => {
-                  const col = board.filter((m) => (m.stage || 'INSTRUCTION') === stage);
-                  return (
-                    <div key={stage} style={{ flex: '1 1 0', minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={STAGE_LABEL[stage] ?? stage}>{STAGE_LABEL[stage] ?? stage}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
-                      </div>
-                      <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 8, minHeight: 60 }}>
-                        {col.length === 0 ? (
-                          <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
-                        ) : (
-                          col.map((m) => {
-                            const date = m.completionTargetDate || m.exchangeTargetDate;
-                            return (
-                              <div key={m.id} style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
-                                  <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
-                                </div>
-                                {m.propertyAddress && (
-                                  <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
-                                )}
-                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginTop: 6, fontSize: 11, color: '#64748b' }}>
-                                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assignee || 'Unassigned'}</span>
-                                  {date && <span style={{ whiteSpace: 'nowrap', color: '#475569' }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                                </div>
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            <style>{`@keyframes adm-spin{to{transform:rotate(360deg)}}`}</style>
+            {boardLoading && board.length === 0 ? (
+              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#64748b' }}>
+                <span style={spinnerStyle} /> Loading matters…
               </div>
-            )}
+            ) : board.length === 0 ? (
+              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>No live matters yet.</div>
+            ) : (() => {
+              const assigneeOpts = Array.from(new Set(board.map((m) => m.assignee).filter(Boolean))).sort();
+              const hasUnassigned = board.some((m) => !m.assignee);
+              const visible = board.filter(
+                (m) =>
+                  (boardAssignee === '' || (boardAssignee === '__un' ? !m.assignee : m.assignee === boardAssignee)) &&
+                  (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag)
+              );
+              return (
+                <>
+                  {/* Filters */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+                    <select value={boardAssignee} onChange={(e) => setBoardAssignee(e.target.value)} style={filterSelect}>
+                      <option value="">All assignees</option>
+                      {assigneeOpts.map((a) => <option key={a} value={a}>{a}</option>)}
+                      {hasUnassigned && <option value="__un">Unassigned</option>}
+                    </select>
+                    <select value={boardFlag} onChange={(e) => setBoardFlag(e.target.value)} style={filterSelect}>
+                      <option value="">All statuses</option>
+                      <option value="ON_TRACK">On track</option>
+                      <option value="NEEDS_ATTENTION">Needs attention</option>
+                      <option value="BLOCKED">Blocked</option>
+                    </select>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
+                    {(boardAssignee || boardFlag) && (
+                      <button style={clearBtn} onClick={() => { setBoardAssignee(''); setBoardFlag(''); }}>Clear</button>
+                    )}
+                    {boardLoading && <span style={spinnerStyle} />}
+                  </div>
+
+                  {/* Kanban */}
+                  <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
+                    {STAGE_ORDER.map((stage) => {
+                      const col = visible.filter((m) => (m.stage || 'INSTRUCTION') === stage);
+                      return (
+                        <div key={stage} style={{ flex: '1 1 0', minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={STAGE_LABEL[stage] ?? stage}>{STAGE_LABEL[stage] ?? stage}</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
+                          </div>
+                          <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 8, minHeight: 60 }}>
+                            {col.length === 0 ? (
+                              <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
+                            ) : (
+                              col.map((m) => {
+                                const date = m.completionTargetDate || m.exchangeTargetDate;
+                                const days = Math.max(0, Math.floor((Date.now() - new Date(m.updatedAt).getTime()) / 86_400_000));
+                                const dotN = Math.min(Math.max(days, 1), 14);
+                                const dotC = days <= 7 ? '#cbd5e1' : days <= 21 ? '#f59e0b' : '#ef4444';
+                                return (
+                                  <div key={m.id} style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
+                                      <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
+                                    </div>
+                                    {m.propertyAddress && (
+                                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                                    )}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginTop: 6, fontSize: 11, color: '#64748b' }}>
+                                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assignee || 'Unassigned'}</span>
+                                      {date && <span style={{ whiteSpace: 'nowrap', color: '#475569' }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                    </div>
+                                    {/* Age dots — days since last activity (staleness at a glance). */}
+                                    <div title={`${days} day${days === 1 ? '' : 's'} since last activity`} style={{ display: 'flex', gap: 2, marginTop: 7, flexWrap: 'wrap' }}>
+                                      {Array.from({ length: dotN }).map((_, i) => (
+                                        <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: dotC }} />
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              );
+            })()}
           </>
         )}
 
