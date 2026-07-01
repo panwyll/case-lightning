@@ -39,13 +39,13 @@ export const factToStr = (v: unknown): string | null => {
   }
 };
 
-/** "purchase_price" / "purchasePrice" → "Purchase price" — a readable label for a fact key. */
+/** "purchase_price" / "purchasePrice" → "Purchase Price" — a readable, Title-Cased label. */
 export const prettyLabel = (key: string): string => {
   const spaced = key
     .replace(/[_-]+/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .trim();
-  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : key;
+  return spaced ? spaced.replace(/\b\w/g, (c) => c.toUpperCase()) : key;
 };
 
 /** Records one row per figure that actually changed. Silently ignores no-op diffs. */

@@ -1696,7 +1696,7 @@ export default function Taskpane() {
                   the last word and it's gone quiet. Doesn't need an email open. */}
               {chases && chases.length > 0 && (
                 <Card>
-                  <Label>To chase ({chases.length})</Label>
+                  <Label>To Chase ({chases.length})</Label>
                   <p style={{ ...S.muted, margin: '0 0 8px' }}>
                     You sent the last word and it’s gone quiet — oldest first.
                     {plan && plan.plan && plan.plan !== 'plus'
@@ -1755,7 +1755,7 @@ export default function Taskpane() {
               {matterId && !changing ? (
                 // Linked: show the matter, one way to change it.
                 <>
-                  <Label>Linked matter</Label>
+                  <Label>Linked Matter</Label>
                   <div style={S.candidate}>
                     <strong style={{ fontSize: 13 }}>{linkedRef || 'This matter'}</strong>
                     {linkedAddr && <div style={{ fontSize: 12, color: '#475569' }}>{linkedAddr}</div>}
@@ -1780,7 +1780,7 @@ export default function Taskpane() {
                   <>
                   {candidates.length > 0 ? (
                     <>
-                      <Label>Likely matters</Label>
+                      <Label>Likely Matters</Label>
                       {candidates.map((c: any) => {
                         const pct = Math.round((c.score ?? 0) * 100);
                         const auto = c.band === 'AUTO';
@@ -1834,7 +1834,7 @@ export default function Taskpane() {
                     );
                     return (
                       <>
-                        <SubLabel>Link a different matter</SubLabel>
+                        <SubLabel>Link a Different Matter</SubLabel>
                         <input
                           style={S.input}
                           placeholder="Search by reference or address…"
@@ -2014,7 +2014,7 @@ export default function Taskpane() {
                     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
                       {quick.type === 'DELEGATE' ? (
                         <label style={{ display: 'block', marginBottom: 6 }}>
-                          <span style={S.fieldLabel}>Delegate to</span>
+                          <span style={S.fieldLabel}>Delegate To</span>
                           <select style={{ ...S.input, marginBottom: 0 }} value={quick.delegateToUserId} onChange={(e) => setQuick({ ...quick, delegateToUserId: e.target.value })}>
                             <option value="">Choose a team member…</option>
                             {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
@@ -2099,7 +2099,7 @@ export default function Taskpane() {
                           <SubLabel>Run “{pbInputs.p.name}”</SubLabel>
                           {pbInputs.needsDelegate && (
                             <label style={{ display: 'block', marginBottom: 6 }}>
-                              <span style={S.fieldLabel}>Delegate to</span>
+                              <span style={S.fieldLabel}>Delegate To</span>
                               <select style={{ ...S.input, marginBottom: 0 }} value={pbInputs.delegateToUserId} onChange={(e) => setPbInputs({ ...pbInputs, delegateToUserId: e.target.value })}>
                                 <option value="">Choose a team member…</option>
                                 {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
@@ -2108,7 +2108,7 @@ export default function Taskpane() {
                           )}
                           {pbInputs.needsNotify && (
                             <label style={{ display: 'block', marginBottom: 6 }}>
-                              <span style={S.fieldLabel}>Notify (email)</span>
+                              <span style={S.fieldLabel}>Notify (Email)</span>
                               <input style={{ ...S.input, marginBottom: 0 }} placeholder="client@example.com" value={pbInputs.notifyEmail} onChange={(e) => setPbInputs({ ...pbInputs, notifyEmail: e.target.value })} />
                             </label>
                           )}
@@ -2162,7 +2162,7 @@ export default function Taskpane() {
 
           {tab === 'email' && showNewMatter && (
             <Card>
-              <Label>New matter</Label>
+              <Label>New Matter</Label>
               <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder={`auto: ${suggestedRef()}`} />
               <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} placeholder="14 Oak Street, London SW1A 1AA" />
               <TagInput label="Buyers" values={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} placeholder="type a name, press Enter" />
@@ -2191,7 +2191,7 @@ export default function Taskpane() {
 
           {tab === 'email' && facts && (
             <Card>
-              <Label>Extracted facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
+              <Label>Extracted Facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
               {Object.entries(facts.facts).map(([k, v]) => (
                 <div key={k} style={S.kv}>
                   <span>{humanize(k)}</span>
@@ -2283,7 +2283,7 @@ export default function Taskpane() {
                   it came from. Every price/date/party edit is auditable. */}
               {Array.isArray(matterInfo.figureHistory) && matterInfo.figureHistory.length > 0 && (
                 <Card>
-                  <Label>Figure history</Label>
+                  <Label>Figure History</Label>
                   <p style={{ ...S.muted, margin: '0 0 8px' }}>
                     Who changed each figure, when and why — and the email or document it came from.
                   </p>
@@ -2348,7 +2348,7 @@ export default function Taskpane() {
               {/* Reconciliation — "is my file right?" across the matter's documents. */}
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: recon ? 12 : 8 }}>
-                  <Label>Check the file</Label>
+                  <Label>Check the File</Label>
                   {recon && (
                     <button
                       style={{ ...S.secondary, width: 'auto', marginTop: 0, padding: '5px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
@@ -2447,7 +2447,7 @@ export default function Taskpane() {
               {/* Case files — the live contents of the matter's OneDrive folder. */}
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <Label>Case files</Label>
+                  <Label>Case Files</Label>
                   <div style={{ display: 'flex', gap: 4 }}>
                     {matterInfo?.matter?.folder_web_url && (
                       <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
@@ -2596,12 +2596,12 @@ export default function Taskpane() {
           )}
           {/* Onboard existing cases (bulk-import the mailbox backlog) */}
           <Card>
-            <Label>Onboard existing cases</Label>
+            <Label>Onboard Existing Cases</Label>
 
             {(!obJob || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(obJob.status)) && (
               <>
                 <p style={S.muted}>Find live cases in your mailbox and import them as matters — you pick which to keep.</p>
-                <SubLabel>How far back</SubLabel>
+                <SubLabel>How Far Back</SubLabel>
                 <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
                   <option value="3">Last 3 months</option>
                   <option value="unlimited">All history (premium)</option>
@@ -2757,11 +2757,11 @@ export default function Taskpane() {
 
           {/* AI engine + auto-triage */}
           <Card>
-            <Label>AI engine</Label>
+            <Label>AI Engine</Label>
             <p style={S.muted}>
               {aiConnected === null ? 'Status unknown.' : aiConnected ? 'Per-user key connected.' : 'Using the firm’s central Claude key.'}
             </p>
-            <SubLabel>Auto-triage</SubLabel>
+            <SubLabel>Auto-Triage</SubLabel>
             <p style={S.muted}>
               Always on — incoming mail is auto-matched to a case, tagged, and pre-analysed so each email
               opens ready. It never sends a reply.
@@ -3048,22 +3048,22 @@ function HousePanel({
     <section style={S.card}>
       <Label>{matter.matter_ref}</Label>
       <label style={{ display: 'block', marginBottom: 6 }}>
-        <span style={S.fieldLabel}>Acting for</span>
+        <span style={S.fieldLabel}>Acting For</span>
         <select style={{ ...S.input, marginBottom: 0 }} value={draft.track} onChange={(e) => set('track', e.target.value)}>
           {TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
-      {field('Property address', 'propertyAddress')}
-      {field('Purchase price', 'purchasePrice', 'text', priceValid)}
+      {field('Property Address', 'propertyAddress')}
+      {field('Purchase Price', 'purchasePrice', 'text', priceValid)}
       {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}
       {join(matter.seller_names) && <div style={S.kv}><span>Seller(s)</span><span style={{ textAlign: 'right' }}>{join(matter.seller_names)}</span></div>}
-      {field('Other side (solicitor)', 'counterpartySolicitor')}
-      {field('Estate agent', 'counterpartyAgent')}
+      {field('Other Side (Solicitor)', 'counterpartySolicitor')}
+      {field('Estate Agent', 'counterpartyAgent')}
       {field('Lender', 'lender')}
-      {field('Chain position', 'chainPosition')}
+      {field('Chain Position', 'chainPosition')}
       <div style={{ display: 'flex', gap: 6 }}>
-        {field('Exchange target', 'exchangeTargetDate', 'date')}
-        {field('Completion target', 'completionTargetDate', 'date')}
+        {field('Exchange Target', 'exchangeTargetDate', 'date')}
+        {field('Completion Target', 'completionTargetDate', 'date')}
       </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <label style={{ flex: 1 }}>

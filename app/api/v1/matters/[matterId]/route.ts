@@ -128,18 +128,18 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const track = (provided: boolean, field: string, label: string, oldValue: string | null, newValue: string | undefined) => {
       if (provided) changes.push({ field, label, oldValue, newValue: newValue ?? null });
     };
-    track(body.propertyAddress !== undefined, 'property_address', 'Property address', before?.property_address ?? null, body.propertyAddress);
-    track(body.purchasePrice !== undefined, 'purchase_price', 'Purchase price', before?.purchase_price ?? null, body.purchasePrice);
-    track(body.counterpartySolicitor !== undefined, 'counterparty_solicitor', "Other side's solicitor", before?.counterparty_solicitor ?? null, body.counterpartySolicitor);
-    track(body.counterpartyAgent !== undefined, 'counterparty_agent', 'Estate agent', before?.counterparty_agent ?? null, body.counterpartyAgent);
-    track(body.exchangeTargetDate !== undefined, 'exchange_target_date', 'Exchange date', dstr(before?.exchange_target_date), body.exchangeTargetDate);
-    track(body.completionTargetDate !== undefined, 'completion_target_date', 'Completion date', dstr(before?.completion_target_date), body.completionTargetDate);
+    track(body.propertyAddress !== undefined, 'property_address', 'Property Address', before?.property_address ?? null, body.propertyAddress);
+    track(body.purchasePrice !== undefined, 'purchase_price', 'Purchase Price', before?.purchase_price ?? null, body.purchasePrice);
+    track(body.counterpartySolicitor !== undefined, 'counterparty_solicitor', "Other Side's Solicitor", before?.counterparty_solicitor ?? null, body.counterpartySolicitor);
+    track(body.counterpartyAgent !== undefined, 'counterparty_agent', 'Estate Agent', before?.counterparty_agent ?? null, body.counterpartyAgent);
+    track(body.exchangeTargetDate !== undefined, 'exchange_target_date', 'Exchange Date', dstr(before?.exchange_target_date), body.exchangeTargetDate);
+    track(body.completionTargetDate !== undefined, 'completion_target_date', 'Completion Date', dstr(before?.completion_target_date), body.completionTargetDate);
     track(body.lender !== undefined, 'lender', 'Lender', before?.lender ?? null, body.lender);
-    track(body.chainPosition !== undefined, 'chain_position', 'Chain position', before?.chain_position ?? null, body.chainPosition);
+    track(body.chainPosition !== undefined, 'chain_position', 'Chain Position', before?.chain_position ?? null, body.chainPosition);
     track(body.status !== undefined, 'status', 'Status', before?.status ?? null, body.status);
     track(body.stage !== undefined, 'stage', 'Stage', before?.stage ?? null, body.stage);
-    track(body.statusFlag !== undefined, 'status_flag', 'Status flag', before?.status_flag ?? null, body.statusFlag);
-    track(body.track !== undefined, 'track', 'Transaction type', before?.track ?? null, body.track);
+    track(body.statusFlag !== undefined, 'status_flag', 'Status Flag', before?.status_flag ?? null, body.statusFlag);
+    track(body.track !== undefined, 'track', 'Transaction Type', before?.track ?? null, body.track);
     await recordFigureChanges({
       tenantId: user.tenantId,
       matterId,
