@@ -71,8 +71,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
          chain_position = coalesce($7, chain_position),
          status = coalesce($8, status),
          assigned_to = case when $9::boolean then $10::uuid else assigned_to end,
-         stage_entered_at = case when $11 is not null and $11 <> stage then now() else stage_entered_at end,
-         stage = coalesce($11, stage),
+         stage_entered_at = case when $11::text is not null and $11::text <> stage then now() else stage_entered_at end,
+         stage = coalesce($11::text, stage),
          status_flag = coalesce($12, status_flag),
          updated_at = now()
        where id = $13 and tenant_id = $14`,

@@ -2275,6 +2275,7 @@ export default function Taskpane() {
                 matter={matterInfo.matter}
                 facts={matterInfo.summary?.facts ?? {}}
                 onPatch={updateMatterField}
+                history={Array.isArray(matterInfo.figureHistory) ? matterInfo.figureHistory : []}
               />
               <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
 
@@ -2942,10 +2943,12 @@ function HousePanel({
   matter,
   facts,
   onPatch,
+  history,
 }: {
   matter: any;
   facts: Record<string, unknown>;
   onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
+  history: any[];
 }) {
   const dateStr = (s: unknown) => (s ? String(s).slice(0, 10) : '');
   const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
@@ -2964,6 +2967,20 @@ function HousePanel({
   const [draft, setDraft] = useState<Draft>(initial);
   const [baseline, setBaseline] = useState<Draft>(initial);
   const set = (k: keyof Draft, v: string) => setDraft((d) => ({ ...d, [k]: v }));
+  const [openField, setOpenField] = useState<keyof Draft | null>(null);
+  // Map each editable field to the DB field name used in the figure-change audit, so a
+  // field's label can reveal its own history.
+  const DB_FIELD: Partial<Record<keyof Draft, string>> = {
+    propertyAddress: 'property_address',
+    purchasePrice: 'purchase_price',
+    counterpartySolicitor: 'counterparty_solicitor',
+    counterpartyAgent: 'counterparty_agent',
+    lender: 'lender',
+    chainPosition: 'chain_position',
+    exchangeTargetDate: 'exchange_target_date',
+    completionTargetDate: 'completion_target_date',
+    track: 'track',
+  };
 
   const priceValid = !draft.purchasePrice.trim() || MONEY_RE.test(draft.purchasePrice.trim());
   const keys = Object.keys(draft) as (keyof Draft)[];
@@ -2979,18 +2996,53 @@ function HousePanel({
     setBaseline(draft);
   };
 
-  const field = (label: string, k: keyof Draft, type = 'text', valid = true) => (
-    <label style={{ display: 'block', marginBottom: 6 }}>
-      <span style={S.fieldLabel}>{label}</span>
-      <input
-        style={{ ...S.input, marginBottom: 0, ...(valid ? {} : { borderColor: '#dc2626' }) }}
-        type={type}
-        value={draft[k]}
-        onChange={(e) => set(k, e.target.value)}
-      />
-      {!valid && <span style={{ fontSize: 11, color: '#dc2626' }}>Enter a valid amount, e.g. £210,000</span>}
-    </label>
-  );
+  const field = (label: string, k: keyof Draft, type = 'text', valid = true) => {
+    const dbf = DB_FIELD[k];
+    const rows = dbf ? history.filter((h: any) => h.field === dbf) : [];
+    const open = openField === k;
+    return (
+      <div style={{ marginBottom: 6 }}>
+        <span
+          style={{ ...S.fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: rows.length ? 'pointer' : 'default' }}
+          onClick={rows.length ? () => setOpenField(open ? null : k) : undefined}
+          title={rows.length ? 'Show change history' : undefined}
+        >
+          {label}
+          {rows.length > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', borderRadius: 8, padding: '1px 6px' }}>
+              {rows.length} {open ? '⌃' : '⌄'}
+            </span>
+          )}
+        </span>
+        <input
+          style={{ ...S.input, marginBottom: 0, ...(valid ? {} : { borderColor: '#dc2626' }) }}
+          type={type}
+          value={draft[k]}
+          onChange={(e) => set(k, e.target.value)}
+        />
+        {!valid && <span style={{ fontSize: 11, color: '#dc2626' }}>Enter a valid amount, e.g. £210,000</span>}
+        {open && rows.length > 0 && (
+          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {rows.map((h: any) => (
+              <div key={h.id} style={{ fontSize: 11, color: '#4A4358', background: '#FBFAFF', border: '1px solid #ECE7F8', borderRadius: 8, padding: '5px 8px' }}>
+                <div>
+                  <span style={{ color: '#94a3b8', textDecoration: h.old_value ? 'line-through' : 'none' }}>{h.old_value || '—'}</span>
+                  {' → '}
+                  <span style={{ color: '#5A27E0', fontWeight: 700 }}>{h.new_value || '—'}</span>
+                </div>
+                <div style={{ color: '#7A7388', marginTop: 1 }}>
+                  {h.actor || 'CONVEYi'} · {new Date(h.created_at).toLocaleDateString()} ·{' '}
+                  {h.source === 'MANUAL' ? 'by hand' : h.source === 'AI_EMAIL' ? 'from email' : h.source === 'AI_DOC' ? 'from a document' : String(h.source).toLowerCase()}
+                  {h.ref_label ? ` · ${h.ref_kind === 'EMAIL' ? '✉' : '📎'} ${h.ref_label}` : ''}
+                </div>
+                {h.reason && h.source === 'MANUAL' && <div style={{ fontStyle: 'italic', color: '#7A7388', marginTop: 1 }}>{h.reason}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <section style={S.card}>
