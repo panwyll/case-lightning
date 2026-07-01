@@ -8,6 +8,7 @@ import { listThreadMessages, appendTrackerRow } from '@/lib/server/graph';
 import { extractFacts, upsertChunks } from '@/lib/server/ai';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
+import { recordFigureChanges, factToStr, prettyLabel } from '@/lib/server/figure-audit';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -28,7 +29,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     // (there is nowhere to put it).
     if (body.matterId) await assertMatterAccess(user, body.matterId);
     const conversationId = body.conversationId ?? graphThreadId;
-    const text = threadToText(await listThreadMessages(user.userId, conversationId));
+    const messages = await listThreadMessages(user.userId, conversationId);
+    const text = threadToText(messages);
+    const emailSubject = (messages[messages.length - 1]?.subject as string | undefined) ?? null;
 
     const existing = body.matterId
       ? await queryOne<{ facts: Record<string, unknown> }>(
@@ -57,6 +60,25 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           user.tenantId,
         ]
       );
+
+      // Figure history: record which facts this email changed, with the email as the
+      // source — so the House tab shows who/when/why for every figure.
+      const oldFacts = (existing?.facts ?? {}) as Record<string, unknown>;
+      const newFacts = extracted.facts as Record<string, unknown>;
+      await recordFigureChanges({
+        tenantId: user.tenantId,
+        matterId: body.matterId,
+        actorUserId: user.userId,
+        source: 'AI_EMAIL',
+        reason: emailSubject ? `Read from email: ${emailSubject}` : 'Read from an email',
+        ref: { kind: 'EMAIL', id: graphThreadId, label: emailSubject },
+        changes: Object.keys(newFacts).map((k) => ({
+          field: k,
+          label: prettyLabel(k),
+          oldValue: factToStr(oldFacts[k]),
+          newValue: factToStr(newFacts[k]),
+        })),
+      });
 
       for (const item of extracted.timeline) {
         await query(

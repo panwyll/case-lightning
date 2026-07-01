@@ -112,6 +112,9 @@ export const config = {
   // Minutes a drafted reply saves vs writing from scratch — used only for the clearly
   // labelled "estimated time saved" in the import-impact report. Tune via env.
   estimatedMinutesSavedPerReply: Number(env('ESTIMATED_MINUTES_SAVED_PER_REPLY') ?? '8'),
+  // "Chase up": a matched, OPEN matter's thread becomes a chase when the firm sent the
+  // last message and no reply has arrived within this many days. Tune via env.
+  chaseSlaDays: Number(env('CHASE_SLA_DAYS') ?? '5'),
   // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
   // Default: the entry paid tier (plus) is capped; pro/enterprise are unlimited. Adjust
   // per your price→tier mapping (e.g. set EMAIL_CAP_PRO if Pro is the £200 tier).

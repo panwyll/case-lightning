@@ -172,6 +172,16 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
+// A matter that's gone quiet on the firm's side — the "to chase" worklist shown on the
+// no-email landing (see /api/v1/chase).
+type Chase = {
+  threadId: string;
+  matterRef: string;
+  propertyAddress: string | null;
+  subject: string | null;
+  ageDays: number;
+};
+
 // Remember across opens that this user was signed in, so a cold taskpane shows a
 // brief "Connecting…" instead of flashing "Not connected" while /me is in flight.
 // Set on a successful /me, cleared only on a genuine sign-out (401/403).
@@ -301,6 +311,8 @@ export default function Taskpane() {
   // a recoverable error + retry instead of an endless "Reading…" spinner.
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
+  const [chases, setChases] = useState<Chase[] | null>(null);
+  const [chaseBusy, setChaseBusy] = useState<string>('');
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
@@ -406,7 +418,27 @@ export default function Taskpane() {
     } catch {
       setPlaybooks([]);
     }
+    try {
+      // Doesn't need an email open — this is the firm-wide "what am I waiting on?" list.
+      setChases((await api<{ chases: Chase[] }>('/chase')).chases ?? []);
+    } catch {
+      setChases([]);
+    }
   }, []);
+
+  // Snooze a chase for a week (e.g. already chased by phone) — drops it off the list
+  // and stops it re-flagging until then.
+  async function snoozeChaseItem(threadId: string) {
+    setChaseBusy(threadId);
+    try {
+      await api('/chase', { method: 'POST', body: JSON.stringify({ threadId, days: 7 }) });
+      setChases((cs) => (cs ?? []).filter((c) => c.threadId !== threadId));
+    } catch {
+      /* best-effort */
+    } finally {
+      setChaseBusy('');
+    }
+  }
 
   // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
   // don't flash "Not connected" during the first /me round-trip. Runs post-mount
@@ -1659,9 +1691,55 @@ export default function Taskpane() {
           {/* No email open — don't leave the pane blank; say what to do and where
               the firm-wide tools are. */}
           {!messageId && !assistError && (
-            <Card>
-              <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
-            </Card>
+            <>
+              {/* "To chase" worklist — the mirror of triage: matters where the firm sent
+                  the last word and it's gone quiet. Doesn't need an email open. */}
+              {chases && chases.length > 0 && (
+                <Card>
+                  <Label>To chase ({chases.length})</Label>
+                  <p style={{ ...S.muted, margin: '0 0 8px' }}>
+                    You sent the last word and it’s gone quiet — oldest first.
+                    {plan && plan.plan && plan.plan !== 'plus'
+                      ? ' Also flagged in Outlook — turn on the To‑Do bar (View ▸ To‑Do Bar ▸ Tasks) to see them there.'
+                      : ''}
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {chases.slice(0, 25).map((c) => (
+                      <div
+                        key={c.threadId}
+                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}
+                      >
+                        <span
+                          style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: c.ageDays >= 10 ? '#dc2626' : c.ageDays >= 5 ? '#d97706' : '#64748b' }}
+                          title={`${c.ageDays} days waiting`}
+                        >
+                          {c.ageDays}d
+                        </span>
+                        <span style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {c.matterRef}{c.propertyAddress ? ` · ${c.propertyAddress}` : ''}
+                          </span>
+                          <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {c.subject || 'No subject'}
+                          </span>
+                        </span>
+                        <button
+                          style={{ flex: 'none', fontSize: 11, fontWeight: 600, padding: '4px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#5A27E0', cursor: 'pointer' }}
+                          disabled={chaseBusy === c.threadId}
+                          onClick={() => snoozeChaseItem(c.threadId)}
+                          title="Hide for a week (e.g. already chased by phone)"
+                        >
+                          {chaseBusy === c.threadId ? '…' : 'Snooze'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+              <Card>
+                <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
+              </Card>
+            </>
           )}
 
           {/* Matter drawer — two states only: confirm the linked matter, or choose
@@ -2199,6 +2277,67 @@ export default function Taskpane() {
                 onPatch={updateMatterField}
               />
               <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
+
+              {/* Figure history — who changed each figure, when, why, and the email/doc
+                  it came from. Every price/date/party edit is auditable. */}
+              {Array.isArray(matterInfo.figureHistory) && matterInfo.figureHistory.length > 0 && (
+                <Card>
+                  <Label>Figure history</Label>
+                  <p style={{ ...S.muted, margin: '0 0 8px' }}>
+                    Who changed each figure, when and why — and the email or document it came from.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {matterInfo.figureHistory.slice(0, 50).map((h: any) => (
+                      <div key={h.id} style={{ padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530' }}>
+                          {h.label}:{' '}
+                          <span style={{ color: '#94a3b8', fontWeight: 500, textDecoration: h.old_value ? 'line-through' : 'none' }}>
+                            {h.old_value || '—'}
+                          </span>{' '}
+                          → <span style={{ color: '#5A27E0' }}>{h.new_value || '—'}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: '#7A7388', marginTop: 2 }}>
+                          {h.actor || (h.source === 'MANUAL' ? 'Someone' : 'CONVEYi')} ·{' '}
+                          {new Date(h.created_at).toLocaleString()} ·{' '}
+                          {h.source === 'MANUAL'
+                            ? 'edited by hand'
+                            : h.source === 'AI_EMAIL'
+                            ? 'read from an email'
+                            : h.source === 'AI_DOC'
+                            ? 'read from a document'
+                            : h.source === 'IMPORT'
+                            ? 'from import'
+                            : String(h.source).toLowerCase()}
+                        </div>
+                        {h.reason && h.source === 'MANUAL' && (
+                          <div style={{ fontSize: 11.5, color: '#4A4358', marginTop: 2, fontStyle: 'italic' }}>{h.reason}</div>
+                        )}
+                        {h.ref_kind && (
+                          <div style={{ marginTop: 4 }}>
+                            {h.ref_url ? (
+                              <a
+                                href={h.ref_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{ display: 'inline-block', fontSize: 11, color: '#5A27E0', textDecoration: 'none', border: '1px solid #D9D2EC', borderRadius: 8, padding: '2px 8px' }}
+                              >
+                                {h.ref_kind === 'EMAIL' ? '✉' : '📎'} {h.ref_label || (h.ref_kind === 'EMAIL' ? 'Source email' : 'Source document')}
+                              </a>
+                            ) : (
+                              <span
+                                style={{ display: 'inline-block', fontSize: 11, color: '#5A27E0', border: '1px solid #D9D2EC', borderRadius: 8, padding: '2px 8px' }}
+                                title={h.ref_kind === 'EMAIL' ? 'The email this came from' : 'The document this came from'}
+                              >
+                                {h.ref_kind === 'EMAIL' ? '✉' : '📎'} {h.ref_label || (h.ref_kind === 'EMAIL' ? 'Source email' : 'Source document')}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
             </>
           )}
 

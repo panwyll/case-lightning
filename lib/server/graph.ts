@@ -364,6 +364,24 @@ export async function setMessageCategory(userId: string, messageId: string, cate
   await client.api(`/me/messages/${messageId}`).patch({ categories: [category] });
 }
 
+/**
+ * Sets (or refreshes) an Outlook follow-up flag with a due date on a message. Once set,
+ * the message surfaces natively in Outlook's To-Do bar, the Flagged view and Microsoft
+ * To-Do's "My Day" — the surfaces an add-in can't open itself but CAN populate. Used by
+ * the chase sweep to nudge the user about a thread that's gone quiet. Best-effort.
+ */
+export async function setFollowUpFlag(userId: string, messageId: string, dueDate?: Date): Promise<void> {
+  const client = await graphClientForUser(userId);
+  const when = (dueDate ?? new Date()).toISOString().slice(0, 19);
+  await client.api(`/me/messages/${messageId}`).patch({
+    flag: {
+      flagStatus: 'flagged',
+      startDateTime: { dateTime: when, timeZone: 'UTC' },
+      dueDateTime: { dateTime: when, timeZone: 'UTC' },
+    },
+  });
+}
+
 // ── Per-matter mail folders ──────────────────────────────────────────────────
 
 /**

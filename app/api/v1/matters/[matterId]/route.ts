@@ -2,9 +2,10 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
-import { query } from '@/lib/server/db';
+import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { getMatterSummary } from '@/lib/server/matter';
+import { recordFigureChanges, type FigureChange } from '@/lib/server/figure-audit';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -48,9 +49,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
           .optional(),
         statusFlag: z.enum(['ON_TRACK', 'NEEDS_ATTENTION', 'BLOCKED']).optional(),
         track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
+        reason: z.string().max(500).optional(), // optional note — the "why" for the figure history
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
+
+    // Snapshot the current figures before the edit so we can log who changed what to what.
+    const before = await queryOne<Record<string, any>>(`select * from matter where id = $1 and tenant_id = $2`, [
+      matterId,
+      user.tenantId,
+    ]);
 
     await query(
       `update matter set
@@ -112,6 +120,35 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         /* column not migrated yet — ignore until 020_matter_track.sql is applied */
       }
     }
+
+    // Log every figure the caller actually changed → the House-tab history (who/when/why).
+    const dstr = (v: any): string | null =>
+      v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
+    const changes: FigureChange[] = [];
+    const track = (provided: boolean, field: string, label: string, oldValue: string | null, newValue: string | undefined) => {
+      if (provided) changes.push({ field, label, oldValue, newValue: newValue ?? null });
+    };
+    track(body.propertyAddress !== undefined, 'property_address', 'Property address', before?.property_address ?? null, body.propertyAddress);
+    track(body.purchasePrice !== undefined, 'purchase_price', 'Purchase price', before?.purchase_price ?? null, body.purchasePrice);
+    track(body.counterpartySolicitor !== undefined, 'counterparty_solicitor', "Other side's solicitor", before?.counterparty_solicitor ?? null, body.counterpartySolicitor);
+    track(body.counterpartyAgent !== undefined, 'counterparty_agent', 'Estate agent', before?.counterparty_agent ?? null, body.counterpartyAgent);
+    track(body.exchangeTargetDate !== undefined, 'exchange_target_date', 'Exchange date', dstr(before?.exchange_target_date), body.exchangeTargetDate);
+    track(body.completionTargetDate !== undefined, 'completion_target_date', 'Completion date', dstr(before?.completion_target_date), body.completionTargetDate);
+    track(body.lender !== undefined, 'lender', 'Lender', before?.lender ?? null, body.lender);
+    track(body.chainPosition !== undefined, 'chain_position', 'Chain position', before?.chain_position ?? null, body.chainPosition);
+    track(body.status !== undefined, 'status', 'Status', before?.status ?? null, body.status);
+    track(body.stage !== undefined, 'stage', 'Stage', before?.stage ?? null, body.stage);
+    track(body.statusFlag !== undefined, 'status_flag', 'Status flag', before?.status_flag ?? null, body.statusFlag);
+    track(body.track !== undefined, 'track', 'Transaction type', before?.track ?? null, body.track);
+    await recordFigureChanges({
+      tenantId: user.tenantId,
+      matterId,
+      actorUserId: user.userId,
+      source: 'MANUAL',
+      reason: body.reason ?? null,
+      changes,
+    });
+
     return ok({ ok: true });
   } catch (error) {
     return fail(error);

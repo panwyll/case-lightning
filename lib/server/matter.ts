@@ -258,10 +258,30 @@ export async function getMatterSummary(matterId: string, tenantId: string) {
     /* matter_contact not migrated yet — return none */
   }
 
+  // Figure history — who/when/why each key figure changed, with its email/doc source.
+  // Guarded so a deploy landing before migration 034 doesn't 500.
+  let figureHistory: Record<string, unknown>[] = [];
+  try {
+    figureHistory = await query<Record<string, unknown>>(
+      `select fc.id, fc.field, fc.label, fc.old_value, fc.new_value, fc.source, fc.reason,
+              fc.ref_kind, fc.ref_id, fc.ref_label, fc.ref_url, fc.created_at,
+              coalesce(u.display_name, u.email) as actor
+         from matter_figure_change fc
+         left join app_user u on u.id = fc.actor_user_id
+        where fc.matter_id = $1 and fc.tenant_id = $2
+        order by fc.created_at desc
+        limit 100`,
+      [matterId, tenantId]
+    );
+  } catch {
+    /* matter_figure_change not migrated yet — return none */
+  }
+
   return {
     matter,
     summary: summary ?? { facts: {}, outstanding_items: [], risks: [] },
     timeline,
     contacts,
+    figureHistory,
   };
 }

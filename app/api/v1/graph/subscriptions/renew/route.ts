@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { assertFeature } from '@/lib/server/config';
 import { query } from '@/lib/server/db';
 import { ensureSubscription } from '@/lib/server/subscriptions';
+import { runChaseSweep } from '@/lib/server/chase';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -32,12 +33,16 @@ export async function GET(req: NextRequest) {
 
     let healthy = 0;
     let needsReconnect = 0;
+    let chasesFlagged = 0;
     for (const u of users) {
       const status = await ensureSubscription(u.id, u.tenant_id);
       if (status.enabled) healthy++;
       else if (status.needsReconnect) needsReconnect++;
+      // Piggyback the daily chase sweep here (Hobby cron limit → no separate cron):
+      // flag matters that have gone quiet so they appear in the user's To-Do bar.
+      chasesFlagged += await runChaseSweep(u.id, u.tenant_id).catch(() => 0);
     }
-    return ok({ checked: users.length, healthy, needsReconnect });
+    return ok({ checked: users.length, healthy, needsReconnect, chasesFlagged });
   } catch (error) {
     return fail(error);
   }
