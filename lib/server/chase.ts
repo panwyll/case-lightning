@@ -147,6 +147,17 @@ export async function runChaseSweep(userId: string, tenantId: string): Promise<n
       [t.id, awaitingSince, lastMessageId]
     ).catch(() => {});
 
+    // Last message is now an outbound SENT one → any reply we'd drafted for this thread has
+    // been sent, so clear its "ready to send" worklist item (it now becomes a chase instead).
+    // Inlined rather than importing worklist.ts (which imports chase.ts) to avoid a cycle.
+    if (awaitingSince) {
+      await query(
+        `update worklist_item set done_at = now()
+          where tenant_id = $1 and kind = 'DRAFT_READY' and thread_id = $2 and done_at is null`,
+        [tenantId, t.id]
+      ).catch(() => {});
+    }
+
     // Flag it natively in Outlook when it's overdue, not snoozed, and we haven't already
     // flagged this same outbound message. Premium only.
     if (!premium || !awaitingSince || !lastMessageId) continue;

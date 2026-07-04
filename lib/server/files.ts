@@ -12,6 +12,7 @@ import crypto from 'node:crypto';
 import PizZip from 'pizzip';
 import { query, queryOne } from './db';
 import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
+import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
 
@@ -141,6 +142,15 @@ export async function processMatterFile(
     try {
       await createDraftMessage(user.userId, draftSubject, bodyHtml);
       drafted = true;
+      // Surface the acknowledgement on the "ready to send" worklist. No thread — a portal
+      // download / manual upload has no inbound email — so it's dismissed manually once sent.
+      await addDraftReady({
+        tenantId: user.tenantId,
+        matterId,
+        dedupKey: `doc:${opts.itemId}`,
+        title: `Acknowledgement drafted — ${documentType} received`,
+        detail: draftSubject,
+      });
     } catch {
       drafted = false;
     }

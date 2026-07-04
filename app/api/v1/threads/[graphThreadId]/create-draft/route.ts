@@ -6,6 +6,7 @@ import { queryOne } from '@/lib/server/db';
 import { assertMatterAccess, externalDomainsAllowed } from '@/lib/server/guard';
 import { getMessage, createReplyDraft } from '@/lib/server/graph';
 import { writeAudit } from '@/lib/server/audit';
+import { addDraftReady } from '@/lib/server/worklist';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -64,6 +65,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     }
 
     const draft = await createReplyDraft(user.userId, body.messageId, body.bodyHtml, { appendToken: token, skipBodyIfExists: body.skipIfExists });
+
+    // Surface a genuinely new reply draft on the "ready to send" worklist so it doesn't rot
+    // unseen in Drafts. Reused (already-existing) drafts don't re-add. Matter-scoped only.
+    if (body.matterId && !draft.reused) {
+      const thread = await queryOne<{ id: string }>(
+        `select id from email_thread where tenant_id = $1 and (graph_thread_id = $2 or graph_conversation_id = $2) limit 1`,
+        [user.tenantId, graphThreadId]
+      );
+      await addDraftReady({
+        tenantId: user.tenantId,
+        matterId: body.matterId,
+        dedupKey: `thread:${graphThreadId}`,
+        title: 'Reply drafted — review & send',
+        detail: draft.subject ?? body.subject ?? null,
+        threadId: thread?.id ?? null,
+        graphMessageId: draft.id,
+      });
+    }
 
     await writeAudit({
       tenantId: user.tenantId,

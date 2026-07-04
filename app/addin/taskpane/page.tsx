@@ -172,14 +172,17 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
-// A matter that's gone quiet on the firm's side — the "to chase" worklist shown on the
-// no-email landing (see /api/v1/chase).
-type Chase = {
-  threadId: string;
+// The canonical taskpane worklist entry (see /api/v1/worklist): "ready to send" drafts and
+// chases, shown on the no-email landing regardless of whether an email is open.
+type WorklistEntry = {
+  id: string;
+  kind: 'CHASE' | 'DRAFT_READY';
   matterRef: string;
   propertyAddress: string | null;
-  subject: string | null;
+  title: string;
+  detail: string | null;
   ageDays: number;
+  threadId?: string | null;
 };
 
 // Remember across opens that this user was signed in, so a cold taskpane shows a
@@ -311,8 +314,8 @@ export default function Taskpane() {
   // a recoverable error + retry instead of an endless "Reading…" spinner.
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
-  const [chases, setChases] = useState<Chase[] | null>(null);
-  const [chaseBusy, setChaseBusy] = useState<string>('');
+  const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
+  const [wlBusy, setWlBusy] = useState<string>('');
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
@@ -419,26 +422,47 @@ export default function Taskpane() {
       setPlaybooks([]);
     }
     try {
-      // Doesn't need an email open — this is the firm-wide "what am I waiting on?" list.
-      setChases((await api<{ chases: Chase[] }>('/chase')).chases ?? []);
+      // Doesn't need an email open — the firm-wide "what needs me today" list.
+      setWorklist((await api<{ items: WorklistEntry[] }>('/worklist')).items ?? []);
     } catch {
-      setChases([]);
+      setWorklist([]);
     }
   }, []);
 
-  // Snooze a chase for a week (e.g. already chased by phone) — drops it off the list
-  // and stops it re-flagging until then.
-  async function snoozeChaseItem(threadId: string) {
-    setChaseBusy(threadId);
+  // Re-pull the worklist on its own (used when returning to the no-email landing and on a
+  // light poll, so a just-arrived draft/chase shows without reopening the pinned pane).
+  const reloadWorklist = useCallback(async () => {
     try {
-      await api('/chase', { method: 'POST', body: JSON.stringify({ threadId, days: 7 }) });
-      setChases((cs) => (cs ?? []).filter((c) => c.threadId !== threadId));
+      setWorklist((await api<{ items: WorklistEntry[] }>('/worklist')).items ?? []);
+    } catch {
+      /* keep whatever we had */
+    }
+  }, []);
+
+  // Snooze (a week) or dismiss a worklist entry — a chase (by thread) or a ready-to-send draft.
+  async function worklistAction(item: WorklistEntry, action: 'snooze' | 'dismiss') {
+    setWlBusy(item.id);
+    try {
+      await api('/worklist', {
+        method: 'POST',
+        body: JSON.stringify({ kind: item.kind, id: item.kind === 'CHASE' ? item.threadId ?? item.id : item.id, action, days: 7 }),
+      });
+      setWorklist((w) => (w ?? []).filter((x) => x.id !== item.id));
     } catch {
       /* best-effort */
     } finally {
-      setChaseBusy('');
+      setWlBusy('');
     }
   }
+
+  // Keep the worklist fresh while the pinned pane sits on the no-email landing: refetch on
+  // entering it and every 90s, so newly-arrived drafts/chases appear without reopening.
+  useEffect(() => {
+    if (!me || messageId) return;
+    reloadWorklist();
+    const t = setInterval(reloadWorklist, 90_000);
+    return () => clearInterval(t);
+  }, [me, messageId, reloadWorklist]);
 
   // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
   // don't flash "Not connected" during the first /me round-trip. Runs post-mount
@@ -648,7 +672,19 @@ export default function Taskpane() {
         const loadItem = () => {
           const mailbox = Office?.context?.mailbox;
           const item = mailbox?.item;
-          if (!item) return;
+          if (!item) {
+            // Pinned pane with nothing selected → drop back to the worklist landing rather
+            // than leaving the last email's analysis stuck on screen.
+            setMessageId('');
+            setConversationId('');
+            setSubject('');
+            setSender(null);
+            setAssist(null);
+            setMatterId('');
+            setMatterInfo(null);
+            setTab('email');
+            return;
+          }
           let id = item.itemId as string | undefined;
           if (id && /[+/=]/.test(id) && typeof mailbox.convertToRestId === 'function') {
             try {
@@ -1692,50 +1728,72 @@ export default function Taskpane() {
               the firm-wide tools are. */}
           {!messageId && !assistError && (
             <>
-              {/* "To chase" worklist — the mirror of triage: matters where the firm sent
-                  the last word and it's gone quiet. Doesn't need an email open. */}
-              {chases && chases.length > 0 && (
-                <Card>
-                  <Label>To Chase ({chases.length})</Label>
-                  <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                    You sent the last word and it’s gone quiet — oldest first.
-                    {plan && plan.plan && plan.plan !== 'plus'
-                      ? ' Also flagged in Outlook — turn on the To‑Do bar (View ▸ To‑Do Bar ▸ Tasks) to see them there.'
-                      : ''}
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {chases.slice(0, 25).map((c) => (
-                      <div
-                        key={c.threadId}
-                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}
-                      >
-                        <span
-                          style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: c.ageDays >= 10 ? '#dc2626' : c.ageDays >= 5 ? '#d97706' : '#64748b' }}
-                          title={`${c.ageDays} days waiting`}
-                        >
-                          {c.ageDays}d
-                        </span>
-                        <span style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {c.matterRef}{c.propertyAddress ? ` · ${c.propertyAddress}` : ''}
-                          </span>
-                          <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {c.subject || 'No subject'}
-                          </span>
-                        </span>
-                        <button
-                          style={{ flex: 'none', fontSize: 11, fontWeight: 600, padding: '4px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#5A27E0', cursor: 'pointer' }}
-                          disabled={chaseBusy === c.threadId}
-                          onClick={() => snoozeChaseItem(c.threadId)}
-                          title="Hide for a week (e.g. already chased by phone)"
-                        >
-                          {chaseBusy === c.threadId ? '…' : 'Snooze'}
-                        </button>
-                      </div>
-                    ))}
+              {/* Canonical worklist — the "what needs me today" list, no email required.
+                  Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
+                  ready to send, and matters that have gone quiet and need chasing. */}
+              {(() => {
+                const ready = (worklist ?? []).filter((w) => w.kind === 'DRAFT_READY');
+                const chasing = (worklist ?? []).filter((w) => w.kind === 'CHASE');
+                const row = (w: WorklistEntry) => (
+                  <div
+                    key={w.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}
+                  >
+                    <span
+                      style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#64748b' }}
+                      title={`${w.ageDays} days`}
+                    >
+                      {w.ageDays}d
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
+                      </span>
+                      <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {w.detail || w.title}
+                      </span>
+                    </span>
+                    <button
+                      style={{ flex: 'none', fontSize: 11, fontWeight: 600, padding: '4px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#5A27E0', cursor: 'pointer' }}
+                      disabled={wlBusy === w.id}
+                      onClick={() => worklistAction(w, w.kind === 'DRAFT_READY' ? 'dismiss' : 'snooze')}
+                      title={w.kind === 'DRAFT_READY' ? 'Mark done (sent / handled)' : 'Hide for a week (e.g. already chased by phone)'}
+                    >
+                      {wlBusy === w.id ? '…' : w.kind === 'DRAFT_READY' ? 'Done' : 'Snooze'}
+                    </button>
                   </div>
-                </Card>
-              )}
+                );
+                return (
+                  <>
+                    {ready.length > 0 && (
+                      <Card>
+                        <Label>Ready to Send ({ready.length})</Label>
+                        <p style={{ ...S.muted, margin: '0 0 8px' }}>
+                          Drafts CONVEYi prepared — replies and “document received” updates — waiting for you to review &amp; send in Outlook.
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{ready.slice(0, 25).map(row)}</div>
+                      </Card>
+                    )}
+                    {chasing.length > 0 && (
+                      <Card>
+                        <Label>To Chase ({chasing.length})</Label>
+                        <p style={{ ...S.muted, margin: '0 0 8px' }}>
+                          You sent the last word and it’s gone quiet — oldest first.
+                          {plan && plan.plan && plan.plan !== 'plus'
+                            ? ' Also flagged in Outlook — turn on the To‑Do bar (View ▸ To‑Do Bar ▸ Tasks) to see them there.'
+                            : ''}
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{chasing.slice(0, 25).map(row)}</div>
+                      </Card>
+                    )}
+                    {(ready.length > 0 || chasing.length > 0) && (
+                      <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
+                        📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep your worklist open as you work.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
               <Card>
                 <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
               </Card>
