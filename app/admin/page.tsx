@@ -62,7 +62,7 @@ type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'pla
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: 'Every live matter by stage — oversight at a glance, without living in the inbox. Read-only for now.' },
+  board: { label: 'Matter board', subtitle: 'Every live matter by stage. Drag a card to move its stage; change the owner or status on the card.' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
@@ -205,6 +205,42 @@ export default function AdminPage() {
   const [boardAssignee, setBoardAssignee] = useState('');
   const [boardFlag, setBoardFlag] = useState('');
   const [boardSort, setBoardSort] = useState<'stage_age' | 'completion' | 'ref' | 'updated'>('stage_age');
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [boardBusyId, setBoardBusyId] = useState<string | null>(null);
+
+  // The board is editable in place — drag a card to another stage, or change its status /
+  // assignee on the card. Optimistic; reverts to server truth if the PATCH fails.
+  async function patchMatter(id: string, patch: Record<string, unknown>) {
+    setBoardBusyId(id);
+    setBoard((b) =>
+      b.map((m) => {
+        if (m.id !== id) return m;
+        const next: any = { ...m };
+        if (patch.stage) {
+          next.stage = patch.stage;
+          next.stageEnteredAt = new Date().toISOString();
+        }
+        if (patch.statusFlag) next.statusFlag = patch.statusFlag;
+        if ('assignedTo' in patch) {
+          next.assignedTo = patch.assignedTo;
+          const mem = users.find((u: any) => u.id === patch.assignedTo);
+          next.assignee = mem ? mem.display_name || mem.email : null;
+        }
+        return next;
+      })
+    );
+    try {
+      await api(`/matters/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+    } catch {
+      try {
+        setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
+      } catch {
+        /* keep optimistic state */
+      }
+    } finally {
+      setBoardBusyId(null);
+    }
+  }
   const [copiedRef, setCopiedRef] = useState(false);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
@@ -246,6 +282,8 @@ export default function AdminPage() {
         setBoardLoading(true);
         try {
           setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
+          // Members power the on-card "assign" dropdown (the board is editable in place).
+          api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
         } finally {
           setBoardLoading(false);
         }
@@ -870,7 +908,18 @@ export default function AdminPage() {
                             <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={STAGE_LABEL[stage] ?? stage}>{STAGE_LABEL[stage] ?? stage}</span>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
                           </div>
-                          <div style={{ background: '#f1f5f9', borderRadius: 10, padding: 8, minHeight: 60 }}>
+                          <div
+                            onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (draggingId) {
+                                const dragged = board.find((x) => x.id === draggingId);
+                                if (dragged && (dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
+                              }
+                              setDraggingId(null);
+                            }}
+                            style={{ background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, padding: 8, minHeight: 60, transition: 'background .12s' }}
+                          >
                             {col.length === 0 ? (
                               <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
                             ) : (
@@ -880,17 +929,44 @@ export default function AdminPage() {
                                 const dotN = Math.min(Math.max(days, 1), 14);
                                 const dotC = days <= 7 ? '#cbd5e1' : days <= 21 ? '#f59e0b' : '#ef4444';
                                 return (
-                                  <div key={m.id} style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+                                  <div
+                                    key={m.id}
+                                    draggable
+                                    onDragStart={() => setDraggingId(m.id)}
+                                    onDragEnd={() => setDraggingId(null)}
+                                    style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)', cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                                  >
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                       <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
-                                      <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
+                                      <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{m.matterRef || 'Matter'}</strong>
+                                      {date && <span style={{ fontSize: 10.5, whiteSpace: 'nowrap', color: '#94a3b8', flexShrink: 0 }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                                     </div>
                                     {m.propertyAddress && (
                                       <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
                                     )}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, marginTop: 6, fontSize: 11, color: '#64748b' }}>
-                                      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.assignee || 'Unassigned'}</span>
-                                      {date && <span style={{ whiteSpace: 'nowrap', color: '#475569' }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                    {/* Editable in place — change owner / status without leaving the board. */}
+                                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                                      <select
+                                        value={m.assignedTo || ''}
+                                        title="Assign to"
+                                        onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
+                                        onDragStart={(e) => e.preventDefault()}
+                                        style={{ flex: 2, minWidth: 0, fontSize: 10.5, padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', color: '#475569', cursor: 'pointer' }}
+                                      >
+                                        <option value="">Unassigned</option>
+                                        {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+                                      </select>
+                                      <select
+                                        value={m.statusFlag || 'ON_TRACK'}
+                                        title="Status"
+                                        onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
+                                        onDragStart={(e) => e.preventDefault()}
+                                        style={{ flex: 1, minWidth: 0, fontSize: 10.5, padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', color: '#475569', cursor: 'pointer' }}
+                                      >
+                                        <option value="ON_TRACK">On track</option>
+                                        <option value="NEEDS_ATTENTION">Attention</option>
+                                        <option value="BLOCKED">Blocked</option>
+                                      </select>
                                     </div>
                                     {/* Age dots — true days in the current stage. */}
                                     <div title={`${days} day${days === 1 ? '' : 's'} in ${STAGE_LABEL[stage] ?? stage}`} style={{ display: 'flex', gap: 2, marginTop: 7, flexWrap: 'wrap' }}>

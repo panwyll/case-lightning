@@ -1,6 +1,7 @@
 /**
  * GET /api/v1/admin/board — every live matter with the fields the oversight board
- * needs (stage, health, owner, key dates). Read-only; ADMIN. Closed matters excluded.
+ * needs (stage, health, owner, key dates). ADMIN. Closed matters excluded. The board is
+ * editable in-place — stage/status/assignee are changed via PATCH /matters/[id].
  */
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
@@ -23,6 +24,7 @@ export async function GET() {
       exchangeTargetDate: string | null;
       completionTargetDate: string | null;
       assignee: string | null;
+      assignedTo: string | null;
       updatedAt: string;
       stageEnteredAt: string;
     }>(
@@ -34,6 +36,7 @@ export async function GET() {
               m.exchange_target_date as "exchangeTargetDate",
               m.completion_target_date as "completionTargetDate",
               coalesce(u.display_name, u.email) as assignee,
+              m.assigned_to          as "assignedTo",
               m.updated_at           as "updatedAt",
               m.stage_entered_at     as "stageEnteredAt"
          from matter m
