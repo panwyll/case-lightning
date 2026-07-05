@@ -13,11 +13,14 @@
  * via customer.subscription.* webhooks, so this module is read-mostly.
  */
 import { config } from './config';
-import { query } from './db';
+import { query, queryOne } from './db';
 import { stripe } from './stripe';
 import { accountForUser } from './referrals';
 import { getTenantBilling, type Plan } from './plan';
 import type { SessionUser } from './types';
+
+/** The Firm (enterprise) base price bundles this many seats; extras bill per-seat. */
+export const FIRM_INCLUDED_SEATS = 3;
 
 /** A seat = an app_user belonging to the tenant. Multi-seat needs the Enterprise plan. */
 export interface Seat {
@@ -131,6 +134,75 @@ export function planForPrice(priceId: string | null | undefined): PlanKey {
   return 'plus';
 }
 
+/**
+ * Resolve the plan from ALL of a subscription's price IDs, not just the first line.
+ * A Firm subscription carries two items — the base price and the per-seat overage
+ * (STRIPE_PRICE_FIRM_SEAT) — so reading items[0] alone can land on the seat price and
+ * misdetect the tier. We take the highest recognised base tier present; the seat price
+ * matches none of the three base prices and is therefore ignored.
+ */
+export function planForPriceIds(priceIds: (string | null | undefined)[]): PlanKey {
+  if (priceIds.includes(config.stripePriceEnterprise)) return 'enterprise';
+  if (priceIds.includes(config.stripePricePro)) return 'pro';
+  if (priceIds.includes(config.stripePricePlus)) return 'plus';
+  return 'plus';
+}
+
+/** Billable seats = everyone who can actually use the product; READ_ONLY viewers are free. */
+export async function billableSeatCount(tenantId: string): Promise<number> {
+  const row = await queryOne<{ n: string }>(
+    `select count(*)::text as n from app_user where tenant_id = $1 and role <> 'READ_ONLY'`,
+    [tenantId]
+  );
+  return Number(row?.n ?? '0');
+}
+
+/**
+ * Reconcile the Firm plan's per-seat overage line item with the tenant's real seat count.
+ * The base Firm price includes FIRM_INCLUDED_SEATS; each seat beyond that is billed via the
+ * separate per-unit STRIPE_PRICE_FIRM_SEAT price. No-op unless the tenant is on Firm with an
+ * active subscription AND the seat price is configured — so firms at/below the included count,
+ * non-Firm tiers, and installs without the seat price all bill flat, exactly as before.
+ *
+ * Best-effort and idempotent: it only calls Stripe when the desired quantity differs from
+ * what's already on the subscription, so the resulting subscription.updated webhook converges
+ * (no loop). Callers fire-and-forget — a Stripe hiccup must never block sign-in or role edits.
+ */
+export async function syncFirmSeats(tenantId: string): Promise<void> {
+  const seatPrice = config.stripePriceFirmSeat;
+  if (!seatPrice) return;
+
+  const account = await queryOne<{ stripe_customer_id: string | null }>(
+    `select stripe_customer_id from billing_account where tenant_id = $1 order by updated_at desc limit 1`,
+    [tenantId]
+  );
+  if (!account?.stripe_customer_id) return;
+
+  const subs = await stripe().subscriptions.list({ customer: account.stripe_customer_id, status: 'active', limit: 1 });
+  const sub = subs.data[0];
+  if (!sub) return;
+
+  const billing = await getTenantBilling(tenantId);
+  const desired =
+    billing.plan === 'enterprise' ? Math.max(0, (await billableSeatCount(tenantId)) - FIRM_INCLUDED_SEATS) : 0;
+
+  const existing = sub.items.data.find((it) => it.price?.id === seatPrice);
+  const current = existing?.quantity ?? 0;
+  if (desired === current) return;
+
+  const item =
+    desired === 0
+      ? { id: existing!.id, deleted: true }
+      : existing
+        ? { id: existing.id, quantity: desired }
+        : { price: seatPrice, quantity: desired };
+
+  await stripe().subscriptions.update(sub.id, {
+    items: [item],
+    proration_behavior: 'create_prorations',
+  });
+}
+
 /** Raised when STRIPE_PRICE_* env vars aren't configured → checkout 503s. */
 export class PlanNotConfiguredError extends Error {
   constructor(plan: PlanKey) {
@@ -179,6 +251,9 @@ export async function changePlan(
         proration_behavior: 'create_prorations',
         cancel_at_period_end: false,
       });
+      // Switching to/from Firm changes whether per-seat overage applies — reconcile it.
+      // (Also drops the overage item on a downgrade away from Firm.) Best-effort.
+      await syncFirmSeats(user.tenantId).catch(() => {});
       return { updated: true };
     }
   }

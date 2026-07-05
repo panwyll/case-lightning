@@ -11,7 +11,7 @@ import {
   clawbackByInvoice,
 } from '@/lib/server/referrals';
 import { recordSubscriptionEvent } from '@/lib/server/billing-events';
-import { planForPrice } from '@/lib/server/billing';
+import { planForPriceIds } from '@/lib/server/billing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -108,8 +108,9 @@ export async function POST(req: NextRequest) {
         case 'customer.subscription.created': {
           const sub = event.data.object as Stripe.Subscription;
           const customerId = typeof sub.customer === 'string' ? sub.customer : sub.customer?.id;
-          const price = sub.items?.data?.[0]?.price;
-          const plan = planForPrice(price?.id ?? null);
+          // Scan every line — a Firm sub also carries the per-seat overage item, so
+          // items[0] alone could be the seat price and misdetect the tier.
+          const plan = planForPriceIds(sub.items?.data?.map((i) => i.price?.id) ?? []);
           if (customerId) {
             await recordSubscriptionEvent({ stripeCustomerId: customerId, eventType: 'SUBSCRIPTION', toStatus: sub.status, plan });
             await query(

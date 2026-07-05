@@ -4,6 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { writeAudit } from '@/lib/server/audit';
+import { syncFirmSeats } from '@/lib/server/billing';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -44,6 +45,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
       actionStatus: 'SUCCESS',
       payload: { userId, role },
     });
+    // Promoting to / demoting from READ_ONLY changes the billable seat count — reconcile
+    // the Firm per-seat overage. Best-effort; never fail the role change on a Stripe error.
+    await syncFirmSeats(admin.tenantId).catch(() => {});
     return ok({ user: row });
   } catch (error) {
     return fail(error);

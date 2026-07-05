@@ -96,6 +96,10 @@ export const config = {
   stripePricePlus: env('STRIPE_PRICE_PLUS'),
   stripePricePro: env('STRIPE_PRICE_PRO'),
   stripePriceEnterprise: env('STRIPE_PRICE_ENTERPRISE'),
+  // Firm (enterprise) per-seat overage: a separate per-unit recurring price billed for
+  // each seat beyond FIRM_INCLUDED_SEATS. When unset, Firm bills flat (no overage) —
+  // so the app degrades to the old single-price behaviour until this is configured.
+  stripePriceFirmSeat: env('STRIPE_PRICE_FIRM_SEAT'),
   // Pro tier is rate-limited on heavy LLM work (e.g. AI document generation). This
   // caps the number of heavy-LLM calls (DOC_FILL) a Pro tenant can make per calendar
   // month; Enterprise is uncapped. Tune without a deploy via env.

@@ -5,6 +5,7 @@ import { exchangeCodeForToken } from '@/lib/server/oauth';
 import { transaction } from '@/lib/server/db';
 import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/session';
 import { hasTeamAccess } from '@/lib/server/plan';
+import { syncFirmSeats } from '@/lib/server/billing';
 import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -82,7 +83,7 @@ export async function GET(req: NextRequest) {
              graph_refresh_token=$4, token_expires_at=$5 where id=$6`,
           [email, name, token.access_token, token.refresh_token ?? null, expiresAt, existing.rows[0]!.id]
         );
-        return existing.rows[0]!;
+        return { id: existing.rows[0]!.id, created: false };
       }
       // First user in a tenant becomes ADMIN (the firm owner); everyone after is a
       // CONVEYANCER until an admin promotes them.
@@ -90,7 +91,7 @@ export async function GET(req: NextRequest) {
         tenant.id,
       ]);
       const seatCount = Number(count.rows[0]?.n ?? '0');
-      // Plus/Pro are single-seat; only Enterprise (team) admits additional colleagues.
+      // Solo/Pro are single-seat; only Firm (team) admits additional colleagues.
       // Fail OPEN on a plan-check error so a billing hiccup never locks a firm out.
       if (seatCount > 0) {
         let teamOk = true;
@@ -108,8 +109,12 @@ export async function GET(req: NextRequest) {
          values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
         [tenant.id, oid, email, name, role, token.access_token, token.refresh_token ?? null, expiresAt]
       );
-      return created.rows[0]!;
+      return { id: created.rows[0]!.id, created: true };
     });
+
+    // A new colleague just took a seat → reconcile the Firm per-seat overage. Fire-and-
+    // forget: a Stripe hiccup must never block sign-in (no-op off Firm / under the cap).
+    if (user.created) void syncFirmSeats(tenant.id).catch(() => {});
 
     const session = await signSession(user.id);
     // Land on a tiny completion page. The token rides in the URL fragment (never
@@ -130,7 +135,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Your firm’s plan is single-seat. Ask your admin to upgrade to the Enterprise (team) plan to add colleagues.',
+            'Your firm’s plan is single-seat. Ask your admin to upgrade to the Firm (team) plan to add colleagues.',
         },
         { status: 403 }
       );
