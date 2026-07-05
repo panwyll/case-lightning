@@ -120,8 +120,9 @@ export const config = {
   // last message and no reply has arrived within this many days. Tune via env.
   chaseSlaDays: Number(env('CHASE_SLA_DAYS') ?? '5'),
   // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
-  // Default: the entry paid tier (plus) is capped; pro/enterprise are unlimited. Adjust
-  // per your price→tier mapping (e.g. set EMAIL_CAP_PRO if Pro is the £200 tier).
+  // Default: the entry tier (plus/"Solo") is capped so it funnels into Pro; pro/enterprise
+  // are unlimited. EMAIL_CAP_PLUS is the Solo funnel lever — calibrate it so an active
+  // conveyancer exhausts it ~2–3 weeks in (long enough to bed in, short enough to bite).
   emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
   emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
   emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),

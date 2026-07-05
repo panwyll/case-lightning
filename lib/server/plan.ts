@@ -5,8 +5,8 @@
  * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
  *
  *   plus       — "Solo". Entry. No premium AI/automation, single seat. £39/mo.
- *   pro        — "Pro". Premium AI/automation, single seat, heavy-LLM usage capped. £99/mo.
- *   enterprise — "Firm". Premium AI/automation + team (multi-seat), uncapped. £199/mo,
+ *   pro        — "Pro". Premium AI/automation, single seat, heavy-LLM usage capped. £199/mo.
+ *   enterprise — "Firm". Premium AI/automation + team (multi-seat), uncapped. £399/mo,
  *                3 seats included then £59/seat (per-seat billing not yet wired — flat today).
  *
  * Premium features (auto-rules, unlimited onboarding lookback, AI doc-template

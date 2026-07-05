@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'What’s the difference between the Solo, Pro and Firm plans?',
-    a: 'Solo (£39/month) gives one conveyancer the Outlook add-in, case-aware drafting, the chase-up worklist, the OneDrive knowledge base and the Excel tracker. Pro (£99/month) adds the automation: incoming mail is auto-matched to the right case, tagged, filed, and — where you allow it — answered automatically, plus AI document packs. Firm (£199/month, three seats included then £59 a seat) opens the practice up to the whole team: a matter board, a workload dashboard and matter assignment, with admin oversight.',
+    a: 'Solo (£39/month) gives one conveyancer the Outlook add-in, case-aware drafting, the chase-up worklist, the OneDrive knowledge base and the Excel tracker. Pro (£199/month) adds the automation: incoming mail is auto-matched to the right case, tagged, filed, and — where you allow it — answered automatically, plus AI document packs. Firm (£399/month, three seats included then £59 a seat) opens the practice up to the whole team: a matter board, a workload dashboard and matter assignment, with admin oversight.',
   },
   {
     q: 'What if it doesn’t work for us?',
