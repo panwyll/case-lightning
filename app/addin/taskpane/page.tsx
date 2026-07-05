@@ -316,6 +316,8 @@ export default function Taskpane() {
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
+  const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>({ team: false, isAdmin: false, scope: 'mine' });
+  const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
@@ -422,18 +424,29 @@ export default function Taskpane() {
       setPlaybooks([]);
     }
     try {
-      // Doesn't need an email open — the firm-wide "what needs me today" list.
-      setWorklist((await api<{ items: WorklistEntry[] }>('/worklist')).items ?? []);
+      // Doesn't need an email open — the "what needs me today" list (my matters by default).
+      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>('/worklist');
+      setWorklist(r.items ?? []);
+      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, scope: r.scope ?? 'mine' });
     } catch {
       setWorklist([]);
     }
+    try {
+      setTeamMembers((await api<{ members: any[] }>('/team/members')).members ?? []);
+    } catch {
+      setTeamMembers([]);
+    }
   }, []);
 
-  // Re-pull the worklist on its own (used when returning to the no-email landing and on a
-  // light poll, so a just-arrived draft/chase shows without reopening the pinned pane).
-  const reloadWorklist = useCallback(async () => {
+  // Re-pull the worklist on its own (used when returning to the no-email landing, on a light
+  // poll, and when switching My/Team scope). Captures team/role so the toggle knows itself.
+  const reloadWorklist = useCallback(async (scope?: 'mine' | 'team') => {
     try {
-      setWorklist((await api<{ items: WorklistEntry[] }>('/worklist')).items ?? []);
+      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>(
+        `/worklist${scope ? `?scope=${scope}` : ''}`
+      );
+      setWorklist(r.items ?? []);
+      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, scope: r.scope ?? 'mine' });
     } catch {
       /* keep whatever we had */
     }
@@ -459,10 +472,10 @@ export default function Taskpane() {
   // entering it and every 90s, so newly-arrived drafts/chases appear without reopening.
   useEffect(() => {
     if (!me || messageId) return;
-    reloadWorklist();
-    const t = setInterval(reloadWorklist, 90_000);
+    reloadWorklist(wlMeta.scope);
+    const t = setInterval(() => reloadWorklist(wlMeta.scope), 90_000);
     return () => clearInterval(t);
-  }, [me, messageId, reloadWorklist]);
+  }, [me, messageId, reloadWorklist, wlMeta.scope]);
 
   // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
   // don't flash "Not connected" during the first /me round-trip. Runs post-mount
@@ -1731,6 +1744,34 @@ export default function Taskpane() {
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}
+              {wlMeta.team && (
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  {(
+                    [
+                      ['mine', 'My worklist'],
+                      ...(wlMeta.isAdmin ? [['team', 'Whole firm']] : []),
+                    ] as Array<['mine' | 'team', string]>
+                  ).map(([s, lbl]) => (
+                    <button
+                      key={s}
+                      onClick={() => reloadWorklist(s)}
+                      style={{
+                        flex: 1,
+                        fontSize: 12,
+                        fontWeight: wlMeta.scope === s ? 700 : 600,
+                        padding: '6px 10px',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        border: '1px solid ' + (wlMeta.scope === s ? '#5A27E0' : '#D9D2EC'),
+                        background: wlMeta.scope === s ? '#5A27E0' : '#fff',
+                        color: wlMeta.scope === s ? '#fff' : '#5A27E0',
+                      }}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              )}
               {(() => {
                 const ready = (worklist ?? []).filter((w) => w.kind === 'DRAFT_READY');
                 const chasing = (worklist ?? []).filter((w) => w.kind === 'CHASE');
@@ -2334,6 +2375,7 @@ export default function Taskpane() {
                 facts={matterInfo.summary?.facts ?? {}}
                 onPatch={updateMatterField}
                 history={Array.isArray(matterInfo.figureHistory) ? matterInfo.figureHistory : []}
+                members={teamMembers}
               />
               <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
 
@@ -3002,11 +3044,13 @@ function HousePanel({
   facts,
   onPatch,
   history,
+  members,
 }: {
   matter: any;
   facts: Record<string, unknown>;
   onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
   history: any[];
+  members: Array<{ id: string; display_name: string | null; email: string; role: string }>;
 }) {
   const dateStr = (s: unknown) => (s ? String(s).slice(0, 10) : '');
   const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
@@ -3111,6 +3155,21 @@ function HousePanel({
           {TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
+      {members.length > 1 && (
+        <label style={{ display: 'block', marginBottom: 6 }}>
+          <span style={S.fieldLabel}>Assigned to</span>
+          <select
+            style={{ ...S.input, marginBottom: 0 }}
+            value={matter.assigned_to || ''}
+            onChange={(e) => onPatch({ assignedTo: e.target.value || null })}
+          >
+            <option value="">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>{m.display_name || m.email}</option>
+            ))}
+          </select>
+        </label>
+      )}
       {field('Property Address', 'propertyAddress')}
       {field('Purchase Price', 'purchasePrice', 'text', priceValid)}
       {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}

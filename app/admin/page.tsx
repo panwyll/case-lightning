@@ -56,13 +56,14 @@ function fmtDuration(mins: number): string {
   return `${d < 10 ? d.toFixed(1) : Math.round(d)} day${d >= 2 ? 's' : ''}`;
 }
 
-type TabKey = 'billing' | 'board' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
   board: { label: 'Matter board', subtitle: 'Every live matter by stage — oversight at a glance, without living in the inbox. Read-only for now.' },
+  workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
   playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
@@ -77,7 +78,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   { label: 'Account', tabs: ['billing'] },
-  { label: 'Oversight', tabs: ['board'] },
+  { label: 'Oversight', tabs: ['board', 'workload'] },
   { label: 'Automation & templates', tabs: ['templates', 'docpacks', 'playbooks', 'rules'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
@@ -86,7 +87,7 @@ const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['board', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
@@ -167,6 +168,7 @@ export default function AdminPage() {
   const visibleTabs = me && !isAdmin ? TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k)) : TAB_KEYS;
 
   const [tab, setTab] = useState<TabKey>('billing');
+  const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // Capture a token from the URL fragment (desktop deep-link), load the user, and
   // open the tab named in ?tab= so links from the add-in land in the right place.
   useEffect(() => {
@@ -254,6 +256,7 @@ export default function AdminPage() {
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
       if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
+      if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
       if (tab === 'playbooks') {
         setPlaybooks((await api<{ playbooks: any[] }>('/admin/playbooks')).playbooks);
         setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
@@ -624,7 +627,7 @@ export default function AdminPage() {
         </nav>
 
         {/* Content */}
-        <div style={{ flex: 1, minWidth: 300, maxWidth: tab === 'board' || tab === 'audit' ? 'none' : 880 }}>
+        <div style={{ flex: 1, minWidth: 300, maxWidth: tab === 'board' || tab === 'workload' || tab === 'audit' ? 'none' : 880 }}>
         <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>{TAB_META[tab].label}</h1>
         <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>
 
@@ -908,6 +911,48 @@ export default function AdminPage() {
               );
             })()}
           </>
+        )}
+
+        {tab === 'workload' && (
+          <div style={card}>
+            <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
+              Who’s carrying what right now. Assign matters on the taskpane (House tab → “Assigned to”); anything without an owner shows in its own row so nothing slips.
+            </p>
+            {workload.length === 0 ? (
+              <p style={{ fontSize: 13, color: '#64748b' }}>No open matters yet.</p>
+            ) : (
+              <div style={{ overflowX: 'auto', border: '1px solid #e8eaf0', borderRadius: 10 }}>
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc' }}>
+                      {['Fee-earner', 'Open matters', 'Needs attention', 'Overdue chases', 'Drafts waiting'].map((h, i) => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: i === 0 ? 'left' : 'center', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {workload.map((r) => {
+                      const num = (v: number, colour: string) => (
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: v ? colour : '#cbd5e1', fontWeight: v ? 700 : 400 }}>{v}</td>
+                      );
+                      return (
+                        <tr key={r.id ?? 'unassigned'} style={{ borderTop: '1px solid #eef2f7', background: r.id ? '#fff' : '#fffbeb' }}>
+                          <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                            {r.name}
+                            {!r.id && <span style={{ fontWeight: 500, color: '#b45309' }}> · needs an owner</span>}
+                          </td>
+                          {num(r.open_matters, '#0f172a')}
+                          {num(r.needs_attention, '#b45309')}
+                          {num(r.overdue_chases, '#dc2626')}
+                          {num(r.drafts_waiting, '#5A27E0')}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         {tab === 'templates' && (

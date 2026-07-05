@@ -54,9 +54,12 @@ export async function addDraftReady(input: {
   }
 }
 
-/** The merged worklist for a tenant — chases + ready-to-send drafts, most overdue first. */
-export async function getWorklist(tenantId: string): Promise<WorklistEntry[]> {
-  const chases = await detectChases(tenantId);
+/**
+ * The merged worklist — chases + ready-to-send drafts, most overdue first.
+ * `assignedToUserId` null = whole firm ("Team"); a user id = only their matters ("My worklist").
+ */
+export async function getWorklist(tenantId: string, assignedToUserId?: string | null): Promise<WorklistEntry[]> {
+  const chases = await detectChases(tenantId, undefined, assignedToUserId);
   const chaseEntries: WorklistEntry[] = chases.map((c) => ({
     id: c.threadId,
     kind: 'CHASE',
@@ -89,8 +92,9 @@ export async function getWorklist(tenantId: string): Promise<WorklistEntry[]> {
           and w.done_at is null
           and coalesce(w.snoozed_until, to_timestamp(0)) < now()
           and m.status = 'OPEN'
+          and ($2::uuid is null or m.assigned_to = $2::uuid)
         order by w.created_at asc`,
-      [tenantId]
+      [tenantId, assignedToUserId ?? null]
     );
     const now = Date.now();
     draftEntries = rows.map((r) => ({

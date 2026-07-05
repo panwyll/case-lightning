@@ -47,7 +47,11 @@ export interface ChaseItem {
  * The threads currently needing a chase for a tenant, most overdue first. Pure DB read of
  * the state the sweep persisted — fast, no Graph. `slaDays` defaults to config.
  */
-export async function detectChases(tenantId: string, slaDays = config.chaseSlaDays): Promise<ChaseItem[]> {
+export async function detectChases(
+  tenantId: string,
+  slaDays = config.chaseSlaDays,
+  assignedToUserId?: string | null
+): Promise<ChaseItem[]> {
   const rows = await query<{
     thread_id: string;
     graph_thread_id: string;
@@ -57,17 +61,19 @@ export async function detectChases(tenantId: string, slaDays = config.chaseSlaDa
     subject: string | null;
     chase_awaiting_since: string;
   }>(
+    // $3 null = whole firm; otherwise only matters assigned to that user ("My worklist").
     `select t.id as thread_id, t.graph_thread_id, t.subject, t.chase_awaiting_since,
             m.id as matter_id, m.matter_ref, m.property_address
        from email_thread t
        join matter m on m.id = t.matter_id
       where t.tenant_id = $1
         and m.status = 'OPEN'
+        and ($3::uuid is null or m.assigned_to = $3::uuid)
         and t.chase_awaiting_since is not null
         and t.chase_awaiting_since < now() - ($2 || ' days')::interval
         and coalesce(t.chase_snoozed_until, to_timestamp(0)) < now()
       order by t.chase_awaiting_since asc`,
-    [tenantId, String(slaDays)]
+    [tenantId, String(slaDays), assignedToUserId ?? null]
   );
   const now = Date.now();
   return rows.map((r) => ({
@@ -101,15 +107,19 @@ export async function runChaseSweep(userId: string, tenantId: string): Promise<n
     snoozed_until: string | null;
     flagged_at: string | null;
   }>(
+    // Only sweep/flag this user's own matters (or unassigned ones) — on a team each person
+    // flags their own chases in their own mailbox, not the whole firm's. Solo firms leave
+    // everything unassigned, so they still get the lot.
     `select t.id, coalesce(t.graph_conversation_id, t.graph_thread_id) as conversation_id,
             t.chase_snoozed_until as snoozed_until, t.chase_flagged_at as flagged_at
        from email_thread t
        join matter m on m.id = t.matter_id
       where t.tenant_id = $1 and m.status = 'OPEN'
+        and (m.assigned_to = $2::uuid or m.assigned_to is null)
         and coalesce(t.chase_checked_at, to_timestamp(0)) < now() - interval '${CHASE_RECHECK_HOURS} hours'
       order by t.chase_checked_at asc nulls first
       limit ${CHASE_SCAN_CAP}`,
-    [tenantId]
+    [tenantId, userId]
   );
   if (threads.length === 0) return 0;
 

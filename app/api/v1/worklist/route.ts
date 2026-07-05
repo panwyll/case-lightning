@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { getWorklist, dismissWorklistItem, snoozeWorklistItem } from '@/lib/server/worklist';
 import { runChaseSweep, snoozeChase } from '@/lib/server/chase';
+import { hasTeamAccess } from '@/lib/server/plan';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -15,17 +16,24 @@ export const dynamic = 'force-dynamic';
  * context required. Opening it also opportunistically re-runs the chase sweep out of band
  * (which refreshes chase state AND clears any drafts that have since been sent).
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     assertFeature('auth');
     assertFeature('graph');
     const user = await requireUser();
     await assertEntitled(user.tenantId);
-    const items = await getWorklist(user.tenantId);
+    // Solo firm → show everything. Team firm → "mine" (my matters) by default; only an
+    // ADMIN can widen to "team" (the whole firm's worklist).
+    const team = await hasTeamAccess(user.tenantId).catch(() => false);
+    const isAdmin = user.role === 'ADMIN';
+    const reqScope = req.nextUrl.searchParams.get('scope') === 'team' ? 'team' : 'mine';
+    const scope = team ? reqScope : 'mine';
+    const assignedTo = !team || (scope === 'team' && isAdmin) ? null : user.userId;
+    const items = await getWorklist(user.tenantId, assignedTo);
     after(async () => {
       await runChaseSweep(user.userId, user.tenantId).catch(() => {});
     });
-    return ok({ items });
+    return ok({ items, team, isAdmin, scope });
   } catch (error) {
     return fail(error);
   }
