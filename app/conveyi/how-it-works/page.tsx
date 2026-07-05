@@ -66,7 +66,7 @@ export default function HowItWorksPage() {
 
       <section className="px-6 pb-8">
         <div className="mx-auto max-w-5xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-12">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">On the Team plan</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">On the Pro plan</p>
           <h2 className="mt-3 font-serif text-3xl font-semibold tracking-tight md:text-4xl">
             The routine handles itself.
           </h2>

@@ -34,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ru
     if (!existing) return fail(new Error('Rule not found'));
 
     if (b.enabled === true && !(await isPremiumTenant(user.tenantId))) {
-      return fail(new Error('Premium auto-rules require the Team plan.'));
+      return fail(new Error('Premium auto-rules require the Pro or Firm plan.'));
     }
 
     const effectiveMode = b.replyMode ?? existing.reply_mode;

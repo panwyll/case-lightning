@@ -4,7 +4,7 @@ import { NavHeader, SiteFooter, ctaHref, ROUTES } from '../../_components/shared
 export const metadata: Metadata = {
   title: 'Document templates — CONVEYi',
   description:
-    'How to set up and use document templates in CONVEYi: upload your firm’s Word documents, drop in {{placeholders}}, and generate ready-to-send client documents from any matter — with optional AI-written sections on the Team plan.',
+    'How to set up and use document templates in CONVEYi: upload your firm’s Word documents, drop in {{placeholders}}, and generate ready-to-send client documents from any matter — with optional AI-written sections on the Pro plan.',
 };
 
 const PAGE_SOURCE = 'doc_packs_guide';
@@ -96,7 +96,7 @@ export default function DocPacksGuidePage() {
 
         {/* AI sections */}
         <h2 className="mt-12 text-2xl font-semibold">
-          AI-written sections <span className="align-middle text-sm font-medium text-violet">Team plan</span>
+          AI-written sections <span className="align-middle text-sm font-medium text-violet">Pro plan</span>
         </h2>
         <p className="mt-3 text-ink/70">
           For the parts of a document that change with each matter — a tailored summary, a paragraph

@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const b = ruleSchema.parse(await req.json());
 
     if (b.enabled && !(await isPremiumTenant(user.tenantId))) {
-      return fail(new Error('Premium auto-rules require the Team plan. Create the rule disabled, or upgrade.'));
+      return fail(new Error('Premium auto-rules require the Pro or Firm plan. Create the rule disabled, or upgrade.'));
     }
 
     // A SEND rule that is enabled must carry an explicit, re-accepted risk ack.

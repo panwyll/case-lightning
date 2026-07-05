@@ -4,40 +4,58 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'Simple pricing for CONVEYi. £200/month Standard, £500/month Team. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
+    'Simple pricing for CONVEYi. Solo £39, Pro £99, Firm £199 with 3 seats included. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
 };
 
 const PAGE_SOURCE = 'pricing';
 
 const tiers = [
   {
-    name: 'Standard',
-    price: '£200',
-    blurb: 'For a firm that wants to clear the inbox and move every case faster.',
+    name: 'Solo',
+    price: '£39',
+    seats: 'One seat',
+    blurb: 'For the individual conveyancer who wants the inbox handled.',
     features: [
       'CONVEYi add-in inside Outlook',
       'Thread summaries & case-aware draft replies',
-      'Per-case OneDrive knowledge base',
-      'Live Excel tracker per matter',
+      'Chase-up worklist — never lose a reply again',
+      'Per-case OneDrive knowledge base & live Excel tracker',
       'Save emails & attachments in one click',
       'GDPR-compliant — data stays in your tenant',
     ],
-    cta: 'pricing_standard',
+    cta: 'pricing_solo',
     highlight: false,
   },
   {
-    name: 'Team',
-    price: '£500',
-    blurb: 'For firms that want the routine handled automatically, firm-wide.',
+    name: 'Pro',
+    price: '£99',
+    seats: 'One seat',
+    blurb: 'For the sole practitioner who wants the routine handled automatically.',
     features: [
-      'Everything in Standard',
-      'Auto-triage incoming mail (matched to the right case)',
-      'Auto-rules: file, tag, draft or auto-reply on routine updates',
-      'Outlook category tagging',
-      'Team roles & matter assignment',
+      'Everything in Solo',
+      'Auto-triage incoming mail, matched to the right case',
+      'Auto-rules: file, tag & draft on routine updates',
+      'AI document packs — [[fills]] drawn from the matter',
+      'Unlimited onboarding lookback',
+      'Uncapped email volume',
+    ],
+    cta: 'pricing_pro',
+    highlight: false,
+  },
+  {
+    name: 'Firm',
+    price: '£199',
+    seats: '3 seats included · £59/seat after',
+    blurb: 'For the practice that runs its cases as a team.',
+    features: [
+      'Everything in Pro, uncapped',
+      'Matter board — every live case by stage',
+      'Workload dashboard — who’s carrying what',
+      'Assign matters & chases across the team',
+      'Team roles & admin oversight',
       'Priority support',
     ],
-    cta: 'pricing_team',
+    cta: 'pricing_firm',
     highlight: true,
   },
 ];
@@ -54,24 +72,25 @@ export default function PricingPage() {
             Priced per firm. Not per headache.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-ink-soft">
-            No setup fees, no annual lock-in, no per-seat surprises. Try it for 30 days — if it doesn’t
-            save you time, get your money back.
+            No setup fees, no annual lock-in. Start solo, and when your practice grows the whole team
+            works from one bill — your first three seats are included. Try it for 30 days; if it
+            doesn’t save you time, get your money back.
           </p>
         </div>
       </section>
 
       <section className="px-6 py-12 md:py-16">
-        <div className="mx-auto grid max-w-5xl gap-6 md:grid-cols-2">
+        <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-3">
           {tiers.map((t) => (
             <div
               key={t.name}
-              className={`relative rounded-3xl p-8 md:p-10 ${
+              className={`relative rounded-3xl p-8 md:p-9 ${
                 t.highlight ? 'border-2 border-violet bg-paper-soft shadow-violet' : 'border border-line bg-paper-soft'
               }`}
             >
               {t.highlight && (
                 <span className="absolute -top-3 left-8 rounded-full bg-violet px-3 py-1 text-xs font-bold uppercase tracking-wider text-white">
-                  Most popular
+                  For teams
                 </span>
               )}
               <h2 className="text-lg font-bold uppercase tracking-widest text-ink-soft">{t.name}</h2>
@@ -79,6 +98,7 @@ export default function PricingPage() {
                 <span className="font-serif text-6xl font-semibold">{t.price}</span>
                 <span className="mb-2 text-ink-soft">/month</span>
               </div>
+              <p className="mt-2 text-sm font-semibold text-violet">{t.seats}</p>
               <p className="mt-3 text-ink-soft">{t.blurb}</p>
               <ul className="mt-7 space-y-3">
                 {t.features.map((f) => (
@@ -102,14 +122,14 @@ export default function PricingPage() {
           ))}
         </div>
 
-        <div className="mx-auto mt-10 max-w-5xl rounded-2xl border border-violet/20 bg-violet-soft p-6 text-center md:p-8">
+        <div className="mx-auto mt-10 max-w-6xl rounded-2xl border border-violet/20 bg-violet-soft p-6 text-center md:p-8">
           <p className="font-serif text-2xl font-semibold tracking-tight">
             Earn it back: <span className="text-violet">£50/month recurring</span> for every firm you refer.
           </p>
-          <p className="mt-2 text-ink-soft">Paid as account credit, for as long as they stay a customer. Refer four firms and Standard is free.</p>
+          <p className="mt-2 text-ink-soft">Paid as account credit, for as long as they stay a customer. A few referrals and your own subscription pays for itself.</p>
         </div>
 
-        <p className="mx-auto mt-8 max-w-5xl text-center text-sm text-ink-soft">
+        <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-ink-soft">
           All plans include the 30-day money-back guarantee. ·{' '}
           <a href={ctaHref(ROUTES.faq, PAGE_SOURCE, 'pricing_faq')} className="text-violet underline underline-offset-4">Read the FAQ</a>
         </p>
@@ -117,8 +137,8 @@ export default function PricingPage() {
 
       <section className="bg-ink px-6 py-20 text-paper md:py-24">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Start on Standard. Upgrade any time.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Move up to Team the moment you want the routine handled automatically.</p>
+          <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Start solo. Grow into the firm.</h2>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Move up to Pro the moment you want the routine automated — and open it to your whole team when you’re ready.</p>
           <div className="mt-8 flex justify-center">
             <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
           </div>

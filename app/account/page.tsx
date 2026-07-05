@@ -68,7 +68,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   canceled: { label: 'Canceled', cls: 'bg-red-100 text-red-700' },
 };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
+const PLAN_LABEL: Record<string, string> = { plus: 'Solo', pro: 'Pro', enterprise: 'Firm' };
 
 export default function AccountPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -206,7 +206,7 @@ export default function AccountPage() {
               disabled={busy}
               className="rounded-lg bg-ink px-4 py-2 font-semibold text-white disabled:opacity-60"
             >
-              {busy ? 'Working…' : 'Upgrade to Enterprise'}
+              {busy ? 'Working…' : 'Upgrade to Firm'}
             </button>
           )}
           <button
@@ -244,8 +244,8 @@ export default function AccountPage() {
         </ul>
         <p className="mt-3 text-sm text-ink-soft">
           {summary.plan === 'enterprise'
-            ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account — they’re added to your firm automatically.'
-            : 'Plus and Pro are single-seat. The Enterprise plan adds team seats so colleagues can join your firm — upgrade above.'}
+            ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account — they’re added to your firm automatically. Your first 3 seats are included; extra seats are £59/month each.'
+            : 'Solo and Pro are single-seat. The Firm plan opens the practice up — the matter board, workload and assignment — with 3 seats included. Upgrade above.'}
         </p>
       </Card>
 

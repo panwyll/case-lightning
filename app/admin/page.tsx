@@ -102,7 +102,7 @@ const STAGE_LABEL: Record<string, string> = {
 };
 const FLAG_DOT: Record<string, string> = { ON_TRACK: '#16a34a', NEEDS_ATTENTION: '#f59e0b', BLOCKED: '#dc2626' };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Plus', pro: 'Pro', enterprise: 'Enterprise' };
+const PLAN_LABEL: Record<string, string> = { plus: 'Solo', pro: 'Pro', enterprise: 'Firm' };
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   active: { label: 'Active', bg: '#dcfce7', color: '#166534' },
   trialing: { label: 'Trial', bg: '#ede9fe', color: '#6d28d9' },
@@ -697,7 +697,7 @@ export default function AdminPage() {
                     <button style={btnPrimary} disabled={billingBusy} onClick={() => changePlanTo('pro')}>{billingBusy ? 'Working…' : 'Upgrade to Pro'}</button>
                   )}
                   {billing.plan !== 'enterprise' && (
-                    <button style={{ ...btnPrimary, background: '#0f172a' }} disabled={billingBusy} onClick={() => changePlanTo('enterprise')}>{billingBusy ? 'Working…' : 'Upgrade to Enterprise'}</button>
+                    <button style={{ ...btnPrimary, background: '#0f172a' }} disabled={billingBusy} onClick={() => changePlanTo('enterprise')}>{billingBusy ? 'Working…' : 'Upgrade to Firm'}</button>
                   )}
                   <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>{billing.hasSubscription ? 'Manage subscription' : 'Choose a plan'}</button>
                 </div>
@@ -749,8 +749,8 @@ export default function AdminPage() {
                 </div>
                 <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
                   {billing.plan === 'enterprise'
-                    ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account.'
-                    : 'Plus and Pro are single-seat. Enterprise adds team seats — upgrade above.'}
+                    ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account. Your first 3 seats are included; extra seats are £59/month each.'
+                    : 'Solo and Pro are single-seat. Firm opens up the matter board, workload and assignment, with 3 seats included — upgrade above.'}
                 </p>
               </div>
 
@@ -1140,7 +1140,7 @@ export default function AdminPage() {
                 </tbody>
               </table>
               <p style={{ fontSize: 12, color: '#64748b', marginTop: 10, marginBottom: 0 }}>
-                <strong>Team plan only:</strong> use{' '}
+                <strong>Pro plan and up:</strong> use{' '}
                 <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>
                   [[Write a short welcome paragraph for the client]]
                 </code>{' '}

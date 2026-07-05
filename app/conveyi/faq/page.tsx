@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',
   description:
-    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the referral scheme, the 30-day money-back guarantee, and the £200 vs £500 plans.',
+    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the referral scheme, the 30-day money-back guarantee, and the Solo, Pro and Firm plans.',
 };
 
 const PAGE_SOURCE = 'faq';
@@ -28,15 +28,15 @@ const faqs = [
   },
   {
     q: 'Will it send emails to clients on its own?',
-    a: 'Only if you explicitly switch that on. By default everything is draft-only — replies land in your Drafts for a human to check and send. Automatic sending is a Team-plan option, opt-in per rule, limited to routine updates, and you can turn it off at any time.',
+    a: 'Only if you explicitly switch that on. By default everything is draft-only — replies land in your Drafts for a human to check and send. Automatic sending is a Pro/Firm-plan option, opt-in per rule, limited to routine updates, and you can turn it off at any time.',
   },
   {
     q: 'How does the referral scheme work?',
-    a: 'It’s the most generous in legal software: refer another firm and you earn £50 every month they remain a customer — recurring, not a one-off. It’s paid as account credit, so referring four firms covers your own Standard subscription entirely.',
+    a: 'It’s the most generous in legal software: refer another firm and you earn £50 every month they remain a customer — recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
   },
   {
-    q: 'What’s the difference between the £200 and £500 plans?',
-    a: 'Standard (£200/month) gives you the Outlook add-in, case-aware drafting, the OneDrive knowledge base and the Excel tracker. Team (£500/month) adds the automation: incoming mail is auto-matched to the right case, tagged, filed, and — where you allow it — answered automatically.',
+    q: 'What’s the difference between the Solo, Pro and Firm plans?',
+    a: 'Solo (£39/month) gives one conveyancer the Outlook add-in, case-aware drafting, the chase-up worklist, the OneDrive knowledge base and the Excel tracker. Pro (£99/month) adds the automation: incoming mail is auto-matched to the right case, tagged, filed, and — where you allow it — answered automatically, plus AI document packs. Firm (£199/month, three seats included then £59 a seat) opens the practice up to the whole team: a matter board, a workload dashboard and matter assignment, with admin oversight.',
   },
   {
     q: 'What if it doesn’t work for us?',

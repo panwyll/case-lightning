@@ -1248,7 +1248,7 @@ export default function Taskpane() {
       }
       setStatus(
         (j as any).capped
-          ? `Generated “${(j as any).file?.name ?? tpl.name}” — but you’ve hit your Pro monthly AI limit, so the AI sections were left blank. Upgrade to Enterprise for uncapped AI.`
+          ? `Generated “${(j as any).file?.name ?? tpl.name}” — but you’ve hit your Pro monthly AI limit, so the AI sections were left blank. Upgrade to Firm for uncapped AI.`
           : `Generated “${(j as any).file?.name ?? tpl.name}” — saved to Case files.`
       );
       await loadFiles();
@@ -1621,11 +1621,11 @@ export default function Taskpane() {
             {plan && (
               <span style={S.planBadge}>
                 {plan.plan === 'enterprise'
-                  ? 'Enterprise'
+                  ? 'Firm'
                   : plan.plan === 'pro'
                   ? 'Pro'
                   : plan.plan === 'plus'
-                  ? 'Plus'
+                  ? 'Solo'
                   : plan.status === 'trialing'
                   ? 'Trial'
                   : 'Free'}
@@ -2646,9 +2646,9 @@ export default function Taskpane() {
                             {tpl.has_llm_prompts && (
                               <span
                                 style={{ marginLeft: 6, fontSize: 10, color: aiLocked ? '#94a3b8' : '#6d28d9', fontWeight: 700 }}
-                                title={aiLocked ? 'Contains AI-written sections — Team plan only. They’ll be left blank on your plan.' : 'Contains AI-written sections'}
+                                title={aiLocked ? 'Contains AI-written sections — Pro plan and up. They’ll be left blank on your plan.' : 'Contains AI-written sections'}
                               >
-                                AI{aiLocked ? ' · Team only' : ''}
+                                AI{aiLocked ? ' · Pro' : ''}
                               </span>
                             )}
                           </span>

@@ -61,7 +61,7 @@ export default function Page() {
             <Cta label="See how it works" href={ctaHref(ROUTES.howItWorks, PAGE_SOURCE, 'hero_how')} dataCta="hero_how" variant="secondary" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
-            From £200/month · 30-day money-back guarantee · nothing to install
+            From £39/month · 30-day money-back guarantee · nothing to install
           </p>
         </div>
       </section>
@@ -148,19 +148,24 @@ export default function Page() {
       <section className="border-t border-line px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Two plans. No lock-in.</h2>
+            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Three plans. No lock-in.</h2>
             <Cta label="See full pricing" href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'pricing_teaser')} dataCta="pricing_teaser" variant="ghost" />
           </div>
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Standard</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£200<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">Everything a small firm needs to clear the inbox and move every case faster.</p>
+              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Solo</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£39<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <p className="mt-3 text-ink-soft">Everything the individual conveyancer needs to clear the inbox and move every case faster.</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-paper-soft p-8">
+              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Pro</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£99<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <p className="mt-3 text-ink-soft">Adds auto-triage and auto-rules: routine emails get matched, filed and answered for you.</p>
             </div>
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
-              <div className="text-sm font-semibold uppercase tracking-widest text-violet">Team</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£500<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">Adds auto-triage and auto-rules: routine emails get matched, filed and answered for you.</p>
+              <div className="text-sm font-semibold uppercase tracking-widest text-violet">Firm</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£199<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <p className="mt-3 text-ink-soft">The whole practice as a team — matter board, workload and assignment. 3 seats included.</p>
             </div>
           </div>
         </div>

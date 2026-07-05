@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1366" height="768" viewBox="0 0 1366 768" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5A27E0"/>
+      <stop offset="1" stop-color="#3A12A8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#1a0a4a" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1366" height="768" fill="#F4F1FE"/>
+  <rect width="760" height="768" fill="url(#bg)"/>
+
+  <!-- left: headline -->
+  <g fill="#FFFFFF">
+    <g transform="translate(80,150)">
+      <rect width="44" height="44" rx="11" fill="#FFFFFF"/>
+      <path d="M9 22 C15 13 21 13 26 22 C31 31 37 31 43 22" transform="translate(-2,-2)" fill="none" stroke="#5A27E0" stroke-width="4.5" stroke-linecap="round"/>
+      <text x="60" y="30" font-size="26" font-weight="700">CONVEYi</text>
+    </g>
+    <text x="80" y="320" font-size="58" font-weight="800">Know what every</text>
+    <text x="80" y="386" font-size="58" font-weight="800">email needs — instantly.</text>
+    <text x="80" y="456" font-size="25" fill="#E4DBFF">CONVEYi reads the open email, matches it to the</text>
+    <text x="80" y="490" font-size="25" fill="#E4DBFF">right matter, and tells you whether to reply, action,</text>
+    <text x="80" y="524" font-size="25" fill="#E4DBFF">or delegate — before you've read a word.</text>
+  </g>
+
+  <!-- right: taskpane card -->
+  <g filter="url(#shadow)">
+    <rect x="812" y="92" width="478" height="584" rx="26" fill="#FFFFFF"/>
+  </g>
+  <g transform="translate(812,92)">
+    <!-- top bar -->
+    <circle cx="44" cy="46" r="14" fill="#F1ECFD"/>
+    <circle cx="82" cy="46" r="14" fill="#F1ECFD"/>
+    <rect x="300" y="34" width="56" height="24" rx="12" fill="#EDE7FB"/>
+    <text x="328" y="51" font-size="13" font-weight="700" fill="#5A27E0" text-anchor="middle">TRIAL</text>
+    <text x="446" y="51" font-size="15" fill="#3A3247" text-anchor="end">Peter Anwyll</text>
+
+    <!-- matched matter -->
+    <text x="32" y="108" font-size="13" font-weight="700" fill="#8A839B" letter-spacing="0.5">ON THIS EMAIL</text>
+    <rect x="32" y="122" width="414" height="62" rx="14" fill="#F6F2FF" stroke="#E6DEFB"/>
+    <rect x="46" y="138" width="30" height="30" rx="8" fill="#5A27E0"/>
+    <path d="M52 159 C56 153 60 153 63 159 C66 165 70 165 74 159" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+    <text x="90" y="148" font-size="17" font-weight="700" fill="#1C1530">SMITH-X · 12 Oak Lane</text>
+    <text x="90" y="170" font-size="13.5" fill="#7A7388">Matched · buyer's solicitor, Bellweather &amp; Co</text>
+    <circle cx="424" cy="153" r="11" fill="#1FAE6B"/>
+    <path d="M419 153 l4 4 l7 -8" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- triage tag -->
+    <rect x="32" y="200" width="150" height="32" rx="16" fill="#EDE7FB"/>
+    <circle cx="52" cy="216" r="5" fill="#5A27E0"/>
+    <text x="66" y="221" font-size="14.5" font-weight="700" fill="#5A27E0">Reply needed</text>
+
+    <!-- what they're asking -->
+    <rect x="32" y="252" width="414" height="208" rx="16" fill="#FBFAFF" stroke="#ECE7F8"/>
+    <text x="52" y="284" font-size="15.5" font-weight="700" fill="#1C1530">What they're asking</text>
+    <g fill="#4A4358" font-size="14.5">
+      <circle cx="56" cy="312" r="3" fill="#5A27E0"/>
+      <text x="70" y="317">Confirm the draft contract has been received</text>
+      <circle cx="56" cy="344" r="3" fill="#5A27E0"/>
+      <text x="70" y="349">Send the EPC and the TA10 fixtures &amp; fittings</text>
+      <text x="70" y="370">form ahead of exchange</text>
+      <circle cx="56" cy="398" r="3" fill="#5A27E0"/>
+      <text x="70" y="403">Proposed completion: 28 days after exchange</text>
+    </g>
+    <text x="52" y="440" font-size="13.5" fill="#8A839B" font-style="italic">Verified against the matter file before drafting.</text>
+
+    <!-- primary button -->
+    <rect x="32" y="486" width="414" height="50" rx="13" fill="#5A27E0"/>
+    <text x="239" y="517" font-size="17" font-weight="700" fill="#FFFFFF" text-anchor="middle">Draft reply</text>
+
+    <!-- bottom nav -->
+    <line x1="0" y1="560" x2="478" y2="560" stroke="#EEEAF7"/>
+    <rect x="150" y="586" width="40" height="3" rx="1.5" fill="#5A27E0"/>
+    <text x="170" y="582" font-size="20" fill="#5A27E0" text-anchor="middle">✉</text>
+    <text x="239" y="582" font-size="20" fill="#B7B1C4" text-anchor="middle">⌂</text>
+    <text x="308" y="582" font-size="18" fill="#B7B1C4" text-anchor="middle">📎</text>
+  </g>
+</svg>

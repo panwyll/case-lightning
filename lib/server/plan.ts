@@ -1,9 +1,13 @@
 /**
  * Plan tiers & capability gates.
  *
- *   plus       — entry. No premium AI/automation, single seat.
- *   pro        — premium AI/automation, single seat, heavy-LLM usage capped.
- *   enterprise — premium AI/automation + team (multi-seat), uncapped.
+ * Internal keys are stable; the customer-facing names differ (see PLAN_LABEL in the
+ * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
+ *
+ *   plus       — "Solo". Entry. No premium AI/automation, single seat. £39/mo.
+ *   pro        — "Pro". Premium AI/automation, single seat, heavy-LLM usage capped. £99/mo.
+ *   enterprise — "Firm". Premium AI/automation + team (multi-seat), uncapped. £199/mo,
+ *                3 seats included then £59/seat (per-seat billing not yet wired — flat today).
  *
  * Premium features (auto-rules, unlimited onboarding lookback, AI doc-template
  * [[prompt]] fills) require pro OR enterprise. Team/multi-seat requires enterprise.
