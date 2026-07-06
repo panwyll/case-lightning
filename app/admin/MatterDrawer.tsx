@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Slide-over matter detail for the board — click a card to open it. Reuses the existing
@@ -27,6 +27,18 @@ const TASK_DONE = new Set(['DONE']);
 
 const fmtDate = (v: any): string =>
   v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+const dstr = (v: any): string => (v ? String(v).slice(0, 10) : '');
+
+/** The matter figures editable straight from the Overview tab. Key = PATCH body field. */
+const FIGURE_FIELDS: Array<{ key: string; label: string; type: 'text' | 'date'; col: string }> = [
+  { key: 'purchasePrice', label: 'Purchase price', type: 'text', col: 'purchase_price' },
+  { key: 'exchangeTargetDate', label: 'Exchange target', type: 'date', col: 'exchange_target_date' },
+  { key: 'completionTargetDate', label: 'Completion target', type: 'date', col: 'completion_target_date' },
+  { key: 'lender', label: 'Lender', type: 'text', col: 'lender' },
+  { key: 'chainPosition', label: 'Chain position', type: 'text', col: 'chain_position' },
+  { key: 'counterpartySolicitor', label: 'Counterparty solicitor', type: 'text', col: 'counterparty_solicitor' },
+  { key: 'counterpartyAgent', label: 'Counterparty agent', type: 'text', col: 'counterparty_agent' },
+];
 
 const panel: React.CSSProperties = {
   position: 'fixed',
@@ -87,7 +99,12 @@ export default function MatterDrawer({
   const [files, setFiles] = useState<{ files: any[]; folderProvisioned: boolean } | null>(null);
   const [todo, setTodo] = useState<{ tasks: any[]; assignees: any[] } | null>(null);
   const [newTask, setNewTask] = useState('');
+  const [newAssignee, setNewAssignee] = useState('');
+  const [newDue, setNewDue] = useState('');
   const [adding, setAdding] = useState(false);
+  // Editable matter figures — baseline in a ref so we only PATCH real changes on blur.
+  const [figures, setFigures] = useState<Record<string, string> | null>(null);
+  const figBaseline = useRef<Record<string, string>>({});
 
   // Local copy of the editable fields so drawer edits show instantly (and propagate up).
   const [stage, setStage] = useState<string>(matter.stage || 'INSTRUCTION');
@@ -96,11 +113,31 @@ export default function MatterDrawer({
 
   useEffect(() => {
     let live = true;
-    api(`/matters/${id}`).then((r) => live && setDetail(r)).catch(() => live && setDetail({ error: true }));
+    api(`/matters/${id}`)
+      .then((r) => {
+        if (!live) return;
+        setDetail(r);
+        const mm = r?.matter ?? {};
+        const init: Record<string, string> = {};
+        for (const f of FIGURE_FIELDS) init[f.key] = f.type === 'date' ? dstr(mm[f.col]) : String(mm[f.col] ?? '');
+        figBaseline.current = { ...init };
+        setFigures(init);
+      })
+      .catch(() => live && setDetail({ error: true }));
     return () => {
       live = false;
     };
   }, [id, api]);
+
+  // PATCH a figure only when it actually changed (blur/Enter). Goes through the board's
+  // patchMatter so the card's date chip stays in step; audit trail is written server-side.
+  const saveFigure = (key: string) => {
+    if (!figures) return;
+    const val = (figures[key] ?? '').trim();
+    if (val === figBaseline.current[key]) return;
+    figBaseline.current[key] = val;
+    onPatch(id, { [key]: val || null });
+  };
 
   // Lazy-load the heavier tabs only when first opened.
   useEffect(() => {
@@ -125,18 +162,46 @@ export default function MatterDrawer({
     }
   }
 
+  const assigneeName = (userId: string): string | null => {
+    const a = (todo?.assignees ?? []).find((x: any) => x.id === userId);
+    return a ? a.display_name || a.email : null;
+  };
+
   async function addTask() {
     const detailText = newTask.trim();
     if (!detailText) return;
     setAdding(true);
     try {
-      const { task } = await api<{ task: any }>(`/matters/${id}/tasks`, { method: 'POST', body: JSON.stringify({ detail: detailText }) });
+      const { task } = await api<{ task: any }>(`/matters/${id}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          detail: detailText,
+          assigneeUserId: newAssignee || null,
+          assignee: newAssignee ? assigneeName(newAssignee) : null,
+          due: newDue || null,
+        }),
+      });
       setTodo((s) => (s ? { ...s, tasks: [task, ...s.tasks] } : { tasks: [task], assignees: [] }));
       setNewTask('');
+      setNewAssignee('');
+      setNewDue('');
     } catch {
       /* leave the text so they can retry */
     } finally {
       setAdding(false);
+    }
+  }
+
+  // Inline task edit (assignee / due) — optimistic, refetch on failure. The API body is
+  // camelCase but rows are snake_case, so mirror assigneeUserId onto assignee_user_id.
+  async function patchTask(t: any, patch: Record<string, unknown>) {
+    const local: Record<string, unknown> = { ...patch };
+    if ('assigneeUserId' in patch) local.assignee_user_id = patch.assigneeUserId;
+    setTodo((s) => (s ? { ...s, tasks: s.tasks.map((x) => (x.id === t.id ? { ...x, ...local } : x)) } : s));
+    try {
+      await api(`/matters/${id}/tasks/${t.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+    } catch {
+      api(`/matters/${id}/tasks`).then(setTodo).catch(() => {});
     }
   }
 
@@ -147,16 +212,17 @@ export default function MatterDrawer({
   const contacts: any[] = detail?.contacts ?? [];
   const timeline: any[] = detail?.timeline ?? [];
 
-  const facts: Array<[string, any]> = [
-    ['Purchase price', m.purchase_price],
-    ['Exchange target', m.exchange_target_date ? fmtDate(m.exchange_target_date) : null],
-    ['Completion target', m.completion_target_date ? fmtDate(m.completion_target_date) : null],
-    ['Lender', m.lender],
-    ['Chain position', m.chain_position],
-    ['Counterparty solicitor', m.counterparty_solicitor],
-    ['Counterparty agent', m.counterparty_agent],
-    ['Track', m.track],
-  ];
+  const factInput: React.CSSProperties = {
+    width: '100%',
+    boxSizing: 'border-box',
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#0f172a',
+    padding: '4px 6px',
+    border: '1px solid transparent',
+    borderRadius: 6,
+    background: 'transparent',
+  };
 
   return (
     <>
@@ -206,14 +272,28 @@ export default function MatterDrawer({
 
           {detail && !detail.error && tab === 'overview' && (
             <>
-              <div style={sectionLabel}>Key details</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
-                {facts.map(([label, val]) => (
-                  <div key={label}>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>{label}</div>
-                    <div style={{ fontSize: 13, color: val ? '#0f172a' : '#cbd5e1', fontWeight: val ? 600 : 400 }}>{val || '—'}</div>
+              <div style={sectionLabel}>Key details <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— click a value to edit</span></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                {FIGURE_FIELDS.map((f) => (
+                  <div key={f.key}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', padding: '0 6px' }}>{f.label}</div>
+                    <input
+                      type={f.type}
+                      value={figures?.[f.key] ?? ''}
+                      placeholder="—"
+                      onChange={(e) => setFigures((s) => (s ? { ...s, [f.key]: e.target.value } : s))}
+                      onBlur={() => saveFigure(f.key)}
+                      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                      style={factInput}
+                      onFocus={(e) => (e.target.style.border = '1px solid #c4b5fd')}
+                      onBlurCapture={(e) => (e.target.style.border = '1px solid transparent')}
+                    />
                   </div>
                 ))}
+                <div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', padding: '0 6px' }}>Track</div>
+                  <div style={{ ...factInput, color: m.track ? '#0f172a' : '#cbd5e1' }}>{m.track || '—'}</div>
+                </div>
               </div>
 
               <div style={sectionLabel}>Outstanding</div>
@@ -276,28 +356,55 @@ export default function MatterDrawer({
 
           {tab === 'todo' && (
             <>
-              <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
+              {/* Add an action — with owner + due date, Jira-style. */}
+              <div style={{ marginTop: 14, padding: 10, background: '#f8fafc', border: '1px solid #eef1f5', borderRadius: 10 }}>
                 <input
                   value={newTask}
                   onChange={(e) => setNewTask(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addTask()}
                   placeholder="Add an action…"
-                  style={{ flex: 1, fontSize: 13, padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 8 }}
+                  style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 10px', border: '1px solid #e2e8f0', borderRadius: 8 }}
                 />
-                <button onClick={addTask} disabled={adding || !newTask.trim()} style={{ ...miniSelect, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, padding: '0 14px', opacity: adding || !newTask.trim() ? 0.5 : 1 }}>Add</button>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <select value={newAssignee} onChange={(e) => setNewAssignee(e.target.value)} style={{ ...miniSelect, flex: 1, minWidth: 0 }} title="Assign to">
+                    <option value="">Unassigned</option>
+                    {(todo?.assignees ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                  </select>
+                  <input type="date" value={newDue} onChange={(e) => setNewDue(e.target.value)} style={{ ...miniSelect, flex: 1, minWidth: 0 }} title="Due date" />
+                  <button onClick={addTask} disabled={adding || !newTask.trim()} style={{ ...miniSelect, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, padding: '4px 16px', opacity: adding || !newTask.trim() ? 0.5 : 1 }}>Add</button>
+                </div>
               </div>
               {!todo && <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 14 }}>Loading…</p>}
               {todo && todo.tasks.length === 0 && <p style={{ fontSize: 13, color: '#cbd5e1', marginTop: 14 }}>No tasks yet. Add the first action above.</p>}
               <div style={{ marginTop: 10 }}>
                 {todo?.tasks.map((t) => {
                   const done = TASK_DONE.has(t.status);
+                  const dueVal = dstr(t.due);
+                  const overdue = !done && dueVal && new Date(dueVal).getTime() < Date.now() - 86_400_000;
                   return (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '8px 0', borderTop: '1px solid #f4f6f9' }}>
-                      <input type="checkbox" checked={done} onChange={() => toggleTask(t)} style={{ marginTop: 2, cursor: 'pointer', accentColor: '#5A27E0' }} />
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 0', borderTop: '1px solid #f4f6f9' }}>
+                      <input type="checkbox" checked={done} onChange={() => toggleTask(t)} style={{ marginTop: 3, cursor: 'pointer', accentColor: '#5A27E0' }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: done ? '#94a3b8' : '#0f172a', textDecoration: done ? 'line-through' : 'none' }}>{t.detail}</div>
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                          {t.assignee ? `${t.assignee}` : 'Unassigned'}{t.due ? ` · due ${fmtDate(t.due)}` : ''}{t.status === 'IN_PROGRESS' ? ' · in progress' : ''}
+                        <div style={{ display: 'flex', gap: 5, marginTop: 5, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <select
+                            value={t.assignee_user_id || ''}
+                            onChange={(e) => patchTask(t, { assigneeUserId: e.target.value || null, assignee: e.target.value ? assigneeName(e.target.value) : null })}
+                            style={{ ...miniSelect, fontSize: 11, padding: '2px 4px', color: t.assignee_user_id || t.assignee ? '#334155' : '#94a3b8' }}
+                            title="Assign to"
+                          >
+                            <option value="">{!t.assignee_user_id && t.assignee ? t.assignee : 'Unassigned'}</option>
+                            {(todo?.assignees ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                          </select>
+                          <input
+                            type="date"
+                            value={dueVal}
+                            onChange={(e) => patchTask(t, { due: e.target.value || null })}
+                            style={{ ...miniSelect, fontSize: 11, padding: '2px 4px', color: overdue ? '#b91c1c' : '#334155', borderColor: overdue ? '#fecaca' : '#e2e8f0' }}
+                            title="Due date"
+                          />
+                          {t.status === 'IN_PROGRESS' && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#f3efff', borderRadius: 999, padding: '1px 7px' }}>in progress</span>}
+                          {overdue && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b91c1c' }}>overdue</span>}
                         </div>
                       </div>
                     </div>

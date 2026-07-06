@@ -209,6 +209,22 @@ export default function AdminPage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [boardBusyId, setBoardBusyId] = useState<string | null>(null);
   const [openMatter, setOpenMatter] = useState<any | null>(null);
+  const [boardQuery, setBoardQuery] = useState('');
+  // Collapsed kanban columns — remembered per browser so the layout survives reloads.
+  const [collapsedStages, setCollapsedStages] = useState<string[]>(() => {
+    try {
+      if (typeof window === 'undefined') return [];
+      return JSON.parse(window.localStorage.getItem('cl_board_collapsed') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const toggleStage = (stage: string) =>
+    setCollapsedStages((prev) => {
+      const next = prev.includes(stage) ? prev.filter((s) => s !== stage) : [...prev, stage];
+      try { window.localStorage.setItem('cl_board_collapsed', JSON.stringify(next)); } catch {}
+      return next;
+    });
 
   // The board is editable in place — drag a card to another stage, or change its status /
   // assignee on the card. Optimistic; reverts to server truth if the PATCH fails.
@@ -228,6 +244,9 @@ export default function AdminPage() {
           const mem = users.find((u: any) => u.id === patch.assignedTo);
           next.assignee = mem ? mem.display_name || mem.email : null;
         }
+        // Figure edits from the matter drawer — keep the card's date chip in step.
+        if ('exchangeTargetDate' in patch) next.exchangeTargetDate = patch.exchangeTargetDate || null;
+        if ('completionTargetDate' in patch) next.completionTargetDate = patch.completionTargetDate || null;
         return next;
       })
     );
@@ -856,11 +875,16 @@ export default function AdminPage() {
               const assigneeOpts = Array.from(new Set(board.map((m) => m.assignee).filter(Boolean))).sort();
               const hasUnassigned = board.some((m) => !m.assignee);
               const stageMs = (m: any) => new Date(m.stageEnteredAt || m.updatedAt).getTime();
+              const q = boardQuery.trim().toLowerCase();
               const visible = board
                 .filter(
                   (m) =>
                     (boardAssignee === '' || (boardAssignee === '__un' ? !m.assignee : m.assignee === boardAssignee)) &&
-                    (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag)
+                    (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag) &&
+                    (!q ||
+                      String(m.matterRef || '').toLowerCase().includes(q) ||
+                      String(m.propertyAddress || '').toLowerCase().includes(q) ||
+                      String(m.assignee || '').toLowerCase().includes(q))
                 )
                 .sort((a, b) => {
                   if (boardSort === 'stage_age') return stageMs(a) - stageMs(b); // oldest in stage first (most dots)
@@ -876,6 +900,12 @@ export default function AdminPage() {
                 <>
                   {/* Filters */}
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+                    <input
+                      value={boardQuery}
+                      onChange={(e) => setBoardQuery(e.target.value)}
+                      placeholder="Search ref, address, owner…"
+                      style={{ ...filterSelect, width: 210, cursor: 'text' }}
+                    />
                     <select value={boardAssignee} onChange={(e) => setBoardAssignee(e.target.value)} style={filterSelect}>
                       <option value="">All assignees</option>
                       {assigneeOpts.map((a) => <option key={a} value={a}>{a}</option>)}
@@ -894,8 +924,8 @@ export default function AdminPage() {
                       <option value="BLOCKED">Blocked</option>
                     </select>
                     <span style={{ fontSize: 12, color: '#94a3b8' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
-                    {(boardAssignee || boardFlag) && (
-                      <button style={clearBtn} onClick={() => { setBoardAssignee(''); setBoardFlag(''); }}>Clear</button>
+                    {(boardAssignee || boardFlag || boardQuery) && (
+                      <button style={clearBtn} onClick={() => { setBoardAssignee(''); setBoardFlag(''); setBoardQuery(''); }}>Clear</button>
                     )}
                     {boardLoading && <span style={spinnerStyle} />}
                   </div>
@@ -904,10 +934,38 @@ export default function AdminPage() {
                   <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
                     {STAGE_ORDER.map((stage) => {
                       const col = visible.filter((m) => (m.stage || 'INSTRUCTION') === stage);
+                      const collapsed = collapsedStages.includes(stage);
+                      if (collapsed) {
+                        // Narrow strip — still a drop target, click to expand.
+                        return (
+                          <div
+                            key={stage}
+                            onClick={() => toggleStage(stage)}
+                            onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (draggingId) {
+                                const dragged = board.find((x) => x.id === draggingId);
+                                if (dragged && (dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
+                              }
+                              setDraggingId(null);
+                            }}
+                            title={`${STAGE_LABEL[stage] ?? stage} — ${col.length} matter${col.length === 1 ? '' : 's'} (click to expand)`}
+                            style={{ flex: '0 0 34px', alignSelf: 'stretch', minHeight: 120, background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
+                          >
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{col.length}</span>
+                            <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 0.3 }}>{STAGE_LABEL[stage] ?? stage}</span>
+                          </div>
+                        );
+                      }
                       return (
                         <div key={stage} style={{ flex: '1 1 0', minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={STAGE_LABEL[stage] ?? stage}>{STAGE_LABEL[stage] ?? stage}</span>
+                            <span
+                              onClick={() => toggleStage(stage)}
+                              title={`${STAGE_LABEL[stage] ?? stage} — click to collapse`}
+                              style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                            >{STAGE_LABEL[stage] ?? stage}</span>
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
                           </div>
                           <div
@@ -947,6 +1005,24 @@ export default function AdminPage() {
                                       </div>
                                       {m.propertyAddress && (
                                         <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                                      )}
+                                      {/* To-do signals without opening the card. */}
+                                      {(Number(m.openTasks) > 0 || m.nextDue) && (
+                                        <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                                          {Number(m.openTasks) > 0 && (
+                                            <span title={`${m.openTasks} open task${Number(m.openTasks) === 1 ? '' : 's'}`} style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 999, padding: '1px 7px' }}>
+                                              ☑ {m.openTasks}
+                                            </span>
+                                          )}
+                                          {m.nextDue && (() => {
+                                            const overdue = new Date(m.nextDue).getTime() < Date.now() - 86_400_000;
+                                            return (
+                                              <span title="Next task due" style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '1px 7px', color: overdue ? '#b91c1c' : '#475569', background: overdue ? '#fef2f2' : '#f1f5f9', border: `1px solid ${overdue ? '#fecaca' : '#e2e8f0'}` }}>
+                                                due {new Date(m.nextDue).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                              </span>
+                                            );
+                                          })()}
+                                        </div>
                                       )}
                                     </div>
                                     {/* Editable in place — change owner / status without leaving the board. */}
