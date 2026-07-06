@@ -5,6 +5,7 @@
  */
 import { query, queryOne } from './db';
 import { matchMessage, messageSignals, hasTrustedLink, type Candidate } from './matching';
+import { maybeAdvanceStage } from './stage-inference';
 import { classifyEmail, draftReply, retrieveMatterContext, type EmailIntent } from './ai';
 import {
   createReplyDraft,
@@ -189,6 +190,13 @@ function statusTagName(c: Classification): string {
  */
 export async function applyTriageTags(user: SessionUser, message: any, triage: TriageResult): Promise<string[]> {
   if (!message.id) return [];
+  // Email-driven board: on a firm-linked thread (the only write-safe signal), let the
+  // message's content advance the matter's stage — the kanban maintains itself instead
+  // of being a second tracker to feed. Forward-only; provenance goes on the timeline.
+  if (triage.top?.matterId && hasTrustedLink(triage.top)) {
+    const text = `${message.subject ?? ''}\n${typeof message.body?.content === 'string' ? message.body.content : message.bodyPreview ?? ''}`;
+    void maybeAdvanceStage(user.tenantId, triage.top.matterId, text, message.subject ?? null).catch(() => {});
+  }
   const statusTag = statusTagName(triage.classification);
   const matterTag = triage.top && triage.top.band === 'AUTO' ? triage.top.matterRef : null;
   const tags: string[] = matterTag ? [statusTag, matterTag] : [statusTag];

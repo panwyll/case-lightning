@@ -465,6 +465,40 @@ export default function MatterDrawer({
                   <button onClick={addTask} disabled={adding || !newTask.trim()} style={{ ...miniSelect, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, padding: '4px 16px', opacity: adding || !newTask.trim() ? 0.5 : 1 }}>Add</button>
                 </div>
               </div>
+              {/* Zero-admin: items the AI already extracted from the correspondence — accept,
+                  don't retype. Hidden once an equivalent task exists. */}
+              {(() => {
+                const have = new Set((todo?.tasks ?? []).map((t: any) => String(t.detail).trim().toLowerCase()));
+                const suggested = outstanding
+                  .map((o: any) => (typeof o === 'string' ? o : o.label || o.item || ''))
+                  .filter((s: string) => s && !have.has(s.trim().toLowerCase()))
+                  .slice(0, 8);
+                if (!suggested.length || !todo) return null;
+                return (
+                  <div style={{ marginTop: 12, border: '1px solid #e9e2fb', background: '#faf8ff', borderRadius: 10, padding: '8px 10px' }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>
+                      Suggested from the correspondence
+                    </div>
+                    {suggested.map((s: string) => (
+                      <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0' }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: '#334155' }}>{s}</span>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { task } = await api<{ task: any }>(`/matters/${id}/tasks`, { method: 'POST', body: JSON.stringify({ detail: s, source: 'AI_SUGGESTED' }) });
+                              setTodo((st) => (st ? { ...st, tasks: [task, ...st.tasks] } : st));
+                            } catch {}
+                          }}
+                          style={{ ...miniSelect, fontWeight: 800, color: '#5A27E0', borderColor: '#ddd2f7', flexShrink: 0, padding: '2px 10px' }}
+                          title="Add as a task"
+                        >
+                          ＋ Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {!todo && <p style={{ color: '#94a3b8', fontSize: 13, marginTop: 14 }}>Loading…</p>}
               {todo && todo.tasks.length === 0 && <p style={{ fontSize: 13, color: '#cbd5e1', marginTop: 14 }}>No tasks yet. Add the first action above.</p>}
               <div style={{ marginTop: 10 }}>
