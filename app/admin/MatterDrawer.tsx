@@ -110,6 +110,10 @@ export default function MatterDrawer({
   const [stage, setStage] = useState<string>(matter.stage || 'INSTRUCTION');
   const [statusFlag, setStatusFlag] = useState<string>(matter.statusFlag || 'ON_TRACK');
   const [assignedTo, setAssignedTo] = useState<string>(matter.assignedTo || '');
+  // Which pile the matter lives in: Up next (BACKLOG) / the board (OPEN) / Completed (CLOSED).
+  const [pile, setPile] = useState<string>(
+    matter.status === 'BACKLOG' || matter.status === 'CLOSED' ? matter.status : 'OPEN'
+  );
 
   useEffect(() => {
     let live = true;
@@ -149,6 +153,7 @@ export default function MatterDrawer({
     if ('stage' in patch) setStage(patch.stage as string);
     if ('statusFlag' in patch) setStatusFlag(patch.statusFlag as string);
     if ('assignedTo' in patch) setAssignedTo((patch.assignedTo as string) || '');
+    if ('status' in patch) setPile(patch.status as string);
     onPatch(id, patch);
   };
 
@@ -253,6 +258,16 @@ export default function MatterDrawer({
             <select value={assignedTo} onChange={(e) => edit({ assignedTo: e.target.value || null })} style={miniSelect} title="Owner">
               <option value="">Unassigned</option>
               {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+            </select>
+            <select
+              value={pile}
+              onChange={(e) => edit({ status: e.target.value })}
+              style={{ ...miniSelect, fontWeight: 700, color: pile === 'CLOSED' ? '#16a34a' : pile === 'BACKLOG' ? '#b45309' : '#334155' }}
+              title="Pile — Up next, on the board, or Completed"
+            >
+              <option value="BACKLOG">Up next</option>
+              <option value="OPEN">On the board</option>
+              <option value="CLOSED">Completed</option>
             </select>
           </div>
         </div>

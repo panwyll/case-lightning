@@ -63,7 +63,7 @@ type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'pla
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: 'Every live matter by stage. Drag a card to move its stage; change the owner or status on the card.' },
+  board: { label: 'Matter board', subtitle: 'Work in flight by stage, flanked by Up next (not started) and Completed. Drag cards anywhere — everything writes back.' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
@@ -210,13 +210,16 @@ export default function AdminPage() {
   const [boardBusyId, setBoardBusyId] = useState<string | null>(null);
   const [openMatter, setOpenMatter] = useState<any | null>(null);
   const [boardQuery, setBoardQuery] = useState('');
+  const [doneTotal, setDoneTotal] = useState(0);
   // Collapsed kanban columns — remembered per browser so the layout survives reloads.
+  // The Completed pile starts collapsed: it's history, not work in flight.
   const [collapsedStages, setCollapsedStages] = useState<string[]>(() => {
     try {
-      if (typeof window === 'undefined') return [];
-      return JSON.parse(window.localStorage.getItem('cl_board_collapsed') || '[]');
+      if (typeof window === 'undefined') return ['__DONE'];
+      const stored = window.localStorage.getItem('cl_board_collapsed');
+      return stored ? JSON.parse(stored) : ['__DONE'];
     } catch {
-      return [];
+      return ['__DONE'];
     }
   });
   const toggleStage = (stage: string) =>
@@ -230,6 +233,12 @@ export default function AdminPage() {
   // assignee on the card. Optimistic; reverts to server truth if the PATCH fails.
   async function patchMatter(id: string, patch: Record<string, unknown>) {
     setBoardBusyId(id);
+    if ('status' in patch) {
+      const prev = board.find((m) => m.id === id);
+      const wasClosed = prev?.status === 'CLOSED';
+      const isClosed = patch.status === 'CLOSED';
+      if (wasClosed !== isClosed) setDoneTotal((n) => Math.max(0, n + (isClosed ? 1 : -1)));
+    }
     setBoard((b) =>
       b.map((m) => {
         if (m.id !== id) return m;
@@ -247,6 +256,11 @@ export default function AdminPage() {
         // Figure edits from the matter drawer — keep the card's date chip in step.
         if ('exchangeTargetDate' in patch) next.exchangeTargetDate = patch.exchangeTargetDate || null;
         if ('completionTargetDate' in patch) next.completionTargetDate = patch.completionTargetDate || null;
+        // Pile moves (Up next / active / Completed) — the card re-renders into its pile.
+        if ('status' in patch) {
+          next.status = patch.status;
+          next.updatedAt = new Date().toISOString(); // freshly completed sorts to the top of the pile
+        }
         return next;
       })
     );
@@ -302,7 +316,9 @@ export default function AdminPage() {
       if (tab === 'board') {
         setBoardLoading(true);
         try {
-          setBoard((await api<{ matters: any[] }>('/admin/board')).matters);
+          const b = await api<{ matters: any[]; doneTotal?: number }>('/admin/board');
+          setBoard(b.matters);
+          setDoneTotal(b.doneTotal ?? 0);
           // Members power the on-card "assign" dropdown (the board is editable in place).
           api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
         } finally {
@@ -896,6 +912,93 @@ export default function AdminPage() {
                   if (boardSort === 'ref') return String(a.matterRef || '').localeCompare(String(b.matterRef || ''));
                   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); // most recently updated first
                 });
+              // Three piles: work in flight (stage columns), Up next (instructed, not
+              // started) and Completed (done — capped server-side so it never bloats).
+              const active = visible.filter((m) => m.status !== 'BACKLOG' && m.status !== 'CLOSED');
+              const backlogPile = visible.filter((m) => m.status === 'BACKLOG');
+              const donePile = visible
+                .filter((m) => m.status === 'CLOSED')
+                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+              // Dropping a card from a pile onto a stage reactivates it there.
+              const dropOnStage = (stage: string) => {
+                if (!draggingId) return;
+                const dragged = board.find((x) => x.id === draggingId);
+                if (dragged) {
+                  const parked = dragged.status === 'BACKLOG' || dragged.status === 'CLOSED';
+                  if (parked) patchMatter(draggingId, { stage, status: 'OPEN' });
+                  else if ((dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
+                }
+                setDraggingId(null);
+              };
+              // A side pile ("Up next" / "Completed") — drop target, collapsible, compact cards.
+              const pileColumn = (key: string, label: string, pile: any[], status: string, accent: string, countLabel?: string) => {
+                const collapsed = collapsedStages.includes(key);
+                const onDrop = (e: React.DragEvent) => {
+                  e.preventDefault();
+                  if (draggingId) {
+                    const dragged = board.find((x) => x.id === draggingId);
+                    if (dragged && dragged.status !== status) patchMatter(draggingId, { status });
+                  }
+                  setDraggingId(null);
+                };
+                if (collapsed) {
+                  return (
+                    <div
+                      key={key}
+                      onClick={() => toggleStage(key)}
+                      onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
+                      onDrop={onDrop}
+                      title={`${label} — ${countLabel ?? pile.length} (click to expand)`}
+                      style={{ flex: '0 0 34px', alignSelf: 'stretch', minHeight: 120, background: draggingId ? '#eef2ff' : accent, border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
+                    >
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{countLabel ?? pile.length}</span>
+                      <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 0.3 }}>{label}</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={key} style={{ flex: '1 1 0', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
+                      <span onClick={() => toggleStage(key)} title={`${label} — click to collapse`} style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{label}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{countLabel ?? pile.length}</span>
+                    </div>
+                    <div
+                      onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
+                      onDrop={onDrop}
+                      style={{ background: draggingId ? '#eef2ff' : accent, border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, padding: 8, minHeight: 60, transition: 'background .12s' }}
+                    >
+                      {pile.length === 0 ? (
+                        <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
+                      ) : (
+                        pile.map((m) => (
+                          <div
+                            key={m.id}
+                            draggable
+                            onDragStart={() => setDraggingId(m.id)}
+                            onDragEnd={() => setDraggingId(null)}
+                            style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)', cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                          >
+                            <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
+                              <strong style={{ display: 'block', fontSize: 13, color: status === 'CLOSED' ? '#64748b' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
+                              {m.propertyAddress && (
+                                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                              )}
+                              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                                {status === 'CLOSED'
+                                  ? `completed ${new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
+                                  : m.assignee || 'Unassigned'}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {status === 'CLOSED' && doneTotal > pile.length && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: '4px 0 2px' }}>+ {doneTotal - pile.length} older</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              };
               return (
                 <>
                   {/* Filters */}
@@ -930,10 +1033,11 @@ export default function AdminPage() {
                     {boardLoading && <span style={spinnerStyle} />}
                   </div>
 
-                  {/* Kanban */}
+                  {/* Kanban — flanked by the Up next (not started) and Completed piles */}
                   <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
+                    {pileColumn('__BACKLOG', 'Up next', backlogPile, 'BACKLOG', '#fdf6ec')}
                     {STAGE_ORDER.map((stage) => {
-                      const col = visible.filter((m) => (m.stage || 'INSTRUCTION') === stage);
+                      const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       const collapsed = collapsedStages.includes(stage);
                       if (collapsed) {
                         // Narrow strip — still a drop target, click to expand.
@@ -944,11 +1048,7 @@ export default function AdminPage() {
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
                             onDrop={(e) => {
                               e.preventDefault();
-                              if (draggingId) {
-                                const dragged = board.find((x) => x.id === draggingId);
-                                if (dragged && (dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
-                              }
-                              setDraggingId(null);
+                              dropOnStage(stage);
                             }}
                             title={`${STAGE_LABEL[stage] ?? stage} — ${col.length} matter${col.length === 1 ? '' : 's'} (click to expand)`}
                             style={{ flex: '0 0 34px', alignSelf: 'stretch', minHeight: 120, background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
@@ -972,11 +1072,7 @@ export default function AdminPage() {
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
                             onDrop={(e) => {
                               e.preventDefault();
-                              if (draggingId) {
-                                const dragged = board.find((x) => x.id === draggingId);
-                                if (dragged && (dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
-                              }
-                              setDraggingId(null);
+                              dropOnStage(stage);
                             }}
                             style={{ background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, padding: 8, minHeight: 60, transition: 'background .12s' }}
                           >
@@ -1063,6 +1159,7 @@ export default function AdminPage() {
                         </div>
                       );
                     })}
+                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#f0fdf4', doneTotal ? String(doneTotal) : undefined)}
                   </div>
                 </>
               );
