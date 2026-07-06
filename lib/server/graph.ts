@@ -198,6 +198,19 @@ export async function getMessage(userId: string, messageId: string): Promise<any
  * fresh subject makes Outlook treat the draft as a brand-new email rather than a
  * reply. We only append the matter's case-ref token (for matching) when given.
  */
+/**
+ * Send an EXISTING draft from the user's mailbox — the human has reviewed it in the
+ * web app and clicked Send. Refuses anything that isn't a draft, so a stale id can
+ * never re-send a live message.
+ */
+export async function sendDraftMessage(userId: string, messageId: string): Promise<{ subject: string | null }> {
+  const client = await graphClientForUser(userId);
+  const msg = await client.api(`/me/messages/${messageId}`).select('isDraft,subject').get();
+  if (!msg?.isDraft) throw new Error('That message is no longer a draft — it may already have been sent.');
+  await client.api(`/me/messages/${messageId}/send`).post({});
+  return { subject: msg.subject ?? null };
+}
+
 export async function createReplyDraft(
   userId: string,
   messageId: string,

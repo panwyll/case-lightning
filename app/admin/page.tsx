@@ -207,24 +207,42 @@ export default function AdminPage() {
       .then(setMywork)
       .catch(() => setMywork({ items: [], team: false, isAdmin: false, scope: 'mine' }));
   }, []);
-  // The primary action on a chase is the EMAIL: one click drafts the chaser into
-  // Outlook Drafts server-side, then the button becomes the link to it.
-  const [chaserLinks, setChaserLinks] = useState<Record<string, string | 'busy'>>({});
+  // The primary action on a chase is the EMAIL: one click drafts the chaser server-
+  // side, the draft appears inline for review, and Send fires it — all without
+  // leaving the web app. (It also sits in Outlook Drafts, so either surface works.)
+  type ChaserDraft = 'busy' | { id: string; webLink: string | null; subject: string; bodyHtml: string };
+  const [chaserDrafts, setChaserDrafts] = useState<Record<string, ChaserDraft>>({});
+  const [sendingId, setSendingId] = useState<string | null>(null);
   async function draftChaser(item: any) {
     const key = item.id;
-    setChaserLinks((s) => ({ ...s, [key]: 'busy' }));
+    setChaserDrafts((s) => ({ ...s, [key]: 'busy' }));
     try {
-      const r = await api<{ webLink: string | null }>('/worklist/draft-chaser', {
+      const r = await api<{ id: string; webLink: string | null; subject: string; bodyHtml: string }>('/worklist/draft-chaser', {
         method: 'POST',
         body: JSON.stringify({ threadId: item.threadId ?? item.id }),
       });
-      setChaserLinks((s) => ({ ...s, [key]: r.webLink || 'https://outlook.office.com/mail/drafts' }));
+      setChaserDrafts((s) => ({ ...s, [key]: r }));
     } catch (e: any) {
-      setChaserLinks((s) => {
+      setChaserDrafts((s) => {
         const { [key]: _drop, ...rest } = s;
         return rest;
       });
       setStatus(e?.message || 'Could not draft the chaser.');
+    }
+  }
+  async function sendFromWeb(item: any, messageId: string) {
+    setSendingId(item.id);
+    try {
+      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId, itemId: item.id }) });
+      setMywork((s) => (s ? { ...s, items: s.items.filter((x) => x.id !== item.id) } : s));
+      setChaserDrafts((s) => {
+        const { [item.id]: _drop, ...rest } = s;
+        return rest;
+      });
+    } catch (e: any) {
+      setStatus(e?.message || 'Could not send — the draft may have changed. Try from Outlook Drafts.');
+    } finally {
+      setSendingId(null);
     }
   }
   async function myworkAction(item: any, action: 'snooze' | 'dismiss') {
@@ -1434,7 +1452,8 @@ export default function AdminPage() {
           const drafts = mywork.items.filter((i) => i.kind === 'DRAFT_READY');
           const chases = mywork.items.filter((i) => i.kind === 'CHASE');
           const row = (item: any, accent: string) => (
-            <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderTop: '1px solid #f1f5f9', opacity: myworkBusy === item.id ? 0.5 : 1 }}>
+            <div key={item.id} style={{ borderTop: '1px solid #f1f5f9' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', opacity: myworkBusy === item.id ? 0.5 : 1 }}>
               <span style={{ width: 8, height: 8, borderRadius: 999, background: accent, marginTop: 6, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{item.title}</div>
@@ -1447,27 +1466,58 @@ export default function AdminPage() {
                   {item.ageDays}d
                 </span>
               )}
-              {item.kind === 'CHASE' &&
-                (chaserLinks[item.id] && chaserLinks[item.id] !== 'busy' ? (
-                  <a href={chaserLinks[item.id] as string} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', color: '#16a34a', fontWeight: 700, borderColor: '#bbf7d0', background: '#f0fdf4', flexShrink: 0 }}>
-                    Open draft ↗
-                  </a>
-                ) : (
-                  <button
-                    onClick={() => draftChaser(item)}
-                    disabled={chaserLinks[item.id] === 'busy'}
-                    style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0, opacity: chaserLinks[item.id] === 'busy' ? 0.6 : 1 }}
-                  >
-                    {chaserLinks[item.id] === 'busy' ? 'Drafting…' : '✍️ Draft chaser'}
-                  </button>
-                ))}
+              {item.kind === 'CHASE' && !chaserDrafts[item.id] && (
+                <button
+                  onClick={() => draftChaser(item)}
+                  style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0 }}
+                >
+                  ✍️ Draft chaser
+                </button>
+              )}
+              {item.kind === 'CHASE' && chaserDrafts[item.id] === 'busy' && (
+                <span style={{ fontSize: 12, color: '#5A27E0', fontWeight: 700, flexShrink: 0 }}>Drafting…</span>
+              )}
+              {item.kind === 'DRAFT_READY' && item.graphMessageId && (
+                <button
+                  onClick={() => { if (window.confirm(`Send “${item.title}”? Review it first via Outlook Drafts if unsure.`)) sendFromWeb(item, item.graphMessageId); }}
+                  disabled={sendingId === item.id}
+                  style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0, opacity: sendingId === item.id ? 0.6 : 1 }}
+                >
+                  {sendingId === item.id ? 'Sending…' : 'Send ▸'}
+                </button>
+              )}
               {item.kind === 'DRAFT_READY' && (
-                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, textDecoration: 'none', flexShrink: 0 }}>
-                  Open draft ↗
+                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', flexShrink: 0 }}>
+                  Open ↗
                 </a>
               )}
               <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
               <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
+            </div>
+            {/* Inline review-and-send: the drafted chaser, right here — no detour. */}
+            {typeof chaserDrafts[item.id] === 'object' && (() => {
+              const d = chaserDrafts[item.id] as Exclude<ChaserDraft, 'busy'>;
+              return (
+                <div style={{ margin: '0 0 12px', border: '1px solid #ddd2f7', background: '#faf8ff', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{d.subject}</div>
+                  <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.55, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }} dangerouslySetInnerHTML={{ __html: d.bodyHtml }} />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                    <button
+                      onClick={() => sendFromWeb(item, d.id)}
+                      disabled={sendingId === item.id}
+                      style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, opacity: sendingId === item.id ? 0.6 : 1 }}
+                    >
+                      {sendingId === item.id ? 'Sending…' : 'Send ▸'}
+                    </button>
+                    {d.webLink && (
+                      <a href={d.webLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Edit in Outlook ↗</a>
+                    )}
+                    <button onClick={() => setChaserDrafts((s) => { const { [item.id]: _x, ...rest } = s; return rest; })} style={{ ...clearBtn, border: 'none', background: 'transparent' }}>Discard preview</button>
+                    <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Also saved in your Outlook Drafts.</span>
+                  </div>
+                </div>
+              );
+            })()}
             </div>
           );
           return (

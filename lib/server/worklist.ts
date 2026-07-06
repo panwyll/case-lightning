@@ -84,7 +84,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       thread_id: string | null;
       created_at: string;
     }>(
-      `select w.id, w.matter_id, w.title, w.detail, w.thread_id, w.created_at,
+      `select w.id, w.matter_id, w.title, w.detail, w.thread_id, w.graph_message_id, w.created_at,
               m.matter_ref, m.property_address
          from worklist_item w
          join matter m on m.id = w.matter_id
@@ -107,6 +107,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       detail: r.detail,
       ageDays: Math.floor((now - new Date(r.created_at).getTime()) / 86_400_000),
       threadId: r.thread_id,
+      graphMessageId: (r as any).graph_message_id ?? null,
     }));
   } catch {
     /* not migrated yet */

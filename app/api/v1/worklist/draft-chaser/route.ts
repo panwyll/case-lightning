@@ -74,7 +74,9 @@ export async function POST(req: NextRequest) {
       payload: { source: 'WORKLIST_CHASER', threadId },
     });
 
-    return ok({ webLink: created.webLink, subject: created.subject });
+    // Return the content too, so the web app can show the draft for review and
+    // send it in place — no detour through Outlook required.
+    return ok({ id: created.id, webLink: created.webLink, subject: created.subject, bodyHtml: draft.bodyHtml });
   } catch (error) {
     return fail(error);
   }
