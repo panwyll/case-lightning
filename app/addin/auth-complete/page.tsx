@@ -42,9 +42,10 @@ export default function AuthComplete() {
     }
 
     // If we're not inside an Office dialog after a moment, this is a normal
-    // browser visit — go to the taskpane.
+    // browser sign-in (no add-in) — the session cookie is already set, so land
+    // on the web app.
     const fallback = setTimeout(() => {
-      if (!done) window.location.replace('/addin/taskpane');
+      if (!done) window.location.replace('/admin');
     }, 2500);
     return () => clearTimeout(fallback);
   }, []);

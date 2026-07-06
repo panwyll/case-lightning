@@ -6,6 +6,7 @@ import { transaction } from '@/lib/server/db';
 import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/session';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { syncFirmSeats } from '@/lib/server/billing';
+import { ensureSubscription } from '@/lib/server/subscriptions';
 import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -115,6 +116,11 @@ export async function GET(req: NextRequest) {
     // A new colleague just took a seat → reconcile the Firm per-seat overage. Fire-and-
     // forget: a Stripe hiccup must never block sign-in (no-op off Firm / under the cap).
     if (user.created) void syncFirmSeats(tenant.id).catch(() => {});
+
+    // Arm (or self-heal) the auto-triage inbox subscription right away. Add-in users get
+    // this on taskpane open, but a web-only sign-in has no taskpane — without this they'd
+    // wait for the daily cron. ensureSubscription never throws; still guard the import path.
+    void ensureSubscription(user.id, tenant.id).catch(() => {});
 
     const session = await signSession(user.id);
     // Land on a tiny completion page. The token rides in the URL fragment (never

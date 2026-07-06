@@ -57,11 +57,12 @@ function fmtDuration(mins: number): string {
   return `${d < 10 ? d.toFixed(1) : Math.round(d)} day${d >= 2 ? 's' : ''}`;
 }
 
-type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
+  mywork: { label: 'My work', subtitle: 'Replies drafted and waiting in your Outlook Drafts, and threads that need a chase.' },
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
   board: { label: 'Matter board', subtitle: '' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
@@ -78,13 +79,29 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
-  { label: 'Account', tabs: ['billing'] },
-  { label: 'Oversight', tabs: ['board', 'workload'] },
+  { label: 'Work', tabs: ['mywork', 'board', 'workload'] },
   { label: 'Automation & templates', tabs: ['templates', 'docpacks', 'playbooks', 'rules'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
-  { label: 'Help', tabs: ['help'] },
+  { label: 'Account', tabs: ['billing', 'help'] },
 ];
+
+// Small icon per tab — the nav reads at a glance, Monday/Jira style.
+const TAB_ICON: Record<TabKey, string> = {
+  mywork: '☑️',
+  board: '🗂️',
+  workload: '⚖️',
+  templates: '✉️',
+  docpacks: '📄',
+  playbooks: '⚡',
+  rules: '🤖',
+  team: '👥',
+  policy: '🛡️',
+  actions: '🔧',
+  audit: '🕘',
+  billing: '💳',
+  help: '💬',
+};
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
@@ -168,8 +185,31 @@ export default function AdminPage() {
   // non-admin. Gating on the async /me would otherwise pop the sidebar from 2 → all.
   const visibleTabs = me && !isAdmin ? TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k)) : TAB_KEYS;
 
-  const [tab, setTab] = useState<TabKey>('billing');
+  const [tab, setTab] = useState<TabKey>('mywork');
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
+  // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
+  // so the web app is operable day-to-day without the add-in.
+  const [mywork, setMywork] = useState<{ items: any[]; team: boolean; isAdmin: boolean; scope: string } | null>(null);
+  const [myworkBusy, setMyworkBusy] = useState<string | null>(null);
+  const loadMywork = useCallback((scope?: string) => {
+    api<{ items: any[]; team: boolean; isAdmin: boolean; scope: string }>(`/worklist${scope ? `?scope=${scope}` : ''}`)
+      .then(setMywork)
+      .catch(() => setMywork({ items: [], team: false, isAdmin: false, scope: 'mine' }));
+  }, []);
+  async function myworkAction(item: any, action: 'snooze' | 'dismiss') {
+    setMyworkBusy(item.id);
+    try {
+      await api('/worklist', {
+        method: 'POST',
+        body: JSON.stringify({ kind: item.kind, id: item.kind === 'CHASE' ? item.threadId ?? item.id : item.id, action, days: 7 }),
+      });
+      setMywork((s) => (s ? { ...s, items: s.items.filter((x) => x.id !== item.id) } : s));
+    } catch {
+      loadMywork(mywork?.scope);
+    } finally {
+      setMyworkBusy(null);
+    }
+  }
   // Capture a token from the URL fragment (desktop deep-link), load the user, and
   // open the tab named in ?tab= so links from the add-in land in the right place.
   useEffect(() => {
@@ -185,11 +225,11 @@ export default function AdminPage() {
     api('/billing/account').then(setBilling).catch(() => {});
     const t = new URLSearchParams(window.location.search).get('tab');
     if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as TabKey);
-    else setTab('billing');
+    else setTab('mywork');
   }, []);
   // Never leave a non-admin parked on an admin-only tab.
   useEffect(() => {
-    if (me && !isAdmin && ADMIN_ONLY.includes(tab)) setTab('billing');
+    if (me && !isAdmin && ADMIN_ONLY.includes(tab)) setTab('mywork');
   }, [me, isAdmin, tab]);
   function go(t: TabKey) {
     setTab(t);
@@ -313,6 +353,7 @@ export default function AdminPage() {
         setReferrals(await api('/referrals'));
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
+      if (tab === 'mywork') loadMywork();
       if (tab === 'board') {
         setBoardLoading(true);
         try {
@@ -609,13 +650,16 @@ export default function AdminPage() {
   const filterSelect: React.CSSProperties = { padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13, background: '#fff', color: '#0f172a' };
   const clearBtn: React.CSSProperties = { padding: '5px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12, background: '#fff', color: '#475569', cursor: 'pointer' };
   const navItem = (active: boolean): React.CSSProperties => ({
-    display: 'block',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 9,
     width: '100%',
     textAlign: 'left',
     padding: '7px 10px',
     borderRadius: 8,
     border: 'none',
-    background: active ? '#ede9fe' : 'transparent',
+    // No inline background when inactive so the .adm-nav:hover class can show through.
+    ...(active ? { background: '#ede9fe', boxShadow: 'inset 3px 0 0 #5A27E0' } : {}),
     color: active ? '#5A27E0' : '#334155',
     fontWeight: active ? 700 : 500,
     fontSize: 13,
@@ -644,41 +688,77 @@ export default function AdminPage() {
       </div>
     );
     return (
-      <div style={{ background: '#f8fafc', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#f6f7fb', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <style>{`@keyframes adm-spin{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ textAlign: 'center', color: '#475569' }}>
-          {brand}
-          {meLoading ? (
+        {meLoading ? (
+          <div style={{ textAlign: 'center', color: '#475569' }}>
+            {brand}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#64748b' }}>
               <span style={spinnerStyle} /> Logging you in…
             </div>
-          ) : (
-            <>
-              <h2 style={{ fontSize: 18, margin: '0 0 6px', color: '#0f172a' }}>Please sign in</h2>
-              <p style={{ fontSize: 13, margin: '0 0 16px' }}>Open the CONVEYi add-in in Outlook and connect your Microsoft 365 account, then return here.</p>
-              <a href="/api/v1/auth/login" style={{ ...btnPrimary, textDecoration: 'none', display: 'inline-block' }}>Sign in</a>
-            </>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 16, boxShadow: '0 4px 24px rgba(16,24,40,0.07)', padding: '34px 36px', maxWidth: 420, width: '100%' }}>
+            {brand}
+            <h2 style={{ fontSize: 21, margin: '0 0 8px', color: '#0f172a', letterSpacing: -0.2 }}>Connect your inbox</h2>
+            <p style={{ fontSize: 13.5, color: '#475569', lineHeight: 1.55, margin: '0 0 14px' }}>
+              Sign in with the Microsoft 365 account you do conveyancing from. Nothing to install — CONVEYi starts working on your mail straight away:
+            </p>
+            <ul style={{ margin: '0 0 18px', paddingLeft: 0, listStyle: 'none' }}>
+              {[
+                ['📥', 'Incoming email matched to the right matter and tagged'],
+                ['✍️', 'Replies drafted into your Outlook Drafts — nothing sends itself'],
+                ['🗂️', 'Every case tracked on the matter board, chases never forgotten'],
+              ].map(([ic, txt]) => (
+                <li key={txt} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, color: '#334155', marginBottom: 8 }}>
+                  <span aria-hidden style={{ flexShrink: 0 }}>{ic}</span>
+                  <span>{txt}</span>
+                </li>
+              ))}
+            </ul>
+            <a href="/api/v1/auth/login" style={{ ...btnPrimary, textDecoration: 'none', display: 'block', textAlign: 'center' }}>Connect Microsoft 365</a>
+            <p style={{ fontSize: 12, color: '#94a3b8', margin: '14px 0 0', lineHeight: 1.5 }}>
+              Also using the Outlook add-in? Same account, same firm — sign in wherever suits and everything stays in step.
+            </p>
+          </div>
+        )}
       </div>
     );
   }
 
+  const initials = (me.displayName || me.email || '?')
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w: string) => w[0]?.toUpperCase())
+    .join('');
+
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ background: '#f6f7fb', minHeight: '100vh' }}>
+      {/* Shell-wide styling that inline styles can't express: hover states, motion, scrollbars. */}
+      <style>{`
+        @keyframes adm-spin{to{transform:rotate(360deg)}}
+        .adm-nav{transition:background .12s ease,color .12s ease}
+        .adm-nav:hover{background:#eef1f6}
+        .adm-bcard{box-shadow:0 1px 2px rgba(16,24,40,0.05);transition:box-shadow .13s ease,transform .13s ease}
+        .adm-bcard:hover{box-shadow:0 5px 14px rgba(16,24,40,0.11);transform:translateY(-1px)}
+        ::-webkit-scrollbar{height:8px;width:8px}
+        ::-webkit-scrollbar-thumb{background:#d7dce3;border-radius:999px}
+        ::-webkit-scrollbar-track{background:transparent}
+      `}</style>
       {/* Sticky brand bar */}
       <div style={{ background: '#fff', borderBottom: '1px solid #e8eaf0', position: 'sticky', top: 0, zIndex: 5 }}>
-        <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, padding: '13px 20px' }}>
+        <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px' }}>
           <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
             <rect width="32" height="32" rx="7" fill="#5A27E0" />
             <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
           </svg>
           <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
-          <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>Admin</span>
           {me && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
               <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
+              <span title={me.email} style={{ width: 30, height: 30, borderRadius: 999, background: '#ede9fe', color: '#5A27E0', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials}</span>
             </div>
           )}
         </div>
@@ -694,7 +774,10 @@ export default function AdminPage() {
               <div key={grp.label} style={{ marginBottom: 22 }}>
                 <div style={navGroupLabel}>{grp.label}</div>
                 {items.map((k) => (
-                  <button key={k} style={navItem(tab === k)} onClick={() => go(k)}>{TAB_META[k].label}</button>
+                  <button key={k} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
+                    <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center', filter: tab === k ? 'none' : 'grayscale(0.4)', opacity: tab === k ? 1 : 0.75 }}>{TAB_ICON[k]}</span>
+                    {TAB_META[k].label}
+                  </button>
                 ))}
               </div>
             );
@@ -786,7 +869,7 @@ export default function AdminPage() {
                 </div>
                 <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
                   {billing.plan === 'enterprise'
-                    ? 'Colleagues join by opening the CONVEYi add-in and signing in with their Microsoft 365 account. Your first 3 seats are included; extra seats are £59/month each.'
+                    ? 'Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in, or just at this web address. Your first 3 seats are included; extra seats are £59/month each.'
                     : 'Solo and Pro are single-seat. Firm opens up the matter board, workload and assignment, with 3 seats included — upgrade above.'}
                 </p>
               </div>
@@ -975,7 +1058,8 @@ export default function AdminPage() {
                             draggable
                             onDragStart={() => setDraggingId(m.id)}
                             onDragEnd={() => setDraggingId(null)}
-                            style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)', cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                            className="adm-bcard"
+                            style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
                           >
                             <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
                               <strong style={{ display: 'block', fontSize: 13, color: status === 'CLOSED' ? '#64748b' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
@@ -1088,7 +1172,8 @@ export default function AdminPage() {
                                     draggable
                                     onDragStart={() => setDraggingId(m.id)}
                                     onDragEnd={() => setDraggingId(null)}
-                                    style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)', cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                                    className="adm-bcard"
+                                    style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
                                   >
                                     {/* Header opens the full matter detail — files, to-do, timeline. */}
                                     <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
@@ -1174,6 +1259,88 @@ export default function AdminPage() {
             onClose={() => setOpenMatter(null)}
           />
         )}
+
+        {tab === 'mywork' && (() => {
+          if (!mywork) {
+            return (
+              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, color: '#64748b' }}>
+                <span style={spinnerStyle} /> Loading your worklist…
+              </div>
+            );
+          }
+          const drafts = mywork.items.filter((i) => i.kind === 'DRAFT_READY');
+          const chases = mywork.items.filter((i) => i.kind === 'CHASE');
+          const row = (item: any, accent: string) => (
+            <div key={item.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', borderTop: '1px solid #f1f5f9', opacity: myworkBusy === item.id ? 0.5 : 1 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: accent, marginTop: 6, flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{item.title}</div>
+                <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 2 }}>
+                  {[item.matterRef, item.propertyAddress, item.detail].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              {Number(item.ageDays) > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: Number(item.ageDays) >= 7 ? '#b91c1c' : '#64748b', background: Number(item.ageDays) >= 7 ? '#fef2f2' : '#f1f5f9', borderRadius: 999, padding: '2px 8px', flexShrink: 0, marginTop: 2 }}>
+                  {item.ageDays}d
+                </span>
+              )}
+              <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
+              <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
+            </div>
+          );
+          return (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                {mywork.team && mywork.isAdmin && (
+                  <div style={{ display: 'flex', gap: 2, background: '#eef1f5', borderRadius: 999, padding: 3 }}>
+                    {(['mine', 'team'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => loadMywork(s)}
+                        style={{ border: 'none', borderRadius: 999, padding: '5px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: mywork.scope === s ? '#fff' : 'transparent', color: mywork.scope === s ? '#5A27E0' : '#64748b', boxShadow: mywork.scope === s ? '0 1px 3px rgba(16,24,40,0.12)' : 'none' }}
+                      >
+                        {s === 'mine' ? 'My work' : 'Whole firm'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', marginLeft: 'auto' }}>
+                  Open Outlook Drafts ↗
+                </a>
+              </div>
+
+              {mywork.items.length === 0 && (
+                <div style={{ ...card, textAlign: 'center', padding: 40 }}>
+                  <div style={{ fontSize: 30, marginBottom: 8 }}>🎉</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>All caught up</div>
+                  <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>No drafts waiting and nothing to chase. New work appears here as email comes in.</p>
+                </div>
+              )}
+
+              {drafts.length > 0 && (
+                <div style={card}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 14, color: '#0f172a' }}>Ready to send</strong>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 8px' }}>{drafts.length}</span>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— replies already drafted, sitting in Outlook Drafts for review</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>{drafts.map((i) => row(i, '#5A27E0'))}</div>
+                </div>
+              )}
+
+              {chases.length > 0 && (
+                <div style={card}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 14, color: '#0f172a' }}>To chase</strong>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }}>{chases.length}</span>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— you sent the last message and nobody has replied</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>{chases.map((i) => row(i, '#f59e0b'))}</div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {tab === 'workload' && (
           <div style={card}>
