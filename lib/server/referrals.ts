@@ -138,6 +138,7 @@ export async function setReferrer(refereeAccountId: string, referrerAccountId: s
 export async function accrueCommission(args: {
   refereeAccountId: string;
   stripeInvoiceId: string;
+  amountPaidPennies?: number | null;
   periodStart?: number | null;
   periodEnd?: number | null;
 }): Promise<void> {
@@ -146,6 +147,14 @@ export async function accrueCommission(args: {
     [args.refereeAccountId]
   );
   if (!edge) return;
+
+  // Commission is a share of what the referred firm actually paid this invoice, capped —
+  // so it scales down on low tiers (a flat £50 would overpay a £39 Solo referee) and up
+  // with Firm seat overage, while never exceeding the cap. A £0 invoice (trial) accrues
+  // nothing; you only ever pay commission out of revenue you've collected.
+  const paid = Math.max(0, args.amountPaidPennies ?? 0);
+  const amount = Math.min(config.referralCommissionPennies, Math.round(paid * config.referralCommissionRate));
+  if (amount <= 0) return;
 
   await query(
     `insert into commission_ledger
@@ -158,7 +167,7 @@ export async function accrueCommission(args: {
       args.stripeInvoiceId,
       args.periodStart ? new Date(args.periodStart * 1000).toISOString() : null,
       args.periodEnd ? new Date(args.periodEnd * 1000).toISOString() : null,
-      config.referralCommissionPennies,
+      amount,
       firstOfNextMonth(),
     ]
   );

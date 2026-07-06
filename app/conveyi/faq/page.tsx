@@ -32,7 +32,7 @@ const faqs = [
   },
   {
     q: 'How does the referral scheme work?',
-    a: 'It’s the most generous in legal software: refer another firm and you earn £50 every month they remain a customer — recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
+    a: 'It’s the most generous in legal software: refer another firm and you earn a quarter of what they pay — up to £50 — every month they remain a customer, recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
   },
   {
     q: 'What’s the difference between the Solo, Pro and Firm plans?',

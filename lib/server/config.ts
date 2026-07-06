@@ -126,8 +126,12 @@ export const config = {
   emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
   emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
   emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
-  // Recurring single-level referral commission, in pennies (£50 = 5000).
-  referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'),
+  // Recurring single-level referral commission. Now a share of what the *referred* firm
+  // actually pays each invoice, capped — so it never exceeds a sensible cut of low tiers
+  // (a flat £50 would overpay against Solo at £39). Commission = min(cap, rate × invoice).
+  // rate 0.25 + cap £50 → Solo ≈ £10, Pro ≈ £50 (hits cap), Firm = £50.
+  referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
+  referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
 
   // Owner-only internal analytics dashboard. The /internal page and its metrics

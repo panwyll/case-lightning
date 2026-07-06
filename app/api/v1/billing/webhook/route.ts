@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
           await accrueCommission({
             refereeAccountId: account.id,
             stripeInvoiceId: inv.id,
+            amountPaidPennies: inv.amount_paid ?? null,
             periodStart: line?.period?.start ?? null,
             periodEnd: line?.period?.end ?? null,
           });

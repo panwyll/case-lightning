@@ -774,7 +774,7 @@ export default function AdminPage() {
                   )}
                 </div>
                 <p style={{ color: '#64748b', fontSize: 13, margin: '0 0 8px' }}>
-                  Earn {money(billing.commissionPennies, billing.currency)}/month for every firm you refer, for as long as they stay subscribed.
+                  Earn up to {money(billing.commissionPennies, billing.currency)}/month for every firm you refer (a quarter of what they pay), for as long as they stay subscribed.
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   <input readOnly value={billing.referralLink} onFocus={(e) => e.currentTarget.select()} style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} />

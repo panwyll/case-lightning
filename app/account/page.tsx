@@ -257,8 +257,8 @@ export default function AccountPage() {
           <span className="text-sm text-ink-soft">credit balance</span>
         </div>
         <p className="mt-1 text-sm text-ink-soft">
-          Earn {money(summary.commissionPennies, summary.currency)}/month for every firm you refer, for as long as they
-          stay. {summary.referrals.active} active of {summary.referrals.total} referred.
+          Earn up to {money(summary.commissionPennies, summary.currency)}/month for every firm you refer (a quarter of
+          what they pay), for as long as they stay. {summary.referrals.active} active of {summary.referrals.total} referred.
         </p>
 
         <div className="mt-3 flex flex-wrap gap-2">

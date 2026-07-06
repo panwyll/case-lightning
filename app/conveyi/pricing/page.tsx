@@ -124,9 +124,9 @@ export default function PricingPage() {
 
         <div className="mx-auto mt-10 max-w-6xl rounded-2xl border border-violet/20 bg-violet-soft p-6 text-center md:p-8">
           <p className="font-serif text-2xl font-semibold tracking-tight">
-            Earn it back: <span className="text-violet">£50/month recurring</span> for every firm you refer.
+            Earn it back: <span className="text-violet">up to £50/month recurring</span> for every firm you refer.
           </p>
-          <p className="mt-2 text-ink-soft">Paid as account credit, for as long as they stay a customer. A few referrals and your own subscription pays for itself.</p>
+          <p className="mt-2 text-ink-soft">A quarter of what each firm you refer pays, up to £50 a month — as account credit, for as long as they stay a customer. A few referrals and your own subscription pays for itself.</p>
         </div>
 
         <p className="mx-auto mt-8 max-w-6xl text-center text-sm text-ink-soft">
