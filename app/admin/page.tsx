@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import MatterDrawer from './MatterDrawer';
 
 interface MatterHit {
   id: string;
@@ -207,6 +208,7 @@ export default function AdminPage() {
   const [boardSort, setBoardSort] = useState<'stage_age' | 'completion' | 'ref' | 'updated'>('stage_age');
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [boardBusyId, setBoardBusyId] = useState<string | null>(null);
+  const [openMatter, setOpenMatter] = useState<any | null>(null);
 
   // The board is editable in place — drag a card to another stage, or change its status /
   // assignee on the card. Optimistic; reverts to server truth if the PATCH fails.
@@ -936,14 +938,17 @@ export default function AdminPage() {
                                     onDragEnd={() => setDraggingId(null)}
                                     style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, boxShadow: '0 1px 2px rgba(16,24,40,0.04)', cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
                                   >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
-                                      <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{m.matterRef || 'Matter'}</strong>
-                                      {date && <span style={{ fontSize: 10.5, whiteSpace: 'nowrap', color: '#94a3b8', flexShrink: 0 }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                    {/* Header opens the full matter detail — files, to-do, timeline. */}
+                                    <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
+                                        <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{m.matterRef || 'Matter'}</strong>
+                                        {date && <span style={{ fontSize: 10.5, whiteSpace: 'nowrap', color: '#94a3b8', flexShrink: 0 }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                      </div>
+                                      {m.propertyAddress && (
+                                        <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                                      )}
                                     </div>
-                                    {m.propertyAddress && (
-                                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
-                                    )}
                                     {/* Editable in place — change owner / status without leaving the board. */}
                                     <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
                                       <select
@@ -987,6 +992,16 @@ export default function AdminPage() {
               );
             })()}
           </>
+        )}
+
+        {openMatter && (
+          <MatterDrawer
+            matter={openMatter}
+            api={api}
+            users={users}
+            onPatch={patchMatter}
+            onClose={() => setOpenMatter(null)}
+          />
         )}
 
         {tab === 'workload' && (
