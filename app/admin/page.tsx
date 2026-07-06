@@ -207,6 +207,26 @@ export default function AdminPage() {
       .then(setMywork)
       .catch(() => setMywork({ items: [], team: false, isAdmin: false, scope: 'mine' }));
   }, []);
+  // The primary action on a chase is the EMAIL: one click drafts the chaser into
+  // Outlook Drafts server-side, then the button becomes the link to it.
+  const [chaserLinks, setChaserLinks] = useState<Record<string, string | 'busy'>>({});
+  async function draftChaser(item: any) {
+    const key = item.id;
+    setChaserLinks((s) => ({ ...s, [key]: 'busy' }));
+    try {
+      const r = await api<{ webLink: string | null }>('/worklist/draft-chaser', {
+        method: 'POST',
+        body: JSON.stringify({ threadId: item.threadId ?? item.id }),
+      });
+      setChaserLinks((s) => ({ ...s, [key]: r.webLink || 'https://outlook.office.com/mail/drafts' }));
+    } catch (e: any) {
+      setChaserLinks((s) => {
+        const { [key]: _drop, ...rest } = s;
+        return rest;
+      });
+      setStatus(e?.message || 'Could not draft the chaser.');
+    }
+  }
   async function myworkAction(item: any, action: 'snooze' | 'dismiss') {
     setMyworkBusy(item.id);
     try {
@@ -1426,6 +1446,25 @@ export default function AdminPage() {
                 <span style={{ fontSize: 11, fontWeight: 700, color: Number(item.ageDays) >= 7 ? '#b91c1c' : '#64748b', background: Number(item.ageDays) >= 7 ? '#fef2f2' : '#f1f5f9', borderRadius: 999, padding: '2px 8px', flexShrink: 0, marginTop: 2 }}>
                   {item.ageDays}d
                 </span>
+              )}
+              {item.kind === 'CHASE' &&
+                (chaserLinks[item.id] && chaserLinks[item.id] !== 'busy' ? (
+                  <a href={chaserLinks[item.id] as string} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', color: '#16a34a', fontWeight: 700, borderColor: '#bbf7d0', background: '#f0fdf4', flexShrink: 0 }}>
+                    Open draft ↗
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => draftChaser(item)}
+                    disabled={chaserLinks[item.id] === 'busy'}
+                    style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0, opacity: chaserLinks[item.id] === 'busy' ? 0.6 : 1 }}
+                  >
+                    {chaserLinks[item.id] === 'busy' ? 'Drafting…' : '✍️ Draft chaser'}
+                  </button>
+                ))}
+              {item.kind === 'DRAFT_READY' && (
+                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, textDecoration: 'none', flexShrink: 0 }}>
+                  Open draft ↗
+                </a>
               )}
               <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
               <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
