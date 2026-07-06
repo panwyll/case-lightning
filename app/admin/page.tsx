@@ -63,7 +63,7 @@ type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'pla
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: 'Work in flight by stage, with a Completed pile so done matters leave the board. Drag cards anywhere — everything writes back.' },
+  board: { label: 'Matter board', subtitle: '' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
@@ -703,8 +703,8 @@ export default function AdminPage() {
 
         {/* Content */}
         <div style={{ flex: 1, minWidth: 300, maxWidth: tab === 'board' || tab === 'workload' || tab === 'audit' ? 'none' : 880 }}>
-        <h1 style={{ fontSize: 20, margin: '0 0 4px' }}>{TAB_META[tab].label}</h1>
-        <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>
+        <h1 style={{ fontSize: 20, margin: `0 0 ${TAB_META[tab].subtitle ? 4 : 18}px` }}>{TAB_META[tab].label}</h1>
+        {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
 
