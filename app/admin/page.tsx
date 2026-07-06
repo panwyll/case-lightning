@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 
 interface MatterHit {
@@ -109,6 +110,16 @@ const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'templates', 'docpacks', 'pla
 
 // Conveyancing stage model — the board's columns, in workflow order.
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
+// Each stage gets a hue — column headers and card accents key off it, Monday-style.
+const STAGE_COLOR: Record<string, string> = {
+  INSTRUCTION: '#8b5cf6',
+  CONTRACT_PACK: '#3b82f6',
+  SEARCHES_ENQUIRIES: '#06b6d4',
+  REVIEW_SIGNING: '#f59e0b',
+  EXCHANGE: '#ec4899',
+  COMPLETION: '#22c55e',
+  POST_COMPLETION: '#64748b',
+};
 const STAGE_LABEL: Record<string, string> = {
   INSTRUCTION: 'Instruction',
   CONTRACT_PACK: 'Contract pack',
@@ -251,6 +262,41 @@ export default function AdminPage() {
   const [openMatter, setOpenMatter] = useState<any | null>(null);
   const [boardQuery, setBoardQuery] = useState('');
   const [doneTotal, setDoneTotal] = useState(0);
+  // What each card shows — the board is customisable per browser, Jira-style.
+  const BOARD_PREF_DEFAULTS = { address: true, owner: true, dates: true, tasks: true, age: true, quickEdit: true };
+  const [boardPrefs, setBoardPrefs] = useState<Record<string, boolean>>(() => {
+    try {
+      if (typeof window === 'undefined') return BOARD_PREF_DEFAULTS;
+      return { ...BOARD_PREF_DEFAULTS, ...JSON.parse(window.localStorage.getItem('cl_board_prefs') || '{}') };
+    } catch {
+      return BOARD_PREF_DEFAULTS;
+    }
+  });
+  const [showDisplayMenu, setShowDisplayMenu] = useState(false);
+  const togglePref = (k: string) =>
+    setBoardPrefs((p) => {
+      const next = { ...p, [k]: !p[k] };
+      try { window.localStorage.setItem('cl_board_prefs', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  // Quick-add a matter straight into a column, Trello-style.
+  const [addingStage, setAddingStage] = useState<string | null>(null);
+  const [newMatterAddr, setNewMatterAddr] = useState('');
+  const [creatingMatter, setCreatingMatter] = useState(false);
+  // "/" focuses the board search from anywhere on the tab.
+  const boardSearchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (tab !== 'board') return;
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key === '/' && !(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement) && !(t instanceof HTMLSelectElement) && !t?.isContentEditable) {
+        e.preventDefault();
+        boardSearchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [tab]);
   // Collapsed kanban columns — remembered per browser so the layout survives reloads.
   // The Completed pile starts collapsed: it's history, not work in flight.
   const [collapsedStages, setCollapsedStages] = useState<string[]>(() => {
@@ -314,6 +360,31 @@ export default function AdminPage() {
       }
     } finally {
       setBoardBusyId(null);
+    }
+  }
+
+  // Trello-style quick add: type an address into a column, get a matter there. The ref
+  // is an auto-generated codename (same convention as the taskpane); everything else is
+  // filled in later from the drawer or as email arrives.
+  async function quickCreateMatter(stage: string) {
+    const addr = newMatterAddr.trim();
+    if (!addr || creatingMatter) return;
+    setCreatingMatter(true);
+    try {
+      const created = await api<{ id: string }>('/matters', {
+        method: 'POST',
+        body: JSON.stringify({ matterRef: fallbackMatterRef(), propertyAddress: addr }),
+      });
+      if (stage !== 'INSTRUCTION') await api(`/matters/${created.id}`, { method: 'PATCH', body: JSON.stringify({ stage }) }).catch(() => {});
+      setNewMatterAddr('');
+      setAddingStage(null);
+      const b = await api<{ matters: any[]; doneTotal?: number }>('/admin/board');
+      setBoard(b.matters);
+      setDoneTotal(b.doneTotal ?? 0);
+    } catch (e: any) {
+      setStatus(e?.message || 'Could not create the matter.');
+    } finally {
+      setCreatingMatter(false);
     }
   }
   const [copiedRef, setCopiedRef] = useState(false);
@@ -688,7 +759,7 @@ export default function AdminPage() {
       </div>
     );
     return (
-      <div style={{ background: '#f6f7fb', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ background: '#f6f7fb', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
         <style>{`@keyframes adm-spin{to{transform:rotate(360deg)}}`}</style>
         {meLoading ? (
           <div style={{ textAlign: 'center', color: '#475569' }}>
@@ -734,7 +805,7 @@ export default function AdminPage() {
     .join('');
 
   return (
-    <div style={{ background: '#f6f7fb', minHeight: '100vh' }}>
+    <div style={{ background: '#f6f7fb', minHeight: '100vh', fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
       {/* Shell-wide styling that inline styles can't express: hover states, motion, scrollbars. */}
       <style>{`
         @keyframes adm-spin{to{transform:rotate(360deg)}}
@@ -765,8 +836,8 @@ export default function AdminPage() {
       </div>
 
       <div style={{ ...box, display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 20px 56px' }}>
-        {/* Grouped left nav */}
-        <nav style={{ width: 200, flexShrink: 0 }}>
+        {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
+        <nav style={{ width: 208, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '14px 10px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           {NAV_GROUPS.map((grp) => {
             const items = grp.tabs.filter((k) => visibleTabs.includes(k));
             if (!items.length) return null;
@@ -1012,9 +1083,33 @@ export default function AdminPage() {
                 }
                 setDraggingId(null);
               };
-              // A side pile ("Up next" / "Completed") — drop target, collapsible, compact cards.
-              const pileColumn = (key: string, label: string, pile: any[], status: string, accent: string, countLabel?: string) => {
-                const collapsed = collapsedStages.includes(key);
+              const initialsOf = (n: string) =>
+                n.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('');
+              // Column chrome shared by stages and piles.
+              const colHead = (label: string, dot: string, count: React.ReactNode, onToggle: () => void) => (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 6px 9px' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
+                  <span onClick={onToggle} title={`${label} — click to collapse`} style={{ fontSize: 12, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
+                </div>
+              );
+              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, maxHeight: 'calc(100vh - 340px)', overflowY: 'auto', transition: 'background .12s' };
+              const collapsedStrip = (key: string, label: string, dot: string, count: React.ReactNode, onDrop: (e: React.DragEvent) => void) => (
+                <div
+                  key={key}
+                  onClick={() => toggleStage(key)}
+                  onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
+                  onDrop={onDrop}
+                  title={`${label} — ${count} (click to expand)`}
+                  style={{ flex: '0 0 36px', alignSelf: 'stretch', minHeight: 140, background: draggingId ? '#eef2ff' : '#f0f1f5', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 12, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: 999, background: dot }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{count}</span>
+                  <span style={{ writingMode: 'vertical-rl', fontSize: 10.5, fontWeight: 800, color: '#64748b', letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</span>
+                </div>
+              );
+              // The Completed pile — drop target, collapsible, compact cards.
+              const pileColumn = (key: string, label: string, pile: any[], status: string, dot: string, countLabel?: string) => {
                 const onDrop = (e: React.DragEvent) => {
                   e.preventDefault();
                   if (draggingId) {
@@ -1023,34 +1118,17 @@ export default function AdminPage() {
                   }
                   setDraggingId(null);
                 };
-                if (collapsed) {
-                  return (
-                    <div
-                      key={key}
-                      onClick={() => toggleStage(key)}
-                      onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
-                      onDrop={onDrop}
-                      title={`${label} — ${countLabel ?? pile.length} (click to expand)`}
-                      style={{ flex: '0 0 34px', alignSelf: 'stretch', minHeight: 120, background: draggingId ? '#eef2ff' : accent, border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
-                    >
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{countLabel ?? pile.length}</span>
-                      <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 0.3 }}>{label}</span>
-                    </div>
-                  );
-                }
+                if (collapsedStages.includes(key)) return collapsedStrip(key, label, dot, countLabel ?? pile.length, onDrop);
                 return (
-                  <div key={key} style={{ flex: '1 1 0', minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
-                      <span onClick={() => toggleStage(key)} title={`${label} — click to collapse`} style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{label}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{countLabel ?? pile.length}</span>
-                    </div>
+                  <div key={key} style={{ flex: '0 0 260px', minWidth: 0 }}>
+                    {colHead(label, dot, countLabel ?? pile.length, () => toggleStage(key))}
                     <div
                       onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
                       onDrop={onDrop}
-                      style={{ background: draggingId ? '#eef2ff' : accent, border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, padding: 8, minHeight: 60, transition: 'background .12s' }}
+                      style={{ ...colBody, ...(draggingId ? { background: '#eef2ff', outline: '1px dashed #a5b4fc' } : {}) }}
                     >
                       {pile.length === 0 ? (
-                        <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
+                        <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '16px 0' }}>Drop a card here</div>
                       ) : (
                         pile.map((m) => (
                           <div
@@ -1059,18 +1137,16 @@ export default function AdminPage() {
                             onDragStart={() => setDraggingId(m.id)}
                             onDragEnd={() => setDraggingId(null)}
                             className="adm-bcard"
-                            style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                            onClick={() => setOpenMatter(m)}
+                            title="Open matter"
+                            style={{ background: '#fff', border: '1px solid #e9ebf1', borderRadius: 10, padding: '9px 11px', marginBottom: 8, cursor: 'pointer', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
                           >
-                            <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
-                              <strong style={{ display: 'block', fontSize: 13, color: status === 'CLOSED' ? '#64748b' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
-                              {m.propertyAddress && (
-                                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
-                              )}
-                              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                                {status === 'CLOSED'
-                                  ? `completed ${new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`
-                                  : m.assignee || 'Unassigned'}
-                              </div>
+                            <strong style={{ display: 'block', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
+                            {m.propertyAddress && (
+                              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                            )}
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                              ✓ completed {new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                             </div>
                           </div>
                         ))
@@ -1082,15 +1158,47 @@ export default function AdminPage() {
                   </div>
                 );
               };
+              // Pulse numbers over the whole live board (unfiltered) — the chips double as filters.
+              const live = board.filter((m) => m.status !== 'CLOSED');
+              const nAttention = live.filter((m) => m.statusFlag === 'NEEDS_ATTENTION').length;
+              const nBlocked = live.filter((m) => m.statusFlag === 'BLOCKED').length;
+              const nUnassigned = live.filter((m) => !m.assignee).length;
+              const in7d = Date.now() + 7 * 86_400_000;
+              const nDueSoon = live.filter((m) => {
+                const t = m.completionTargetDate || m.exchangeTargetDate;
+                return t && new Date(t).getTime() <= in7d;
+              }).length;
+              const statChip = (label: string, n: number, color: string, onClick?: () => void, active?: boolean) => (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  disabled={!onClick}
+                  style={{ background: active ? '#ede9fe' : '#fff', border: `1px solid ${active ? '#c4b5fd' : '#e8eaf0'}`, borderRadius: 12, padding: '9px 16px', textAlign: 'left', cursor: onClick ? 'pointer' : 'default', fontFamily: 'inherit', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}
+                >
+                  <div style={{ fontSize: 19, fontWeight: 800, color, lineHeight: 1.1 }}>{n}</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8b93a3', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>{label}</div>
+                </button>
+              );
               return (
                 <>
-                  {/* Filters */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+                  {/* Pulse strip — the board's vital signs; attention/blocked/unassigned chips filter on click */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+                    {statChip('In flight', live.length, '#0f172a')}
+                    {statChip('Needs attention', nAttention, nAttention ? '#b45309' : '#94a3b8', () => setBoardFlag(boardFlag === 'NEEDS_ATTENTION' ? '' : 'NEEDS_ATTENTION'), boardFlag === 'NEEDS_ATTENTION')}
+                    {statChip('Blocked', nBlocked, nBlocked ? '#b91c1c' : '#94a3b8', () => setBoardFlag(boardFlag === 'BLOCKED' ? '' : 'BLOCKED'), boardFlag === 'BLOCKED')}
+                    {statChip('Unassigned', nUnassigned, nUnassigned ? '#5A27E0' : '#94a3b8', () => setBoardAssignee(boardAssignee === '__un' ? '' : '__un'), boardAssignee === '__un')}
+                    {statChip('Target in 7 days', nDueSoon, nDueSoon ? '#0e7490' : '#94a3b8')}
+                    {statChip('Completed', doneTotal, '#16a34a')}
+                  </div>
+
+                  {/* Toolbar */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14, background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: '9px 10px', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
                     <input
+                      ref={boardSearchRef}
                       value={boardQuery}
                       onChange={(e) => setBoardQuery(e.target.value)}
-                      placeholder="Search ref, address, owner…"
-                      style={{ ...filterSelect, width: 210, cursor: 'text' }}
+                      placeholder="Search ref, address, owner…  ( / )"
+                      style={{ ...filterSelect, width: 230, cursor: 'text', background: '#f6f7fb', border: '1px solid #eef0f4' }}
                     />
                     <select value={boardAssignee} onChange={(e) => setBoardAssignee(e.target.value)} style={filterSelect}>
                       <option value="">All assignees</option>
@@ -1109,140 +1217,175 @@ export default function AdminPage() {
                       <option value="NEEDS_ATTENTION">Needs attention</option>
                       <option value="BLOCKED">Blocked</option>
                     </select>
-                    <span style={{ fontSize: 12, color: '#94a3b8' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
                     {(boardAssignee || boardFlag || boardQuery) && (
                       <button style={clearBtn} onClick={() => { setBoardAssignee(''); setBoardFlag(''); setBoardQuery(''); }}>Clear</button>
                     )}
                     {boardLoading && <span style={spinnerStyle} />}
+                    <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
+                    {/* Customise what cards show — persisted per browser */}
+                    <div style={{ position: 'relative' }}>
+                      <button style={{ ...clearBtn, fontWeight: 700 }} onClick={() => setShowDisplayMenu((v) => !v)}>⚙ Display</button>
+                      {showDisplayMenu && (
+                        <>
+                          <div onClick={() => setShowDisplayMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
+                          <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, boxShadow: '0 10px 30px rgba(16,24,40,0.14)', padding: '10px 12px', width: 210 }}>
+                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#8b93a3', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Card fields</div>
+                            {([['address', 'Property address'], ['owner', 'Owner'], ['dates', 'Dates & task chips'], ['tasks', 'Open-task count'], ['age', 'Days in stage'], ['quickEdit', 'Quick-edit dropdowns']] as const).map(([k, label]) => (
+                              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', padding: '4px 0', cursor: 'pointer' }}>
+                                <input type="checkbox" checked={Boolean(boardPrefs[k])} onChange={() => togglePref(k)} style={{ accentColor: '#5A27E0' }} />
+                                {label}
+                              </label>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Kanban — with the Completed pile on the right so done work leaves the board */}
-                  <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
+                  {/* Kanban rail — fixed-width columns on a horizontal scroll, Completed pile at the end */}
+                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
                     {STAGE_ORDER.map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
-                      const collapsed = collapsedStages.includes(stage);
-                      if (collapsed) {
-                        // Narrow strip — still a drop target, click to expand.
-                        return (
-                          <div
-                            key={stage}
-                            onClick={() => toggleStage(stage)}
-                            onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              dropOnStage(stage);
-                            }}
-                            title={`${STAGE_LABEL[stage] ?? stage} — ${col.length} matter${col.length === 1 ? '' : 's'} (click to expand)`}
-                            style={{ flex: '0 0 34px', alignSelf: 'stretch', minHeight: 120, background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
-                          >
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{col.length}</span>
-                            <span style={{ writingMode: 'vertical-rl', fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: 0.3 }}>{STAGE_LABEL[stage] ?? stage}</span>
-                          </div>
-                        );
+                      if (collapsedStages.includes(stage)) {
+                        return collapsedStrip(stage, STAGE_LABEL[stage] ?? stage, STAGE_COLOR[stage] ?? '#94a3b8', col.length, (e) => {
+                          e.preventDefault();
+                          dropOnStage(stage);
+                        });
                       }
                       return (
-                        <div key={stage} style={{ flex: '1 1 0', minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, padding: '0 4px 8px' }}>
-                            <span
-                              onClick={() => toggleStage(stage)}
-                              title={`${STAGE_LABEL[stage] ?? stage} — click to collapse`}
-                              style={{ fontSize: 12, fontWeight: 700, color: '#334155', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
-                            >{STAGE_LABEL[stage] ?? stage}</span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>{col.length}</span>
-                          </div>
+                        <div key={stage} style={{ flex: '0 0 290px', minWidth: 0 }}>
+                          {colHead(STAGE_LABEL[stage] ?? stage, STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
                           <div
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
                             onDrop={(e) => {
                               e.preventDefault();
                               dropOnStage(stage);
                             }}
-                            style={{ background: draggingId ? '#eef2ff' : '#f1f5f9', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 10, padding: 8, minHeight: 60, transition: 'background .12s' }}
+                            style={{ ...colBody, ...(draggingId ? { background: '#eef2ff', outline: '1px dashed #a5b4fc' } : {}) }}
                           >
-                            {col.length === 0 ? (
-                              <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '12px 0' }}>—</div>
-                            ) : (
-                              col.map((m) => {
-                                const date = m.completionTargetDate || m.exchangeTargetDate;
-                                const days = Math.max(0, Math.floor((Date.now() - new Date(m.stageEnteredAt || m.updatedAt).getTime()) / 86_400_000));
-                                const dotN = Math.min(Math.max(days, 1), 14);
-                                const dotC = days <= 7 ? '#cbd5e1' : days <= 21 ? '#f59e0b' : '#ef4444';
-                                return (
-                                  <div
-                                    key={m.id}
-                                    draggable
-                                    onDragStart={() => setDraggingId(m.id)}
-                                    onDragEnd={() => setDraggingId(null)}
-                                    className="adm-bcard"
-                                    style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 8, padding: '8px 10px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
-                                  >
-                                    {/* Header opens the full matter detail — files, to-do, timeline. */}
-                                    <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: 999, background: FLAG_DOT[m.statusFlag] ?? '#cbd5e1', flexShrink: 0 }} title={(m.statusFlag || '').toLowerCase().replace(/_/g, ' ')} />
-                                        <strong style={{ fontSize: 13, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>{m.matterRef || 'Matter'}</strong>
-                                        {date && <span style={{ fontSize: 10.5, whiteSpace: 'nowrap', color: '#94a3b8', flexShrink: 0 }}>{new Date(date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                                      </div>
-                                      {m.propertyAddress && (
-                                        <div style={{ fontSize: 12, color: '#475569', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
+                            {col.length === 0 && addingStage !== stage && (
+                              <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '14px 0 6px' }}>Drop a card here</div>
+                            )}
+                            {col.map((m) => {
+                              const target = m.completionTargetDate || m.exchangeTargetDate;
+                              const days = Math.max(0, Math.floor((Date.now() - new Date(m.stageEnteredAt || m.updatedAt).getTime()) / 86_400_000));
+                              const ageFg = days <= 7 ? '#8b93a3' : days <= 21 ? '#b45309' : '#b91c1c';
+                              const ageBg = days <= 7 ? '#f1f5f9' : days <= 21 ? '#fef3c7' : '#fee2e2';
+                              const chip: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' };
+                              return (
+                                <div
+                                  key={m.id}
+                                  draggable
+                                  onDragStart={() => setDraggingId(m.id)}
+                                  onDragEnd={() => setDraggingId(null)}
+                                  className="adm-bcard"
+                                  style={{ background: '#fff', border: '1px solid #e9ebf1', borderLeft: `3px solid ${FLAG_DOT[m.statusFlag] ?? '#e9ebf1'}`, borderRadius: 10, padding: '10px 11px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
+                                >
+                                  {/* Card face opens the full matter drawer */}
+                                  <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                      <strong style={{ fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
+                                      {boardPrefs.age && (
+                                        <span title={`${days} day${days === 1 ? '' : 's'} in ${STAGE_LABEL[stage] ?? stage}`} style={{ ...chip, color: ageFg, background: ageBg, flexShrink: 0 }}>{days}d</span>
                                       )}
-                                      {/* To-do signals without opening the card. */}
-                                      {(Number(m.openTasks) > 0 || m.nextDue) && (
-                                        <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                                          {Number(m.openTasks) > 0 && (
-                                            <span title={`${m.openTasks} open task${Number(m.openTasks) === 1 ? '' : 's'}`} style={{ fontSize: 10.5, fontWeight: 700, color: '#475569', background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 999, padding: '1px 7px' }}>
-                                              ☑ {m.openTasks}
+                                    </div>
+                                    {boardPrefs.address && m.propertyAddress && (
+                                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{m.propertyAddress}</div>
+                                    )}
+                                    {boardPrefs.dates && (target || Number(m.openTasks) > 0 || m.nextDue) && (
+                                      <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
+                                        {target && (
+                                          <span title={m.completionTargetDate ? 'Completion target' : 'Exchange target'} style={{ ...chip, color: '#0e7490', background: '#ecfeff' }}>
+                                            🎯 {new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                          </span>
+                                        )}
+                                        {boardPrefs.tasks && Number(m.openTasks) > 0 && (
+                                          <span title={`${m.openTasks} open task${Number(m.openTasks) === 1 ? '' : 's'}`} style={{ ...chip, color: '#475569', background: '#f1f5f9' }}>☑ {m.openTasks}</span>
+                                        )}
+                                        {boardPrefs.tasks && m.nextDue && (() => {
+                                          const overdue = new Date(m.nextDue).getTime() < Date.now() - 86_400_000;
+                                          return (
+                                            <span title="Next task due" style={{ ...chip, color: overdue ? '#b91c1c' : '#475569', background: overdue ? '#fee2e2' : '#f1f5f9' }}>
+                                              due {new Date(m.nextDue).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                                             </span>
-                                          )}
-                                          {m.nextDue && (() => {
-                                            const overdue = new Date(m.nextDue).getTime() < Date.now() - 86_400_000;
-                                            return (
-                                              <span title="Next task due" style={{ fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '1px 7px', color: overdue ? '#b91c1c' : '#475569', background: overdue ? '#fef2f2' : '#f1f5f9', border: `1px solid ${overdue ? '#fecaca' : '#e2e8f0'}` }}>
-                                                due {new Date(m.nextDue).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                              </span>
-                                            );
-                                          })()}
-                                        </div>
-                                      )}
-                                    </div>
-                                    {/* Editable in place — change owner / status without leaving the board. */}
-                                    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                                      <select
-                                        value={m.assignedTo || ''}
-                                        title="Assign to"
-                                        onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
-                                        onDragStart={(e) => e.preventDefault()}
-                                        style={{ flex: 2, minWidth: 0, fontSize: 10.5, padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', color: '#475569', cursor: 'pointer' }}
-                                      >
-                                        <option value="">Unassigned</option>
-                                        {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
-                                      </select>
-                                      <select
-                                        value={m.statusFlag || 'ON_TRACK'}
-                                        title="Status"
-                                        onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
-                                        onDragStart={(e) => e.preventDefault()}
-                                        style={{ flex: 1, minWidth: 0, fontSize: 10.5, padding: '2px 4px', border: '1px solid #e2e8f0', borderRadius: 6, background: '#fff', color: '#475569', cursor: 'pointer' }}
-                                      >
-                                        <option value="ON_TRACK">On track</option>
-                                        <option value="NEEDS_ATTENTION">Attention</option>
-                                        <option value="BLOCKED">Blocked</option>
-                                      </select>
-                                    </div>
-                                    {/* Age dots — true days in the current stage. */}
-                                    <div title={`${days} day${days === 1 ? '' : 's'} in ${STAGE_LABEL[stage] ?? stage}`} style={{ display: 'flex', gap: 2, marginTop: 7, flexWrap: 'wrap' }}>
-                                      {Array.from({ length: dotN }).map((_, i) => (
-                                        <span key={i} style={{ width: 4, height: 4, borderRadius: 999, background: dotC }} />
-                                      ))}
-                                    </div>
+                                          );
+                                        })()}
+                                      </div>
+                                    )}
                                   </div>
-                                );
-                              })
+                                  {/* Owner row — quick-edit dropdowns, or a read-only avatar chip */}
+                                  {boardPrefs.owner && (
+                                    boardPrefs.quickEdit ? (
+                                      <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+                                        <select
+                                          value={m.assignedTo || ''}
+                                          title="Assign to"
+                                          onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
+                                          onDragStart={(e) => e.preventDefault()}
+                                          style={{ flex: 1.6, minWidth: 0, fontSize: 11, padding: '3px 5px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit' }}
+                                        >
+                                          <option value="">Unassigned</option>
+                                          {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+                                        </select>
+                                        <select
+                                          value={m.statusFlag || 'ON_TRACK'}
+                                          title="Status"
+                                          onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
+                                          onDragStart={(e) => e.preventDefault()}
+                                          style={{ flex: 1, minWidth: 0, fontSize: 11, padding: '3px 5px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400 }}
+                                        >
+                                          <option value="ON_TRACK">On track</option>
+                                          <option value="NEEDS_ATTENTION">Attention</option>
+                                          <option value="BLOCKED">Blocked</option>
+                                        </select>
+                                      </div>
+                                    ) : (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+                                        <span style={{ width: 20, height: 20, borderRadius: 999, background: m.assignee ? '#ede9fe' : '#f1f5f9', color: m.assignee ? '#5A27E0' : '#94a3b8', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                          {m.assignee ? initialsOf(m.assignee) : '—'}
+                                        </span>
+                                        <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.assignee || 'Unassigned'}</span>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              );
+                            })}
+                            {/* Trello-style quick add at the foot of every column */}
+                            {addingStage === stage ? (
+                              <div style={{ background: '#fff', border: '1px dashed #c7cdd8', borderRadius: 10, padding: 8 }}>
+                                <input
+                                  autoFocus
+                                  disabled={creatingMatter}
+                                  value={newMatterAddr}
+                                  onChange={(e) => setNewMatterAddr(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') quickCreateMatter(stage);
+                                    if (e.key === 'Escape') { setAddingStage(null); setNewMatterAddr(''); }
+                                  }}
+                                  placeholder="Property address…"
+                                  style={{ width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontFamily: 'inherit' }}
+                                />
+                                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                  <button onClick={() => quickCreateMatter(stage)} disabled={creatingMatter || !newMatterAddr.trim()} style={{ ...btnPrimary, padding: '4px 12px', fontSize: 12, opacity: creatingMatter || !newMatterAddr.trim() ? 0.5 : 1 }}>
+                                    {creatingMatter ? 'Creating…' : 'Add matter'}
+                                  </button>
+                                  <button onClick={() => { setAddingStage(null); setNewMatterAddr(''); }} style={{ ...clearBtn, padding: '4px 10px' }}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setAddingStage(stage); setNewMatterAddr(''); }}
+                                style={{ width: '100%', border: 'none', background: 'transparent', color: '#8b93a3', fontSize: 12.5, fontWeight: 700, padding: '7px 0 4px', cursor: 'pointer', borderRadius: 8, fontFamily: 'inherit', textAlign: 'left', paddingLeft: 6 }}
+                              >
+                                ＋ Add matter
+                              </button>
                             )}
                           </div>
                         </div>
                       );
                     })}
-                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#f0fdf4', doneTotal ? String(doneTotal) : undefined)}
+                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#22c55e', doneTotal ? String(doneTotal) : undefined)}
                   </div>
                 </>
               );
@@ -1345,7 +1488,7 @@ export default function AdminPage() {
         {tab === 'workload' && (
           <div style={card}>
             <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
-              Who’s carrying what right now. Assign matters on the taskpane (House tab → “Assigned to”); anything without an owner shows in its own row so nothing slips.
+              Who’s carrying what right now. Assign matters from the board or a matter’s drawer; anything without an owner shows in its own row so nothing slips.
             </p>
             {workload.length === 0 ? (
               <p style={{ fontSize: 13, color: '#64748b' }}>No open matters yet.</p>
@@ -1360,23 +1503,42 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {workload.map((r) => {
-                      const num = (v: number, colour: string) => (
-                        <td style={{ padding: '8px 12px', textAlign: 'center', color: v ? colour : '#cbd5e1', fontWeight: v ? 700 : 400 }}>{v}</td>
-                      );
-                      return (
-                        <tr key={r.id ?? 'unassigned'} style={{ borderTop: '1px solid #eef2f7', background: r.id ? '#fff' : '#fffbeb' }}>
-                          <td style={{ padding: '8px 12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                            {r.name}
-                            {!r.id && <span style={{ fontWeight: 500, color: '#b45309' }}> · needs an owner</span>}
-                          </td>
-                          {num(r.open_matters, '#0f172a')}
-                          {num(r.needs_attention, '#b45309')}
-                          {num(r.overdue_chases, '#dc2626')}
-                          {num(r.drafts_waiting, '#5A27E0')}
-                        </tr>
-                      );
-                    })}
+                    {(() => {
+                      const maxOpen = Math.max(1, ...workload.map((w) => w.open_matters));
+                      const initialsOf = (n: string) => n.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('');
+                      return workload.map((r) => {
+                        const num = (v: number, colour: string) => (
+                          <td style={{ padding: '10px 12px', textAlign: 'center', color: v ? colour : '#cbd5e1', fontWeight: v ? 700 : 400 }}>{v}</td>
+                        );
+                        return (
+                          <tr key={r.id ?? 'unassigned'} style={{ borderTop: '1px solid #eef2f7', background: r.id ? '#fff' : '#fffbeb' }}>
+                            <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                                <span style={{ width: 26, height: 26, borderRadius: 999, background: r.id ? '#ede9fe' : '#fef3c7', color: r.id ? '#5A27E0' : '#b45309', fontSize: 10.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                  {r.id ? initialsOf(r.name) : '!'}
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                                  {r.name}
+                                  {!r.id && <span style={{ fontWeight: 500, color: '#b45309' }}> · needs an owner</span>}
+                                </span>
+                              </div>
+                            </td>
+                            {/* Open matters as a capacity bar — who's loaded, at a glance */}
+                            <td style={{ padding: '10px 12px', minWidth: 160 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{ flex: 1, height: 7, background: '#eef1f5', borderRadius: 999, overflow: 'hidden' }}>
+                                  <div style={{ width: `${Math.round((r.open_matters / maxOpen) * 100)}%`, height: '100%', background: r.id ? '#8b5cf6' : '#f59e0b', borderRadius: 999 }} />
+                                </div>
+                                <span style={{ fontWeight: 700, color: r.open_matters ? '#0f172a' : '#cbd5e1', width: 22, textAlign: 'right' }}>{r.open_matters}</span>
+                              </div>
+                            </td>
+                            {num(r.needs_attention, '#b45309')}
+                            {num(r.overdue_chases, '#dc2626')}
+                            {num(r.drafts_waiting, '#5A27E0')}
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

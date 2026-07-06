@@ -45,12 +45,14 @@ const panel: React.CSSProperties = {
   top: 0,
   right: 0,
   bottom: 0,
-  width: 'min(520px, 100vw)',
+  width: 'min(600px, 100vw)',
   background: '#fff',
-  boxShadow: '-8px 0 32px rgba(16,24,40,0.16)',
+  boxShadow: '-12px 0 40px rgba(16,24,40,0.18)',
   display: 'flex',
   flexDirection: 'column',
   zIndex: 60,
+  fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif',
+  animation: 'cl-drawer-in .18s ease-out',
 };
 const miniSelect: React.CSSProperties = {
   fontSize: 12,
@@ -248,7 +250,8 @@ export default function MatterDrawer({
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 59 }} />
+      <style>{`@keyframes cl-drawer-in{from{transform:translateX(28px);opacity:.5}to{transform:none;opacity:1}}`}</style>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.32)', backdropFilter: 'blur(2px)', zIndex: 59 }} />
       <aside style={panel}>
         {/* Header */}
         <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid #eef1f5' }}>
