@@ -1,10 +1,9 @@
 /**
- * GET /api/v1/admin/board — the oversight board's matters, in three piles:
- *   - active   (status OPEN/legacy)  → the stage columns
- *   - backlog  (status BACKLOG)      → "Up next": instructed but not started
- *   - done     (status CLOSED)       → "Completed": recent completions, capped so
- *                                       the pile never grows unbounded (doneTotal
- *                                       carries the full count)
+ * GET /api/v1/admin/board — the oversight board's matters, in two piles:
+ *   - live (status OPEN/legacy) → the stage columns, work in flight
+ *   - done (status CLOSED)      → "Completed": recent completions, capped so the
+ *                                  pile never grows unbounded (doneTotal carries
+ *                                  the full count)
  * MERGED matters never appear. ADMIN. The board is editable in-place — stage /
  * status / assignee / pile are all changed via PATCH /matters/[id].
  */
@@ -67,8 +66,7 @@ export async function GET() {
     const user = await requireRole(['ADMIN']);
 
     const fetch = async (withTasks: boolean) => {
-      // Live board: everything except completed and merged (BACKLOG rides along and
-      // is split out client-side into the "Up next" pile).
+      // Live board: everything except completed and merged.
       const live = await query<BoardMatter>(
         `${selectFor(withTasks)}
           where m.tenant_id = $1 and coalesce(m.status, 'OPEN') not in ('CLOSED', 'MERGED')

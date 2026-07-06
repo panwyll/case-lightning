@@ -110,10 +110,8 @@ export default function MatterDrawer({
   const [stage, setStage] = useState<string>(matter.stage || 'INSTRUCTION');
   const [statusFlag, setStatusFlag] = useState<string>(matter.statusFlag || 'ON_TRACK');
   const [assignedTo, setAssignedTo] = useState<string>(matter.assignedTo || '');
-  // Which pile the matter lives in: Up next (BACKLOG) / the board (OPEN) / Completed (CLOSED).
-  const [pile, setPile] = useState<string>(
-    matter.status === 'BACKLOG' || matter.status === 'CLOSED' ? matter.status : 'OPEN'
-  );
+  // Whether the matter is on the board (OPEN) or in the Completed pile (CLOSED).
+  const [pile, setPile] = useState<string>(matter.status === 'CLOSED' ? 'CLOSED' : 'OPEN');
 
   useEffect(() => {
     let live = true;
@@ -259,16 +257,19 @@ export default function MatterDrawer({
               <option value="">Unassigned</option>
               {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
             </select>
-            <select
-              value={pile}
-              onChange={(e) => edit({ status: e.target.value })}
-              style={{ ...miniSelect, fontWeight: 700, color: pile === 'CLOSED' ? '#16a34a' : pile === 'BACKLOG' ? '#b45309' : '#334155' }}
-              title="Pile — Up next, on the board, or Completed"
+            <button
+              onClick={() => edit({ status: pile === 'CLOSED' ? 'OPEN' : 'CLOSED' })}
+              style={{
+                ...miniSelect,
+                fontWeight: 700,
+                color: pile === 'CLOSED' ? '#334155' : '#16a34a',
+                borderColor: pile === 'CLOSED' ? '#e2e8f0' : '#bbf7d0',
+                background: pile === 'CLOSED' ? '#fff' : '#f0fdf4',
+              }}
+              title={pile === 'CLOSED' ? 'Put this matter back on the board' : 'Move this matter to the Completed pile'}
             >
-              <option value="BACKLOG">Up next</option>
-              <option value="OPEN">On the board</option>
-              <option value="CLOSED">Completed</option>
-            </select>
+              {pile === 'CLOSED' ? 'Reopen' : '✓ Mark completed'}
+            </button>
           </div>
         </div>
 

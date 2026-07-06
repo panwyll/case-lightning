@@ -63,7 +63,7 @@ type TabKey = 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'pla
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: 'Work in flight by stage, flanked by Up next (not started) and Completed. Drag cards anywhere — everything writes back.' },
+  board: { label: 'Matter board', subtitle: 'Work in flight by stage, with a Completed pile so done matters leave the board. Drag cards anywhere — everything writes back.' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
@@ -912,20 +912,19 @@ export default function AdminPage() {
                   if (boardSort === 'ref') return String(a.matterRef || '').localeCompare(String(b.matterRef || ''));
                   return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); // most recently updated first
                 });
-              // Three piles: work in flight (stage columns), Up next (instructed, not
-              // started) and Completed (done — capped server-side so it never bloats).
-              const active = visible.filter((m) => m.status !== 'BACKLOG' && m.status !== 'CLOSED');
-              const backlogPile = visible.filter((m) => m.status === 'BACKLOG');
+              // Two piles: work in flight (stage columns) and Completed (done — capped
+              // server-side so it never bloats). No backlog: conveyancing has no sprint-
+              // grooming phase; a new instruction simply starts on the board.
+              const active = visible.filter((m) => m.status !== 'CLOSED');
               const donePile = visible
                 .filter((m) => m.status === 'CLOSED')
                 .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-              // Dropping a card from a pile onto a stage reactivates it there.
+              // Dropping a completed card onto a stage reactivates it there.
               const dropOnStage = (stage: string) => {
                 if (!draggingId) return;
                 const dragged = board.find((x) => x.id === draggingId);
                 if (dragged) {
-                  const parked = dragged.status === 'BACKLOG' || dragged.status === 'CLOSED';
-                  if (parked) patchMatter(draggingId, { stage, status: 'OPEN' });
+                  if (dragged.status === 'CLOSED') patchMatter(draggingId, { stage, status: 'OPEN' });
                   else if ((dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
                 }
                 setDraggingId(null);
@@ -1033,9 +1032,8 @@ export default function AdminPage() {
                     {boardLoading && <span style={spinnerStyle} />}
                   </div>
 
-                  {/* Kanban — flanked by the Up next (not started) and Completed piles */}
+                  {/* Kanban — with the Completed pile on the right so done work leaves the board */}
                   <div style={{ display: 'flex', gap: 10, paddingBottom: 8, alignItems: 'flex-start' }}>
-                    {pileColumn('__BACKLOG', 'Up next', backlogPile, 'BACKLOG', '#fdf6ec')}
                     {STAGE_ORDER.map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       const collapsed = collapsedStages.includes(stage);
