@@ -94,9 +94,12 @@ export default function MatterDrawer({
   onClose: () => void;
 }) {
   const id = matter.id as string;
-  const [tab, setTab] = useState<'overview' | 'files' | 'todo' | 'activity'>('overview');
+  const [tab, setTab] = useState<'overview' | 'emails' | 'files' | 'todo' | 'activity'>('overview');
   const [detail, setDetail] = useState<any>(null);
   const [files, setFiles] = useState<{ files: any[]; folderProvisioned: boolean } | null>(null);
+  const [threads, setThreads] = useState<any[] | null>(null);
+  const [openThread, setOpenThread] = useState<string | null>(null);
+  const [threadMsgs, setThreadMsgs] = useState<Record<string, any[] | 'loading' | 'error'>>({});
   const [todo, setTodo] = useState<{ tasks: any[]; assignees: any[] } | null>(null);
   const [newTask, setNewTask] = useState('');
   const [newAssignee, setNewAssignee] = useState('');
@@ -145,7 +148,23 @@ export default function MatterDrawer({
   useEffect(() => {
     if (tab === 'files' && !files) api(`/matters/${id}/files`).then(setFiles).catch(() => setFiles({ files: [], folderProvisioned: false }));
     if (tab === 'todo' && !todo) api(`/matters/${id}/tasks`).then(setTodo).catch(() => setTodo({ tasks: [], assignees: [] }));
-  }, [tab, id, api, files, todo]);
+    if (tab === 'emails' && !threads) api(`/matters/${id}/emails`).then((r) => setThreads(r.threads ?? [])).catch(() => setThreads([]));
+  }, [tab, id, api, files, todo, threads]);
+
+  // Expand a thread — messages are read live from Graph (never stored), cached per open.
+  function toggleThread(tid: string) {
+    if (openThread === tid) {
+      setOpenThread(null);
+      return;
+    }
+    setOpenThread(tid);
+    if (!threadMsgs[tid]) {
+      setThreadMsgs((s) => ({ ...s, [tid]: 'loading' }));
+      api(`/matters/${id}/emails/${tid}`)
+        .then((r) => setThreadMsgs((s) => ({ ...s, [tid]: r.messages ?? [] })))
+        .catch(() => setThreadMsgs((s) => ({ ...s, [tid]: 'error' })));
+    }
+  }
 
   const edit = (patch: Record<string, unknown>) => {
     if ('stage' in patch) setStage(patch.stage as string);
@@ -276,6 +295,7 @@ export default function MatterDrawer({
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, padding: '0 12px', borderBottom: '1px solid #eef1f5' }}>
           <button style={tabBtn(tab === 'overview')} onClick={() => setTab('overview')}>Overview</button>
+          <button style={tabBtn(tab === 'emails')} onClick={() => setTab('emails')}>Emails{threads ? ` (${threads.length})` : ''}</button>
           <button style={tabBtn(tab === 'files')} onClick={() => setTab('files')}>Files</button>
           <button style={tabBtn(tab === 'todo')} onClick={() => setTab('todo')}>To-do{todo ? ` (${todo.tasks.filter((t) => !TASK_DONE.has(t.status)).length})` : ''}</button>
           <button style={tabBtn(tab === 'activity')} onClick={() => setTab('activity')}>Activity</button>
@@ -345,6 +365,58 @@ export default function MatterDrawer({
                   </div>
                 ))
               )}
+            </>
+          )}
+
+          {tab === 'emails' && (
+            <>
+              <div style={sectionLabel}>Correspondence — read live from the mailbox, never copied out</div>
+              {!threads && <p style={{ color: '#94a3b8', fontSize: 13 }}>Loading threads…</p>}
+              {threads && threads.length === 0 && <p style={{ fontSize: 13, color: '#cbd5e1' }}>No email threads linked to this matter yet.</p>}
+              {threads?.map((t) => {
+                const parts = Array.isArray(t.participants) ? t.participants : [];
+                const open = openThread === t.id;
+                const msgs = threadMsgs[t.id];
+                return (
+                  <div key={t.id} style={{ borderTop: '1px solid #f4f6f9' }}>
+                    <div onClick={() => toggleThread(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', cursor: 'pointer' }}>
+                      <span style={{ fontSize: 11, color: '#94a3b8', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s', flexShrink: 0 }}>▶</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</div>
+                        {parts.length > 0 && (
+                          <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {parts.slice(0, 3).map((p: any) => p?.name || p?.address || p).filter(Boolean).join(', ')}{parts.length > 3 ? ` +${parts.length - 3}` : ''}
+                          </div>
+                        )}
+                      </div>
+                      {t.chaseAwaitingSince && <span style={{ fontSize: 10.5, fontWeight: 700, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '1px 7px', flexShrink: 0 }}>awaiting reply</span>}
+                      {t.lastMessageAt && <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', flexShrink: 0 }}>{fmtDate(t.lastMessageAt)}</span>}
+                    </div>
+                    {open && (
+                      <div style={{ padding: '0 0 10px 19px' }}>
+                        {msgs === 'loading' && <p style={{ color: '#94a3b8', fontSize: 13, margin: '4px 0' }}>Fetching from the mailbox…</p>}
+                        {msgs === 'error' && <p style={{ color: '#b45309', fontSize: 12.5, margin: '4px 0' }}>Couldn’t read this thread — it may live in a colleague’s mailbox.</p>}
+                        {Array.isArray(msgs) && msgs.length === 0 && <p style={{ color: '#94a3b8', fontSize: 12.5, margin: '4px 0' }}>No messages found in the connected mailbox for this thread.</p>}
+                        {Array.isArray(msgs) &&
+                          msgs.map((m: any) => (
+                            <div key={m.id} style={{ border: '1px solid #eef1f5', borderRadius: 8, padding: '8px 10px', marginBottom: 6, background: '#fafbfc' }}>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                <strong style={{ fontSize: 12.5, color: '#0f172a', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.fromAddress || undefined}>{m.from}</strong>
+                                {m.hasAttachments && <span title="Has attachments" style={{ fontSize: 11 }}>📎</span>}
+                                <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>{m.sentAt ? new Date(m.sentAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                              </div>
+                              {m.to?.length > 0 && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>to {m.to.slice(0, 3).join(', ')}{m.to.length > 3 ? ` +${m.to.length - 3}` : ''}</div>}
+                              <div style={{ fontSize: 12.5, color: '#334155', marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto', lineHeight: 1.5 }}>{m.bodyText || '(empty)'}</div>
+                              {m.webLink && (
+                                <a href={m.webLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: '#1d4ed8', textDecoration: 'none', display: 'inline-block', marginTop: 6 }}>Open in Outlook ↗</a>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </>
           )}
 

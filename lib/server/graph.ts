@@ -82,19 +82,27 @@ export function describeGraphError(error: unknown): string {
 
 // ── Mail ──────────────────────────────────────────────────────────────────
 
-export async function listThreadMessages(userId: string, conversationId: string): Promise<any[]> {
+export async function listThreadMessages(
+  userId: string,
+  conversationId: string,
+  opts?: { textBodies?: boolean }
+): Promise<any[]> {
   const client = await graphClientForUser(userId);
   // Graph rejects $filter on conversationId combined with $orderby on a different
   // property ("The restriction or sort order is too complex"), so fetch filtered
   // and sort chronologically in memory instead.
-  const result = await client
+  let req = client
     .api('/me/messages')
     .filter(`conversationId eq '${conversationId.replace(/'/g, "''")}'`)
     .select(
-      'id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,conversationId,internetMessageId,categories,hasAttachments'
+      'id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,conversationId,internetMessageId,categories,hasAttachments' +
+        (opts?.textBodies ? ',webLink' : '')
     )
-    .top(200)
-    .get();
+    .top(200);
+  // Plain-text bodies for surfaces that render the message (the web app's Emails tab):
+  // Graph converts HTML server-side, so no third-party HTML ever reaches our DOM.
+  if (opts?.textBodies) req = req.header('Prefer', 'outlook.body-content-type="text"');
+  const result = await req.get();
   const messages = (result.value ?? []) as any[];
   return messages.sort((a, b) => {
     const ta = new Date(a.receivedDateTime ?? a.sentDateTime ?? 0).getTime();
