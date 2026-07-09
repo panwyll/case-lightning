@@ -881,6 +881,73 @@ export async function listTableRows(
   });
 }
 
+// ── Microsoft To Do (the native-task sync spoke) ────────────────────────────
+// Per-user personal mailbox surface; see docs/two-way-sync-design.md. All best-
+// effort: no Tasks.ReadWrite consent → these throw/return null and the caller no-ops.
+
+/** Find (or create) the user's "CONVEYi" To Do list; returns its id. */
+export async function ensureTodoList(userId: string, name = 'CONVEYi'): Promise<string | null> {
+  try {
+    const client = await graphClientForUser(userId);
+    const res = await client.api('/me/todo/lists').get();
+    const found = ((res.value ?? []) as any[]).find((l) => l.displayName === name);
+    if (found) return found.id as string;
+    const created = await client.api('/me/todo/lists').post({ displayName: name });
+    return (created?.id as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const TODO_STATUS: Record<string, string> = { DONE: 'completed', IN_PROGRESS: 'inProgress', NOTED: 'notStarted', OPEN: 'notStarted' };
+
+/** Create or update a To Do task; returns its id (null on failure). */
+export async function upsertTodoTask(
+  userId: string,
+  listId: string,
+  input: { title: string; status: string; due?: string | null },
+  existingId?: string | null
+): Promise<string | null> {
+  try {
+    const client = await graphClientForUser(userId);
+    const body: any = { title: input.title, status: TODO_STATUS[input.status] ?? 'notStarted' };
+    if (input.due) body.dueDateTime = { dateTime: `${input.due}T00:00:00.000`, timeZone: 'UTC' };
+    if (existingId) {
+      const r = await client.api(`/me/todo/lists/${listId}/tasks/${existingId}`).patch(body);
+      return (r?.id as string) ?? existingId;
+    }
+    const r = await client.api(`/me/todo/lists/${listId}/tasks`).post(body);
+    return (r?.id as string) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Delta of a To Do list since `deltaLink` (full sync if none). Returns changed tasks + next deltaLink. */
+export async function todoListDelta(
+  userId: string,
+  listId: string,
+  deltaLink?: string | null
+): Promise<{ tasks: any[]; deltaLink: string | null }> {
+  const tasks: any[] = [];
+  try {
+    const client = await graphClientForUser(userId);
+    let url = deltaLink || `/me/todo/lists/${listId}/tasks/delta`;
+    for (let i = 0; i < 20; i++) {
+      const res: any = await client.api(url).get();
+      tasks.push(...((res.value ?? []) as any[]));
+      if (res['@odata.nextLink']) {
+        url = res['@odata.nextLink'];
+        continue;
+      }
+      return { tasks, deltaLink: (res['@odata.deltaLink'] as string) ?? null };
+    }
+    return { tasks, deltaLink: null };
+  } catch {
+    return { tasks, deltaLink: null };
+  }
+}
+
 /**
  * Upserts many rows into a named table in ONE workbook session, keyed by a
  * column. Updating table rows via the workbook API co-authors with an open file

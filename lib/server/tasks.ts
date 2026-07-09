@@ -19,6 +19,7 @@
  */
 import { query, transaction } from './db';
 import { listTrackerRows, upsertTrackerRowByRef } from './graph';
+import { mirrorTaskToTodo, syncFromTodo } from './todo';
 import type { SessionUser } from './types';
 
 // Structural type for "something I can run SQL on" — satisfied by the
@@ -156,6 +157,7 @@ export async function syncFromTracker(user: SessionUser, matterId: string): Prom
 
 export async function listTasks(user: SessionUser, matterId: string): Promise<MatterTask[]> {
   await syncFromTracker(user, matterId); // reconcile live Excel edits first
+  await syncFromTodo(user.userId).catch(() => {}); // then pull this user's To Do edits (no-op without the scope)
   return query<MatterTask>(
     `select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2
      order by case status when 'OPEN' then 0 when 'IN_PROGRESS' then 1 when 'NOTED' then 2 else 3 end,
@@ -211,6 +213,11 @@ export async function createTask(
     ).rows[0];
     await mirrorToExcel(db, user, matterId, task);
     return task;
+  }).then(async (task) => {
+    // Push to the assignee's To Do outside the per-matter lock (a Graph call
+    // shouldn't extend the lock hold). Best-effort; no-op without the scope.
+    void mirrorTaskToTodo(user, matterId, task).catch(() => {});
+    return task;
   });
 }
 
@@ -239,6 +246,9 @@ export async function updateTask(
         )
       ).rows[0] ?? null;
     if (task) await mirrorToExcel(db, user, matterId, task);
+    return task;
+  }).then(async (task) => {
+    if (task) void mirrorTaskToTodo(user, matterId, task).catch(() => {});
     return task;
   });
 }
