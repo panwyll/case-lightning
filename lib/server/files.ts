@@ -13,6 +13,7 @@ import PizZip from 'pizzip';
 import { query, queryOne } from './db';
 import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
 import { addDraftReady } from './worklist';
+import { autoActionTask } from './tasks';
 import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
 
@@ -154,6 +155,9 @@ export async function processMatterFile(
     } catch {
       drafted = false;
     }
+    // Proactively raise a task so the "who needs telling" action is tracked on the board,
+    // not just sitting as a draft. Deduped; best-effort.
+    await autoActionTask(user, matterId, `Update the client — we now hold the ${documentType} (${opts.fileName})`).catch(() => {});
   }
 
   await writeAudit({

@@ -252,3 +252,29 @@ export async function updateTask(
     return task;
   });
 }
+
+/**
+ * Proactively raise a "you need to do this" task when something meaningful happens on a
+ * matter — a stage moves, a substantive document lands. This is the assistant being on
+ * top of things: the action shows up on the board / task list without anyone typing it.
+ *
+ * Deduped so we NEVER hammer: if an open task with the same detail already exists on the
+ * matter, we skip. source='AUTO' marks it as CONVEYi-raised. Best-effort — a task-raise
+ * must never break the thing that triggered it (a doc upload, a stage change).
+ */
+export async function autoActionTask(
+  user: { userId: string; tenantId: string; email?: string; role?: string },
+  matterId: string,
+  detail: string
+): Promise<void> {
+  try {
+    const dup = await query<{ id: string }>(
+      `select id from matter_task where matter_id = $1 and tenant_id = $2 and detail = $3 and status in ('OPEN','IN_PROGRESS') limit 1`,
+      [matterId, user.tenantId, detail]
+    );
+    if (dup.length) return;
+    await createTask(user as SessionUser, matterId, { type: 'UPDATE', detail, source: 'AUTO', status: 'OPEN' });
+  } catch {
+    /* best-effort — never block the triggering action */
+  }
+}
