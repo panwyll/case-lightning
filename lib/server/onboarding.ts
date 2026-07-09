@@ -63,14 +63,14 @@ const SCAN_SLICE_MS = 12000;     // wall-clock budget per scan slice; we drain a
                                  // stages in a handful of slices, not hundreds.
 const PROPOSE_BATCH = 8;         // clusters considered per slice
 const PROPOSE_CONCURRENCY = 4;   // proposeMatter (LLM) calls run in parallel, ≤ db pool
-const PROPOSE_SLICE_MS = 45000;  // wall-clock budget per propose slice — stop launching waves
-                                 // past this so a slow LLM can't push a slice over the 60s cap;
+const PROPOSE_SLICE_MS = 20000;  // wall-clock budget per propose slice — kept well under the 50s
+                                 // slice backstop so one more LLM wave can't overshoot it;
                                  // unproposed clusters simply carry to the next /process call.
 const PROVISION_FETCH = 6;       // approved cases pulled per slice (drained under the time budget)
-const PROVISION_SLICE_MS = 45000; // wall-clock budget per provision slice — each matter is heavy
+const PROVISION_SLICE_MS = 20000; // wall-clock budget per provision slice — each matter is heavy
                                   // (OneDrive folder + Excel tracker + thread fetch + LLM extract),
-                                  // so we do them one at a time until this deadline and let the
-                                  // client loop for the rest. Keeps every slice under Vercel's 60s cap.
+                                  // so we do them one at a time until this deadline (well under the
+                                  // 50s backstop) and let the client loop for the rest.
 const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noise
 const THREADS_PER_CASE = 5;      // conversations pulled for fact extraction
 
@@ -608,22 +608,33 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
 /** Advance a job by exactly one bounded slice and return its fresh state. */
 export async function advanceJob(user: SessionUser, job: OnboardingJob): Promise<OnboardingJob> {
   try {
-    switch (job.status) {
-      case 'SCANNING':
-        await scanPage(user, job);
-        break;
-      case 'CLUSTERING':
-        await clusterJob(job);
-        break;
-      case 'PROPOSING':
-        await proposeNextClusters(user, job);
-        break;
-      case 'PROVISIONING':
-        await provisionNextApproved(user, job);
-        break;
-      default:
-        break; // AWAITING_REVIEW / terminal — nothing to do
-    }
+    const slice = (async () => {
+      switch (job.status) {
+        case 'SCANNING':
+          await scanPage(user, job);
+          break;
+        case 'CLUSTERING':
+          await clusterJob(job);
+          break;
+        case 'PROPOSING':
+          await proposeNextClusters(user, job);
+          break;
+        case 'PROVISIONING':
+          await provisionNextApproved(user, job);
+          break;
+        default:
+          break; // AWAITING_REVIEW / terminal — nothing to do
+      }
+    })();
+    // Hard backstop under Vercel's 60s cap: a single Graph/AI call with no timeout of its
+    // own would otherwise hang the whole function → a raw 504. Racing the slice means we
+    // return a clean, staged error (which stage failed) instead, and the job can be resumed.
+    await Promise.race([
+      slice,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`The ${job.status.toLowerCase()} step ran past 50s and was stopped — a Microsoft or AI call is being slow.`)), 50_000)
+      ),
+    ]);
   } catch (error) {
     const message = describeGraphError(error);
     await query(`update onboarding_job set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), job.id]);
