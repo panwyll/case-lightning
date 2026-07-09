@@ -122,7 +122,6 @@ type Tone = (typeof TONES)[number];
 // run() busy labels for the reply flow — also used to drive the panel's spinner.
 const REPLY_BUSY_CREATE = 'Writing the reply into Outlook';
 const REPLY_BUSY_REGEN = 'Updating the reply in Outlook';
-const REPLY_BUSY_SEND = 'Sending the reply';
 
 const STAGES: Array<[string, string]> = [
   ['INSTRUCTION', '1 · Instruction'],
@@ -280,7 +279,6 @@ export default function Taskpane() {
   // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
   const [guidance, setGuidance] = useState('');
   const [replyReady, setReplyReady] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null); // the Outlook draft to send
   // Set when a reply draft attempt errors, so the panel stops spinning and offers a retry.
   const [replyFailed, setReplyFailed] = useState(false);
 
@@ -754,7 +752,6 @@ export default function Taskpane() {
           setIgnored(false);
           setLinkOpen(false);
           setReplyReady(false);
-          setDraftId(null);
           setReplyFailed(false);
           setGuidance('');
           setTone('NEUTRAL');
@@ -1399,11 +1396,10 @@ export default function Taskpane() {
         }
       );
       setReplyReady(true);
-      setDraftId(r.draftId ?? null);
       // The auto draft-on-open is a background action — the green panel state says it
       // all, so stay quiet (and never toast when an existing draft was left untouched).
       if (!opts.auto && !r.reused) {
-        setStatus(opts.regen ? 'Reply draft updated.' : 'Reply drafted.');
+        setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
       }
       // NB: we deliberately do NOT file (move) the email here. The reply is only a
       // draft, and auto-drafting fires on open — filing here moved the source email
@@ -1412,22 +1408,6 @@ export default function Taskpane() {
     });
     clearTimeout(watchdog);
     if (!done) setReplyFailed(true);
-  }
-
-  // Send the reviewed draft straight from the pane. Human-in-the-loop: the user clicked
-  // Send. The server refuses anything that isn't a draft, so it can only fire once.
-  async function sendReply() {
-    // No window.confirm here: Outlook add-in webviews don't reliably support it (it can
-    // return undefined and silently block the send). The explicit Send click is the intent.
-    if (!draftId) { setStatus('No draft to send yet — draft the reply first.'); return; }
-    await run(REPLY_BUSY_SEND, async () => {
-      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId: draftId }) });
-      setStatus('Reply sent.');
-      setReplyReady(false);
-      setDraftId(null);
-      setChosenAction(null);
-      return true;
-    });
   }
 
   const loadTasks = useCallback(async (mid = matterId) => {
@@ -2086,7 +2066,7 @@ export default function Taskpane() {
                 return (
                   <div style={S.actionPanel}>
                     {replyReady && !replying ? (
-                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply drafted — review below, then Send.</p>
+                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply draft in Outlook — review &amp; send it there.</p>
                     ) : replying ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Writing the draft into Outlook…
@@ -2109,32 +2089,13 @@ export default function Taskpane() {
                       />
                     </div>
 
-                    {replyReady ? (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                        <button
-                          style={{ ...S.secondary, flex: 1, marginTop: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                          onClick={() => openReply({ regen: true })}
-                          disabled={!!busy}
-                        >
-                          {busy === REPLY_BUSY_REGEN ? <span style={S.spinner} /> : 'Regenerate'}
-                        </button>
-                        <button
-                          style={{ ...S.primary, flex: 1, marginTop: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                          onClick={sendReply}
-                          disabled={!!busy}
-                        >
-                          {busy === REPLY_BUSY_SEND ? <span style={S.spinnerLight} /> : 'Send'}
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        style={{ ...S.primary, marginTop: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                        onClick={() => openReply({ regen: !!guidance.trim() })}
-                        disabled={replying}
-                      >
-                        {replying ? <span style={S.spinnerLight} /> : 'Draft reply'}
-                      </button>
-                    )}
+                    <button
+                      style={{ ...S.primary, marginTop: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={() => openReply({ regen: replyReady || !!guidance.trim() })}
+                      disabled={replying}
+                    >
+                      {replying ? <span style={S.spinnerLight} /> : replyReady ? 'Regenerate' : 'Draft reply'}
+                    </button>
                   </div>
                 );
               })()}

@@ -34,12 +34,10 @@ export const config = {
     env('AZURE_REDIRECT_URI') ??
     `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/auth/callback`,
   // Least-privilege Graph scopes so admin consent is easier for firms' IT:
-  //  - Mail.ReadWrite covers reading threads AND creating draft replies.
-  //  - Mail.Send is what lets a *reviewed* draft be sent from the pane / web app
-  //    (POST /messages/{id}/send). Interactive, human-clicks-Send only; without it
-  //    that call 403s. NOTE: prod sets GRAPH_SCOPES in Vercel which OVERRIDES this
-  //    default — adding a scope here also needs the env updated + redeploy + the
-  //    admin re-consenting so existing tokens pick it up.
+  //  - Mail.ReadWrite covers reading threads AND creating draft replies (no
+  //    separate Mail.Read needed; there is no send scope — draft-only by design).
+  //    (Interactive send-from-pane was trialled but pulled to keep consent light;
+  //    it needs Mail.Send + a re-consent — see git history if re-adding.)
   //  - MailboxSettings.ReadWrite is required to manage the master category list
   //    (create/colour the Reply/Action/Delegate tags). Without it Outlook still
   //    lets us stamp category names onto a message via Mail.ReadWrite, but it
@@ -51,7 +49,7 @@ export const config = {
   //    to Teams" feature only.
   graphScopes: (
     env('GRAPH_SCOPES') ??
-    'User.Read Mail.ReadWrite Mail.Send MailboxSettings.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
+    'User.Read Mail.ReadWrite MailboxSettings.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
   ).split(/\s+/),
 
   // AI — Claude, tiered by task so we don't pay Opus rates to label emails:
