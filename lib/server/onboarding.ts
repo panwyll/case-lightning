@@ -20,6 +20,7 @@ import { listMailSince, listThreadMessages, appendTrackerRow, describeGraphError
 import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
+import { seedTasksFromOutstanding } from './tasks';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
 import { threadToText } from './text';
 import { writeAudit } from './audit';
@@ -472,6 +473,10 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
      where matter_id = $4 and tenant_id = $5`,
     [JSON.stringify(extracted.facts), JSON.stringify(extracted.outstanding), JSON.stringify(extracted.risks), matterId, user.tenantId]
   );
+  // Turn the outstanding items the extractor just produced into real, actionable tasks on the
+  // matter — so an imported case lands with its to-do list already populated. Reuses the
+  // extraction above (no extra AI), batch-inserts, and never blocks provisioning.
+  await seedTasksFromOutstanding(user, matterId, extracted.outstanding, { max: 8 }).catch(() => {});
   for (const item of extracted.timeline) {
     await query(
       `insert into matter_timeline_event (tenant_id, matter_id, event_type, title, details, source_ref)

@@ -280,6 +280,77 @@ export async function autoActionTask(
   }
 }
 
+/**
+ * Bulk-seed a matter's task list from AI-extracted "outstanding items" — used at import time so
+ * a freshly-provisioned matter already carries its open to-dos. PERFORMANT BY DESIGN:
+ *   • reuses the extraction the importer already ran (no new LLM call),
+ *   • one batched INSERT per matter under a single tracker lock (not N createTask round-trips),
+ *   • NO per-task Excel mirror or To Do push — those Graph calls would turn a bulk import into a
+ *     call storm. Seeded tasks are app-first; they sync outward the next time one is edited.
+ * Idempotent: skips items already open on the matter, so re-running an import won't duplicate.
+ * Returns how many tasks it created.
+ */
+export async function seedTasksFromOutstanding(
+  user: SessionUser,
+  matterId: string,
+  outstanding: string[],
+  opts: { max?: number } = {}
+): Promise<number> {
+  const max = opts.max ?? 8;
+  const seen = new Set<string>();
+  const items = (outstanding ?? [])
+    .map((s) => (s ?? '').trim())
+    .filter((s) => s.length >= 4 && s.length <= 280)
+    .filter((s) => {
+      const k = s.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .slice(0, max);
+  if (!items.length) return 0;
+  try {
+    return await withTrackerLock(matterId, async (db) => {
+      const existing = new Set(
+        (
+          await db.query<{ detail: string }>(
+            `select lower(detail) as detail from matter_task where matter_id = $1 and status in ('OPEN','IN_PROGRESS')`,
+            [matterId]
+          )
+        ).rows.map((r) => r.detail)
+      );
+      const fresh = items.filter((s) => !existing.has(s.toLowerCase()));
+      if (!fresh.length) return 0;
+      // Continue the T-NNNN sequence from the current max (not count) so a prior deletion
+      // can't make us re-issue a ref.
+      const last = (
+        await db.query<{ ref: string }>(
+          `select ref from matter_task where matter_id = $1 and ref ~ '^T-[0-9]+$' order by (substring(ref from 3))::int desc limit 1`,
+          [matterId]
+        )
+      ).rows[0];
+      let n = last ? parseInt(last.ref.slice(2), 10) : 0;
+      const tuples: string[] = [];
+      const params: unknown[] = [];
+      let p = 0;
+      for (const detail of fresh) {
+        n += 1;
+        const ref = `T-${String(n).padStart(4, '0')}`;
+        tuples.push(`($${++p},$${++p},$${++p},'TASK',$${++p},'OPEN','IMPORT',$${++p})`);
+        params.push(user.tenantId, matterId, ref, detail, user.userId);
+      }
+      await db.query(
+        `insert into matter_task (tenant_id, matter_id, ref, type, detail, status, source, created_by)
+         values ${tuples.join(',')}`,
+        params
+      );
+      return fresh.length;
+    });
+  } catch {
+    return 0; // task-seeding must never fail the import
+  }
+}
+
 // The "tell the client" milestones where CONVEYi pre-drafts the update itself (into the
 // ready-to-send queue), rather than just raising a task. Templated (no LLM) so it's fast,
 // predictable and cheap; blank recipient so the fee-earner reviews + addresses before Send.
