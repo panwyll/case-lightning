@@ -2609,7 +2609,7 @@ export default function Taskpane() {
                         <button
                           style={{ ...S.iconAction, color: canX ? '#5A27E0' : '#cbd5e1', borderColor: canX ? '#c4b5fd' : '#e2e8f0', cursor: canX ? 'pointer' : 'not-allowed' }}
                           onClick={() => canX && runReconcile()}
-                          disabled={!canX}
+                          aria-disabled={!canX}
                           title={reconBusy ? 'Cross-checking…' : !filesLoaded ? 'Loading case files…' : docs === 0 ? 'Only the Tracker is here — add case documents to cross-check.' : 'Cross-check documents against each other and the matter'}
                           aria-label="Cross-check documents"
                         >
