@@ -2390,15 +2390,16 @@ export default function Taskpane() {
                   </div>
                 ) : (
                   <>
-                    {/* Numbered stage — unlabeled; edit in place */}
-                    <select value={curStage} onChange={(e) => updateMatterField({ stage: e.target.value })} disabled={!!busy} style={ctrl} title="Stage">
-                      {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                    {/* Assignee — unlabeled; edit in place */}
-                    <select value={curAssigned} onChange={(e) => updateMatterField({ assignedTo: e.target.value || null })} disabled={!!busy} style={ctrl} title="Assigned to">
-                      <option value="">Unassigned</option>
-                      {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
-                    </select>
+                    {/* Stage + assignee side by side — unlabeled, edit in place */}
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <select value={curStage} onChange={(e) => updateMatterField({ stage: e.target.value })} disabled={!!busy} style={{ ...ctrl, flex: 1, minWidth: 0, width: 'auto' }} title="Stage">
+                        {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                      <select value={curAssigned} onChange={(e) => updateMatterField({ assignedTo: e.target.value || null })} disabled={!!busy} style={{ ...ctrl, flex: 1, minWidth: 0, width: 'auto' }} title="Assigned to">
+                        <option value="">Unassigned</option>
+                        {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                      </select>
+                    </div>
                     {/* Free-text case notes — unlabeled box, saves on blur */}
                     <textarea
                       key={matterId}
