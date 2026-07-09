@@ -16,7 +16,7 @@
  *     → (confirm) → PROVISIONING → COMPLETED
  */
 import { query, queryOne } from './db';
-import { listMailSince, listThreadMessages, appendTrackerRow, describeGraphError } from './graph';
+import { listMailSince, listThreadMessages, describeGraphError } from './graph';
 import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
@@ -465,7 +465,9 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
   }
   if (!allMessages.length) return;
 
-  const text = threadToText(allMessages).slice(0, 24000);
+  // Cap the extract input so the single Groq/Anthropic call stays fast enough to finish well
+  // within the provisioning slice — 16k chars is plenty of signal for a back-fill summary.
+  const text = threadToText(allMessages).slice(0, 16000);
   const existing = await queryOne<{ facts: Record<string, unknown> }>(
     `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
@@ -495,34 +497,11 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
     );
   }
   await upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } });
-
-  const matter = await queryOne<{ tracker_item_id: string | null }>(
-    `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
-    [matterId, user.tenantId]
-  );
-  if (matter?.tracker_item_id) {
-    const today = new Date().toISOString().slice(0, 10);
-    for (const item of extracted.timeline) {
-      await appendTrackerRow(user.userId, matter.tracker_item_id, {
-        date: today,
-        type: 'UPDATE',
-        detail: `${item.title}: ${item.details}`.slice(0, 250),
-        owner: '',
-        due: '',
-        status: 'NOTED',
-      }).catch(() => {});
-    }
-    for (const o of extracted.outstanding) {
-      await appendTrackerRow(user.userId, matter.tracker_item_id, {
-        date: today,
-        type: 'OUTSTANDING',
-        detail: String(o).slice(0, 250),
-        owner: '',
-        due: '',
-        status: 'OPEN',
-      }).catch(() => {});
-    }
-  }
+  // NB: we deliberately do NOT back-fill the Excel tracker here. Writing a row per timeline/
+  // outstanding item meant ~16 sequential Graph Excel calls per matter — the main reason
+  // provisioning blew past the 50s slice cap. The same data already lives in matter_summary,
+  // matter_timeline_event and the seeded tasks (app-DB is the source of truth); the tracker
+  // populates via the normal task/figure sync, not an eager import-time back-fill.
 }
 
 async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Promise<void> {
