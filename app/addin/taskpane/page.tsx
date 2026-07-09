@@ -1874,10 +1874,9 @@ export default function Taskpane() {
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}
-              {/* Any admin with colleagues can filter the queue by fee earner — "Anyone" is
-                  the whole firm. Shown regardless of plan/tasks so you can always switch who
-                  you're looking at. A lone user has nothing to filter, so it's hidden then. */}
-              {wlMeta.isAdmin && teamMembers.length > 1 && (
+              {/* Admins can always filter the queue by fee earner — "Anyone" is the whole
+                  firm. Shown regardless of plan/tasks/headcount so the control is always there. */}
+              {wlMeta.isAdmin && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#7A7388', flex: 'none' }}>Assigned to</span>
                   <select
