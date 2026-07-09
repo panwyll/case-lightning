@@ -34,14 +34,13 @@ export const config = {
     env('AZURE_REDIRECT_URI') ??
     `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/auth/callback`,
   // Least-privilege Graph scopes so admin consent is easier for firms' IT:
-  //  - Mail.ReadWrite covers reading threads AND creating draft replies.
-  //  - Mail.Send lets a *reviewed* draft be sent from the pane / web app
-  //    (POST /messages/{id}/send) — interactive, human-clicks-Send only.
-  //  - Tasks.ReadWrite backs the Microsoft To Do spoke of the task sync
-  //    (two-way-sync-design.md): our matter tasks mirror into the user's To Do.
-  //  - NB: prod sets GRAPH_SCOPES in Vercel which OVERRIDES this default. Adding a
-  //    scope here also needs the env updated + redeploy + the admin re-consenting
-  //    (and the Azure app registration granting the permission) so tokens carry it.
+  //  - Mail.ReadWrite covers reading threads AND creating draft replies (no send).
+  //  - !! DO NOT add a scope here (or to the Vercel GRAPH_SCOPES env) until the Azure
+  //    app registration has that permission AND it's been ADMIN-CONSENTED. Requesting
+  //    an unconsented scope makes Entra reject the ENTIRE token exchange (AADSTS65001),
+  //    which takes down ALL Graph access — not just the new feature. Mail.Send (send
+  //    from pane) and Tasks.ReadWrite (To Do sync) are held back for exactly this
+  //    reason; re-add both only once consent is confirmed green in Azure.
   //  - MailboxSettings.ReadWrite is required to manage the master category list
   //    (create/colour the Reply/Action/Delegate tags). Without it Outlook still
   //    lets us stamp category names onto a message via Mail.ReadWrite, but it
@@ -53,7 +52,7 @@ export const config = {
   //    to Teams" feature only.
   graphScopes: (
     env('GRAPH_SCOPES') ??
-    'User.Read Mail.ReadWrite Mail.Send Tasks.ReadWrite MailboxSettings.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
+    'User.Read Mail.ReadWrite MailboxSettings.ReadWrite Files.ReadWrite Team.ReadBasic.All ChannelMessage.Send'
   ).split(/\s+/),
 
   // AI — Claude, tiered by task so we don't pay Opus rates to label emails:
