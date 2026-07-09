@@ -2051,8 +2051,8 @@ export default function Taskpane() {
               <Label>Summary</Label>
               <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 10px' }}>{assist.ask}</p>
 
-              {/* The moves. The recommended one is pre-lit; pick either to expand it. */}
-              <div style={{ ...S.actionRow, gridTemplateColumns: 'repeat(2, 1fr)' }}>
+              {/* The moves, as tabs. The recommended one is pre-lit; pick either to expand it. */}
+              <div style={S.tabBar}>
                 {([
                   ['reply', 'reply', 'Reply'],
                   ['action', 'check', 'Action'],
@@ -2062,16 +2062,17 @@ export default function Taskpane() {
                   return (
                     <button
                       key={key}
-                      style={{ ...S.actionBtn, ...(active ? S.actionBtnActive : {}) }}
+                      style={{ ...S.tabBtn, ...(active ? S.tabBtnActive : {}), position: 'relative' }}
+                      aria-selected={active}
                       onClick={() => {
                         recordAction(key);
                         setChosenAction(key);
                         if (key === 'reply') openReply();
                       }}
                     >
-                      <Icon name={icon} size={18} />
+                      <Icon name={icon} size={16} />
                       <span>{lbl}</span>
-                      {isRec && <span style={S.recDot} title="Suggested" />}
+                      {isRec && <span style={{ ...S.recDot, top: 3, right: 6 }} title="Suggested" />}
                     </button>
                   );
                 })}
