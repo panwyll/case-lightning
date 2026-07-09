@@ -174,12 +174,13 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
       json = JSON.parse(text);
     } catch {
       // A non-JSON body means the request didn't reach our handler cleanly — almost always a
-      // serverless timeout (504) or a gateway/framework error page. Turn it into a real,
-      // retryable error instead of a raw "Unexpected token <" JSON parse crash.
+      // serverless timeout (504) or a gateway/framework error page. Surface a real message
+      // (plus a snippet of the body) instead of a raw "Unexpected token <" JSON parse crash.
+      const snippet = text.slice(0, 300).replace(/\s+/g, ' ').trim();
       const err = new Error(
         res.status === 504 || res.status === 408 || res.status === 524
-          ? 'That step took too long and timed out — please try again.'
-          : `The server returned an unexpected response (HTTP ${res.status || '?'}).`
+          ? `Timed out (HTTP ${res.status}).`
+          : `Non-JSON response (HTTP ${res.status || '?'})${snippet ? `: ${snippet}` : ''}`
       ) as Error & { status?: number };
       err.status = res.status;
       throw err;
@@ -675,19 +676,22 @@ export default function Taskpane() {
         } catch (e) {
           // A single slice timing out / a transient 5xx shouldn't abort the whole import —
           // each slice is resumable, so back off and retry a few times before surfacing.
+          // Show the RAW error + status on every attempt so failures are diagnosable.
           const status = (e as { status?: number }).status ?? 0;
+          const raw = (e as Error).message || 'Unknown error';
           const transient = status === 0 || status === 408 || status === 429 || status >= 500;
           if (transient && transientRetries < 4) {
             transientRetries += 1;
-            setStatus(`Hit a snag — retrying (${transientRetries}/4)…`);
+            setStatus(`⚠️ ${raw} [HTTP ${status || 'network'}] — retrying ${transientRetries}/4…`);
             await new Promise((res) => setTimeout(res, 1500 * transientRetries));
             continue;
           }
-          throw e;
+          setStatus(`Onboarding stopped — ${raw} [HTTP ${status || 'network'}]`);
+          return;
         }
       }
     } catch (e) {
-      setStatus((e as Error).message);
+      setStatus(`Onboarding stopped — ${(e as Error).message || 'Unknown error'}`);
     } finally {
       obDriving.current = false;
     }
