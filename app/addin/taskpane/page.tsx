@@ -1654,7 +1654,7 @@ export default function Taskpane() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {me && (
             <button
-              style={{ ...S.iconBtn, color: showSetup ? '#5A27E0' : '#94a3b8', background: showSetup ? '#EDE7FB' : 'transparent' }}
+              style={{ ...S.iconBtn, color: showSetup ? '#5A27E0' : '#64748b', background: showSetup ? '#EDE7FB' : 'transparent' }}
               onClick={() => setShowSetup((s) => !s)}
               title="Setup & settings"
               aria-label="Setup & settings"
@@ -1667,7 +1667,7 @@ export default function Taskpane() {
           )}
           {me && (
             <button
-              style={{ ...S.iconBtn, color: '#5A27E0' }}
+              style={{ ...S.iconBtn, color: '#64748b' }}
               onClick={openReferral}
               title="Refer a firm, earn credit"
               aria-label="Refer a firm, earn credit"
@@ -1678,29 +1678,24 @@ export default function Taskpane() {
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button style={S.account} onClick={() => openAdmin('billing')} title={`${me.displayName || me.email} — account & billing`}>
-              {plan && (
-                <span style={S.planBadge}>
-                  {plan.plan === 'enterprise'
-                    ? 'Firm'
-                    : plan.plan === 'pro'
-                    ? 'Pro'
-                    : plan.plan === 'plus'
-                    ? 'Solo'
-                    : plan.status === 'trialing'
-                    ? 'Trial'
-                    : 'Free'}
-                </span>
-              )}
-              <Icon name="user" size={16} />
+            {plan && (
+              <span style={S.planBadge}>
+                {plan.plan === 'enterprise'
+                  ? 'Firm'
+                  : plan.plan === 'pro'
+                  ? 'Pro'
+                  : plan.plan === 'plus'
+                  ? 'Solo'
+                  : plan.status === 'trialing'
+                  ? 'Trial'
+                  : 'Free'}
+              </span>
+            )}
+            <button style={{ ...S.iconBtn, color: '#64748b' }} onClick={() => openAdmin('billing')} title={`${me.displayName || me.email} — account & billing`} aria-label="Account & billing">
+              <Icon name="user" size={18} />
             </button>
-            <button
-              onClick={signOut}
-              style={{ ...S.iconBtn, color: '#94a3b8' }}
-              title={`Sign out (${me.email})`}
-              aria-label="Sign out"
-            >
-              <Icon name="logout" size={16} />
+            <button style={{ ...S.iconBtn, color: '#64748b' }} onClick={signOut} title={`Sign out (${me.email})`} aria-label="Sign out">
+              <Icon name="logout" size={18} />
             </button>
           </div>
         ) : (
@@ -2120,7 +2115,8 @@ export default function Taskpane() {
                 if (replySent) {
                   return (
                     <div style={S.actionPanel}>
-                      <p style={{ margin: 0, fontSize: 13, color: '#166534', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✓ Reply sent</p>
+                      <p style={{ margin: 0, fontSize: 13, color: '#166534', fontWeight: 700 }}>✓ Sent</p>
+                      <p style={{ ...S.muted, margin: '4px 0 0' }}>You’re now waiting on a reply — I’ll surface this as a chase if it goes quiet. No need to nudge them yourself.</p>
                     </div>
                   );
                 }
