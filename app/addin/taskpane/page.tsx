@@ -1403,7 +1403,7 @@ export default function Taskpane() {
       // The auto draft-on-open is a background action — the green panel state says it
       // all, so stay quiet (and never toast when an existing draft was left untouched).
       if (!opts.auto && !r.reused) {
-        setStatus(opts.regen ? 'Reply draft updated in Outlook — review & send it there.' : 'Reply draft created in Outlook — review & send it there.');
+        setStatus(opts.regen ? 'Reply draft updated.' : 'Reply drafted.');
       }
       // NB: we deliberately do NOT file (move) the email here. The reply is only a
       // draft, and auto-drafting fires on open — filing here moved the source email
@@ -1417,8 +1417,9 @@ export default function Taskpane() {
   // Send the reviewed draft straight from the pane. Human-in-the-loop: the user clicked
   // Send. The server refuses anything that isn't a draft, so it can only fire once.
   async function sendReply() {
+    // No window.confirm here: Outlook add-in webviews don't reliably support it (it can
+    // return undefined and silently block the send). The explicit Send click is the intent.
     if (!draftId) { setStatus('No draft to send yet — draft the reply first.'); return; }
-    if (!window.confirm('Send this reply now? It goes to the recipients on the draft.')) return;
     await run(REPLY_BUSY_SEND, async () => {
       await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId: draftId }) });
       setStatus('Reply sent.');
@@ -2085,7 +2086,7 @@ export default function Taskpane() {
                 return (
                   <div style={S.actionPanel}>
                     {replyReady && !replying ? (
-                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply draft in Outlook — review &amp; send it there.</p>
+                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply drafted — review below, then Send.</p>
                     ) : replying ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Writing the draft into Outlook…
