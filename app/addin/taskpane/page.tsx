@@ -2602,7 +2602,7 @@ export default function Taskpane() {
                           style={{ ...S.iconAction, background: canX ? '#5A27E0' : '#fff', color: canX ? '#fff' : '#cbd5e1', borderColor: canX ? '#5A27E0' : '#e2e8f0', cursor: canX ? 'pointer' : 'not-allowed' }}
                           onClick={() => canX && runReconcile()}
                           aria-disabled={!canX}
-                          title={reconBusy ? 'Cross-checking…' : !filesLoaded ? 'Loading case files…' : docs === 0 ? 'Add case documents to cross check' : 'Cross-check documents against each other and the matter'}
+                          title={reconBusy ? 'Cross-checking…' : !filesLoaded ? 'Loading case files…' : docs === 0 ? 'Add case documents to cross check' : 'Cross Check Documents'}
                           aria-label="Cross-check documents"
                         >
                           {reconBusy ? <span style={S.spinner} /> : <Icon name="fileCheck" size={15} />}
