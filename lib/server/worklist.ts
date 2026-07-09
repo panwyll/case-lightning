@@ -15,7 +15,7 @@
 import { query } from './db';
 import { detectChases } from './chase';
 
-export type WorklistKind = 'CHASE' | 'DRAFT_READY';
+export type WorklistKind = 'CHASE' | 'DRAFT_READY' | 'TASK';
 
 export interface WorklistEntry {
   id: string; // worklist_item id for DRAFT_READY; the thread id for CHASE
@@ -29,7 +29,8 @@ export interface WorklistEntry {
   threadId?: string | null; // CHASE: the thread to snooze; DRAFT_READY: its thread if it's a reply
   graphMessageId?: string | null; // the ready draft to send (DRAFT_READY)
   keyDate?: string | null; // the matter's nearest exchange/completion target — drives urgency
-  urgent?: boolean; // key date within a week: sorts to the very top
+  urgent?: boolean; // key date OR task due within a week: sorts to the very top
+  due?: string | null; // TASK: the task's own due date (YYYY-MM-DD), if set
 }
 
 /** Add (or re-surface) a "ready to send" draft. Idempotent per (tenant, kind, dedupKey). */
@@ -116,12 +117,53 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
     /* not migrated yet */
   }
 
+  // Open matter tasks — the matter's own to-do list, folded into the one plate view so
+  // "what needs you" is genuinely everything, not just email. Best-effort; capped so a
+  // pathological matter can't flood the queue.
+  let taskEntries: WorklistEntry[] = [];
+  try {
+    const rows = await query<{
+      id: string;
+      matter_id: string;
+      detail: string;
+      due: string | null;
+      created_at: string;
+      matter_ref: string;
+      property_address: string | null;
+    }>(
+      `select t.id, t.matter_id, t.detail, t.due, t.created_at, m.matter_ref, m.property_address
+         from matter_task t
+         join matter m on m.id = t.matter_id
+        where t.tenant_id = $1
+          and t.status in ('OPEN','IN_PROGRESS')
+          and m.status = 'OPEN'
+          and ($2::uuid is null or m.assigned_to = $2::uuid or t.assignee_user_id = $2::uuid)
+        order by t.created_at asc
+        limit 300`,
+      [tenantId, assignedToUserId ?? null]
+    );
+    const now = Date.now();
+    taskEntries = rows.map((r) => ({
+      id: r.id,
+      kind: 'TASK',
+      matterId: r.matter_id,
+      matterRef: r.matter_ref,
+      propertyAddress: r.property_address,
+      title: r.detail,
+      detail: null,
+      ageDays: Math.floor((now - new Date(r.created_at).getTime()) / 86_400_000),
+      due: r.due ? new Date(r.due).toISOString().slice(0, 10) : null,
+    }));
+  } catch {
+    /* matter_task absent / not readable — worklist still works without tasks */
+  }
+
   // Rank by urgency (the "here's your plate, in priority order" queue):
-  //   1. matters with an exchange/completion target within a week — soonest first,
+  //   1. anything with an exchange/completion target OR task due within a week — soonest first,
   //   2. overdue chases (oldest first),
   //   3. ready-to-send drafts (quick wins),
-  //   4. everything else, oldest first.
-  const entries = [...draftEntries, ...chaseEntries];
+  //   4. open tasks, then everything else, oldest first.
+  const entries = [...draftEntries, ...chaseEntries, ...taskEntries];
   const matterIds = [...new Set(entries.map((e) => e.matterId).filter(Boolean))];
   const keyDates: Record<string, number> = {};
   if (matterIds.length) {
@@ -138,20 +180,28 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
   }
   const now = Date.now();
   const DAY = 86_400_000;
-  const score = (e: WorklistEntry): number => {
+  // The soonest hard deadline on an entry: the matter's exchange/completion target, or —
+  // for a task — its own due date, whichever is nearer.
+  const soonestMs = (e: WorklistEntry): number | undefined => {
     const kd = e.matterId ? keyDates[e.matterId] : undefined;
-    const daysToKey = kd !== undefined ? (kd - now) / DAY : Infinity;
-    if (daysToKey <= 7) return daysToKey; // 0..7 — imminent exchange/completion, soonest first
+    const due = e.due ? new Date(e.due).getTime() : undefined;
+    const vals = [kd, due].filter((v): v is number => v !== undefined);
+    return vals.length ? Math.min(...vals) : undefined;
+  };
+  const score = (e: WorklistEntry): number => {
+    const soon = soonestMs(e);
+    const daysToDeadline = soon !== undefined ? (soon - now) / DAY : Infinity;
+    if (daysToDeadline <= 7) return daysToDeadline; // 0..7 — imminent deadline, soonest first
     if (e.kind === 'CHASE' && e.ageDays >= 5) return 100 - Math.min(e.ageDays, 60); // overdue chases
     if (e.kind === 'DRAFT_READY') return 200 - Math.min(e.ageDays, 60); // ready wins
+    if (e.kind === 'TASK') return 250 - Math.min(e.ageDays, 60); // open to-dos
     return 300 - Math.min(e.ageDays, 60);
   };
   for (const e of entries) {
     const kd = e.matterId ? keyDates[e.matterId] : undefined;
-    if (kd !== undefined) {
-      e.keyDate = new Date(kd).toISOString().slice(0, 10);
-      e.urgent = (kd - now) / DAY <= 7;
-    }
+    if (kd !== undefined) e.keyDate = new Date(kd).toISOString().slice(0, 10);
+    const soon = soonestMs(e);
+    if (soon !== undefined) e.urgent = (soon - now) / DAY <= 7;
   }
   return entries.sort((a, b) => score(a) - score(b));
 }

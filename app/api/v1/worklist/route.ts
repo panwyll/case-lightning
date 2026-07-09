@@ -4,6 +4,8 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { getWorklist, dismissWorklistItem, snoozeWorklistItem } from '@/lib/server/worklist';
+import { updateTask } from '@/lib/server/tasks';
+import { queryOne } from '@/lib/server/db';
 import { runChaseSweep, snoozeChase } from '@/lib/server/chase';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { ok, fail } from '@/lib/server/http';
@@ -47,9 +49,9 @@ export async function POST(req: NextRequest) {
     await assertEntitled(user.tenantId);
     const body = z
       .object({
-        kind: z.enum(['CHASE', 'DRAFT_READY']),
-        id: z.string(), // email_thread id (CHASE) or worklist_item id (DRAFT_READY)
-        action: z.enum(['snooze', 'dismiss']).default('snooze'),
+        kind: z.enum(['CHASE', 'DRAFT_READY', 'TASK']),
+        id: z.string(), // email_thread id (CHASE), worklist_item id (DRAFT_READY), or matter_task id (TASK)
+        action: z.enum(['snooze', 'dismiss', 'done']).default('snooze'),
         days: z.number().int().min(1).max(60).default(7),
       })
       .parse(await req.json());
@@ -58,6 +60,11 @@ export async function POST(req: NextRequest) {
       // A chase is derived, so there's no "done" — dismiss just snoozes it far out.
       const far = new Date(Date.now() + 3650 * 86_400_000);
       await snoozeChase(user.tenantId, body.id, body.action === 'dismiss' ? far : until);
+    } else if (body.kind === 'TASK') {
+      // Completing a matter task from the queue — route through updateTask so it mirrors
+      // out to Excel / To Do like any other completion.
+      const t = await queryOne<{ matter_id: string }>(`select matter_id from matter_task where id = $1 and tenant_id = $2`, [body.id, user.tenantId]);
+      if (t) await updateTask(user, t.matter_id, body.id, { status: 'DONE' });
     } else if (body.action === 'dismiss') {
       await dismissWorklistItem(user.tenantId, body.id);
     } else {

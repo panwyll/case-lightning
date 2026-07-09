@@ -247,7 +247,7 @@ export default function AdminPage() {
       setSendingId(null);
     }
   }
-  async function myworkAction(item: any, action: 'snooze' | 'dismiss') {
+  async function myworkAction(item: any, action: 'snooze' | 'dismiss' | 'done') {
     setMyworkBusy(item.id);
     try {
       await api('/worklist', {
@@ -1467,6 +1467,7 @@ export default function AdminPage() {
           }
           const drafts = mywork.items.filter((i) => i.kind === 'DRAFT_READY');
           const chases = mywork.items.filter((i) => i.kind === 'CHASE');
+          const tasks = mywork.items.filter((i) => i.kind === 'TASK');
           const row = (item: any, accent: string) => (
             <div key={item.id} style={{ borderTop: '1px solid #f1f5f9' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', opacity: myworkBusy === item.id ? 0.5 : 1 }}>
@@ -1507,8 +1508,14 @@ export default function AdminPage() {
                   Open ↗
                 </a>
               )}
-              <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
-              <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
+              {item.kind === 'TASK' ? (
+                <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'done')} title="Mark this task done">✓ Done</button>
+              ) : (
+                <>
+                  <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
+                  <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
+                </>
+              )}
             </div>
             {/* Inline review-and-send: the drafted chaser, right here — no detour. */}
             {typeof chaserDrafts[item.id] === 'object' && (() => {
@@ -1587,6 +1594,17 @@ export default function AdminPage() {
                     <span style={{ fontSize: 12, color: '#94a3b8' }}>— you sent the last message and nobody has replied</span>
                   </div>
                   <div style={{ marginTop: 6 }}>{chases.map((i) => row(i, '#f59e0b'))}</div>
+                </div>
+              )}
+
+              {tasks.length > 0 && (
+                <div style={card}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <strong style={{ fontSize: 14, color: '#0f172a' }}>To do</strong>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#475569', background: '#e2e8f0', borderRadius: 999, padding: '1px 8px' }}>{tasks.length}</span>
+                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— open tasks on your matters</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>{tasks.map((i) => row(i, '#64748b'))}</div>
                 </div>
               )}
             </>

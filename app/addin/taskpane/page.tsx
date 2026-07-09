@@ -188,7 +188,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 // chases, shown on the no-email landing regardless of whether an email is open.
 type WorklistEntry = {
   id: string;
-  kind: 'CHASE' | 'DRAFT_READY';
+  kind: 'CHASE' | 'DRAFT_READY' | 'TASK';
   matterRef: string;
   propertyAddress: string | null;
   title: string;
@@ -197,7 +197,8 @@ type WorklistEntry = {
   threadId?: string | null;
   graphMessageId?: string | null; // the ready draft to send (DRAFT_READY only)
   keyDate?: string | null; // matter's nearest exchange/completion target
-  urgent?: boolean; // key date within a week — top of the queue
+  urgent?: boolean; // key date OR task due within a week — top of the queue
+  due?: string | null; // TASK's own due date (YYYY-MM-DD)
 };
 
 // Remember across opens that this user was signed in, so a cold taskpane shows a
@@ -336,6 +337,8 @@ export default function Taskpane() {
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
+  // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
+  const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
   // Worklist filter: `assignee` is '' (anyone / whole firm) or a user id. Only shown to team admins.
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
@@ -489,7 +492,7 @@ export default function Taskpane() {
   }, []);
 
   // Snooze (a week) or dismiss a worklist entry — a chase (by thread) or a ready-to-send draft.
-  async function worklistAction(item: WorklistEntry, action: 'snooze' | 'dismiss') {
+  async function worklistAction(item: WorklistEntry, action: 'snooze' | 'dismiss' | 'done') {
     setWlBusy(item.id);
     try {
       await api('/worklist', {
@@ -1895,7 +1898,21 @@ export default function Taskpane() {
                 </div>
               )}
               {(() => {
-                const items = worklist ?? [];
+                const base = worklist ?? [];
+                // 'smart' keeps the server's urgency ranking. 'due' floats nearest deadlines
+                // (task due or exchange/completion) to the top. 'matter' groups by case.
+                const deadlineMs = (w: WorklistEntry) => {
+                  const d = w.due ? new Date(w.due).getTime() : w.keyDate ? new Date(w.keyDate).getTime() : NaN;
+                  return Number.isNaN(d) ? Infinity : d;
+                };
+                const items =
+                  wlSort === 'smart'
+                    ? base
+                    : [...base].sort((a, b) =>
+                        wlSort === 'due'
+                          ? deadlineMs(a) - deadlineMs(b)
+                          : (a.matterRef || '').localeCompare(b.matterRef || '') || a.ageDays - b.ageDays
+                      );
                 const row = (w: WorklistEntry) => (
                   <div
                     key={w.id}
@@ -1909,12 +1926,17 @@ export default function Taskpane() {
                     </span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: w.kind === 'CHASE' ? '#b45309' : '#5A27E0', background: w.kind === 'CHASE' ? '#fef3c7' : '#ede9fe', borderRadius: 999, padding: '0 6px', flex: 'none' }}>
-                          {w.kind === 'CHASE' ? 'Chase' : 'Send'}
+                        <span style={{ fontSize: 10, fontWeight: 700, ...(w.kind === 'CHASE' ? { color: '#b45309', background: '#fef3c7' } : w.kind === 'TASK' ? { color: '#475569', background: '#e2e8f0' } : { color: '#5A27E0', background: '#ede9fe' }), borderRadius: 999, padding: '0 6px', flex: 'none' }}>
+                          {w.kind === 'CHASE' ? 'Chase' : w.kind === 'TASK' ? 'To do' : 'Send'}
                         </span>
                         {w.urgent && w.keyDate && (
                           <span title="Exchange/completion target" style={{ fontSize: 10, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', borderRadius: 999, padding: '0 6px', flex: 'none', whiteSpace: 'nowrap' }}>
                             🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                        {w.kind === 'TASK' && w.due && (
+                          <span title="Task due" style={{ fontSize: 10, fontWeight: 700, ...(w.urgent ? { color: '#b91c1c', background: '#fee2e2' } : { color: '#475569', background: '#e2e8f0' }), borderRadius: 999, padding: '0 6px', flex: 'none', whiteSpace: 'nowrap' }}>
+                            📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                           </span>
                         )}
                         <strong style={{ fontSize: 12.5, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -1929,6 +1951,14 @@ export default function Taskpane() {
                       const primary: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 700, padding: '5px 10px', border: 'none', borderRadius: 8, background: '#5A27E0', color: '#fff', cursor: 'pointer' };
                       const ghost: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 600, padding: '5px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#7A7388', cursor: 'pointer' };
                       const busy = wlBusy === w.id;
+                      // TASK: a matter to-do → tick it off (mirrors out to Excel / To Do).
+                      if (w.kind === 'TASK') {
+                        return (
+                          <button style={{ ...ghost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => worklistAction(w, 'done')} title="Mark this task done">
+                            {busy ? '…' : '✓ Done'}
+                          </button>
+                        );
+                      }
                       // DRAFT_READY: it's already written → Send in one click.
                       if (w.kind === 'DRAFT_READY') {
                         return (
@@ -1982,11 +2012,24 @@ export default function Taskpane() {
                 return (
                   <>
                     <Card>
-                      <Label>What needs you ({items.length})</Label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <Label>What needs you ({items.length})</Label>
+                        <select
+                          value={wlSort}
+                          onChange={(e) => setWlSort(e.target.value as typeof wlSort)}
+                          title="Sort the worklist"
+                          style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, padding: '3px 6px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', cursor: 'pointer' }}
+                        >
+                          <option value="smart">Smart order</option>
+                          <option value="due">By due date</option>
+                          <option value="matter">By matter</option>
+                        </select>
+                      </div>
                       <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                        In priority order — soonest exchange/completion first, then overdue chases. CONVEYi’s already drafted what it can; just hit Send.
+                        Chases, ready-to-send drafts and open tasks — everything on your plate.
+                        {wlSort === 'smart' ? ' In priority order: soonest deadline first, then overdue chases.' : ''}
                       </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.slice(0, 40).map(row)}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.slice(0, 80).map(row)}</div>
                     </Card>
                     <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
                       📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
