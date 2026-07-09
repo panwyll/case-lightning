@@ -1875,8 +1875,10 @@ export default function Taskpane() {
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}
               {/* Admins can always filter the queue by fee earner — "Anyone" is the whole
-                  firm. Shown regardless of plan/tasks/headcount so the control is always there. */}
-              {wlMeta.isAdmin && (
+                  firm. Gate on me.role (reliable, from /me) rather than wlMeta.isAdmin, which
+                  is only set when /worklist itself succeeds — so the control shows even if the
+                  list call hiccups. Regardless of plan/tasks/headcount. */}
+              {me?.role === 'ADMIN' && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#7A7388', flex: 'none' }}>Assigned to</span>
                   <select
