@@ -280,6 +280,7 @@ export default function Taskpane() {
   // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
   const [guidance, setGuidance] = useState('');
   const [replyReady, setReplyReady] = useState(false);
+  const [replySent, setReplySent] = useState(false); // this email's reply has been sent
   const [draftId, setDraftId] = useState<string | null>(null); // the Outlook draft to send
   // Set when a reply draft attempt errors, so the panel stops spinning and offers a retry.
   const [replyFailed, setReplyFailed] = useState(false);
@@ -754,6 +755,7 @@ export default function Taskpane() {
           setIgnored(false);
           setLinkOpen(false);
           setReplyReady(false);
+          setReplySent(false);
           setDraftId(null);
           setReplyFailed(false);
           setGuidance('');
@@ -1435,9 +1437,9 @@ export default function Taskpane() {
     await run(REPLY_BUSY_SEND, async () => {
       await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId: draftId }) });
       setStatus('Reply sent.');
+      setReplySent(true); // show a "sent" confirmation, don't fall back to the drafter
       setReplyReady(false);
       setDraftId(null);
-      setChosenAction(null);
       return true;
     });
   }
@@ -1559,7 +1561,7 @@ export default function Taskpane() {
     // `busy` is in the deps so that if another action (e.g. loadMatter) is mid-flight
     // when analysis lands, this re-runs and fires once that clears — otherwise the
     // panel hangs on "Preparing the reply…" forever.
-    if (autoRepliedFor.current === messageId || replyReady || busy) return;
+    if (autoRepliedFor.current === messageId || replyReady || replySent || busy) return;
     autoRepliedFor.current = messageId;
     openReply({ auto: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1676,7 +1678,7 @@ export default function Taskpane() {
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button style={S.account} onClick={() => openAdmin('billing')} title="Manage account & billing">
+            <button style={S.account} onClick={() => openAdmin('billing')} title={`${me.displayName || me.email} — account & billing`}>
               {plan && (
                 <span style={S.planBadge}>
                   {plan.plan === 'enterprise'
@@ -1690,8 +1692,7 @@ export default function Taskpane() {
                     : 'Free'}
                 </span>
               )}
-              <span style={S.user}>{me.displayName || me.email}</span>
-              <span style={{ color: '#94a3b8' }}>›</span>
+              <Icon name="user" size={16} />
             </button>
             <button
               onClick={signOut}
@@ -2115,6 +2116,14 @@ export default function Taskpane() {
                   is the control surface: status, tone, guidance and regenerate. */}
               {effectiveAction === 'reply' && (() => {
                 const replying = busy === REPLY_BUSY_CREATE || busy === REPLY_BUSY_REGEN;
+                // Once sent, the reply is done — a confirmation, not the drafter again.
+                if (replySent) {
+                  return (
+                    <div style={S.actionPanel}>
+                      <p style={{ margin: 0, fontSize: 13, color: '#166534', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✓ Reply sent</p>
+                    </div>
+                  );
+                }
                 return (
                   <div style={S.actionPanel}>
                     {replyReady && !replying ? (
