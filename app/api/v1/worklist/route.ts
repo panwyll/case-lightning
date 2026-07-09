@@ -22,16 +22,13 @@ export async function GET(req: NextRequest) {
     assertFeature('graph');
     const user = await requireUser();
     await assertEntitled(user.tenantId);
-    // Who's worklist? Solo firm → everything (one person). Team firm → a fee earner only
-    // ever sees their own; an ADMIN can filter by any person via ?assignedTo=<userId>, or
-    // ?assignedTo= (empty) / "any" for the whole firm.
+    // Who's worklist? An ADMIN can filter by any person via ?assignedTo=<userId>, or
+    // ?assignedTo= (empty) / "any" for the whole firm — regardless of plan, so trials can
+    // use it too. A non-admin fee earner only ever sees their own matters.
     const team = await hasTeamAccess(user.tenantId).catch(() => false);
     const isAdmin = user.role === 'ADMIN';
     const param = req.nextUrl.searchParams.get('assignedTo') ?? '';
-    let assignedTo: string | null;
-    if (!team) assignedTo = null; // solo: nothing to filter by
-    else if (!isAdmin) assignedTo = user.userId; // team member: only their own
-    else assignedTo = !param || param === 'any' ? null : param; // admin: anyone, or a chosen person
+    const assignedTo = isAdmin ? (!param || param === 'any' ? null : param) : user.userId;
     const items = await getWorklist(user.tenantId, assignedTo);
     after(async () => {
       await runChaseSweep(user.userId, user.tenantId).catch(() => {});

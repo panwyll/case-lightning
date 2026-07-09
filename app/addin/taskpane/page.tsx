@@ -1874,9 +1874,10 @@ export default function Taskpane() {
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}
-              {/* Admins on a team plan can filter the queue by fee earner — "Anyone" is
-                  the whole firm. Everyone else just sees their own, so no control needed. */}
-              {wlMeta.team && wlMeta.isAdmin && (
+              {/* Any admin with colleagues can filter the queue by fee earner — "Anyone" is
+                  the whole firm. Shown regardless of plan/tasks so you can always switch who
+                  you're looking at. A lone user has nothing to filter, so it's hidden then. */}
+              {wlMeta.isAdmin && teamMembers.length > 1 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 600, color: '#7A7388', flex: 'none' }}>Assigned to</span>
                   <select
@@ -1961,17 +1962,22 @@ export default function Taskpane() {
                     })()}
                   </div>
                 );
-                if (items.length === 0)
+                if (items.length === 0) {
+                  const who = wlMeta.assignee ? teamMembers.find((m) => m.id === wlMeta.assignee) : null;
+                  const whoName = who ? who.display_name || who.email : null;
                   return (
                     <Card>
                       <Label>What needs you</Label>
                       <p style={{ ...S.muted, margin: '6px 0 0' }}>
                         {worklist === null
                           ? 'Loading your worklist…'
-                          : 'You’re all caught up — nothing’s waiting on you right now. New chases and ready-to-send drafts will appear here.'}
+                          : whoName
+                          ? `Nothing needs ${whoName} right now. Switch “Assigned to” to Anyone (or another person) to see the rest.`
+                          : 'All caught up across the firm — no chases or ready-to-send drafts right now. New ones appear here automatically.'}
                       </p>
                     </Card>
                   );
+                }
                 return (
                   <>
                     <Card>
