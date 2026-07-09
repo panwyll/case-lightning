@@ -67,6 +67,39 @@ export async function mirrorTaskToTodo(user: SessionUser, matterId: string, task
 }
 
 /**
+ * End-of-import batch push: mirror every app-first task that hasn't reached To Do yet into the
+ * importing user's To Do list, in one pass. Called once when an onboarding import completes, so a
+ * bulk import doesn't fan out a Graph call per task mid-provision. Only touches tasks that target
+ * THIS user (unassigned, or assigned to them) — we can't write to a colleague's mailbox from here.
+ * No-op (and instant) without the Tasks.ReadWrite scope. Best-effort; returns how many it pushed.
+ */
+export async function flushUnsyncedTasksToTodo(user: SessionUser, opts: { max?: number } = {}): Promise<number> {
+  if (!tasksScope()) return 0;
+  const max = opts.max ?? 500;
+  try {
+    const rows = await query<TaskLike & { matter_id: string }>(
+      `select id, matter_id, detail, status, due, assignee_user_id
+         from matter_task
+        where tenant_id = $1
+          and todo_task_id is null
+          and status in ('OPEN','IN_PROGRESS')
+          and (assignee_user_id is null or assignee_user_id = $2)
+        order by created_at asc
+        limit $3`,
+      [user.tenantId, user.userId, max]
+    );
+    let pushed = 0;
+    for (const t of rows) {
+      await mirrorTaskToTodo(user, t.matter_id, t);
+      pushed += 1;
+    }
+    return pushed;
+  } catch {
+    return 0; // best-effort — the tasks are safe in Postgres, next edit re-pushes
+  }
+}
+
+/**
  * Pull a user's To Do edits back into matter_task, keyed by todo_task_id. Applies a
  * status change only if the To Do task changed AFTER our last confirmed push
  * (last-write-wins, the same guard the Excel spoke uses), so our own echoes are

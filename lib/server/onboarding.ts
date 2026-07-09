@@ -21,6 +21,7 @@ import { extractPostcodes } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
 import { seedTasksFromOutstanding } from './tasks';
+import { flushUnsyncedTasksToTodo } from './todo';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
 import { threadToText } from './text';
 import { writeAudit } from './audit';
@@ -524,6 +525,10 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
   );
 
   if (!cases.length) {
+    // Import finished: push the freshly-seeded (app-first) tasks to Microsoft To Do in one
+    // batch here — not per-task during provisioning — so a bulk import never fans out Graph
+    // calls mid-flight. No-op without the Tasks.ReadWrite scope, so it's safe while dormant.
+    await flushUnsyncedTasksToTodo(user).catch(() => {});
     await query(`update onboarding_job set status = 'COMPLETED', completed_at = now(), updated_at = now() where id = $1`, [job.id]);
     return;
   }
