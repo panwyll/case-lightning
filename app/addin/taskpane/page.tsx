@@ -336,7 +336,8 @@ export default function Taskpane() {
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
-  const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>({ team: false, isAdmin: false, scope: 'mine' });
+  // Worklist filter: `assignee` is '' (anyone / whole firm) or a user id. Only shown to team admins.
+  const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [showHistory, setShowHistory] = useState(false); // status card: audit-log panel
@@ -446,9 +447,9 @@ export default function Taskpane() {
     }
     try {
       // Doesn't need an email open — the "what needs me today" list (my matters by default).
-      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>('/worklist');
+      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; assignedTo: string }>('/worklist');
       setWorklist(r.items ?? []);
-      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, scope: r.scope ?? 'mine' });
+      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, assignee: r.assignedTo ?? '' });
     } catch {
       setWorklist([]);
     }
@@ -475,13 +476,13 @@ export default function Taskpane() {
 
   // Re-pull the worklist on its own (used when returning to the no-email landing, on a light
   // poll, and when switching My/Team scope). Captures team/role so the toggle knows itself.
-  const reloadWorklist = useCallback(async (scope?: 'mine' | 'team') => {
+  const reloadWorklist = useCallback(async (assignee?: string) => {
     try {
-      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>(
-        `/worklist${scope ? `?scope=${scope}` : ''}`
+      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; assignedTo: string }>(
+        `/worklist${assignee !== undefined ? `?assignedTo=${encodeURIComponent(assignee || 'any')}` : ''}`
       );
       setWorklist(r.items ?? []);
-      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, scope: r.scope ?? 'mine' });
+      setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, assignee: r.assignedTo ?? '' });
     } catch {
       /* keep whatever we had */
     }
@@ -532,14 +533,14 @@ export default function Taskpane() {
     }
   }
 
-  // Keep the worklist fresh while the pinned pane sits on the no-email landing: refetch on
-  // entering it and every 90s, so newly-arrived drafts/chases appear without reopening.
+  // Keep the worklist fresh while it's on screen (no-email landing OR the homeView queue):
+  // refetch on entering it and every 90s, so newly-arrived drafts/chases appear.
   useEffect(() => {
-    if (!me || messageId) return;
-    reloadWorklist(wlMeta.scope);
-    const t = setInterval(() => reloadWorklist(wlMeta.scope), 90_000);
+    if (!me || (messageId && !homeView)) return;
+    reloadWorklist(wlMeta.assignee);
+    const t = setInterval(() => reloadWorklist(wlMeta.assignee), 90_000);
     return () => clearInterval(t);
-  }, [me, messageId, reloadWorklist, wlMeta.scope]);
+  }, [me, messageId, homeView, reloadWorklist, wlMeta.assignee]);
 
   // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
   // don't flash "Not connected" during the first /me round-trip. Runs post-mount
@@ -1690,7 +1691,7 @@ export default function Taskpane() {
           {me && (
             <button
               style={{ ...S.iconBtn, color: homeView ? '#5A27E0' : '#64748b', background: homeView ? '#EDE7FB' : 'transparent' }}
-              onClick={() => setHomeView((h) => { if (!h) void reloadWorklist(); return !h; })}
+              onClick={() => setHomeView((h) => !h)}
               title={homeView ? 'Back to this email' : 'What needs me — the worklist'}
               aria-label={homeView ? 'Back to this email' : 'Open worklist'}
             >
@@ -1873,32 +1874,22 @@ export default function Taskpane() {
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}
-              {wlMeta.team && (
-                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                  {(
-                    [
-                      ['mine', 'My worklist'],
-                      ...(wlMeta.isAdmin ? [['team', 'Whole firm']] : []),
-                    ] as Array<['mine' | 'team', string]>
-                  ).map(([s, lbl]) => (
-                    <button
-                      key={s}
-                      onClick={() => reloadWorklist(s)}
-                      style={{
-                        flex: 1,
-                        fontSize: 12,
-                        fontWeight: wlMeta.scope === s ? 700 : 600,
-                        padding: '6px 10px',
-                        borderRadius: 8,
-                        cursor: 'pointer',
-                        border: '1px solid ' + (wlMeta.scope === s ? '#5A27E0' : '#D9D2EC'),
-                        background: wlMeta.scope === s ? '#5A27E0' : '#fff',
-                        color: wlMeta.scope === s ? '#fff' : '#5A27E0',
-                      }}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
+              {/* Admins on a team plan can filter the queue by fee earner — "Anyone" is
+                  the whole firm. Everyone else just sees their own, so no control needed. */}
+              {wlMeta.team && wlMeta.isAdmin && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#7A7388', flex: 'none' }}>Assigned to</span>
+                  <select
+                    value={wlMeta.assignee}
+                    onChange={(e) => reloadWorklist(e.target.value)}
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, padding: '6px 8px', borderRadius: 8, border: '1px solid #D9D2EC', background: '#fff', color: '#1C1530', cursor: 'pointer' }}
+                    title="Filter the worklist by who owns the matter"
+                  >
+                    <option value="">Anyone</option>
+                    {teamMembers.map((m) => (
+                      <option key={m.id} value={m.id}>{m.display_name || m.email}</option>
+                    ))}
+                  </select>
                 </div>
               )}
               {(() => {
