@@ -312,6 +312,9 @@ export default function Taskpane() {
   //   house     → the transaction/matter record (details, stage, tasks) — editable
   //   paperclip → files on the matter + the email-derived transaction knowledge
   const [tab, setTab] = useState<'email' | 'house' | 'paperclip'>('email');
+  // Home/worklist view: the pane only opens on a selected email, so the "what needs me"
+  // queue was unreachable while any email was open. This toggle surfaces it on demand.
+  const [homeView, setHomeView] = useState(false);
 
   // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
   const [assist, setAssist] = useState<AssistData | null>(null);
@@ -1686,6 +1689,26 @@ export default function Taskpane() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {me && (
             <button
+              style={{ ...S.iconBtn, color: homeView ? '#5A27E0' : '#64748b', background: homeView ? '#EDE7FB' : 'transparent' }}
+              onClick={() => setHomeView((h) => { if (!h) void reloadWorklist(); return !h; })}
+              title={homeView ? 'Back to this email' : 'What needs me — the worklist'}
+              aria-label={homeView ? 'Back to this email' : 'Open worklist'}
+            >
+              {homeView && messageId ? (
+                // an email is open behind us — offer a clear way back
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 12H5" /><path d="M12 19l-7-7 7-7" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" />
+                  <circle cx="3.5" cy="6" r="1" /><circle cx="3.5" cy="12" r="1" /><circle cx="3.5" cy="18" r="1" />
+                </svg>
+              )}
+            </button>
+          )}
+          {me && (
+            <button
               style={{ ...S.iconBtn, color: showSetup ? '#5A27E0' : '#64748b', background: showSetup ? '#EDE7FB' : 'transparent' }}
               onClick={() => setShowSetup((s) => !s)}
               title="Setup & settings"
@@ -1792,7 +1815,7 @@ export default function Taskpane() {
           {/* ── Hero: one compact status pill — a coloured dot (green = certain,
                 amber = unsure, red = none/error), the matter name, and an expand
                 arrow. Always tappable to open the link/create drawer. ── */}
-          {(() => {
+          {!homeView && (() => {
             const ref = matterInfo?.matter?.matter_ref ?? assist?.matter?.matterRef ?? topCandidate?.matterRef ?? null;
             const meta: Record<typeof matchKind, { icon: string; dot: string; name: string; style: React.CSSProperties }> = {
               found: { icon: '✓', dot: '#16a34a', name: ref || 'Matter found', style: S.heroFound },
@@ -1836,16 +1859,16 @@ export default function Taskpane() {
           })()}
 
           {/* Analysis failed — give the spinner an exit instead of spinning forever. */}
-          {messageId && assistError && (
+          {!homeView && messageId && assistError && (
             <Card>
               <p style={S.muted}>We couldn’t finish reading this email. It may have been a temporary hiccup.</p>
               <button style={S.secondary} onClick={() => runAssist()}>Try again</button>
             </Card>
           )}
 
-          {/* No email open — don't leave the pane blank; say what to do and where
-              the firm-wide tools are. */}
-          {!messageId && !assistError && (
+          {/* The worklist — shown when no email is open, or on demand via the header
+              worklist button (homeView) even while an email is selected. */}
+          {(homeView || !messageId) && !assistError && (
             <>
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
@@ -1947,7 +1970,17 @@ export default function Taskpane() {
                     })()}
                   </div>
                 );
-                if (items.length === 0) return null;
+                if (items.length === 0)
+                  return (
+                    <Card>
+                      <Label>What needs you</Label>
+                      <p style={{ ...S.muted, margin: '6px 0 0' }}>
+                        {worklist === null
+                          ? 'Loading your worklist…'
+                          : 'You’re all caught up — nothing’s waiting on you right now. New chases and ready-to-send drafts will appear here.'}
+                      </p>
+                    </Card>
+                  );
                 return (
                   <>
                     <Card>
@@ -1963,15 +1996,17 @@ export default function Taskpane() {
                   </>
                 );
               })()}
-              <Card>
-                <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
-              </Card>
+              {!homeView && (
+                <Card>
+                  <button style={S.secondary} onClick={() => setShowSetup(true)}>Setup &amp; import existing cases</button>
+                </Card>
+              )}
             </>
           )}
 
           {/* Matter drawer — two states only: confirm the linked matter, or choose
               a different one (pick a candidate / create new). */}
-          {drawerOpen && (
+          {!homeView && drawerOpen && (
             <div
               style={{
                 ...S.matterDrawer,
@@ -2101,8 +2136,11 @@ export default function Taskpane() {
             </div>
           )}
 
-          {/* Tab bar — the matter pill above is the fixed "which matter" anchor;
+          {/* Tab bar + everything below is the per-email view — hidden in homeView so the
+              worklist stands alone. The matter pill above is the fixed "which matter" anchor;
               these switch what we show for it. House/Files need a linked matter. */}
+          {!homeView && (
+          <>
           <div style={S.tabBar}>
             {([
               ['email', 'mail', 'Email'],
@@ -2857,6 +2895,8 @@ export default function Taskpane() {
                 )}
               </Card>
             </>
+          )}
+          </>
           )}
 
         </>
