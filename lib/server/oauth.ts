@@ -51,7 +51,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   });
 }
 
-export function getAuthUrl(state: string): string {
+export function getAuthUrl(state: string, prompt?: 'consent' | 'select_account'): string {
   const base = `https://login.microsoftonline.com/${config.azureTenantId}/oauth2/v2.0/authorize`;
   const qs = new URLSearchParams({
     client_id: config.azureClientId!,
@@ -61,5 +61,9 @@ export function getAuthUrl(state: string): string {
     scope: authScopes(),
     state,
   });
+  // `prompt=consent` forces the consent screen — used by the "reconnect" path after a
+  // scope was added, so the user (or admin) actually re-grants instead of hitting a
+  // silent AADSTS65001 dead end.
+  if (prompt) qs.set('prompt', prompt);
   return `${base}?${qs.toString()}`;
 }

@@ -7,10 +7,33 @@ import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/se
 import { hasTeamAccess } from '@/lib/server/plan';
 import { syncFirmSeats } from '@/lib/server/billing';
 import { ensureSubscription } from '@/lib/server/subscriptions';
-import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/**
+ * A friendly, actionable sign-in error page — never a raw error dump. Renders inside the
+ * Office dialog and standalone. A consent problem (a scope was added but not yet granted,
+ * or a stale session) offers "Grant access & reconnect" which re-runs OAuth forcing the
+ * consent screen (?consent=1); anything else offers a plain retry. So a broken auth state
+ * is a one-click fix, not a dead end.
+ */
+function authErrorPage(message: string, consentIssue: boolean): NextResponse {
+  const href = consentIssue ? '/api/v1/auth/login?consent=1' : '/api/v1/auth/login';
+  const cta = consentIssue ? 'Grant access & reconnect' : 'Try signing in again';
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reconnect — CONVEYi</title></head>
+<body style="margin:0;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;background:#f6f7fb;color:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px">
+<div style="max-width:380px;text-align:center">
+  <div style="width:46px;height:46px;border-radius:11px;background:#5A27E0;display:flex;align-items:center;justify-content:center;margin:0 auto 16px">
+    <svg viewBox="0 0 32 32" width="30" height="30"><path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"/></svg>
+  </div>
+  <h1 style="font-size:19px;margin:0 0 8px">${consentIssue ? 'One more permission needed' : 'Sign-in didn’t finish'}</h1>
+  <p style="font-size:13.5px;color:#475569;line-height:1.55;margin:0 0 18px">${message}</p>
+  <a href="${href}" style="display:inline-block;background:#5A27E0;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:10px">${cta}</a>
+</div></body></html>`;
+  return new NextResponse(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+}
 
 /** Thrown when a second+ colleague signs in to a firm on a single-seat plan. */
 class SeatLimitError extends Error {
@@ -138,14 +161,20 @@ export async function GET(req: NextRequest) {
     return res;
   } catch (error) {
     if (error instanceof SeatLimitError) {
-      return NextResponse.json(
-        {
-          error:
-            'Your firm’s plan is single-seat. Ask your admin to upgrade to the Firm (team) plan to add colleagues.',
-        },
-        { status: 403 }
+      return authErrorPage(
+        'Your firm’s plan is single-seat. Ask your admin to upgrade to the Firm (team) plan to add colleagues, then reconnect.',
+        false
       );
     }
-    return fail(error);
+    // A consent/permission problem (e.g. a scope was added but not yet granted, or a stale
+    // grant) → offer the consent-forcing reconnect. Everything else → a plain retry.
+    const msg = String((error as Error)?.message ?? error);
+    const consentIssue = /AADSTS65001|invalid_grant|consent|AADSTS650|not consented/i.test(msg);
+    return authErrorPage(
+      consentIssue
+        ? 'CONVEYi needs your permission to connect to your Microsoft 365 mailbox. Click below to grant access — you’ll see a Microsoft consent screen.'
+        : 'Something interrupted the sign-in. This is usually temporary — please try again.',
+      consentIssue
+    );
   }
 }

@@ -810,12 +810,24 @@ export default function Taskpane() {
   // ── Actions ────────────────────────────────────────────────────────────────
   // Sign-in must run in an Office dialog window — Microsoft's login refuses to be
   // iframed, so a redirect inside the taskpane fails with "refused to connect".
-  function connect() {
+  // Clear the session both sides and drop to the Connect screen — the user-facing escape
+  // hatch from a bad auth state (wrong account, stale consent). No dead ends.
+  async function signOut() {
+    try { await api('/auth/logout', { method: 'POST' }); } catch { /* clear locally regardless */ }
+    window.localStorage.removeItem(TOKEN_KEY);
+    setSignedInCookie(false);
+    setMe(null);
+    setBooting(false);
+    setStatus('Signed out.');
+  }
+
+  function connect(opts: { consent?: boolean } = {}) {
     const Office = (window as any).Office;
     const origin = window.location.origin;
+    const path = opts.consent ? '/api/v1/auth/login?consent=1' : '/api/v1/auth/login';
     if (Office?.context?.ui?.displayDialogAsync) {
       Office.context.ui.displayDialogAsync(
-        `${origin}/api/v1/auth/login`,
+        `${origin}${path}`,
         { height: 60, width: 30, displayInIframe: false },
         (result: any) => {
           if (result.status !== 'succeeded') {
@@ -839,7 +851,7 @@ export default function Taskpane() {
       );
     } else {
       // Not in Office (e.g. testing in a plain browser tab) — top-level redirect.
-      window.location.href = '/api/v1/auth/login';
+      window.location.href = path;
     }
   }
 
@@ -1663,23 +1675,33 @@ export default function Taskpane() {
           )}
         </div>
         {me ? (
-          <button style={S.account} onClick={() => openAdmin('billing')} title="Manage account & billing">
-            {plan && (
-              <span style={S.planBadge}>
-                {plan.plan === 'enterprise'
-                  ? 'Firm'
-                  : plan.plan === 'pro'
-                  ? 'Pro'
-                  : plan.plan === 'plus'
-                  ? 'Solo'
-                  : plan.status === 'trialing'
-                  ? 'Trial'
-                  : 'Free'}
-              </span>
-            )}
-            <span style={S.user}>{me.displayName || me.email}</span>
-            <span style={{ color: '#94a3b8' }}>›</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button style={S.account} onClick={() => openAdmin('billing')} title="Manage account & billing">
+              {plan && (
+                <span style={S.planBadge}>
+                  {plan.plan === 'enterprise'
+                    ? 'Firm'
+                    : plan.plan === 'pro'
+                    ? 'Pro'
+                    : plan.plan === 'plus'
+                    ? 'Solo'
+                    : plan.status === 'trialing'
+                    ? 'Trial'
+                    : 'Free'}
+                </span>
+              )}
+              <span style={S.user}>{me.displayName || me.email}</span>
+              <span style={{ color: '#94a3b8' }}>›</span>
+            </button>
+            <button
+              onClick={signOut}
+              style={{ ...S.iconBtn, color: '#94a3b8' }}
+              title={`Sign out (${me.email})`}
+              aria-label="Sign out"
+            >
+              <Icon name="logout" size={16} />
+            </button>
+          </div>
         ) : (
           <span style={S.user}>{booting ? 'Connecting…' : connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
@@ -1719,9 +1741,19 @@ export default function Taskpane() {
               <button style={S.secondary} onClick={refreshMe}>Retry</button>
             </>
           ) : (
-            <button style={S.primary} onClick={connect}>
-              Connect Outlook
-            </button>
+            <>
+              <button style={S.primary} onClick={() => connect()}>
+                Connect Outlook
+              </button>
+              {/* Escape hatch: if a scope was added or consent went stale, a normal connect
+                  can silently fail — this forces the Microsoft consent screen. */}
+              <button
+                onClick={() => connect({ consent: true })}
+                style={{ display: 'block', margin: '10px auto 0', background: 'none', border: 'none', color: '#5A27E0', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                Trouble connecting? Reconnect with fresh permissions
+              </button>
+            </>
           )}
         </Card>
       )}
@@ -3094,6 +3126,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     refresh: <><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></>,
     history: <><path d="M3 3v6h6" /><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9" /><path d="M12 8v5l4 2" /></>,
     fileCheck: <><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="m9 14 2 2 4-4" /></>,
+    logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></>,
     external: <><path d="M14 3h7v7" /><path d="M21 3l-9 9" /><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,

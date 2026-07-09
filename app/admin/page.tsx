@@ -826,6 +826,10 @@ export default function AdminPage() {
               ))}
             </ul>
             <a href="/api/v1/auth/login" style={{ ...btnPrimary, textDecoration: 'none', display: 'block', textAlign: 'center' }}>Connect Microsoft 365</a>
+            {/* Escape hatch for a stale consent / added scope — forces the Microsoft consent screen. */}
+            <a href="/api/v1/auth/login?consent=1" style={{ display: 'block', textAlign: 'center', margin: '10px 0 0', color: '#5A27E0', fontSize: 12.5, fontWeight: 600, textDecoration: 'none' }}>
+              Trouble connecting? Reconnect with fresh permissions
+            </a>
             <p style={{ fontSize: 12, color: '#94a3b8', margin: '14px 0 0', lineHeight: 1.5 }}>
               Also using the Outlook add-in? Same account, same firm — sign in wherever suits and everything stays in step.
             </p>
@@ -868,6 +872,13 @@ export default function AdminPage() {
               {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
               <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
               <span title={me.email} style={{ width: 30, height: 30, borderRadius: 999, background: '#ede9fe', color: '#5A27E0', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials}</span>
+              <button
+                onClick={() => { try { window.localStorage.removeItem(TOKEN_KEY); } catch {} window.location.href = '/api/v1/auth/logout'; }}
+                title="Sign out"
+                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: '4px 6px', fontFamily: 'inherit' }}
+              >
+                Sign out
+              </button>
             </div>
           )}
         </div>
