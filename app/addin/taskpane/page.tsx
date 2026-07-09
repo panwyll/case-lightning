@@ -331,6 +331,7 @@ export default function Taskpane() {
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
   const [showHistory, setShowHistory] = useState(false); // status card: audit-log panel
+  const [newTaskText, setNewTaskText] = useState(''); // status card: quick-add task
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
@@ -2353,6 +2354,7 @@ export default function Taskpane() {
             const savedNotes = (matterInfo?.matter?.notes as string | undefined) ?? '';
             const timeline: Array<{ title?: string; details?: string; event_type?: string; event_at?: string; created_at?: string }> =
               (matterInfo?.timeline as any) ?? [];
+            const openTasks = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
             const ctrl: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', color: '#0f172a', marginBottom: 7, fontFamily: 'inherit', cursor: 'pointer' };
             return (
               <Card>
@@ -2418,6 +2420,34 @@ export default function Taskpane() {
                       <option value="">Unassigned</option>
                       {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
                     </select>
+                    {/* Open tasks — tick to complete; quick-add below. The full board is the Tracker button. */}
+                    {openTasks.map((t) => (
+                      <label key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '4px 2px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          onChange={() => api(`/matters/${matterId}/tasks/${t.id}`, { method: 'PATCH', body: JSON.stringify({ status: 'DONE' }) }).then(() => loadTasks()).catch(() => {})}
+                          style={{ marginTop: 2, accentColor: '#5A27E0', flex: 'none' }}
+                        />
+                        <span style={{ fontSize: 12.5, color: '#0f172a', lineHeight: 1.4 }}>
+                          {t.detail}
+                          {t.assignee ? <span style={{ color: '#94a3b8' }}> · {t.assignee}</span> : null}
+                          {t.due ? <span style={{ color: '#94a3b8' }}> · due {new Date(t.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span> : null}
+                        </span>
+                      </label>
+                    ))}
+                    <input
+                      value={newTaskText}
+                      onChange={(e) => setNewTaskText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newTaskText.trim()) {
+                          const d = newTaskText.trim();
+                          setNewTaskText('');
+                          api(`/matters/${matterId}/tasks`, { method: 'POST', body: JSON.stringify({ detail: d }) }).then(() => loadTasks()).catch(() => {});
+                        }
+                      }}
+                      placeholder="＋ Add a task…"
+                      style={{ width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 9px', border: '1px solid #e2e8f0', borderRadius: 8, fontFamily: 'inherit', margin: '2px 0 8px' }}
+                    />
                     {/* Free-text case notes — unlabeled box, saves on blur */}
                     <textarea
                       key={matterId}
