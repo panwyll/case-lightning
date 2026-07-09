@@ -141,16 +141,18 @@ export async function processMatterFile(
       `<p>We are updating our file accordingly and will revert with any further requirements.</p>` +
       `<p>Kind regards</p>`;
     try {
-      await createDraftMessage(user.userId, draftSubject, bodyHtml);
+      const draft = await createDraftMessage(user.userId, draftSubject, bodyHtml);
       drafted = true;
-      // Surface the acknowledgement on the "ready to send" worklist. No thread — a portal
-      // download / manual upload has no inbound email — so it's dismissed manually once sent.
+      // Surface the acknowledgement on the "ready to send" worklist, carrying the draft's
+      // id so it can be sent in one click from the pane (no thread — a portal download /
+      // manual upload has no inbound email).
       await addDraftReady({
         tenantId: user.tenantId,
         matterId,
         dedupKey: `doc:${opts.itemId}`,
         title: `Acknowledgement drafted — ${documentType} received`,
         detail: draftSubject,
+        graphMessageId: (draft?.id as string) ?? null,
       });
     } catch {
       drafted = false;

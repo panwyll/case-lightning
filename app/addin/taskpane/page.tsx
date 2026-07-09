@@ -195,6 +195,7 @@ type WorklistEntry = {
   detail: string | null;
   ageDays: number;
   threadId?: string | null;
+  graphMessageId?: string | null; // the ready draft to send (DRAFT_READY only)
 };
 
 // Remember across opens that this user was signed in, so a cold taskpane shows a
@@ -494,6 +495,35 @@ export default function Taskpane() {
       /* best-effort */
     } finally {
       setWlBusy('');
+    }
+  }
+
+  // The "did-it-for-you, hit confirm" actions, right in the worklist:
+  //  - a ready draft is already written → one-click Send.
+  //  - a chase → draft the chaser (into Outlook Drafts), then it becomes Send.
+  // Per-item drafted-chaser state so the button flips to Send once it's written.
+  const [wlChaser, setWlChaser] = useState<Record<string, string | 'busy'>>({}); // itemId → draft messageId
+  async function sendWorklistDraft(item: WorklistEntry, messageId: string) {
+    setWlBusy(item.id);
+    try {
+      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId, itemId: item.kind === 'DRAFT_READY' ? item.id : undefined }) });
+      setWorklist((w) => (w ?? []).filter((x) => x.id !== item.id));
+      setStatus('Sent.');
+    } catch (e: any) {
+      setStatus(e?.message || 'Couldn’t send — open the draft in Outlook to send it there.');
+    } finally {
+      setWlBusy('');
+    }
+  }
+  async function draftWorklistChaser(item: WorklistEntry) {
+    setWlChaser((s) => ({ ...s, [item.id]: 'busy' }));
+    try {
+      const r = await api<{ id: string }>('/worklist/draft-chaser', { method: 'POST', body: JSON.stringify({ threadId: item.threadId ?? item.id }) });
+      if (r.id) setWlChaser((s) => ({ ...s, [item.id]: r.id }));
+      else throw new Error('no draft');
+    } catch (e: any) {
+      setWlChaser((s) => { const { [item.id]: _drop, ...rest } = s; return rest; });
+      setStatus(e?.message || 'Couldn’t draft the chaser.');
     }
   }
 
@@ -1868,14 +1898,42 @@ export default function Taskpane() {
                         {w.detail || w.title}
                       </span>
                     </span>
-                    <button
-                      style={{ flex: 'none', fontSize: 11, fontWeight: 600, padding: '4px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#5A27E0', cursor: 'pointer' }}
-                      disabled={wlBusy === w.id}
-                      onClick={() => worklistAction(w, w.kind === 'DRAFT_READY' ? 'dismiss' : 'snooze')}
-                      title={w.kind === 'DRAFT_READY' ? 'Mark done (sent / handled)' : 'Hide for a week (e.g. already chased by phone)'}
-                    >
-                      {wlBusy === w.id ? '…' : w.kind === 'DRAFT_READY' ? 'Done' : 'Snooze'}
-                    </button>
+                    {(() => {
+                      const primary: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 700, padding: '5px 10px', border: 'none', borderRadius: 8, background: '#5A27E0', color: '#fff', cursor: 'pointer' };
+                      const ghost: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 600, padding: '5px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#7A7388', cursor: 'pointer' };
+                      const busy = wlBusy === w.id;
+                      // DRAFT_READY: it's already written → Send in one click.
+                      if (w.kind === 'DRAFT_READY') {
+                        return (
+                          <>
+                            {w.graphMessageId && (
+                              <button style={{ ...primary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)} title="Send this reviewed draft now">
+                                {busy ? '…' : 'Send'}
+                              </button>
+                            )}
+                            <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'dismiss')} title="Mark done (handled another way)">Done</button>
+                          </>
+                        );
+                      }
+                      // CHASE: draft the chaser for you, then it becomes Send.
+                      const drafted = wlChaser[w.id];
+                      if (typeof drafted === 'string') {
+                        return (
+                          <>
+                            <button style={{ ...primary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)} title="Send the chaser now">{busy ? '…' : 'Send'}</button>
+                            <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'snooze')} title="Hide for a week">Snooze</button>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <button style={{ ...primary, opacity: drafted === 'busy' ? 0.6 : 1 }} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)} title="Draft a chase-up for you">
+                            {drafted === 'busy' ? '…' : 'Draft chaser'}
+                          </button>
+                          <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'snooze')} title="Hide for a week (e.g. already chased by phone)">Snooze</button>
+                        </>
+                      );
+                    })()}
                   </div>
                 );
                 return (
@@ -1884,7 +1942,7 @@ export default function Taskpane() {
                       <Card>
                         <Label>Ready to Send ({ready.length})</Label>
                         <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                          Drafts CONVEYi prepared — replies and “document received” updates — waiting for you to review &amp; send in Outlook.
+                          Drafts CONVEYi already wrote — replies and “document received” updates. Hit Send, or open in Outlook to tweak first.
                         </p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{ready.slice(0, 25).map(row)}</div>
                       </Card>
