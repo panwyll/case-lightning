@@ -148,6 +148,11 @@ const STATUS_FLAGS: Array<[string, string]> = [
 
 const TOKEN_KEY = 'cl_token';
 
+// A 401/403 from ANY call means the session lapsed mid-use. Rather than let the
+// individual caller surface a dead-end "unauthorized" toast, we drop the whole
+// taskpane back to the Connect screen. The component registers this on mount.
+let onUnauthorized: (() => void) | null = null;
+
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   // Bearer token (set after the sign-in dialog) covers desktop Outlook, where the
   // session cookie isn't shared with the taskpane. Cookie still works on the web.
@@ -164,6 +169,12 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) {
+    // Auth lapsed → bounce to the Connect screen (see onUnauthorized). Clear the stale
+    // bearer token so we don't keep re-sending a dead one on the reconnect.
+    if (res.status === 401 || res.status === 403) {
+      if (typeof window !== 'undefined') window.localStorage.removeItem(TOKEN_KEY);
+      onUnauthorized?.();
+    }
     const err = new Error(json.error || `HTTP ${res.status}`) as Error & { status?: number; action?: string };
     err.status = res.status;
     err.action = json.action;
@@ -436,6 +447,20 @@ export default function Taskpane() {
     } catch {
       setTeamMembers([]);
     }
+  }, []);
+
+  // Register the global unauthorized handler: any 401/403 mid-session drops the whole
+  // taskpane to the Connect screen (me=null) instead of a dead-end toast, so the user
+  // can just sign back in.
+  useEffect(() => {
+    onUnauthorized = () => {
+      setMe(null);
+      setSignedInCookie(false);
+      setBooting(false);
+    };
+    return () => {
+      onUnauthorized = null;
+    };
   }, []);
 
   // Re-pull the worklist on its own (used when returning to the no-email landing, on a light
