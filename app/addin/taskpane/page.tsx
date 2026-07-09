@@ -168,7 +168,23 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
     ...options,
   });
   const text = await res.text();
-  const json = text ? JSON.parse(text) : {};
+  let json: any = {};
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // A non-JSON body means the request didn't reach our handler cleanly — almost always a
+      // serverless timeout (504) or a gateway/framework error page. Turn it into a real,
+      // retryable error instead of a raw "Unexpected token <" JSON parse crash.
+      const err = new Error(
+        res.status === 504 || res.status === 408 || res.status === 524
+          ? 'That step took too long and timed out — please try again.'
+          : `The server returned an unexpected response (HTTP ${res.status || '?'}).`
+      ) as Error & { status?: number };
+      err.status = res.status;
+      throw err;
+    }
+  }
   if (!res.ok) {
     // Auth lapsed → bounce to the Connect screen (see onUnauthorized). Clear the stale
     // bearer token so we don't keep re-sending a dead one on the reconnect.
@@ -644,15 +660,31 @@ export default function Taskpane() {
   const driveOnboarding = useCallback(async () => {
     if (obDriving.current) return;
     obDriving.current = true;
+    let transientRetries = 0;
     try {
       for (;;) {
-        const r = await api<{ status: string; job: ObJob | null; done: boolean }>('/onboarding/process', { method: 'POST' });
-        if (r.job) setObJob(r.job);
-        if (r.done) {
-          await refreshOnboarding();
-          break;
+        try {
+          const r = await api<{ status: string; job: ObJob | null; done: boolean }>('/onboarding/process', { method: 'POST' });
+          transientRetries = 0; // a good slice resets the budget
+          if (r.job) setObJob(r.job);
+          if (r.done) {
+            await refreshOnboarding();
+            break;
+          }
+          await new Promise((res) => setTimeout(res, 500));
+        } catch (e) {
+          // A single slice timing out / a transient 5xx shouldn't abort the whole import —
+          // each slice is resumable, so back off and retry a few times before surfacing.
+          const status = (e as { status?: number }).status ?? 0;
+          const transient = status === 0 || status === 408 || status === 429 || status >= 500;
+          if (transient && transientRetries < 4) {
+            transientRetries += 1;
+            setStatus(`Hit a snag — retrying (${transientRetries}/4)…`);
+            await new Promise((res) => setTimeout(res, 1500 * transientRetries));
+            continue;
+          }
+          throw e;
         }
-        await new Promise((res) => setTimeout(res, 500));
       }
     } catch (e) {
       setStatus((e as Error).message);
@@ -1693,8 +1725,8 @@ export default function Taskpane() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {me && (
             <button
-              style={{ ...S.iconBtn, color: homeView ? '#5A27E0' : '#64748b', background: homeView ? '#EDE7FB' : 'transparent' }}
-              onClick={() => setHomeView((h) => !h)}
+              style={{ ...S.iconBtn, color: homeView && !setupView ? '#5A27E0' : '#64748b', background: homeView && !setupView ? '#EDE7FB' : 'transparent' }}
+              onClick={() => { if (showSetup) { setShowSetup(false); setHomeView(true); } else setHomeView((h) => !h); }}
               title={homeView ? 'Back to this email' : 'What needs me — the worklist'}
               aria-label={homeView ? 'Back to this email' : 'Open worklist'}
             >
