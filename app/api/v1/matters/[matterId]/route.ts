@@ -49,6 +49,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
           .optional(),
         statusFlag: z.enum(['ON_TRACK', 'NEEDS_ATTENTION', 'BLOCKED']).optional(),
         track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
+        notes: z.string().max(5000).optional(), // free-text case notes (matter.notes)
         reason: z.string().max(500).optional(), // optional note — the "why" for the figure history
       })
       .parse(await req.json());
@@ -106,6 +107,55 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       } catch {
         /* column not migrated yet — ignore until 017_purchase_price.sql is applied */
       }
+    }
+
+    // Free-text case notes — guarded, pending migration 036, so it can't break the
+    // long-standing field edits if it lands before the column exists.
+    if (body.notes !== undefined) {
+      try {
+        await query(`update matter set notes = $1, updated_at = now() where id = $2 and tenant_id = $3`, [
+          body.notes,
+          matterId,
+          user.tenantId,
+        ]);
+      } catch {
+        /* column not migrated yet — ignore until 036_matter_notes.sql is applied */
+      }
+    }
+
+    // Human-readable audit entries for what a person just changed from the board/taskpane,
+    // so the case history reads "owner changed", "stage moved", etc. Best-effort.
+    try {
+      const events: Array<[string, string, string | null]> = [];
+      if (body.stage !== undefined && body.stage !== before?.stage) {
+        events.push(['STAGE_SET', `Stage → ${String(body.stage).toLowerCase().replace(/_/g, ' ')}`, 'Set manually']);
+      }
+      if (body.statusFlag !== undefined && body.statusFlag !== before?.status_flag) {
+        events.push(['STATUS_FLAG', `Marked ${String(body.statusFlag).toLowerCase().replace(/_/g, ' ')}`, null]);
+      }
+      if (body.assignedTo !== undefined && (body.assignedTo ?? null) !== (before?.assigned_to ?? null)) {
+        let title = 'Unassigned';
+        if (body.assignedTo) {
+          const u = await queryOne<{ name: string }>(
+            `select coalesce(display_name, email) as name from app_user where id = $1 and tenant_id = $2`,
+            [body.assignedTo, user.tenantId]
+          );
+          title = u?.name ? `Assigned to ${u.name}` : 'Reassigned';
+        }
+        events.push(['ASSIGNED', title, null]);
+      }
+      if (body.status !== undefined && body.status !== before?.status) {
+        events.push(['STATUS', body.status === 'CLOSED' ? 'Matter completed' : body.status === 'OPEN' ? 'Reopened' : `Status: ${body.status}`, null]);
+      }
+      for (const [type, title, details] of events) {
+        await query(
+          `insert into matter_timeline_event (tenant_id, matter_id, event_at, event_type, title, details)
+           values ($1,$2, now(), $3, $4, $5)`,
+          [user.tenantId, matterId, type, title, details]
+        );
+      }
+    } catch {
+      /* timeline table absent or transient — non-critical */
     }
 
     // track (PURCHASE/SALE/REMORTGAGE) — same guarded pattern, pending migration 020.

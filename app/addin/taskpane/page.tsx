@@ -330,6 +330,7 @@ export default function Taskpane() {
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; scope: 'mine' | 'team' }>({ team: false, isAdmin: false, scope: 'mine' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
+  const [showHistory, setShowHistory] = useState(false); // status card: audit-log panel
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
@@ -2347,20 +2348,15 @@ export default function Taskpane() {
                 : rawFlag === 'NEEDS_ATTENTION'
                 ? { bg: '#fef9c3', fg: '#854d0e', dot: '#f59e0b' }
                 : { bg: '#dcfce7', fg: '#166534', dot: '#16a34a' };
-            const stage = humanize(matterInfo?.matter?.stage || 'INSTRUCTION');
-            const outstanding: string[] = matterInfo?.summary?.outstanding_items ?? [];
-            const open = tasks.filter((t) => t.status === 'OPEN' || t.status === 'IN_PROGRESS');
-            const owner = assignees.find((a) => a.id === matterInfo?.matter?.assigned_to);
-            const assignedTo = owner ? owner.display_name || owner.email : open.find((t) => t.assignee)?.assignee || '—';
-            const notes = open.length ? open.map((t) => t.detail).join('; ') : outstanding.length ? outstanding.join('; ') : '—';
-            const kv = (k: string, v: React.ReactNode) => (
-              <div style={S.kvRow}><span style={S.kvKey}>{k}</span><span style={S.kvVal}>{v}</span></div>
-            );
+            const curStage = matterInfo?.matter?.stage || 'INSTRUCTION';
+            const curAssigned = matterInfo?.matter?.assigned_to || '';
+            const savedNotes = (matterInfo?.matter?.notes as string | undefined) ?? '';
+            const timeline: Array<{ title?: string; details?: string; event_type?: string; event_at?: string; created_at?: string }> =
+              (matterInfo?.timeline as any) ?? [];
+            const ctrl: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', color: '#0f172a', marginBottom: 7, fontFamily: 'inherit', cursor: 'pointer' };
             return (
               <Card>
-                {/* Header row: status badge + refresh, with Team tracker pinned to the
-                    right. It lives on this row only (not a full-height column) so the
-                    kv rows below get the card's full width — else values wrap to shreds. */}
+                {/* Header row: status badge + refresh, with history + Tracker pinned right. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: fc.dot, flex: 'none' }} />
@@ -2375,13 +2371,63 @@ export default function Taskpane() {
                   >
                     <Icon name="refresh" size={13} />
                   </button>
-                  <button style={{ ...S.boardBtn, marginLeft: 'auto' }} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
-                    {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
-                  </button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button
+                      style={{ ...S.ghostIcon, ...(showHistory ? { background: '#ede9fe', color: '#5A27E0' } : {}) }}
+                      onClick={() => setShowHistory((v) => !v)}
+                      title="Case history"
+                      aria-label="Case history"
+                    >
+                      <Icon name="history" size={14} />
+                    </button>
+                    <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team tracker in a new tab">
+                      {boardLoading ? 'Syncing…' : 'Tracker'} <Icon name="external" size={11} />
+                    </button>
+                  </div>
                 </div>
-                {kv('Stage', stage)}
-                {kv('Assigned to', assignedTo)}
-                {kv('Notes', notes)}
+
+                {showHistory ? (
+                  /* Case audit log — emails matched, stage moves, reassignments, edits. */
+                  <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+                    {timeline.length === 0 ? (
+                      <p style={{ ...S.muted, margin: '2px 0' }}>No history yet — activity shows here as email arrives and the matter changes.</p>
+                    ) : (
+                      timeline.map((e, i) => {
+                        const when = e.event_at || e.created_at;
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 8, padding: '7px 0', borderTop: i ? '1px solid #f1f5f9' : 'none' }}>
+                            <span style={{ width: 6, height: 6, borderRadius: 999, background: '#c4b5fd', marginTop: 5, flex: 'none' }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12.5, color: '#0f172a' }}>{e.title || (e.event_type || '').toLowerCase().replace(/_/g, ' ')}</div>
+                              {e.details && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>{e.details}</div>}
+                              {when && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{new Date(when).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* Numbered stage — unlabeled; edit in place */}
+                    <select value={curStage} onChange={(e) => updateMatterField({ stage: e.target.value })} disabled={!!busy} style={ctrl} title="Stage">
+                      {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    {/* Assignee — unlabeled; edit in place */}
+                    <select value={curAssigned} onChange={(e) => updateMatterField({ assignedTo: e.target.value || null })} disabled={!!busy} style={ctrl} title="Assigned to">
+                      <option value="">Unassigned</option>
+                      {assignees.map((a) => <option key={a.id} value={a.id}>{a.display_name || a.email}</option>)}
+                    </select>
+                    {/* Free-text case notes — unlabeled box, saves on blur */}
+                    <textarea
+                      key={matterId}
+                      defaultValue={savedNotes}
+                      placeholder="Notes on this matter…"
+                      onBlur={(e) => { if (e.target.value !== savedNotes) updateMatterField({ notes: e.target.value }); }}
+                      style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, minHeight: 60, resize: 'vertical', fontFamily: 'inherit', color: '#0f172a', lineHeight: 1.45 }}
+                    />
+                  </>
+                )}
               </Card>
             );
           })()}
@@ -3025,6 +3071,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     file: <><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /></>,
     upload: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></>,
     refresh: <><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></>,
+    history: <><path d="M3 3v6h6" /><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9" /><path d="M12 8v5l4 2" /></>,
     external: <><path d="M14 3h7v7" /><path d="M21 3l-9 9" /><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
