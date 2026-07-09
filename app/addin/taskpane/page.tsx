@@ -2600,8 +2600,18 @@ export default function Taskpane() {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Label>Case Files</Label>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    {/* Cross-check the documents against each other and the matter. Greyed
-                        with a why until there's at least one real document beyond the Tracker. */}
+                    {matterInfo?.matter?.folder_web_url && (
+                      <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
+                        <Icon name="clip" size={15} />
+                      </a>
+                    )}
+                    <button style={S.iconAction} onClick={() => fileInputRef.current?.click()} title="Upload a file" aria-label="Upload a file">
+                      <Icon name="upload" size={15} />
+                    </button>
+                    <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
+                      <Icon name="refresh" size={15} />
+                    </button>
+                    {/* Cross-check — rightmost. Greyed with a why until there's a real document beyond the Tracker. */}
                     {(() => {
                       const docs = files.filter((f) => !(f.id === matterInfo?.matter?.tracker_item_id || /^Tracker\.xlsx$/i.test(f.name))).length;
                       const canX = filesLoaded && docs > 0 && !reconBusy;
@@ -2617,17 +2627,6 @@ export default function Taskpane() {
                         </button>
                       );
                     })()}
-                    {matterInfo?.matter?.folder_web_url && (
-                      <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
-                        <Icon name="clip" size={15} />
-                      </a>
-                    )}
-                    <button style={S.iconAction} onClick={() => fileInputRef.current?.click()} title="Upload a file" aria-label="Upload a file">
-                      <Icon name="upload" size={15} />
-                    </button>
-                    <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
-                      <Icon name="refresh" size={15} />
-                    </button>
                   </div>
                 </div>
                 <input
