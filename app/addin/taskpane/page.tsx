@@ -2511,31 +2511,21 @@ export default function Taskpane() {
           {/* ── FILES TAB — Case files (live OneDrive folder) + Templates ── */}
           {tab === 'paperclip' && matterId && (
             <>
-              {/* Reconciliation — "is my file right?" across the matter's documents. */}
+              {/* Reconciliation results — the cross-check is triggered from the Case Files
+                  header (the purple icon); this card only appears once it has run. */}
+              {recon && (
               <Card>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: recon ? 12 : 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
                   <Label>Check the File</Label>
-                  {recon && (
-                    <button
-                      style={{ ...S.secondary, width: 'auto', marginTop: 0, padding: '5px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                      onClick={runReconcile}
-                      disabled={reconBusy}
-                    >
-                      {reconBusy ? <span style={S.spinner} /> : null}
-                      {reconBusy ? 'Checking…' : 'Re-check'}
-                    </button>
-                  )}
-                </div>
-                {!recon && (
                   <button
-                    style={{ ...S.primary, width: '100%', marginTop: 0, padding: '10px 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    style={{ ...S.secondary, width: 'auto', marginTop: 0, padding: '5px 12px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     onClick={runReconcile}
                     disabled={reconBusy}
                   >
-                    {reconBusy ? <span style={S.spinnerLight} /> : <Icon name="check" size={15} />}
-                    {reconBusy ? 'Reading the file…' : 'Cross check documents'}
+                    {reconBusy ? <span style={S.spinner} /> : null}
+                    {reconBusy ? 'Checking…' : 'Re-check'}
                   </button>
-                )}
+                </div>
                 {recon && (
                   <>
                     {/* Issues first — the "what needs you" headline. */}
@@ -2603,12 +2593,30 @@ export default function Taskpane() {
                   </>
                 )}
               </Card>
+              )}
 
               {/* Case files — the live contents of the matter's OneDrive folder. */}
               <Card>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Label>Case Files</Label>
                   <div style={{ display: 'flex', gap: 4 }}>
+                    {/* Cross-check the documents against each other and the matter. Greyed
+                        with a why until there's at least one real document beyond the Tracker. */}
+                    {(() => {
+                      const docs = files.filter((f) => !(f.id === matterInfo?.matter?.tracker_item_id || /^Tracker\.xlsx$/i.test(f.name))).length;
+                      const canX = filesLoaded && docs > 0 && !reconBusy;
+                      return (
+                        <button
+                          style={{ ...S.iconAction, color: canX ? '#5A27E0' : '#cbd5e1', borderColor: canX ? '#c4b5fd' : '#e2e8f0', cursor: canX ? 'pointer' : 'not-allowed' }}
+                          onClick={() => canX && runReconcile()}
+                          disabled={!canX}
+                          title={reconBusy ? 'Cross-checking…' : !filesLoaded ? 'Loading case files…' : docs === 0 ? 'Only the Tracker is here — add case documents to cross-check.' : 'Cross-check documents against each other and the matter'}
+                          aria-label="Cross-check documents"
+                        >
+                          {reconBusy ? <span style={S.spinner} /> : <Icon name="fileCheck" size={15} />}
+                        </button>
+                      );
+                    })()}
                     {matterInfo?.matter?.folder_web_url && (
                       <a style={S.iconAction} href={matterInfo.matter.folder_web_url} target="_blank" rel="noreferrer" title="Open folder in OneDrive" aria-label="Open folder in OneDrive">
                         <Icon name="clip" size={15} />
@@ -3066,6 +3074,7 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     upload: <><path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></>,
     refresh: <><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 3v6h-6" /></>,
     history: <><path d="M3 3v6h6" /><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9" /><path d="M12 8v5l4 2" /></>,
+    fileCheck: <><path d="M14 3v5h5" /><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="m9 14 2 2 4-4" /></>,
     external: <><path d="M14 3h7v7" /><path d="M21 3l-9 9" /><path d="M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></>,
     clip: <path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-2.9-2.9l7.6-7.6" />,
     check: <path d="M20 6 9 17l-5-5" />,
