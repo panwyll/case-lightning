@@ -200,12 +200,14 @@ export default function AdminPage() {
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
   // so the web app is operable day-to-day without the add-in.
-  const [mywork, setMywork] = useState<{ items: any[]; team: boolean; isAdmin: boolean; scope: string } | null>(null);
+  const [mywork, setMywork] = useState<{ items: any[]; team: boolean; isAdmin: boolean; assignedTo: string } | null>(null);
   const [myworkBusy, setMyworkBusy] = useState<string | null>(null);
-  const loadMywork = useCallback((scope?: string) => {
-    api<{ items: any[]; team: boolean; isAdmin: boolean; scope: string }>(`/worklist${scope ? `?scope=${scope}` : ''}`)
+  const loadMywork = useCallback((assignee?: string) => {
+    api<{ items: any[]; team: boolean; isAdmin: boolean; assignedTo: string }>(
+      `/worklist${assignee !== undefined ? `?assignedTo=${encodeURIComponent(assignee || 'any')}` : ''}`
+    )
       .then(setMywork)
-      .catch(() => setMywork({ items: [], team: false, isAdmin: false, scope: 'mine' }));
+      .catch(() => setMywork({ items: [], team: false, isAdmin: false, assignedTo: '' }));
   }, []);
   // The primary action on a chase is the EMAIL: one click drafts the chaser server-
   // side, the draft appears inline for review, and Send fires it — all without
@@ -254,7 +256,7 @@ export default function AdminPage() {
       });
       setMywork((s) => (s ? { ...s, items: s.items.filter((x) => x.id !== item.id) } : s));
     } catch {
-      loadMywork(mywork?.scope);
+      loadMywork(mywork?.assignedTo);
     } finally {
       setMyworkBusy(null);
     }
@@ -462,7 +464,10 @@ export default function AdminPage() {
         setReferrals(await api('/referrals'));
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
-      if (tab === 'mywork') loadMywork();
+      if (tab === 'mywork') {
+        loadMywork();
+        if (isAdmin) api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
+      }
       if (tab === 'board') {
         setBoardLoading(true);
         try {
@@ -1534,18 +1539,21 @@ export default function AdminPage() {
           return (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                {mywork.team && mywork.isAdmin && (
-                  <div style={{ display: 'flex', gap: 2, background: '#eef1f5', borderRadius: 999, padding: 3 }}>
-                    {(['mine', 'team'] as const).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => loadMywork(s)}
-                        style={{ border: 'none', borderRadius: 999, padding: '5px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: mywork.scope === s ? '#fff' : 'transparent', color: mywork.scope === s ? '#5A27E0' : '#64748b', boxShadow: mywork.scope === s ? '0 1px 3px rgba(16,24,40,0.12)' : 'none' }}
-                      >
-                        {s === 'mine' ? 'My work' : 'Whole firm'}
-                      </button>
-                    ))}
-                  </div>
+                {isAdmin && (
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
+                    <select
+                      value={mywork.assignedTo}
+                      onChange={(e) => loadMywork(e.target.value)}
+                      style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}
+                      title="Filter the worklist by who owns the matter"
+                    >
+                      <option value="">Anyone</option>
+                      {users.map((u: any) => (
+                        <option key={u.id} value={u.id}>{u.display_name || u.email}</option>
+                      ))}
+                    </select>
+                  </label>
                 )}
                 <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', marginLeft: 'auto' }}>
                   Open Outlook Drafts ↗
