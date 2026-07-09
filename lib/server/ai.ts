@@ -121,7 +121,9 @@ async function structured<T>(
   if (provider === 'anthropic') {
     let resp: Anthropic.Message;
     try {
-      resp = await new Anthropic({ apiKey }).messages.create({
+      // 30s per-call timeout: a hung provider must abort well before the onboarding slice's
+      // 50s backstop (and Vercel's 60s cap), so a slow model fails one unit, not the whole run.
+      resp = await new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 }).messages.create({
         model,
         max_tokens: 4096,
         system,
@@ -140,21 +142,37 @@ async function structured<T>(
   }
 
   // Groq — OpenAI-compatible chat completions with a forced function call.
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      max_tokens: 4096,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userContent },
-      ],
-      tools: [{ type: 'function', function: { name: toolName, description, parameters: schema } }],
-      tool_choice: { type: 'function', function: { name: toolName } },
-    }),
-  });
+  // 30s AbortController timeout: raw fetch has no timeout of its own, so a hung Groq response
+  // would otherwise hang the whole function to Vercel's 60s cap (a 504). Abort well before the
+  // onboarding slice's 50s backstop so a slow call fails one unit, not the whole run.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: 4096,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userContent },
+        ],
+        tools: [{ type: 'function', function: { name: toolName, description, parameters: schema } }],
+        tool_choice: { type: 'function', function: { name: toolName } },
+      }),
+    });
+  } catch (err) {
+    await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED');
+    throw new Error(
+      controller.signal.aborted ? 'Groq request timed out after 30s' : `Groq request failed: ${(err as Error).message}`
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED');
     throw new Error(`Groq error ${res.status}: ${await res.text()}`);
