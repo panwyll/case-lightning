@@ -2527,20 +2527,14 @@ export default function Taskpane() {
                   )}
                 </div>
                 {!recon && (
-                  <>
-                    <p style={{ ...S.muted, margin: '0 0 12px', lineHeight: 1.5 }}>
-                      Cross-checks the case documents against each other and the matter — price, dates, parties, tenure,
-                      lender, SDLT — and flags every mismatch or missing item before exchange.
-                    </p>
-                    <button
-                      style={{ ...S.primary, width: '100%', marginTop: 0, padding: '10px 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-                      onClick={runReconcile}
-                      disabled={reconBusy}
-                    >
-                      {reconBusy ? <span style={S.spinnerLight} /> : <Icon name="check" size={15} />}
-                      {reconBusy ? 'Reading the file…' : 'Reconcile documents'}
-                    </button>
-                  </>
+                  <button
+                    style={{ ...S.primary, width: '100%', marginTop: 0, padding: '10px 16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+                    onClick={runReconcile}
+                    disabled={reconBusy}
+                  >
+                    {reconBusy ? <span style={S.spinnerLight} /> : <Icon name="check" size={15} />}
+                    {reconBusy ? 'Reading the file…' : 'Cross check documents'}
+                  </button>
                 )}
                 {recon && (
                   <>
