@@ -2358,35 +2358,30 @@ export default function Taskpane() {
             );
             return (
               <Card>
-                <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  {/* Left: the status itself (badge) + refresh, then the rest */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        <span style={{ width: 7, height: 7, borderRadius: 999, background: fc.dot, flex: 'none' }} />
-                        {flag}
-                      </span>
-                      <button
-                        style={S.ghostIcon}
-                        onClick={() => { loadMatter(); loadTasks(); }}
-                        disabled={!!busy}
-                        title="Refresh status"
-                        aria-label="Refresh status"
-                      >
-                        <Icon name="refresh" size={13} />
-                      </button>
-                    </div>
-                    {kv('Stage', stage)}
-                    {kv('Assigned to', assignedTo)}
-                    {kv('Notes', notes)}
-                  </div>
-                  {/* Right: open the firm-wide team tracker, pinned to the top corner */}
-                  <div style={{ flex: 'none' }}>
-                    <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
-                      {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
-                    </button>
-                  </div>
+                {/* Header row: status badge + refresh, with Team tracker pinned to the
+                    right. It lives on this row only (not a full-height column) so the
+                    kv rows below get the card's full width — else values wrap to shreds. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: 999, background: fc.dot, flex: 'none' }} />
+                    {flag}
+                  </span>
+                  <button
+                    style={S.ghostIcon}
+                    onClick={() => { loadMatter(); loadTasks(); }}
+                    disabled={!!busy}
+                    title="Refresh status"
+                    aria-label="Refresh status"
+                  >
+                    <Icon name="refresh" size={13} />
+                  </button>
+                  <button style={{ ...S.boardBtn, marginLeft: 'auto' }} onClick={buildBoard} disabled={boardLoading} title="Open the team task tracker in a new tab">
+                    {boardLoading ? 'Syncing…' : 'Team tracker'} <Icon name="external" size={11} />
+                  </button>
                 </div>
+                {kv('Stage', stage)}
+                {kv('Assigned to', assignedTo)}
+                {kv('Notes', notes)}
               </Card>
             );
           })()}
@@ -3768,9 +3763,9 @@ const S: Record<string, React.CSSProperties> = {
   quickAct: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' },
   // Borderless icon button (e.g. the status refresh) — no boxy outline.
   ghostIcon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, padding: 0, background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', borderRadius: 6 },
-  kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '2px 0', alignItems: 'baseline' },
-  kvKey: { flex: 'none', width: 84, color: '#64748b', fontWeight: 600 },
-  kvVal: { flex: 1, minWidth: 0, color: '#0f172a' },
+  kvRow: { display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', alignItems: 'baseline' },
+  kvKey: { flex: 'none', width: 74, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' },
+  kvVal: { flex: 1, minWidth: 0, color: '#0f172a', lineHeight: 1.45, wordBreak: 'break-word' },
   link: { display: 'block', fontSize: 12, color: '#5A27E0', margin: '6px 0', textDecoration: 'none', fontWeight: 600 },
   toast: {
     position: 'fixed',
