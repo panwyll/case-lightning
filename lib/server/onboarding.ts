@@ -63,7 +63,14 @@ const SCAN_SLICE_MS = 12000;     // wall-clock budget per scan slice; we drain a
                                  // stages in a handful of slices, not hundreds.
 const PROPOSE_BATCH = 8;         // clusters considered per slice
 const PROPOSE_CONCURRENCY = 4;   // proposeMatter (LLM) calls run in parallel, ≤ db pool
-const PROVISION_BATCH = 2;       // matters provisioned per slice
+const PROPOSE_SLICE_MS = 45000;  // wall-clock budget per propose slice — stop launching waves
+                                 // past this so a slow LLM can't push a slice over the 60s cap;
+                                 // unproposed clusters simply carry to the next /process call.
+const PROVISION_FETCH = 6;       // approved cases pulled per slice (drained under the time budget)
+const PROVISION_SLICE_MS = 45000; // wall-clock budget per provision slice — each matter is heavy
+                                  // (OneDrive folder + Excel tracker + thread fetch + LLM extract),
+                                  // so we do them one at a time until this deadline and let the
+                                  // client loop for the rest. Keeps every slice under Vercel's 60s cap.
 const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noise
 const THREADS_PER_CASE = 5;      // conversations pulled for fact extraction
 
@@ -325,8 +332,10 @@ async function proposeNextClusters(user: SessionUser, job: OnboardingJob): Promi
 
   // The per-cluster proposal is dominated by one LLM round-trip, so run a bounded
   // number of clusters in parallel rather than strictly one after another.
+  const deadline = Date.now() + PROPOSE_SLICE_MS;
   for (let i = 0; i < clusters.length; i += PROPOSE_CONCURRENCY) {
     await Promise.all(clusters.slice(i, i + PROPOSE_CONCURRENCY).map((c) => proposeCluster(user, job, c, own)));
+    if (Date.now() > deadline) break; // remaining clusters carry to the next slice
   }
 }
 
@@ -521,7 +530,7 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
     `select id, cluster_key, proposed_matter_ref, property_address, buyer_names, seller_names,
             counterparty_solicitor, counterparty_agent, conversation_ids, edits
      from onboarding_case where job_id = $1 and status = 'APPROVED' order by created_at asc limit $2`,
-    [job.id, PROVISION_BATCH]
+    [job.id, PROVISION_FETCH]
   );
 
   if (!cases.length) {
@@ -533,6 +542,7 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
     return;
   }
 
+  const deadline = Date.now() + PROVISION_SLICE_MS;
   for (const c of cases) {
     try {
       const edits = (c.edits ?? {}) as Record<string, any>;
@@ -587,6 +597,9 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
         payload: { caseId: c.id, error: message },
       });
     }
+    // Time budget spent — stop the slice; the remaining APPROVED cases carry over to the
+    // next /process call the client makes. One matter at a time keeps us under the 60s cap.
+    if (Date.now() > deadline) break;
   }
 }
 
