@@ -1,6 +1,6 @@
 import { query, queryOne } from './db';
 import { config } from './config';
-import { ensureMatterFolder, ensureExcelTracker, ensureInboxSubfolder, moveMessageToFolder } from './graph';
+import { ensureMatterFolder, ensureExcelTracker, hardenTracker, ensureInboxSubfolder, moveMessageToFolder } from './graph';
 import { matterSelfIdentifiers, upsertIdentifiers, domainOf } from './matching';
 import { writeAudit } from './audit';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
@@ -143,6 +143,9 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
   // Provision the user-facing M365 surfaces: a OneDrive folder + a live Excel tracker.
   const folder = await ensureMatterFolder(user.userId, folderPath);
   const tracker = await ensureExcelTracker(user.userId, folderPath);
+  // Harden the tracker: freeze the header, forbid column add/remove, Status dropdown —
+  // so a human can't rename the columns the two-way sync keys off. Best-effort.
+  if (tracker?.id) void hardenTracker(user.userId, tracker.id).catch(() => {});
 
   // Give the matter its own Inbox subfolder so processed mail can be filed there —
   // but only when the firm has opted in (off by default; toggled in Admin → Policy).
