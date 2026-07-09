@@ -196,6 +196,8 @@ type WorklistEntry = {
   ageDays: number;
   threadId?: string | null;
   graphMessageId?: string | null; // the ready draft to send (DRAFT_READY only)
+  keyDate?: string | null; // matter's nearest exchange/completion target
+  urgent?: boolean; // key date within a week — top of the queue
 };
 
 // Remember across opens that this user was signed in, so a cold taskpane shows a
@@ -1877,12 +1879,11 @@ export default function Taskpane() {
                 </div>
               )}
               {(() => {
-                const ready = (worklist ?? []).filter((w) => w.kind === 'DRAFT_READY');
-                const chasing = (worklist ?? []).filter((w) => w.kind === 'CHASE');
+                const items = worklist ?? [];
                 const row = (w: WorklistEntry) => (
                   <div
                     key={w.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}
                   >
                     <span
                       style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#64748b' }}
@@ -1891,10 +1892,20 @@ export default function Taskpane() {
                       {w.ageDays}d
                     </span>
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: w.kind === 'CHASE' ? '#b45309' : '#5A27E0', background: w.kind === 'CHASE' ? '#fef3c7' : '#ede9fe', borderRadius: 999, padding: '0 6px', flex: 'none' }}>
+                          {w.kind === 'CHASE' ? 'Chase' : 'Send'}
+                        </span>
+                        {w.urgent && w.keyDate && (
+                          <span title="Exchange/completion target" style={{ fontSize: 10, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', borderRadius: 999, padding: '0 6px', flex: 'none', whiteSpace: 'nowrap' }}>
+                            🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          </span>
+                        )}
+                        <strong style={{ fontSize: 12.5, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
+                        </strong>
                       </span>
-                      <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
                         {w.detail || w.title}
                       </span>
                     </span>
@@ -1936,34 +1947,19 @@ export default function Taskpane() {
                     })()}
                   </div>
                 );
+                if (items.length === 0) return null;
                 return (
                   <>
-                    {ready.length > 0 && (
-                      <Card>
-                        <Label>Ready to Send ({ready.length})</Label>
-                        <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                          Drafts CONVEYi already wrote — replies and “document received” updates. Hit Send, or open in Outlook to tweak first.
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{ready.slice(0, 25).map(row)}</div>
-                      </Card>
-                    )}
-                    {chasing.length > 0 && (
-                      <Card>
-                        <Label>To Chase ({chasing.length})</Label>
-                        <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                          You sent the last word and it’s gone quiet — oldest first.
-                          {plan && plan.plan && plan.plan !== 'plus'
-                            ? ' Also flagged in Outlook — turn on the To‑Do bar (View ▸ To‑Do Bar ▸ Tasks) to see them there.'
-                            : ''}
-                        </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{chasing.slice(0, 25).map(row)}</div>
-                      </Card>
-                    )}
-                    {(ready.length > 0 || chasing.length > 0) && (
-                      <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
-                        📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep your worklist open as you work.
+                    <Card>
+                      <Label>What needs you ({items.length})</Label>
+                      <p style={{ ...S.muted, margin: '0 0 8px' }}>
+                        In priority order — soonest exchange/completion first, then overdue chases. CONVEYi’s already drafted what it can; just hit Send.
                       </p>
-                    )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.slice(0, 40).map(row)}</div>
+                    </Card>
+                    <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
+                      📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
+                    </p>
                   </>
                 );
               })()}

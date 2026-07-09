@@ -6,7 +6,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { getMatterSummary } from '@/lib/server/matter';
 import { recordFigureChanges, type FigureChange } from '@/lib/server/figure-audit';
-import { autoActionTask } from '@/lib/server/tasks';
+import { onStageAdvanced } from '@/lib/server/tasks';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -159,12 +159,11 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       /* timeline table absent or transient — non-critical */
     }
 
-    // Proactive: a stage move usually means the client (and often the other side) needs
-    // telling — raise a tracked task for it. Deduped, best-effort. Only on a real stage
-    // change, not a status-flag toggle, so the board doesn't fill with noise.
+    // Proactive: a stage move means the client usually needs telling. Milestones
+    // (exchange/completion) get a pre-drafted update in the ready-to-send queue; other
+    // moves raise a lightweight task. Deduped + best-effort inside onStageAdvanced.
     if (body.stage !== undefined && body.stage !== before?.stage) {
-      const label = String(body.stage).toLowerCase().replace(/_/g, ' ');
-      await autoActionTask(user, matterId, `Update the client — matter now at the ${label} stage`).catch(() => {});
+      await onStageAdvanced(user, matterId, body.stage).catch(() => {});
     }
 
     // track (PURCHASE/SALE/REMORTGAGE) — same guarded pattern, pending migration 020.

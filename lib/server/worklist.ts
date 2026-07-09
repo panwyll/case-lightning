@@ -27,6 +27,9 @@ export interface WorklistEntry {
   detail: string | null;
   ageDays: number;
   threadId?: string | null; // CHASE: the thread to snooze; DRAFT_READY: its thread if it's a reply
+  graphMessageId?: string | null; // the ready draft to send (DRAFT_READY)
+  keyDate?: string | null; // the matter's nearest exchange/completion target — drives urgency
+  urgent?: boolean; // key date within a week: sorts to the very top
 }
 
 /** Add (or re-surface) a "ready to send" draft. Idempotent per (tenant, kind, dedupKey). */
@@ -113,8 +116,44 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
     /* not migrated yet */
   }
 
-  // Ready-to-send first (the fastest wins — the work is already done), then chases; oldest first within each.
-  return [...draftEntries, ...chaseEntries];
+  // Rank by urgency (the "here's your plate, in priority order" queue):
+  //   1. matters with an exchange/completion target within a week — soonest first,
+  //   2. overdue chases (oldest first),
+  //   3. ready-to-send drafts (quick wins),
+  //   4. everything else, oldest first.
+  const entries = [...draftEntries, ...chaseEntries];
+  const matterIds = [...new Set(entries.map((e) => e.matterId).filter(Boolean))];
+  const keyDates: Record<string, number> = {};
+  if (matterIds.length) {
+    try {
+      const rows = await query<{ id: string; d: string | null }>(
+        `select id, least(coalesce(exchange_target_date, 'infinity'::date), coalesce(completion_target_date, 'infinity'::date)) as d
+           from matter where tenant_id = $1 and id = any($2::uuid[])`,
+        [tenantId, matterIds]
+      );
+      for (const r of rows) if (r.d && !/infinity/.test(r.d)) keyDates[r.id] = new Date(r.d).getTime();
+    } catch {
+      /* dates unreadable — fall back to age-only ranking */
+    }
+  }
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const score = (e: WorklistEntry): number => {
+    const kd = e.matterId ? keyDates[e.matterId] : undefined;
+    const daysToKey = kd !== undefined ? (kd - now) / DAY : Infinity;
+    if (daysToKey <= 7) return daysToKey; // 0..7 — imminent exchange/completion, soonest first
+    if (e.kind === 'CHASE' && e.ageDays >= 5) return 100 - Math.min(e.ageDays, 60); // overdue chases
+    if (e.kind === 'DRAFT_READY') return 200 - Math.min(e.ageDays, 60); // ready wins
+    return 300 - Math.min(e.ageDays, 60);
+  };
+  for (const e of entries) {
+    const kd = e.matterId ? keyDates[e.matterId] : undefined;
+    if (kd !== undefined) {
+      e.keyDate = new Date(kd).toISOString().slice(0, 10);
+      e.urgent = (kd - now) / DAY <= 7;
+    }
+  }
+  return entries.sort((a, b) => score(a) - score(b));
 }
 
 /** Mark a DRAFT_READY item done (user dismissed / already sent). */

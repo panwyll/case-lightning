@@ -6,6 +6,7 @@
 import { query, queryOne } from './db';
 import { matchMessage, messageSignals, hasTrustedLink, type Candidate } from './matching';
 import { maybeAdvanceStage } from './stage-inference';
+import { onStageAdvanced } from './tasks';
 import { classifyEmail, draftReply, retrieveMatterContext, type EmailIntent } from './ai';
 import {
   createReplyDraft,
@@ -195,7 +196,10 @@ export async function applyTriageTags(user: SessionUser, message: any, triage: T
   // of being a second tracker to feed. Forward-only; provenance goes on the timeline.
   if (triage.top?.matterId && hasTrustedLink(triage.top)) {
     const text = `${message.subject ?? ''}\n${typeof message.body?.content === 'string' ? message.body.content : message.bodyPreview ?? ''}`;
-    void maybeAdvanceStage(user.tenantId, triage.top.matterId, text, message.subject ?? null).catch(() => {});
+    const mId = triage.top.matterId;
+    void maybeAdvanceStage(user.tenantId, mId, text, message.subject ?? null)
+      .then((advanced) => (advanced ? onStageAdvanced(user, mId, advanced) : undefined)) // milestone → drafted update
+      .catch(() => {});
   }
   const statusTag = statusTagName(triage.classification);
   const matterTag = triage.top && triage.top.band === 'AUTO' ? triage.top.matterRef : null;

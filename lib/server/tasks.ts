@@ -17,8 +17,9 @@
  * NOTE: the Excel side (graph.ts upsert/list) still needs live verification —
  * the Graph workbook API shapes can't be exercised offline.
  */
-import { query, transaction } from './db';
-import { listTrackerRows, upsertTrackerRowByRef } from './graph';
+import { query, queryOne, transaction } from './db';
+import { listTrackerRows, upsertTrackerRowByRef, createDraftMessage } from './graph';
+import { addDraftReady } from './worklist';
 import { mirrorTaskToTodo, syncFromTodo } from './todo';
 import type { SessionUser } from './types';
 
@@ -276,5 +277,64 @@ export async function autoActionTask(
     await createTask(user as SessionUser, matterId, { type: 'UPDATE', detail, source: 'AUTO', status: 'OPEN' });
   } catch {
     /* best-effort — never block the triggering action */
+  }
+}
+
+// The "tell the client" milestones where CONVEYi pre-drafts the update itself (into the
+// ready-to-send queue), rather than just raising a task. Templated (no LLM) so it's fast,
+// predictable and cheap; blank recipient so the fee-earner reviews + addresses before Send.
+const MILESTONE_UPDATE: Record<string, { subject: (ref: string) => string; body: (addr: string) => string; label: string }> = {
+  EXCHANGE: {
+    label: 'contracts exchanged',
+    subject: (ref) => `${ref} — Contracts exchanged`,
+    body: (addr) =>
+      `<p>Dear Sir or Madam,</p><p>We are pleased to confirm that contracts have now been exchanged${addr ? ` on ${addr}` : ''}. ` +
+      `The transaction is now legally binding. We will write again shortly with the arrangements for completion.</p><p>Kind regards</p>`,
+  },
+  COMPLETION: {
+    label: 'completion',
+    subject: (ref) => `${ref} — Completion`,
+    body: (addr) =>
+      `<p>Dear Sir or Madam,</p><p>We are pleased to confirm that completion has now taken place${addr ? ` on ${addr}` : ''}. ` +
+      `We will attend to the post-completion formalities and revert with any further requirements.</p><p>Kind regards</p>`,
+  },
+};
+
+/**
+ * Called whenever a matter's stage advances (manual PATCH or email-driven). On a big
+ * client-facing milestone (exchange/completion) CONVEYi drafts the update into the
+ * ready-to-send queue — the fee-earner just reviews and hits Send. On other stage moves
+ * it raises a lightweight task instead of drafting (so we don't email the client on every
+ * internal step). Deduped, best-effort.
+ */
+export async function onStageAdvanced(
+  user: { userId: string; tenantId: string; email?: string; role?: string },
+  matterId: string,
+  stage: string
+): Promise<void> {
+  try {
+    const label = stage.toLowerCase().replace(/_/g, ' ');
+    const milestone = MILESTONE_UPDATE[stage];
+    if (!milestone) {
+      await autoActionTask(user, matterId, `Update the client — matter now at the ${label} stage`);
+      return;
+    }
+    const matter = await queryOne<{ matter_ref: string; property_address: string | null }>(
+      `select matter_ref, property_address from matter where id = $1 and tenant_id = $2`,
+      [matterId, user.tenantId]
+    );
+    if (!matter) return;
+    const subject = milestone.subject(matter.matter_ref);
+    const draft = await createDraftMessage(user.userId, subject, milestone.body(matter.property_address ?? '')).catch(() => null);
+    await addDraftReady({
+      tenantId: user.tenantId,
+      matterId,
+      dedupKey: `stage:${stage}`, // one per stage per matter — never re-drafts the same milestone
+      title: `Update drafted — ${milestone.label}`,
+      detail: subject,
+      graphMessageId: (draft?.id as string) ?? null,
+    });
+  } catch {
+    /* best-effort */
   }
 }
