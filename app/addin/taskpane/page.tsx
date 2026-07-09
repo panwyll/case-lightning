@@ -2081,25 +2081,6 @@ export default function Taskpane() {
                     ) : null}
 
                     <div style={{ marginTop: 10 }}>
-                      <span style={S.updateLabel}>Tone</span>
-                      <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                        {TONES.map((t) => {
-                          const on = tone === t;
-                          return (
-                            <button
-                              key={t}
-                              onClick={() => setTone(t)}
-                              disabled={replying}
-                              style={{ flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: replying ? 'default' : 'pointer', border: '1px solid', borderColor: on ? '#5A27E0' : '#cbd5e1', background: on ? '#5A27E0' : '#fff', color: on ? '#fff' : '#475569' }}
-                            >
-                              {humanize(t)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div style={{ marginTop: 10 }}>
                       <span style={S.updateLabel}>Add guidance</span>
                       <textarea
                         value={guidance}
