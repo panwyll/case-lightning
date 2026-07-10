@@ -357,6 +357,7 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
+  const [wlDebug, setWlDebug] = useState<any>(null);
   // Worklist filter: `assignee` is '' (anyone / whole firm) or a user id. Only shown to team admins.
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
@@ -499,10 +500,11 @@ export default function Taskpane() {
   // poll, and when switching My/Team scope). Captures team/role so the toggle knows itself.
   const reloadWorklist = useCallback(async (assignee?: string) => {
     try {
-      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; assignedTo: string }>(
+      const r = await api<{ items: WorklistEntry[]; team: boolean; isAdmin: boolean; assignedTo: string; _debug?: any }>(
         `/worklist${assignee !== undefined ? `?assignedTo=${encodeURIComponent(assignee || 'any')}` : ''}`
       );
       setWorklist(r.items ?? []);
+      setWlDebug(r._debug ?? null);
       setWlMeta({ team: !!r.team, isAdmin: !!r.isAdmin, assignee: r.assignedTo ?? '' });
     } catch {
       /* keep whatever we had */
@@ -2064,6 +2066,10 @@ export default function Taskpane() {
                           ? `Nothing needs ${whoName} right now. Switch “Assigned to” to Anyone (or another person) to see the rest.`
                           : 'All caught up across the firm — no chases or ready-to-send drafts right now. New ones appear here automatically.'}
                       </p>
+                      {/* DIAGNOSTIC: why the queue is empty — raw task counts vs what surfaced. */}
+                      {wlDebug && (
+                        <pre style={{ fontSize: 10, color: '#94a3b8', whiteSpace: 'pre-wrap', margin: '8px 0 0' }}>{JSON.stringify(wlDebug)}</pre>
+                      )}
                     </Card>
                   );
                 }

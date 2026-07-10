@@ -5,7 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { getWorklist, dismissWorklistItem, snoozeWorklistItem } from '@/lib/server/worklist';
 import { updateTask } from '@/lib/server/tasks';
-import { queryOne } from '@/lib/server/db';
+import { query, queryOne } from '@/lib/server/db';
 import { runChaseSweep, snoozeChase } from '@/lib/server/chase';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { ok, fail } from '@/lib/server/http';
@@ -35,7 +35,17 @@ export async function GET(req: NextRequest) {
     after(async () => {
       await runChaseSweep(user.userId, user.tenantId).catch(() => {});
     });
-    return ok({ items, team, isAdmin, assignedTo: assignedTo ?? '' });
+    // DEBUG: compare what the worklist returned vs raw task counts, to explain an empty queue.
+    let _debug: Record<string, unknown> = {};
+    try {
+      const total = (await query<{ n: string }>(`select count(*)::int as n from matter_task where tenant_id = $1 and status in ('OPEN','IN_PROGRESS')`, [user.tenantId]))[0]?.n;
+      const inOpen = (await query<{ n: string }>(`select count(*)::int as n from matter_task t join matter m on m.id = t.matter_id where t.tenant_id = $1 and t.status in ('OPEN','IN_PROGRESS') and m.status = 'OPEN'`, [user.tenantId]))[0]?.n;
+      const byStatus = await query<{ s: string; n: string }>(`select m.status as s, count(*)::int as n from matter_task t join matter m on m.id = t.matter_id where t.tenant_id = $1 group by m.status`, [user.tenantId]);
+      _debug = { openTasks: total, openTasksInOpenMatters: inOpen, tasksByMatterStatus: byStatus, worklistTasks: items.filter((i) => i.kind === 'TASK').length, chases: items.filter((i) => i.kind === 'CHASE').length, drafts: items.filter((i) => i.kind === 'DRAFT_READY').length };
+    } catch (e) {
+      _debug = { error: (e as Error).message };
+    }
+    return ok({ items, team, isAdmin, assignedTo: assignedTo ?? '', _debug });
   } catch (error) {
     return fail(error);
   }
