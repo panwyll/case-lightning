@@ -66,13 +66,15 @@ const PROPOSE_CONCURRENCY = 4;   // proposeMatter (LLM) calls run in parallel, �
 const PROPOSE_SLICE_MS = 20000;  // wall-clock budget per propose slice — kept well under the 50s
                                  // slice backstop so one more LLM wave can't overshoot it;
                                  // unproposed clusters simply carry to the next /process call.
-const PROVISION_FETCH = 6;       // approved cases pulled per slice (drained under the time budget)
+const PROVISION_FETCH = 6;       // approved cases shelled per slice (drained under the time budget)
+const PROVISION_ENRICH_FETCH = 3; // shelled cases enriched (AI) per slice — heavier, so fewer
 const PROVISION_SLICE_MS = 20000; // wall-clock budget per provision slice — each matter is heavy
                                   // (OneDrive folder + Excel tracker + thread fetch + LLM extract),
                                   // so we do them one at a time until this deadline (well under the
                                   // 50s backstop) and let the client loop for the rest.
 const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noise
-const THREADS_PER_CASE = 5;      // conversations pulled for fact extraction
+const THREADS_PER_CASE = 3;      // conversations pulled for fact extraction (kept low so the
+                                 // enrich slice's thread fetches + AI extract stay under the cap)
 
 // Addresses that are clearly automated / bulk senders (no-reply, ESPs, marketing).
 // Used both to keep these out of clustering and to gate what reaches the AI.
@@ -448,15 +450,26 @@ async function proposeCluster(
 
 // ── Step 4: provision ────────────────────────────────────────────────────────────
 
-async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow): Promise<void> {
+// Phase A helper — create the email_thread links for a matter. No message fetch, so it's fast
+// and belongs in the lightweight "shell" pass.
+async function linkThreads(user: SessionUser, matterId: string, c: CaseRow): Promise<void> {
   const convs = (c.conversation_ids ?? []).filter(Boolean).slice(0, THREADS_PER_CASE);
-  const allMessages: any[] = [];
   for (const conv of convs) {
     await query(
       `insert into email_thread (tenant_id, matter_id, graph_thread_id, graph_conversation_id, subject)
        values ($1,$2,$3,$4,$5) on conflict (tenant_id, graph_thread_id) do nothing`,
       [user.tenantId, matterId, conv, conv, null]
     );
+  }
+}
+
+// Phase B helper — the AI-heavy enrichment: pull the thread messages, run ONE extract, then
+// write the summary, seed tasks and timeline. Runs in its own slice so it never stacks on top
+// of the shell's Graph provisioning (folder + Excel), which is what blew past the 50s cap.
+async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Promise<void> {
+  const convs = (c.conversation_ids ?? []).filter(Boolean).slice(0, THREADS_PER_CASE);
+  const allMessages: any[] = [];
+  for (const conv of convs) {
     try {
       allMessages.push(...(await listThreadMessages(user.userId, conv)));
     } catch {
@@ -466,7 +479,7 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
   if (!allMessages.length) return;
 
   // Cap the extract input so the single Groq/Anthropic call stays fast enough to finish well
-  // within the provisioning slice — 16k chars is plenty of signal for a back-fill summary.
+  // within the enrich slice — 16k chars is plenty of signal for a back-fill summary.
   const text = threadToText(allMessages).slice(0, 16000);
   const existing = await queryOne<{ facts: Record<string, unknown> }>(
     `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
@@ -497,89 +510,105 @@ async function ingestCaseThreads(user: SessionUser, matterId: string, c: CaseRow
     );
   }
   await upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } });
-  // NB: we deliberately do NOT back-fill the Excel tracker here. Writing a row per timeline/
-  // outstanding item meant ~16 sequential Graph Excel calls per matter — the main reason
-  // provisioning blew past the 50s slice cap. The same data already lives in matter_summary,
-  // matter_timeline_event and the seeded tasks (app-DB is the source of truth); the tracker
-  // populates via the normal task/figure sync, not an eager import-time back-fill.
+  // NB: no eager Excel-tracker back-fill here — a row per timeline/outstanding item was ~16
+  // sequential Graph Excel calls per matter. That data lives in matter_summary, the timeline
+  // and the seeded tasks; the tracker populates via the normal sync, not an import-time back-fill.
 }
 
+// Provision APPROVED cases in TWO bounded phases so no single slice does too much:
+//   A) shell   — create the matter (OneDrive folder + Excel tracker) + thread links. Graph only.
+//   B) enrich  — fetch the threads + one AI extract → summary/tasks/timeline. AI only.
+// A case is "shelled" once it has a matter_id; enrichment then flips it to ONBOARDED. Splitting
+// the heavy Graph work from the heavy AI work is what keeps every slice under Vercel's 60s cap.
 async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Promise<void> {
-  const cases = await query<CaseRow>(
+  const deadline = Date.now() + PROVISION_SLICE_MS;
+
+  // ── Phase A: shells for APPROVED cases that don't have a matter yet ──
+  const toShell = await query<CaseRow>(
     `select id, cluster_key, proposed_matter_ref, property_address, buyer_names, seller_names,
             counterparty_solicitor, counterparty_agent, conversation_ids, edits
-     from onboarding_case where job_id = $1 and status = 'APPROVED' order by created_at asc limit $2`,
+     from onboarding_case
+     where job_id = $1 and status = 'APPROVED' and matter_id is null
+     order by created_at asc limit $2`,
     [job.id, PROVISION_FETCH]
   );
+  if (toShell.length) {
+    for (const c of toShell) {
+      try {
+        const edits = (c.edits ?? {}) as Record<string, any>;
+        const propertyAddress = String(edits.propertyAddress ?? c.property_address ?? '').trim();
+        if (!propertyAddress) throw new Error('No property address to provision.');
+        const matterRef = String(edits.matterRef ?? c.proposed_matter_ref ?? '').trim();
+        // De-dup guard: if a matter already exists for this property, link to it.
+        const dup = await queryOne<{ id: string }>(
+          `select id from matter where tenant_id = $1 and lower(property_address) = lower($2) limit 1`,
+          [user.tenantId, propertyAddress]
+        );
+        let matterId: string;
+        if (dup) {
+          matterId = dup.id;
+        } else {
+          const created = await createMatter(user, {
+            matterRef,
+            propertyAddress,
+            buyerNames: (edits.buyerNames as string[]) ?? c.buyer_names ?? [],
+            sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],
+            counterpartySolicitor: c.counterparty_solicitor ?? undefined,
+            counterpartyAgent: c.counterparty_agent ?? undefined,
+          });
+          matterId = created.id;
+        }
+        await linkThreads(user, matterId, c);
+        // Record the matter but keep status APPROVED — Phase B flips it to ONBOARDED once the
+        // AI enrichment has run. matter_id being set is what marks a case as "shelled".
+        await query(`update onboarding_case set matter_id = $1, updated_at = now() where id = $2`, [matterId, c.id]);
+      } catch (error) {
+        const message = describeGraphError(error);
+        await query(`update onboarding_case set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), c.id]);
+      }
+      if (Date.now() > deadline) break;
+    }
+    return; // remaining shells / the enrich phase run on the next /process call
+  }
 
-  if (!cases.length) {
-    // Import finished: push the freshly-seeded (app-first) tasks to Microsoft To Do in one
-    // batch here — not per-task during provisioning — so a bulk import never fans out Graph
-    // calls mid-flight. No-op without the Tasks.ReadWrite scope, so it's safe while dormant.
-    await flushUnsyncedTasksToTodo(user).catch(() => {});
-    await query(`update onboarding_job set status = 'COMPLETED', completed_at = now(), updated_at = now() where id = $1`, [job.id]);
+  // ── Phase B: enrich shelled cases (have a matter, not yet ONBOARDED) ──
+  const toEnrich = await query<CaseRow & { matter_id: string }>(
+    `select id, cluster_key, proposed_matter_ref, property_address, buyer_names, seller_names,
+            counterparty_solicitor, counterparty_agent, conversation_ids, edits, matter_id
+     from onboarding_case
+     where job_id = $1 and status = 'APPROVED' and matter_id is not null
+     order by created_at asc limit $2`,
+    [job.id, PROVISION_ENRICH_FETCH]
+  );
+  if (toEnrich.length) {
+    for (const c of toEnrich) {
+      try {
+        await enrichMatter(user, c.matter_id, c);
+        await query(`update onboarding_case set status = 'ONBOARDED', updated_at = now() where id = $1`, [c.id]);
+        await query(`update onboarding_job set cases_onboarded = cases_onboarded + 1, updated_at = now() where id = $1`, [job.id]);
+        await writeAudit({
+          tenantId: user.tenantId,
+          matterId: c.matter_id,
+          actorUserId: user.userId,
+          actionType: 'ONBOARDING_CASE_PROVISIONED',
+          actionStatus: 'SUCCESS',
+          payload: { caseId: c.id, clusterKey: c.cluster_key },
+        });
+      } catch (error) {
+        // The matter shell already exists — complete the case anyway so the import finishes
+        // rather than looping on a matter whose extract keeps failing; record the enrich error.
+        const message = describeGraphError(error);
+        await query(`update onboarding_case set status = 'ONBOARDED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), c.id]);
+        await query(`update onboarding_job set cases_onboarded = cases_onboarded + 1, updated_at = now() where id = $1`, [job.id]);
+      }
+      if (Date.now() > deadline) break;
+    }
     return;
   }
 
-  const deadline = Date.now() + PROVISION_SLICE_MS;
-  for (const c of cases) {
-    try {
-      const edits = (c.edits ?? {}) as Record<string, any>;
-      const propertyAddress = String(edits.propertyAddress ?? c.property_address ?? '').trim();
-      if (!propertyAddress) throw new Error('No property address to provision.');
-      // Prefer an explicit edit, else the proposed ref; if neither, createMatter
-      // derives a client-address ref from the parties + address below.
-      const matterRef = String(edits.matterRef ?? c.proposed_matter_ref ?? '').trim();
-
-      // De-dup guard: if a matter already exists for this property (e.g. created
-      // manually between scan and confirm), link to it instead of duplicating.
-      const dup = await queryOne<{ id: string }>(
-        `select id from matter where tenant_id = $1 and lower(property_address) = lower($2) limit 1`,
-        [user.tenantId, propertyAddress]
-      );
-
-      let matterId: string;
-      if (dup) {
-        matterId = dup.id;
-      } else {
-        const created = await createMatter(user, {
-          matterRef,
-          propertyAddress,
-          buyerNames: (edits.buyerNames as string[]) ?? c.buyer_names ?? [],
-          sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],
-          counterpartySolicitor: c.counterparty_solicitor ?? undefined,
-          counterpartyAgent: c.counterparty_agent ?? undefined,
-        });
-        matterId = created.id;
-      }
-
-      await ingestCaseThreads(user, matterId, c);
-
-      await query(`update onboarding_case set status = 'ONBOARDED', matter_id = $1, updated_at = now() where id = $2`, [matterId, c.id]);
-      await query(`update onboarding_job set cases_onboarded = cases_onboarded + 1, updated_at = now() where id = $1`, [job.id]);
-      await writeAudit({
-        tenantId: user.tenantId,
-        matterId,
-        actorUserId: user.userId,
-        actionType: 'ONBOARDING_CASE_PROVISIONED',
-        actionStatus: 'SUCCESS',
-        payload: { caseId: c.id, clusterKey: c.cluster_key, reusedExisting: Boolean(dup) },
-      });
-    } catch (error) {
-      const message = describeGraphError(error);
-      await query(`update onboarding_case set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), c.id]);
-      await writeAudit({
-        tenantId: user.tenantId,
-        actorUserId: user.userId,
-        actionType: 'ONBOARDING_CASE_PROVISIONED',
-        actionStatus: 'FAILED',
-        payload: { caseId: c.id, error: message },
-      });
-    }
-    // Time budget spent — stop the slice; the remaining APPROVED cases carry over to the
-    // next /process call the client makes. One matter at a time keeps us under the 60s cap.
-    if (Date.now() > deadline) break;
-  }
+  // ── Phase C: nothing approved left — flush To Do and finish ──
+  await flushUnsyncedTasksToTodo(user).catch(() => {});
+  await query(`update onboarding_job set status = 'COMPLETED', completed_at = now(), updated_at = now() where id = $1`, [job.id]);
 }
 
 // ── Orchestrator ────────────────────────────────────────────────────────────────
