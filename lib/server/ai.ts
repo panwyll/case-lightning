@@ -113,6 +113,9 @@ async function structured<T>(
   // their output is anchored to the real process model; the cheap, high-volume
   // classify tier stays lean (it only labels) to keep per-email cost down.
   const system = tier === 'classify' ? SYSTEM_GUARD : `${SYSTEM_GUARD}\n\n${CONVEYANCING_PRIMER}`;
+  // Cap output tokens per tier — a smaller ceiling means the model finishes sooner, which keeps
+  // the call well inside the 30s per-request timeout (and the onboarding slice budget).
+  const maxTokens = tier === 'classify' ? 1024 : tier === 'fast' ? 2048 : 4096;
 
   // Best-effort metering wrapper: record token usage/cost, never throw from here.
   const meterCall = (usage: TokenUsage, status: 'SUCCESS' | 'FAILED') =>
@@ -121,11 +124,11 @@ async function structured<T>(
   if (provider === 'anthropic') {
     let resp: Anthropic.Message;
     try {
-      // 30s per-call timeout: a hung provider must abort well before the onboarding slice's
-      // 50s backstop (and Vercel's 60s cap), so a slow model fails one unit, not the whole run.
-      resp = await new Anthropic({ apiKey, timeout: 30_000, maxRetries: 1 }).messages.create({
+      // 30s per-call timeout, and maxRetries:0 so a timed-out call fails fast instead of the
+      // SDK silently retrying (2×30s = 60s, which was tripping the onboarding 50s backstop).
+      resp = await new Anthropic({ apiKey, timeout: 30_000, maxRetries: 0 }).messages.create({
         model,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         system,
         tools: [{ name: toolName, description, input_schema: schema as Anthropic.Tool.InputSchema }],
         tool_choice: { type: 'tool', name: toolName },
@@ -156,7 +159,7 @@ async function structured<T>(
       body: JSON.stringify({
         model,
         temperature: 0.2,
-        max_tokens: 4096,
+        max_tokens: maxTokens,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: userContent },

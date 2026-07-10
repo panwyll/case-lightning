@@ -480,8 +480,8 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
   if (!allMessages.length) return `no messages fetched from ${convs.length} thread(s)`;
 
   // Cap the extract input so the single Groq/Anthropic call stays fast enough to finish well
-  // within the enrich slice — 16k chars is plenty of signal for a back-fill summary.
-  const text = threadToText(allMessages).slice(0, 16000);
+  // within the enrich slice's 30s AI timeout — 8k chars is enough signal for a back-fill summary.
+  const text = threadToText(allMessages).slice(0, 8000);
   const existing = await queryOne<{ facts: Record<string, unknown> }>(
     `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
