@@ -360,7 +360,7 @@ export default function Taskpane() {
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
-  const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; events?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
+  const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; matter?: any; summary?: any; timeline?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
   // Worklist filter: `assignee` is '' (anyone / whole firm) or a user id. Only shown to team admins.
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
@@ -537,10 +537,10 @@ export default function Taskpane() {
     if (!opening || !mid || wlTl[mid]) return;
     setWlTl((t) => ({ ...t, [mid]: { loading: true } }));
     try {
-      const r = await api<{ timeline: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>(`/matters/${mid}/timeline`);
-      setWlTl((t) => ({ ...t, [mid]: { events: r.timeline ?? [] } }));
+      const r = await api<{ matter: any; summary: any; timeline: any[] }>(`/matters/${mid}`);
+      setWlTl((t) => ({ ...t, [mid]: { matter: r.matter, summary: r.summary, timeline: r.timeline ?? [] } }));
     } catch {
-      setWlTl((t) => ({ ...t, [mid]: { events: [] } }));
+      setWlTl((t) => ({ ...t, [mid]: { matter: null, summary: null, timeline: [] } }));
     }
   }
 
@@ -2002,7 +2002,6 @@ export default function Taskpane() {
                       : w.kind === 'CHASE'
                       ? `Chase reply${w.detail ? ` — ${w.detail}` : ''}`
                       : w.title || w.detail || 'Reply ready to send';
-                  const kindLabel = w.kind === 'CHASE' ? 'Chase' : w.kind === 'TASK' ? 'To do' : 'Send';
                   const iconBtn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
                     flex: 'none', width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     border: variant === 'ghost' ? '1px solid #D9D2EC' : 'none', borderRadius: 8,
@@ -2037,8 +2036,7 @@ export default function Taskpane() {
                         {primaryText}
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, fontSize: 10.5, color: '#7A7388', minWidth: 0 }}>
-                        <span style={{ fontWeight: 700, flex: 'none', ...(w.kind === 'CHASE' ? { color: '#b45309' } : w.kind === 'TASK' ? { color: '#475569' } : { color: '#5A27E0' }) }}>{kindLabel}</span>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}</span>
                         {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                         {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                       </span>
@@ -2072,28 +2070,70 @@ export default function Taskpane() {
                       )}
                     </span>
                     </div>
-                    {wlOpen === w.id && (
+                    {wlOpen === w.id && w.matterId && (
                       <div style={{ padding: '2px 10px 10px', borderTop: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8') }}>
-                        <div style={{ fontSize: 11.5, color: '#4A4358', margin: '8px 0' }}>{w.detail || w.title}</div>
-                        {w.matterId && (() => {
+                        {(() => {
                           const tl = wlTl[w.matterId!];
-                          if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8' }}>Loading timeline…</div>;
-                          if (!tl.events || tl.events.length === 0) return <div style={{ fontSize: 11, color: '#94a3b8' }}>No timeline events yet.</div>;
+                          if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8 }}>Loading…</div>;
+                          const m = tl.matter ?? {};
+                          const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
+                          const details = ([
+                            ['Stage', m.stage ? String(m.stage).replace(/_/g, ' ').toLowerCase() : null],
+                            ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
+                            ['Type', m.track ? String(m.track).toLowerCase() : null],
+                            ['Price', m.purchase_price ? `£${m.purchase_price}` : null],
+                            ['Buyer', (m.buyer_names ?? []).join(', ') || null],
+                            ['Seller', (m.seller_names ?? []).join(', ') || null],
+                            ['Other solicitor', m.counterparty_solicitor || null],
+                            ['Estate agent', m.counterparty_agent || null],
+                            ['Lender', m.lender || null],
+                            ['Chain', m.chain_position || null],
+                            ['Exchange', dt(m.exchange_target_date)],
+                            ['Completion', dt(m.completion_target_date)],
+                          ] as Array<[string, string | null]>).filter(([, v]) => v);
+                          const outstanding = (tl.summary?.outstanding_items ?? []) as string[];
+                          const events = tl.timeline ?? [];
                           return (
-                            <>
-                              <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>Matter timeline</div>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
-                                {tl.events.slice(0, 20).map((ev) => (
-                                  <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
-                                    <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
-                                    {ev.details && <div style={{ color: '#7A7388', marginTop: 1 }}>{ev.details}</div>}
-                                    <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 1 }}>
-                                      {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            <div style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: 11.5, color: '#4A4358', marginBottom: 8 }}>{w.detail || w.title}</div>
+                              {details.length > 0 && (
+                                <div style={{ marginBottom: 10 }}>
+                                  {details.map(([k, v]) => (
+                                    <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 2 }}>
+                                      <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 82, flex: 'none' }}>{k}</span>
+                                      <span style={{ color: '#1C1530', textTransform: k === 'Stage' || k === 'Type' ? 'capitalize' : 'none' }}>{v}</span>
                                     </div>
+                                  ))}
+                                </div>
+                              )}
+                              {outstanding.length > 0 && (
+                                <div style={{ marginBottom: 10 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Outstanding</div>
+                                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: '#4A4358', lineHeight: 1.5 }}>
+                                    {outstanding.slice(0, 8).map((o, i) => <li key={i}>{o}</li>)}
+                                  </ul>
+                                </div>
+                              )}
+                              {events.length > 0 && (
+                                <>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>Timeline</div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                                    {events.slice(0, 20).map((ev) => (
+                                      <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
+                                        <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
+                                        {ev.details && <div style={{ color: '#7A7388', marginTop: 1 }}>{ev.details}</div>}
+                                        <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 1 }}>
+                                          {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                ))}
-                              </div>
-                            </>
+                                </>
+                              )}
+                              {details.length === 0 && outstanding.length === 0 && events.length === 0 && (
+                                <div style={{ fontSize: 11, color: '#94a3b8' }}>No further details recorded yet.</div>
+                              )}
+                            </div>
                           );
                         })()}
                       </div>
