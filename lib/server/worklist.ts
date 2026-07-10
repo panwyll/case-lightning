@@ -31,6 +31,7 @@ export interface WorklistEntry {
   keyDate?: string | null; // the matter's nearest exchange/completion target — drives urgency
   urgent?: boolean; // key date OR task due within a week: sorts to the very top
   due?: string | null; // TASK: the task's own due date (YYYY-MM-DD), if set
+  stage?: string | null; // the matter's current stage — shown as the row's status
 }
 
 /** Add (or re-surface) a "ready to send" draft. Idempotent per (tenant, kind, dedupKey). */
@@ -170,10 +171,11 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
   const entries = [...draftEntries, ...chaseEntries, ...taskEntries];
   const matterIds = [...new Set(entries.map((e) => e.matterId).filter(Boolean))];
   const keyDates: Record<string, number> = {};
+  const stages: Record<string, string> = {};
   if (matterIds.length) {
     try {
-      const rows = await query<{ id: string; d: string | null }>(
-        `select id, least(coalesce(exchange_target_date, 'infinity'::date), coalesce(completion_target_date, 'infinity'::date)) as d
+      const rows = await query<{ id: string; d: string | null; stage: string | null }>(
+        `select id, stage, least(coalesce(exchange_target_date, 'infinity'::date), coalesce(completion_target_date, 'infinity'::date)) as d
            from matter where tenant_id = $1 and id = any($2::uuid[])`,
         [tenantId, matterIds]
       );
@@ -182,6 +184,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       // timestamp, which would later make new Date(kd).toISOString() throw "Invalid time value"
       // and take down the whole worklist. Guard with Number.isFinite, not a fragile regex.
       for (const r of rows) {
+        if (r.stage) stages[r.id] = r.stage;
         if (!r.d) continue;
         const t = new Date(r.d as any).getTime();
         if (Number.isFinite(t)) keyDates[r.id] = t;
@@ -210,6 +213,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
     return 300 - Math.min(e.ageDays, 60);
   };
   for (const e of entries) {
+    if (e.matterId && stages[e.matterId]) e.stage = stages[e.matterId];
     const kd = e.matterId ? keyDates[e.matterId] : undefined;
     if (kd !== undefined && Number.isFinite(kd)) e.keyDate = new Date(kd).toISOString().slice(0, 10);
     const soon = soonestMs(e);

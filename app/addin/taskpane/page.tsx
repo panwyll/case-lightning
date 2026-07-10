@@ -134,6 +134,8 @@ const STAGES: Array<[string, string]> = [
   ['COMPLETION', '6 · Completion'],
   ['POST_COMPLETION', '7 · Post-completion'],
 ];
+// Human stage label without the ordinal prefix (e.g. "Searches & enquiries").
+const stageLabel = (s: string): string => (STAGES.find(([v]) => v === s)?.[1] ?? s).replace(/^\d+\s·\s/, '');
 
 // Which side of the transaction we act for — frames the stage model and the
 // drafting AI (so it doesn't assume we're always the buyer).
@@ -218,6 +220,7 @@ type WorklistEntry = {
   keyDate?: string | null; // matter's nearest exchange/completion target
   urgent?: boolean; // key date OR task due within a week — top of the queue
   due?: string | null; // TASK's own due date (YYYY-MM-DD)
+  stage?: string | null; // matter's current stage — the row's status
 };
 
 // Remember across opens that this user was signed in, so a cold taskpane shows a
@@ -2034,13 +2037,20 @@ export default function Taskpane() {
                       title={w.matterId ? 'Show matter timeline' : undefined}
                       style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
                     >
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1C1530', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                      {/* Matter — which case this is. */}
+                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
+                      </span>
+                      {/* Action — what needs doing. */}
+                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12, color: '#4A4358', lineHeight: 1.35, marginTop: 2 }}>
                         {primaryText}
                       </span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, fontSize: 10.5, color: '#7A7388', minWidth: 0 }}>
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}</span>
+                      {/* Status — the matter's stage + any deadline. */}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 10, minWidth: 0 }}>
+                        {w.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageLabel(w.stage)}</span>}
                         {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                         {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {!w.stage && !w.urgent && !(w.kind === 'TASK' && w.due) && <span style={{ color: '#B0A9C0' }}>{w.ageDays}d old</span>}
                       </span>
                     </span>
                     <span style={{ flex: 'none', display: 'flex', gap: 5, opacity: busy || drafted === 'busy' ? 0.5 : 1 }}>
@@ -2079,11 +2089,28 @@ export default function Taskpane() {
                           if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8 }}>Loading…</div>;
                           const m = tl.matter ?? {};
                           const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
+                          const price = m.purchase_price
+                            ? /^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`
+                            : null;
+                          const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
+                          const outstanding = (tl.summary?.outstanding_items ?? []) as string[];
+                          const events = tl.timeline ?? [];
+                          // ── Tier 1: an at-a-glance exec summary, composed from the case data. ──
+                          const bits: string[] = [];
+                          bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
+                          if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
+                          if (price) bits.push(`at ${price}`);
+                          let execSummary = bits.join(' ').trim();
+                          if (execSummary) execSummary += '.';
+                          if (m.stage) execSummary += ` Currently ${stageLabel(m.stage).toLowerCase()}.`;
+                          const nextAction = w.kind === 'TASK' ? w.title : outstanding[0];
+                          if (nextAction) execSummary += ` Next: ${nextAction.charAt(0).toLowerCase() + nextAction.slice(1)}.`;
+                          // ── Tier 2: the key data points. ──
                           const details = ([
-                            ['Stage', m.stage ? String(m.stage).replace(/_/g, ' ').toLowerCase() : null],
+                            ['Stage', m.stage ? stageLabel(m.stage) : null],
                             ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
                             ['Type', m.track ? String(m.track).toLowerCase() : null],
-                            ['Price', m.purchase_price ? `£${m.purchase_price}` : null],
+                            ['Price', price],
                             ['Buyer', (m.buyer_names ?? []).join(', ') || null],
                             ['Seller', (m.seller_names ?? []).join(', ') || null],
                             ['Other solicitor', m.counterparty_solicitor || null],
@@ -2093,13 +2120,17 @@ export default function Taskpane() {
                             ['Exchange', dt(m.exchange_target_date)],
                             ['Completion', dt(m.completion_target_date)],
                           ] as Array<[string, string | null]>).filter(([, v]) => v);
-                          const outstanding = (tl.summary?.outstanding_items ?? []) as string[];
-                          const events = tl.timeline ?? [];
+                          const Hdr = ({ children }: { children: React.ReactNode }) => (
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>{children}</div>
+                          );
                           return (
                             <div style={{ marginTop: 8 }}>
-                              <div style={{ fontSize: 11.5, color: '#4A4358', marginBottom: 8 }}>{w.detail || w.title}</div>
+                              {/* 1 · Summary */}
+                              <div style={{ fontSize: 12, color: '#1C1530', lineHeight: 1.5, marginBottom: 12 }}>{execSummary}</div>
+                              {/* 2 · Key data points */}
                               {details.length > 0 && (
-                                <div style={{ marginBottom: 10 }}>
+                                <div style={{ marginBottom: 12 }}>
+                                  <Hdr>Key details</Hdr>
                                   {details.map(([k, v]) => (
                                     <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 2 }}>
                                       <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 82, flex: 'none' }}>{k}</span>
@@ -2108,19 +2139,20 @@ export default function Taskpane() {
                                   ))}
                                 </div>
                               )}
+                              {/* 3 · Full detail */}
                               {outstanding.length > 0 && (
-                                <div style={{ marginBottom: 10 }}>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 4 }}>Outstanding</div>
+                                <div style={{ marginBottom: 12 }}>
+                                  <Hdr>Our outstanding actions</Hdr>
                                   <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: '#4A4358', lineHeight: 1.5 }}>
-                                    {outstanding.slice(0, 8).map((o, i) => <li key={i}>{o}</li>)}
+                                    {outstanding.slice(0, 10).map((o, i) => <li key={i}>{o}</li>)}
                                   </ul>
                                 </div>
                               )}
                               {events.length > 0 && (
                                 <>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>Timeline</div>
+                                  <Hdr>Full timeline</Hdr>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
-                                    {events.slice(0, 20).map((ev) => (
+                                    {events.slice(0, 30).map((ev) => (
                                       <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
                                         <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
                                         {ev.details && <div style={{ color: '#7A7388', marginTop: 1 }}>{ev.details}</div>}
