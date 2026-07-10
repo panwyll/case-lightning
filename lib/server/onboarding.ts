@@ -467,7 +467,7 @@ async function linkThreads(user: SessionUser, matterId: string, c: CaseRow): Pro
 // Phase B helper — the AI-heavy enrichment: pull the thread messages, run ONE extract, then
 // write the summary, seed tasks and timeline. Runs in its own slice so it never stacks on top
 // of the shell's Graph provisioning (folder + Excel), which is what blew past the 50s cap.
-async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Promise<void> {
+async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Promise<string> {
   const convs = (c.conversation_ids ?? []).filter(Boolean).slice(0, THREADS_PER_CASE);
   const allMessages: any[] = [];
   for (let i = 0; i < convs.length; i++) {
@@ -477,7 +477,7 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
       /* a thread may have been moved/deleted since the scan — skip it */
     }
   }
-  if (!allMessages.length) return;
+  if (!allMessages.length) return `no messages fetched from ${convs.length} thread(s)`;
 
   // Cap the extract input so the single Groq/Anthropic call stays fast enough to finish well
   // within the enrich slice — 16k chars is plenty of signal for a back-fill summary.
@@ -504,7 +504,7 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
   // Turn the outstanding items the extractor just produced into real, actionable tasks on the
   // matter — so an imported case lands with its to-do list already populated. Reuses the
   // extraction above (no extra AI), batch-inserts, and never blocks provisioning.
-  await seedTasksFromOutstanding(user, matterId, extracted.outstanding, { max: 8 }).catch(() => {});
+  const seeded = await seedTasksFromOutstanding(user, matterId, extracted.outstanding, { max: 8 }).catch(() => 0);
   for (const item of extracted.timeline) {
     await query(
       `insert into matter_timeline_event (tenant_id, matter_id, event_type, title, details, source_ref)
@@ -516,6 +516,7 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
   // NB: no eager Excel-tracker back-fill here — a row per timeline/outstanding item was ~16
   // sequential Graph Excel calls per matter. That data lives in matter_summary, the timeline
   // and the seeded tasks; the tracker populates via the normal sync, not an import-time back-fill.
+  return `${extracted.outstanding.length} outstanding → ${seeded} task(s) · ${extracted.timeline.length} timeline · ${allMessages.length} msg(s)`;
 }
 
 // Provision APPROVED cases in TWO bounded phases so no single slice does too much:
@@ -588,8 +589,10 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
   if (toEnrich.length) {
     for (const c of toEnrich) {
       try {
-        await enrichMatter(user, c.matter_id, c);
-        await query(`update onboarding_case set status = 'ONBOARDED', updated_at = now() where id = $1`, [c.id]);
+        // Capture the enrich summary (tasks seeded / outstanding / msgs) so "no tasks" is
+        // diagnosable — it's written to the case error field and shown on the done screen.
+        const summary = await enrichMatter(user, c.matter_id, c);
+        await query(`update onboarding_case set status = 'ONBOARDED', error = $1, updated_at = now() where id = $2`, [`enriched: ${summary}`.slice(0, 500), c.id]);
         await query(`update onboarding_job set cases_onboarded = cases_onboarded + 1, updated_at = now() where id = $1`, [job.id]);
         await writeAudit({
           tenantId: user.tenantId,
@@ -597,13 +600,13 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
           actorUserId: user.userId,
           actionType: 'ONBOARDING_CASE_PROVISIONED',
           actionStatus: 'SUCCESS',
-          payload: { caseId: c.id, clusterKey: c.cluster_key },
+          payload: { caseId: c.id, clusterKey: c.cluster_key, summary },
         });
       } catch (error) {
         // The matter shell already exists — complete the case anyway so the import finishes
         // rather than looping on a matter whose extract keeps failing; record the enrich error.
         const message = describeGraphError(error);
-        await query(`update onboarding_case set status = 'ONBOARDED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), c.id]);
+        await query(`update onboarding_case set status = 'ONBOARDED', error = $1, updated_at = now() where id = $2`, [`enrich failed: ${message}`.slice(0, 500), c.id]);
         await query(`update onboarding_job set cases_onboarded = cases_onboarded + 1, updated_at = now() where id = $1`, [job.id]);
       }
       if (Date.now() > deadline) break;

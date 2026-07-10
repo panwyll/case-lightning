@@ -91,7 +91,7 @@ export async function GET() {
     if (['AWAITING_REVIEW', 'PROVISIONING', 'COMPLETED'].includes(job.status)) {
       cases = await query(
         `select id, cluster_key, proposed_matter_ref, property_address, buyer_names, seller_names,
-                counterparty_solicitor, counterparty_agent, confidence, rationale, thread_count, message_count, status, matter_id
+                counterparty_solicitor, counterparty_agent, confidence, rationale, error, thread_count, message_count, status, matter_id
          from onboarding_case
          where job_id = $1 and status in ('PROPOSED','APPROVED','ONBOARDED','FAILED','REJECTED')
          order by confidence desc nulls last, message_count desc`,

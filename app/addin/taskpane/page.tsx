@@ -110,6 +110,7 @@ interface ObCase {
   counterparty_solicitor: string | null;
   confidence: number | null;
   rationale: string | null;
+  error: string | null;
   thread_count: number;
   message_count: number;
   status: string;
@@ -3164,8 +3165,13 @@ export default function Taskpane() {
                   )}
                   <div style={S.scrollList}>
                     {shown.map((c) => (
-                      <div key={c.id} style={S.scrollRow} title={c.property_address || ''}>
-                        {c.property_address || 'Unknown property'}
+                      <div key={c.id} style={S.scrollRow} title={c.error || c.property_address || ''}>
+                        <div>{c.property_address || 'Unknown property'}</div>
+                        {/* DIAGNOSTIC: what enrichment did per matter (tasks seeded / outstanding / msgs)
+                            or why it failed — so "no tasks" is explainable at a glance. */}
+                        {c.error && (
+                          <div style={{ fontSize: 10.5, color: /fail|no messages/i.test(c.error) ? '#b91c1c' : '#94a3b8' }}>{c.error}</div>
+                        )}
                       </div>
                     ))}
                     {shown.length === 0 && <div style={{ ...S.scrollRow, color: '#94a3b8', borderBottom: 'none' }}>No matches.</div>}
