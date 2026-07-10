@@ -1990,89 +1990,82 @@ export default function Taskpane() {
                           ? deadlineMs(a) - deadlineMs(b)
                           : (a.matterRef || '').localeCompare(b.matterRef || '') || a.ageDays - b.ageDays
                       );
-                const row = (w: WorklistEntry) => (
+                const row = (w: WorklistEntry) => {
+                  const busy = wlBusy === w.id;
+                  const drafted = wlChaser[w.id];
+                  // Jira-style urgency dot instead of the "18d" text — saves width.
+                  const dotColor = w.urgent || w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#16a34a';
+                  // Purely descriptive: what actually needs doing.
+                  const primaryText =
+                    w.kind === 'TASK'
+                      ? w.title
+                      : w.kind === 'CHASE'
+                      ? `Chase reply${w.detail ? ` — ${w.detail}` : ''}`
+                      : w.title || w.detail || 'Reply ready to send';
+                  const kindLabel = w.kind === 'CHASE' ? 'Chase' : w.kind === 'TASK' ? 'To do' : 'Send';
+                  const iconBtn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
+                    flex: 'none', width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    border: variant === 'ghost' ? '1px solid #D9D2EC' : 'none', borderRadius: 8,
+                    background: variant === 'primary' ? '#5A27E0' : '#fff', color: variant === 'primary' ? '#fff' : '#7A7388',
+                    cursor: 'pointer', padding: 0,
+                  });
+                  const G = ({ children }: { children: React.ReactNode }) => (
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+                  );
+                  const iSend = <G><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></G>;
+                  const iPencil = <G><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></G>;
+                  const iClock = <G><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></G>;
+                  const iCheck = <G><path d="M20 6L9 17l-5-5" /></G>;
+                  return (
                   <div
                     key={w.id}
                     style={{ border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
-                    <span
-                      style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#64748b' }}
-                      title={`${w.ageDays} days`}
-                    >
-                      {w.ageDays}d
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px' }}>
+                    <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
                     <span
                       onClick={() => toggleWlExpand(w)}
                       title={w.matterId ? 'Show matter timeline' : undefined}
                       style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
                     >
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, ...(w.kind === 'CHASE' ? { color: '#b45309', background: '#fef3c7' } : w.kind === 'TASK' ? { color: '#475569', background: '#e2e8f0' } : { color: '#5A27E0', background: '#ede9fe' }), borderRadius: 999, padding: '0 6px', flex: 'none' }}>
-                          {w.kind === 'CHASE' ? 'Chase' : w.kind === 'TASK' ? 'To do' : 'Send'}
-                        </span>
-                        {w.urgent && w.keyDate && (
-                          <span title="Exchange/completion target" style={{ fontSize: 10, fontWeight: 700, color: '#b91c1c', background: '#fee2e2', borderRadius: 999, padding: '0 6px', flex: 'none', whiteSpace: 'nowrap' }}>
-                            🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </span>
-                        )}
-                        {w.kind === 'TASK' && w.due && (
-                          <span title="Task due" style={{ fontSize: 10, fontWeight: 700, ...(w.urgent ? { color: '#b91c1c', background: '#fee2e2' } : { color: '#475569', background: '#e2e8f0' }), borderRadius: 999, padding: '0 6px', flex: 'none', whiteSpace: 'nowrap' }}>
-                            📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          </span>
-                        )}
-                        <strong style={{ fontSize: 12.5, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
-                        </strong>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1C1530', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {primaryText}
                       </span>
-                      <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
-                        {w.matterId ? (wlOpen === w.id ? '▾ ' : '▸ ') : ''}{w.detail || w.title}
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, fontSize: 10.5, color: '#7A7388', minWidth: 0 }}>
+                        <span style={{ fontWeight: 700, flex: 'none', ...(w.kind === 'CHASE' ? { color: '#b45309' } : w.kind === 'TASK' ? { color: '#475569' } : { color: '#5A27E0' }) }}>{kindLabel}</span>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}</span>
+                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                       </span>
                     </span>
-                    {(() => {
-                      const primary: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 700, padding: '5px 10px', border: 'none', borderRadius: 8, background: '#5A27E0', color: '#fff', cursor: 'pointer' };
-                      const ghost: React.CSSProperties = { flex: 'none', fontSize: 11, fontWeight: 600, padding: '5px 8px', border: '1px solid #D9D2EC', borderRadius: 8, background: '#fff', color: '#7A7388', cursor: 'pointer' };
-                      const busy = wlBusy === w.id;
-                      // TASK: a matter to-do → tick it off (mirrors out to Excel / To Do).
-                      if (w.kind === 'TASK') {
-                        return (
-                          <button style={{ ...ghost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => worklistAction(w, 'done')} title="Mark this task done">
-                            {busy ? '…' : '✓ Done'}
-                          </button>
-                        );
-                      }
-                      // DRAFT_READY: it's already written → Send in one click.
-                      if (w.kind === 'DRAFT_READY') {
-                        return (
-                          <>
-                            {w.graphMessageId && (
-                              <button style={{ ...primary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)} title="Send this reviewed draft now">
-                                {busy ? '…' : 'Send'}
-                              </button>
-                            )}
-                            <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'dismiss')} title="Mark done (handled another way)">Done</button>
-                          </>
-                        );
-                      }
-                      // CHASE: draft the chaser for you, then it becomes Send.
-                      const drafted = wlChaser[w.id];
-                      if (typeof drafted === 'string') {
-                        return (
-                          <>
-                            <button style={{ ...primary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)} title="Send the chaser now">{busy ? '…' : 'Send'}</button>
-                            <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'snooze')} title="Hide for a week">Snooze</button>
-                          </>
-                        );
-                      }
-                      return (
+                    <span style={{ flex: 'none', display: 'flex', gap: 5, opacity: busy || drafted === 'busy' ? 0.5 : 1 }}>
+                      {w.kind === 'TASK' && (
+                        <button title="Mark done" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'done')}>{iCheck}</button>
+                      )}
+                      {w.kind === 'DRAFT_READY' && (
                         <>
-                          <button style={{ ...primary, opacity: drafted === 'busy' ? 0.6 : 1 }} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)} title="Draft a chase-up for you">
-                            {drafted === 'busy' ? '…' : 'Draft chaser'}
-                          </button>
-                          <button style={ghost} disabled={busy} onClick={() => worklistAction(w, 'snooze')} title="Hide for a week (e.g. already chased by phone)">Snooze</button>
+                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{iSend}</button>}
+                          <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'dismiss')}>{iCheck}</button>
                         </>
-                      );
-                    })()}
+                      )}
+                      {w.kind === 'CHASE' &&
+                        (typeof drafted === 'string' ? (
+                          <>
+                            <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{iSend}</button>
+                            <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
+                          </>
+                        ) : (
+                          <>
+                            <button title="Draft a chaser" style={iconBtn('primary')} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)}>{iPencil}</button>
+                            <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
+                          </>
+                        ))}
+                      {w.matterId && (
+                        <button title={wlOpen === w.id ? 'Hide context' : 'More context & timeline'} style={iconBtn('ghost')} onClick={() => toggleWlExpand(w)}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: wlOpen === w.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
+                        </button>
+                      )}
+                    </span>
                     </div>
                     {wlOpen === w.id && (
                       <div style={{ padding: '2px 10px 10px', borderTop: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8') }}>
@@ -2101,7 +2094,8 @@ export default function Taskpane() {
                       </div>
                     )}
                   </div>
-                );
+                  );
+                };
                 if (items.length === 0) {
                   const who = wlMeta.assignee ? teamMembers.find((m) => m.id === wlMeta.assignee) : null;
                   const whoName = who ? who.display_name || who.email : null;
