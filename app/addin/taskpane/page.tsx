@@ -2034,7 +2034,7 @@ export default function Taskpane() {
                       title={w.matterId ? 'Show matter timeline' : undefined}
                       style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
                     >
-                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1C1530', lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1C1530', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                         {primaryText}
                       </span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, fontSize: 10.5, color: '#7A7388', minWidth: 0 }}>
