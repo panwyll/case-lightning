@@ -22,6 +22,7 @@ import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
 import { seedTasksFromOutstanding } from './tasks';
 import { flushUnsyncedTasksToTodo } from './todo';
+import { resetTrace, traceString, timed } from './optrace';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
 import { threadToText } from './text';
 import { writeAudit } from './audit';
@@ -469,9 +470,9 @@ async function linkThreads(user: SessionUser, matterId: string, c: CaseRow): Pro
 async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Promise<void> {
   const convs = (c.conversation_ids ?? []).filter(Boolean).slice(0, THREADS_PER_CASE);
   const allMessages: any[] = [];
-  for (const conv of convs) {
+  for (let i = 0; i < convs.length; i++) {
     try {
-      allMessages.push(...(await listThreadMessages(user.userId, conv)));
+      allMessages.push(...(await timed(`listThreadMessages#${i}`, () => listThreadMessages(user.userId, convs[i]))));
     } catch {
       /* a thread may have been moved/deleted since the scan — skip it */
     }
@@ -485,13 +486,15 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
     `select facts from matter_summary where matter_id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
-  const extracted = await extractFacts({
-    userId: user.userId,
-    tenantId: user.tenantId,
-    matterId,
-    threadText: text,
-    existingFacts: existing?.facts ?? {},
-  });
+  const extracted = await timed('extractFacts', () =>
+    extractFacts({
+      userId: user.userId,
+      tenantId: user.tenantId,
+      matterId,
+      threadText: text,
+      existingFacts: existing?.facts ?? {},
+    })
+  );
 
   await query(
     `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb, updated_at = now()
@@ -509,7 +512,7 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
       [user.tenantId, matterId, item.title, item.details, JSON.stringify({ source: 'onboarding' })]
     );
   }
-  await upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } });
+  await timed('upsertChunks', () => upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } }));
   // NB: no eager Excel-tracker back-fill here — a row per timeline/outstanding item was ~16
   // sequential Graph Excel calls per matter. That data lives in matter_summary, the timeline
   // and the seeded tasks; the tracker populates via the normal sync, not an import-time back-fill.
@@ -548,17 +551,19 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
         if (dup) {
           matterId = dup.id;
         } else {
-          const created = await createMatter(user, {
-            matterRef,
-            propertyAddress,
-            buyerNames: (edits.buyerNames as string[]) ?? c.buyer_names ?? [],
-            sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],
-            counterpartySolicitor: c.counterparty_solicitor ?? undefined,
-            counterpartyAgent: c.counterparty_agent ?? undefined,
-          });
+          const created = await timed('createMatter', () =>
+            createMatter(user, {
+              matterRef,
+              propertyAddress,
+              buyerNames: (edits.buyerNames as string[]) ?? c.buyer_names ?? [],
+              sellerNames: (edits.sellerNames as string[]) ?? c.seller_names ?? [],
+              counterpartySolicitor: c.counterparty_solicitor ?? undefined,
+              counterpartyAgent: c.counterparty_agent ?? undefined,
+            })
+          );
           matterId = created.id;
         }
-        await linkThreads(user, matterId, c);
+        await timed('linkThreads', () => linkThreads(user, matterId, c));
         // Record the matter but keep status APPROVED — Phase B flips it to ONBOARDED once the
         // AI enrichment has run. matter_id being set is what marks a case as "shelled".
         await query(`update onboarding_case set matter_id = $1, updated_at = now() where id = $2`, [matterId, c.id]);
@@ -615,6 +620,7 @@ async function provisionNextApproved(user: SessionUser, job: OnboardingJob): Pro
 
 /** Advance a job by exactly one bounded slice and return its fresh state. */
 export async function advanceJob(user: SessionUser, job: OnboardingJob): Promise<OnboardingJob> {
+  resetTrace();
   try {
     const slice = (async () => {
       switch (job.status) {
@@ -640,12 +646,13 @@ export async function advanceJob(user: SessionUser, job: OnboardingJob): Promise
     await Promise.race([
       slice,
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`The ${job.status.toLowerCase()} step ran past 50s and was stopped — a Microsoft or AI call is being slow.`)), 50_000)
+        setTimeout(() => reject(new Error(`The ${job.status.toLowerCase()} step ran past 50s and was stopped — slow call: ${traceString()}`)), 50_000)
       ),
     ]);
   } catch (error) {
-    const message = describeGraphError(error);
-    await query(`update onboarding_job set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 500), job.id]);
+    // Attach the op trace so the failure names the exact slow/hung call, not just the stage.
+    const message = `${describeGraphError(error)} — ops: ${traceString()}`;
+    await query(`update onboarding_job set status = 'FAILED', error = $1, updated_at = now() where id = $2`, [message.slice(0, 900), job.id]);
   }
   return (await reloadJob(job.id))!;
 }
