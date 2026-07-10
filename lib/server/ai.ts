@@ -316,13 +316,20 @@ export async function extractFacts(input: {
     'FACT_EXTRACT',
     { tenantId: input.tenantId, matterId: input.matterId },
     'fact_extract',
-    'Extract conveyancing facts, risks, outstanding items and timeline events from the thread.',
+    'Extract conveyancing facts, risks, the FIRM\'s outstanding actions, and timeline events from the thread. ' +
+      '"outstanding" must contain ONLY the next actions THIS firm/conveyancer has to take (e.g. "reply to enquiries", ' +
+      '"send TA6", "order local search"). Do NOT include anything you are merely waiting on another party to do ' +
+      '(client, buyer, seller, lender, agent, or the other side’s solicitor) — those are statuses we chase, not our tasks.',
     {
       type: 'object',
       properties: {
         facts: { type: 'object', additionalProperties: true },
         risks: { type: 'array', items: { type: 'string' } },
-        outstanding: { type: 'array', items: { type: 'string' } },
+        outstanding: {
+          type: 'array',
+          description: 'ONLY the firm’s own next actions. Exclude anything awaiting another party (client/buyer/seller/lender/other side).',
+          items: { type: 'string' },
+        },
         timeline: {
           type: 'array',
           items: {
