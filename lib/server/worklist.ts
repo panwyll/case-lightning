@@ -152,7 +152,11 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       title: r.detail,
       detail: null,
       ageDays: Math.floor((now - new Date(r.created_at).getTime()) / 86_400_000),
-      due: r.due ? new Date(r.due).toISOString().slice(0, 10) : null,
+      due: ((): string | null => {
+        if (!r.due) return null;
+        const t = new Date(r.due).getTime();
+        return Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null;
+      })(),
     }));
   } catch {
     /* matter_task absent / not readable — worklist still works without tasks */
@@ -173,7 +177,15 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
            from matter where tenant_id = $1 and id = any($2::uuid[])`,
         [tenantId, matterIds]
       );
-      for (const r of rows) if (r.d && !/infinity/.test(r.d)) keyDates[r.id] = new Date(r.d).getTime();
+      // Store only genuinely finite dates: 'infinity'::date comes back as the string
+      // "infinity" OR the number Infinity depending on the driver — both yield a NON-finite
+      // timestamp, which would later make new Date(kd).toISOString() throw "Invalid time value"
+      // and take down the whole worklist. Guard with Number.isFinite, not a fragile regex.
+      for (const r of rows) {
+        if (!r.d) continue;
+        const t = new Date(r.d as any).getTime();
+        if (Number.isFinite(t)) keyDates[r.id] = t;
+      }
     } catch {
       /* dates unreadable — fall back to age-only ranking */
     }
@@ -185,7 +197,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
   const soonestMs = (e: WorklistEntry): number | undefined => {
     const kd = e.matterId ? keyDates[e.matterId] : undefined;
     const due = e.due ? new Date(e.due).getTime() : undefined;
-    const vals = [kd, due].filter((v): v is number => v !== undefined);
+    const vals = [kd, due].filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
     return vals.length ? Math.min(...vals) : undefined;
   };
   const score = (e: WorklistEntry): number => {
@@ -199,7 +211,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
   };
   for (const e of entries) {
     const kd = e.matterId ? keyDates[e.matterId] : undefined;
-    if (kd !== undefined) e.keyDate = new Date(kd).toISOString().slice(0, 10);
+    if (kd !== undefined && Number.isFinite(kd)) e.keyDate = new Date(kd).toISOString().slice(0, 10);
     const soon = soonestMs(e);
     if (soon !== undefined) e.urgent = (soon - now) / DAY <= 7;
   }
