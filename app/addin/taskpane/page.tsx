@@ -207,6 +207,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 type WorklistEntry = {
   id: string;
   kind: 'CHASE' | 'DRAFT_READY' | 'TASK';
+  matterId?: string | null;
   matterRef: string;
   propertyAddress: string | null;
   title: string;
@@ -357,6 +358,9 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
+  // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
+  const [wlOpen, setWlOpen] = useState<string>('');
+  const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; events?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
   // Worklist filter: `assignee` is '' (anyone / whole firm) or a user id. Only shown to team admins.
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
@@ -522,6 +526,21 @@ export default function Taskpane() {
       /* best-effort */
     } finally {
       setWlBusy('');
+    }
+  }
+
+  // Expand a worklist row to show the matter's recent timeline (lazy-fetched, cached per matter).
+  async function toggleWlExpand(w: WorklistEntry) {
+    const opening = wlOpen !== w.id;
+    setWlOpen(opening ? w.id : '');
+    const mid = w.matterId;
+    if (!opening || !mid || wlTl[mid]) return;
+    setWlTl((t) => ({ ...t, [mid]: { loading: true } }));
+    try {
+      const r = await api<{ timeline: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>(`/matters/${mid}/timeline`);
+      setWlTl((t) => ({ ...t, [mid]: { events: r.timeline ?? [] } }));
+    } catch {
+      setWlTl((t) => ({ ...t, [mid]: { events: [] } }));
     }
   }
 
@@ -1974,15 +1993,20 @@ export default function Taskpane() {
                 const row = (w: WorklistEntry) => (
                   <div
                     key={w.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}
+                    style={{ border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}
                   >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
                     <span
                       style={{ flex: 'none', minWidth: 34, textAlign: 'center', fontSize: 11, fontWeight: 700, color: w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#64748b' }}
                       title={`${w.ageDays} days`}
                     >
                       {w.ageDays}d
                     </span>
-                    <span style={{ flex: 1, minWidth: 0 }}>
+                    <span
+                      onClick={() => toggleWlExpand(w)}
+                      title={w.matterId ? 'Show matter timeline' : undefined}
+                      style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
+                    >
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                         <span style={{ fontSize: 10, fontWeight: 700, ...(w.kind === 'CHASE' ? { color: '#b45309', background: '#fef3c7' } : w.kind === 'TASK' ? { color: '#475569', background: '#e2e8f0' } : { color: '#5A27E0', background: '#ede9fe' }), borderRadius: 999, padding: '0 6px', flex: 'none' }}>
                           {w.kind === 'CHASE' ? 'Chase' : w.kind === 'TASK' ? 'To do' : 'Send'}
@@ -2002,7 +2026,7 @@ export default function Taskpane() {
                         </strong>
                       </span>
                       <span style={{ display: 'block', fontSize: 11.5, color: '#7A7388', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 1 }}>
-                        {w.detail || w.title}
+                        {w.matterId ? (wlOpen === w.id ? '▾ ' : '▸ ') : ''}{w.detail || w.title}
                       </span>
                     </span>
                     {(() => {
@@ -2049,6 +2073,33 @@ export default function Taskpane() {
                         </>
                       );
                     })()}
+                    </div>
+                    {wlOpen === w.id && (
+                      <div style={{ padding: '2px 10px 10px', borderTop: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8') }}>
+                        <div style={{ fontSize: 11.5, color: '#4A4358', margin: '8px 0' }}>{w.detail || w.title}</div>
+                        {w.matterId && (() => {
+                          const tl = wlTl[w.matterId!];
+                          if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8' }}>Loading timeline…</div>;
+                          if (!tl.events || tl.events.length === 0) return <div style={{ fontSize: 11, color: '#94a3b8' }}>No timeline events yet.</div>;
+                          return (
+                            <>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>Matter timeline</div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                                {tl.events.slice(0, 20).map((ev) => (
+                                  <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
+                                    <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
+                                    {ev.details && <div style={{ color: '#7A7388', marginTop: 1 }}>{ev.details}</div>}
+                                    <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 1 }}>
+                                      {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 );
                 if (items.length === 0) {
@@ -2083,11 +2134,7 @@ export default function Taskpane() {
                           <option value="matter">By matter</option>
                         </select>
                       </div>
-                      <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                        Chases, ready-to-send drafts and open tasks — everything on your plate.
-                        {wlSort === 'smart' ? ' In priority order: soonest deadline first, then overdue chases.' : ''}
-                      </p>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{items.slice(0, 80).map(row)}</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{items.slice(0, 80).map(row)}</div>
                     </Card>
                     <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
                       📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
@@ -2709,11 +2756,11 @@ export default function Taskpane() {
                     {taskBusy === 'new' ? '…' : 'Add'}
                   </button>
                 </div>
-                {tasks.length === 0 ? (
-                  <p style={{ ...S.muted, margin: 0 }}>No tasks yet.</p>
+                {tasks.filter((t) => t.status !== 'DONE').length === 0 ? (
+                  <p style={{ ...S.muted, margin: 0 }}>No open tasks.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {[...tasks].sort((a, b) => (a.status === 'DONE' ? 1 : 0) - (b.status === 'DONE' ? 1 : 0)).map((t) => {
+                    {tasks.filter((t) => t.status !== 'DONE').map((t) => {
                       const done = t.status === 'DONE';
                       return (
                         <label key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 9px', border: '1px solid #ECE7F8', borderRadius: 9, background: done ? '#F7F6FB' : '#FBFAFF', cursor: 'pointer', opacity: taskBusy === t.id ? 0.5 : 1 }}>
