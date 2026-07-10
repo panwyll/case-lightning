@@ -157,7 +157,9 @@ export async function syncFromTracker(user: SessionUser, matterId: string): Prom
 }
 
 export async function listTasks(user: SessionUser, matterId: string): Promise<MatterTask[]> {
-  await syncFromTracker(user, matterId); // reconcile live Excel edits first
+  // Reconcile external surfaces first, but NEVER let a flaky Excel/To Do sync blank the task
+  // list — the DB is the source of truth, so a sync hiccup must not hide real tasks.
+  await syncFromTracker(user, matterId).catch(() => {}); // reconcile live Excel edits
   await syncFromTodo(user.userId).catch(() => {}); // then pull this user's To Do edits (no-op without the scope)
   return query<MatterTask>(
     `select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2
