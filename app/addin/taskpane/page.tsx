@@ -3113,6 +3113,31 @@ export default function Taskpane() {
                     </>
                   );
                 })()}
+                {/* DIAGNOSTIC: why clusters were NOT proposed — surfaces AI failures vs
+                    genuinely-not-a-case vs low confidence, so 0 candidates is explainable. */}
+                {(() => {
+                  const rejected = obCases.filter((c) => c.status === 'REJECTED' || c.status === 'FAILED');
+                  if (!rejected.length) return null;
+                  const aiFails = rejected.filter((c) => /AI proposal failed|timed out|Groq|error/i.test(c.rationale || '')).length;
+                  return (
+                    <details style={{ marginTop: 8, fontSize: 12 }}>
+                      <summary style={{ cursor: 'pointer', color: '#64748b', fontWeight: 600 }}>
+                        {rejected.length} not recognised{aiFails ? ` · ${aiFails} AI error(s)` : ''} — why?
+                      </summary>
+                      <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 6 }}>
+                        {rejected.slice(0, 40).map((c) => (
+                          <div key={c.id} style={{ padding: '5px 0', borderTop: '1px solid #eee' }}>
+                            <div style={{ color: '#475569' }}>
+                              {(c.property_address || [...(c.buyer_names || []), ...(c.seller_names || [])].join(', ') || 'cluster')} · {c.message_count} email(s)
+                              {c.confidence != null ? ` · ${Math.round((c.confidence ?? 0) * 100)}%` : ''}
+                            </div>
+                            <div style={{ color: '#94a3b8', fontSize: 11 }}>{c.rationale || '(no rationale recorded)'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  );
+                })()}
                 <button style={S.primary} onClick={confirmOnboarding}>
                   Onboard selected
                 </button>
