@@ -1535,6 +1535,27 @@ export default function Taskpane() {
     if (matterId) loadTasks(matterId);
   }, [matterId, loadTasks]);
 
+  const [newTask, setNewTask] = useState('');
+  const [taskBusy, setTaskBusy] = useState('');
+  async function setTaskStatus(taskId: string, status: 'OPEN' | 'DONE') {
+    if (!matterId) return;
+    setTaskBusy(taskId);
+    try {
+      await api(`/matters/${matterId}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await loadTasks(matterId);
+    } catch { /* best-effort */ } finally { setTaskBusy(''); }
+  }
+  async function addTask() {
+    const detail = newTask.trim();
+    if (!detail || !matterId) return;
+    setTaskBusy('new');
+    try {
+      await api(`/matters/${matterId}/tasks`, { method: 'POST', body: JSON.stringify({ detail }) });
+      setNewTask('');
+      await loadTasks(matterId);
+    } catch { /* best-effort */ } finally { setTaskBusy(''); }
+  }
+
   // Delegate to a colleague: assign it on the Excel tracker AND draft a forward of
   // the email to them with instructions (draft only, never sent). Both effects are
   // best-effort independent so a Graph hiccup on the forward still books the task.
@@ -2671,6 +2692,50 @@ export default function Taskpane() {
                 members={teamMembers}
               />
               <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
+
+              {/* Tasks — the matter's to-do list (incl. items seeded on import). The state was
+                  being loaded but never rendered; this is the actual task view. */}
+              <Card>
+                <Label>Tasks{tasks.filter((t) => t.status !== 'DONE').length ? ` · ${tasks.filter((t) => t.status !== 'DONE').length} open` : ''}</Label>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <input
+                    style={{ ...S.input, marginTop: 0 }}
+                    placeholder="Add a task…"
+                    value={newTask}
+                    onChange={(e) => setNewTask(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void addTask(); }}
+                  />
+                  <button style={{ ...S.secondary, width: 'auto', marginTop: 0, padding: '6px 12px' }} disabled={taskBusy === 'new' || !newTask.trim()} onClick={() => void addTask()}>
+                    {taskBusy === 'new' ? '…' : 'Add'}
+                  </button>
+                </div>
+                {tasks.length === 0 ? (
+                  <p style={{ ...S.muted, margin: 0 }}>No tasks yet.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                    {[...tasks].sort((a, b) => (a.status === 'DONE' ? 1 : 0) - (b.status === 'DONE' ? 1 : 0)).map((t) => {
+                      const done = t.status === 'DONE';
+                      return (
+                        <label key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 9px', border: '1px solid #ECE7F8', borderRadius: 9, background: done ? '#F7F6FB' : '#FBFAFF', cursor: 'pointer', opacity: taskBusy === t.id ? 0.5 : 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={done}
+                            disabled={taskBusy === t.id}
+                            onChange={(e) => void setTaskStatus(t.id, e.target.checked ? 'DONE' : 'OPEN')}
+                            style={{ marginTop: 2 }}
+                          />
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: 12.5, color: done ? '#94a3b8' : '#1C1530', textDecoration: done ? 'line-through' : 'none' }}>{t.detail}</span>
+                            <span style={{ display: 'block', fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
+                              {t.ref}{t.status !== 'OPEN' && t.status !== 'DONE' ? ` · ${t.status.toLowerCase()}` : ''}{t.assignee ? ` · ${t.assignee}` : ''}{t.due ? ` · due ${t.due}` : ''}
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </Card>
 
               {/* Figure history — who changed each figure, when, why, and the email/doc
                   it came from. Every price/date/party edit is auditable. */}
