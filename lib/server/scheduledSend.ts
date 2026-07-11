@@ -2,9 +2,12 @@ import { query, queryOne } from './db';
 import { sendDraftMessage } from './graph';
 import { writeAudit } from './audit';
 
-/** How long an outbound email sits in the "scheduled" state before it actually sends.
- *  A soft grace window so a human can catch/cancel an update before it leaves. */
-export const SEND_DELAY_MIN = 20;
+/** How long an outbound email sits in the "scheduled" state before it actually sends —
+ *  a soft grace window so a human can catch/cancel it before it leaves. Auto-sends (a
+ *  workflow update email that fired without a person in the loop) get a longer window;
+ *  a send a human just clicked only needs a brief "undo" window. */
+export const SEND_DELAY_MIN = 20; // workflow / auto-send
+export const MANUAL_SEND_DELAY_MIN = 2; // a human clicked Send
 
 export type SendSource = 'MANUAL' | 'REPLY' | 'WORKFLOW';
 
