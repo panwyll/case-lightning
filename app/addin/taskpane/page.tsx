@@ -14,6 +14,8 @@ declare global {
           item?: OfficeItem;
           // Office hands out EWS-format ids; Graph needs REST-format ones.
           convertToRestId?: (itemId: string, version: unknown) => string;
+          convertToEwsId?: (itemId: string, version: unknown) => string;
+          displayMessageForm?: (itemId: string) => void;
         };
       };
     };
@@ -371,6 +373,7 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
+  const [wlRowOpen, setWlRowOpen] = useState<Set<string>>(new Set()); // task rows expanded to show full text
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
   const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; matter?: any; summary?: any; timeline?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
@@ -561,6 +564,26 @@ export default function Taskpane() {
   //  - a chase → draft the chaser (into Outlook Drafts), then it becomes Send.
   // Per-item drafted-chaser state so the button flips to Send once it's written.
   const [wlChaser, setWlChaser] = useState<Record<string, string | 'busy'>>({}); // itemId → draft messageId
+  // Open a drafted email (or its thread) in Outlook so the user can read/edit it rather than
+  // sending blind. Best-effort: displayMessageForm is a classic-Outlook API — on new Outlook it
+  // may no-op, so we surface a fallback hint. Graph gives us REST ids; the form wants an EWS id.
+  function openInOutlook(graphMessageId: string) {
+    try {
+      const Office = (window as any).Office;
+      const mb = Office?.context?.mailbox;
+      if (!mb?.displayMessageForm) { setStatus('Open it from your Outlook Drafts to review.'); return; }
+      let id = graphMessageId;
+      try {
+        if (mb.convertToEwsId && Office?.MailboxEnums?.RestVersion?.v2_0) id = mb.convertToEwsId(graphMessageId, Office.MailboxEnums.RestVersion.v2_0);
+      } catch {
+        /* already an EWS id / conversion unsupported — try the raw id */
+      }
+      mb.displayMessageForm(id);
+    } catch {
+      setStatus('Open it from your Outlook Drafts to review.');
+    }
+  }
+
   async function sendWorklistDraft(item: WorklistEntry, messageId: string) {
     setWlBusy(item.id);
     try {
@@ -2034,6 +2057,7 @@ export default function Taskpane() {
                     </span>
                   );
                   const iCheck = <G><path d="M20 6L9 17l-5-5" /></G>;
+                  const iOpen = <G><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></G>;
                   return (
                   <div
                     key={w.id}
@@ -2042,8 +2066,12 @@ export default function Taskpane() {
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px' }}>
                     <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      {/* Action — what needs doing (the matter is in the group header above). */}
-                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12, color: '#3A3450', lineHeight: 1.35 }}>
+                      {/* Action — click to expand and read the full text. */}
+                      <span
+                        onClick={() => setWlRowOpen((s) => { const n = new Set(s); n.has(w.id) ? n.delete(w.id) : n.add(w.id); return n; })}
+                        title={wlRowOpen.has(w.id) ? 'Collapse' : 'Read full task'}
+                        style={{ cursor: 'pointer', fontSize: 12, color: '#3A3450', lineHeight: 1.35, ...(wlRowOpen.has(w.id) ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}
+                      >
                         {primaryText}
                       </span>
                       {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
@@ -2053,25 +2081,27 @@ export default function Taskpane() {
                         </span>
                       )}
                     </span>
-                    <span style={{ flex: 'none', display: 'flex', gap: 5, opacity: busy || drafted === 'busy' ? 0.5 : 1 }}>
+                    <span style={{ flex: 'none', display: 'flex', gap: 5 }}>
                       {w.kind === 'TASK' && (
-                        <button title="Mark done" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'done')}>{iCheck}</button>
+                        <button title="Mark done" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'done')}>{busy ? <span style={S.spinner} /> : iCheck}</button>
                       )}
                       {w.kind === 'DRAFT_READY' && (
                         <>
-                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{iSend}</button>}
+                          {w.graphMessageId && <button title="Open the draft in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(w.graphMessageId!)}>{iOpen}</button>}
+                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>}
                           <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'dismiss')}>{iCheck}</button>
                         </>
                       )}
                       {w.kind === 'CHASE' &&
                         (typeof drafted === 'string' ? (
                           <>
-                            <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{iSend}</button>
+                            <button title="Open the chaser in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(drafted)}>{iOpen}</button>
+                            <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>
                             <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
                           </>
                         ) : (
                           <>
-                            <button title="Draft a chaser" style={iconBtn('primary')} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)}>{iPencil}</button>
+                            <button title="Draft a chaser" style={iconBtn('primary')} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)}>{drafted === 'busy' ? <span style={S.spinnerLight} /> : iPencil}</button>
                             <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
                           </>
                         ))}
