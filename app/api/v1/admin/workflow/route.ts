@@ -37,6 +37,9 @@ export async function POST(req: NextRequest) {
         stage: z.string().min(1).max(40), // any of the firm's configured stage keys
         detail: z.string().min(1).max(500),
         type: z.string().optional(),
+        nodeKind: z.enum(['TASK', 'EMAIL']).optional(),
+        emailTemplateId: z.string().uuid().nullable().optional(),
+        sendMode: z.enum(['DRAFT', 'SEND']).nullable().optional(),
         assigneeKind: z.enum(['ROLE', 'USER']),
         assigneeRole: z.enum(['OWNER', 'CONVEYANCER', 'ASSISTANT', 'ADMIN']).nullable().optional(),
         assigneeUserId: z.string().uuid().nullable().optional(),

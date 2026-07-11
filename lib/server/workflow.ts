@@ -9,6 +9,9 @@
  * simply behaves as "no workflow configured".
  */
 import { query, queryOne, transaction } from './db';
+import { createDraftMessage, sendDraftMessage } from './graph';
+import { buildMatterVars } from './doc-templates';
+import { addDraftReady } from './worklist';
 import type { SessionUser } from './types';
 
 export interface TaskTemplate {
@@ -16,6 +19,9 @@ export interface TaskTemplate {
   stage: string;
   detail: string;
   type: string;
+  node_kind: 'TASK' | 'EMAIL';
+  email_template_id: string | null;
+  send_mode: 'DRAFT' | 'SEND' | null;
   assignee_kind: 'ROLE' | 'USER';
   assignee_role: string | null;
   assignee_user_id: string | null;
@@ -30,8 +36,9 @@ export interface TaskEdge {
   to_template_id: string;
 }
 
-const TPL_COLS =
-  'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
+const TPL_BASE = 'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
+const TPL_COLS = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
+export interface EmailTemplateLite { id: string; name: string; subject_template: string | null }
 
 // ── Default conveyancing workflow (seeded once; the firm edits from here) ──────────
 // Laid out left→right by stage; y stacks tasks within a stage. Assigned to the matter
@@ -115,19 +122,38 @@ export async function ensureDefaultWorkflow(tenantId: string, force = false): Pr
   }
 }
 
-export async function getWorkflow(tenantId: string): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[] }> {
+export async function getWorkflow(
+  tenantId: string
+): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[]; emailTemplates: EmailTemplateLite[] }> {
+  let templates: TaskTemplate[] = [];
+  let edges: TaskEdge[] = [];
+  let emailTemplates: EmailTemplateLite[] = [];
   try {
-    const templates = await query<TaskTemplate>(
-      `select ${TPL_COLS} from task_template where tenant_id = $1 order by sort_order, created_at`,
-      [tenantId]
-    );
-    const edges = await query<TaskEdge>(
-      `select from_template_id, to_template_id from task_template_edge where tenant_id = $1`,
-      [tenantId]
-    );
-    return { templates, edges };
+    try {
+      templates = await query<TaskTemplate>(`select ${TPL_COLS} from task_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
+    } catch {
+      // Pre-migration 043 — email columns absent; read the base set and default them.
+      const base = await query<TaskTemplate>(`select ${TPL_BASE} from task_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
+      templates = base.map((t) => ({ ...t, node_kind: 'TASK', email_template_id: null, send_mode: null }));
+    }
+    edges = await query<TaskEdge>(`select from_template_id, to_template_id from task_template_edge where tenant_id = $1`, [tenantId]);
   } catch {
-    return { templates: [], edges: [] }; // not migrated yet
+    return { templates: [], edges: [], emailTemplates: [] }; // not migrated (039) yet
+  }
+  try {
+    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
+  } catch {
+    /* template table always exists — ignore */
+  }
+  return { templates, edges, emailTemplates };
+}
+
+async function fetchTemplate(tenantId: string, id: string): Promise<TaskTemplate> {
+  try {
+    return (await queryOne<TaskTemplate>(`select ${TPL_COLS} from task_template where id=$1 and tenant_id=$2`, [id, tenantId]))!;
+  } catch {
+    const b = (await queryOne<TaskTemplate>(`select ${TPL_BASE} from task_template where id=$1 and tenant_id=$2`, [id, tenantId]))!;
+    return { ...b, node_kind: 'TASK', email_template_id: null, send_mode: null };
   }
 }
 
@@ -138,6 +164,9 @@ export async function saveTemplate(
     stage: string;
     detail: string;
     type?: string;
+    nodeKind?: 'TASK' | 'EMAIL';
+    emailTemplateId?: string | null;
+    sendMode?: 'DRAFT' | 'SEND' | null;
     assigneeKind: 'ROLE' | 'USER';
     assigneeRole?: string | null;
     assigneeUserId?: string | null;
@@ -162,23 +191,33 @@ export async function saveTemplate(
     input.sortOrder ?? 0,
     input.active ?? true,
   ];
+  let id: string;
   if (input.id) {
-    const row = await queryOne<TaskTemplate>(
+    await query(
       `update task_template set stage=$2, detail=$3, type=$4, assignee_kind=$5, assignee_role=$6,
               assignee_user_id=$7, due_offset_days=$8, pos_x=$9, pos_y=$10, sort_order=$11, active=$12,
               updated_at=now()
-        where id=$13 and tenant_id=$1 returning ${TPL_COLS}`,
+        where id=$13 and tenant_id=$1`,
       [...vals, input.id]
     );
-    return row!;
+    id = input.id;
+  } else {
+    const row = await queryOne<{ id: string }>(
+      `insert into task_template (tenant_id, stage, detail, type, assignee_kind, assignee_role,
+          assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning id`,
+      vals
+    );
+    id = row!.id;
   }
-  const row = await queryOne<TaskTemplate>(
-    `insert into task_template (tenant_id, stage, detail, type, assignee_kind, assignee_role,
-        assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active)
-     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning ${TPL_COLS}`,
-    vals
-  );
-  return row!;
+  // Email-node fields in a guarded statement so a deploy before migration 043 still saves tasks.
+  if (input.nodeKind !== undefined || input.emailTemplateId !== undefined || input.sendMode !== undefined) {
+    await query(
+      `update task_template set node_kind=$2, email_template_id=$3, send_mode=$4 where id=$1 and tenant_id=$5`,
+      [id, input.nodeKind ?? 'TASK', input.nodeKind === 'EMAIL' ? input.emailTemplateId ?? null : null, input.nodeKind === 'EMAIL' ? input.sendMode ?? 'DRAFT' : null, user.tenantId]
+    ).catch(() => {});
+  }
+  return fetchTemplate(user.tenantId, id);
 }
 
 export async function deleteTemplate(user: SessionUser, id: string): Promise<void> {
@@ -267,7 +306,7 @@ async function createTemplateTask(
   t: TaskTemplate,
   assignee: string | null,
   assigneeUserId: string | null,
-  status: 'OPEN' | 'BLOCKED'
+  status: 'OPEN' | 'BLOCKED' | 'DONE'
 ): Promise<void> {
   const due =
     t.due_offset_days != null ? new Date(Date.now() + t.due_offset_days * 86_400_000).toISOString().slice(0, 10) : '';
@@ -287,6 +326,49 @@ async function createTemplateTask(
       [tenantId, matterId, ref, t.type || 'TASK', t.detail, assignee, assigneeUserId, due, status, createdBy, t.id]
     );
   });
+}
+
+const fillVars = (s: string, vars: Record<string, string>) => s.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) => vars[k] ?? '');
+
+async function matterEmailVars(tenantId: string, matterId: string): Promise<Record<string, string> | null> {
+  const [m, ten, asg] = await Promise.all([
+    queryOne<any>(`select * from matter where id=$1 and tenant_id=$2`, [matterId, tenantId]),
+    queryOne<{ name: string }>(`select name from tenant where id=$1`, [tenantId]),
+    queryOne<{ display_name: string | null; email: string }>(`select u.display_name, u.email from matter m join app_user u on u.id=m.assigned_to where m.id=$1 and m.tenant_id=$2`, [matterId, tenantId]).catch(() => null),
+  ]);
+  if (!m) return null;
+  return buildMatterVars(m, ten?.name ?? 'Your firm', asg?.display_name ?? asg?.email ?? '');
+}
+
+/** Fire an EMAIL node: render the template, then draft into the ready-to-send queue (DRAFT) or
+ *  actually send it (SEND, only when a recipient is known — otherwise it falls back to a draft). */
+async function fireEmailNode(userId: string, tenantId: string, matterId: string, t: TaskTemplate): Promise<void> {
+  if (!t.email_template_id) return;
+  const tpl = await queryOne<{ name: string; subject_template: string | null; body_template: string }>(
+    `select name, subject_template, body_template from template where id=$1 and tenant_id=$2`,
+    [t.email_template_id, tenantId]
+  ).catch(() => null);
+  if (!tpl) return;
+  const vars = await matterEmailVars(tenantId, matterId);
+  if (!vars) return;
+  const subject = fillVars(tpl.subject_template || tpl.name, vars);
+  const filled = fillVars(tpl.body_template, vars);
+  const body = filled.includes('<') ? filled : `<p>${filled.replace(/\n/g, '<br>')}</p>`;
+  let recipient: string | null = null;
+  try {
+    recipient = (await queryOne<{ email: string }>(
+      `select email from matter_contact where matter_id=$1 and tenant_id=$2 and email is not null order by (role='CLIENT') desc, last_seen_at desc limit 1`,
+      [matterId, tenantId]
+    ))?.email ?? null;
+  } catch { /* no contacts table / rows */ }
+  const wantsSend = t.send_mode === 'SEND' && !!recipient;
+  const draft = await createDraftMessage(userId, subject, body, wantsSend && recipient ? [recipient] : []).catch(() => null);
+  if (!draft?.id) return;
+  if (wantsSend) {
+    await sendDraftMessage(userId, draft.id).catch(() => {}); // sent — nothing further
+  } else {
+    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Email drafted — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
+  }
 }
 
 /** A matter reached `stage` — create its (not-yet-created) templates, blocking any with an
@@ -313,8 +395,14 @@ export async function instantiateStageTemplates(user: SessionUser, matterId: str
     for (const t of templates) {
       if (existing.has(t.id)) continue;
       const blocked = (prereqs[t.id] ?? []).some((d) => !doneIds.has(d));
-      const { assignee, assigneeUserId } = await resolveAssignee(user.tenantId, matterId, t);
-      await createTemplateTask(user.tenantId, matterId, user.userId, t, assignee, assigneeUserId, blocked ? 'BLOCKED' : 'OPEN');
+      if (t.node_kind === 'EMAIL') {
+        // Fire now if unblocked; track state via a hidden EMAIL row (DONE = fired, BLOCKED = waiting).
+        if (!blocked) await fireEmailNode(user.userId, user.tenantId, matterId, t);
+        await createTemplateTask(user.tenantId, matterId, user.userId, { ...t, type: 'EMAIL' }, null, null, blocked ? 'BLOCKED' : 'DONE');
+      } else {
+        const { assignee, assigneeUserId } = await resolveAssignee(user.tenantId, matterId, t);
+        await createTemplateTask(user.tenantId, matterId, user.userId, t, assignee, assigneeUserId, blocked ? 'BLOCKED' : 'OPEN');
+      }
       created += 1;
     }
     return created;
@@ -323,9 +411,11 @@ export async function instantiateStageTemplates(user: SessionUser, matterId: str
   }
 }
 
-/** A workflow task was completed — open any dependents whose prerequisites are now all DONE. */
-export async function unblockDependents(tenantId: string, matterId: string, completedTemplateId: string | null): Promise<void> {
+/** A workflow task was completed — open (or, for email nodes, fire) any dependents whose
+ *  prerequisites are now all DONE. */
+export async function unblockDependents(user: { userId: string; tenantId: string }, matterId: string, completedTemplateId: string | null): Promise<void> {
   if (!completedTemplateId) return;
+  const tenantId = user.tenantId;
   try {
     const deps = await query<{ to_template_id: string }>(
       `select to_template_id from task_template_edge where tenant_id = $1 and from_template_id = $2`,
@@ -338,9 +428,21 @@ export async function unblockDependents(tenantId: string, matterId: string, comp
     const edges = await query<TaskEdge>(`select from_template_id, to_template_id from task_template_edge where tenant_id = $1`, [tenantId]);
     const prereqs: Record<string, string[]> = {};
     for (const e of edges) (prereqs[e.to_template_id] ??= []).push(e.from_template_id);
+    // Look up node kind for the dependents (fallback to TASK pre-migration 043).
+    const depIds = deps.map((d) => d.to_template_id);
+    let byId: Record<string, TaskTemplate> = {};
+    try {
+      const rows = await query<TaskTemplate>(`select ${TPL_COLS} from task_template where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, depIds]);
+      byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    } catch { /* email cols absent — treat all as TASK */ }
     for (const d of deps) {
       const allDone = (prereqs[d.to_template_id] ?? []).every((p) => doneIds.has(p));
-      if (allDone) {
+      if (!allDone) continue;
+      const t = byId[d.to_template_id];
+      if (t?.node_kind === 'EMAIL') {
+        await fireEmailNode(user.userId, tenantId, matterId, t);
+        await query(`update matter_task set status = 'DONE', updated_at = now() where matter_id = $1 and template_id = $2 and status = 'BLOCKED'`, [matterId, d.to_template_id]);
+      } else {
         await query(`update matter_task set status = 'OPEN', updated_at = now() where matter_id = $1 and template_id = $2 and status = 'BLOCKED'`, [matterId, d.to_template_id]);
       }
     }

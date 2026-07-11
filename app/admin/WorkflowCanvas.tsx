@@ -24,6 +24,9 @@ interface Template {
   stage: string;
   detail: string;
   type: string;
+  node_kind?: 'TASK' | 'EMAIL';
+  email_template_id?: string | null;
+  send_mode?: 'DRAFT' | 'SEND' | null;
   assignee_kind: 'ROLE' | 'USER';
   assignee_role: string | null;
   assignee_user_id: string | null;
@@ -45,6 +48,7 @@ export default function WorkflowCanvas() {
   const [users, setUsers] = useState<Member[]>([]);
   const [statuses, setStatuses] = useState<Array<{ id: string; name: string; kind: string; color: string | null; sort_order: number }>>([]);
   const [stages, setStages] = useState<Stage[]>([]);
+  const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject_template: string | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -58,10 +62,11 @@ export default function WorkflowCanvas() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[] }>('/admin/workflow');
+      const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[]; emailTemplates: any[] }>('/admin/workflow');
       setTemplates(r.templates ?? []);
       setEdges(r.edges ?? []);
       setUsers(r.users ?? []);
+      setEmailTemplates(r.emailTemplates ?? []);
       try { setStatuses((await api<{ statuses: any[] }>('/admin/statuses')).statuses ?? []); } catch { /* palette optional */ }
       try { setStages((await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []); } catch { /* stages optional */ }
       setErr(null);
@@ -140,6 +145,19 @@ export default function WorkflowCanvas() {
     }
   };
 
+  const addEmail = async () => {
+    const stage = stages[0]?.key ?? 'INSTRUCTION';
+    const y = 40 + templates.filter((t) => t.stage === stage).length * 90;
+    try {
+      const r = await api<{ template: Template }>('/admin/workflow', {
+        method: 'POST',
+        body: JSON.stringify({ stage, detail: 'Send email', nodeKind: 'EMAIL', sendMode: 'DRAFT', emailTemplateId: emailTemplates[0]?.id ?? null, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: 260, posY: y }),
+      });
+      setTemplates((ts) => [...ts, r.template]);
+      setSelected(r.template.id);
+    } catch (e: any) { setErr(e?.message || 'Could not add email.'); }
+  };
+
   const saveNode = async (t: Template) => {
     try {
       const r = await api<{ template: Template }>('/admin/workflow', {
@@ -147,6 +165,7 @@ export default function WorkflowCanvas() {
         body: JSON.stringify({
           id: t.id, stage: t.stage, detail: t.detail, assigneeKind: t.assignee_kind,
           assigneeRole: t.assignee_role, assigneeUserId: t.assignee_user_id, dueOffsetDays: t.due_offset_days,
+          nodeKind: t.node_kind ?? 'TASK', emailTemplateId: t.email_template_id ?? null, sendMode: t.send_mode ?? null,
           posX: Math.round(t.pos_x), posY: Math.round(t.pos_y), active: t.active,
         }),
       });
@@ -215,6 +234,7 @@ export default function WorkflowCanvas() {
             Tasks auto-created &amp; assigned when a matter hits a stage. Drag a node's dot onto another to make it a prerequisite.
           </span>
           <button onClick={addTask} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ Add task</button>
+          <button onClick={addEmail} style={{ ...btn, background: '#0ea5e9', color: '#fff', border: 'none' }}>+ Add email</button>
         </div>
         {/* Pipeline stages (checkpoints) — rename, reorder, add your own. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 6 }}>
@@ -315,9 +335,16 @@ export default function WorkflowCanvas() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
                     <span style={{ width: 8, height: 8, borderRadius: 3, background: stageColor(t.stage), flex: 'none' }} />
                     <span style={{ fontSize: 9.5, fontWeight: 700, color: stageColor(t.stage), textTransform: 'uppercase', letterSpacing: 0.3 }}>{stageLabel(t.stage)}</span>
+                    {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginLeft: 'auto' }}>✉ EMAIL</span>}
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>{t.detail}</div>
-                  <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>→ {assigneeText(t)}{t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}</div>
+                  {t.node_kind === 'EMAIL' ? (
+                    <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>
+                      {emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · {t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>→ {assigneeText(t)}{t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}</div>
+                  )}
                   {/* IN port (left) — where incoming dependency arrows land. */}
                   <div title={linking ? 'Drop here to make the dragged task a prerequisite of this one' : 'Dependencies arrive here'}
                     style={{ position: 'absolute', left: -6, top: PORT_Y - 6, width: 12, height: 12, borderRadius: 999, background: linking && linking.from !== t.id ? '#5A27E0' : '#cbd5e1', border: '2px solid #fff' }} />
@@ -345,15 +372,32 @@ export default function WorkflowCanvas() {
         {sel && (
           <div style={{ ...card, width: 260, flex: 'none' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <strong style={{ fontSize: 13, color: '#0f172a' }}>Edit task</strong>
+              <strong style={{ fontSize: 13, color: '#0f172a' }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
               <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
             </div>
-            <label style={lbl}>Task</label>
-            <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={3} style={{ ...input, resize: 'vertical' }} />
+            <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
+            <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
             <label style={lbl}>Checkpoint (stage)</label>
             <select value={sel.stage} onChange={(e) => { const v = e.target.value; setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, stage: v } : x)); saveNode({ ...sel, stage: v }); }} style={input}>
               {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
             </select>
+            {sel.node_kind === 'EMAIL' && (
+              <>
+                <label style={lbl}>Email template</label>
+                <select value={sel.email_template_id ?? ''} onChange={(e) => { const v = e.target.value || null; const next = { ...sel, email_template_id: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                  <option value="">— pick a template —</option>
+                  {emailTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+                <label style={lbl}>When it fires</label>
+                <select value={sel.send_mode ?? 'DRAFT'} onChange={(e) => { const v = e.target.value as 'DRAFT' | 'SEND'; const next = { ...sel, send_mode: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                  <option value="DRAFT">Draft into the send queue (human sends)</option>
+                  <option value="SEND">Auto-send (only if a client email is on file)</option>
+                </select>
+                {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
+                {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
+              </>
+            )}
+            {sel.node_kind !== 'EMAIL' && <>
             <label style={lbl}>Assign to</label>
             <select value={sel.assignee_kind === 'USER' ? `u:${sel.assignee_user_id}` : `r:${sel.assignee_role}`}
               onChange={(e) => {
@@ -376,6 +420,7 @@ export default function WorkflowCanvas() {
             <input type="number" min={0} value={sel.due_offset_days ?? ''} placeholder="—"
               onChange={(e) => { const v = e.target.value === '' ? null : Math.max(0, parseInt(e.target.value, 10) || 0); setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, due_offset_days: v } : x)); }}
               onBlur={() => saveNode(sel)} style={input} />
+            </>}
             <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="checkbox" checked={sel.active} onChange={(e) => { const next = { ...sel, active: e.target.checked }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} />
               Active

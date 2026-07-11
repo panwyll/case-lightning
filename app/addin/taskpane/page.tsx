@@ -2882,7 +2882,7 @@ export default function Taskpane() {
               {/* Tasks — the matter's to-do list (incl. items seeded on import). The state was
                   being loaded but never rendered; this is the actual task view. */}
               <Card>
-                <Label>Tasks{tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length ? ` · ${tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length} open` : ''}</Label>
+                <Label>Tasks{tasks.filter((t) => t.status !== 'DONE' && t.type !== 'EMAIL' && !isWaitingOnOthers(t.detail)).length ? ` · ${tasks.filter((t) => t.status !== 'DONE' && t.type !== 'EMAIL' && !isWaitingOnOthers(t.detail)).length} open` : ''}</Label>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   <input
                     style={{ ...S.input, marginTop: 0 }}
@@ -2895,11 +2895,11 @@ export default function Taskpane() {
                     {taskBusy === 'new' ? '…' : 'Add'}
                   </button>
                 </div>
-                {tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length === 0 ? (
+                {tasks.filter((t) => t.status !== 'DONE' && t.type !== 'EMAIL' && !isWaitingOnOthers(t.detail)).length === 0 ? (
                   <p style={{ ...S.muted, margin: 0 }}>No open tasks.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).map((t) => {
+                    {tasks.filter((t) => t.status !== 'DONE' && t.type !== 'EMAIL' && !isWaitingOnOthers(t.detail)).map((t) => {
                       const blocked = t.status === 'BLOCKED';
                       const cur = statusOpts.find((s) => (t.status_label ? s.name === t.status_label : s.kind === t.status));
                       return (

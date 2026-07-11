@@ -147,6 +147,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
          join matter m on m.id = t.matter_id
         where t.tenant_id = $1
           and t.status in ('OPEN','IN_PROGRESS')
+          and t.type <> 'EMAIL'
           and m.status = 'OPEN'
           and ($2::uuid is null or m.assigned_to = $2::uuid or t.assignee_user_id = $2::uuid)
         order by t.created_at asc

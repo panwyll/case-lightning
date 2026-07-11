@@ -258,7 +258,7 @@ export async function updateTask(
     // Workflow DAG: completing a task may unblock its dependents on this matter.
     if (task && patch.status === 'DONE') {
       const tpl = await queryOne<{ template_id: string | null }>(`select template_id from matter_task where id = $1`, [taskId]).catch(() => null);
-      if (tpl?.template_id) void unblockDependents(user.tenantId, matterId, tpl.template_id).catch(() => {});
+      if (tpl?.template_id) void unblockDependents(user, matterId, tpl.template_id).catch(() => {});
     }
     return task;
   });
