@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
+import WorkflowCanvas from './WorkflowCanvas';
 
 interface MatterHit {
   id: string;
@@ -58,7 +59,7 @@ function fmtDuration(mins: number): string {
   return `${d < 10 ? d.toFixed(1) : Math.round(d)} day${d >= 2 ? 's' : ''}`;
 }
 
-type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
@@ -67,6 +68,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
   board: { label: 'Matter board', subtitle: '' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
+  workflow: { label: 'Task workflow', subtitle: 'Build the DAG of tasks that are auto-created and assigned when a matter reaches each stage.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
   playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
@@ -81,7 +83,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   { label: 'Work', tabs: ['mywork', 'board', 'workload'] },
-  { label: 'Automation & templates', tabs: ['templates', 'docpacks', 'playbooks', 'rules'] },
+  { label: 'Automation & templates', tabs: ['workflow', 'templates', 'docpacks', 'playbooks', 'rules'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
   { label: 'Account', tabs: ['billing', 'help'] },
@@ -92,6 +94,7 @@ const TAB_ICON: Record<TabKey, string> = {
   mywork: '☑️',
   board: '🗂️',
   workload: '⚖️',
+  workflow: '🔀',
   templates: '✉️',
   docpacks: '📄',
   playbooks: '⚡',
@@ -106,7 +109,7 @@ const TAB_ICON: Record<TabKey, string> = {
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'workflow', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
@@ -1671,6 +1674,8 @@ export default function AdminPage() {
             )}
           </div>
         )}
+
+        {tab === 'workflow' && <WorkflowCanvas />}
 
         {tab === 'templates' && (
           <>
