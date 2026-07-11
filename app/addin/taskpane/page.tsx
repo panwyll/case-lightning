@@ -371,8 +371,6 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
-  const [wlFolded, setWlFolded] = useState<Set<string>>(new Set()); // collapsed matter groups (By matter view)
-  const [wlShowAll, setWlShowAll] = useState<Set<string>>(new Set()); // matters expanded past the per-matter cap (flat view)
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
   const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; matter?: any; summary?: any; timeline?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
@@ -544,18 +542,17 @@ export default function Taskpane() {
     }
   }
 
-  // Expand a worklist row to show the matter's recent timeline (lazy-fetched, cached per matter).
-  async function toggleWlExpand(w: WorklistEntry) {
-    const opening = wlOpen !== w.id;
-    setWlOpen(opening ? w.id : '');
-    const mid = w.matterId;
-    if (!opening || !mid || wlTl[mid]) return;
-    setWlTl((t) => ({ ...t, [mid]: { loading: true } }));
+  // Expand a matter card to show its key info + history (lazy-fetched, cached per matter).
+  async function toggleMatter(matterId: string) {
+    const opening = wlOpen !== matterId;
+    setWlOpen(opening ? matterId : '');
+    if (!opening || wlTl[matterId]) return;
+    setWlTl((t) => ({ ...t, [matterId]: { loading: true } }));
     try {
-      const r = await api<{ matter: any; summary: any; timeline: any[] }>(`/matters/${mid}`);
-      setWlTl((t) => ({ ...t, [mid]: { matter: r.matter, summary: r.summary, timeline: r.timeline ?? [] } }));
+      const r = await api<{ matter: any; summary: any; timeline: any[] }>(`/matters/${matterId}`);
+      setWlTl((t) => ({ ...t, [matterId]: { matter: r.matter, summary: r.summary, timeline: r.timeline ?? [] } }));
     } catch {
-      setWlTl((t) => ({ ...t, [mid]: { matter: null, summary: null, timeline: [] } }));
+      setWlTl((t) => ({ ...t, [matterId]: { matter: null, summary: null, timeline: [] } }));
     }
   }
 
@@ -2005,7 +2002,7 @@ export default function Taskpane() {
                           ? deadlineMs(a) - deadlineMs(b)
                           : (a.matterRef || '').localeCompare(b.matterRef || '') || a.ageDays - b.ageDays
                       );
-                const row = (w: WorklistEntry, hideMatter = false) => {
+                const row = (w: WorklistEntry) => {
                   const busy = wlBusy === w.id;
                   const drafted = wlChaser[w.id];
                   // Jira-style urgency dot instead of the "18d" text — saves width.
@@ -2044,28 +2041,17 @@ export default function Taskpane() {
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px' }}>
                     <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
-                    <span
-                      onClick={() => toggleWlExpand(w)}
-                      title={w.matterId ? 'Show matter timeline' : undefined}
-                      style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
-                    >
-                      {/* Matter — which case this is (hidden when already under a matter group header). */}
-                      {!hideMatter && (
-                        <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
-                        </span>
-                      )}
-                      {/* Action — what needs doing. */}
-                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12, color: '#4A4358', lineHeight: 1.35, marginTop: 2 }}>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      {/* Action — what needs doing (the matter is in the group header above). */}
+                      <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12, color: '#3A3450', lineHeight: 1.35 }}>
                         {primaryText}
                       </span>
-                      {/* Status — the matter's stage + any deadline. */}
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 10, minWidth: 0 }}>
-                        {w.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageLabel(w.stage)}</span>}
-                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {!w.stage && !w.urgent && !(w.kind === 'TASK' && w.due) && <span style={{ color: '#B0A9C0' }}>{w.ageDays}d old</span>}
-                      </span>
+                      {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10 }}>
+                          {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        </span>
+                      )}
                     </span>
                     <span style={{ flex: 'none', display: 'flex', gap: 5, opacity: busy || drafted === 'busy' ? 0.5 : 1 }}>
                       {w.kind === 'TASK' && (
@@ -2089,110 +2075,80 @@ export default function Taskpane() {
                             <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
                           </>
                         ))}
-                      {w.matterId && (
-                        <button title={wlOpen === w.id ? 'Hide context' : 'More context & timeline'} style={iconBtn('ghost')} onClick={() => toggleWlExpand(w)}>
-                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: wlOpen === w.id ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
-                        </button>
-                      )}
                     </span>
                     </div>
-                    {wlOpen === w.id && w.matterId && (
-                      <div style={{ padding: '2px 10px 10px', borderTop: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8') }}>
-                        {(() => {
-                          const tl = wlTl[w.matterId!];
-                          if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8 }}>Loading…</div>;
-                          const m = tl.matter ?? {};
-                          const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
-                          const price = m.purchase_price
-                            ? /^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`
-                            : null;
-                          const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
-                          // Firm's own actions only — drop "Client to…"/"Awaiting…" waiting items.
-                          const outstanding = ((tl.summary?.outstanding_items ?? []) as string[]).filter((o) => !isWaitingOnOthers(o));
-                          const events = tl.timeline ?? [];
-                          // ── Tier 1: an at-a-glance exec summary, composed from the case data. ──
-                          const bits: string[] = [];
-                          bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
-                          if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
-                          if (price) bits.push(`at ${price}`);
-                          let execSummary = bits.join(' ').trim();
-                          if (execSummary) execSummary += '.';
-                          if (m.stage) execSummary += ` Currently ${stageLabel(m.stage).toLowerCase()}.`;
-                          const nextAction = w.kind === 'TASK' ? w.title : outstanding[0];
-                          if (nextAction) execSummary += ` Next: ${nextAction.charAt(0).toLowerCase() + nextAction.slice(1)}.`;
-                          // ── Tier 2: the key data points. ──
-                          const details = ([
-                            ['Stage', m.stage ? stageLabel(m.stage) : null],
-                            ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
-                            ['Type', m.track ? String(m.track).toLowerCase() : null],
-                            ['Price', price],
-                            ['Buyer', (m.buyer_names ?? []).join(', ') || null],
-                            ['Seller', (m.seller_names ?? []).join(', ') || null],
-                            ['Other solicitor', m.counterparty_solicitor || null],
-                            ['Estate agent', m.counterparty_agent || null],
-                            ['Lender', m.lender || null],
-                            ['Chain', m.chain_position || null],
-                            ['Exchange', dt(m.exchange_target_date)],
-                            ['Completion', dt(m.completion_target_date)],
-                          ] as Array<[string, string | null]>).filter(([, v]) => v);
-                          const Hdr = ({ children }: { children: React.ReactNode }) => (
-                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{children}</div>
-                          );
-                          return (
-                            <div style={{ marginTop: 8 }}>
-                              {/* 1 · Summary */}
-                              <div style={{ fontSize: 12, color: '#1C1530', lineHeight: 1.5, marginBottom: 12 }}>{execSummary}</div>
-                              {/* 2 · Key data points */}
-                              {details.length > 0 && (
-                                <div style={{ marginBottom: 12 }}>
-                                  <Hdr>Key details</Hdr>
-                                  {details.map(([k, v]) => (
-                                    <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 2 }}>
-                                      <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 82, flex: 'none' }}>{k}</span>
-                                      <span style={{ color: '#1C1530', textTransform: k === 'Stage' || k === 'Type' ? 'capitalize' : 'none' }}>{v}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                              {/* 3 · Full detail */}
-                              {outstanding.length > 0 && (
-                                <div style={{ marginBottom: 12 }}>
-                                  <Hdr>Our next actions · {outstanding.length}</Hdr>
-                                  <div style={{ maxHeight: 168, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8 }}>
-                                    {outstanding.slice(0, 30).map((o, i) => (
-                                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 9px', borderTop: i > 0 ? '1px solid #F1EEF9' : 'none', fontSize: 11.5, color: '#3A3450', lineHeight: 1.4 }}>
-                                        <span style={{ flex: 'none', width: 5, height: 5, borderRadius: 999, background: '#5A27E0', marginTop: 6 }} />
-                                        <span>{o}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-                              {events.length > 0 && (
-                                <>
-                                  <Hdr>Full history · {events.length}</Hdr>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 190, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8, padding: '8px 9px' }}>
-                                    {events.slice(0, 30).map((ev) => (
-                                      <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
-                                        <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
-                                        {ev.details && <div style={{ color: '#7A7388', marginTop: 1, lineHeight: 1.4 }}>{ev.details}</div>}
-                                        <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 2 }}>
-                                          {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </>
-                              )}
-                              {details.length === 0 && outstanding.length === 0 && events.length === 0 && (
-                                <div style={{ fontSize: 11, color: '#94a3b8' }}>No further details recorded yet.</div>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
                   </div>
+                  );
+                };
+                // The expandable "key info + history" panel for a matter card (lazy-loaded).
+                const matterDetail = (matterId: string, nextActionText: string | null) => {
+                  const tl = wlTl[matterId];
+                  if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8' }}>Loading…</div>;
+                  const m = tl.matter ?? {};
+                  const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
+                  const price = m.purchase_price
+                    ? /^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`
+                    : null;
+                  const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
+                  const events = tl.timeline ?? [];
+                  const bits: string[] = [];
+                  bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
+                  if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
+                  if (price) bits.push(`at ${price}`);
+                  let execSummary = bits.join(' ').trim();
+                  if (execSummary) execSummary += '.';
+                  if (m.stage) execSummary += ` Currently ${stageLabel(m.stage).toLowerCase()}.`;
+                  if (nextActionText) execSummary += ` Next: ${nextActionText.charAt(0).toLowerCase() + nextActionText.slice(1)}.`;
+                  const details = ([
+                    ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
+                    ['Type', m.track ? String(m.track).toLowerCase() : null],
+                    ['Price', price],
+                    ['Buyer', (m.buyer_names ?? []).join(', ') || null],
+                    ['Seller', (m.seller_names ?? []).join(', ') || null],
+                    ['Other solicitor', m.counterparty_solicitor || null],
+                    ['Estate agent', m.counterparty_agent || null],
+                    ['Lender', m.lender || null],
+                    ['Chain', m.chain_position || null],
+                    ['Exchange', dt(m.exchange_target_date)],
+                    ['Completion', dt(m.completion_target_date)],
+                  ] as Array<[string, string | null]>).filter(([, v]) => v);
+                  const Hdr = ({ children }: { children: React.ReactNode }) => (
+                    <div style={{ fontSize: 10, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{children}</div>
+                  );
+                  return (
+                    <div>
+                      <div style={{ fontSize: 12, color: '#1C1530', lineHeight: 1.5, marginBottom: 12 }}>{execSummary}</div>
+                      {details.length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                          <Hdr>Key details</Hdr>
+                          {details.map(([k, v]) => (
+                            <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 2 }}>
+                              <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 82, flex: 'none' }}>{k}</span>
+                              <span style={{ color: '#1C1530', textTransform: k === 'Type' ? 'capitalize' : 'none' }}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {events.length > 0 && (
+                        <>
+                          <Hdr>Full history · {events.length}</Hdr>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 190, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8, padding: '8px 9px' }}>
+                            {events.slice(0, 30).map((ev) => (
+                              <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
+                                <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
+                                {ev.details && <div style={{ color: '#7A7388', marginTop: 1, lineHeight: 1.4 }}>{ev.details}</div>}
+                                <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 2 }}>
+                                  {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {details.length === 0 && events.length === 0 && (
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>No further details recorded yet.</div>
+                      )}
+                    </div>
                   );
                 };
                 if (items.length === 0) {
@@ -2227,71 +2183,61 @@ export default function Taskpane() {
                           <option value="matter">By matter</option>
                         </select>
                       </div>
-                      {wlSort === 'matter' ? (
-                        // Grouped by matter: one header per case, its items beneath (matter line hidden on each row).
-                        (() => {
-                          const groups: Array<{ key: string; ref: string; sub: string | null; stage: string | null; items: WorklistEntry[] }> = [];
-                          const byKey: Record<string, number> = {};
-                          for (const w of items.slice(0, 120)) {
-                            const key = w.matterId || w.matterRef;
-                            if (byKey[key] === undefined) {
-                              byKey[key] = groups.length;
-                              groups.push({ key, ref: w.matterRef, sub: w.propertyAddress, stage: w.stage ?? null, items: [] });
-                            }
-                            groups[byKey[key]].items.push(w);
+                      {(() => {
+                        // Matter-first: group items by matter, preserving the server's most-urgent-
+                        // first order (a matter with an urgent task floats up). "By matter" = alpha.
+                        const groups: Array<{ key: string; matterId: string | null; ref: string; sub: string | null; stage: string | null; urgent: boolean; items: WorklistEntry[] }> = [];
+                        const byKey: Record<string, number> = {};
+                        for (const w of items.slice(0, 200)) {
+                          const key = w.matterId || w.matterRef;
+                          if (byKey[key] === undefined) {
+                            byKey[key] = groups.length;
+                            groups.push({ key, matterId: w.matterId ?? null, ref: w.matterRef, sub: w.propertyAddress, stage: w.stage ?? null, urgent: false, items: [] });
                           }
-                          const toggleFold = (k: string) => setWlFolded((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
-                          return (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-                              {groups.map((g) => {
-                                const folded = wlFolded.has(g.key);
-                                return (
-                                  <div key={g.key}>
-                                    <div onClick={() => toggleFold(g.key)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: folded ? 0 : 5, padding: '2px', cursor: 'pointer' }}>
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
-                                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          const g = groups[byKey[key]];
+                          g.items.push(w);
+                          if (w.urgent) g.urgent = true;
+                        }
+                        if (wlSort === 'matter') groups.sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+                            {groups.map((g) => {
+                              const open = !!g.matterId && wlOpen === g.matterId;
+                              const first = g.items[0];
+                              const nextAction = first ? (first.kind === 'TASK' ? first.title : first.title || first.detail || null) : null;
+                              const keyDate = g.items.find((i) => i.urgent && i.keyDate)?.keyDate ?? null;
+                              return (
+                                <div key={g.key} style={{ border: '1px solid ' + (g.urgent ? '#fecaca' : '#E7E2F3'), borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
+                                  {/* Matter header — the key info, expandable for the full picture. */}
+                                  <div style={{ padding: '8px 10px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9') }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                      <span title={g.urgent ? 'Has an urgent item' : undefined} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: g.urgent ? '#dc2626' : '#94a3b8' }} />
+                                      <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {g.ref}{g.sub ? ` · ${g.sub}` : ''}
                                       </span>
-                                      <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 600, color: '#94a3b8' }}>· {g.items.length}</span>
-                                      {g.stage && <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 6px' }}>{stageLabel(g.stage)}</span>}
+                                      <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>{g.items.length} to do</span>
+                                      {g.matterId && (
+                                        <button title={open ? 'Hide details' : 'Key info & history'} onClick={() => toggleMatter(g.matterId!)} style={{ flex: 'none', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #D9D2EC', borderRadius: 7, background: '#fff', color: '#7A7388', cursor: 'pointer', padding: 0 }}>
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
+                                        </button>
+                                      )}
                                     </div>
-                                    {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{g.items.map((w) => row(w, true))}</div>}
+                                    {(g.stage || keyDate) && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 16, fontSize: 10 }}>
+                                        {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageLabel(g.stage)}</span>}
+                                        {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                      </div>
+                                    )}
                                   </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })()
-                      ) : (
-                        // Flat priority view — cap items per matter so one busy case can't flood the queue.
-                        (() => {
-                          const CAP = 3;
-                          const totals: Record<string, number> = {};
-                          for (const w of items.slice(0, 120)) { const k = w.matterId || w.matterRef; totals[k] = (totals[k] || 0) + 1; }
-                          const seen: Record<string, number> = {};
-                          const overflowShown: Record<string, boolean> = {};
-                          const nodes: React.ReactNode[] = [];
-                          for (const w of items.slice(0, 120)) {
-                            const k = w.matterId || w.matterRef;
-                            seen[k] = (seen[k] || 0) + 1;
-                            if (wlShowAll.has(k) || seen[k] <= CAP) {
-                              nodes.push(row(w));
-                            } else if (!overflowShown[k]) {
-                              overflowShown[k] = true;
-                              nodes.push(
-                                <button
-                                  key={`more-${k}`}
-                                  onClick={() => setWlShowAll((s) => new Set(s).add(k))}
-                                  style={{ textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#5A27E0', background: '#F7F5FD', border: '1px dashed #D9D2EC', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
-                                >
-                                  +{totals[k] - CAP} more from {w.matterRef}
-                                </button>
+                                  {open && <div style={{ padding: 10, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
+                                  {/* All todos for this matter. */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>{g.items.map((w) => row(w))}</div>
+                                </div>
                               );
-                            }
-                          }
-                          return <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{nodes}</div>;
-                        })()
-                      )}
+                            })}
+                          </div>
+                        );
+                      })()}
                     </Card>
                     <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
                       📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
