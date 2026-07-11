@@ -21,6 +21,7 @@ import { query, queryOne, transaction } from './db';
 import { listTrackerRows, upsertTrackerRowByRef, createDraftMessage } from './graph';
 import { addDraftReady, isWaitingOnOthers } from './worklist';
 import { mirrorTaskToTodo, syncFromTodo } from './todo';
+import { instantiateStageTemplates, unblockDependents } from './workflow';
 import type { SessionUser } from './types';
 
 // Structural type for "something I can run SQL on" — satisfied by the
@@ -49,7 +50,7 @@ export interface MatterTask {
   excel_synced_at: string | null;
 }
 
-export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'NOTED';
+export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'NOTED' | 'BLOCKED';
 
 const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_at, updated_at, excel_synced_at';
 
@@ -252,6 +253,11 @@ export async function updateTask(
     return task;
   }).then(async (task) => {
     if (task) void mirrorTaskToTodo(user, matterId, task).catch(() => {});
+    // Workflow DAG: completing a task may unblock its dependents on this matter.
+    if (task && patch.status === 'DONE') {
+      const tpl = await queryOne<{ template_id: string | null }>(`select template_id from matter_task where id = $1`, [taskId]).catch(() => null);
+      if (tpl?.template_id) void unblockDependents(user.tenantId, matterId, tpl.template_id).catch(() => {});
+    }
     return task;
   });
 }
@@ -387,6 +393,10 @@ export async function onStageAdvanced(
   stage: string
 ): Promise<void> {
   try {
+    // Configurable workflow: instantiate this checkpoint's task templates (assigned per the
+    // admin's DAG), blocking any with an unfinished prerequisite. Best-effort inside.
+    await instantiateStageTemplates(user as SessionUser, matterId, stage);
+
     const label = stage.toLowerCase().replace(/_/g, ' ');
     const milestone = MILESTONE_UPDATE[stage];
     if (!milestone) {
