@@ -44,6 +44,7 @@ export interface MatterTask {
   assignee_user_id: string | null;
   due: string | null;
   status: string;
+  status_label: string | null;
   source: string;
   created_at: string;
   updated_at: string;
@@ -52,7 +53,7 @@ export interface MatterTask {
 
 export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'NOTED' | 'BLOCKED';
 
-const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, source, created_at, updated_at, excel_synced_at';
+const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, status_label, source, created_at, updated_at, excel_synced_at';
 
 /** Map free-text Excel status (a human may type anything) onto our enum. */
 function normaliseStatus(s: string): TaskStatus {
@@ -229,7 +230,7 @@ export async function updateTask(
   user: SessionUser,
   matterId: string,
   taskId: string,
-  patch: { type?: string; detail?: string; assignee?: string | null; assigneeUserId?: string | null; due?: string | null; status?: TaskStatus }
+  patch: { type?: string; detail?: string; assignee?: string | null; assigneeUserId?: string | null; due?: string | null; status?: TaskStatus; statusLabel?: string | null }
 ): Promise<MatterTask | null> {
   return withTrackerLock(matterId, async (db) => {
     const task =
@@ -242,11 +243,12 @@ export async function updateTask(
              assignee_user_id = coalesce($6, assignee_user_id),
              due = coalesce(nullif($7,'')::date, due),
              status = coalesce($8, status),
+             status_label = case when $8::text is not null then $10 else status_label end,
              source = 'APP',
              updated_at = now()
            where id = $1 and matter_id = $2 and tenant_id = $9
            returning ${COLS}`,
-          [taskId, matterId, patch.type ?? null, patch.detail ?? null, patch.assignee ?? null, patch.assigneeUserId ?? null, patch.due ?? null, patch.status ?? null, user.tenantId]
+          [taskId, matterId, patch.type ?? null, patch.detail ?? null, patch.assignee ?? null, patch.assigneeUserId ?? null, patch.due ?? null, patch.status ?? null, user.tenantId, patch.statusLabel ?? null]
         )
       ).rows[0] ?? null;
     if (task) await mirrorToExcel(db, user, matterId, task);

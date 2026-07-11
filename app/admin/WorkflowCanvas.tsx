@@ -52,6 +52,7 @@ export default function WorkflowCanvas() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [users, setUsers] = useState<Member[]>([]);
+  const [statuses, setStatuses] = useState<Array<{ id: string; name: string; kind: string; color: string | null; sort_order: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -69,6 +70,7 @@ export default function WorkflowCanvas() {
       setTemplates(r.templates ?? []);
       setEdges(r.edges ?? []);
       setUsers(r.users ?? []);
+      try { setStatuses((await api<{ statuses: any[] }>('/admin/statuses')).statuses ?? []); } catch { /* palette optional */ }
       setErr(null);
     } catch (e: any) {
       setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
@@ -172,6 +174,20 @@ export default function WorkflowCanvas() {
     await api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
   };
 
+  const addStatus = async () => {
+    try { await api('/admin/statuses', { method: 'POST', body: JSON.stringify({ name: 'New status', kind: 'OPEN', color: '#64748b', sortOrder: statuses.length }) }); await load(); }
+    catch (e: any) { setErr(e?.message || 'Could not add status.'); }
+  };
+  const saveStatus = async (s: { id: string; name: string; kind: string; color: string | null; sort_order: number }) => {
+    try { await api('/admin/statuses', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, kind: s.kind, color: s.color, sortOrder: s.sort_order }) }); }
+    catch (e: any) { setErr(e?.message || 'Could not save status.'); }
+  };
+  const removeStatus = async (id: string) => {
+    if (!window.confirm('Delete this status?')) return;
+    setStatuses((ss) => ss.filter((x) => x.id !== id));
+    await api(`/admin/statuses?id=${id}`, { method: 'DELETE' }).catch(() => {});
+  };
+
   const sel = templates.find((t) => t.id === selected) || null;
   // Edges run from the OUT port (right edge of the prerequisite) to the IN port (left edge of
   // the dependent), at a fixed offset from the node top so they line up with the visible dots.
@@ -198,6 +214,30 @@ export default function WorkflowCanvas() {
               <span style={{ width: 9, height: 9, borderRadius: 3, background: c }} /> {l}
             </span>
           ))}
+        </div>
+      </div>
+
+      {/* Task statuses — the firm's own labels. Each maps to a kind that drives the logic. */}
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <strong style={{ fontSize: 13, color: '#0f172a' }}>Task statuses</strong>
+          <span style={{ fontSize: 11.5, color: '#94a3b8', flex: 1 }}>Kind drives the logic: <b>Done</b> completes a task (and unblocks dependents); <b>Open</b>/<b>In&nbsp;progress</b> stay actionable.</span>
+          <button onClick={addStatus} style={btn}>+ Add status</button>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {statuses.map((s) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', borderRadius: 8, padding: '5px 7px', background: '#fff' }}>
+              <input type="color" value={s.color || '#64748b'} onChange={(e) => { const v = e.target.value; setStatuses((ss) => ss.map((x) => x.id === s.id ? { ...x, color: v } : x)); }} onBlur={() => saveStatus({ ...s, color: s.color })} style={{ width: 22, height: 22, border: 'none', background: 'none', padding: 0, cursor: 'pointer' }} />
+              <input value={s.name} onChange={(e) => { const v = e.target.value; setStatuses((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStatus(s)} style={{ width: 110, fontSize: 12, padding: '3px 5px', border: '1px solid #d0d5dd', borderRadius: 6 }} />
+              <select value={s.kind} onChange={(e) => { const v = e.target.value; const next = { ...s, kind: v }; setStatuses((ss) => ss.map((x) => x.id === s.id ? next : x)); saveStatus(next); }} style={{ fontSize: 11.5, padding: '3px 4px', border: '1px solid #d0d5dd', borderRadius: 6 }}>
+                <option value="OPEN">Open</option>
+                <option value="IN_PROGRESS">In progress</option>
+                <option value="DONE">Done</option>
+              </select>
+              <button onClick={() => removeStatus(s.id)} title="Delete status" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+          {statuses.length === 0 && <span style={{ fontSize: 12, color: '#94a3b8' }}>Loading…</span>}
         </div>
       </div>
 

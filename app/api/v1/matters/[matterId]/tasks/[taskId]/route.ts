@@ -23,7 +23,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ma
         assignee: z.string().nullable().optional(),
         assigneeUserId: z.string().uuid().nullable().optional(),
         due: z.string().nullable().optional(),
-        status: z.enum(['OPEN', 'IN_PROGRESS', 'DONE', 'NOTED']).optional(),
+        status: z.enum(['OPEN', 'IN_PROGRESS', 'DONE', 'NOTED', 'BLOCKED']).optional(),
+        statusLabel: z.string().max(40).nullable().optional(), // firm's custom status name
       })
       .parse(await req.json());
     const task = await updateTask(user, matterId, taskId, body);

@@ -71,7 +71,9 @@ interface MatterTask {
   assignee: string | null;
   due: string | null;
   status: string;
+  status_label: string | null;
 }
+interface TaskStatusOpt { id: string; name: string; kind: 'OPEN' | 'IN_PROGRESS' | 'DONE'; color: string | null }
 interface Assignee {
   id: string;
   email: string;
@@ -369,6 +371,7 @@ export default function Taskpane() {
   // a recoverable error + retry instead of an endless "Reading…" spinner.
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
+  const [statusOpts, setStatusOpts] = useState<TaskStatusOpt[]>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
@@ -496,6 +499,7 @@ export default function Taskpane() {
     }
     try {
       setTeamMembers((await api<{ members: any[] }>('/team/members')).members ?? []);
+      setStatusOpts((await api<{ statuses: TaskStatusOpt[] }>('/statuses')).statuses ?? []);
     } catch {
       setTeamMembers([]);
     }
@@ -1591,11 +1595,11 @@ export default function Taskpane() {
 
   const [newTask, setNewTask] = useState('');
   const [taskBusy, setTaskBusy] = useState('');
-  async function setTaskStatus(taskId: string, status: 'OPEN' | 'DONE') {
+  async function setTaskStatus(taskId: string, kind: 'OPEN' | 'IN_PROGRESS' | 'DONE', label: string | null) {
     if (!matterId) return;
     setTaskBusy(taskId);
     try {
-      await api(`/matters/${matterId}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await api(`/matters/${matterId}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify({ status: kind, statusLabel: label }) });
       await loadTasks(matterId);
     } catch { /* best-effort */ } finally { setTaskBusy(''); }
   }
@@ -2893,23 +2897,32 @@ export default function Taskpane() {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                     {tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).map((t) => {
-                      const done = t.status === 'DONE';
+                      const blocked = t.status === 'BLOCKED';
+                      const cur = statusOpts.find((s) => (t.status_label ? s.name === t.status_label : s.kind === t.status));
                       return (
-                        <label key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 9px', border: '1px solid #ECE7F8', borderRadius: 9, background: done ? '#F7F6FB' : '#FBFAFF', cursor: 'pointer', opacity: taskBusy === t.id ? 0.5 : 1 }}>
-                          <input
-                            type="checkbox"
-                            checked={done}
-                            disabled={taskBusy === t.id}
-                            onChange={(e) => void setTaskStatus(t.id, e.target.checked ? 'DONE' : 'OPEN')}
-                            style={{ marginTop: 2 }}
-                          />
+                        <div key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 9px', border: '1px solid #ECE7F8', borderRadius: 9, background: '#FBFAFF', opacity: taskBusy === t.id ? 0.5 : 1 }}>
                           <span style={{ flex: 1, minWidth: 0 }}>
-                            <span style={{ fontSize: 12.5, color: done ? '#94a3b8' : '#1C1530', textDecoration: done ? 'line-through' : 'none' }}>{t.detail}</span>
+                            <span style={{ fontSize: 12.5, color: '#1C1530' }}>{t.detail}</span>
                             <span style={{ display: 'block', fontSize: 10.5, color: '#94a3b8', marginTop: 1 }}>
-                              {t.ref}{t.status !== 'OPEN' && t.status !== 'DONE' ? ` · ${t.status.toLowerCase()}` : ''}{t.assignee ? ` · ${t.assignee}` : ''}{t.due ? ` · due ${t.due}` : ''}
+                              {t.ref}{t.assignee ? ` · ${t.assignee}` : ''}{t.due ? ` · due ${t.due}` : ''}
                             </span>
                           </span>
-                        </label>
+                          {blocked ? (
+                            <span title="Blocked until its prerequisite is completed" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#F1F5F9', borderRadius: 6, padding: '3px 8px' }}>🔒 Blocked</span>
+                          ) : statusOpts.length ? (
+                            <select
+                              value={cur?.id ?? ''}
+                              disabled={taskBusy === t.id}
+                              onChange={(e) => { const s = statusOpts.find((o) => o.id === e.target.value); if (s) void setTaskStatus(t.id, s.kind, s.name); }}
+                              style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '3px 6px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: cur?.color ?? '#5A27E0', cursor: 'pointer' }}
+                            >
+                              {!cur && <option value="">{t.status_label || t.status.toLowerCase()}</option>}
+                              {statusOpts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                            </select>
+                          ) : (
+                            <button title="Mark done" style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#16a34a', cursor: 'pointer' }} disabled={taskBusy === t.id} onClick={() => void setTaskStatus(t.id, 'DONE', 'Done')}>✓ Done</button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
