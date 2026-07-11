@@ -374,6 +374,7 @@ export default function Taskpane() {
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
   const [wlRowOpen, setWlRowOpen] = useState<Set<string>>(new Set()); // task rows expanded to show full text
+  const [wlCardFolded, setWlCardFolded] = useState<Set<string>>(new Set()); // matter cards collapsed to just their header
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
   const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; matter?: any; summary?: any; timeline?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
@@ -2093,7 +2094,7 @@ export default function Taskpane() {
                         </>
                       )}
                       {w.kind === 'CHASE' &&
-                        (typeof drafted === 'string' ? (
+                        (typeof drafted === 'string' && drafted !== 'busy' ? (
                           <>
                             <button title="Open the chaser in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(drafted)}>{iOpen}</button>
                             <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>
@@ -2233,35 +2234,38 @@ export default function Taskpane() {
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
                             {groups.map((g) => {
                               const open = !!g.matterId && wlOpen === g.matterId;
+                              const folded = wlCardFolded.has(g.key);
                               const first = g.items[0];
                               const nextAction = first ? (first.kind === 'TASK' ? first.title : first.title || first.detail || null) : null;
                               const keyDate = g.items.find((i) => i.urgent && i.keyDate)?.keyDate ?? null;
+                              const toggleCard = () => setWlCardFolded((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; });
                               return (
                                 <div key={g.key} style={{ border: '1px solid ' + (g.urgent ? '#fecaca' : '#E7E2F3'), borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
-                                  {/* Matter header — the key info, expandable for the full picture. */}
-                                  <div style={{ padding: '8px 10px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9') }}>
+                                  {/* Matter header — click to collapse the whole card; detail button for the full picture. */}
+                                  <div onClick={toggleCard} style={{ padding: '8px 10px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: folded ? 'none' : '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9'), cursor: 'pointer' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                      <span title={g.urgent ? 'Has an urgent item' : undefined} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: g.urgent ? '#dc2626' : '#94a3b8' }} />
+                                      {/* Collapse chevron (replaces the old grey dot) — points right when folded. */}
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={g.urgent ? '#dc2626' : '#94a3b8'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
                                       <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {g.ref}{g.sub ? ` · ${g.sub}` : ''}
                                       </span>
                                       <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>{g.items.length} to do</span>
                                       {g.matterId && (
-                                        <button title={open ? 'Hide details' : 'Key info & history'} onClick={() => toggleMatter(g.matterId!)} style={{ flex: 'none', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #D9D2EC', borderRadius: 7, background: '#fff', color: '#7A7388', cursor: 'pointer', padding: 0 }}>
+                                        <button title={open ? 'Hide details' : 'Key info & history'} onClick={(e) => { e.stopPropagation(); toggleMatter(g.matterId!); }} style={{ flex: 'none', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #D9D2EC', borderRadius: 7, background: '#fff', color: '#7A7388', cursor: 'pointer', padding: 0 }}>
                                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
                                         </button>
                                       )}
                                     </div>
                                     {(g.stage || keyDate) && (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 16, fontSize: 10 }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10 }}>
                                         {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageLabel(g.stage)}</span>}
                                         {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                                       </div>
                                     )}
                                   </div>
-                                  {open && <div style={{ padding: 10, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
-                                  {/* All todos for this matter. */}
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>{g.items.map((w) => row(w))}</div>
+                                  {!folded && open && <div style={{ padding: 10, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
+                                  {/* All todos for this matter (hidden when the card is collapsed). */}
+                                  {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>{g.items.map((w) => row(w))}</div>}
                                 </div>
                               );
                             })}
