@@ -22,6 +22,7 @@ import { listTrackerRows, upsertTrackerRowByRef, createDraftMessage } from './gr
 import { addDraftReady, isWaitingOnOthers } from './worklist';
 import { mirrorTaskToTodo, syncFromTodo } from './todo';
 import { instantiateStageTemplates, unblockDependents } from './workflow';
+import { notifyMatter } from './events';
 import type { SessionUser } from './types';
 
 // Structural type for "something I can run SQL on" — satisfied by the
@@ -403,6 +404,14 @@ export async function onStageAdvanced(
     const milestone = MILESTONE_UPDATE[stage];
     if (!milestone) {
       await autoActionTask(user, matterId, `Update the client — matter now at the ${label} stage`);
+      // Nudge the fee-earner (timeline row already written by the caller).
+      await notifyMatter(user.tenantId, matterId, {
+        kind: 'STATUS_CHANGED',
+        headline: `Moved to the ${label} stage`,
+        did: 'Raised a task and lined up this checkpoint’s workflow',
+        action: `Update the client — matter now at the ${label} stage`,
+        dedupKey: `stage:${matterId}:${stage}`,
+      }).catch(() => {});
       return;
     }
     const matter = await queryOne<{ matter_ref: string; property_address: string | null }>(
@@ -420,6 +429,13 @@ export async function onStageAdvanced(
       detail: subject,
       graphMessageId: (draft?.id as string) ?? null,
     });
+    await notifyMatter(user.tenantId, matterId, {
+      kind: 'STATUS_CHANGED',
+      headline: `Reached ${milestone.label}`,
+      did: 'Drafted the client update — it’s in your ready-to-send queue',
+      action: 'Review the draft and send it',
+      dedupKey: `stage:${matterId}:${stage}`,
+    }).catch(() => {});
   } catch {
     /* best-effort */
   }

@@ -271,6 +271,7 @@ export default function Taskpane() {
   const [reconBusy, setReconBusy] = useState(false);
   const [aiConnected, setAiConnected] = useState<boolean | null>(null);
   const [autoTriage, setAutoTriage] = useState<{ enabled: boolean; expiresAt: string | null; needsReconnect?: boolean } | null>(null);
+  const [notifyEnabled, setNotifyEnabled] = useState<boolean | null>(null); // batched briefing emails on/off
   const [status, setStatus] = useState<string>('');
   const [busy, setBusy] = useState<string>('');
 
@@ -660,6 +661,20 @@ export default function Taskpane() {
     const t = setInterval(() => reloadWorklist(wlMeta.assignee), 90_000);
     return () => clearInterval(t);
   }, [me, messageId, homeView, reloadWorklist, wlMeta.assignee]);
+
+  // Load the briefing-email preference once signed in (best-effort).
+  useEffect(() => {
+    if (!me) return;
+    api<{ enabled: boolean }>('/notifications/prefs').then((r) => setNotifyEnabled(r.enabled)).catch(() => {});
+  }, [me]);
+  async function toggleNotify(next: boolean) {
+    setNotifyEnabled(next); // optimistic
+    try {
+      await api('/notifications/prefs', { method: 'POST', body: JSON.stringify({ enabled: next }) });
+    } catch {
+      setNotifyEnabled(!next); // revert
+    }
+  }
 
   // Keep the scheduled-send chips fresh in any view (incl. the single-email reply pane,
   // which doesn't poll the worklist): drop chips once their send has fired or been cancelled.
@@ -3516,6 +3531,25 @@ export default function Taskpane() {
                 Outlook stopped letting us watch your inbox — reconnect your account to resume auto-triage.
               </p>
             )}
+            <SubLabel>Briefing emails</SubLabel>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <p style={{ ...S.muted, flex: 1, margin: 0 }}>
+                When a stage moves, a document lands, or an email needs you, we batch it into one “here’s what
+                came up” email to your inbox — never one per ping.
+              </p>
+              <button
+                onClick={() => toggleNotify(!(notifyEnabled ?? true))}
+                disabled={notifyEnabled === null}
+                style={{
+                  flex: 'none', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: 'pointer',
+                  background: (notifyEnabled ?? true) ? '#5A27E0' : '#cbd5e1', position: 'relative', transition: 'background .15s',
+                }}
+                title={(notifyEnabled ?? true) ? 'Briefings on — click to turn off' : 'Briefings off — click to turn on'}
+                aria-label="Toggle briefing emails"
+              >
+                <span style={{ position: 'absolute', top: 3, left: (notifyEnabled ?? true) ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .15s' }} />
+              </button>
+            </div>
           </Card>
         </>
       )}

@@ -6,6 +6,7 @@ import { hasTrustedLink } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
+import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import type { SessionUser } from '@/lib/server/types';
 
@@ -90,6 +91,20 @@ export async function POST(req: NextRequest) {
           } catch (assistError) {
             await markAssistError(user.tenantId, messageId, (assistError as Error).message).catch(() => {});
           }
+        }
+
+        // Proactive loop: a confirmed-match email that actually needs the fee-earner earns a
+        // briefing line. Routine matched mail (no action needed) stays silent — it's on the
+        // worklist already. Dedup per matter so a flurry on one case = one "there's activity".
+        if (triage.top && hasTrustedLink(triage.top) && triage.classification.needsAttention) {
+          const fromName = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
+          await notifyMatter(user.tenantId, triage.top.matterId, {
+            kind: 'EMAIL_TRIAGED',
+            headline: `New email from ${fromName}${message.subject ? ` — “${String(message.subject).slice(0, 80)}”` : ''}`,
+            did: worthPrecomputing ? 'Read it and drafted a suggested reply for you to review' : 'Triaged it and matched it to this matter',
+            action: 'Open the matter to review and reply',
+            dedupKey: `email:${triage.top.matterId}`,
+          }).catch(() => {});
         }
 
         // NB: we deliberately do NOT move the email here. The inbox stays an in-tray;

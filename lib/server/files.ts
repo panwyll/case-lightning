@@ -15,6 +15,7 @@ import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAtt
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
+import { emitMatterEvent } from './events';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
@@ -367,6 +368,7 @@ export async function saveEmailAttachmentsToMatter(
 
   const attachments = await listMessageAttachments(user.userId, messageId);
   let saved = 0;
+  const savedNames: string[] = [];
   for (const att of attachments) {
     if (!att.contentBytes || !att.name || att.isInline) continue;
     const buffer = Buffer.from(att.contentBytes, 'base64');
@@ -410,6 +412,7 @@ export async function saveEmailAttachmentsToMatter(
       metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
     }).catch(() => {});
     saved += 1;
+    savedNames.push(att.name);
   }
 
   if (saved > 0 && matter.tracker_item_id) {
@@ -431,6 +434,23 @@ export async function saveEmailAttachmentsToMatter(
       actionType: 'EMAIL_SAVED_TO_MATTER',
       actionStatus: 'SUCCESS',
       payload: { messageId, count: saved, auto: true },
+    }).catch(() => {});
+    // Proactive loop: a document landing is inherently noteworthy — record it on the
+    // timeline and brief the fee-earner (dedup so the same batch never notifies twice).
+    const nameList = savedNames.length <= 2 ? savedNames.join(', ') : `${savedNames[0]} (+${savedNames.length - 1} more)`;
+    await emitMatterEvent({
+      tenantId: user.tenantId,
+      matterId,
+      eventType: 'DOC_RECEIVED',
+      title: `Received ${saved} document(s): ${nameList}`,
+      details: subject ?? null,
+      notify: {
+        kind: 'DOC_RECEIVED',
+        headline: `New document${saved > 1 ? 's' : ''} received: ${nameList}`,
+        did: 'Filed it to the matter folder and indexed it for the drafter',
+        action: 'Review it and update the client if needed',
+        dedupKey: `doc:${matterId}:${messageId}`,
+      },
     }).catch(() => {});
   }
   return saved;
