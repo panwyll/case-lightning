@@ -371,6 +371,8 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
+  const [wlFolded, setWlFolded] = useState<Set<string>>(new Set()); // collapsed matter groups (By matter view)
+  const [wlShowAll, setWlShowAll] = useState<Set<string>>(new Set()); // matters expanded past the per-matter cap (flat view)
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
   const [wlTl, setWlTl] = useState<Record<string, { loading?: boolean; matter?: any; summary?: any; timeline?: Array<{ id: string; title: string; details: string | null; event_at: string | null; created_at: string }> }>>({});
@@ -2238,25 +2240,57 @@ export default function Taskpane() {
                             }
                             groups[byKey[key]].items.push(w);
                           }
+                          const toggleFold = (k: string) => setWlFolded((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
                           return (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-                              {groups.map((g) => (
-                                <div key={g.key}>
-                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 5, padding: '0 2px' }}>
-                                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                      {g.ref}{g.sub ? ` · ${g.sub}` : ''}
-                                    </span>
-                                    <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 600, color: '#94a3b8' }}>· {g.items.length}</span>
-                                    {g.stage && <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 6px' }}>{stageLabel(g.stage)}</span>}
+                              {groups.map((g) => {
+                                const folded = wlFolded.has(g.key);
+                                return (
+                                  <div key={g.key}>
+                                    <div onClick={() => toggleFold(g.key)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: folded ? 0 : 5, padding: '2px', cursor: 'pointer' }}>
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
+                                      <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                        {g.ref}{g.sub ? ` · ${g.sub}` : ''}
+                                      </span>
+                                      <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 600, color: '#94a3b8' }}>· {g.items.length}</span>
+                                      {g.stage && <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 6px' }}>{stageLabel(g.stage)}</span>}
+                                    </div>
+                                    {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{g.items.map((w) => row(w, true))}</div>}
                                   </div>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{g.items.map((w) => row(w, true))}</div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           );
                         })()
                       ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{items.slice(0, 80).map((w) => row(w))}</div>
+                        // Flat priority view — cap items per matter so one busy case can't flood the queue.
+                        (() => {
+                          const CAP = 3;
+                          const totals: Record<string, number> = {};
+                          for (const w of items.slice(0, 120)) { const k = w.matterId || w.matterRef; totals[k] = (totals[k] || 0) + 1; }
+                          const seen: Record<string, number> = {};
+                          const overflowShown: Record<string, boolean> = {};
+                          const nodes: React.ReactNode[] = [];
+                          for (const w of items.slice(0, 120)) {
+                            const k = w.matterId || w.matterRef;
+                            seen[k] = (seen[k] || 0) + 1;
+                            if (wlShowAll.has(k) || seen[k] <= CAP) {
+                              nodes.push(row(w));
+                            } else if (!overflowShown[k]) {
+                              overflowShown[k] = true;
+                              nodes.push(
+                                <button
+                                  key={`more-${k}`}
+                                  onClick={() => setWlShowAll((s) => new Set(s).add(k))}
+                                  style={{ textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#5A27E0', background: '#F7F5FD', border: '1px dashed #D9D2EC', borderRadius: 8, padding: '6px 10px', cursor: 'pointer' }}
+                                >
+                                  +{totals[k] - CAP} more from {w.matterRef}
+                                </button>
+                              );
+                            }
+                          }
+                          return <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{nodes}</div>;
+                        })()
                       )}
                     </Card>
                     <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
