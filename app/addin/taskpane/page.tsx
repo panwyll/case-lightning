@@ -137,6 +137,16 @@ const STAGES: Array<[string, string]> = [
 // Human stage label without the ordinal prefix (e.g. "Searches & enquiries").
 const stageLabel = (s: string): string => (STAGES.find(([v]) => v === s)?.[1] ?? s).replace(/^\d+\s·\s/, '');
 
+// Backstop for pre-existing / mis-classified data: an item where we're waiting on another
+// party ("Client to provide…", "Awaiting mortgage offer") is a status we chase, not our task.
+// Keeps only the firm's own actions.
+const isWaitingOnOthers = (s: string): boolean => {
+  const t = (s ?? '').trim().toLowerCase();
+  if (/^(firm|we |us |our |conveyancer|fee earner)/.test(t)) return false; // explicitly ours
+  if (/^(await|awaiting|pending)\b/.test(t)) return true;
+  return /^(the )?(client|buyer|seller|purchaser|vendor|applicant|borrower|lender|bank|building society|estate agent|agent|other side|counterpart|third part)[a-z' ]*\bto\b/.test(t);
+};
+
 // Which side of the transaction we act for — frames the stage model and the
 // drafting AI (so it doesn't assume we're always the buyer).
 const TRACKS: Array<[string, string]> = [
@@ -2093,7 +2103,8 @@ export default function Taskpane() {
                             ? /^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`
                             : null;
                           const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
-                          const outstanding = (tl.summary?.outstanding_items ?? []) as string[];
+                          // Firm's own actions only — drop "Client to…"/"Awaiting…" waiting items.
+                          const outstanding = ((tl.summary?.outstanding_items ?? []) as string[]).filter((o) => !isWaitingOnOthers(o));
                           const events = tl.timeline ?? [];
                           // ── Tier 1: an at-a-glance exec summary, composed from the case data. ──
                           const bits: string[] = [];
@@ -2816,7 +2827,7 @@ export default function Taskpane() {
               {/* Tasks — the matter's to-do list (incl. items seeded on import). The state was
                   being loaded but never rendered; this is the actual task view. */}
               <Card>
-                <Label>Tasks{tasks.filter((t) => t.status !== 'DONE').length ? ` · ${tasks.filter((t) => t.status !== 'DONE').length} open` : ''}</Label>
+                <Label>Tasks{tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length ? ` · ${tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length} open` : ''}</Label>
                 <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
                   <input
                     style={{ ...S.input, marginTop: 0 }}
@@ -2829,11 +2840,11 @@ export default function Taskpane() {
                     {taskBusy === 'new' ? '…' : 'Add'}
                   </button>
                 </div>
-                {tasks.filter((t) => t.status !== 'DONE').length === 0 ? (
+                {tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).length === 0 ? (
                   <p style={{ ...S.muted, margin: 0 }}>No open tasks.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {tasks.filter((t) => t.status !== 'DONE').map((t) => {
+                    {tasks.filter((t) => t.status !== 'DONE' && !isWaitingOnOthers(t.detail)).map((t) => {
                       const done = t.status === 'DONE';
                       return (
                         <label key={t.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '7px 9px', border: '1px solid #ECE7F8', borderRadius: 9, background: done ? '#F7F6FB' : '#FBFAFF', cursor: 'pointer', opacity: taskBusy === t.id ? 0.5 : 1 }}>

@@ -19,7 +19,7 @@
  */
 import { query, queryOne, transaction } from './db';
 import { listTrackerRows, upsertTrackerRowByRef, createDraftMessage } from './graph';
-import { addDraftReady } from './worklist';
+import { addDraftReady, isWaitingOnOthers } from './worklist';
 import { mirrorTaskToTodo, syncFromTodo } from './todo';
 import type { SessionUser } from './types';
 
@@ -303,6 +303,7 @@ export async function seedTasksFromOutstanding(
   const items = (outstanding ?? [])
     .map((s) => (s ?? '').trim())
     .filter((s) => s.length >= 4 && s.length <= 280)
+    .filter((s) => !isWaitingOnOthers(s)) // firm's own actions only — never seed "Client to…" items
     .filter((s) => {
       const k = s.toLowerCase();
       if (seen.has(k)) return false;

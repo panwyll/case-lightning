@@ -15,6 +15,15 @@
 import { query } from './db';
 import { detectChases } from './chase';
 
+// Backstop for pre-existing / mis-classified tasks: an item where we're waiting on another
+// party ("Client to provide…", "Awaiting mortgage offer") is a status we chase, not our task.
+export function isWaitingOnOthers(s: string): boolean {
+  const t = (s ?? '').trim().toLowerCase();
+  if (/^(firm|we |us |our |conveyancer|fee earner)/.test(t)) return false; // explicitly ours
+  if (/^(await|awaiting|pending)\b/.test(t)) return true;
+  return /^(the )?(client|buyer|seller|purchaser|vendor|applicant|borrower|lender|bank|building society|estate agent|agent|other side|counterpart|third part)[a-z' ]*\bto\b/.test(t);
+}
+
 export type WorklistKind = 'CHASE' | 'DRAFT_READY' | 'TASK';
 
 export interface WorklistEntry {
@@ -144,7 +153,7 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       [tenantId, assignedToUserId ?? null]
     );
     const now = Date.now();
-    taskEntries = rows.map((r) => ({
+    taskEntries = rows.filter((r) => !isWaitingOnOthers(r.detail)).map((r) => ({
       id: r.id,
       kind: 'TASK',
       matterId: r.matter_id,
