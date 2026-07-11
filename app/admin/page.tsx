@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
+import EmailTemplates from './EmailTemplates';
 
 interface MatterHit {
   id: string;
@@ -1679,27 +1680,7 @@ export default function AdminPage() {
 
         {tab === 'workflow' && <WorkflowCanvas />}
 
-        {tab === 'templates' && (
-          <>
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>New template</h3>
-              <input style={input} placeholder="Name" value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} />
-              <input style={input} placeholder="Category" value={t.category} onChange={(e) => setT({ ...t, category: e.target.value })} />
-              <input style={input} placeholder="Style tag (NEUTRAL/FIRM/CHASING)" value={t.styleTag} onChange={(e) => setT({ ...t, styleTag: e.target.value })} />
-              <input style={input} placeholder="Subject template" value={t.subjectTemplate} onChange={(e) => setT({ ...t, subjectTemplate: e.target.value })} />
-              <textarea style={{ ...input, minHeight: 100 }} placeholder="Body template" value={t.bodyTemplate} onChange={(e) => setT({ ...t, bodyTemplate: e.target.value })} />
-              <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={createTemplate}>
-                Create
-              </button>
-            </div>
-            {templates.map((tpl) => (
-              <div key={tpl.id} style={card}>
-                <strong>{tpl.name}</strong> <span style={{ color: '#64748b' }}>· {tpl.category} · {tpl.styleTag}</span>
-                <p style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#334155' }}>{tpl.bodyTemplate}</p>
-              </div>
-            ))}
-          </>
-        )}
+        {tab === 'templates' && <EmailTemplates />}
 
         {tab === 'docpacks' && (
           <>
