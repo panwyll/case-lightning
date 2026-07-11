@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
-import { getWorkflow, saveTemplate, deleteTemplate } from '@/lib/server/workflow';
+import { getWorkflow, saveTemplate, deleteTemplate, ensureDefaultWorkflow } from '@/lib/server/workflow';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -14,6 +14,7 @@ export async function GET() {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
+    await ensureDefaultWorkflow(user.tenantId); // seed the standard conveyancing flow on first open
     const { templates, edges } = await getWorkflow(user.tenantId);
     const users = await query(
       `select id, coalesce(display_name, email) as name, role from app_user where tenant_id = $1 order by created_at asc`,

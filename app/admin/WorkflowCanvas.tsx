@@ -264,8 +264,13 @@ export default function WorkflowCanvas() {
               );
             })}
             {!loading && templates.length === 0 && (
-              <div style={{ position: 'absolute', left: 40, top: 40, color: '#94a3b8', fontSize: 13 }}>
-                No tasks yet — click <strong>+ Add task</strong> to build your workflow.
+              <div style={{ position: 'absolute', left: 40, top: 40, color: '#64748b', fontSize: 13 }}>
+                <div style={{ marginBottom: 10 }}>No tasks yet.</div>
+                <button onClick={async () => { try { await api('/admin/workflow/seed', { method: 'POST' }); await load(); } catch (e: any) { setErr(e?.message || 'Could not load defaults.'); } }}
+                  style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none', marginRight: 8 }}>
+                  Load the standard conveyancing flow
+                </button>
+                <button onClick={addTask} style={btn}>Start from scratch</button>
               </div>
             )}
           </div>

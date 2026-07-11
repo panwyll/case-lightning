@@ -33,6 +33,88 @@ export interface TaskEdge {
 const TPL_COLS =
   'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
 
+// ── Default conveyancing workflow (seeded once; the firm edits from here) ──────────
+// Laid out left→right by stage; y stacks tasks within a stage. Assigned to the matter
+// owner by default — the admin re-points the admin-heavy ones (searches, SDLT, registration)
+// at an assistant. Deps encode the natural order (review after request, exchange after signing…).
+const DEFAULT_TASKS: Array<{ key: string; stage: string; detail: string; col: number; row: number }> = [
+  { key: 'ins_care', stage: 'INSTRUCTION', detail: 'Issue client care letter & fee estimate', col: 0, row: 0 },
+  { key: 'ins_id', stage: 'INSTRUCTION', detail: 'Complete ID verification & AML checks', col: 0, row: 1 },
+  { key: 'ins_funds', stage: 'INSTRUCTION', detail: 'Confirm source of funds', col: 0, row: 2 },
+  { key: 'cp_request', stage: 'CONTRACT_PACK', detail: "Request contract pack from seller's solicitor", col: 1, row: 0 },
+  { key: 'cp_review', stage: 'CONTRACT_PACK', detail: 'Review contract pack (contract, TA6, TA10, title)', col: 1, row: 1 },
+  { key: 'se_order', stage: 'SEARCHES_ENQUIRIES', detail: 'Order property searches (local, drainage & water, environmental)', col: 2, row: 0 },
+  { key: 'se_enquiries', stage: 'SEARCHES_ENQUIRIES', detail: "Raise pre-contract enquiries with seller's solicitor", col: 2, row: 1 },
+  { key: 'se_review', stage: 'SEARCHES_ENQUIRIES', detail: 'Review search results & replies to enquiries', col: 2, row: 2 },
+  { key: 'se_report', stage: 'SEARCHES_ENQUIRIES', detail: 'Report to client on searches, title & enquiries', col: 2, row: 3 },
+  { key: 'rs_mortgage', stage: 'REVIEW_SIGNING', detail: 'Check mortgage offer & conditions', col: 3, row: 0 },
+  { key: 'rs_send', stage: 'REVIEW_SIGNING', detail: 'Send contract & report to client for signature', col: 3, row: 1 },
+  { key: 'rs_signed', stage: 'REVIEW_SIGNING', detail: 'Obtain signed contract & deposit funds', col: 3, row: 2 },
+  { key: 'ex_date', stage: 'EXCHANGE', detail: 'Agree completion date with all parties', col: 4, row: 0 },
+  { key: 'ex_exchange', stage: 'EXCHANGE', detail: 'Exchange contracts', col: 4, row: 1 },
+  { key: 'co_statement', stage: 'COMPLETION', detail: 'Prepare completion statement & request funds from client', col: 5, row: 0 },
+  { key: 'co_funds', stage: 'COMPLETION', detail: 'Request mortgage advance from lender', col: 5, row: 1 },
+  { key: 'co_complete', stage: 'COMPLETION', detail: 'Complete the transaction', col: 5, row: 2 },
+  { key: 'pc_sdlt', stage: 'POST_COMPLETION', detail: 'Submit SDLT return & pay tax', col: 6, row: 0 },
+  { key: 'pc_register', stage: 'POST_COMPLETION', detail: 'Register title & charge at HM Land Registry', col: 6, row: 1 },
+  { key: 'pc_letter', stage: 'POST_COMPLETION', detail: 'Send completion letter & title info to client', col: 6, row: 2 },
+];
+const DEFAULT_DEPS: Array<[string, string]> = [
+  ['cp_request', 'cp_review'],
+  ['se_order', 'se_review'],
+  ['se_enquiries', 'se_review'],
+  ['se_review', 'se_report'],
+  ['cp_review', 'rs_send'],
+  ['se_report', 'rs_send'],
+  ['rs_send', 'rs_signed'],
+  ['rs_signed', 'ex_exchange'],
+  ['ex_date', 'ex_exchange'],
+  ['rs_mortgage', 'ex_exchange'],
+  ['ex_exchange', 'co_complete'],
+  ['co_statement', 'co_complete'],
+  ['co_funds', 'co_complete'],
+  ['co_complete', 'pc_sdlt'],
+  ['pc_sdlt', 'pc_register'],
+  ['co_complete', 'pc_letter'],
+];
+
+/** Seed the default conveyancing workflow the first time (or on an explicit reload). */
+export async function ensureDefaultWorkflow(tenantId: string, force = false): Promise<void> {
+  try {
+    if (!force) {
+      const t = await queryOne<{ workflow_seeded: boolean }>(`select workflow_seeded from tenant where id = $1`, [tenantId]).catch(() => null);
+      if (t?.workflow_seeded) return;
+      const existing = await queryOne<{ n: number }>(`select count(*)::int as n from task_template where tenant_id = $1`, [tenantId]).catch(() => ({ n: 0 }));
+      if ((existing?.n ?? 0) > 0) {
+        await query(`update tenant set workflow_seeded = true where id = $1`, [tenantId]).catch(() => {});
+        return;
+      }
+    }
+    const idByKey: Record<string, string> = {};
+    let order = 0;
+    for (const t of DEFAULT_TASKS) {
+      const row = await queryOne<{ id: string }>(
+        `insert into task_template (tenant_id, stage, detail, assignee_kind, assignee_role, pos_x, pos_y, sort_order)
+         values ($1,$2,$3,'ROLE','OWNER',$4,$5,$6) returning id`,
+        [tenantId, t.stage, t.detail, 40 + t.col * 230, 40 + t.row * 96, order++]
+      );
+      if (row) idByKey[t.key] = row.id;
+    }
+    for (const [from, to] of DEFAULT_DEPS) {
+      if (idByKey[from] && idByKey[to]) {
+        await query(
+          `insert into task_template_edge (tenant_id, from_template_id, to_template_id)
+           values ($1,$2,$3) on conflict (from_template_id, to_template_id) do nothing`,
+          [tenantId, idByKey[from], idByKey[to]]
+        ).catch(() => {});
+      }
+    }
+    await query(`update tenant set workflow_seeded = true where id = $1`, [tenantId]).catch(() => {});
+  } catch {
+    /* best-effort — the tab still works empty if seeding can't run */
+  }
+}
+
 export async function getWorkflow(tenantId: string): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[] }> {
   try {
     const templates = await query<TaskTemplate>(
