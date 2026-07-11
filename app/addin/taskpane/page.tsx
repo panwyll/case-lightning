@@ -2084,21 +2084,21 @@ export default function Taskpane() {
                       {w.kind === 'DRAFT_READY' && (
                         <>
                           {w.graphMessageId && <button title="Open the draft in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(w.graphMessageId!)}>{iOpen}</button>}
-                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>}
                           <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'dismiss')}>{iCheck}</button>
+                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>}
                         </>
                       )}
                       {w.kind === 'CHASE' &&
                         (typeof drafted === 'string' && drafted !== 'busy' ? (
                           <>
                             <button title="Open the chaser in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(drafted)}>{iOpen}</button>
-                            <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>
                             <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
+                            <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, drafted)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>
                           </>
                         ) : (
                           <>
-                            <button title="Draft a chaser" style={iconBtn('primary')} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)}>{drafted === 'busy' ? <span style={S.spinnerLight} /> : iPencil}</button>
                             <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'snooze')}>{iClock}</button>
+                            <button title="Draft a chaser" style={iconBtn('primary')} disabled={drafted === 'busy'} onClick={() => draftWorklistChaser(w)}>{drafted === 'busy' ? <span style={S.spinnerLight} /> : iPencil}</button>
                           </>
                         ))}
                     </span>
@@ -2236,20 +2236,14 @@ export default function Taskpane() {
                               const toggleCard = () => setWlCardFolded((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; });
                               return (
                                 <div key={g.key} style={{ border: '1px solid ' + (g.urgent ? '#fecaca' : '#E7E2F3'), borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
-                                  {/* Matter header — click to collapse the whole card; detail button for the full picture. */}
+                                  {/* Matter header — the single collapse arrow folds the whole card. */}
                                   <div onClick={toggleCard} style={{ padding: '8px 10px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: folded ? 'none' : '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9'), cursor: 'pointer' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                                      {/* Collapse chevron (replaces the old grey dot) — points right when folded. */}
                                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={g.urgent ? '#dc2626' : '#94a3b8'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
                                       <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         {g.ref}{g.sub ? ` · ${g.sub}` : ''}
                                       </span>
                                       <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>{g.items.length} to do</span>
-                                      {g.matterId && (
-                                        <button title={open ? 'Hide details' : 'Key info & history'} onClick={(e) => { e.stopPropagation(); toggleMatter(g.matterId!); }} style={{ flex: 'none', width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #D9D2EC', borderRadius: 7, background: '#fff', color: '#7A7388', cursor: 'pointer', padding: 0 }}>
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}><path d="M6 9l6 6 6-6" /></svg>
-                                        </button>
-                                      )}
                                     </div>
                                     {(g.stage || keyDate) && (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10 }}>
@@ -2258,6 +2252,12 @@ export default function Taskpane() {
                                       </div>
                                     )}
                                   </div>
+                                  {/* Key details — a text link (not a second arrow) that opens the matter's detail panel. */}
+                                  {!folded && g.matterId && (
+                                    <button onClick={() => toggleMatter(g.matterId!)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', border: 'none', borderBottom: '1px solid #EFEBF9', background: open ? '#F7F5FD' : '#fff', color: '#5A27E0', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                      {open ? '▾ Hide key details' : '▸ Key details & history'}
+                                    </button>
+                                  )}
                                   {!folded && open && <div style={{ padding: 10, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
                                   {/* All todos for this matter (hidden when the card is collapsed). */}
                                   {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8 }}>{g.items.map((w) => row(w))}</div>}

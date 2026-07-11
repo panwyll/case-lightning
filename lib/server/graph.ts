@@ -6,6 +6,7 @@
  */
 import { Client, GraphError } from '@microsoft/microsoft-graph-client';
 import { queryOne, query } from './db';
+import { tenantSelfAddresses } from './matching';
 import { refreshAccessToken } from './oauth';
 import { config } from './config';
 import { TRACKER_XLSX_BASE64, TRACKER_TABLE } from './tracker-template';
@@ -261,12 +262,14 @@ export async function createReplyDraft(
   // addressed straight back to us (emailing ourselves). If the source was sent by this mailbox,
   // redirect the reply to the original recipients (the people we actually need to chase).
   try {
-    const meInfo = await client.api('/me').select('mail,userPrincipalName').get();
-    const self = String(meInfo?.mail || meInfo?.userPrincipalName || '').toLowerCase();
+    const owner = await queryOne<{ tenant_id: string }>(`select tenant_id from app_user where id = $1`, [userId]);
+    const self = owner ? await tenantSelfAddresses(owner.tenant_id) : null;
+    const dom = (a: string) => (a.includes('@') ? a.split('@')[1] : '');
+    const isSelf = (a: string) => !!a && !!self && (self.emails.has(a) || self.domains.has(dom(a)));
     const fromAddr = String(src?.from?.emailAddress?.address ?? '').toLowerCase();
-    if (self && fromAddr && fromAddr === self) {
+    if (self && isSelf(fromAddr)) {
       const notSelf = (arr: any[]) =>
-        (arr ?? []).filter((r: any) => String(r?.emailAddress?.address ?? '').toLowerCase() !== self);
+        (arr ?? []).filter((r: any) => !isSelf(String(r?.emailAddress?.address ?? '').toLowerCase()));
       const to = notSelf(src?.toRecipients);
       const cc = notSelf(src?.ccRecipients);
       if (to.length) updateBody.toRecipients = to;
