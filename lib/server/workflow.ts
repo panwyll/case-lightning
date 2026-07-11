@@ -9,7 +9,8 @@
  * simply behaves as "no workflow configured".
  */
 import { query, queryOne, transaction } from './db';
-import { createDraftMessage, sendDraftMessage } from './graph';
+import { createDraftMessage } from './graph';
+import { scheduleSend } from './scheduledSend';
 import { buildMatterVars } from './doc-templates';
 import { addDraftReady } from './worklist';
 import type { SessionUser } from './types';
@@ -365,7 +366,10 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   const draft = await createDraftMessage(userId, subject, body, wantsSend && recipient ? [recipient] : []).catch(() => null);
   if (!draft?.id) return;
   if (wantsSend) {
-    await sendDraftMessage(userId, draft.id).catch(() => {}); // sent — nothing further
+    // Don't fire instantly — park it on the deferred-send queue (~20 min) so a human
+    // can catch/cancel the auto-update before it leaves. The worker sends it when due.
+    await scheduleSend({ tenantId, userId, matterId, graphMessageId: draft.id, subject, recipient, source: 'WORKFLOW' }).catch(() => {});
+    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Update email scheduled — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
   } else {
     await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Email drafted — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
   }

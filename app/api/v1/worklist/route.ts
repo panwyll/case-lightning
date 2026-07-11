@@ -7,6 +7,7 @@ import { getWorklist, dismissWorklistItem, snoozeWorklistItem } from '@/lib/serv
 import { updateTask } from '@/lib/server/tasks';
 import { queryOne } from '@/lib/server/db';
 import { runChaseSweep, snoozeChase } from '@/lib/server/chase';
+import { processDueSends } from '@/lib/server/scheduledSend';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { ok, fail } from '@/lib/server/http';
 
@@ -34,6 +35,10 @@ export async function GET(req: NextRequest) {
     const items = await getWorklist(user.tenantId, assignedTo);
     after(async () => {
       await runChaseSweep(user.userId, user.tenantId).catch(() => {});
+      // Flush any deferred sends whose grace window has elapsed. This is the primary
+      // sender (the cron is a backstop) — an open pane polls the worklist, so due
+      // updates go out even on a plan that can't run a frequent cron.
+      await processDueSends(user.tenantId).catch(() => {});
     });
     return ok({ items, team, isAdmin, assignedTo: assignedTo ?? '' });
   } catch (error) {

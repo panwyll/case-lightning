@@ -237,6 +237,14 @@ type WorklistEntry = {
   stage?: string | null; // matter's current stage — the row's status
 };
 
+// Local HH:MM for a scheduled-send timestamp (e.g. "14:35").
+function hhmm(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? ''
+    : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 // Remember across opens that this user was signed in, so a cold taskpane shows a
 // brief "Connecting…" instead of flashing "Not connected" while /me is in flight.
 // Set on a successful /me, cleared only on a genuine sign-out (401/403).
@@ -375,6 +383,8 @@ export default function Taskpane() {
   const [stageOpts, setStageOpts] = useState<Array<{ key: string; name: string }>>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
+  // Deferred sends waiting out their grace window — shown as cancellable chips.
+  const [scheduled, setScheduled] = useState<Array<{ id: string; subject: string | null; scheduled_at: string; source: string }>>([]);
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
   const [wlCardFolded, setWlCardFolded] = useState<Set<string>>(new Set()); // matter cards collapsed to just their header
@@ -533,7 +543,27 @@ export default function Taskpane() {
     } catch {
       /* keep whatever we had */
     }
+    // Pending deferred sends (loading the worklist also flushes any that are due, so this
+    // reflects what's still cancellable). Best-effort — separate from the worklist read.
+    try {
+      const s = await api<{ scheduled: Array<{ id: string; subject: string | null; scheduled_at: string; source: string }> }>('/worklist/scheduled');
+      setScheduled(s.scheduled ?? []);
+    } catch {
+      /* leave prior list */
+    }
   }, []);
+
+  // Cancel a deferred send inside its window. The Outlook draft is left in place.
+  async function cancelScheduled(id: string) {
+    setScheduled((s) => s.filter((x) => x.id !== id)); // optimistic
+    try {
+      await api('/worklist/scheduled/cancel', { method: 'POST', body: JSON.stringify({ id }) });
+      setStatus('Send cancelled — the draft is still in your Outlook Drafts.');
+    } catch (e: any) {
+      setStatus(e?.message || 'Couldn’t cancel — it may already have sent.');
+      void reloadWorklist(wlMeta.assignee);
+    }
+  }
 
   // Snooze (a week) or dismiss a worklist entry — a chase (by thread) or a ready-to-send draft.
   async function worklistAction(item: WorklistEntry, action: 'snooze' | 'dismiss' | 'done') {
@@ -593,9 +623,17 @@ export default function Taskpane() {
   async function sendWorklistDraft(item: WorklistEntry, messageId: string) {
     setWlBusy(item.id);
     try {
-      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId, itemId: item.kind === 'DRAFT_READY' ? item.id : undefined }) });
+      const r = await api<{ scheduled?: boolean; scheduleId?: string; scheduledAt?: string }>(
+        '/worklist/send',
+        { method: 'POST', body: JSON.stringify({ messageId, itemId: item.kind === 'DRAFT_READY' ? item.id : undefined }) }
+      );
       setWorklist((w) => (w ?? []).filter((x) => x.id !== item.id));
-      setStatus('Sent.');
+      if (r.scheduleId && r.scheduledAt) {
+        setScheduled((s) => [...s, { id: r.scheduleId!, subject: item.title ?? null, scheduled_at: r.scheduledAt!, source: 'MANUAL' }]);
+        setStatus(`Update email scheduled for ${hhmm(r.scheduledAt)} — cancel below if needed.`);
+      } else {
+        setStatus('Sent.');
+      }
     } catch (e: any) {
       setStatus(e?.message || 'Couldn’t send — open the draft in Outlook to send it there.');
     } finally {
@@ -622,6 +660,19 @@ export default function Taskpane() {
     const t = setInterval(() => reloadWorklist(wlMeta.assignee), 90_000);
     return () => clearInterval(t);
   }, [me, messageId, homeView, reloadWorklist, wlMeta.assignee]);
+
+  // Keep the scheduled-send chips fresh in any view (incl. the single-email reply pane,
+  // which doesn't poll the worklist): drop chips once their send has fired or been cancelled.
+  useEffect(() => {
+    if (!me || scheduled.length === 0) return;
+    const t = setInterval(async () => {
+      try {
+        const s = await api<{ scheduled: Array<{ id: string; subject: string | null; scheduled_at: string; source: string }> }>('/worklist/scheduled');
+        setScheduled(s.scheduled ?? []);
+      } catch { /* keep what we have */ }
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [me, scheduled.length]);
 
   // Cold open with a prior-sign-in hint → optimistically show "Connecting…" so we
   // don't flash "Not connected" during the first /me round-trip. Runs post-mount
@@ -1571,9 +1622,17 @@ export default function Taskpane() {
     // return undefined and silently block the send). The explicit Send click is the intent.
     if (!draftId) { setStatus('No draft to send yet — draft the reply first.'); return; }
     await run(REPLY_BUSY_SEND, async () => {
-      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId: draftId }) });
-      setStatus('Reply sent.');
-      setReplySent(true); // show a "sent" confirmation, don't fall back to the drafter
+      const r = await api<{ scheduleId?: string; scheduledAt?: string }>(
+        '/worklist/send',
+        { method: 'POST', body: JSON.stringify({ messageId: draftId, source: 'REPLY' }) }
+      );
+      if (r.scheduleId && r.scheduledAt) {
+        setScheduled((s) => [...s, { id: r.scheduleId!, subject: 'Reply', scheduled_at: r.scheduledAt!, source: 'REPLY' }]);
+        setStatus(`Reply scheduled for ${hhmm(r.scheduledAt)} — cancel below if needed.`);
+      } else {
+        setStatus('Reply sent.');
+      }
+      setReplySent(true); // show a "sent/scheduled" confirmation, don't fall back to the drafter
       setReplyReady(false);
       setDraftId(null);
       return true;
@@ -3461,6 +3520,22 @@ export default function Taskpane() {
         </>
       )}
 
+      {/* Deferred sends waiting out their grace window — cancellable until they go out. */}
+      {scheduled.length > 0 && (
+        <div style={S.schedWrap}>
+          {scheduled.map((s) => (
+            <div key={s.id} style={S.schedChip}>
+              <span style={{ fontSize: 13 }} aria-hidden>📤</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <strong>{s.source === 'REPLY' ? 'Reply' : 'Update email'}</strong> sending at {hhmm(s.scheduled_at)}
+                {s.subject && s.source !== 'REPLY' ? ` · ${s.subject}` : ''}
+              </span>
+              <button style={S.schedCancel} onClick={() => cancelScheduled(s.id)}>Cancel</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {(busy || status) && (
         <div style={{ ...S.toast, ...(busy ? S.toastBusy : {}) }}>{busy ? `${busy}…` : status}</div>
       )}
@@ -4353,4 +4428,39 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
   },
   toastBusy: { background: '#5A27E0' },
+  schedWrap: {
+    position: 'fixed',
+    left: 12,
+    right: 12,
+    bottom: 76,
+    maxWidth: 456,
+    margin: '0 auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+    zIndex: 5,
+  },
+  schedChip: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    background: '#fffbeb',
+    border: '1px solid #fde68a',
+    color: '#92400e',
+    padding: '8px 10px',
+    borderRadius: 10,
+    fontSize: 12.5,
+    boxShadow: '0 6px 20px rgba(0,0,0,0.12)',
+  },
+  schedCancel: {
+    flex: 'none',
+    background: '#fff',
+    border: '1px solid #d97706',
+    color: '#b45309',
+    fontWeight: 700,
+    fontSize: 12,
+    padding: '4px 10px',
+    borderRadius: 8,
+    cursor: 'pointer',
+  },
 };

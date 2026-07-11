@@ -3,19 +3,18 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
-import { sendDraftMessage } from '@/lib/server/graph';
 import { dismissWorklistItem } from '@/lib/server/worklist';
-import { writeAudit } from '@/lib/server/audit';
+import { scheduleSend, SEND_DELAY_MIN } from '@/lib/server/scheduledSend';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Send a reviewed draft without leaving the web app. This is the interactive,
- * human-in-the-loop send: the user has just read the draft on screen and clicked
- * Send — distinct from the auto-SEND rule path with its kill-switches. The Graph
- * helper refuses non-drafts, so this can only ever fire a draft once.
+ * Schedule a reviewed draft for sending on a short delay. The user has read the draft
+ * on screen and clicked Send; rather than firing instantly we park it (~20 min) so the
+ * send stays cancellable from the pane. The worker sends it when due. Pass `now: true`
+ * to send immediately (skip the grace window).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,20 +23,26 @@ export async function POST(req: NextRequest) {
     const user = await requireUser();
     await assertEntitled(user.tenantId);
     const body = z
-      .object({ messageId: z.string().min(5), itemId: z.string().uuid().optional() })
+      .object({
+        messageId: z.string().min(5),
+        itemId: z.string().uuid().optional(),
+        source: z.enum(['MANUAL', 'REPLY']).optional(),
+        now: z.boolean().optional(),
+      })
       .parse(await req.json());
 
-    const sent = await sendDraftMessage(user.userId, body.messageId);
+    const { id, scheduledAt } = await scheduleSend({
+      tenantId: user.tenantId,
+      userId: user.userId,
+      graphMessageId: body.messageId,
+      source: body.source ?? 'MANUAL',
+      delayMinutes: body.now ? 0 : SEND_DELAY_MIN,
+    });
+    // Drop the worklist item now — it's committed to send (the user can still cancel the
+    // schedule, which leaves the draft in Outlook for manual handling).
     if (body.itemId) await dismissWorklistItem(user.tenantId, body.itemId).catch(() => {});
 
-    await writeAudit({
-      tenantId: user.tenantId,
-      actorUserId: user.userId,
-      actionType: 'EMAIL_SENT',
-      actionStatus: 'SUCCESS',
-      payload: { source: 'WORKLIST_WEB', subject: sent.subject },
-    });
-    return ok({ sent: true, subject: sent.subject });
+    return ok({ scheduled: true, scheduleId: id, scheduledAt, delayMinutes: body.now ? 0 : SEND_DELAY_MIN });
   } catch (error) {
     return fail(error);
   }
