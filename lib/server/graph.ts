@@ -223,8 +223,9 @@ export async function createReplyDraft(
   // draft every time the user re-runs the reply action. We only adopt a draft whose
   // subject is a reply ("RE: …") so we never clobber a forward/new-message draft.
   let draft: { id: string; subject?: string; webLink?: string | null } | null = null;
+  let src: any = null;
   try {
-    const src = await client.api(`/me/messages/${messageId}`).select('conversationId').get();
+    src = await client.api(`/me/messages/${messageId}`).select('conversationId,from,toRecipients,ccRecipients').get();
     const conversationId: string | undefined = src?.conversationId;
     if (conversationId) {
       const res = await client
@@ -254,6 +255,26 @@ export async function createReplyDraft(
   const updateBody: Record<string, unknown> = {
     body: { contentType: 'HTML', content: bodyHtml },
   };
+
+  // Recipient safety net: Graph's createReply addresses the reply to the SENDER of the source
+  // message. For a chase, the source is our OWN last outbound email — so the reply would be
+  // addressed straight back to us (emailing ourselves). If the source was sent by this mailbox,
+  // redirect the reply to the original recipients (the people we actually need to chase).
+  try {
+    const meInfo = await client.api('/me').select('mail,userPrincipalName').get();
+    const self = String(meInfo?.mail || meInfo?.userPrincipalName || '').toLowerCase();
+    const fromAddr = String(src?.from?.emailAddress?.address ?? '').toLowerCase();
+    if (self && fromAddr && fromAddr === self) {
+      const notSelf = (arr: any[]) =>
+        (arr ?? []).filter((r: any) => String(r?.emailAddress?.address ?? '').toLowerCase() !== self);
+      const to = notSelf(src?.toRecipients);
+      const cc = notSelf(src?.ccRecipients);
+      if (to.length) updateBody.toRecipients = to;
+      if (cc.length) updateBody.ccRecipients = cc;
+    }
+  } catch {
+    /* best-effort recipient correction — never block the draft */
+  }
   let subject: string = reply.subject ?? '';
   if (opts.appendToken && !subject.includes(`[#${opts.appendToken}]`)) {
     subject = `${subject} [#${opts.appendToken}]`;
