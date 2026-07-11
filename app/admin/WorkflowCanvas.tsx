@@ -173,7 +173,11 @@ export default function WorkflowCanvas() {
   };
 
   const sel = templates.find((t) => t.id === selected) || null;
-  const center = (t: Template) => { const p = posOf(t); return { x: p.x + NODE_W / 2, y: p.y + NODE_H / 2 }; };
+  // Edges run from the OUT port (right edge of the prerequisite) to the IN port (left edge of
+  // the dependent), at a fixed offset from the node top so they line up with the visible dots.
+  const PORT_Y = 30;
+  const outPt = (t: Template) => { const p = posOf(t); return { x: p.x + NODE_W, y: p.y + PORT_Y }; };
+  const inPt = (t: Template) => { const p = posOf(t); return { x: p.x, y: p.y + PORT_Y }; };
   const assigneeText = (t: Template) =>
     t.assignee_kind === 'USER' ? users.find((u) => u.id === t.assignee_user_id)?.name ?? 'a person'
       : t.assignee_role === 'OWNER' ? 'Matter owner' : (t.assignee_role ?? '').charAt(0) + (t.assignee_role ?? '').slice(1).toLowerCase();
@@ -220,7 +224,7 @@ export default function WorkflowCanvas() {
                 const a = templates.find((t) => t.id === e.from_template_id);
                 const b = templates.find((t) => t.id === e.to_template_id);
                 if (!a || !b) return null;
-                const p1 = center(a), p2 = center(b);
+                const p1 = outPt(a), p2 = inPt(b);
                 return (
                   <line key={`${e.from_template_id}-${e.to_template_id}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
                     stroke="#94a3b8" strokeWidth={2} markerEnd="url(#wf-arrow)"
@@ -231,8 +235,8 @@ export default function WorkflowCanvas() {
                 );
               })}
               {linking && (() => {
-                const a = templates.find((t) => t.id === linking.from); if (!a) return null; const p1 = center(a);
-                return <line x1={p1.x} y1={p1.y} x2={linking.x} y2={linking.y} stroke="#5A27E0" strokeWidth={2} strokeDasharray="4 3" />;
+                const a = templates.find((t) => t.id === linking.from); if (!a) return null; const p1 = outPt(a);
+                return <line x1={p1.x} y1={p1.y} x2={linking.x} y2={linking.y} stroke="#5A27E0" strokeWidth={2} strokeDasharray="4 3" markerEnd="url(#wf-arrow)" />;
               })()}
             </svg>
 
@@ -256,10 +260,13 @@ export default function WorkflowCanvas() {
                   </div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>{t.detail}</div>
                   <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>→ {assigneeText(t)}{t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}</div>
-                  {/* Connect handle — drag to another node to make this a prerequisite. */}
+                  {/* IN port (left) — where incoming dependency arrows land. */}
+                  <div title={linking ? 'Drop here to make the dragged task a prerequisite of this one' : 'Dependencies arrive here'}
+                    style={{ position: 'absolute', left: -6, top: PORT_Y - 6, width: 12, height: 12, borderRadius: 999, background: linking && linking.from !== t.id ? '#5A27E0' : '#cbd5e1', border: '2px solid #fff' }} />
+                  {/* OUT port (right) — drag to another node's left port to make THIS a prerequisite. */}
                   <div title="Drag onto another task to make this its prerequisite"
                     onMouseDown={(e) => startLink(e, t)}
-                    style={{ position: 'absolute', right: -7, top: '50%', marginTop: -7, width: 14, height: 14, borderRadius: 999, background: '#5A27E0', border: '2px solid #fff', cursor: 'crosshair' }} />
+                    style={{ position: 'absolute', right: -7, top: PORT_Y - 7, width: 14, height: 14, borderRadius: 999, background: '#5A27E0', border: '2px solid #fff', cursor: 'crosshair', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
                 </div>
               );
             })}
