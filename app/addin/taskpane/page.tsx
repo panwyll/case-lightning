@@ -373,7 +373,6 @@ export default function Taskpane() {
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
   const [wlSort, setWlSort] = useState<'smart' | 'due' | 'matter'>('smart');
-  const [wlRowOpen, setWlRowOpen] = useState<Set<string>>(new Set()); // task rows expanded to show full text
   const [wlCardFolded, setWlCardFolded] = useState<Set<string>>(new Set()); // matter cards collapsed to just their header
   // Worklist row expansion: which entry is open, and the matter timeline cache it reveals.
   const [wlOpen, setWlOpen] = useState<string>('');
@@ -2036,7 +2035,7 @@ export default function Taskpane() {
                     w.kind === 'TASK'
                       ? w.title
                       : w.kind === 'CHASE'
-                      ? `Chase reply${w.detail ? ` — ${w.detail}` : ''}`
+                      ? `${w.title || 'Chase for a reply'}${w.detail ? ` — ${w.detail}` : ''}`
                       : w.title || w.detail || 'Reply ready to send';
                   const iconBtn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
                     flex: 'none', width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -2067,12 +2066,8 @@ export default function Taskpane() {
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px' }}>
                     <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
                     <span style={{ flex: 1, minWidth: 0 }}>
-                      {/* Action — click to expand and read the full text. */}
-                      <span
-                        onClick={() => setWlRowOpen((s) => { const n = new Set(s); n.has(w.id) ? n.delete(w.id) : n.add(w.id); return n; })}
-                        title={wlRowOpen.has(w.id) ? 'Collapse' : 'Read full task'}
-                        style={{ cursor: 'pointer', fontSize: 12, color: '#3A3450', lineHeight: 1.35, ...(wlRowOpen.has(w.id) ? {} : { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }) }}
-                      >
+                      {/* Action — full text, wraps freely so nothing is cut off. */}
+                      <span style={{ display: 'block', fontSize: 12, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>
                         {primaryText}
                       </span>
                       {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (

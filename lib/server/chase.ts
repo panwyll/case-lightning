@@ -39,6 +39,7 @@ export interface ChaseItem {
   matterRef: string;
   propertyAddress: string | null;
   subject: string | null;
+  chaseTo: string | null; // who we're chasing (primary recipient of the unanswered message)
   awaitingSince: string; // ISO — when the unanswered outbound message went out
   ageDays: number; // whole days the ball has sat in the other side's court
 }
@@ -52,17 +53,10 @@ export async function detectChases(
   slaDays = config.chaseSlaDays,
   assignedToUserId?: string | null
 ): Promise<ChaseItem[]> {
-  const rows = await query<{
-    thread_id: string;
-    graph_thread_id: string;
-    matter_id: string;
-    matter_ref: string;
-    property_address: string | null;
-    subject: string | null;
-    chase_awaiting_since: string;
-  }>(
-    // $3 null = whole firm; otherwise only matters assigned to that user ("My worklist").
-    `select t.id as thread_id, t.graph_thread_id, t.subject, t.chase_awaiting_since,
+  // $3 null = whole firm; otherwise only matters assigned to that user ("My worklist").
+  // chase_to_name is selected optionally so a deploy before migration 038 still works.
+  const sql = (withTo: boolean) =>
+    `select t.id as thread_id, t.graph_thread_id, t.subject, t.chase_awaiting_since${withTo ? ', t.chase_to_name' : ''},
             m.id as matter_id, m.matter_ref, m.property_address
        from email_thread t
        join matter m on m.id = t.matter_id
@@ -72,9 +66,14 @@ export async function detectChases(
         and t.chase_awaiting_since is not null
         and t.chase_awaiting_since < now() - ($2 || ' days')::interval
         and coalesce(t.chase_snoozed_until, to_timestamp(0)) < now()
-      order by t.chase_awaiting_since asc`,
-    [tenantId, String(slaDays), assignedToUserId ?? null]
-  );
+      order by t.chase_awaiting_since asc`;
+  const params = [tenantId, String(slaDays), assignedToUserId ?? null];
+  let rows: Array<Record<string, any>>;
+  try {
+    rows = await query(sql(true), params);
+  } catch {
+    rows = await query(sql(false), params); // pre-migration: no chase_to_name column
+  }
   const now = Date.now();
   return rows.map((r) => ({
     threadId: r.thread_id,
@@ -83,6 +82,7 @@ export async function detectChases(
     matterRef: r.matter_ref,
     propertyAddress: r.property_address,
     subject: r.subject,
+    chaseTo: r.chase_to_name ?? null,
     awaitingSince: r.chase_awaiting_since,
     ageDays: Math.floor((now - new Date(r.chase_awaiting_since).getTime()) / 86_400_000),
   }));
@@ -135,6 +135,8 @@ export async function runChaseSweep(userId: string, tenantId: string): Promise<n
     }
     let awaitingSince: string | null = null;
     let lastMessageId: string | null = null;
+    let lastSubject: string | null = null;
+    let toName: string | null = null;
     try {
       const msgs = await listThreadMessages(userId, t.conversation_id); // chronological asc
       const last = msgs[msgs.length - 1];
@@ -143,6 +145,10 @@ export async function runChaseSweep(userId: string, tenantId: string): Promise<n
       if (outbound) {
         awaitingSince = (last.sentDateTime ?? last.receivedDateTime) || null;
         lastMessageId = last.id ?? null;
+        lastSubject = (last.subject as string | undefined)?.trim() || null;
+        // Who we're chasing = the primary recipient of our unanswered message.
+        const to = (last.toRecipients as any[] | undefined)?.[0]?.emailAddress;
+        toName = (to?.name || to?.address || null) as string | null;
       }
     } catch {
       // Can't read this conversation right now — just bump checked_at and move on.
@@ -152,10 +158,15 @@ export async function runChaseSweep(userId: string, tenantId: string): Promise<n
 
     await query(
       `update email_thread
-          set chase_awaiting_since = $2, chase_last_message_id = $3, chase_checked_at = now()
+          set chase_awaiting_since = $2, chase_last_message_id = $3, chase_checked_at = now(),
+              subject = coalesce(nullif($4, ''), subject)
         where id = $1`,
-      [t.id, awaitingSince, lastMessageId]
+      [t.id, awaitingSince, lastMessageId, lastSubject]
     ).catch(() => {});
+    // chase_to_name lives in a separate guarded statement so a deploy before migration 038 no-ops.
+    if (toName) {
+      await query(`update email_thread set chase_to_name = $2 where id = $1`, [t.id, toName]).catch(() => {});
+    }
 
     // Last message is now an outbound SENT one → any reply we'd drafted for this thread has
     // been sent, so clear its "ready to send" worklist item (it now becomes a chase instead).

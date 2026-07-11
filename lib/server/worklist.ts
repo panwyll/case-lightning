@@ -80,7 +80,8 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
     matterId: c.matterId,
     matterRef: c.matterRef,
     propertyAddress: c.propertyAddress,
-    title: 'Chase — no reply yet',
+    // Descriptive: who we're chasing + about what, e.g. "Chase Croft & Hargreaves — no reply".
+    title: `Chase ${c.chaseTo ? c.chaseTo : 'for a reply'}`,
     detail: c.subject,
     ageDays: c.ageDays,
     threadId: c.threadId,
