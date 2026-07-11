@@ -431,6 +431,7 @@ export default function AdminPage() {
     }
   }
   const [copiedRef, setCopiedRef] = useState(false);
+  const [stages, setStages] = useState<Array<{ key: string; name: string }>>([]);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
@@ -472,6 +473,7 @@ export default function AdminPage() {
         if (isAdmin) api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
       }
       if (tab === 'board') {
+        api<{ stages: Array<{ key: string; name: string }> }>('/stages').then((r) => setStages(r.stages ?? [])).catch(() => {});
         setBoardLoading(true);
         try {
           const b = await api<{ matters: any[]; doneTotal?: number }>('/admin/board');
@@ -1301,17 +1303,17 @@ export default function AdminPage() {
 
                   {/* Kanban rail — fixed-width columns on a horizontal scroll, Completed pile at the end */}
                   <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
-                    {STAGE_ORDER.map((stage) => {
+                    {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       if (collapsedStages.includes(stage)) {
-                        return collapsedStrip(stage, STAGE_LABEL[stage] ?? stage, STAGE_COLOR[stage] ?? '#94a3b8', col.length, (e) => {
+                        return collapsedStrip(stage, (stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, (e) => {
                           e.preventDefault();
                           dropOnStage(stage);
                         });
                       }
                       return (
                         <div key={stage} style={{ flex: '0 0 290px', minWidth: 0 }}>
-                          {colHead(STAGE_LABEL[stage] ?? stage, STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
+                          {colHead((stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
                           <div
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
                             onDrop={(e) => {
@@ -1343,7 +1345,7 @@ export default function AdminPage() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                       <strong style={{ fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
                                       {boardPrefs.age && (
-                                        <span title={`${days} day${days === 1 ? '' : 's'} in ${STAGE_LABEL[stage] ?? stage}`} style={{ ...chip, color: ageFg, background: ageBg, flexShrink: 0 }}>{days}d</span>
+                                        <span title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`} style={{ ...chip, color: ageFg, background: ageBg, flexShrink: 0 }}>{days}d</span>
                                       )}
                                     </div>
                                     {boardPrefs.address && m.propertyAddress && (

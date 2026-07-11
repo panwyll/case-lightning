@@ -7,6 +7,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { getMatterSummary } from '@/lib/server/matter';
 import { recordFigureChanges, type FigureChange } from '@/lib/server/figure-audit';
 import { onStageAdvanced } from '@/lib/server/tasks';
+import { stageKeys } from '@/lib/server/stages';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -45,9 +46,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         chainPosition: z.string().optional(),
         status: z.string().optional(),
         assignedTo: z.string().uuid().nullable().optional(),
-        stage: z
-          .enum(['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'])
-          .optional(),
+        // Any of the firm's configured stage keys (validated against the tenant's set below).
+        stage: z.string().min(1).max(40).optional(),
         statusFlag: z.enum(['ON_TRACK', 'NEEDS_ATTENTION', 'BLOCKED']).optional(),
         track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
         notes: z.string().max(5000).optional(), // free-text case notes (matter.notes)
@@ -55,6 +55,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
+
+    // Guard: a stage write must be one of the firm's configured stage keys.
+    if (body.stage !== undefined) {
+      const keys = await stageKeys(user.tenantId);
+      if (!keys.includes(body.stage)) return fail(Object.assign(new Error('Unknown stage.'), { status: 400 }));
+    }
 
     // Snapshot the current figures before the edit so we can log who changed what to what.
     const before = await queryOne<Record<string, any>>(`select * from matter where id = $1 and tenant_id = $2`, [

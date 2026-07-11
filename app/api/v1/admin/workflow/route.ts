@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const body = z
       .object({
         id: z.string().uuid().nullable().optional(),
-        stage: z.enum(['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION']),
+        stage: z.string().min(1).max(40), // any of the firm's configured stage keys
         detail: z.string().min(1).max(500),
         type: z.string().optional(),
         assigneeKind: z.enum(['ROLE', 'USER']),

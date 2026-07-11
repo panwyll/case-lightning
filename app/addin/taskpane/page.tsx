@@ -372,6 +372,7 @@ export default function Taskpane() {
   const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [statusOpts, setStatusOpts] = useState<TaskStatusOpt[]>([]);
+  const [stageOpts, setStageOpts] = useState<Array<{ key: string; name: string }>>([]);
   const [worklist, setWorklist] = useState<WorklistEntry[] | null>(null);
   const [wlBusy, setWlBusy] = useState<string>('');
   // Worklist sort: 'smart' keeps the server's urgency order; 'due' by nearest deadline; 'matter' groups by case.
@@ -500,6 +501,7 @@ export default function Taskpane() {
     try {
       setTeamMembers((await api<{ members: any[] }>('/team/members')).members ?? []);
       setStatusOpts((await api<{ statuses: TaskStatusOpt[] }>('/statuses')).statuses ?? []);
+      setStageOpts((await api<{ stages: Array<{ key: string; name: string }> }>('/stages')).stages ?? []);
     } catch {
       setTeamMembers([]);
     }
@@ -2127,7 +2129,7 @@ export default function Taskpane() {
                   if (price) bits.push(`at ${price}`);
                   let execSummary = bits.join(' ').trim();
                   if (execSummary) execSummary += '.';
-                  if (m.stage) execSummary += ` Currently ${stageLabel(m.stage).toLowerCase()}.`;
+                  if (m.stage) execSummary += ` Currently ${(stageOpts.find((s) => s.key === m.stage)?.name ?? stageLabel(m.stage)).toLowerCase()}.`;
                   if (nextActionText) execSummary += ` Next: ${nextActionText.charAt(0).toLowerCase() + nextActionText.slice(1)}.`;
                   const details = ([
                     ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
@@ -2251,7 +2253,7 @@ export default function Taskpane() {
                                     </div>
                                     {(g.stage || keyDate) && (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10 }}>
-                                        {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageLabel(g.stage)}</span>}
+                                        {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageOpts.find((s) => s.key === g.stage)?.name ?? stageLabel(g.stage)}</span>}
                                         {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                                       </div>
                                     )}
@@ -2842,7 +2844,7 @@ export default function Taskpane() {
                     {/* Stage + assignee side by side — unlabeled, edit in place */}
                     <div style={{ display: 'flex', gap: 6 }}>
                       <select value={curStage} onChange={(e) => updateMatterField({ stage: e.target.value })} disabled={!!busy} style={{ ...ctrl, flex: 1, minWidth: 0, width: 'auto' }} title="Stage">
-                        {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {(stageOpts.length ? stageOpts.map((s) => [s.key, s.name] as [string, string]) : STAGES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
                       <select value={curAssigned} onChange={(e) => updateMatterField({ assignedTo: e.target.value || null })} disabled={!!busy} style={{ ...ctrl, flex: 1, minWidth: 0, width: 'auto' }} title="Assigned to">
                         <option value="">Unassigned</option>
@@ -2873,6 +2875,7 @@ export default function Taskpane() {
                 onPatch={updateMatterField}
                 history={Array.isArray(matterInfo.figureHistory) ? matterInfo.figureHistory : []}
                 members={teamMembers}
+                stages={stageOpts}
               />
               <ContactsPanel key={`contacts-${matterInfo.matter.id}`} matterId={matterInfo.matter.id} initial={matterInfo.contacts ?? []} />
 
@@ -3635,12 +3638,14 @@ function HousePanel({
   onPatch,
   history,
   members,
+  stages,
 }: {
   matter: any;
   facts: Record<string, unknown>;
   onPatch: (patch: Record<string, unknown>) => Promise<unknown>;
   history: any[];
   members: Array<{ id: string; display_name: string | null; email: string; role: string }>;
+  stages: Array<{ key: string; name: string }>;
 }) {
   const dateStr = (s: unknown) => (s ? String(s).slice(0, 10) : '');
   const priceKey = Object.keys(facts).find((k) => /price|consideration|value|offer/i.test(k));
@@ -3776,7 +3781,7 @@ function HousePanel({
         <label style={{ flex: 1 }}>
           <span style={S.fieldLabel}>Stage</span>
           <select style={{ ...S.input, marginBottom: 0 }} value={matter.stage || 'INSTRUCTION'} onChange={(e) => onPatch({ stage: e.target.value })}>
-            {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            {(stages.length ? stages.map((s) => [s.key, s.name] as [string, string]) : STAGES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </label>
         <label style={{ flex: 1 }}>

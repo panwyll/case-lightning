@@ -15,18 +15,9 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
-const STAGES: Array<[string, string, string]> = [
-  ['INSTRUCTION', 'Instruction', '#6366f1'],
-  ['CONTRACT_PACK', 'Contract pack', '#8b5cf6'],
-  ['SEARCHES_ENQUIRIES', 'Searches & enquiries', '#0ea5e9'],
-  ['REVIEW_SIGNING', 'Review & signing', '#14b8a6'],
-  ['EXCHANGE', 'Exchange', '#f59e0b'],
-  ['COMPLETION', 'Completion', '#16a34a'],
-  ['POST_COMPLETION', 'Post-completion', '#64748b'],
-];
-const stageColor = (s: string) => STAGES.find(([v]) => v === s)?.[2] ?? '#64748b';
-const stageLabel = (s: string) => STAGES.find(([v]) => v === s)?.[1] ?? s;
+const STAGE_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#14b8a6', '#f59e0b', '#16a34a', '#64748b', '#ec4899', '#0891b2', '#a855f7'];
 const ROLES = ['OWNER', 'CONVEYANCER', 'ASSISTANT', 'ADMIN'];
+interface Stage { id: string; key: string; name: string; sort_order: number; active: boolean }
 
 interface Template {
   id: string;
@@ -53,6 +44,7 @@ export default function WorkflowCanvas() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [users, setUsers] = useState<Member[]>([]);
   const [statuses, setStatuses] = useState<Array<{ id: string; name: string; kind: string; color: string | null; sort_order: number }>>([]);
+  const [stages, setStages] = useState<Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -71,6 +63,7 @@ export default function WorkflowCanvas() {
       setEdges(r.edges ?? []);
       setUsers(r.users ?? []);
       try { setStatuses((await api<{ statuses: any[] }>('/admin/statuses')).statuses ?? []); } catch { /* palette optional */ }
+      try { setStages((await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []); } catch { /* stages optional */ }
       setErr(null);
     } catch (e: any) {
       setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
@@ -133,7 +126,7 @@ export default function WorkflowCanvas() {
   };
 
   const addTask = async () => {
-    const stage = STAGES[0][0];
+    const stage = stages[0]?.key ?? 'INSTRUCTION';
     const y = 40 + templates.filter((t) => t.stage === stage).length * 90;
     try {
       const r = await api<{ template: Template }>('/admin/workflow', {
@@ -188,6 +181,21 @@ export default function WorkflowCanvas() {
     await api(`/admin/statuses?id=${id}`, { method: 'DELETE' }).catch(() => {});
   };
 
+  const stageColor = (key: string) => { const i = stages.findIndex((s) => s.key === key); return STAGE_COLORS[(i < 0 ? 0 : i) % STAGE_COLORS.length]; };
+  const stageLabel = (key: string) => stages.find((s) => s.key === key)?.name ?? key;
+  const addStage = async () => {
+    try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); }
+    catch (e: any) { setErr(e?.message || 'Could not add stage.'); }
+  };
+  const saveStageName = async (s: Stage) => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, sortOrder: s.sort_order, active: s.active }) }); } catch (e: any) { setErr(e?.message || 'Could not save stage.'); } };
+  const removeStage = async (id: string) => { if (!window.confirm('Delete this stage? (Kept but hidden if matters are on it.)')) return; await api(`/admin/stages?id=${id}`, { method: 'DELETE' }).catch(() => {}); await load(); };
+  const moveStage = async (idx: number, dir: -1 | 1) => {
+    const j = idx + dir; if (j < 0 || j >= stages.length) return;
+    const reordered = [...stages]; [reordered[idx], reordered[j]] = [reordered[j], reordered[idx]];
+    setStages(reordered);
+    await api('/admin/stages', { method: 'POST', body: JSON.stringify({ order: reordered.map((s, i) => ({ id: s.id, sortOrder: i })) }) }).catch(() => {});
+  };
+
   const sel = templates.find((t) => t.id === selected) || null;
   // Edges run from the OUT port (right edge of the prerequisite) to the IN port (left edge of
   // the dependent), at a fixed offset from the node top so they line up with the visible dots.
@@ -208,11 +216,21 @@ export default function WorkflowCanvas() {
           </span>
           <button onClick={addTask} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ Add task</button>
         </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-          {STAGES.map(([v, l, c]) => (
-            <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#475569' }}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: c }} /> {l}
-            </span>
+        {/* Pipeline stages (checkpoints) — rename, reorder, add your own. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3 }}>Pipeline stages</span>
+          <button onClick={addStage} style={{ ...btn, padding: '3px 9px', fontSize: 11.5 }}>+ Add stage</button>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {stages.map((s, i) => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, border: '1px solid #e2e8f0', borderRadius: 8, padding: '3px 5px', background: '#fff' }}>
+              <span style={{ width: 9, height: 9, borderRadius: 3, background: stageColor(s.key), flex: 'none' }} />
+              <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)}
+                style={{ width: `${Math.max(8, s.name.length + 1)}ch`, minWidth: 60, fontSize: 12, padding: '2px 4px', border: '1px solid transparent', borderRadius: 5, background: 'transparent' }} />
+              <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier" style={arrowBtn}>‹</button>
+              <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later" style={arrowBtn}>›</button>
+              <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#94a3b8' }}>×</button>
+            </div>
           ))}
         </div>
       </div>
@@ -334,7 +352,7 @@ export default function WorkflowCanvas() {
             <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={3} style={{ ...input, resize: 'vertical' }} />
             <label style={lbl}>Checkpoint (stage)</label>
             <select value={sel.stage} onChange={(e) => { const v = e.target.value; setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, stage: v } : x)); saveNode({ ...sel, stage: v }); }} style={input}>
-              {STAGES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
             </select>
             <label style={lbl}>Assign to</label>
             <select value={sel.assignee_kind === 'USER' ? `u:${sel.assignee_user_id}` : `r:${sel.assignee_role}`}
@@ -374,3 +392,4 @@ const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8ea
 const btn: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#334155', cursor: 'pointer' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '10px 0 3px' };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
+const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px' };
