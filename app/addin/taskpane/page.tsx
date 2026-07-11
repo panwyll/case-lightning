@@ -2003,7 +2003,7 @@ export default function Taskpane() {
                           ? deadlineMs(a) - deadlineMs(b)
                           : (a.matterRef || '').localeCompare(b.matterRef || '') || a.ageDays - b.ageDays
                       );
-                const row = (w: WorklistEntry) => {
+                const row = (w: WorklistEntry, hideMatter = false) => {
                   const busy = wlBusy === w.id;
                   const drafted = wlChaser[w.id];
                   // Jira-style urgency dot instead of the "18d" text — saves width.
@@ -2047,10 +2047,12 @@ export default function Taskpane() {
                       title={w.matterId ? 'Show matter timeline' : undefined}
                       style={{ flex: 1, minWidth: 0, cursor: w.matterId ? 'pointer' : 'default' }}
                     >
-                      {/* Matter — which case this is. */}
-                      <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
-                      </span>
+                      {/* Matter — which case this is (hidden when already under a matter group header). */}
+                      {!hideMatter && (
+                        <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {w.matterRef}{w.propertyAddress ? ` · ${w.propertyAddress}` : ''}
+                        </span>
+                      )}
                       {/* Action — what needs doing. */}
                       <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', fontSize: 12, color: '#4A4358', lineHeight: 1.35, marginTop: 2 }}>
                         {primaryText}
@@ -2223,7 +2225,39 @@ export default function Taskpane() {
                           <option value="matter">By matter</option>
                         </select>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{items.slice(0, 80).map(row)}</div>
+                      {wlSort === 'matter' ? (
+                        // Grouped by matter: one header per case, its items beneath (matter line hidden on each row).
+                        (() => {
+                          const groups: Array<{ key: string; ref: string; sub: string | null; stage: string | null; items: WorklistEntry[] }> = [];
+                          const byKey: Record<string, number> = {};
+                          for (const w of items.slice(0, 120)) {
+                            const key = w.matterId || w.matterRef;
+                            if (byKey[key] === undefined) {
+                              byKey[key] = groups.length;
+                              groups.push({ key, ref: w.matterRef, sub: w.propertyAddress, stage: w.stage ?? null, items: [] });
+                            }
+                            groups[byKey[key]].items.push(w);
+                          }
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+                              {groups.map((g) => (
+                                <div key={g.key}>
+                                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 5, padding: '0 2px' }}>
+                                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {g.ref}{g.sub ? ` · ${g.sub}` : ''}
+                                    </span>
+                                    <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 600, color: '#94a3b8' }}>· {g.items.length}</span>
+                                    {g.stage && <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 6px' }}>{stageLabel(g.stage)}</span>}
+                                  </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>{g.items.map((w) => row(w, true))}</div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>{items.slice(0, 80).map((w) => row(w))}</div>
+                      )}
                     </Card>
                     <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
                       📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
