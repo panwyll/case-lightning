@@ -2132,7 +2132,7 @@ export default function Taskpane() {
                             ['Completion', dt(m.completion_target_date)],
                           ] as Array<[string, string | null]>).filter(([, v]) => v);
                           const Hdr = ({ children }: { children: React.ReactNode }) => (
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#7A7388', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 5 }}>{children}</div>
+                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{children}</div>
                           );
                           return (
                             <div style={{ marginTop: 8 }}>
@@ -2153,21 +2153,26 @@ export default function Taskpane() {
                               {/* 3 · Full detail */}
                               {outstanding.length > 0 && (
                                 <div style={{ marginBottom: 12 }}>
-                                  <Hdr>Our outstanding actions</Hdr>
-                                  <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: '#4A4358', lineHeight: 1.5 }}>
-                                    {outstanding.slice(0, 10).map((o, i) => <li key={i}>{o}</li>)}
-                                  </ul>
+                                  <Hdr>Our next actions · {outstanding.length}</Hdr>
+                                  <div style={{ maxHeight: 168, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8 }}>
+                                    {outstanding.slice(0, 30).map((o, i) => (
+                                      <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 9px', borderTop: i > 0 ? '1px solid #F1EEF9' : 'none', fontSize: 11.5, color: '#3A3450', lineHeight: 1.4 }}>
+                                        <span style={{ flex: 'none', width: 5, height: 5, borderRadius: 999, background: '#5A27E0', marginTop: 6 }} />
+                                        <span>{o}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                               {events.length > 0 && (
                                 <>
-                                  <Hdr>Full timeline</Hdr>
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+                                  <Hdr>Full history · {events.length}</Hdr>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 190, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8, padding: '8px 9px' }}>
                                     {events.slice(0, 30).map((ev) => (
                                       <div key={ev.id} style={{ fontSize: 11, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
                                         <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
-                                        {ev.details && <div style={{ color: '#7A7388', marginTop: 1 }}>{ev.details}</div>}
-                                        <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 1 }}>
+                                        {ev.details && <div style={{ color: '#7A7388', marginTop: 1, lineHeight: 1.4 }}>{ev.details}</div>}
+                                        <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 2 }}>
                                           {new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                                         </div>
                                       </div>
