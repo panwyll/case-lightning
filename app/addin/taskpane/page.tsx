@@ -3619,15 +3619,14 @@ export default function Taskpane() {
             <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowReferral(false)} title="Close" aria-label="Close">✕</button>
             <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
               <div style={{ fontSize: 30, lineHeight: 1 }}>🎉</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#5A27E0', marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>up to</div>
-              <div style={{ fontSize: 40, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 2, lineHeight: 1 }}>
+              <div style={{ fontSize: 40, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 10, lineHeight: 1 }}>
                 £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginTop: 6, lineHeight: 1.3 }}>
                 every month<br />for every referral you make
               </div>
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, lineHeight: 1.3 }}>
-                a quarter of what they pay, up to £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}
+                a quarter of what they pay
               </div>
             </div>
 
