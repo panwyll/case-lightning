@@ -62,15 +62,15 @@ test('POST /api/waitlist with valid payload returns 200 or a configured-service 
   const res = await ctx.post('/api/waitlist', {
     data: { first_name: 'Jane', surname: 'Smith', email: 'jane@smithsolicitors.co.uk' },
   });
-  // With real creds → 200 { ok: true }. In CI without them the route reports it isn't
-  // configured (503 with a `missing` list) or a DB failure (500) — all carry an error.
+  // With real creds → 200 { ok: true }. Otherwise the route reports a problem it can't get
+  // past: not configured (503 + `missing`), Supabase unreachable (503, connection error), or
+  // a DB failure (500). They all carry an `error` string — that's what we assert.
   expect([200, 500, 503]).toContain(res.status());
   const body = await res.json();
   if (res.status() === 200) {
     expect(body).toMatchObject({ ok: true });
   } else {
     expect(typeof body.error).toBe('string');
-    if (res.status() === 503) expect(Array.isArray(body.missing)).toBe(true);
   }
   await ctx.dispose();
 });
