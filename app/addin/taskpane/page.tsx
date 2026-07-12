@@ -3625,9 +3625,6 @@ export default function Taskpane() {
               <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginTop: 6, lineHeight: 1.3 }}>
                 every month<br />for every referral you make
               </div>
-              <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, lineHeight: 1.3 }}>
-                a quarter of what they pay
-              </div>
             </div>
 
             {referral ? (
