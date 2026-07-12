@@ -2539,7 +2539,7 @@ export default function Taskpane() {
               <p style={{ fontSize: 13.5, lineHeight: 1.55, color: '#0f172a', margin: '0 0 8px' }}>{summaryText}</p>
               {summaryStageTxt && (
                 <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '0 0 10px' }}>
-                  Currently at <strong style={{ color: '#5A27E0', fontWeight: 700 }}>{summaryStageTxt.toLowerCase()}</strong> · full detail below
+                  Currently at <strong style={{ color: '#5A27E0', fontWeight: 700 }}>{summaryStageTxt.toLowerCase()}</strong>
                 </p>
               )}
 

@@ -286,7 +286,7 @@ export async function summarizeThread(input: {
     { tenantId: input.tenantId, matterId: input.matterId },
     'thread_summary',
     'Brief a busy conveyancer on this email the way a sharp assistant would when they walk in Monday morning. Produce THREE things:\n' +
-      '- "brief": 2–3 short, plain-English sentences in a calm, human voice. Say what THIS email is about, where the case is right now, and the ONE or TWO most important things the fee-earner should do next. Lead with what matters. Do NOT list every task, do NOT restate the whole file, do NOT use legalese. Think spoken heads-up, e.g. "The buyer\'s agent has sent the memo of sale — but the name doesn\'t match your client, so confirm who\'s actually buying before you send the client-care pack." Aim for under 55 words.\n' +
+      '- "brief": 2–3 short, plain-English sentences in a calm, human voice. START by summarising what THIS latest email actually is or contains, in one short clause — who sent what / what they said (e.g. "The other side has sent the contract pack", "The agent\'s memo of sale is in", "Buyer\'s solicitor has raised enquiries"). THEN say the ONE or TWO most important things the fee-earner should do next, and where the case is only if it helps. Do NOT list every task, do NOT restate the whole file, do NOT use legalese. Think spoken heads-up, e.g. "The other side has sent the contract pack — review their enquiries and get the searches ordered." Aim for under 55 words.\n' +
       '- "happened": key things that have occurred (a few short bullets).\n' +
       '- "outstanding": what is still outstanding (a few short bullets).',
     {
@@ -294,7 +294,7 @@ export async function summarizeThread(input: {
       properties: {
         brief: {
           type: 'string',
-          description: '2–3 tight, conversational sentences: what this email is, where the case stands, the top next action(s). Under ~55 words. Never a list, never every task.',
+          description: 'Opens with a one-clause summary of what this email is/contains (who sent what), then the top next action(s). Under ~55 words. Never a list, never every task.',
         },
         happened: { type: 'array', items: { type: 'string' } },
         outstanding: { type: 'array', items: { type: 'string' } },
