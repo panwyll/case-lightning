@@ -55,6 +55,8 @@ interface AssistData {
   matter: { id: string; matterRef: string; propertyAddress: string | null } | null;
   candidates: Array<{ matterId: string; matterRef: string; propertyAddress: string; score: number; band: string }>;
   ask: string;
+  /** Short assistant-voice heads-up (from the slow phase); falls back to `ask` until ready. */
+  brief: string;
   whatWeKnow: string[];
   outstanding: string[];
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
@@ -1756,26 +1758,11 @@ export default function Taskpane() {
   // a pure FYI → Ignore; anything that wants a response → Reply; otherwise it's
   // work to do (Action) or to hand off (Delegate).
   const cls = assist?.classification;
-  // Blended Email-tab summary = the email's ask + where the case stands + what's
-  // waiting on others vs. what we still need to do. Pulled from the assist, the thread
-  // summary and the extracted facts, deduped, and split by the waiting-on heuristic.
-  // Defensive: the AI-produced assist fields are typed as arrays but can come back malformed
-  // (a null, an object, a bare string) — never trust the type, coerce to a real array first.
-  const asArr = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
+  // The Email-tab summary is a short, assistant-voice brief (generated in the slow phase);
+  // fall back to the one-line classifier ask until it lands. Plus the matter's current stage.
   const summaryStage = matterInfo?.matter?.stage as string | undefined;
   const summaryStageTxt = summaryStage ? (stageOpts.find((s) => s.key === summaryStage)?.name ?? stageLabel(summaryStage)) : null;
-  const summaryOutstanding = Array.from(new Set(
-    [
-      ...asArr<string>(assist?.outstanding),
-      ...asArr<string>(summary?.outstanding),
-      ...asArr<string>(facts?.outstanding),
-    ].map((s) => String(s).trim()).filter(Boolean)
-  ));
-  const summaryWaitingOn = summaryOutstanding.filter((o) => isWaitingOnOthers(o));
-  const summaryToDo = Array.from(new Set([
-    ...summaryOutstanding.filter((o) => !isWaitingOnOthers(o)),
-    ...asArr<{ task?: string }>(assist?.draft?.actions).map((a) => a?.task).filter((t): t is string => !!t),
-  ]));
+  const summaryText = (assist?.brief && assist.brief.trim()) || assist?.ask || '';
   const recommended: 'reply' | 'action' | 'ignore' = !cls
     ? 'reply'
     : cls.needsAttention === false
@@ -2548,27 +2535,12 @@ export default function Taskpane() {
           {tab === 'email' && hasMatter && assist && (
             <Card>
               <Label>Summary</Label>
-              {/* Email — what this message is about / asking. */}
-              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 8px' }}>{assist.ask}</p>
-              {/* Case — where the matter stands right now. */}
+              {/* One short, human heads-up: what the email is, where the case is, what to do next. */}
+              <p style={{ fontSize: 13.5, lineHeight: 1.55, color: '#0f172a', margin: '0 0 8px' }}>{summaryText}</p>
               {summaryStageTxt && (
-                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px' }}>
-                  Case is currently at <strong style={{ color: '#5A27E0' }}>{summaryStageTxt.toLowerCase()}</strong>.
+                <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '0 0 10px' }}>
+                  Currently at <strong style={{ color: '#5A27E0', fontWeight: 700 }}>{summaryStageTxt.toLowerCase()}</strong> · full detail below
                 </p>
-              )}
-              {/* Waiting on others — nothing for us to do yet, but track it. */}
-              {summaryWaitingOn.length > 0 && (
-                <div style={{ margin: '0 0 8px' }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: 0.3 }}>Waiting on</span>
-                  <ul style={{ ...S.ul, marginTop: 2 }}>{summaryWaitingOn.map((o, i) => <li key={i}>{o}</li>)}</ul>
-                </div>
-              )}
-              {/* Our next actions — the "you need to…". */}
-              {summaryToDo.length > 0 && (
-                <div style={{ margin: '0 0 10px' }}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.3 }}>You need to</span>
-                  <ul style={{ ...S.ul, marginTop: 2 }}>{summaryToDo.map((o, i) => <li key={i}>{o}</li>)}</ul>
-                </div>
               )}
 
               {/* The moves, as tabs. The recommended one is pre-lit; pick either to expand it. */}

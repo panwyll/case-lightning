@@ -44,6 +44,8 @@ export interface FastAssist {
 
 /** The slow half: the two LLM-backed pieces (thread summary + prepared reply). */
 export interface SlowAssist {
+  /** A short, assistant-voice heads-up: what this email is, where the case is, what to do next. */
+  brief: string;
   /** What we already know — thread highlights (plus matter context when linked). */
   whatWeKnow: string[];
   /** Open items / blockers standing between us and a complete answer. */
@@ -63,7 +65,7 @@ export interface AssistInput {
 
 /** Empty slow half — what a PARTIAL (fast-only) result carries until the slow half lands. */
 export function emptySlow(): SlowAssist {
-  return { whatWeKnow: [], outstanding: [], draft: null };
+  return { brief: '', whatWeKnow: [], outstanding: [], draft: null };
 }
 
 // Internal context handed from the fast phase to the slow phase so the slow
@@ -273,7 +275,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
   // what the thread summary surfaced when there's no matter yet.
   const outstanding = ctx.matterOutstanding.length ? ctx.matterOutstanding : summary.outstanding;
 
-  return { whatWeKnow: summary.happened, outstanding, draft };
+  return { brief: summary.brief, whatWeKnow: summary.happened, outstanding, draft };
 }
 
 /** Fast phase only — returns the fast half plus the context the slow phase needs. */

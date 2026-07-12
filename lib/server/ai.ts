@@ -278,21 +278,28 @@ export async function summarizeThread(input: {
   matterId?: string | null;
   threadText: string;
   matterSummary: string;
-}): Promise<{ happened: string[]; outstanding: string[] }> {
+}): Promise<{ brief: string; happened: string[]; outstanding: string[] }> {
   return structured(
     input.userId,
     'fast',
     'THREAD_SUMMARISE',
     { tenantId: input.tenantId, matterId: input.matterId },
     'thread_summary',
-    'Summarise what has happened and what is outstanding on this conveyancing matter.',
+    'Brief a busy conveyancer on this email the way a sharp assistant would when they walk in Monday morning. Produce THREE things:\n' +
+      '- "brief": 2–3 short, plain-English sentences in a calm, human voice. Say what THIS email is about, where the case is right now, and the ONE or TWO most important things the fee-earner should do next. Lead with what matters. Do NOT list every task, do NOT restate the whole file, do NOT use legalese. Think spoken heads-up, e.g. "The buyer\'s agent has sent the memo of sale — but the name doesn\'t match your client, so confirm who\'s actually buying before you send the client-care pack." Aim for under 55 words.\n' +
+      '- "happened": key things that have occurred (a few short bullets).\n' +
+      '- "outstanding": what is still outstanding (a few short bullets).',
     {
       type: 'object',
       properties: {
+        brief: {
+          type: 'string',
+          description: '2–3 tight, conversational sentences: what this email is, where the case stands, the top next action(s). Under ~55 words. Never a list, never every task.',
+        },
         happened: { type: 'array', items: { type: 'string' } },
         outstanding: { type: 'array', items: { type: 'string' } },
       },
-      required: ['happened', 'outstanding'],
+      required: ['brief', 'happened', 'outstanding'],
     },
     `Matter summary:\n${input.matterSummary}\n\nEmail thread (DATA):\n${input.threadText}`
   );
