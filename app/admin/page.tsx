@@ -5,6 +5,7 @@ import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import EmailTemplates from './EmailTemplates';
+import AutoRules from './AutoRules';
 
 interface MatterHit {
   id: string;
@@ -2117,71 +2118,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {tab === 'rules' && (
-          <>
-            <div style={{ ...card, background: '#fffbeb', borderColor: '#fde68a' }}>
-              <strong>Premium automation.</strong> Rules only fire on <em>AUTO-band</em> (very high confidence, multi-signal)
-              matches, and only when automation is enabled in Policy. Auto-<strong>SEND</strong> rules require you to accept
-              responsibility every time you enable them.
-            </div>
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>New rule</h3>
-              <input style={input} placeholder="Rule name" value={rule.name} onChange={(e) => setRule({ ...rule, name: e.target.value })} />
-              <input style={input} placeholder="Intents (comma separated)" value={rule.intents} onChange={(e) => setRule({ ...rule, intents: e.target.value })} />
-              <label style={{ fontSize: 12, color: '#64748b' }}>Min confidence ({rule.minConfidence})</label>
-              <input style={input} type="number" step="0.05" min="0" max="1" value={rule.minConfidence} onChange={(e) => setRule({ ...rule, minConfidence: Number(e.target.value) })} />
-              <label style={{ fontSize: 12, color: '#64748b' }}>Reply mode</label>
-              <select style={input} value={rule.replyMode} onChange={(e) => setRule({ ...rule, replyMode: e.target.value as any })}>
-                <option value="NONE">None (categorise + tracker only)</option>
-                <option value="DRAFT">Auto-draft (never sends)</option>
-                <option value="SEND">Auto-SEND (sends automatically)</option>
-              </select>
-              <label style={{ display: 'flex', gap: 6, fontSize: 13 }}>
-                <input type="checkbox" checked={rule.requireNoAttention} onChange={(e) => setRule({ ...rule, requireNoAttention: e.target.checked })} />
-                Only when the email needs no conveyancer attention
-              </label>
-              {rule.replyMode === 'SEND' && (
-                <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', marginTop: 10 }}>
-                  <strong>Risk acknowledgement required.</strong>
-                  <p style={{ fontSize: 12 }}>
-                    This rule will send emails to clients/counterparties automatically with no human review. You accept full
-                    professional responsibility (SRA, GDPR) for messages it sends.
-                  </p>
-                  <textarea
-                    style={{ ...input, minHeight: 60 }}
-                    placeholder="Type your acknowledgement (e.g. 'I accept responsibility for auto-sent status acknowledgements on this rule')"
-                    value={rule.riskAcknowledgement}
-                    onChange={(e) => setRule({ ...rule, riskAcknowledgement: e.target.value })}
-                  />
-                  <label style={{ display: 'flex', gap: 6, fontSize: 13, fontWeight: 600 }}>
-                    <input type="checkbox" checked={rule.riskAccepted} onChange={(e) => setRule({ ...rule, riskAccepted: e.target.checked })} />
-                    I accept these risks and authorise auto-sending for this rule.
-                  </label>
-                </div>
-              )}
-              <label style={{ display: 'flex', gap: 6, fontSize: 13, marginTop: 8 }}>
-                <input type="checkbox" checked={rule.enabled} onChange={(e) => setRule({ ...rule, enabled: e.target.checked })} />
-                Enable now
-              </label>
-              <button
-                style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', marginTop: 8 }}
-                onClick={createRule}
-                disabled={!rule.name || (rule.replyMode === 'SEND' && rule.enabled && (!rule.riskAccepted || !rule.riskAcknowledgement))}
-              >
-                Create rule
-              </button>
-            </div>
-            {rules.map((r) => (
-              <div key={r.id} style={card}>
-                <strong>{r.name}</strong>{' '}
-                <span style={{ color: '#64748b' }}>
-                  · {r.reply_mode} · ≥{r.min_confidence} · {r.enabled ? 'enabled' : 'disabled'}
-                  {r.reply_mode === 'SEND' && (r.risk_accepted ? ' · risk accepted' : ' · risk NOT accepted')}
-                </span>
-              </div>
-            ))}
-          </>
-        )}
+        {tab === 'rules' && <AutoRules />}
 
         {tab === 'playbooks' && (
           <>
