@@ -60,6 +60,77 @@ function fmtDuration(mins: number): string {
   return `${d < 10 ? d.toFixed(1) : Math.round(d)} day${d >= 2 ? 's' : ''}`;
 }
 
+// Turn a raw audit row (action_type + payload) into a plain-English sentence. Weaves in the
+// payload's specifics (subject, counts, rule names, reasons) so the log reads like a story of
+// what actually happened, not a wall of enum codes.
+function describeAudit(row: any): string {
+  const p = (row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<string, any>;
+  const q = (s: any) => (s ? `“${String(s).slice(0, 80)}”` : '');
+  switch (row.action_type as string) {
+    case 'EMAIL_SENT':
+      return `Sent an email${p.subject ? ` ${q(p.subject)}` : ''}${p.source === 'SCHEDULED' ? ' (on the send delay)' : p.source === 'WORKLIST_WEB' ? ' from My work' : ''}`;
+    case 'AUTO_REPLY_SENT':
+      return row.action_status === 'SUCCESS' ? `Auto-sent a reply${p.recipients ? ` to ${p.recipients}` : ''}` : `Auto-reply held back — ${p.reason || 'safety check failed'}`;
+    case 'DRAFT_GENERATED':
+      return `Drafted a reply${p.tone ? ` (${p.tone} tone)` : ''}`;
+    case 'OUTLOOK_DRAFT_CREATED':
+      return p.kind === 'FORWARD' ? `Prepared a forward${p.toEmail ? ` to ${p.toEmail}` : ''}` : row.action_status !== 'SUCCESS' ? `Draft blocked — ${p.reason || 'not allowed'}` : 'Created an Outlook draft';
+    case 'EMAIL_TRIAGED':
+      return `Triaged an incoming email${p.band ? ` (${String(p.band).toLowerCase()} confidence match)` : ''}`;
+    case 'EMAIL_SAVED_TO_MATTER':
+      return `Filed ${p.count ?? 'some'} document${p.count === 1 ? '' : 's'} from an email${p.auto ? ' automatically' : ''}`;
+    case 'EMAIL_FILED':
+      return `Filed an email to the matter${p.moved ? ' and moved it out of the inbox' : ''}`;
+    case 'FILE_PROCESSED':
+      return `Processed ${q(p.fileName) || 'a file'}${p.substantive === false ? ' (not substantive — skipped)' : p.drafted ? ' and drafted an acknowledgement' : ''}`;
+    case 'DOCUMENT_UPLOADED':
+      return `Uploaded a document${p.fileName ? ` ${q(p.fileName)}` : ''}`;
+    case 'DOCUMENT_REVIEWED':
+      return `Reviewed a document${p.fileName ? ` ${q(p.fileName)}` : ''}`;
+    case 'MATTER_CREATED':
+      return `Created a new matter`;
+    case 'MATTER_MERGED':
+      return `Merged matter ${p.mergedRef || ''} into ${p.keepRef || ''}`.replace(/\s+/g, ' ').trim();
+    case 'MATCH_CONFIRMED':
+      return `Confirmed an email belongs to this matter${p.band ? ` (${String(p.band).toLowerCase()})` : ''}`;
+    case 'THREAD_LINKED':
+      return 'Linked an email thread to the matter';
+    case 'THREAD_SUMMARISED':
+      return 'Summarised an email thread';
+    case 'FACTS_EXTRACTED':
+      return 'Extracted case facts from a thread';
+    case 'OUTLOOK_CATEGORY_UPDATED':
+      return `Tagged an email in Outlook${p.category ? ` as ${q(p.category)}` : ''}`;
+    case 'USER_ACTION_CHOSEN':
+      return `Chose the “${p.action || 'action'}” action on an email`;
+    case 'AUTO_RULE_APPLIED':
+      return `Applied the auto-rule ${q(p.ruleName) || ''}`.trim();
+    case 'AUTO_RULE_CREATED':
+      return `Created an auto-rule${p.enabled === false ? ' (disabled)' : ''}`;
+    case 'AUTO_RULE_UPDATED':
+      return `Updated an auto-rule${p.enabled === false ? ' — turned off' : p.enabled ? ' — turned on' : ''}`;
+    case 'USER_ROLE_CHANGED':
+      return `Changed a team member’s role to ${p.role || 'a new role'}`;
+    case 'AI_KEY_SET':
+      return 'Connected a personal AI key';
+    case 'AI_KEY_REMOVED':
+      return 'Removed the personal AI key';
+    case 'TEAMS_SUMMARY_POSTED':
+      return 'Posted a matter summary to Teams';
+    case 'ONBOARDING_STARTED':
+      return 'Started importing existing cases';
+    case 'ONBOARDING_CONFIRMED':
+      return 'Confirmed the cases to import';
+    case 'ONBOARDING_CASE_PROVISIONED':
+      return `Provisioned a case during import${p.summary ? ` — ${String(p.summary).slice(0, 80)}` : ''}`;
+    case 'ONBOARDING_CANCELLED':
+      return 'Cancelled the case import';
+    default:
+      // Prettify an unmapped code: EMAIL_SENT → "Email sent".
+      return String(row.action_type || 'Action').toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
 type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
@@ -263,6 +334,24 @@ export default function AdminPage() {
       loadMywork(mywork?.assignedTo);
     } finally {
       setMyworkBusy(null);
+    }
+  }
+  // My work presentation state — mirrors the taskpane worklist: sort, per-matter collapse,
+  // and a lazily-fetched "key details & history" panel cache.
+  const [myworkSort, setMyworkSort] = useState<'smart' | 'due' | 'matter'>('smart');
+  const [myworkFolded, setMyworkFolded] = useState<Set<string>>(new Set());
+  const [myworkOpen, setMyworkOpen] = useState<string>('');
+  const [myworkTl, setMyworkTl] = useState<Record<string, { loading?: boolean; matter?: any; timeline?: any[] }>>({});
+  async function toggleMyworkMatter(matterId: string) {
+    const opening = myworkOpen !== matterId;
+    setMyworkOpen(opening ? matterId : '');
+    if (!opening || myworkTl[matterId]) return;
+    setMyworkTl((t) => ({ ...t, [matterId]: { loading: true } }));
+    try {
+      const r = await api<{ matter: any; timeline: any[] }>(`/matters/${matterId}`);
+      setMyworkTl((t) => ({ ...t, [matterId]: { matter: r.matter, timeline: r.timeline ?? [] } }));
+    } catch {
+      setMyworkTl((t) => ({ ...t, [matterId]: { matter: null, timeline: [] } }));
     }
   }
   // Capture a token from the URL fragment (desktop deep-link), load the user, and
@@ -1471,146 +1560,248 @@ export default function AdminPage() {
               </div>
             );
           }
-          const drafts = mywork.items.filter((i) => i.kind === 'DRAFT_READY');
-          const chases = mywork.items.filter((i) => i.kind === 'CHASE');
-          const tasks = mywork.items.filter((i) => i.kind === 'TASK');
-          const row = (item: any, accent: string) => (
-            <div key={item.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '11px 0', opacity: myworkBusy === item.id ? 0.5 : 1 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: accent, marginTop: 6, flexShrink: 0 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{item.title}</div>
-                <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 2 }}>
-                  {[item.matterRef, item.propertyAddress, item.detail].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-              {Number(item.ageDays) > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 700, color: Number(item.ageDays) >= 7 ? '#b91c1c' : '#64748b', background: Number(item.ageDays) >= 7 ? '#fef2f2' : '#f1f5f9', borderRadius: 999, padding: '2px 8px', flexShrink: 0, marginTop: 2 }}>
-                  {item.ageDays}d
-                </span>
-              )}
-              {item.kind === 'CHASE' && !chaserDrafts[item.id] && (
-                <button
-                  onClick={() => draftChaser(item)}
-                  style={{ ...clearBtn, background: '#5A27E0', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0 }}
-                >
-                  ✍️ Draft chaser
-                </button>
-              )}
-              {item.kind === 'CHASE' && chaserDrafts[item.id] === 'busy' && (
-                <span style={{ fontSize: 12, color: '#5A27E0', fontWeight: 700, flexShrink: 0 }}>Drafting…</span>
-              )}
-              {item.kind === 'DRAFT_READY' && item.graphMessageId && (
-                <button
-                  onClick={() => { if (window.confirm(`Send “${item.title}”? Review it first via Outlook Drafts if unsure.`)) sendFromWeb(item, item.graphMessageId); }}
-                  disabled={sendingId === item.id}
-                  style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, flexShrink: 0, opacity: sendingId === item.id ? 0.6 : 1 }}
-                >
-                  {sendingId === item.id ? 'Sending…' : 'Send ▸'}
-                </button>
-              )}
-              {item.kind === 'DRAFT_READY' && (
-                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', flexShrink: 0 }}>
-                  Open ↗
-                </a>
-              )}
-              {item.kind === 'TASK' ? (
-                <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'done')} title="Mark this task done">✓ Done</button>
-              ) : (
-                <>
-                  <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'snooze')} title="Hide for 7 days">Snooze</button>
-                  <button style={{ ...clearBtn, flexShrink: 0 }} disabled={myworkBusy === item.id} onClick={() => myworkAction(item, 'dismiss')} title="Remove from the list">Dismiss</button>
-                </>
-              )}
-            </div>
-            {/* Inline review-and-send: the drafted chaser, right here — no detour. */}
-            {typeof chaserDrafts[item.id] === 'object' && (() => {
-              const d = chaserDrafts[item.id] as Exclude<ChaserDraft, 'busy'>;
-              return (
-                <div style={{ margin: '0 0 12px', border: '1px solid #ddd2f7', background: '#faf8ff', borderRadius: 10, padding: '10px 12px' }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{d.subject}</div>
-                  <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.55, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }} dangerouslySetInnerHTML={{ __html: d.bodyHtml }} />
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                    <button
-                      onClick={() => sendFromWeb(item, d.id)}
-                      disabled={sendingId === item.id}
-                      style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, opacity: sendingId === item.id ? 0.6 : 1 }}
-                    >
-                      {sendingId === item.id ? 'Sending…' : 'Send ▸'}
-                    </button>
-                    {d.webLink && (
-                      <a href={d.webLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Edit in Outlook ↗</a>
-                    )}
-                    <button onClick={() => setChaserDrafts((s) => { const { [item.id]: _x, ...rest } = s; return rest; })} style={{ ...clearBtn, border: 'none', background: 'transparent' }}>Discard preview</button>
-                    <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Also saved in your Outlook Drafts.</span>
-                  </div>
-                </div>
-              );
-            })()}
-            </div>
+          const stageName = (key: string | null | undefined) =>
+            !key ? '' : stages.find((s) => s.key === key)?.name ?? String(key).toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+          const deadlineMs = (w: any) => {
+            const d = w.due ? new Date(w.due).getTime() : w.keyDate ? new Date(w.keyDate).getTime() : NaN;
+            return Number.isNaN(d) ? Infinity : d;
+          };
+          const items =
+            myworkSort === 'smart'
+              ? mywork.items
+              : [...mywork.items].sort((a, b) =>
+                  myworkSort === 'due'
+                    ? deadlineMs(a) - deadlineMs(b)
+                    : (a.matterRef || '').localeCompare(b.matterRef || '') || (a.ageDays ?? 0) - (b.ageDays ?? 0)
+                );
+          const G = ({ children }: { children: React.ReactNode }) => (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
           );
+          const iSend = <G><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></G>;
+          const iPencil = <G><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></G>;
+          const iCheck = <G><path d="M20 6L9 17l-5-5" /></G>;
+          const iOpen = <G><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></G>;
+          const iZzz = (
+            <span style={{ display: 'inline-flex', alignItems: 'flex-end', lineHeight: 1, fontWeight: 800, fontStyle: 'italic', letterSpacing: -0.5 }}>
+              <span style={{ fontSize: 7 }}>z</span><span style={{ fontSize: 10, marginBottom: 3 }}>z</span><span style={{ fontSize: 13, marginBottom: 6 }}>z</span>
+            </span>
+          );
+          const iconBtn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
+            flex: 'none', width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            border: variant === 'ghost' ? '1px solid #D9D2EC' : 'none', borderRadius: 8,
+            background: variant === 'primary' ? '#5A27E0' : '#fff', color: variant === 'primary' ? '#fff' : '#7A7388', cursor: 'pointer', padding: 0,
+          });
+          const draftsLink = 'https://outlook.office.com/mail/drafts';
+          // One work item, matter-first style: urgency dot, wrapped action text, key date, icon actions.
+          const row = (w: any) => {
+            const busy = myworkBusy === w.id || sendingId === w.id;
+            const drafted = chaserDrafts[w.id];
+            const dotColor = w.urgent || w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#16a34a';
+            const primaryText =
+              w.kind === 'TASK' ? w.title
+              : w.kind === 'CHASE' ? `${w.title || 'Chase for a reply'}${w.detail ? ` — ${w.detail}` : ''}`
+              : w.title || w.detail || 'Reply ready to send';
+            return (
+              <div key={w.id} style={{ border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', opacity: busy ? 0.6 : 1 }}>
+                  <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 13, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>{primaryText}</span>
+                    {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10.5 }}>
+                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ flex: 'none', display: 'flex', gap: 5 }}>
+                    {w.kind === 'TASK' && (
+                      <button title="Mark done" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'done')}>{iCheck}</button>
+                    )}
+                    {w.kind === 'DRAFT_READY' && (
+                      <>
+                        <a title="Open in Outlook Drafts to read/edit" href={draftsLink} target="_blank" rel="noopener noreferrer" style={iconBtn('ghost')}>{iOpen}</a>
+                        <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'dismiss')}>{iCheck}</button>
+                        {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => { if (window.confirm(`Send “${w.title}”? Review it in Outlook Drafts first if unsure.`)) sendFromWeb(w, w.graphMessageId); }}>{iSend}</button>}
+                      </>
+                    )}
+                    {w.kind === 'CHASE' && (typeof drafted === 'object' ? (
+                      <>
+                        <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'snooze')}>{iZzz}</button>
+                        <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendFromWeb(w, drafted.id)}>{iSend}</button>
+                      </>
+                    ) : drafted === 'busy' ? (
+                      <span style={{ ...iconBtn('ghost'), cursor: 'default' }}><span style={spinnerStyle} /></span>
+                    ) : (
+                      <>
+                        <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'snooze')}>{iZzz}</button>
+                        <button title="Draft a chaser" style={iconBtn('primary')} onClick={() => draftChaser(w)}>{iPencil}</button>
+                      </>
+                    ))}
+                  </span>
+                </div>
+                {/* Inline review-and-send for a drafted chaser — no detour to Outlook. */}
+                {typeof drafted === 'object' && (
+                  <div style={{ margin: '0 10px 10px', border: '1px solid #ddd2f7', background: '#faf8ff', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{drafted.subject}</div>
+                    <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.55, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }} dangerouslySetInnerHTML={{ __html: drafted.bodyHtml }} />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
+                      <button onClick={() => sendFromWeb(w, drafted.id)} disabled={sendingId === w.id} style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, opacity: sendingId === w.id ? 0.6 : 1 }}>
+                        {sendingId === w.id ? 'Sending…' : 'Send ▸'}
+                      </button>
+                      {drafted.webLink && <a href={drafted.webLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Edit in Outlook ↗</a>}
+                      <button onClick={() => setChaserDrafts((s) => { const { [w.id]: _x, ...rest } = s; return rest; })} style={{ ...clearBtn, border: 'none', background: 'transparent' }}>Discard preview</button>
+                      <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Also saved in your Outlook Drafts.</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          };
+          // The expandable "key info + history" panel for a matter card (lazy-loaded).
+          const matterDetail = (matterId: string, nextActionText: string | null) => {
+            const tl = myworkTl[matterId];
+            if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8' }}>Loading…</div>;
+            const m = tl.matter ?? {};
+            const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
+            const price = m.purchase_price ? (/^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`) : null;
+            const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
+            const events = tl.timeline ?? [];
+            const bits: string[] = [];
+            bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
+            if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
+            if (price) bits.push(`at ${price}`);
+            let execSummary = bits.join(' ').trim();
+            if (execSummary) execSummary += '.';
+            if (m.stage) execSummary += ` Currently ${stageName(m.stage).toLowerCase()}.`;
+            if (nextActionText) execSummary += ` Next: ${nextActionText.charAt(0).toLowerCase() + nextActionText.slice(1)}.`;
+            const details = ([
+              ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
+              ['Type', m.track ? String(m.track).toLowerCase() : null],
+              ['Price', price],
+              ['Buyer', (m.buyer_names ?? []).join(', ') || null],
+              ['Seller', (m.seller_names ?? []).join(', ') || null],
+              ['Other solicitor', m.counterparty_solicitor || null],
+              ['Estate agent', m.counterparty_agent || null],
+              ['Lender', m.lender || null],
+              ['Chain', m.chain_position || null],
+              ['Exchange', dt(m.exchange_target_date)],
+              ['Completion', dt(m.completion_target_date)],
+            ] as Array<[string, string | null]>).filter(([, v]) => v);
+            const Hdr = ({ children }: { children: React.ReactNode }) => (
+              <div style={{ fontSize: 10, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{children}</div>
+            );
+            return (
+              <div>
+                <div style={{ fontSize: 12.5, color: '#1C1530', lineHeight: 1.5, marginBottom: 12 }}>{execSummary}</div>
+                {details.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <Hdr>Key details</Hdr>
+                    {details.map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11.5, marginBottom: 2 }}>
+                        <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 92, flex: 'none' }}>{k}</span>
+                        <span style={{ color: '#1C1530', textTransform: k === 'Type' ? 'capitalize' : 'none' }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {events.length > 0 && (
+                  <>
+                    <Hdr>Full history · {events.length}</Hdr>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8, padding: '8px 9px' }}>
+                      {events.slice(0, 30).map((ev: any) => (
+                        <div key={ev.id} style={{ fontSize: 11.5, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
+                          <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
+                          {ev.details && <div style={{ color: '#7A7388', marginTop: 1, lineHeight: 1.4 }}>{ev.details}</div>}
+                          <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 2 }}>{new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {details.length === 0 && events.length === 0 && <div style={{ fontSize: 11, color: '#94a3b8' }}>No further details recorded yet.</div>}
+              </div>
+            );
+          };
+          // Matter-first grouping, preserving the server's most-urgent-first order.
+          const groups: Array<{ key: string; matterId: string | null; ref: string; sub: string | null; stage: string | null; urgent: boolean; items: any[] }> = [];
+          const byKey: Record<string, number> = {};
+          for (const w of items.slice(0, 200)) {
+            const key = w.matterId || w.matterRef;
+            if (byKey[key] === undefined) { byKey[key] = groups.length; groups.push({ key, matterId: w.matterId ?? null, ref: w.matterRef, sub: w.propertyAddress, stage: w.stage ?? null, urgent: false, items: [] }); }
+            const g = groups[byKey[key]];
+            g.items.push(w);
+            if (w.urgent) g.urgent = true;
+          }
+          if (myworkSort === 'matter') groups.sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
           return (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
                 {isAdmin && (
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
-                    <select
-                      value={mywork.assignedTo}
-                      onChange={(e) => loadMywork(e.target.value)}
-                      style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}
-                      title="Filter the worklist by who owns the matter"
-                    >
+                    <select value={mywork.assignedTo} onChange={(e) => loadMywork(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }} title="Filter the worklist by who owns the matter">
                       <option value="">Anyone</option>
-                      {users.map((u: any) => (
-                        <option key={u.id} value={u.id}>{u.display_name || u.email}</option>
-                      ))}
+                      {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
                     </select>
                   </label>
                 )}
-                <a href="https://outlook.office.com/mail/drafts" target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', marginLeft: 'auto' }}>
-                  Open Outlook Drafts ↗
-                </a>
+                <a href={draftsLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', marginLeft: 'auto' }}>Open Outlook Drafts ↗</a>
               </div>
 
-              {mywork.items.length === 0 && (
+              {mywork.items.length === 0 ? (
                 <div style={{ ...card, textAlign: 'center', padding: 40 }}>
                   <div style={{ fontSize: 30, marginBottom: 8 }}>🎉</div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>All caught up</div>
                   <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>No drafts waiting and nothing to chase. New work appears here as email comes in.</p>
                 </div>
-              )}
-
-              {drafts.length > 0 && (
+              ) : (
                 <div style={card}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <strong style={{ fontSize: 14, color: '#0f172a' }}>Ready to send</strong>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 8px' }}>{drafts.length}</span>
-                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— replies already drafted, sitting in Outlook Drafts for review</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                    <strong style={{ fontSize: 14, color: '#0f172a' }}>What needs you</strong>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 8px' }}>{items.length}</span>
+                    <select value={myworkSort} onChange={(e) => setMyworkSort(e.target.value as typeof myworkSort)} title="Sort the worklist" style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, padding: '4px 8px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', cursor: 'pointer' }}>
+                      <option value="smart">Smart order</option>
+                      <option value="due">By due date</option>
+                      <option value="matter">By matter</option>
+                    </select>
                   </div>
-                  <div style={{ marginTop: 6 }}>{drafts.map((i) => row(i, '#5A27E0'))}</div>
-                </div>
-              )}
-
-              {chases.length > 0 && (
-                <div style={card}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <strong style={{ fontSize: 14, color: '#0f172a' }}>To chase</strong>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }}>{chases.length}</span>
-                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— you sent the last message and nobody has replied</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+                    {groups.map((g) => {
+                      const open = !!g.matterId && myworkOpen === g.matterId;
+                      const folded = myworkFolded.has(g.key);
+                      const first = g.items[0];
+                      const nextAction = first ? (first.kind === 'TASK' ? first.title : first.title || first.detail || null) : null;
+                      const keyDate = g.items.find((i: any) => i.urgent && i.keyDate)?.keyDate ?? null;
+                      const toggleCard = () => setMyworkFolded((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; });
+                      return (
+                        <div key={g.key} style={{ border: '1px solid ' + (g.urgent ? '#fecaca' : '#E7E2F3'), borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
+                          {/* Matter header — the single collapse arrow folds the whole card. */}
+                          <div onClick={toggleCard} style={{ padding: '9px 11px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: folded ? 'none' : '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9'), cursor: 'pointer' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={g.urgent ? '#dc2626' : '#94a3b8'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.ref}{g.sub ? ` · ${g.sub}` : ''}</span>
+                              <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>{g.items.length} to do</span>
+                            </div>
+                            {(g.stage || keyDate) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10.5 }}>
+                                {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageName(g.stage)}</span>}
+                                {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                              </div>
+                            )}
+                          </div>
+                          {/* Key details — a text link (not a second arrow) that opens the matter's detail panel. */}
+                          {!folded && g.matterId && (
+                            <button onClick={() => toggleMyworkMatter(g.matterId!)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', border: 'none', borderBottom: '1px solid #EFEBF9', background: open ? '#F7F5FD' : '#fff', color: '#5A27E0', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+                              {open ? '▾ Hide key details' : '▸ Key details & history'}
+                            </button>
+                          )}
+                          {!folded && open && <div style={{ padding: 11, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
+                          {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 9 }}>{g.items.map((w: any) => row(w))}</div>}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div style={{ marginTop: 6 }}>{chases.map((i) => row(i, '#f59e0b'))}</div>
-                </div>
-              )}
-
-              {tasks.length > 0 && (
-                <div style={card}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <strong style={{ fontSize: 14, color: '#0f172a' }}>To do</strong>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#475569', background: '#e2e8f0', borderRadius: 999, padding: '1px 8px' }}>{tasks.length}</span>
-                    <span style={{ fontSize: 12, color: '#94a3b8' }}>— open tasks on your matters</span>
-                  </div>
-                  <div style={{ marginTop: 6 }}>{tasks.map((i) => row(i, '#64748b'))}</div>
                 </div>
               )}
             </>
@@ -2135,22 +2326,41 @@ export default function AdminPage() {
 
         {tab === 'audit' && (
           <div style={card}>
-            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: '#64748b' }}>
-                  <th>When</th>
-                  <th>Action</th>
-                  <th>Status</th>
+                  <th style={{ padding: '6px 10px 8px 0', fontWeight: 700, whiteSpace: 'nowrap' }}>When</th>
+                  <th style={{ padding: '6px 10px 8px 0', fontWeight: 700 }}>Who</th>
+                  <th style={{ padding: '6px 10px 8px 0', fontWeight: 700, width: '100%' }}>What happened</th>
+                  <th style={{ padding: '6px 0 8px', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' }}>Result</th>
                 </tr>
               </thead>
               <tbody>
-                {audit.map((row) => (
-                  <tr key={row.id} style={{ borderTop: '1px solid #e2e8f0' }}>
-                    <td>{new Date(row.created_at).toLocaleString()}</td>
-                    <td>{row.action_type}</td>
-                    <td>{row.action_status}</td>
-                  </tr>
-                ))}
+                {audit.map((row) => {
+                  const status = String(row.action_status || '');
+                  const sc = status === 'SUCCESS' ? { c: '#166534', b: '#dcfce7' } : status === 'BLOCKED' ? { c: '#92400e', b: '#fef3c7' } : { c: '#b91c1c', b: '#fee2e2' };
+                  const when = new Date(row.created_at);
+                  return (
+                    <tr key={row.id} style={{ borderTop: '1px solid #eef2f7', verticalAlign: 'top' }}>
+                      <td style={{ padding: '9px 10px 9px 0', color: '#64748b', whiteSpace: 'nowrap' }} title={when.toLocaleString()}>
+                        {when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}<span style={{ color: '#cbd5e1' }}> · </span>{when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td style={{ padding: '9px 10px 9px 0', color: '#334155', whiteSpace: 'nowrap' }}>{row.actor_name || 'System'}</td>
+                      <td style={{ padding: '9px 10px 9px 0', color: '#0f172a', lineHeight: 1.45 }}>
+                        {describeAudit(row)}
+                        {row.matter_ref && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px', whiteSpace: 'nowrap' }}>{row.matter_ref}</span>}
+                      </td>
+                      <td style={{ padding: '9px 0', textAlign: 'right' }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, color: sc.c, background: sc.b, borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' }}>
+                          {status === 'SUCCESS' ? 'Done' : status === 'BLOCKED' ? 'Blocked' : 'Failed'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {audit.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>No activity recorded yet.</td></tr>
+                )}
               </tbody>
             </table>
           </div>

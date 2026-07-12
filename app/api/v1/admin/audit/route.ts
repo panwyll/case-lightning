@@ -19,12 +19,19 @@ export async function GET(req: NextRequest) {
       })
       .parse(Object.fromEntries(req.nextUrl.searchParams));
 
+    // Join the actor (who) and matter (which case) so the log reads as a sentence,
+    // not a bare action code. left joins so a system/tenant-level action still shows.
+    const cols = `a.id, a.created_at, a.action_type, a.action_status, a.payload, a.matter_id,
+                  coalesce(u.display_name, u.email) as actor_name, m.matter_ref`;
+    const from = `from audit_log a
+                  left join app_user u on u.id = a.actor_user_id
+                  left join matter m on m.id = a.matter_id`;
     const rows = matterId
       ? await query(
-          `select * from audit_log where tenant_id = $1 and matter_id = $2 order by created_at desc limit $3`,
+          `select ${cols} ${from} where a.tenant_id = $1 and a.matter_id = $2 order by a.created_at desc limit $3`,
           [user.tenantId, matterId, limit]
         )
-      : await query(`select * from audit_log where tenant_id = $1 order by created_at desc limit $2`, [
+      : await query(`select ${cols} ${from} where a.tenant_id = $1 order by a.created_at desc limit $2`, [
           user.tenantId,
           limit,
         ]);
