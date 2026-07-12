@@ -3741,6 +3741,33 @@ function LoadingRow({ label }: { label: string }) {
 // read-only (the matter PATCH doesn't accept them); stage/status are enum selects
 // that apply immediately. Purchase price is validated as a money value.
 const MONEY_RE = /^£?\s*\d{1,3}(,\d{3})*(\.\d{1,2})?$|^£?\s*\d+(\.\d{1,2})?$/;
+
+// Structured property address. property_address stays the display string; these parts are
+// what the House tab actually edits, recomposing the string on save.
+type AddrParts = { building: string; street: string; town: string; postcode: string; country: string };
+const UK_POSTCODE_RE = /([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})/i;
+function composeAddress(a: AddrParts): string {
+  const line1 = [a.building, a.street].map((s) => (s || '').trim()).filter(Boolean).join(' ');
+  return [line1, a.town, a.postcode, a.country].map((s) => (s || '').trim()).filter(Boolean).join(', ');
+}
+// Best-effort split of a legacy freeform address into parts (only used until the first
+// structured edit persists address_parts). Pulls out a UK postcode, treats the last comma
+// segment as the town and the rest as the street; the user can tidy building/country.
+function parseAddress(s: string): AddrParts {
+  const empty: AddrParts = { building: '', street: '', town: '', postcode: '', country: '' };
+  if (!s) return empty;
+  const pcM = s.match(UK_POSTCODE_RE);
+  const postcode = pcM ? `${pcM[1].toUpperCase()} ${pcM[2].toUpperCase()}` : '';
+  const segs = (pcM ? s.replace(pcM[0], '') : s).split(',').map((x) => x.trim()).filter(Boolean);
+  const town = segs.length >= 2 ? segs[segs.length - 1] : '';
+  const street = segs.length >= 2 ? segs.slice(0, -1).join(', ') : segs[0] || '';
+  return { building: '', street, town, postcode, country: '' };
+}
+function seedAddr(matter: any): AddrParts {
+  const p = matter.address_parts;
+  if (p && typeof p === 'object') return { building: p.building || '', street: p.street || '', town: p.town || '', postcode: p.postcode || '', country: p.country || '' };
+  return parseAddress(matter.property_address ?? '');
+}
 function HousePanel({
   matter,
   facts,
@@ -3774,6 +3801,15 @@ function HousePanel({
   const [baseline, setBaseline] = useState<Draft>(initial);
   const set = (k: keyof Draft, v: string) => setDraft((d) => ({ ...d, [k]: v }));
   const [openField, setOpenField] = useState<keyof Draft | null>(null);
+  // Structured address editing: parts seeded from address_parts (or a legacy parse), an
+  // expand toggle, and a setter that recomposes the display string into the draft.
+  const [addr, setAddr] = useState<AddrParts>(() => seedAddr(matter));
+  const [addrEditing, setAddrEditing] = useState(false);
+  const setAddrPart = (k: keyof AddrParts, v: string) => {
+    const next = { ...addr, [k]: v };
+    setAddr(next);
+    setDraft((d) => ({ ...d, propertyAddress: composeAddress(next) }));
+  };
   // Map each editable field to the DB field name used in the figure-change audit, so a
   // field's label can reveal its own history.
   const DB_FIELD: Partial<Record<keyof Draft, string>> = {
@@ -3797,12 +3833,35 @@ function HousePanel({
   const save = async () => {
     const patch: Record<string, unknown> = {};
     keys.forEach((k) => { if (draft[k] !== baseline[k]) patch[k] = draft[k].trim(); });
+    // Address edits go out as both the composed display string and the structured parts.
+    if (patch.propertyAddress !== undefined) patch.addressParts = addr;
     if (!Object.keys(patch).length) return;
     await onPatch(patch);
     setBaseline(draft);
   };
 
-  const field = (label: string, k: keyof Draft, type = 'text', valid = true) => {
+  // Shared change-history list (reused by the field() rows and the address block).
+  const histRows = (rows: any[]) => (
+    <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {rows.map((h: any) => (
+        <div key={h.id} style={{ fontSize: 11, color: '#4A4358', background: '#FBFAFF', border: '1px solid #ECE7F8', borderRadius: 8, padding: '5px 8px' }}>
+          <div>
+            <span style={{ color: '#94a3b8', textDecoration: h.old_value ? 'line-through' : 'none' }}>{h.old_value || '—'}</span>
+            {' → '}
+            <span style={{ color: '#5A27E0', fontWeight: 700 }}>{h.new_value || '—'}</span>
+          </div>
+          <div style={{ color: '#7A7388', marginTop: 1 }}>
+            {h.actor || 'CONVEYi'} · {new Date(h.created_at).toLocaleDateString()} ·{' '}
+            {h.source === 'MANUAL' ? 'by hand' : h.source === 'AI_EMAIL' ? 'from email' : h.source === 'AI_DOC' ? 'from a document' : String(h.source).toLowerCase()}
+            {h.ref_label ? ` · ${h.ref_kind === 'EMAIL' ? '✉' : '📎'} ${h.ref_label}` : ''}
+          </div>
+          {h.reason && h.source === 'MANUAL' && <div style={{ fontStyle: 'italic', color: '#7A7388', marginTop: 1 }}>{h.reason}</div>}
+        </div>
+      ))}
+    </div>
+  );
+
+  const field = (label: string, k: keyof Draft, type = 'text', valid = true, placeholder?: string) => {
     const dbf = DB_FIELD[k];
     const rows = dbf ? history.filter((h: any) => h.field === dbf) : [];
     const open = openField === k;
@@ -3824,28 +3883,56 @@ function HousePanel({
           style={{ ...S.input, marginBottom: 0, ...(valid ? {} : { borderColor: '#dc2626' }) }}
           type={type}
           value={draft[k]}
+          placeholder={placeholder}
           onChange={(e) => set(k, e.target.value)}
         />
         {!valid && <span style={{ fontSize: 11, color: '#dc2626' }}>Enter a valid amount, e.g. £210,000</span>}
-        {open && rows.length > 0 && (
-          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {rows.map((h: any) => (
-              <div key={h.id} style={{ fontSize: 11, color: '#4A4358', background: '#FBFAFF', border: '1px solid #ECE7F8', borderRadius: 8, padding: '5px 8px' }}>
-                <div>
-                  <span style={{ color: '#94a3b8', textDecoration: h.old_value ? 'line-through' : 'none' }}>{h.old_value || '—'}</span>
-                  {' → '}
-                  <span style={{ color: '#5A27E0', fontWeight: 700 }}>{h.new_value || '—'}</span>
-                </div>
-                <div style={{ color: '#7A7388', marginTop: 1 }}>
-                  {h.actor || 'CONVEYi'} · {new Date(h.created_at).toLocaleDateString()} ·{' '}
-                  {h.source === 'MANUAL' ? 'by hand' : h.source === 'AI_EMAIL' ? 'from email' : h.source === 'AI_DOC' ? 'from a document' : String(h.source).toLowerCase()}
-                  {h.ref_label ? ` · ${h.ref_kind === 'EMAIL' ? '✉' : '📎'} ${h.ref_label}` : ''}
-                </div>
-                {h.reason && h.source === 'MANUAL' && <div style={{ fontStyle: 'italic', color: '#7A7388', marginTop: 1 }}>{h.reason}</div>}
-              </div>
-            ))}
+        {open && rows.length > 0 && histRows(rows)}
+      </div>
+    );
+  };
+
+  // Property address: a fixed, formatted display with an Edit button that expands the
+  // structured form (house name/number, street, town, postcode, country).
+  const addressBlock = () => {
+    const rows = history.filter((h: any) => h.field === 'property_address');
+    const open = openField === 'propertyAddress';
+    const part = (label: string, k: keyof AddrParts, placeholder: string, style?: React.CSSProperties) => (
+      <label style={{ display: 'block', ...style }}>
+        <span style={{ ...S.fieldLabel, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>{label}</span>
+        <input style={{ ...S.input, marginBottom: 6 }} value={addr[k]} placeholder={placeholder} onChange={(e) => setAddrPart(k, e.target.value)} />
+      </label>
+    );
+    return (
+      <div style={{ marginBottom: 6 }}>
+        <span
+          style={{ ...S.fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: rows.length ? 'pointer' : 'default' }}
+          onClick={rows.length ? () => setOpenField(open ? null : 'propertyAddress') : undefined}
+          title={rows.length ? 'Show change history' : undefined}
+        >
+          Property address
+          {rows.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', borderRadius: 8, padding: '1px 6px' }}>{rows.length} {open ? '⌃' : '⌄'}</span>}
+        </span>
+        {!addrEditing ? (
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+            <div style={{ ...S.input, marginBottom: 0, flex: 1, minHeight: 34, display: 'flex', alignItems: 'center', background: '#F8F7FC', color: draft.propertyAddress ? '#1C1530' : '#94a3b8' }}>
+              {draft.propertyAddress || 'No address set'}
+            </div>
+            <button type="button" onClick={() => setAddrEditing(true)} style={{ flex: 'none', padding: '0 12px', borderRadius: 8, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Edit</button>
+          </div>
+        ) : (
+          <div style={{ border: '1px solid #E7E2F3', borderRadius: 10, padding: 10, background: '#FBFAFF' }}>
+            {part('House name / number', 'building', 'e.g. 14 or Rose Cottage')}
+            {part('Street', 'street', 'e.g. Oak Street')}
+            {part('Town / city', 'town', 'e.g. Leeds')}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {part('Postcode', 'postcode', 'e.g. LS1 2AB', { flex: 1 })}
+              {part('Country', 'country', 'United Kingdom', { flex: 1 })}
+            </div>
+            <button type="button" onClick={() => setAddrEditing(false)} style={{ marginTop: 2, padding: '5px 12px', borderRadius: 8, border: 'none', background: '#5A27E0', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Done</button>
           </div>
         )}
+        {open && rows.length > 0 && histRows(rows)}
       </div>
     );
   };
@@ -3874,14 +3961,14 @@ function HousePanel({
           </select>
         </label>
       )}
-      {field('Property Address', 'propertyAddress')}
-      {field('Purchase Price', 'purchasePrice', 'text', priceValid)}
+      {addressBlock()}
+      {field('Purchase Price', 'purchasePrice', 'text', priceValid, '£210,000')}
       {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}
       {join(matter.seller_names) && <div style={S.kv}><span>Seller(s)</span><span style={{ textAlign: 'right' }}>{join(matter.seller_names)}</span></div>}
-      {field('Other Side (Solicitor)', 'counterpartySolicitor')}
-      {field('Estate Agent', 'counterpartyAgent')}
-      {field('Lender', 'lender')}
-      {field('Chain Position', 'chainPosition')}
+      {field('Other Side (Solicitor)', 'counterpartySolicitor', 'text', true, 'e.g. Croft & Hargreaves')}
+      {field('Estate Agent', 'counterpartyAgent', 'text', true, 'e.g. Hunters')}
+      {field('Lender', 'lender', 'text', true, 'e.g. Santander')}
+      {field('Chain Position', 'chainPosition', 'text', true, 'e.g. 2nd in a chain of 3')}
       <div style={{ display: 'flex', gap: 6 }}>
         {field('Exchange Target', 'exchangeTargetDate', 'date')}
         {field('Completion Target', 'completionTargetDate', 'date')}
@@ -3905,7 +3992,7 @@ function HousePanel({
           <button style={{ ...S.primary, marginTop: 0, flex: 1, opacity: canSave ? 1 : 0.5 }} onClick={save} disabled={!canSave}>
             Save changes
           </button>
-          <button style={S.secondary} onClick={() => setDraft(baseline)}>Discard</button>
+          <button style={S.secondary} onClick={() => { setDraft(baseline); setAddr(seedAddr(matter)); setAddrEditing(false); }}>Discard</button>
         </div>
       )}
     </section>

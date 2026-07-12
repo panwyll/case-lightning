@@ -37,6 +37,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const body = z
       .object({
         propertyAddress: z.string().optional(),
+        addressParts: z.record(z.string()).nullable().optional(), // structured {building,street,town,postcode,country}
         purchasePrice: z.string().optional(),
         counterpartySolicitor: z.string().optional(),
         counterpartyAgent: z.string().optional(),
@@ -113,6 +114,20 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         ]);
       } catch {
         /* column not migrated yet — ignore until 017_purchase_price.sql is applied */
+      }
+    }
+
+    // Structured address parts — guarded, pending migration 046. property_address (the
+    // display string) is composed client-side and lands via the main update above.
+    if (body.addressParts !== undefined) {
+      try {
+        await query(`update matter set address_parts = $1::jsonb, updated_at = now() where id = $2 and tenant_id = $3`, [
+          body.addressParts ? JSON.stringify(body.addressParts) : null,
+          matterId,
+          user.tenantId,
+        ]);
+      } catch {
+        /* column not migrated yet — ignore until 046_matter_address_parts.sql is applied */
       }
     }
 
