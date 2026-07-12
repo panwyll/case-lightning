@@ -1759,19 +1759,22 @@ export default function Taskpane() {
   // Blended Email-tab summary = the email's ask + where the case stands + what's
   // waiting on others vs. what we still need to do. Pulled from the assist, the thread
   // summary and the extracted facts, deduped, and split by the waiting-on heuristic.
+  // Defensive: the AI-produced assist fields are typed as arrays but can come back malformed
+  // (a null, an object, a bare string) — never trust the type, coerce to a real array first.
+  const asArr = <T,>(x: unknown): T[] => (Array.isArray(x) ? (x as T[]) : []);
   const summaryStage = matterInfo?.matter?.stage as string | undefined;
   const summaryStageTxt = summaryStage ? (stageOpts.find((s) => s.key === summaryStage)?.name ?? stageLabel(summaryStage)) : null;
   const summaryOutstanding = Array.from(new Set(
     [
-      ...((assist?.outstanding ?? []) as string[]),
-      ...((summary?.outstanding ?? []) as string[]),
-      ...((facts?.outstanding ?? []) as string[]),
+      ...asArr<string>(assist?.outstanding),
+      ...asArr<string>(summary?.outstanding),
+      ...asArr<string>(facts?.outstanding),
     ].map((s) => String(s).trim()).filter(Boolean)
   ));
   const summaryWaitingOn = summaryOutstanding.filter((o) => isWaitingOnOthers(o));
   const summaryToDo = Array.from(new Set([
     ...summaryOutstanding.filter((o) => !isWaitingOnOthers(o)),
-    ...((assist?.draft?.actions ?? []).map((a) => a.task).filter(Boolean)),
+    ...asArr<{ task?: string }>(assist?.draft?.actions).map((a) => a?.task).filter((t): t is string => !!t),
   ]));
   const recommended: 'reply' | 'action' | 'ignore' = !cls
     ? 'reply'
