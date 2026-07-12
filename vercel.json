@@ -13,14 +13,6 @@
     {
       "path": "/api/v1/onboarding/resume",
       "schedule": "15 3 * * *"
-    },
-    {
-      "path": "/api/v1/cron/send-scheduled",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/v1/cron/notify",
-      "schedule": "*/5 * * * *"
     }
   ]
 }
