@@ -1756,6 +1756,23 @@ export default function Taskpane() {
   // a pure FYI → Ignore; anything that wants a response → Reply; otherwise it's
   // work to do (Action) or to hand off (Delegate).
   const cls = assist?.classification;
+  // Blended Email-tab summary = the email's ask + where the case stands + what's
+  // waiting on others vs. what we still need to do. Pulled from the assist, the thread
+  // summary and the extracted facts, deduped, and split by the waiting-on heuristic.
+  const summaryStage = matterInfo?.matter?.stage as string | undefined;
+  const summaryStageTxt = summaryStage ? (stageOpts.find((s) => s.key === summaryStage)?.name ?? stageLabel(summaryStage)) : null;
+  const summaryOutstanding = Array.from(new Set(
+    [
+      ...((assist?.outstanding ?? []) as string[]),
+      ...((summary?.outstanding ?? []) as string[]),
+      ...((facts?.outstanding ?? []) as string[]),
+    ].map((s) => String(s).trim()).filter(Boolean)
+  ));
+  const summaryWaitingOn = summaryOutstanding.filter((o) => isWaitingOnOthers(o));
+  const summaryToDo = Array.from(new Set([
+    ...summaryOutstanding.filter((o) => !isWaitingOnOthers(o)),
+    ...((assist?.draft?.actions ?? []).map((a) => a.task).filter(Boolean)),
+  ]));
   const recommended: 'reply' | 'action' | 'ignore' = !cls
     ? 'reply'
     : cls.needsAttention === false
@@ -2528,7 +2545,28 @@ export default function Taskpane() {
           {tab === 'email' && hasMatter && assist && (
             <Card>
               <Label>Summary</Label>
-              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 10px' }}>{assist.ask}</p>
+              {/* Email — what this message is about / asking. */}
+              <p style={{ fontSize: 13, lineHeight: 1.5, color: '#0f172a', margin: '0 0 8px' }}>{assist.ask}</p>
+              {/* Case — where the matter stands right now. */}
+              {summaryStageTxt && (
+                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px' }}>
+                  Case is currently at <strong style={{ color: '#5A27E0' }}>{summaryStageTxt.toLowerCase()}</strong>.
+                </p>
+              )}
+              {/* Waiting on others — nothing for us to do yet, but track it. */}
+              {summaryWaitingOn.length > 0 && (
+                <div style={{ margin: '0 0 8px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#b45309', textTransform: 'uppercase', letterSpacing: 0.3 }}>Waiting on</span>
+                  <ul style={{ ...S.ul, marginTop: 2 }}>{summaryWaitingOn.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                </div>
+              )}
+              {/* Our next actions — the "you need to…". */}
+              {summaryToDo.length > 0 && (
+                <div style={{ margin: '0 0 10px' }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.3 }}>You need to</span>
+                  <ul style={{ ...S.ul, marginTop: 2 }}>{summaryToDo.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                </div>
+              )}
 
               {/* The moves, as tabs. The recommended one is pre-lit; pick either to expand it. */}
               <div style={S.tabBar}>
@@ -2810,13 +2848,10 @@ export default function Taskpane() {
           )}
 
 
-          {tab === 'email' && summary && (
+          {tab === 'email' && summary && summary.happened.length > 0 && (
             <Card>
-              <Label>Summary</Label>
-              <SubLabel>Happened</SubLabel>
+              <Label>Thread history</Label>
               <ul style={S.ul}>{summary.happened.map((h, i) => <li key={i}>{h}</li>)}</ul>
-              <SubLabel>Outstanding</SubLabel>
-              <ul style={S.ul}>{summary.outstanding.map((o, i) => <li key={i}>{o}</li>)}</ul>
             </Card>
           )}
 
@@ -3768,6 +3803,17 @@ function seedAddr(matter: any): AddrParts {
   if (p && typeof p === 'object') return { building: p.building || '', street: p.street || '', town: p.town || '', postcode: p.postcode || '', country: p.country || '' };
   return parseAddress(matter.property_address ?? '');
 }
+
+// A person + their firm, stored as one "Name, Firm" string. Split on the FIRST comma only,
+// so a firm with commas ("Delaney, Webb & Co") survives; round-trips cleanly on save.
+type PartyParts = { name: string; firm: string };
+function splitParty(s: string): PartyParts {
+  const i = (s || '').indexOf(',');
+  return i === -1 ? { name: (s || '').trim(), firm: '' } : { name: s.slice(0, i).trim(), firm: s.slice(i + 1).trim() };
+}
+function joinParty(p: PartyParts): string {
+  return [p.name, p.firm].map((x) => (x || '').trim()).filter(Boolean).join(', ');
+}
 function HousePanel({
   matter,
   facts,
@@ -3809,6 +3855,22 @@ function HousePanel({
     const next = { ...addr, [k]: v };
     setAddr(next);
     setDraft((d) => ({ ...d, propertyAddress: composeAddress(next) }));
+  };
+  // Structured name/firm editing for the solicitor + estate agent (each stored as one string).
+  type PartyKey = 'counterpartySolicitor' | 'counterpartyAgent';
+  const [solParts, setSolParts] = useState<PartyParts>(() => splitParty(initial.counterpartySolicitor));
+  const [agentParts, setAgentParts] = useState<PartyParts>(() => splitParty(initial.counterpartyAgent));
+  const [editingParty, setEditingParty] = useState<PartyKey | null>(null);
+  const setPartyPart = (which: PartyKey, key: keyof PartyParts, v: string) => {
+    if (which === 'counterpartySolicitor') {
+      const next = { ...solParts, [key]: v };
+      setSolParts(next);
+      setDraft((d) => ({ ...d, counterpartySolicitor: joinParty(next) }));
+    } else {
+      const next = { ...agentParts, [key]: v };
+      setAgentParts(next);
+      setDraft((d) => ({ ...d, counterpartyAgent: joinParty(next) }));
+    }
   };
   // Map each editable field to the DB field name used in the figure-change audit, so a
   // field's label can reveal its own history.
@@ -3937,6 +3999,49 @@ function HousePanel({
     );
   };
 
+  // A person + firm (solicitor / estate agent): fixed display + Edit → Name & Firm inputs,
+  // composed back into the single field. Mirrors the address block.
+  const partyBlock = (label: string, k: PartyKey, emptyLabel: string, namePlaceholder: string, firmPlaceholder: string) => {
+    const dbf = DB_FIELD[k];
+    const rows = dbf ? history.filter((h: any) => h.field === dbf) : [];
+    const open = openField === k;
+    const parts = k === 'counterpartySolicitor' ? solParts : agentParts;
+    const editing = editingParty === k;
+    const partInput = (plabel: string, pkey: keyof PartyParts, placeholder: string) => (
+      <label style={{ display: 'block' }}>
+        <span style={{ ...S.fieldLabel, fontSize: 10, textTransform: 'none', letterSpacing: 0 }}>{plabel}</span>
+        <input style={{ ...S.input, marginBottom: 6 }} value={parts[pkey]} placeholder={placeholder} onChange={(e) => setPartyPart(k, pkey, e.target.value)} />
+      </label>
+    );
+    return (
+      <div style={{ marginBottom: 6 }}>
+        <span
+          style={{ ...S.fieldLabel, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: rows.length ? 'pointer' : 'default' }}
+          onClick={rows.length ? () => setOpenField(open ? null : k) : undefined}
+          title={rows.length ? 'Show change history' : undefined}
+        >
+          {label}
+          {rows.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', borderRadius: 8, padding: '1px 6px' }}>{rows.length} {open ? '⌃' : '⌄'}</span>}
+        </span>
+        {!editing ? (
+          <div style={{ display: 'flex', alignItems: 'stretch', gap: 6 }}>
+            <div style={{ ...S.input, marginBottom: 0, flex: 1, minHeight: 34, display: 'flex', alignItems: 'center', background: '#F8F7FC', color: draft[k] ? '#1C1530' : '#94a3b8' }}>
+              {draft[k] || emptyLabel}
+            </div>
+            <button type="button" onClick={() => setEditingParty(k)} style={{ flex: 'none', padding: '0 12px', borderRadius: 8, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Edit</button>
+          </div>
+        ) : (
+          <div style={{ border: '1px solid #E7E2F3', borderRadius: 10, padding: 10, background: '#FBFAFF' }}>
+            {partInput('Name', 'name', namePlaceholder)}
+            {partInput('Firm', 'firm', firmPlaceholder)}
+            <button type="button" onClick={() => setEditingParty(null)} style={{ marginTop: 2, padding: '5px 12px', borderRadius: 8, border: 'none', background: '#5A27E0', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          </div>
+        )}
+        {open && rows.length > 0 && histRows(rows)}
+      </div>
+    );
+  };
+
   return (
     <section style={S.card}>
       <Label>{matter.matter_ref}</Label>
@@ -3962,11 +4067,11 @@ function HousePanel({
         </label>
       )}
       {addressBlock()}
-      {field('Purchase Price', 'purchasePrice', 'text', priceValid, '£210,000')}
+      {field('Purchase Price', 'purchasePrice', 'text', priceValid, '£')}
       {join(matter.buyer_names) && <div style={S.kv}><span>Buyer(s)</span><span style={{ textAlign: 'right' }}>{join(matter.buyer_names)}</span></div>}
       {join(matter.seller_names) && <div style={S.kv}><span>Seller(s)</span><span style={{ textAlign: 'right' }}>{join(matter.seller_names)}</span></div>}
-      {field('Other Side (Solicitor)', 'counterpartySolicitor', 'text', true, 'e.g. Croft & Hargreaves')}
-      {field('Estate Agent', 'counterpartyAgent', 'text', true, 'e.g. Hunters')}
+      {partyBlock('Other Side (Solicitor)', 'counterpartySolicitor', 'No solicitor set', 'e.g. Chloe Patel', 'e.g. Delaney & Webb')}
+      {partyBlock('Estate Agent', 'counterpartyAgent', 'No agent set', 'e.g. Ben Ashworth', 'e.g. Bramley & Vale')}
       {field('Lender', 'lender', 'text', true, 'e.g. Santander')}
       {field('Chain Position', 'chainPosition', 'text', true, 'e.g. 2nd in a chain of 3')}
       <div style={{ display: 'flex', gap: 6 }}>
@@ -3992,7 +4097,7 @@ function HousePanel({
           <button style={{ ...S.primary, marginTop: 0, flex: 1, opacity: canSave ? 1 : 0.5 }} onClick={save} disabled={!canSave}>
             Save changes
           </button>
-          <button style={S.secondary} onClick={() => { setDraft(baseline); setAddr(seedAddr(matter)); setAddrEditing(false); }}>Discard</button>
+          <button style={S.secondary} onClick={() => { setDraft(baseline); setAddr(seedAddr(matter)); setAddrEditing(false); setSolParts(splitParty(baseline.counterpartySolicitor)); setAgentParts(splitParty(baseline.counterpartyAgent)); setEditingParty(null); }}>Discard</button>
         </div>
       )}
     </section>
