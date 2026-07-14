@@ -110,6 +110,32 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
     setPhase('processing');
   };
 
+  // In Outlook the taskpane iframe can't use the mic, so record in an Office Dialog (a real
+  // window). In a plain browser tab, record inline. The dialog hands back the finished note.
+  const record = () => {
+    const Office = (window as any).Office;
+    if (Office?.context?.ui?.displayDialogAsync) {
+      setErr(null);
+      Office.context.ui.displayDialogAsync(
+        `${window.location.origin}/addin/record`,
+        { height: 55, width: 40, displayInIframe: false },
+        (result: any) => {
+          if (result.status !== 'succeeded') { setErr('Couldn’t open the recorder — allow pop-ups and try again.'); return; }
+          const dialog = result.value;
+          dialog.addEventHandler(Office.EventType.DialogMessageReceived, (arg: any) => {
+            try {
+              const data = JSON.parse(arg.message);
+              if (data.note) { setNotes((n) => [data.note, ...n]); setOpenId(data.note.id); }
+            } catch { /* ignore malformed message */ }
+            dialog.close();
+          });
+        }
+      );
+    } else {
+      void start();
+    }
+  };
+
   // Matter search for the assign step (debounced).
   useEffect(() => {
     if (!assignId || !mq.trim()) { setMResults([]); return; }
@@ -154,7 +180,7 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
             <div style={{ fontSize: 13, color: '#5A27E0', fontWeight: 700, padding: '22px 0' }}><span style={S.spin} /> Transcribing…</div>
           ) : (
             <>
-              <button onClick={start} title="Record a call" aria-label="Record a call" style={round('#5A27E0')}>
+              <button onClick={record} title="Record a call" aria-label="Record a call" style={round('#5A27E0')}>
                 <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
