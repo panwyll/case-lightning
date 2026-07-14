@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { query, queryOne } from '@/lib/server/db';
 import { upsertChunks } from '@/lib/server/ai';
+import { uploadToMatterKb, matterKbPath } from '@/lib/server/graph';
 import { emitMatterEvent } from '@/lib/server/events';
 import { ok, fail } from '@/lib/server/http';
 
@@ -41,9 +42,31 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       [body.matterId !== undefined, body.matterId ?? null, body.title ?? null, id, user.tenantId]
     );
 
-    // Newly attached to a matter → index into its KB and drop a timeline marker. Best-effort.
+    // Newly attached to a matter → write a file into the matter's OneDrive Case Knowledge
+    // Base, index it for RAG, and drop a timeline marker. Each step is best-effort.
     if (body.matterId && body.matterId !== existing.matter_id) {
       const title = body.title ?? existing.title;
+
+      // A readable text file in the matter's OneDrive folder.
+      try {
+        const matter = await queryOne<{ folder_path: string | null }>(
+          `select folder_path from matter where id = $1 and tenant_id = $2`,
+          [body.matterId, user.tenantId]
+        );
+        if (matter?.folder_path) {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const safeTitle = (title || 'Call note').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+          const fileName = `Call note — ${safeTitle} — ${dateStr}.txt`;
+          const content = `Call note: ${title}\nDate: ${new Date().toLocaleString('en-GB')}\n\nSUMMARY\n${existing.summary || '(none)'}\n\nFULL TRANSCRIPT\n${existing.transcript || '(none)'}\n`;
+          const uploaded = await uploadToMatterKb(user.userId, matter.folder_path, fileName, Buffer.from(content, 'utf8'));
+          await query(
+            `insert into document (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, doc_type, created_by)
+             values ($1,$2,'CALL_NOTE',$3,$4,$5,$6,$7,'text/plain','CALL_NOTE',$8)`,
+            [user.tenantId, body.matterId, uploaded.parentReference?.driveId ?? null, uploaded.id, `${matterKbPath(matter.folder_path)}/${fileName}`, uploaded.webUrl ?? null, fileName, user.userId]
+          ).catch(() => {});
+        }
+      } catch { /* OneDrive write is best-effort — the KB index + timeline still land */ }
+
       await upsertChunks({
         tenantId: user.tenantId,
         matterId: body.matterId,

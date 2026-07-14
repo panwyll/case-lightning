@@ -3625,7 +3625,12 @@ export default function Taskpane() {
       )}
 
       {/* Call notes — phone icon in the header. */}
-      {showCallNotes && <CallNotes onClose={() => setShowCallNotes(false)} />}
+      {showCallNotes && (
+        <CallNotes
+          onClose={() => setShowCallNotes(false)}
+          currentMatter={matterId && matterInfo?.matter ? { id: matterId, ref: matterInfo.matter.matter_ref, address: matterInfo.matter.property_address } : null}
+        />
+      )}
 
       {/* Referral popup — gift icon in the header. */}
       {showReferral && (

@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import PizZip from 'pizzip';
 import { query, queryOne } from './db';
-import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterFolder } from './graph';
+import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
 import { writeAudit } from './audit';
@@ -381,7 +381,7 @@ export async function saveEmailAttachmentsToMatter(
       [matterId, user.tenantId, hash]
     );
     if (exists) continue; // identical content already filed
-    const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, att.name, buffer);
+    const uploaded = await uploadToMatterKb(user.userId, matter.folder_path, att.name, buffer);
     const doc = await queryOne<{ id: string }>(
       `insert into document
         (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, hash_sha256, doc_type, created_by)
@@ -391,7 +391,7 @@ export async function saveEmailAttachmentsToMatter(
         matterId,
         uploaded.parentReference?.driveId ?? null,
         uploaded.id,
-        `${matter.folder_path}/${att.name}`,
+        `${matterKbPath(matter.folder_path)}/${att.name}`,
         uploaded.webUrl ?? null,
         att.name,
         att.contentType ?? null,

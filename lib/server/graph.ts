@@ -592,6 +592,19 @@ export async function uploadToMatterFolder(
   return client.api(endpoint).put(content);
 }
 
+/** Documents the app files for a matter live in a "Case Knowledge Base" subfolder so the
+ *  matter root stays tidy (correspondence, the tracker, etc. sit at the top). */
+export const CASE_KB_FOLDER = 'Case Knowledge Base';
+export function matterKbPath(folderPath: string): string {
+  return `${folderPath}/${CASE_KB_FOLDER}`;
+}
+/** Upload a file into the matter's Case Knowledge Base subfolder, creating it if missing. */
+export async function uploadToMatterKb(userId: string, folderPath: string, fileName: string, content: Buffer | ArrayBuffer): Promise<any> {
+  const kb = matterKbPath(folderPath);
+  await ensureMatterFolder(userId, kb).catch(() => {});
+  return uploadToMatterFolder(userId, kb, fileName, content);
+}
+
 export async function listMatterFiles(userId: string, folderPath: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/drive/root:/${encodePath(folderPath)}:/children`).get();

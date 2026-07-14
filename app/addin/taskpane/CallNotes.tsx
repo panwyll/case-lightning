@@ -40,13 +40,17 @@ interface Note {
 }
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-export default function CallNotes({ onClose }: { onClose: () => void }) {
+export default function CallNotes({ onClose, currentMatter }: { onClose: () => void; currentMatter?: { id: string; ref: string; address?: string | null } | null }) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [phase, setPhase] = useState<'idle' | 'recording' | 'processing'>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null); // transcript expanded
+  const [sumOpen, setSumOpen] = useState<string | null>(null); // summary expanded while assigning
   const [assignId, setAssignId] = useState<string | null>(null); // note being assigned
+  const [taskFor, setTaskFor] = useState<string | null>(null); // note whose add-task box is open
+  const [taskText, setTaskText] = useState('');
+  const [taskDone, setTaskDone] = useState(false);
   const [mq, setMq] = useState('');
   const [mResults, setMResults] = useState<Array<{ id: string; matterRef: string; propertyAddress: string }>>([]);
   const [searching, setSearching] = useState(false);
@@ -160,6 +164,15 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
     setNotes((n) => n.filter((x) => x.id !== noteId));
     await api(`/call-notes/${noteId}`, { method: 'DELETE' }).catch(() => {});
   };
+  const addTask = async (matterId: string) => {
+    const detail = taskText.trim();
+    if (!detail) return;
+    try {
+      await api(`/matters/${matterId}/tasks`, { method: 'POST', body: JSON.stringify({ detail, source: 'CALL_NOTE' }) });
+      setTaskText('');
+      setTaskDone(true); setTimeout(() => setTaskDone(false), 1500);
+    } catch (e: any) { setErr(e?.message || 'Could not add the task.'); }
+  };
 
   return (
     <div style={S.overlay} onClick={onClose}>
@@ -217,11 +230,26 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
 
-                {n.summary && <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.5, marginTop: 6, whiteSpace: 'pre-wrap' }}>{n.summary}</div>}
+                {/* Summary — shown by default, but collapses to a toggle while assigning to keep the picker tidy. */}
+                {n.summary && (assignId === n.id ? (
+                  <>
+                    <button onClick={() => setSumOpen(sumOpen === n.id ? null : n.id)} style={{ ...S.link, marginTop: 6 }}>{sumOpen === n.id ? 'Hide summary' : 'Show summary'}</button>
+                    {sumOpen === n.id && <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.5, marginTop: 4, whiteSpace: 'pre-wrap' }}>{n.summary}</div>}
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.5, marginTop: 6, whiteSpace: 'pre-wrap' }}>{n.summary}</div>
+                ))}
 
                 {assignId === n.id && (
                   <div style={{ marginTop: 8, border: '1px solid #E7E2F3', borderRadius: 8, padding: 8, background: '#fff' }}>
                     <input autoFocus value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search matters (ref, address, name)…" style={S.input} />
+                    {/* Default to the matter that's open in the pane, until the user starts filtering. */}
+                    {!mq.trim() && currentMatter?.ref && (
+                      <button onClick={() => assign(n.id, currentMatter.id)} style={{ ...S.result, background: '#F7F5FD' }}>
+                        <strong style={{ color: '#5A27E0' }}>{currentMatter.ref}</strong> <span style={{ color: '#64748b' }}>{currentMatter.address}</span>
+                        <span style={{ fontSize: 9, fontWeight: 800, color: '#5A27E0', marginLeft: 4 }}>· CURRENT</span>
+                      </button>
+                    )}
                     {mResults.map((m) => (
                       <button key={m.id} onClick={() => assign(n.id, m.id)} style={S.result}>
                         <strong style={{ color: '#1C1530' }}>{m.matterRef}</strong> <span style={{ color: '#64748b' }}>{m.propertyAddress}</span>
@@ -237,8 +265,17 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
 
                 <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
                   <button onClick={() => setOpenId(open ? null : n.id)} style={S.link}>{open ? 'Hide transcript' : 'Full transcript'}</button>
+                  {n.matter_id && <button onClick={() => { setTaskFor(taskFor === n.id ? null : n.id); setTaskText(''); }} style={S.link}>{taskFor === n.id ? 'Close' : '+ Add task'}</button>}
                   <button onClick={() => del(n.id)} style={{ ...S.link, color: '#b91c1c', marginLeft: 'auto' }}>Delete</button>
                 </div>
+                {/* Add follow-up tasks for the matter this call was assigned to. */}
+                {taskFor === n.id && n.matter_id && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
+                    <input autoFocus value={taskText} onChange={(e) => setTaskText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTask(n.matter_id!); }} placeholder={`New task for ${n.matter_ref || 'this matter'}…`} style={S.input} />
+                    <button onClick={() => addTask(n.matter_id!)} disabled={!taskText.trim()} style={{ ...S.miniBtn, background: '#5A27E0', color: '#fff', borderColor: '#5A27E0', opacity: taskText.trim() ? 1 : 0.5 }}>Add</button>
+                  </div>
+                )}
+                {taskFor === n.id && taskDone && <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, marginTop: 4 }}>✓ Task added</div>}
                 {open && <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.55, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }}>{n.transcript || '(no transcript)'}</div>}
               </div>
             );
