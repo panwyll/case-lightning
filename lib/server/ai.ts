@@ -193,6 +193,68 @@ async function structured<T>(
   return JSON.parse(args) as T;
 }
 
+// ── Audio transcription (Groq Whisper) ──────────────────────────────────────
+
+/** Transcribe recorded audio via Groq's Whisper endpoint. Groq-only (Anthropic can't do
+ *  audio), so it needs GROQ_API_KEY regardless of which chat provider is primary. */
+export async function transcribeAudio(input: {
+  buffer: Buffer;
+  mimeType: string;
+  fileName: string;
+}): Promise<string> {
+  const key = config.groqApiKey;
+  if (!key) throw new Error('Audio transcription needs a Groq key — set GROQ_API_KEY.');
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(input.buffer)], { type: input.mimeType || 'audio/webm' }), input.fileName || 'audio.webm');
+  form.append('model', 'whisper-large-v3-turbo');
+  form.append('response_format', 'json');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120_000); // transcription is slower than chat
+  let res: Response;
+  try {
+    res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}` },
+      signal: controller.signal,
+      body: form,
+    });
+  } catch (err) {
+    throw new Error(controller.signal.aborted ? 'Transcription timed out.' : `Transcription failed: ${(err as Error).message}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) throw new Error(`Transcription error ${res.status}: ${await res.text()}`);
+  const json = (await res.json()) as { text?: string };
+  return (json.text ?? '').trim();
+}
+
+/** Turn a call transcript into a short title + a crisp summary (key points, decisions, next steps). */
+export async function summarizeTranscript(input: {
+  userId: string;
+  tenantId: string;
+  matterId?: string | null;
+  transcript: string;
+}): Promise<{ title: string; summary: string }> {
+  return structured(
+    input.userId,
+    'fast',
+    'THREAD_SUMMARISE',
+    { tenantId: input.tenantId, matterId: input.matterId ?? null },
+    'call_note_summary',
+    'Summarise this phone call for a conveyancer\'s file. Produce a short "title" (≤8 words, e.g. "Call with buyer re completion date") and a tight "summary": the key points discussed, any decisions made, and the actions / next steps — a few crisp sentences or short lines. Plain English, no preamble.',
+    {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short label for the call, ≤8 words.' },
+        summary: { type: 'string', description: 'Key points, decisions and next steps — a few crisp sentences.' },
+      },
+      required: ['title', 'summary'],
+    },
+    `Phone call transcript (DATA):\n${input.transcript}`
+  );
+}
+
 // ── RAG store ────────────────────────────────────────────────────────────────
 
 function chunkText(input: string, maxChars = 2400): string[] {
