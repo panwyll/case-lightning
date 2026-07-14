@@ -48,7 +48,8 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
   const [openId, setOpenId] = useState<string | null>(null); // transcript expanded
   const [assignId, setAssignId] = useState<string | null>(null); // note being assigned
   const [mq, setMq] = useState('');
-  const [mResults, setMResults] = useState<Array<{ id: string; matter_ref: string; property_address: string }>>([]);
+  const [mResults, setMResults] = useState<Array<{ id: string; matterRef: string; propertyAddress: string }>>([]);
+  const [searching, setSearching] = useState(false);
 
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -92,7 +93,6 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
         form.append('durationSeconds', String(seconds));
         const { note } = await apiUpload<{ note: Note }>('/call-notes', form);
         setNotes((n) => [note, ...n]);
-        setOpenId(note.id);
       } catch (e: any) {
         setErr(e?.message || 'Couldn’t transcribe the recording.');
       } finally {
@@ -125,7 +125,7 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
           dialog.addEventHandler(Office.EventType.DialogMessageReceived, (arg: any) => {
             try {
               const data = JSON.parse(arg.message);
-              if (data.note) { setNotes((n) => [data.note, ...n]); setOpenId(data.note.id); }
+              if (data.note) setNotes((n) => [data.note, ...n]);
             } catch { /* ignore malformed message */ }
             dialog.close();
           });
@@ -138,9 +138,12 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
 
   // Matter search for the assign step (debounced).
   useEffect(() => {
-    if (!assignId || !mq.trim()) { setMResults([]); return; }
+    if (!assignId || !mq.trim()) { setMResults([]); setSearching(false); return; }
+    setSearching(true);
     const t = setTimeout(async () => {
-      try { setMResults((await api<{ matters: any[] }>(`/matters?q=${encodeURIComponent(mq.trim())}`)).matters ?? []); } catch { setMResults([]); }
+      try { setMResults((await api<{ matters: any[] }>(`/matters?q=${encodeURIComponent(mq.trim())}`)).matters ?? []); }
+      catch { setMResults([]); }
+      finally { setSearching(false); }
     }, 250);
     return () => clearTimeout(t);
   }, [mq, assignId]);
@@ -221,10 +224,14 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
                     <input autoFocus value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search matters (ref, address, name)…" style={S.input} />
                     {mResults.map((m) => (
                       <button key={m.id} onClick={() => assign(n.id, m.id)} style={S.result}>
-                        <strong style={{ color: '#1C1530' }}>{m.matter_ref}</strong> <span style={{ color: '#64748b' }}>{m.property_address}</span>
+                        <strong style={{ color: '#1C1530' }}>{m.matterRef}</strong> <span style={{ color: '#64748b' }}>{m.propertyAddress}</span>
                       </button>
                     ))}
-                    {mq.trim() && mResults.length === 0 && <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '4px 2px' }}>No matches.</div>}
+                    {searching ? (
+                      <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '4px 2px' }}>Searching…</div>
+                    ) : mq.trim() && mResults.length === 0 ? (
+                      <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '4px 2px' }}>No matches.</div>
+                    ) : null}
                   </div>
                 )}
 
