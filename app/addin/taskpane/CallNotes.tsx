@@ -211,7 +211,9 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
             );
           })}
         </div>
-        <p style={{ fontSize: 10, color: '#b0a9c0', textAlign: 'center', margin: '12px 0 0' }}>Everyone on the call should consent to recording.</p>
+        <div style={{ textAlign: 'center', margin: '12px 0 0' }}>
+          <a href="https://ico.org.uk/for-organisations/" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: '#94a3b8', textDecoration: 'underline' }}>UK call-recording rules (ICO) ↗</a>
+        </div>
       </div>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
