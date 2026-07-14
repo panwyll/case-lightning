@@ -140,26 +140,27 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
           <strong style={{ fontSize: 15, color: '#1C1530', flex: 1 }}>Call notes</strong>
           <button onClick={onClose} style={S.x} aria-label="Close">✕</button>
         </div>
-        <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '0 0 12px' }}>
-          Record a client call (or dictate a note), get a transcript and summary, then attach it to a matter. Make sure everyone on the call is happy to be recorded.
-        </p>
-
-        {/* Recorder */}
-        <div style={{ textAlign: 'center', padding: '6px 0 14px' }}>
+        {/* Recorder — a single mic button; a live timer + red stop while recording. */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, padding: '10px 0 16px' }}>
           {phase === 'recording' ? (
-            <div>
-              <div style={{ fontSize: 26, fontWeight: 800, color: '#dc2626', letterSpacing: 1 }}>
-                <span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#dc2626', marginRight: 8, animation: 'pulse 1s infinite' }} />
-                {mmss(elapsed)}
-              </div>
-              <button onClick={stop} style={{ ...S.bigBtn, background: '#dc2626' }}>■ Stop &amp; transcribe</button>
-            </div>
+            <>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#dc2626', letterSpacing: 1, fontVariantNumeric: 'tabular-nums' }}>{mmss(elapsed)}</div>
+              <button onClick={stop} title="Stop &amp; transcribe" aria-label="Stop and transcribe" style={round('#dc2626')}>
+                <span style={{ display: 'block', width: 16, height: 16, background: '#fff', borderRadius: 3 }} />
+              </button>
+              <span style={{ fontSize: 11, color: '#94a3b8' }}>Recording — tap to stop</span>
+            </>
           ) : phase === 'processing' ? (
-            <div style={{ fontSize: 13, color: '#5A27E0', fontWeight: 700, padding: '10px 0' }}>
-              <span style={S.spin} /> Transcribing &amp; summarising…
-            </div>
+            <div style={{ fontSize: 13, color: '#5A27E0', fontWeight: 700, padding: '22px 0' }}><span style={S.spin} /> Transcribing…</div>
           ) : (
-            <button onClick={start} style={{ ...S.bigBtn, background: '#5A27E0' }}>● Record a call</button>
+            <>
+              <button onClick={start} title="Record a call" aria-label="Record a call" style={round('#5A27E0')}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+              </button>
+              <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Record a call</span>
+            </>
           )}
         </div>
 
@@ -210,12 +211,17 @@ export default function CallNotes({ onClose }: { onClose: () => void }) {
             );
           })}
         </div>
+        <p style={{ fontSize: 10, color: '#b0a9c0', textAlign: 'center', margin: '12px 0 0' }}>Everyone on the call should consent to recording.</p>
       </div>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
 
+const round = (bg: string): React.CSSProperties => ({
+  width: 64, height: 64, borderRadius: '50%', border: 'none', background: bg, cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 20px rgba(90,39,224,0.30)',
+});
 const S: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(15,15,30,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 12 },
   card: { background: '#fff', borderRadius: 14, padding: 16, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.3)', position: 'relative' },
