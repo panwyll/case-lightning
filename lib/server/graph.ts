@@ -605,6 +605,12 @@ export async function uploadToMatterKb(userId: string, folderPath: string, fileN
   return uploadToMatterFolder(userId, kb, fileName, content);
 }
 
+/** Delete a OneDrive item by id (used to clean up a file mistakenly filed to the wrong matter). */
+export async function deleteDriveItem(userId: string, itemId: string): Promise<void> {
+  const client = await graphClientForUser(userId);
+  await client.api(`/me/drive/items/${itemId}`).delete();
+}
+
 export async function listMatterFiles(userId: string, folderPath: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/drive/root:/${encodePath(folderPath)}:/children`).get();

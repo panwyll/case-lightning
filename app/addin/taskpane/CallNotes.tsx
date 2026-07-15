@@ -152,12 +152,12 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
     return () => clearTimeout(t);
   }, [mq, assignId]);
 
-  const assign = async (noteId: string, matterId: string) => {
+  const assign = async (noteId: string, matterId: string | null) => {
     try {
       const { note } = await api<{ note: Note }>(`/call-notes/${noteId}`, { method: 'PATCH', body: JSON.stringify({ matterId }) });
       setNotes((n) => n.map((x) => x.id === noteId ? note : x));
       setAssignId(null); setMq(''); setMResults([]);
-    } catch (e: any) { setErr(e?.message || 'Could not assign.'); }
+    } catch (e: any) { setErr(e?.message || 'Could not update.'); }
   };
   const del = async (noteId: string) => {
     if (!window.confirm('Delete this call note?')) return;
@@ -224,7 +224,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                     </div>
                   </div>
                   {n.matter_ref ? (
-                    <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', borderRadius: 999, padding: '2px 8px' }}>{n.matter_ref}</span>
+                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} title="Move to another matter" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' }}>{n.matter_ref} ✎</button>
                   ) : (
                     <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} style={{ ...S.miniBtn, color: '#5A27E0', borderColor: '#D9D2EC' }}>+ Assign to matter</button>
                   )}
@@ -260,6 +260,10 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                     ) : mq.trim() && mResults.length === 0 ? (
                       <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '4px 2px' }}>No matches.</div>
                     ) : null}
+                    {/* Already on a matter → allow taking it back off (purges the KB/OneDrive residue). */}
+                    {n.matter_id && !mq.trim() && (
+                      <button onClick={() => assign(n.id, null)} style={{ ...S.result, color: '#b91c1c', marginTop: 2 }}>Remove from {n.matter_ref} (unassign)</button>
+                    )}
                   </div>
                 )}
 

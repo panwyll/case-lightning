@@ -61,6 +61,8 @@ interface AssistData {
   whatWeKnow: string[];
   outstanding: string[];
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  /** Per-attachment summaries for the email tab (empty until the slow half lands). */
+  documents?: Array<{ name: string; docType: string; summary: string }>;
   highlighted: string[];
   /** False while the slow half (thread summary + draft) is still being prepared. */
   ready: boolean;
@@ -404,6 +406,7 @@ export default function Taskpane() {
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
   const [showCallNotes, setShowCallNotes] = useState(false);
+  const [docsOpen, setDocsOpen] = useState(false); // "Attached documents" collapsible in the summary
   const [quotaModal, setQuotaModal] = useState<{ used: number; cap: number; hoursSaved: number } | null>(null);
   const [refCopied, setRefCopied] = useState(false);
   // Cache the master board's URL so the button can open it synchronously (no
@@ -2553,6 +2556,25 @@ export default function Taskpane() {
                 <p style={{ fontSize: 11.5, color: '#94a3b8', margin: '0 0 10px' }}>
                   Currently at <strong style={{ color: '#5A27E0', fontWeight: 700 }}>{summaryStageTxt.toLowerCase()}</strong>
                 </p>
+              )}
+
+              {/* Attached documents — what each one is + key points (collapsible). */}
+              {(assist.documents?.length ?? 0) > 0 && (
+                <div style={{ margin: '0 0 10px' }}>
+                  <button onClick={() => setDocsOpen((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#5A27E0', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    📎 {assist.documents!.length} attached document{assist.documents!.length === 1 ? '' : 's'} {docsOpen ? '▾' : '▸'}
+                  </button>
+                  {docsOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
+                      {assist.documents!.map((d, i) => (
+                        <div key={i} style={{ border: '1px solid #ECE7F8', borderRadius: 8, background: '#FBFAFF', padding: '7px 9px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#1C1530' }}>{d.name} <span style={{ fontWeight: 400, color: '#94a3b8' }}>· {d.docType}</span></div>
+                          <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.45, marginTop: 2 }}>{d.summary}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* The moves, as tabs. The recommended one is pre-lit; pick either to expand it. */}

@@ -189,11 +189,14 @@ export async function processMatterFile(
  * best-effort (returns '' when nothing readable). Drives the "consider attachments
  * in the reply" behaviour from both the assist precompute and manual re-drafts.
  */
-export async function reviewAttachmentsContext(
+export interface AttachmentDoc { name: string; docType: string; summary: string }
+/** Review a message's attachments once, returning both a per-document summary (for the UI)
+ *  and the context blob used to ground a reply. */
+export async function summarizeAttachments(
   user: { userId: string; tenantId: string },
   matterId: string,
   messageId: string
-): Promise<string> {
+): Promise<{ documents: AttachmentDoc[]; context: string }> {
   const attachments = await listMessageAttachments(user.userId, messageId).catch(() => [] as any[]);
   const reviewable = attachments
     .filter((a: any) => a.contentBytes && a.name && !a.isInline)
@@ -207,8 +210,9 @@ export async function reviewAttachmentsContext(
       );
     })
     .slice(0, 3);
-  if (!reviewable.length) return '';
+  if (!reviewable.length) return { documents: [], context: '' };
   const parts: string[] = [];
+  const documents: AttachmentDoc[] = [];
   for (const a of reviewable) {
     const name = a.name as string;
     const lower = name.toLowerCase();
@@ -240,6 +244,7 @@ export async function reviewAttachmentsContext(
         .filter((c: { status: string }) => c.status === 'MISMATCH' || c.status === 'MISSING')
         .map((c: { field: string; status: string }) => `${c.field} (${c.status})`)
         .join('; ');
+      if (review.summary) documents.push({ name, docType: review.documentType ?? 'Document', summary: [review.summary, risks ? `⚠ ${risks}` : '', checks ? `Doesn’t match the matter: ${checks}` : ''].filter(Boolean).join(' ') });
       parts.push(
         `ATTACHED DOCUMENT — ${name} [${review.documentType ?? 'document'}]: ${review.summary ?? ''}` +
           (risks ? ` Risks: ${risks}.` : '') +
@@ -249,7 +254,16 @@ export async function reviewAttachmentsContext(
       /* unreadable / provider can't read this type — skip */
     }
   }
-  return parts.length ? `ATTACHMENT REVIEW (consider in the reply):\n${parts.join('\n---\n')}` : '';
+  return { documents, context: parts.length ? `ATTACHMENT REVIEW (consider in the reply):\n${parts.join('\n---\n')}` : '' };
+}
+
+/** Back-compat: the reply-drafting paths only need the context blob. */
+export async function reviewAttachmentsContext(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  messageId: string
+): Promise<string> {
+  return (await summarizeAttachments(user, matterId, messageId)).context;
 }
 
 /** Best-effort plain-text extraction from a base64 .docx (word/document.xml). */

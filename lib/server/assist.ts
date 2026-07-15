@@ -19,7 +19,7 @@ import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
 import { summarizeThread, draftReply, retrieveMatterContext, actingForPhrase } from './ai';
-import { reviewAttachmentsContext, attachmentGroundTruth } from './files';
+import { summarizeAttachments, attachmentGroundTruth, type AttachmentDoc } from './files';
 import { recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
@@ -52,6 +52,8 @@ export interface SlowAssist {
   outstanding: string[];
   /** A prepared reply, when the email warrants one; null otherwise. */
   draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  /** Per-attachment summaries (what each document is and its key points), for the email tab. */
+  documents: AttachmentDoc[];
 }
 
 export type AssistResult = FastAssist & SlowAssist;
@@ -65,7 +67,7 @@ export interface AssistInput {
 
 /** Empty slow half — what a PARTIAL (fast-only) result carries until the slow half lands. */
 export function emptySlow(): SlowAssist {
-  return { brief: '', whatWeKnow: [], outstanding: [], draft: null };
+  return { brief: '', whatWeKnow: [], outstanding: [], draft: null, documents: [] };
 }
 
 // Internal context handed from the fast phase to the slow phase so the slow
@@ -218,6 +220,16 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
     matterSummary: JSON.stringify(ctx.facts),
   });
 
+  // Review any attachments ONCE — the per-document summaries surface in the email tab, and
+  // the same review grounds the reply below (so we don't read the documents twice).
+  let attachDocs: AttachmentDoc[] = [];
+  let attachContext = '';
+  if (ctx.matterId && ctx.message?.hasAttachments && ctx.message?.id) {
+    const att = await summarizeAttachments(user, ctx.matterId, ctx.message.id).catch(() => ({ documents: [] as AttachmentDoc[], context: '' }));
+    attachDocs = att.documents;
+    attachContext = att.context;
+  }
+
   // Decide whether to prepare a reply at all — don't burn the call on pure FYIs.
   const wantsReply = ctx.needsAttention || REPLY_INTENTS.has(ctx.intent);
   let draft: SlowAssist['draft'] = null;
@@ -242,12 +254,8 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
         })
       : [];
     let retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
-    // If the email carries attachments, review them against the matter and fold the
-    // findings into the draft context (e.g. a document sent for review).
-    if (ctx.matterId && ctx.message?.hasAttachments && ctx.message?.id) {
-      const attach = await reviewAttachmentsContext(user, ctx.matterId, ctx.message.id).catch(() => '');
-      if (attach) retrievedContext = retrievedContext ? `${retrievedContext}\n---\n${attach}` : attach;
-    }
+    // Fold the already-computed attachment review into the draft context (no second read).
+    if (attachContext) retrievedContext = retrievedContext ? `${retrievedContext}\n---\n${attachContext}` : attachContext;
     const templateText = `${template ? `${template.subject_template ?? ''}\n${template.body_template}` : ''}\n${policy?.default_disclaimer ?? ''}`;
 
     // Ground truth on what's actually attached, so the drafter never thanks for an
@@ -275,7 +283,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
   // what the thread summary surfaced when there's no matter yet.
   const outstanding = ctx.matterOutstanding.length ? ctx.matterOutstanding : summary.outstanding;
 
-  return { brief: summary.brief, whatWeKnow: summary.happened, outstanding, draft };
+  return { brief: summary.brief, whatWeKnow: summary.happened, outstanding, draft, documents: attachDocs };
 }
 
 /** Fast phase only — returns the fast half plus the context the slow phase needs. */
