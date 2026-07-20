@@ -1900,7 +1900,7 @@ export default function Taskpane() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {me && (
             <button
-              style={{ ...S.iconBtn, color: homeView && !setupView ? '#5A27E0' : '#64748b', background: homeView && !setupView ? '#EDE7FB' : 'transparent' }}
+              style={{ ...S.iconBtn, color: '#5A27E0', background: homeView && !setupView ? '#EDE7FB' : 'transparent' }}
               onClick={() => { if (showSetup) { setShowSetup(false); setHomeView(true); } else setHomeView((h) => !h); }}
               title={homeView ? 'Back to this email' : 'What needs me — the worklist'}
               aria-label={homeView ? 'Back to this email' : 'Open worklist'}
@@ -1920,17 +1920,7 @@ export default function Taskpane() {
           )}
           {me && (
             <button
-              style={{ ...S.iconBtn, color: '#5A27E0' }}
-              onClick={() => setShowCreateMatter(true)}
-              title="New matter"
-              aria-label="New matter"
-            >
-              <Icon name="plus" size={19} />
-            </button>
-          )}
-          {me && (
-            <button
-              style={{ ...S.iconBtn, color: showCallNotes ? '#5A27E0' : '#64748b', background: showCallNotes ? '#EDE7FB' : 'transparent' }}
+              style={{ ...S.iconBtn, color: '#5A27E0', background: showCallNotes ? '#EDE7FB' : 'transparent' }}
               onClick={() => setShowCallNotes(true)}
               title="Call notes — record & transcribe a client call"
               aria-label="Call notes"
@@ -1942,7 +1932,15 @@ export default function Taskpane() {
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
-              style={{ ...S.iconBtn, color: showAccount ? '#5A27E0' : '#64748b', background: showAccount ? '#EDE7FB' : 'transparent' }}
+              style={{ ...S.iconBtn, color: '#5A27E0' }}
+              onClick={() => setShowCreateMatter(true)}
+              title="New matter"
+              aria-label="New matter"
+            >
+              <Icon name="plus" size={19} />
+            </button>
+            <button
+              style={{ ...S.iconBtn, color: '#5A27E0', background: showAccount ? '#EDE7FB' : 'transparent' }}
               onClick={() => setShowAccount(true)}
               title={`${me.displayName || me.email} — account`}
               aria-label="Account"
