@@ -81,29 +81,29 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         <label style={S.lbl}>Property address *</label>
         <input autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="14 Oak Street, Leeds LS1 2AB" style={S.input} />
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}>
             <label style={S.lbl}>Acting for</label>
             <select value={track} onChange={(e) => setTrack(e.target.value)} style={S.input}>{TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}>
             <label style={S.lbl}>Matter ref</label>
             <input value={shownRef} onChange={(e) => { setRef(e.target.value); setRefTouched(true); }} placeholder="auto" style={S.input} />
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Buyer(s)</label><input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="comma-separated" style={S.input} /></div>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Seller(s)</label><input value={seller} onChange={(e) => setSeller(e.target.value)} placeholder="comma-separated" style={S.input} /></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Buyer(s)</label><input value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="comma-separated" style={S.input} /></div>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Seller(s)</label><input value={seller} onChange={(e) => setSeller(e.target.value)} placeholder="comma-separated" style={S.input} /></div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Other side (solicitor)</label><input value={solicitor} onChange={(e) => setSolicitor(e.target.value)} placeholder="e.g. Chloe Patel, Delaney & Webb" style={S.input} /></div>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Estate agent</label><input value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="e.g. Hunters" style={S.input} /></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Other side (solicitor)</label><input value={solicitor} onChange={(e) => setSolicitor(e.target.value)} placeholder="e.g. Chloe Patel, Delaney & Webb" style={S.input} /></div>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Estate agent</label><input value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="e.g. Hunters" style={S.input} /></div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Lender</label><input value={lender} onChange={(e) => setLender(e.target.value)} placeholder="e.g. Santander" style={S.input} /></div>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Exchange target</label><input type="date" value={exchange} onChange={(e) => setExchange(e.target.value)} style={S.input} /></div>
-          <div style={{ flex: 1 }}><label style={S.lbl}>Completion target</label><input type="date" value={completion} onChange={(e) => setCompletion(e.target.value)} style={S.input} /></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Lender</label><input value={lender} onChange={(e) => setLender(e.target.value)} placeholder="e.g. Santander" style={S.input} /></div>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Exchange target</label><input type="date" value={exchange} onChange={(e) => setExchange(e.target.value)} style={S.input} /></div>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Completion target</label><input type="date" value={completion} onChange={(e) => setCompletion(e.target.value)} style={S.input} /></div>
         </div>
 
         {err && <div style={{ fontSize: 12, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', margin: '10px 0 0' }}>{err}</div>}
@@ -118,8 +118,8 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
 }
 
 const S: Record<string, React.CSSProperties> = {
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(15,15,30,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 },
-  card: { background: '#fff', borderRadius: 14, padding: 18, width: '100%', maxWidth: 520, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 14px 44px rgba(0,0,0,0.3)' },
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(15,15,30,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 12 },
+  card: { background: '#fff', borderRadius: 14, padding: 16, width: '100%', maxWidth: 520, maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 14px 44px rgba(0,0,0,0.3)' },
   x: { width: 26, height: 26, border: 'none', background: '#f1f5f9', borderRadius: 8, cursor: 'pointer', color: '#64748b', fontSize: 12 },
   lbl: { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', margin: '10px 0 3px' },
   input: { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '7px 9px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' },
