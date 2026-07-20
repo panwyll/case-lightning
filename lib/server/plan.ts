@@ -62,7 +62,12 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
   const status = account?.status ?? 'none';
   const entitled = status === 'active' || status === 'trialing';
   const trialing = status === 'trialing';
-  const plan = entitled && PLANS.includes(account?.plan as Plan) ? (account!.plan as Plan) : null;
+  let plan = entitled && PLANS.includes(account?.plan as Plan) ? (account!.plan as Plan) : null;
+  // A trial must be evaluable: if the subscription didn't resolve to a known tier,
+  // grant Pro features rather than nothing, so auto-rules/doc AI can be tried. Volume
+  // is still held down by the trial email cap and trialExpensiveCap — features, not
+  // throughput. Without this a plan-less trial silently gets the free-tier experience.
+  if (trialing && plan === null) plan = 'pro';
   return { plan, status, entitled, trialing, pilot: false };
 }
 
@@ -87,9 +92,16 @@ export async function isPremiumTenant(tenantId: string): Promise<boolean> {
   return plan !== null && PREMIUM_PLANS.has(plan);
 }
 
-/** Monthly cap on emails processed (triage/analyse) for a plan. null = unlimited. */
+/**
+ * Monthly cap on emails processed (triage/analyse) for a plan. null = unlimited.
+ *
+ * A null plan means we could not resolve a tier (e.g. the Stripe price didn't match
+ * a known price id). That must fail CLOSED to the entry-tier cap — treating "unknown"
+ * as unlimited would hand the loosest quota to the least-identified accounts.
+ */
 export function emailMonthlyCap(plan: Plan | null): number | null {
-  const c = plan === 'plus' ? config.emailCapPlus : plan === 'pro' ? config.emailCapPro : plan === 'enterprise' ? config.emailCapEnterprise : 0;
+  if (plan === null) return config.emailCapPlus > 0 ? config.emailCapPlus : null;
+  const c = plan === 'plus' ? config.emailCapPlus : plan === 'pro' ? config.emailCapPro : config.emailCapEnterprise;
   return c && c > 0 ? c : null;
 }
 
@@ -102,8 +114,13 @@ export async function emailQuotaStatus(
   tenantId: string
 ): Promise<{ allowed: boolean; used: number; cap: number | null; hoursSavedThisMonth: number; plan: Plan | null }> {
   const billing = await getTenantBilling(tenantId);
-  const cap = emailMonthlyCap(billing.plan);
-  if (!cap) return { allowed: true, used: 0, cap: null, hoursSavedThisMonth: 0, plan: billing.plan };
+  // A trial is held to the lower of its evaluated tier's cap and the trial cap, so
+  // trialing on an "unlimited" tier doesn't hand out unlimited volume.
+  const trialCap = billing.trialing && config.emailCapTrial > 0 ? config.emailCapTrial : null;
+  const caps = [emailMonthlyCap(billing.plan), trialCap].filter((c): c is number => c != null);
+  const cap = caps.length ? Math.min(...caps) : null;
+  // Always meter, even when uncapped — the account panel and the upgrade nudge read
+  // `used`/`hoursSavedThisMonth`, and short-circuiting made them report a flat zero.
   const row = await queryOne<{ emails: number; drafts: number }>(
     `select
        count(*) filter (where event_type = 'EMAIL_CLASSIFY')::int as emails,
@@ -114,7 +131,7 @@ export async function emailQuotaStatus(
   );
   const used = row?.emails ?? 0;
   const hoursSavedThisMonth = Math.round(((row?.drafts ?? 0) * config.estimatedMinutesSavedPerReply) / 60);
-  return { allowed: used < cap, used, cap, hoursSavedThisMonth, plan: billing.plan };
+  return { allowed: cap == null || used < cap, used, cap, hoursSavedThisMonth, plan: billing.plan };
 }
 
 /**

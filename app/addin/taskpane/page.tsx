@@ -3715,7 +3715,9 @@ export default function Taskpane() {
                   {plan?.plan === 'enterprise' ? 'Firm' : plan?.plan === 'pro' ? 'Pro' : plan?.plan === 'plus' ? 'Solo' : plan?.status === 'trialing' ? 'Trial' : 'Free'}
                 </div>
                 {plan?.status && plan.status !== 'active' && (
-                  <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>{plan.status.replace('_', ' ')}</div>
+                  <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>
+                    {plan.status === 'none' ? 'No subscription' : plan.status.replace('_', ' ')}
+                  </div>
                 )}
               </div>
               <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>

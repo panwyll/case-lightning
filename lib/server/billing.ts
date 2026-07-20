@@ -278,6 +278,10 @@ export async function changePlan(
     success_url: `${appUrl}/account?upgraded=1`,
     cancel_url: `${appUrl}/account`,
     allow_promotion_codes: true,
+    // Stripe owns the trial clock — it emits customer.subscription.updated as the
+    // trial converts (trialing → active) or lapses, and the webhook writes that
+    // status straight through. Nothing in our DB has to expire anything.
+    ...(config.trialDays > 0 ? { subscription_data: { trial_period_days: config.trialDays } } : {}),
   });
   return { url: session.url! };
 }

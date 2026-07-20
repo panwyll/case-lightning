@@ -116,6 +116,15 @@ export const config = {
   // running up cost. Trial backlog/onboarding lookback is also clamped (days).
   trialExpensiveCap: Number(env('TRIAL_EXPENSIVE_CAP') ?? '3'),
   trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '7'),
+  // Length of the free trial, in days. Stripe owns the clock: this is passed as
+  // subscription_data.trial_period_days at checkout, and the subscription webhook
+  // drives status trialing → active (or unpaid/canceled if they never pay). 0 = no
+  // trial. NOTE: the /start-trial funnel uses a hosted Stripe Payment Link, whose
+  // trial is configured in the Stripe dashboard, not here.
+  trialDays: Number(env('TRIAL_DAYS') ?? '14'),
+  // Emails a trial may process per month, whatever tier it's evaluating — trials get
+  // Pro features but not Pro volume. 0 = fall back to the evaluated tier's cap.
+  emailCapTrial: Number(env('EMAIL_CAP_TRIAL') ?? '200'),
   // Historical-import (backlog scan) is heavy, so cap it per calendar month. Non-pro
   // gets fewer with an upsell; pro/enterprise get more.
   onboardingMonthlyCapFree: Number(env('ONBOARDING_MONTHLY_CAP_FREE') ?? '1'),

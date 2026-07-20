@@ -214,6 +214,7 @@ const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }>
   trialing: { label: 'Trial', bg: '#ede9fe', color: '#6d28d9' },
   past_due: { label: 'Past due', bg: '#fef3c7', color: '#92400e' },
   canceled: { label: 'Canceled', bg: '#fee2e2', color: '#b91c1c' },
+  none: { label: 'No subscription', bg: '#f1f5f9', color: '#64748b' },
 };
 
 // A matter search box with a results dropdown; calls onSelect with the chosen matter.

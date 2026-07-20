@@ -66,6 +66,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   trialing: { label: 'Trial', cls: 'bg-violet-soft text-violet-dark' },
   past_due: { label: 'Past due', cls: 'bg-amber-100 text-amber-800' },
   canceled: { label: 'Canceled', cls: 'bg-red-100 text-red-700' },
+  none: { label: 'No subscription', cls: 'bg-slate-100 text-slate-600' },
 };
 
 const PLAN_LABEL: Record<string, string> = { plus: 'Solo', pro: 'Pro', enterprise: 'Firm' };
