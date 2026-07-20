@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
+import { composeAddress, EMPTY_ADDR, type AddrParts } from '@/lib/address';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -23,7 +24,7 @@ const TRACKS: Array<[string, string]> = [
 const list = (s: string) => s.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 
 export default function NewMatter({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [address, setAddress] = useState('');
+  const [addr, setAddr] = useState<AddrParts>({ ...EMPTY_ADDR, country: 'England' });
   const [track, setTrack] = useState('PURCHASE');
   const [buyer, setBuyer] = useState('');
   const [seller, setSeller] = useState('');
@@ -37,11 +38,16 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // The one-line display string the rest of the app stores in property_address.
+  const address = composeAddress(addr);
+  const addrOk = Boolean(addr.street.trim());
+  const setPart = (k: keyof AddrParts, v: string) => setAddr((a) => ({ ...a, [k]: v }));
+
   const derivedRef = matterRefFrom({ buyerNames: list(buyer), sellerNames: list(seller), propertyAddress: address });
   const shownRef = refTouched ? ref : derivedRef;
 
   const create = async () => {
-    if (!address.trim() || busy) return;
+    if (!addrOk || busy) return;
     setBusy(true); setErr(null);
     try {
       const matterRef = (shownRef.trim() || fallbackMatterRef());
@@ -59,8 +65,12 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           completionTargetDate: completion || undefined,
         }),
       });
-      // track isn't accepted at creation — set it (and it drives "acting for") straight after.
-      if (track !== 'PURCHASE') await api(`/matters/${created.id}`, { method: 'PATCH', body: JSON.stringify({ track }) }).catch(() => {});
+      // Neither track nor addressParts is accepted at creation — set them straight after
+      // (track drives "acting for"; addressParts is what the House tab edits).
+      await api(`/matters/${created.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ ...(track !== 'PURCHASE' ? { track } : {}), addressParts: addr }),
+      }).catch(() => {});
       onCreated(created.id);
     } catch (e: any) {
       setErr(e?.message?.includes('graph') || e?.message?.toLowerCase?.().includes('token')
@@ -76,8 +86,37 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New matter</strong>
           <button onClick={onClose} style={S.x} aria-label="Close">✕</button>
         </div>
-        <label style={{ ...S.lbl, marginTop: 4 }}>Property address *</label>
-        <input autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="14 Oak Street, Leeds LS1 2AB" style={S.input} />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+            <label style={{ ...S.lbl, marginTop: 4 }}>House name / number</label>
+            <input autoFocus value={addr.building} onChange={(e) => setPart('building', e.target.value)} placeholder="14" style={S.input} />
+          </div>
+          <div style={{ flex: '2 1 200px', minWidth: 0 }}>
+            <label style={{ ...S.lbl, marginTop: 4 }}>Street *</label>
+            <input value={addr.street} onChange={(e) => setPart('street', e.target.value)} placeholder="Oak Street" style={S.input} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 150px', minWidth: 0 }}>
+            <label style={S.lbl}>Town / city</label>
+            <input value={addr.town} onChange={(e) => setPart('town', e.target.value)} placeholder="Leeds" style={S.input} />
+          </div>
+          <div style={{ flex: '1 1 110px', minWidth: 0 }}>
+            <label style={S.lbl}>Postcode</label>
+            <input
+              value={addr.postcode}
+              onChange={(e) => setPart('postcode', e.target.value.toUpperCase())}
+              placeholder="LS1 2AB"
+              style={S.input}
+            />
+          </div>
+          <div style={{ flex: '1 1 120px', minWidth: 0 }}>
+            <label style={S.lbl}>Country</label>
+            <select value={addr.country} onChange={(e) => setPart('country', e.target.value)} style={S.input}>
+              {['England', 'Wales', 'Scotland', 'Northern Ireland'].map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}>
@@ -107,7 +146,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         {err && <div style={{ fontSize: 12, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', margin: '10px 0 0' }}>{err}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button onClick={create} disabled={!address.trim() || busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: !address.trim() || busy ? 0.5 : 1 }}>{busy ? 'Creating…' : 'Create matter'}</button>
+          <button onClick={create} disabled={!addrOk || busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: !addrOk || busy ? 0.5 : 1 }}>{busy ? 'Creating…' : 'Create matter'}</button>
           <button onClick={onClose} style={S.btn}>Cancel</button>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import NewMatter from '@/app/admin/NewMatter';
+import { composeAddress, parseAddress, type AddrParts } from '@/lib/address';
 import CallNotes from './CallNotes';
 
 // ── Minimal Office.js typings (we only touch the mailbox item) ───────────────
@@ -3844,27 +3845,6 @@ function LoadingRow({ label }: { label: string }) {
 // that apply immediately. Purchase price is validated as a money value.
 const MONEY_RE = /^£?\s*\d{1,3}(,\d{3})*(\.\d{1,2})?$|^£?\s*\d+(\.\d{1,2})?$/;
 
-// Structured property address. property_address stays the display string; these parts are
-// what the House tab actually edits, recomposing the string on save.
-type AddrParts = { building: string; street: string; town: string; postcode: string; country: string };
-const UK_POSTCODE_RE = /([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})/i;
-function composeAddress(a: AddrParts): string {
-  const line1 = [a.building, a.street].map((s) => (s || '').trim()).filter(Boolean).join(' ');
-  return [line1, a.town, a.postcode, a.country].map((s) => (s || '').trim()).filter(Boolean).join(', ');
-}
-// Best-effort split of a legacy freeform address into parts (only used until the first
-// structured edit persists address_parts). Pulls out a UK postcode, treats the last comma
-// segment as the town and the rest as the street; the user can tidy building/country.
-function parseAddress(s: string): AddrParts {
-  const empty: AddrParts = { building: '', street: '', town: '', postcode: '', country: '' };
-  if (!s) return empty;
-  const pcM = s.match(UK_POSTCODE_RE);
-  const postcode = pcM ? `${pcM[1].toUpperCase()} ${pcM[2].toUpperCase()}` : '';
-  const segs = (pcM ? s.replace(pcM[0], '') : s).split(',').map((x) => x.trim()).filter(Boolean);
-  const town = segs.length >= 2 ? segs[segs.length - 1] : '';
-  const street = segs.length >= 2 ? segs.slice(0, -1).join(', ') : segs[0] || '';
-  return { building: '', street, town, postcode, country: '' };
-}
 function seedAddr(matter: any): AddrParts {
   const p = matter.address_parts;
   if (p && typeof p === 'object') return { building: p.building || '', street: p.street || '', town: p.town || '', postcode: p.postcode || '', country: p.country || '' };
