@@ -16,9 +16,9 @@
 
   <Id>6ac8bf48-cb10-4ba5-8469-5fd32f77d4b0</Id>
   <Version>1.0.4.0</Version>
-  <ProviderName>Case Lightning</ProviderName>
+  <ProviderName>AIFTRC LTD</ProviderName>
   <DefaultLocale>en-GB</DefaultLocale>
-  <DisplayName DefaultValue="CONVEYi by Case Lightning"/>
+  <DisplayName DefaultValue="CONVEYi"/>
   <Description DefaultValue="CONVEYi — case-aware AI email drafting and AI case management for UK conveyancers, inside Outlook."/>
   <IconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-128.png"/>

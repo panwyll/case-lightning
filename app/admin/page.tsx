@@ -6,6 +6,7 @@ import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import EmailTemplates from './EmailTemplates';
 import AutoRules from './AutoRules';
+import NewMatter from './NewMatter';
 
 interface MatterHit {
   id: string;
@@ -522,6 +523,7 @@ export default function AdminPage() {
     }
   }
   const [copiedRef, setCopiedRef] = useState(false);
+  const [showNewMatter, setShowNewMatter] = useState(false);
   const [stages, setStages] = useState<Array<{ key: string; name: string }>>([]);
   const [referrals, setReferrals] = useState<any>(null);
   const [mergeKeep, setMergeKeep] = useState<MatterHit | null>(null);
@@ -1747,7 +1749,8 @@ export default function AdminPage() {
                     </select>
                   </label>
                 )}
-                <a href={draftsLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none', marginLeft: 'auto' }}>Open Outlook Drafts ↗</a>
+                <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
+                <a href={draftsLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Open Outlook Drafts ↗</a>
               </div>
 
               {mywork.items.length === 0 ? (
@@ -2304,6 +2307,20 @@ export default function AdminPage() {
         )}
         </div>
       </div>
+
+      {showNewMatter && (
+        <NewMatter
+          onClose={() => setShowNewMatter(false)}
+          onCreated={async (id) => {
+            setShowNewMatter(false);
+            setStatus('Matter created — OneDrive folder + tracker provisioned.');
+            await Promise.all([
+              loadMywork(mywork?.assignedTo),
+              api<{ matters: any[]; doneTotal?: number }>('/admin/board').then((b) => { setBoard(b.matters); setDoneTotal(b.doneTotal ?? 0); }).catch(() => {}),
+            ]);
+          }}
+        />
+      )}
     </div>
   );
 }
