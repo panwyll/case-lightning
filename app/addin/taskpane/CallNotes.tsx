@@ -51,6 +51,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
   const [taskFor, setTaskFor] = useState<string | null>(null); // note whose add-task box is open
   const [taskText, setTaskText] = useState('');
   const [taskDone, setTaskDone] = useState(false);
+  const [delConfirm, setDelConfirm] = useState<string | null>(null); // note id awaiting delete confirm
   const [mq, setMq] = useState('');
   const [mResults, setMResults] = useState<Array<{ id: string; matterRef: string; propertyAddress: string }>>([]);
   const [searching, setSearching] = useState(false);
@@ -160,7 +161,9 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
     } catch (e: any) { setErr(e?.message || 'Could not update.'); }
   };
   const del = async (noteId: string) => {
-    if (!window.confirm('Delete this call note?')) return;
+    // No window.confirm — it's unreliable in the Outlook add-in iframe (returns undefined,
+    // which silently cancels). The button is a two-click confirm instead.
+    setDelConfirm(null);
     setNotes((n) => n.filter((x) => x.id !== noteId));
     await api(`/call-notes/${noteId}`, { method: 'DELETE' }).catch(() => {});
   };
@@ -270,7 +273,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                 <div style={{ display: 'flex', gap: 10, marginTop: 8, alignItems: 'center' }}>
                   <button onClick={() => setOpenId(open ? null : n.id)} style={S.link}>{open ? 'Hide transcript' : 'Full transcript'}</button>
                   {n.matter_id && <button onClick={() => { setTaskFor(taskFor === n.id ? null : n.id); setTaskText(''); }} style={S.link}>{taskFor === n.id ? 'Close' : '+ Add task'}</button>}
-                  <button onClick={() => del(n.id)} style={{ ...S.link, color: '#b91c1c', marginLeft: 'auto' }}>Delete</button>
+                  <button onClick={() => (delConfirm === n.id ? del(n.id) : setDelConfirm(n.id))} onBlur={() => setDelConfirm((c) => (c === n.id ? null : c))} style={{ ...S.link, color: '#b91c1c', marginLeft: 'auto' }}>{delConfirm === n.id ? 'Tap again to delete' : 'Delete'}</button>
                 </div>
                 {/* Add follow-up tasks for the matter this call was assigned to. */}
                 {taskFor === n.id && n.matter_id && (
