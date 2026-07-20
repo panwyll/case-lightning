@@ -1938,16 +1938,6 @@ export default function Taskpane() {
               <Icon name="phone" size={18} />
             </button>
           )}
-          {me && (
-            <button
-              style={{ ...S.iconBtn, color: '#64748b' }}
-              onClick={openReferral}
-              title="Refer a firm, earn credit"
-              aria-label="Refer a firm, earn credit"
-            >
-              <Icon name="gift" size={18} />
-            </button>
-          )}
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -3746,6 +3736,12 @@ export default function Taskpane() {
               onClick={() => { setShowAccount(false); setShowSetup(true); setHomeView(true); }}
             >
               <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
+            </button>
+            <button
+              style={{ ...S.acctRow }}
+              onClick={() => { setShowAccount(false); openReferral(); }}
+            >
+              <Icon name="gift" size={16} /> <span>Refer a firm, earn credit</span>
             </button>
             <button
               style={{ ...S.acctRow }}
