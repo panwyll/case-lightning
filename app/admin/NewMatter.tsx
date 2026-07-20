@@ -76,9 +76,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New matter</strong>
           <button onClick={onClose} style={S.x} aria-label="Close">✕</button>
         </div>
-        <p style={{ fontSize: 12, color: '#94a3b8', margin: '0 0 12px' }}>Provisions the OneDrive folder + Excel tracker automatically.</p>
-
-        <label style={S.lbl}>Property address *</label>
+        <label style={{ ...S.lbl, marginTop: 4 }}>Property address *</label>
         <input autoFocus value={address} onChange={(e) => setAddress(e.target.value)} placeholder="14 Oak Street, Leeds LS1 2AB" style={S.input} />
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

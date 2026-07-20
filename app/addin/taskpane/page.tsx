@@ -3733,7 +3733,7 @@ export default function Taskpane() {
 
             <button
               style={{ ...S.acctRow }}
-              onClick={() => { setShowAccount(false); setShowSetup(true); setHomeView(true); }}
+              onClick={() => { setShowAccount(false); setShowSetup(true); }}
             >
               <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
             </button>
