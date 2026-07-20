@@ -16,7 +16,7 @@ import { config } from './config';
 import { query, queryOne } from './db';
 import { stripe } from './stripe';
 import { accountForUser } from './referrals';
-import { getTenantBilling, type Plan } from './plan';
+import { getTenantBilling, emailQuotaStatus, type Plan } from './plan';
 import type { SessionUser } from './types';
 
 /** The Firm (enterprise) base price bundles this many seats; extras bill per-seat. */
@@ -45,6 +45,8 @@ export interface BillingSummary {
   commissionPennies: number;
   referrals: { total: number; active: number };
   commissions: { accruedPennies: number; appliedPennies: number; clawedBackPennies: number };
+  // This month's AI usage (mirrors emailQuotaStatus so /account renders it without a second call).
+  usage: { used: number; cap: number | null; hoursSavedThisMonth: number };
 }
 
 export async function getBillingSummary(user: SessionUser): Promise<BillingSummary> {
@@ -69,6 +71,7 @@ export async function getBillingSummary(user: SessionUser): Promise<BillingSumma
   const totalFor = (s: string) => Number(totals.find((t) => t.status === s)?.total ?? 0);
 
   const billing = await getTenantBilling(user.tenantId);
+  const quota = await emailQuotaStatus(user.tenantId);
   const appUrl = config.appUrl.replace(/\/$/, '');
   return {
     plan: account.plan,
@@ -89,6 +92,7 @@ export async function getBillingSummary(user: SessionUser): Promise<BillingSumma
       appliedPennies: totalFor('APPLIED'),
       clawedBackPennies: totalFor('CLAWED_BACK'),
     },
+    usage: { used: quota.used, cap: quota.cap, hoursSavedThisMonth: quota.hoursSavedThisMonth },
   };
 }
 

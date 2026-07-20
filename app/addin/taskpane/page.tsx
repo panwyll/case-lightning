@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
+import NewMatter from '@/app/admin/NewMatter';
 import CallNotes from './CallNotes';
 
 // ── Minimal Office.js typings (we only touch the mailbox item) ───────────────
@@ -270,7 +271,9 @@ function hasSignInHint(): boolean {
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
-  const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean } | null>(null);
+  const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean; usage?: { used: number; cap: number | null; hoursSavedThisMonth: number } } | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const [showCreateMatter, setShowCreateMatter] = useState(false);
   // Matter reconciliation grid ("is my file right?").
   const [recon, setRecon] = useState<{ rows: any[]; issues: string[]; documents: string[]; skipped: string[] } | null>(null);
   const [reconBusy, setReconBusy] = useState(false);
@@ -498,8 +501,8 @@ export default function Taskpane() {
       }
     }
     try {
-      const b = await api<{ plan: string | null; status: string; entitled: boolean; trialing: boolean }>('/billing/account');
-      setPlan({ plan: b.plan, status: b.status, entitled: b.entitled, trialing: b.trialing });
+      const b = await api<{ plan: string | null; status: string; entitled: boolean; trialing: boolean; usage?: { used: number; cap: number | null; hoursSavedThisMonth: number } }>('/billing/account');
+      setPlan({ plan: b.plan, status: b.status, entitled: b.entitled, trialing: b.trialing, usage: b.usage });
     } catch {
       setPlan(null);
     }
@@ -1917,15 +1920,12 @@ export default function Taskpane() {
           )}
           {me && (
             <button
-              style={{ ...S.iconBtn, color: showSetup ? '#5A27E0' : '#64748b', background: showSetup ? '#EDE7FB' : 'transparent' }}
-              onClick={() => setShowSetup((s) => !s)}
-              title="Setup & settings"
-              aria-label="Setup & settings"
+              style={{ ...S.iconBtn, color: '#5A27E0' }}
+              onClick={() => setShowCreateMatter(true)}
+              title="New matter"
+              aria-label="New matter"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
+              <Icon name="plus" size={19} />
             </button>
           )}
           {me && (
@@ -1951,24 +1951,13 @@ export default function Taskpane() {
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            {plan && (
-              <span style={S.planBadge}>
-                {plan.plan === 'enterprise'
-                  ? 'Firm'
-                  : plan.plan === 'pro'
-                  ? 'Pro'
-                  : plan.plan === 'plus'
-                  ? 'Solo'
-                  : plan.status === 'trialing'
-                  ? 'Trial'
-                  : 'Free'}
-              </span>
-            )}
-            <button style={{ ...S.iconBtn, color: '#64748b' }} onClick={() => openAdmin('billing')} title={`${me.displayName || me.email} — account & billing`} aria-label="Account & billing">
+            <button
+              style={{ ...S.iconBtn, color: showAccount ? '#5A27E0' : '#64748b', background: showAccount ? '#EDE7FB' : 'transparent' }}
+              onClick={() => setShowAccount(true)}
+              title={`${me.displayName || me.email} — account`}
+              aria-label="Account"
+            >
               <Icon name="user" size={18} />
-            </button>
-            <button style={{ ...S.iconBtn, color: '#64748b' }} onClick={signOut} title={`Sign out (${me.email})`} aria-label="Sign out">
-              <Icon name="logout" size={18} />
             </button>
           </div>
         ) : (
@@ -3706,6 +3695,73 @@ export default function Taskpane() {
           </div>
         </div>
       )}
+
+      {/* New matter — purple-plus icon in the header. Standalone (not the email-tied create form). */}
+      {showCreateMatter && (
+        <NewMatter
+          onClose={() => setShowCreateMatter(false)}
+          onCreated={() => { setShowCreateMatter(false); void reloadWorklist(wlMeta.assignee); }}
+        />
+      )}
+
+      {/* Account panel — person icon in the header. Plan, usage, and the exits. */}
+      {showAccount && me && (
+        <div style={S.modalOverlay} onClick={() => setShowAccount(false)}>
+          <div style={{ ...S.modalCard, maxWidth: 340 }} onClick={(e) => e.stopPropagation()}>
+            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowAccount(false)} title="Close" aria-label="Close">✕</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#EDE7FB', color: '#5A27E0', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
+                <Icon name="user" size={20} />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me.displayName || me.email}</div>
+                {me.displayName && <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{me.email}</div>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+              <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>Plan</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                  {plan?.plan === 'enterprise' ? 'Firm' : plan?.plan === 'pro' ? 'Pro' : plan?.plan === 'plus' ? 'Solo' : plan?.status === 'trialing' ? 'Trial' : 'Free'}
+                </div>
+                {plan?.status && plan.status !== 'active' && (
+                  <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>{plan.status.replace('_', ' ')}</div>
+                )}
+              </div>
+              <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>This month</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
+                  {plan?.usage ? (plan.usage.cap == null ? `${plan.usage.used}` : `${plan.usage.used} / ${plan.usage.cap}`) : '—'}
+                  <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}> emails</span>
+                </div>
+                {plan?.usage && plan.usage.hoursSavedThisMonth > 0 && (
+                  <div style={{ fontSize: 11, color: '#16a34a', marginTop: 1 }}>~{plan.usage.hoursSavedThisMonth}h saved</div>
+                )}
+              </div>
+            </div>
+
+            <button
+              style={{ ...S.acctRow }}
+              onClick={() => { setShowAccount(false); setShowSetup(true); setHomeView(true); }}
+            >
+              <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
+            </button>
+            <button
+              style={{ ...S.acctRow }}
+              onClick={() => { setShowAccount(false); openAdmin('billing'); }}
+            >
+              <Icon name="external" size={16} /> <span>Admin centre &amp; billing</span>
+            </button>
+            <button
+              style={{ ...S.acctRow, color: '#b91c1c' }}
+              onClick={() => { setShowAccount(false); signOut(); }}
+            >
+              <Icon name="logout" size={16} /> <span>Sign out</span>
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3763,6 +3819,8 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M5 12v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" /><path d="M12 8v14" /><path d="M12 8H7.5a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8z" /><path d="M12 8h4.5a2.5 2.5 0 0 0 0-5C13 3 12 8 12 8z" /></>,
     copy: <><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>,
     phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />,
+    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flex: 'none' }}>
@@ -4406,6 +4464,7 @@ const S: Record<string, React.CSSProperties> = {
   fileBtn: { flex: 'none', padding: '3px 9px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' },
   fileDone: { flex: 'none', fontSize: 10, fontWeight: 700, color: '#166534', background: '#dcfce7', borderRadius: 999, padding: '2px 7px' },
   iconAction: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, border: '1px solid #cbd5e1', borderRadius: 7, background: '#fff', color: '#475569', cursor: 'pointer', textDecoration: 'none' },
+  acctRow: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', fontSize: 13, fontWeight: 600, color: '#334155', background: '#fff', border: '1px solid #eef2f7', borderRadius: 10, padding: '10px 12px', marginTop: 8, cursor: 'pointer', fontFamily: 'inherit' },
   fileIcon: { flex: 'none', display: 'inline-flex', color: '#94a3b8' },
   actionRow: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 4 },
   actionBtn: {
