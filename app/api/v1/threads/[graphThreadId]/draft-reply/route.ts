@@ -134,7 +134,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       bodyHtml: draft.bodyHtml,
       why: draft.why,
       referencedDocuments: docs,
-      actions: draft.actions,
       messageId: body.messageId,
     });
   } catch (error) {

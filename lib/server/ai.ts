@@ -751,7 +751,6 @@ export async function draftReply(input: {
   subject: string;
   bodyHtml: string;
   why: string[];
-  actions: Array<{ owner: string; task: string; due: string }>;
 }> {
   return structured(
     input.userId,
@@ -759,27 +758,15 @@ export async function draftReply(input: {
     'DRAFT_REPLY',
     { tenantId: input.tenantId, matterId: input.matterId },
     'draft_package',
-    'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). Output subject, HTML body, rationale bullets (note any discrepancies you found), and a next-actions checklist.',
+    'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). Output subject, HTML body, and rationale bullets (note any discrepancies you found).',
     {
       type: 'object',
       properties: {
         subject: { type: 'string' },
         bodyHtml: { type: 'string' },
         why: { type: 'array', items: { type: 'string' } },
-        actions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              owner: { type: 'string' },
-              task: { type: 'string' },
-              due: { type: 'string' },
-            },
-            required: ['owner', 'task', 'due'],
-          },
-        },
       },
-      required: ['subject', 'bodyHtml', 'why', 'actions'],
+      required: ['subject', 'bodyHtml', 'why'],
     },
     `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}${
       input.guidance ? `Solicitor's instructions for this draft (follow them closely): ${input.guidance}\n` : ''
@@ -816,7 +803,6 @@ export async function draftUpdate(input: {
   subject: string;
   bodyHtml: string;
   why: string[];
-  actions: Array<{ owner: string; task: string; due: string }>;
 }> {
   return structured(
     input.userId,
@@ -826,27 +812,15 @@ export async function draftUpdate(input: {
     'draft_package',
     'Produce a draft-only, fresh OUTBOUND conveyancing update email addressed to the named recipient — NOT a reply to the original sender. ' +
       'Open by addressing the recipient, summarise the relevant development on this matter for them, and state plainly any action they need to take. ' +
-      'Return subject, HTML body, rationale bullets, and a next-actions checklist. Concise, compliance-safe professional language. Never claim the email has been sent.',
+      'Return subject, HTML body, and rationale bullets. Concise, compliance-safe professional language. Never claim the email has been sent.',
     {
       type: 'object',
       properties: {
         subject: { type: 'string' },
         bodyHtml: { type: 'string' },
         why: { type: 'array', items: { type: 'string' } },
-        actions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              owner: { type: 'string' },
-              task: { type: 'string' },
-              due: { type: 'string' },
-            },
-            required: ['owner', 'task', 'due'],
-          },
-        },
       },
-      required: ['subject', 'bodyHtml', 'why', 'actions'],
+      required: ['subject', 'bodyHtml', 'why'],
     },
     `Recipient: ${input.recipientName} (role: ${input.recipientRole})\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}Firm template:\n${input.templateText}\n\nMatter facts: ${JSON.stringify(
       input.matterFacts

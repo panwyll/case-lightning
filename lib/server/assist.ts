@@ -51,7 +51,7 @@ export interface SlowAssist {
   /** Open items / blockers standing between us and a complete answer. */
   outstanding: string[];
   /** A prepared reply, when the email warrants one; null otherwise. */
-  draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  draft: { subject: string; bodyHtml: string; why: string[] } | null;
   /** Per-attachment summaries (what each document is and its key points), for the email tab. */
   documents: AttachmentDoc[];
 }
@@ -276,7 +276,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       templateText,
       attachmentSummary,
     });
-    draft = { subject: generated.subject, bodyHtml: generated.bodyHtml, why: generated.why, actions: generated.actions };
+    draft = { subject: generated.subject, bodyHtml: generated.bodyHtml, why: generated.why };
   }
 
   // Prefer the matter's tracked outstanding items as the "blockers"; fall back to

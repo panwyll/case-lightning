@@ -40,7 +40,6 @@ interface DraftPackage {
   subject: string;
   bodyHtml: string;
   why: string[];
-  actions: Array<{ owner: string; task: string; due: string }>;
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
@@ -62,7 +61,7 @@ interface AssistData {
   brief: string;
   whatWeKnow: string[];
   outstanding: string[];
-  draft: { subject: string; bodyHtml: string; why: string[]; actions: Array<{ owner: string; task: string; due: string }> } | null;
+  draft: { subject: string; bodyHtml: string; why: string[] } | null;
   /** Per-attachment summaries for the email tab (empty until the slow half lands). */
   documents?: Array<{ name: string; docType: string; summary: string }>;
   highlighted: string[];
