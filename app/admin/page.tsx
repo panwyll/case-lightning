@@ -898,8 +898,8 @@ export default function AdminPage() {
           })}
         </nav>
 
-        {/* Content */}
-        <div style={{ flex: 1, minWidth: 300, maxWidth: tab === 'board' || tab === 'workload' || tab === 'audit' ? 'none' : 880 }}>
+        {/* Content — full width; every section uses the whole display. */}
+        <div style={{ flex: 1, minWidth: 300, maxWidth: 'none' }}>
         <h1 style={{ fontSize: 20, margin: `0 0 ${TAB_META[tab].subtitle ? 4 : 18}px` }}>{TAB_META[tab].label}</h1>
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
