@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -21,8 +21,16 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 
 const STAGE_COLORS = ['#6366f1', '#8b5cf6', '#0ea5e9', '#14b8a6', '#f59e0b', '#16a34a', '#64748b', '#ec4899', '#0891b2', '#a855f7'];
 const ROLES = ['OWNER', 'CONVEYANCER', 'ASSISTANT', 'ADMIN'];
-interface Stage { id: string; key: string; name: string; sort_order: number; active: boolean }
 
+// Canvas geometry. Tasks are absolutely positioned; these drive the auto-layout and
+// the arrow endpoints.
+const PILL_W = 230;
+const PILL_H = 58;
+const GAP_X = 40;
+const GAP_Y = 62;
+const PAD = 12;
+
+interface Stage { id: string; key: string; name: string; sort_order: number; active: boolean }
 interface Template {
   id: string;
   stage: string;
@@ -43,13 +51,38 @@ interface Template {
 interface Edge { from_template_id: string; to_template_id: string; }
 interface Member { id: string; name: string; role: string }
 
-// Flow-chart CSS. Connectors are drawn with pseudo-elements, so they live here rather
-// than in inline styles. The stage flow runs top→down (the beats); expanding a stage
-// reveals its tasks as a sub-flow that forks where a task has several dependents.
+// Longest-path rank per task (a task's level = 1 + the deepest of its prerequisites).
+// Used only to seed a tidy default layout for tasks that have never been placed.
+function levelsOf(list: Template[], edges: Edge[]): Record<string, number> {
+  const ids = new Set(list.map((t) => t.id));
+  const prereqs: Record<string, string[]> = {};
+  for (const e of edges) if (ids.has(e.from_template_id) && ids.has(e.to_template_id)) (prereqs[e.to_template_id] ??= []).push(e.from_template_id);
+  const memo: Record<string, number> = {};
+  const calc = (id: string, stack: Set<string>): number => {
+    if (memo[id] != null) return memo[id];
+    let lv = 0;
+    for (const p of prereqs[id] ?? []) if (!stack.has(p)) lv = Math.max(lv, calc(p, new Set([...stack, id])) + 1);
+    return (memo[id] = lv);
+  };
+  for (const t of list) calc(t.id, new Set());
+  return memo;
+}
+// A clean grid for a stage: level = row, order within a level = column.
+function computeLayout(list: Template[], edges: Edge[]): Record<string, { x: number; y: number }> {
+  const lv = levelsOf(list, edges);
+  const byLevel: Record<number, Template[]> = {};
+  [...list].sort((a, b) => a.sort_order - b.sort_order).forEach((t) => (byLevel[lv[t.id]] ??= []).push(t));
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [L, arr] of Object.entries(byLevel)) arr.forEach((t, i) => (out[t.id] = { x: PAD + i * (PILL_W + GAP_X), y: PAD + Number(L) * (PILL_H + GAP_Y) }));
+  return out;
+}
+
+// Free-form canvas CSS. Tasks are absolutely placed; arrows overlay them on top, so the
+// dependency lines are always readable and stay clickable-to-delete.
 const WF_CSS = `
 .wf-flow{display:flex;flex-direction:column;align-items:center}
-.wf-stage{width:360px;background:#fff;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.08);overflow:hidden}
-.wf-stage.open{width:660px;max-width:100%}
+.wf-stage{width:360px;background:#fff;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.08)}
+.wf-stage.open{width:auto;min-width:660px;max-width:100%}
 .wf-hd{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer}
 .wf-dot{width:11px;height:11px;border-radius:3px;flex:none}
 .wf-name{font-size:14.5px;font-weight:700;color:#0f172a;flex:1;min-width:0;border:1px solid transparent;border-radius:6px;background:transparent;padding:2px 4px;font-family:inherit}
@@ -65,20 +98,19 @@ const WF_CSS = `
 .wf-ic.wf-del:hover{color:#b91c1c}
 .wf-conn{width:2px;height:26px;background:#c3cbd6;position:relative}
 .wf-conn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #c3cbd6}
-.wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
-.wf-subflow{position:relative;display:flex;flex-direction:column;align-items:center;min-width:min-content;gap:44px}
-.wf-arrows{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;z-index:0}
-.wf-level{display:flex;gap:24px;justify-content:center;align-items:stretch;flex-wrap:wrap;position:relative;z-index:1}
-.wf-task{position:relative;width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left;user-select:none}
+.wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:16px;overflow:auto}
+.wf-canvas{position:relative}
+.wf-arrows{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;z-index:5}
+.wf-hit{stroke:transparent;stroke-width:14;fill:none;pointer-events:stroke;cursor:pointer}
+.wf-task{position:absolute;width:230px;box-sizing:border-box;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left;user-select:none;z-index:2}
 .wf-task:active{cursor:grabbing}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
-.wf-task.drop{border-color:#5A27E0;box-shadow:0 0 0 3px #ddd6fe}
-.wf-task.drop::after{content:'▲ runs after this';position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#5A27E0;white-space:nowrap}
+.wf-task.tgt{border-color:#16a34a;box-shadow:0 0 0 3px #bbf7d0}
 .wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
 .wf-m{font-size:10.5px;color:#94a3b8;margin-top:3px}
-.wf-lvlconn{width:2px;height:20px;background:#c3cbd6;position:relative;margin:2px 0}
-.wf-lvlconn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
-.wf-addbar{margin-top:16px;display:flex;gap:6px;justify-content:center}
+.wf-handle{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #b0b8c4;cursor:crosshair;z-index:6}
+.wf-task:hover .wf-handle,.wf-handle:hover{border-color:#5A27E0;background:#EDE7FB}
+.wf-addbar{margin-top:14px;display:flex;gap:6px;justify-content:center}
 .wf-add{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid #d0d5dd;background:#fff;color:#475569;cursor:pointer}
 `;
 
@@ -92,11 +124,12 @@ export default function WorkflowCanvas() {
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const [dragId, setDragId] = useState<string | null>(null);   // task being dragged (visual)
-  const [dragDelta, setDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 }); // how far the pill has moved from the cursor-down point
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const dragFrom = useRef<{ id: string; x: number; y: number } | null>(null); // mousedown origin
-  const didDrag = useRef(false); // set on a real drag, so the trailing click doesn't also select
+  const [drag, setDrag] = useState<{ id: string; dx: number; dy: number } | null>(null); // moving a pill (cosmetic)
+  const [wire, setWire] = useState<{ from: string; stageKey: string; sx: number; sy: number; cx: number; cy: number } | null>(null); // drawing a dependency
+  const [hoverPill, setHoverPill] = useState<string | null>(null);   // wire drop target
+  const [hoverEdge, setHoverEdge] = useState<string | null>(null);   // arrow under cursor (delete affordance)
+  const gesture = useRef<{ kind: 'drag' | 'wire'; id: string; stageKey: string; startX: number; startY: number; rectLeft: number; rectTop: number; dx: number; dy: number; moved: boolean } | null>(null);
+
   const [note, setNoteRaw] = useState<string | null>(null); // gentle, auto-clearing hint
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setNote = (m: string) => { setNoteRaw(m); if (noteTimer.current) clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNoteRaw(null), 3500); };
@@ -104,12 +137,33 @@ export default function WorkflowCanvas() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      let stageList: Stage[] = [];
+      try { stageList = (await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []; } catch { /* stages optional */ }
       const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[]; emailTemplates: any[] }>('/admin/workflow');
-      setTemplates(r.templates ?? []);
-      setEdges(r.edges ?? []);
+      let tmpl = r.templates ?? [];
+      const eds = r.edges ?? [];
+
+      // One-time normalisation: legacy tasks were all stored at x=0 (stacked). Give each
+      // stage a tidy default grid so the free-form canvas doesn't open as a pile, and
+      // persist it so positions become real coordinates from here on.
+      const patches: Template[] = [];
+      for (const s of stageList) {
+        const list = tmpl.filter((t) => t.stage === s.key);
+        if (list.length > 1 && new Set(list.map((t) => t.pos_x)).size <= 1) {
+          const lay = computeLayout(list, eds);
+          for (const t of list) { const p = lay[t.id]; if (p) patches.push({ ...t, pos_x: p.x, pos_y: p.y }); }
+        }
+      }
+      if (patches.length) {
+        tmpl = tmpl.map((t) => patches.find((p) => p.id === t.id) ?? t);
+        void Promise.all(patches.map((p) => api('/admin/workflow', { method: 'POST', body: JSON.stringify(templateBody(p)) }))).catch(() => {});
+      }
+
+      setStages(stageList);
+      setTemplates(tmpl);
+      setEdges(eds);
       setUsers(r.users ?? []);
       setEmailTemplates(r.emailTemplates ?? []);
-      try { setStages((await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []); } catch { /* stages optional */ }
       setErr(null);
     } catch (e: any) {
       setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
@@ -122,40 +176,26 @@ export default function WorkflowCanvas() {
   const tasksByStage = useMemo(() => {
     const m: Record<string, Template[]> = {};
     for (const t of templates) (m[t.stage] ??= []).push(t);
-    for (const k of Object.keys(m)) m[k].sort((a, b) => (a.pos_y - b.pos_y) || (a.sort_order - b.sort_order));
     return m;
   }, [templates]);
 
-  // Group a stage's tasks into dependency levels (longest-path rank). Tasks at the same
-  // level have no ordering between them → they run IN PARALLEL (one row); each level runs
-  // after the one above. This renders forks and merges correctly (a task that runs after
-  // two parallel tasks just lands on the next level below both).
-  const stageLevels = (key: string): Template[][] => {
-    const list = tasksByStage[key] ?? [];
-    const inStage = new Set(list.map((t) => t.id));
-    const prereqs: Record<string, string[]> = {};
-    for (const e of edges) if (inStage.has(e.from_template_id) && inStage.has(e.to_template_id)) (prereqs[e.to_template_id] ??= []).push(e.from_template_id);
-    const memo: Record<string, number> = {};
-    const calc = (id: string, stack: Set<string>): number => {
-      if (memo[id] != null) return memo[id];
-      let lv = 0;
-      for (const p of prereqs[id] ?? []) if (!stack.has(p)) lv = Math.max(lv, calc(p, new Set([...stack, id])) + 1);
-      return (memo[id] = lv);
-    };
-    const maxLv = list.reduce((m, t) => Math.max(m, calc(t.id, new Set())), 0);
-    const levels: Template[][] = Array.from({ length: maxLv + 1 }, () => []);
-    for (const t of list) levels[memo[t.id]].push(t);
-    return levels;
-  };
-
-  const byId = (id: string) => templates.find((t) => t.id === id) || null;
+  const byId = useCallback((id: string) => templates.find((t) => t.id === id) || null, [templates]);
   const sel = selected ? byId(selected) : null;
+
+  // Effective position of a pill, including the live drag offset so both the pill and
+  // its arrows follow the cursor while dragging.
+  const posOf = useCallback((t: Template) => {
+    let x = t.pos_x, y = t.pos_y;
+    if (drag && drag.id === t.id) { x += drag.dx; y += drag.dy; }
+    return { x, y };
+  }, [drag]);
 
   // ── Mutations ───────────────────────────────────────────────────────────────
   const addTask = async (stageKey: string, nodeKind: 'TASK' | 'EMAIL' = 'TASK') => {
-    const posY = (tasksByStage[stageKey]?.length ?? 0) * 10;
+    const list = tasksByStage[stageKey] ?? [];
+    const posY = list.length ? Math.max(...list.map((t) => t.pos_y)) + PILL_H + GAP_Y : PAD;
     try {
-      const body: any = { stage: stageKey, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: 0, posY };
+      const body: any = { stage: stageKey, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: PAD, posY };
       if (nodeKind === 'EMAIL') { body.detail = 'Send email'; body.nodeKind = 'EMAIL'; body.sendMode = 'DRAFT'; body.emailTemplateId = emailTemplates[0]?.id ?? null; }
       else body.detail = 'New task';
       const r = await api<{ template: Template }>('/admin/workflow', { method: 'POST', body: JSON.stringify(body) });
@@ -164,20 +204,12 @@ export default function WorkflowCanvas() {
       setSelected(r.template.id);
     } catch (e: any) { setErr(e?.message || 'Could not add.'); }
   };
-  const saveNode = async (t: Template) => {
+  const saveNode = useCallback(async (t: Template) => {
     try {
-      const r = await api<{ template: Template }>('/admin/workflow', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: t.id, stage: t.stage, detail: t.detail, assigneeKind: t.assignee_kind,
-          assigneeRole: t.assignee_role, assigneeUserId: t.assignee_user_id, dueOffsetDays: t.due_offset_days,
-          nodeKind: t.node_kind ?? 'TASK', emailTemplateId: t.email_template_id ?? null, sendMode: t.send_mode ?? null,
-          posX: Math.round(t.pos_x), posY: Math.round(t.pos_y), active: t.active,
-        }),
-      });
+      const r = await api<{ template: Template }>('/admin/workflow', { method: 'POST', body: JSON.stringify(templateBody(t)) });
       setTemplates((ts) => ts.map((x) => (x.id === t.id ? r.template : x)));
     } catch (e: any) { setErr(e?.message || 'Could not save.'); }
-  };
+  }, []);
   const deleteNode = async (id: string) => {
     if (!window.confirm('Delete this task and its dependencies?')) return;
     try {
@@ -187,26 +219,73 @@ export default function WorkflowCanvas() {
       setSelected(null);
     } catch (e: any) { setErr(e?.message || 'Could not delete.'); }
   };
-  // Is there already a path a → … → b along the edges? Used to catch a cycle client-side.
+  // Is there already a path a → … → b along the edges? Catches a cycle client-side.
   const reaches = (a: string, b: string, es: Edge[]) => {
     const seen = new Set<string>(); const stack = [a];
     while (stack.length) { const n = stack.pop()!; if (n === b) return true; if (seen.has(n)) continue; seen.add(n); for (const e of es) if (e.from_template_id === n) stack.push(e.to_template_id); }
     return false;
   };
-  const addPrereq = async (from: string, to: string) => {
+  // Draw a dependency: `to` runs after `from`. Reads the freshest edges via the updater
+  // so it never acts on a stale snapshot from a drag gesture's closure.
+  const addPrereq = useCallback((from: string, to: string) => {
     if (from === to) return;
-    if (edges.some((e) => e.from_template_id === from && e.to_template_id === to)) return; // already linked
-    // "to" already runs before "from" — linking would loop them. Say so gently, don't act.
-    if (reaches(to, from, edges)) { setNote('Those two already run in that order — they can’t depend on each other both ways.'); return; }
-    // Optimistic: update locally so the flow re-levels instantly; no full reload.
-    setEdges((es) => [...es, { from_template_id: from, to_template_id: to }]);
-    try { await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) }); }
-    catch (e: any) { setEdges((es) => es.filter((x) => !(x.from_template_id === from && x.to_template_id === to))); setNote(e?.message || 'Couldn’t link those.'); }
-  };
-  const deleteEdge = async (from: string, to: string) => {
+    setEdges((prev) => {
+      if (prev.some((e) => e.from_template_id === from && e.to_template_id === to)) return prev; // already linked
+      if (reaches(to, from, prev)) { setNote('Those two already run in that order — they can’t depend on each other both ways.'); return prev; }
+      void api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) })
+        .catch((e: any) => { setEdges((es) => es.filter((x) => !(x.from_template_id === from && x.to_template_id === to))); setNote(e?.message || 'Couldn’t link those.'); });
+      return [...prev, { from_template_id: from, to_template_id: to }];
+    });
+  }, []);
+  const deleteEdge = useCallback((from: string, to: string) => {
     setEdges((es) => es.filter((e) => !(e.from_template_id === from && e.to_template_id === to)));
-    await api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
-  };
+    void api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
+  }, []);
+
+  // ── Global drag/wire handlers (attached once; act via refs + functional updaters,
+  //    so they never read stale state) ─────────────────────────────────────────
+  const addPrereqRef = useRef(addPrereq); addPrereqRef.current = addPrereq;
+  const saveNodeRef = useRef(saveNode); saveNodeRef.current = saveNode;
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const g = gesture.current; if (!g) return;
+      if (g.kind === 'drag') {
+        g.dx = e.clientX - g.startX; g.dy = e.clientY - g.startY;
+        if (Math.hypot(g.dx, g.dy) > 3) g.moved = true;
+        setDrag({ id: g.id, dx: g.dx, dy: g.dy });
+      } else {
+        const cx = e.clientX - g.rectLeft, cy = e.clientY - g.rectTop;
+        setWire((w) => (w ? { ...w, cx, cy } : w));
+        const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
+        const tid = el?.getAttribute('data-taskid') ?? null;
+        setHoverPill(tid && tid !== g.id && el?.getAttribute('data-stage') === g.stageKey ? tid : null);
+      }
+    };
+    const onUp = (e: MouseEvent) => {
+      const g = gesture.current; gesture.current = null;
+      if (!g) return;
+      if (g.kind === 'drag') {
+        if (g.moved) {
+          setTemplates((ts) => {
+            const next = ts.map((x) => (x.id === g.id ? { ...x, pos_x: Math.round(x.pos_x + g.dx), pos_y: Math.round(Math.max(0, x.pos_y + g.dy)) } : x));
+            const nt = next.find((x) => x.id === g.id); if (nt) void saveNodeRef.current(nt);
+            return next;
+          });
+        } else {
+          setSelected((s) => (s === g.id ? null : g.id)); // a click, not a drag → select
+        }
+        setDrag(null);
+      } else {
+        setWire(null); setHoverPill(null);
+        const el = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
+        const target = el?.getAttribute('data-taskid');
+        if (target && target !== g.id && el?.getAttribute('data-stage') === g.stageKey) addPrereqRef.current(g.id, target);
+      }
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
 
   // ── Stage CRUD (the beats) ──────────────────────────────────────────────────
   const stageColor = (key: string) => { const i = stages.findIndex((s) => s.key === key); return STAGE_COLORS[(i < 0 ? 0 : i) % STAGE_COLORS.length]; };
@@ -227,55 +306,76 @@ export default function WorkflowCanvas() {
   const allOpen = stages.length > 0 && stages.every((s) => open[s.key]);
   const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
 
-  // Measured pill positions (per stage sub-flow), so each dependency can be drawn as
-  // its own arrow — you can see exactly which task runs after which.
-  const [posMap, setPosMap] = useState<Record<string, { cx: number; top: number; bottom: number; stage: string }>>({});
-  const [sizeMap, setSizeMap] = useState<Record<string, { w: number; h: number }>>({});
-  const measure = useCallback(() => {
-    const pos: Record<string, { cx: number; top: number; bottom: number; stage: string }> = {};
-    const size: Record<string, { w: number; h: number }> = {};
-    document.querySelectorAll<HTMLElement>('.wf-subflow').forEach((sf) => {
-      const key = sf.getAttribute('data-stagekey') || '';
-      const sr = sf.getBoundingClientRect();
-      size[key] = { w: sf.scrollWidth, h: sf.scrollHeight };
-      sf.querySelectorAll<HTMLElement>('[data-taskid]').forEach((el) => {
-        const r = el.getBoundingClientRect();
-        pos[el.getAttribute('data-taskid')!] = { cx: r.left - sr.left + sf.scrollLeft + r.width / 2, top: r.top - sr.top + sf.scrollTop, bottom: r.bottom - sr.top + sf.scrollTop, stage: key };
-      });
-    });
-    setPosMap(pos); setSizeMap(size);
-  }, []);
-  useLayoutEffect(() => { measure(); }, [measure, templates, edges, open, stages]);
-  useEffect(() => { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }, [measure]);
+  // Begin moving a pill (cosmetic reposition). Records where the canvas is so the wire
+  // maths (for the handle) has a stable origin.
+  const startGesture = (kind: 'drag' | 'wire', t: Template, e: React.MouseEvent) => {
+    const canvas = (e.currentTarget as HTMLElement).closest('.wf-canvas') as HTMLElement | null;
+    const rect = canvas?.getBoundingClientRect();
+    gesture.current = { kind, id: t.id, stageKey: t.stage, startX: e.clientX, startY: e.clientY, rectLeft: rect?.left ?? 0, rectTop: rect?.top ?? 0, dx: 0, dy: 0, moved: false };
+    if (kind === 'drag') setDrag({ id: t.id, dx: 0, dy: 0 });
+    else { const p = posOf(t); setWire({ from: t.id, stageKey: t.stage, sx: p.x + PILL_W / 2, sy: p.y + PILL_H, cx: p.x + PILL_W / 2, cy: p.y + PILL_H }); }
+  };
 
-  // ── Sub-flow render (a task box, then a fork/chain to its dependents) ─────────
-  // Drag one task onto another (same stage) to make the dragged task run AFTER the
-  // one it's dropped on. Leaving tasks unconnected = they run in parallel. Mouse-based
-  // (not HTML5 DnD) so it's reliable and the drop target is tracked by hover.
-  const taskBox = (t: Template) => (
-    <div
-      data-taskid={t.id}
-      className={`wf-task${t.id === selected ? ' sel' : ''}${dropTarget === t.id ? ' drop' : ''}`}
-      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
-      onMouseEnter={() => { if (dragId && dragId !== t.id && byId(dragId)?.stage === t.stage) setDropTarget(t.id); }}
-      onMouseLeave={() => setDropTarget((d) => (d === t.id ? null : d))}
-      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null); void addPrereq(t.id, from); } }}
-      onClick={(e) => { e.stopPropagation(); if (didDrag.current) { didDrag.current = false; return; } setSelected(t.id === selected ? null : t.id); }}
-      style={t.id === dragId
-        // The pill itself lifts and follows the cursor. pointerEvents:none so the task
-        // it's dragged over still receives the hover/drop.
-        ? { transform: `translate(${dragDelta.dx}px, ${dragDelta.dy}px) rotate(-1.5deg) scale(1.03)`, zIndex: 50, borderColor: '#5A27E0', boxShadow: '0 12px 28px rgba(90,39,224,0.3)', pointerEvents: 'none', opacity: 1 }
-        : { opacity: t.active ? 1 : 0.5 }}
-      title="Drag onto another task to make this run after it"
-    >
-      <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
-      <div className="wf-m">
-        {t.node_kind === 'EMAIL'
-          ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
-          : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+  const taskBox = (t: Template) => {
+    const p = posOf(t);
+    return (
+      <div
+        data-taskid={t.id}
+        data-stage={t.stage}
+        className={`wf-task${t.id === selected ? ' sel' : ''}${hoverPill === t.id ? ' tgt' : ''}`}
+        style={{
+          left: p.x, top: p.y,
+          ...(t.id === drag?.id ? { zIndex: 20, borderColor: '#5A27E0', boxShadow: '0 12px 28px rgba(90,39,224,0.3)', cursor: 'grabbing' } : {}),
+          opacity: t.active ? 1 : 0.5,
+        }}
+        onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); startGesture('drag', t, e); }}
+        title="Drag to move · drag the dot below to link to another task"
+      >
+        <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
+        <div className="wf-m">
+          {t.node_kind === 'EMAIL'
+            ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
+            : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+        </div>
+        <div className="wf-handle" title="Drag to the next task to link them" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); startGesture('wire', t, e); }} />
       </div>
-    </div>
-  );
+    );
+  };
+
+  // The arrow layer for one stage: a curve per dependency, on top of the pills, each
+  // clickable to remove. Endpoints track the pills' live positions.
+  const arrows = (s: Stage, list: Template[], w: number, h: number) => {
+    const se = edges.filter((e) => byId(e.from_template_id)?.stage === s.key && byId(e.to_template_id)?.stage === s.key);
+    return (
+      <svg className="wf-arrows" width={w} height={h}>
+        <defs>
+          <marker id={`wa-${s.key}`} markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8" /></marker>
+          <marker id={`wa-h-${s.key}`} markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5A27E0" /></marker>
+        </defs>
+        {se.map((e) => {
+          const a = byId(e.from_template_id), b = byId(e.to_template_id); if (!a || !b) return null;
+          const pa = posOf(a), pb = posOf(b);
+          const x1 = pa.x + PILL_W / 2, y1 = pa.y + PILL_H, x2 = pb.x + PILL_W / 2, y2 = pb.y;
+          const dy = Math.max(18, Math.abs(y2 - y1) * 0.4);
+          const d = `M ${x1} ${y1} C ${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`;
+          const key = `${e.from_template_id}-${e.to_template_id}`;
+          const hot = hoverEdge === key;
+          return (
+            <g key={key} onMouseEnter={() => setHoverEdge(key)} onMouseLeave={() => setHoverEdge((k) => (k === key ? null : k))}>
+              <path className="wf-hit" d={d} onClick={() => { deleteEdge(e.from_template_id, e.to_template_id); setNote('Removed — those now run in parallel.'); }}>
+                <title>Click to remove this dependency</title>
+              </path>
+              <path d={d} fill="none" stroke={hot ? '#5A27E0' : '#94a3b8'} strokeWidth={hot ? 2.5 : 1.75} markerEnd={`url(#wa-${hot ? 'h-' : ''}${s.key})`} style={{ pointerEvents: 'none' }} />
+            </g>
+          );
+        })}
+        {wire && wire.stageKey === s.key && (
+          <path d={`M ${wire.sx} ${wire.sy} C ${wire.sx} ${wire.sy + 30} ${wire.cx} ${wire.cy - 30} ${wire.cx} ${wire.cy}`} fill="none" stroke="#5A27E0" strokeWidth={2} strokeDasharray="5 4" markerEnd={`url(#wa-h-${s.key})`} />
+        )}
+      </svg>
+    );
+  };
+
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <style>{WF_CSS}</style>
@@ -304,38 +404,13 @@ export default function WorkflowCanvas() {
 
         {!loading && stages.length > 0 && (
           <div style={{ ...card, padding: '28px 12px' }}>
-            <div
-              className="wf-flow"
-              onMouseMove={(e) => { const f = dragFrom.current; if (f) { const dx = e.clientX - f.x, dy = e.clientY - f.y; if (!dragId && Math.hypot(dx, dy) > 4) setDragId(f.id); setDragDelta({ dx, dy }); } }}
-              onMouseUp={(e) => {
-                const from = dragFrom.current?.id;
-                dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null);
-                if (!from) return;
-                // Read the drop target from the DOM (state updates land too late for a fast drag).
-                const elAt = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-                let to = elAt?.closest('[data-taskid]')?.getAttribute('data-taskid') ?? null;
-                if (!to) {
-                  // Dropped in the gap — link to the nearest task ABOVE the drop point in that stage.
-                  const sf = elAt?.closest('.wf-subflow');
-                  if (sf) {
-                    let best: { id: string; d: number } | null = null;
-                    sf.querySelectorAll<HTMLElement>('[data-taskid]').forEach((el) => {
-                      const id = el.getAttribute('data-taskid')!; if (id === from) return;
-                      const r = el.getBoundingClientRect();
-                      if (r.top <= e.clientY) { const d = e.clientY - r.bottom; if (!best || Math.abs(d) < Math.abs(best.d)) best = { id, d }; }
-                    });
-                    to = best ? (best as { id: string }).id : null;
-                  }
-                }
-                if (to && to !== from && byId(from)?.stage === byId(to)?.stage) { didDrag.current = true; void addPrereq(to, from); }
-              }}
-              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null); }}
-            >
+            <div className="wf-flow">
               {stages.map((s, i) => {
                 const list = tasksByStage[s.key] ?? [];
-                const levels = stageLevels(s.key);
                 const isOpen = !!open[s.key];
                 const color = stageColor(s.key);
+                let w = 480, h = 130;
+                for (const t of list) { const p = posOf(t); w = Math.max(w, p.x + PILL_W + PAD); h = Math.max(h, p.y + PILL_H + PAD + 14); }
                 return (
                   <Fragment key={s.id}>
                     <div className={`wf-stage${isOpen ? ' open' : ''}`} style={{ borderLeftColor: color }}>
@@ -357,27 +432,9 @@ export default function WorkflowCanvas() {
                         <div className="wf-body">
                           {list.length === 0
                             ? <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>No tasks yet.</div>
-                            : <div className="wf-subflow" data-stagekey={s.key}>
-                                {(() => {
-                                  const sz = sizeMap[s.key];
-                                  const se = edges.filter((e) => posMap[e.from_template_id]?.stage === s.key && posMap[e.to_template_id]?.stage === s.key);
-                                  if (!sz || !se.length) return null;
-                                  return (
-                                    <svg className="wf-arrows" width={sz.w} height={sz.h}>
-                                      <defs>
-                                        <marker id={`wa-${s.key}`} markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8" /></marker>
-                                      </defs>
-                                      {se.map((e) => {
-                                        const a = posMap[e.from_template_id], b = posMap[e.to_template_id];
-                                        const dy = Math.max(16, (b.top - a.bottom) * 0.5);
-                                        return <path key={`${e.from_template_id}-${e.to_template_id}`} d={`M ${a.cx} ${a.bottom} C ${a.cx} ${a.bottom + dy} ${b.cx} ${b.top - dy} ${b.cx} ${b.top}`} fill="none" stroke="#94a3b8" strokeWidth={1.75} markerEnd={`url(#wa-${s.key})`} />;
-                                      })}
-                                    </svg>
-                                  );
-                                })()}
-                                {levels.map((lvl, li) => (
-                                  <div className="wf-level" key={li}>{lvl.map((t) => <div key={t.id}>{taskBox(t)}</div>)}</div>
-                                ))}
+                            : <div className="wf-canvas" style={{ width: w, height: h }}>
+                                {list.map((t) => <Fragment key={t.id}>{taskBox(t)}</Fragment>)}
+                                {arrows(s, list, w, h)}
                               </div>}
                           <div className="wf-addbar">
                             <button className="wf-add" onClick={() => addTask(s.key, 'TASK')}>+ task</button>
@@ -423,7 +480,7 @@ export default function WorkflowCanvas() {
                 ))}
               </>
             ) : (
-              <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Runs in parallel. Drag this task onto another to make it run after that one.</div>
+              <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Runs in parallel. Drag from the dot under a task to this one to make it run after.</div>
             );
           })()}
 
@@ -475,6 +532,16 @@ export default function WorkflowCanvas() {
       )}
     </div>
   );
+}
+
+// Shared POST body for a task template (create/update/reposition).
+function templateBody(t: Template) {
+  return {
+    id: t.id, stage: t.stage, detail: t.detail, assigneeKind: t.assignee_kind,
+    assigneeRole: t.assignee_role, assigneeUserId: t.assignee_user_id, dueOffsetDays: t.due_offset_days,
+    nodeKind: t.node_kind ?? 'TASK', emailTemplateId: t.email_template_id ?? null, sendMode: t.send_mode ?? null,
+    posX: Math.round(t.pos_x), posY: Math.round(t.pos_y), active: t.active,
+  };
 }
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: 12 };
