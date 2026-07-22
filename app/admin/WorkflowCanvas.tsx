@@ -55,7 +55,8 @@ const WF_CSS = `
 .wf-name{font-size:14.5px;font-weight:700;color:#0f172a;flex:1;min-width:0;border:1px solid transparent;border-radius:6px;background:transparent;padding:2px 4px;font-family:inherit}
 .wf-name:focus{outline:none;border-color:#d0d5dd;background:#fff}
 .wf-count{font-size:12px;color:#94a3b8;white-space:nowrap}
-.wf-chev{color:#94a3b8;font-size:12px;flex:none;width:12px;text-align:center}
+.wf-chev{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;border-radius:7px;border:none;background:#f1f5f9;color:#475569;font-size:14px;cursor:pointer;transition:transform .12s}
+.wf-chev:hover{background:#e2e8f0}
 .wf-chev.open{transform:rotate(90deg)}
 .wf-ctrls{display:flex;gap:1px;opacity:0;transition:opacity .1s}
 .wf-stage:hover .wf-ctrls{opacity:1}
@@ -66,11 +67,12 @@ const WF_CSS = `
 .wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
 .wf-subflow{display:flex;flex-direction:column;align-items:center;min-width:min-content}
 .wf-level{display:flex;gap:20px;justify-content:center;align-items:stretch;flex-wrap:wrap}
-.wf-task{width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left}
+.wf-task{position:relative;width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left;user-select:none}
 .wf-task:active{cursor:grabbing}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
-.wf-task.dragging{opacity:.4}
-.wf-task.drop{border-color:#5A27E0;box-shadow:0 0 0 2px #c4b5fd}
+.wf-task.dragging{opacity:.35}
+.wf-task.drop{border-color:#5A27E0;box-shadow:0 0 0 3px #ddd6fe}
+.wf-task.drop::after{content:'▲ runs after this';position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#5A27E0;white-space:nowrap}
 .wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
 .wf-m{font-size:10.5px;color:#94a3b8;margin-top:3px}
 .wf-lvlconn{width:2px;height:20px;background:#c3cbd6;position:relative;margin:2px 0}
@@ -181,8 +183,11 @@ export default function WorkflowCanvas() {
     } catch (e: any) { setErr(e?.message || 'Could not delete.'); }
   };
   const addPrereq = async (from: string, to: string) => {
-    try { await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) }); await load(); }
-    catch (e: any) { setErr(e?.message || 'Could not add prerequisite (would it create a loop?).'); }
+    // Optimistic: update the edge locally so the flow re-levels instantly. No full
+    // reload (that was what made the view "flash/reload" after a connect).
+    setEdges((es) => (es.some((e) => e.from_template_id === from && e.to_template_id === to) ? es : [...es, { from_template_id: from, to_template_id: to }]));
+    try { await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) }); }
+    catch (e: any) { setEdges((es) => es.filter((x) => !(x.from_template_id === from && x.to_template_id === to))); setErr(e?.message || 'Could not link those (would it create a loop?).'); }
   };
   const deleteEdge = async (from: string, to: string) => {
     setEdges((es) => es.filter((e) => !(e.from_template_id === from && e.to_template_id === to)));
@@ -216,9 +221,10 @@ export default function WorkflowCanvas() {
     <div
       data-taskid={t.id}
       className={`wf-task${t.id === selected ? ' sel' : ''}${dropTarget === t.id ? ' drop' : ''}${dragId === t.id ? ' dragging' : ''}`}
-      onMouseDown={(e) => { e.stopPropagation(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
+      onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
       onMouseEnter={() => { if (dragId && dragId !== t.id && byId(dragId)?.stage === t.stage) setDropTarget(t.id); }}
       onMouseLeave={() => setDropTarget((d) => (d === t.id ? null : d))}
+      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDropTarget(null); void addPrereq(t.id, from); } }}
       onClick={(e) => { e.stopPropagation(); if (didDrag.current) { didDrag.current = false; return; } setSelected(t.id === selected ? null : t.id); }}
       style={{ opacity: t.active ? 1 : 0.5 }}
       title="Drag onto another task to make this run after it"
@@ -236,7 +242,7 @@ export default function WorkflowCanvas() {
       <style>{WF_CSS}</style>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Workflow</strong>
+          <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Case Flow</strong>
           {stages.length > 0 && <button onClick={toggleAll} style={btn}>{allOpen ? 'Collapse all' : 'Expand all'}</button>}
           <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
@@ -318,9 +324,9 @@ export default function WorkflowCanvas() {
         )}
       </div>
 
-      {/* Right: the selected-task editor */}
+      {/* Selected-task editor — a floating panel so opening/closing it never reflows the flow. */}
       {sel && (
-        <div style={{ ...card, width: 280, flex: 'none', position: 'sticky', top: 12 }}>
+        <div style={{ ...card, position: 'fixed', right: 18, top: 92, width: 300, flex: 'none', maxHeight: '82vh', overflowY: 'auto', zIndex: 20, boxShadow: '0 12px 40px rgba(16,24,40,0.2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <strong style={{ fontSize: 13, color: '#0f172a' }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
             <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
@@ -332,27 +338,20 @@ export default function WorkflowCanvas() {
             {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
           </select>
 
-          <label style={lbl}>Runs after (in this stage)</label>
+          <label style={lbl}>Runs after</label>
           {(() => {
             const prereqs = edges.filter((e) => e.to_template_id === sel.id).map((e) => byId(e.from_template_id)).filter((t): t is Template => !!t && t.stage === sel.stage);
-            const candidates = (tasksByStage[sel.stage] ?? []).filter((t) => t.id !== sel.id && !prereqs.some((p) => p.id === t.id) && !edges.some((e) => e.from_template_id === sel.id && e.to_template_id === t.id));
-            return (
+            return prereqs.length ? (
               <>
                 {prereqs.map((p) => (
                   <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', background: '#f1f5f9', borderRadius: 7, padding: '4px 8px', marginBottom: 4 }}>
                     <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.detail}</span>
-                    <button onClick={() => deleteEdge(p.id, sel.id)} title="Remove prerequisite" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                    <button onClick={() => deleteEdge(p.id, sel.id)} title="Remove — runs in parallel again" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
                   </div>
                 ))}
-                {candidates.length > 0 ? (
-                  <select value="" onChange={(e) => { if (e.target.value) void addPrereq(e.target.value, sel.id); }} style={input}>
-                    <option value="">+ Add a prerequisite…</option>
-                    {candidates.map((t) => <option key={t.id} value={t.id}>{t.detail.slice(0, 60)}</option>)}
-                  </select>
-                ) : prereqs.length === 0 ? (
-                  <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Runs as soon as the stage is reached.</div>
-                ) : null}
               </>
+            ) : (
+              <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Runs in parallel. Drag this task onto another to make it run after that one.</div>
             );
           })()}
 

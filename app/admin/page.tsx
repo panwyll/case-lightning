@@ -143,7 +143,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: '' },
   board: { label: 'Matter board', subtitle: '' },
   workload: { label: 'Workload', subtitle: '' },
-  workflow: { label: 'Task workflow', subtitle: '' },
+  workflow: { label: 'Case Flow', subtitle: '' },
   templates: { label: 'Email templates', subtitle: '' },
   docpacks: { label: 'Doc packs', subtitle: '' },
   automations: { label: 'Automations', subtitle: '' },
