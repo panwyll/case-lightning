@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -59,6 +59,48 @@ export default function WorkflowCanvas() {
   const [override, setOverride] = useState<Record<string, { x: number; y: number }>>({});
   const [linking, setLinking] = useState<{ from: string; x: number; y: number } | null>(null);
 
+  // Zoom (clamped). The inner canvas is CSS-scaled; a sizer at the scaled size keeps
+  // scrolling correct, and pointer→canvas math divides by zoom (see relPos). Focal
+  // zoom keeps the point under the cursor put by adjusting scroll after the resize.
+  const ZMIN = 0.4, ZMAX = 1.6, ZSTEP = 0.15;
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  zoomRef.current = zoom;
+  const pendingScroll = useRef<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const c = canvasRef.current;
+    if (c && pendingScroll.current) {
+      c.scrollLeft = pendingScroll.current.left;
+      c.scrollTop = pendingScroll.current.top;
+      pendingScroll.current = null;
+    }
+  }, [zoom]);
+  const applyZoom = (target: number, focal?: { sx: number; sy: number }) => {
+    const z1 = Math.min(ZMAX, Math.max(ZMIN, Math.round(target * 100) / 100));
+    const c = canvasRef.current;
+    if (c) {
+      const f = focal ?? { sx: c.clientWidth / 2, sy: c.clientHeight / 2 };
+      const z0 = zoomRef.current;
+      const cx = (f.sx + c.scrollLeft) / z0;
+      const cy = (f.sy + c.scrollTop) / z0;
+      pendingScroll.current = { left: cx * z1 - f.sx, top: cy * z1 - f.sy };
+    }
+    setZoom(z1);
+  };
+  // Ctrl/⌘ + wheel to zoom toward the cursor. Native (non-passive) so we can preventDefault.
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const b = c.getBoundingClientRect();
+      applyZoom(zoomRef.current * (e.deltaY < 0 ? 1.1 : 0.9), { sx: e.clientX - b.left, sy: e.clientY - b.top });
+    };
+    c.addEventListener('wheel', onWheel, { passive: false });
+    return () => c.removeEventListener('wheel', onWheel);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -82,7 +124,9 @@ export default function WorkflowCanvas() {
     const c = canvasRef.current;
     if (!c) return { x: 0, y: 0 };
     const b = c.getBoundingClientRect();
-    return { x: e.clientX - b.left + c.scrollLeft, y: e.clientY - b.top + c.scrollTop };
+    // The inner canvas is scaled by `zoom` (origin 0,0), so screen deltas map back to
+    // canvas coordinates by dividing through the zoom.
+    return { x: (e.clientX - b.left + c.scrollLeft) / zoom, y: (e.clientY - b.top + c.scrollTop) / zoom };
   };
   const posOf = (t: Template) => override[t.id] ?? { x: t.pos_x, y: t.pos_y };
 
@@ -282,16 +326,19 @@ export default function WorkflowCanvas() {
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
 
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {/* Canvas */}
+        {/* Canvas (with a floating zoom toolbar over it) */}
+        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
         <div
           ref={canvasRef}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={() => { drag.current = null; setLinking(null); }}
           onClick={() => setSelected(null)}
-          style={{ position: 'relative', flex: 1, height: '68vh', overflow: 'auto', background: '#F8FAFC', border: '1px solid #e2e8f0', borderRadius: 12 }}
+          style={{ position: 'relative', width: '100%', height: '68vh', overflow: 'auto', background: '#F8FAFC', border: '1px solid #e2e8f0', borderRadius: 12 }}
         >
-          <div style={{ position: 'relative', width: 2000, height: 1200 }}>
+          {/* Sizer at the scaled dimensions so the scroll area matches what's drawn. */}
+          <div style={{ width: 2000 * zoom, height: 1200 * zoom, position: 'relative' }}>
+          <div style={{ position: 'relative', width: 2000, height: 1200, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
             <svg width={2000} height={1200} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
               <defs>
                 <marker id="wf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
@@ -366,6 +413,14 @@ export default function WorkflowCanvas() {
               </div>
             )}
           </div>
+          </div>
+        </div>
+          {/* Floating zoom toolbar */}
+          <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 2, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 2px 8px rgba(16,24,40,0.12)', padding: 3 }}>
+            <button onClick={() => applyZoom(zoom - ZSTEP)} disabled={zoom <= ZMIN} title="Zoom out" style={zoomBtn}>−</button>
+            <button onClick={() => applyZoom(1)} title="Reset zoom" style={{ ...zoomBtn, width: 46, fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(zoom * 100)}%</button>
+            <button onClick={() => applyZoom(zoom + ZSTEP)} disabled={zoom >= ZMAX} title="Zoom in" style={zoomBtn}>+</button>
+          </div>
         </div>
 
         {/* Editor */}
@@ -438,3 +493,4 @@ const btn: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, padding: '6p
 const lbl: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '10px 0 3px' };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
 const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px' };
+const zoomBtn: React.CSSProperties = { width: 28, height: 28, border: 'none', background: 'none', color: '#334155', cursor: 'pointer', fontSize: 16, fontWeight: 700, borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
