@@ -16,45 +16,7 @@
  *    so the drawer's Activity tab shows exactly why a card moved. Trust = provenance.
  */
 import { query, queryOne } from './db';
-
-const ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'];
-
-// Highest-signal email triggers per stage (purchase + sale tracks merged) — see the
-// "Key state transitions" tables in docs/conveyancing-process-model.md.
-const SIGNALS: Array<{ stage: string; re: RegExp; label: string; bigLeapOk?: boolean }> = [
-  {
-    stage: 'CONTRACT_PACK',
-    re: /\b(contract (pack|bundle|papers)|draft contract (enclosed|attached|herewith)|ta6\b|ta10\b|ta7\b|protocol (forms|documents)|lpe1)/i,
-    label: 'Contract pack in play',
-  },
-  {
-    stage: 'SEARCHES_ENQUIRIES',
-    re: /\b(searches? (ordered|submitted|applied for|results?|received|back))\b|\b(local (authority )?search|llc1|con29|drainage (and water )?search|environmental search)\b|\benquiries (raised|attached|enclosed|herewith)|additional enquiries/i,
-    label: 'Searches / enquiries underway',
-  },
-  {
-    stage: 'REVIEW_SIGNING',
-    re: /\b(report on title|mortgage offer (received|issued|enclosed)|signed (contract|documents?) (enclosed|attached|returned)|deposit (received|now held)|ready to exchange)\b/i,
-    label: 'Review & signing',
-  },
-  {
-    stage: 'EXCHANGE',
-    re: /\b(contracts? (have been |now |were )?exchanged|exchange (of contracts? )?(took place|has taken place|confirmed|completed)|we (have )?exchanged)\b/i,
-    label: 'Exchange confirmed',
-    bigLeapOk: true,
-  },
-  {
-    stage: 'COMPLETION',
-    re: /\b(completion (has )?(taken place|occurred)|completion monies (received|sent)|completed today|keys (have been |can be )?released|legal completion)\b/i,
-    label: 'Completion confirmed',
-    bigLeapOk: true,
-  },
-  {
-    stage: 'POST_COMPLETION',
-    re: /\b(sdlt (return|paid|submitted)|stamp duty (return|paid)|ltt return|ap1\b|os1\b|land registry application|registration (lodged|submitted|pending|completed)|ds1\b|discharge (of mortgage|received))\b/i,
-    label: 'Post-completion formalities',
-  },
-];
+import { STAGE_ORDER as ORDER, STAGE_SIGNALS as SIGNALS } from './process-model';
 
 /**
  * Inspect an email's text and advance the matter's stage if a transition signal

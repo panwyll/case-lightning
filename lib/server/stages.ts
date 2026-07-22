@@ -5,19 +5,13 @@
  * Guarded/idempotent — callers fall back to the built-in list if not migrated.
  */
 import { query, queryOne } from './db';
+import { PROCESS_STAGES } from './process-model';
 import type { SessionUser } from './types';
 
 export interface StageRow { id: string; key: string; name: string; sort_order: number; active: boolean }
 
-export const BUILTIN_STAGES: Array<{ key: string; name: string }> = [
-  { key: 'INSTRUCTION', name: 'Instruction' },
-  { key: 'CONTRACT_PACK', name: 'Contract pack' },
-  { key: 'SEARCHES_ENQUIRIES', name: 'Searches & enquiries' },
-  { key: 'REVIEW_SIGNING', name: 'Review & signing' },
-  { key: 'EXCHANGE', name: 'Exchange' },
-  { key: 'COMPLETION', name: 'Completion' },
-  { key: 'POST_COMPLETION', name: 'Post-completion' },
-];
+/** The seed pipeline — the canonical process spine (see process-model.ts). */
+export const BUILTIN_STAGES: Array<{ key: string; name: string }> = PROCESS_STAGES.map((s) => ({ key: s.key, name: s.name }));
 
 export async function ensureDefaultStages(tenantId: string): Promise<void> {
   try {

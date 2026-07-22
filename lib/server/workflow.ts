@@ -13,6 +13,7 @@ import { createDraftMessage } from './graph';
 import { scheduleSend } from './scheduledSend';
 import { buildMatterVars } from './doc-templates';
 import { addDraftReady } from './worklist';
+import { DEFAULT_TASKS, DEFAULT_DEPS } from './process-model';
 import type { SessionUser } from './types';
 
 export interface TaskTemplate {
@@ -41,50 +42,8 @@ const TPL_BASE = 'id, stage, detail, type, assignee_kind, assignee_role, assigne
 const TPL_COLS = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
 export interface EmailTemplateLite { id: string; name: string; subject_template: string | null }
 
-// ── Default conveyancing workflow (seeded once; the firm edits from here) ──────────
-// Laid out left→right by stage; y stacks tasks within a stage. Assigned to the matter
-// owner by default — the admin re-points the admin-heavy ones (searches, SDLT, registration)
-// at an assistant. Deps encode the natural order (review after request, exchange after signing…).
-const DEFAULT_TASKS: Array<{ key: string; stage: string; detail: string; col: number; row: number }> = [
-  { key: 'ins_care', stage: 'INSTRUCTION', detail: 'Issue client care letter & fee estimate', col: 0, row: 0 },
-  { key: 'ins_id', stage: 'INSTRUCTION', detail: 'Complete ID verification & AML checks', col: 0, row: 1 },
-  { key: 'ins_funds', stage: 'INSTRUCTION', detail: 'Confirm source of funds', col: 0, row: 2 },
-  { key: 'cp_request', stage: 'CONTRACT_PACK', detail: "Request contract pack from seller's solicitor", col: 1, row: 0 },
-  { key: 'cp_review', stage: 'CONTRACT_PACK', detail: 'Review contract pack (contract, TA6, TA10, title)', col: 1, row: 1 },
-  { key: 'se_order', stage: 'SEARCHES_ENQUIRIES', detail: 'Order property searches (local, drainage & water, environmental)', col: 2, row: 0 },
-  { key: 'se_enquiries', stage: 'SEARCHES_ENQUIRIES', detail: "Raise pre-contract enquiries with seller's solicitor", col: 2, row: 1 },
-  { key: 'se_review', stage: 'SEARCHES_ENQUIRIES', detail: 'Review search results & replies to enquiries', col: 2, row: 2 },
-  { key: 'se_report', stage: 'SEARCHES_ENQUIRIES', detail: 'Report to client on searches, title & enquiries', col: 2, row: 3 },
-  { key: 'rs_mortgage', stage: 'REVIEW_SIGNING', detail: 'Check mortgage offer & conditions', col: 3, row: 0 },
-  { key: 'rs_send', stage: 'REVIEW_SIGNING', detail: 'Send contract & report to client for signature', col: 3, row: 1 },
-  { key: 'rs_signed', stage: 'REVIEW_SIGNING', detail: 'Obtain signed contract & deposit funds', col: 3, row: 2 },
-  { key: 'ex_date', stage: 'EXCHANGE', detail: 'Agree completion date with all parties', col: 4, row: 0 },
-  { key: 'ex_exchange', stage: 'EXCHANGE', detail: 'Exchange contracts', col: 4, row: 1 },
-  { key: 'co_statement', stage: 'COMPLETION', detail: 'Prepare completion statement & request funds from client', col: 5, row: 0 },
-  { key: 'co_funds', stage: 'COMPLETION', detail: 'Request mortgage advance from lender', col: 5, row: 1 },
-  { key: 'co_complete', stage: 'COMPLETION', detail: 'Complete the transaction', col: 5, row: 2 },
-  { key: 'pc_sdlt', stage: 'POST_COMPLETION', detail: 'Submit SDLT return & pay tax', col: 6, row: 0 },
-  { key: 'pc_register', stage: 'POST_COMPLETION', detail: 'Register title & charge at HM Land Registry', col: 6, row: 1 },
-  { key: 'pc_letter', stage: 'POST_COMPLETION', detail: 'Send completion letter & title info to client', col: 6, row: 2 },
-];
-const DEFAULT_DEPS: Array<[string, string]> = [
-  ['cp_request', 'cp_review'],
-  ['se_order', 'se_review'],
-  ['se_enquiries', 'se_review'],
-  ['se_review', 'se_report'],
-  ['cp_review', 'rs_send'],
-  ['se_report', 'rs_send'],
-  ['rs_send', 'rs_signed'],
-  ['rs_signed', 'ex_exchange'],
-  ['ex_date', 'ex_exchange'],
-  ['rs_mortgage', 'ex_exchange'],
-  ['ex_exchange', 'co_complete'],
-  ['co_statement', 'co_complete'],
-  ['co_funds', 'co_complete'],
-  ['co_complete', 'pc_sdlt'],
-  ['pc_sdlt', 'pc_register'],
-  ['co_complete', 'pc_letter'],
-];
+// The default conveyancing task DAG (DEFAULT_TASKS / DEFAULT_DEPS) lives in the
+// canonical process-model.ts, alongside the stage list and the email signals.
 
 /** Seed the default conveyancing workflow the first time (or on an explicit reload). */
 export async function ensureDefaultWorkflow(tenantId: string, force = false): Promise<void> {
