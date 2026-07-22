@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -39,15 +39,45 @@ interface Template {
 interface Edge { from_template_id: string; to_template_id: string; }
 interface Member { id: string; name: string; role: string }
 
-/**
- * The workflow builder as a two-level DAG.
- *
- * Top level = the "main beats": the stages flow left→right as nodes (Instruction →
- * Contract pack → …). Each stage node is collapsed by default; expand it in place to
- * reveal its subtasks and their dependencies as an indented tree (a task nested under
- * another "runs after" it — an intra-stage prerequisite). Stage order sequences the
- * beats; the tree sequences the tasks within a beat. Editing is in the side panel.
- */
+// Flow-chart CSS. Connectors are drawn with pseudo-elements, so they live here rather
+// than in inline styles. The stage flow runs top→down (the beats); expanding a stage
+// reveals its tasks as a sub-flow that forks where a task has several dependents.
+const WF_CSS = `
+.wf-flow{display:flex;flex-direction:column;align-items:center}
+.wf-stage{width:360px;background:#fff;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.08);overflow:hidden}
+.wf-stage.open{width:620px;max-width:100%}
+.wf-hd{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer}
+.wf-dot{width:11px;height:11px;border-radius:3px;flex:none}
+.wf-name{font-size:14.5px;font-weight:700;color:#0f172a;flex:1;min-width:0;border:1px solid transparent;border-radius:6px;background:transparent;padding:2px 4px;font-family:inherit}
+.wf-name:focus{outline:none;border-color:#d0d5dd;background:#fff}
+.wf-count{font-size:12px;color:#94a3b8;white-space:nowrap}
+.wf-chev{color:#94a3b8;font-size:12px;flex:none;width:12px;text-align:center}
+.wf-chev.open{transform:rotate(90deg)}
+.wf-ctrls{display:flex;gap:1px;opacity:0;transition:opacity .1s}
+.wf-stage:hover .wf-ctrls{opacity:1}
+.wf-ic{border:none;background:none;color:#94a3b8;cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:5px}
+.wf-ic:disabled{opacity:.3;cursor:default}
+.wf-conn{width:2px;height:26px;background:#c3cbd6;position:relative}
+.wf-conn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #c3cbd6}
+.wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
+.wf-subflow{display:flex;flex-direction:column;align-items:center;min-width:min-content}
+.wf-roots{display:flex;gap:36px;align-items:flex-start;justify-content:center;min-width:min-content}
+.wf-node{display:flex;flex-direction:column;align-items:center}
+.wf-task{width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:pointer;text-align:left}
+.wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
+.wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
+.wf-m{font-size:10.5px;color:#94a3b8;margin-top:3px}
+.wf-subconn{width:2px;height:18px;background:#c3cbd6;position:relative}
+.wf-subconn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
+.wf-branch{display:flex;gap:36px;position:relative;padding-top:18px}
+.wf-branch::before{content:'';position:absolute;top:0;left:25%;right:25%;height:2px;background:#c3cbd6}
+.wf-leg{display:flex;flex-direction:column;align-items:center;position:relative}
+.wf-leg::before{content:'';position:absolute;top:-18px;left:50%;width:2px;height:18px;background:#c3cbd6}
+.wf-leg::after{content:'';position:absolute;top:-6px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
+.wf-addbar{margin-top:16px;display:flex;gap:6px;justify-content:center}
+.wf-add{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid #d0d5dd;background:#fff;color:#475569;cursor:pointer}
+`;
+
 export default function WorkflowCanvas() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -57,7 +87,7 @@ export default function WorkflowCanvas() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [open, setOpen] = useState<Record<string, boolean>>({}); // expanded stage keys
+  const [open, setOpen] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,7 +114,6 @@ export default function WorkflowCanvas() {
     return m;
   }, [templates]);
 
-  // Roots (no in-stage prerequisite) + children map, from edges whose both ends are in-stage.
   const stageTree = (key: string) => {
     const list = tasksByStage[key] ?? [];
     const inStage = new Set(list.map((t) => t.id));
@@ -148,7 +177,7 @@ export default function WorkflowCanvas() {
     await api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
   };
 
-  // ── Stage CRUD (the beats themselves) ───────────────────────────────────────
+  // ── Stage CRUD (the beats) ──────────────────────────────────────────────────
   const stageColor = (key: string) => { const i = stages.findIndex((s) => s.key === key); return STAGE_COLORS[(i < 0 ? 0 : i) % STAGE_COLORS.length]; };
   const addStage = async () => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); } catch (e: any) { setErr(e?.message || 'Could not add stage.'); } };
   const saveStageName = async (s: Stage) => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, sortOrder: s.sort_order, active: s.active }) }); } catch (e: any) { setErr(e?.message || 'Could not save stage.'); } };
@@ -167,48 +196,33 @@ export default function WorkflowCanvas() {
   const allOpen = stages.length > 0 && stages.every((s) => open[s.key]);
   const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
 
-  const taskBox = (t: Template) => {
-    const isSel = t.id === selected;
-    return (
-      <div onClick={(e) => { e.stopPropagation(); setSelected(isSel ? null : t.id); }}
-        style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer', background: isSel ? '#EDE7FB' : '#fff',
-          border: `1px solid ${isSel ? '#5A27E0' : '#dfe3ea'}`, boxShadow: '0 1px 2px rgba(16,24,40,0.05)', opacity: t.active ? 1 : 0.5 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>
-          {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
-          {t.detail}
-        </div>
-        <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
-          {t.node_kind === 'EMAIL'
-            ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
-            : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
-        </div>
+  // ── Sub-flow render (a task box, then a fork/chain to its dependents) ─────────
+  const taskBox = (t: Template) => (
+    <div className={`wf-task${t.id === selected ? ' sel' : ''}`} onClick={(e) => { e.stopPropagation(); setSelected(t.id === selected ? null : t.id); }} style={{ opacity: t.active ? 1 : 0.5 }}>
+      <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
+      <div className="wf-m">
+        {t.node_kind === 'EMAIL'
+          ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
+          : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
       </div>
-    );
-  };
-
-  // A branch: an elbow line + arrowhead from the trunk into a node's box, then the node.
-  const branch = (t: Template, childrenOf: Record<string, string[]>, seen: Set<string>): React.ReactNode => (
-    <div key={t.id} style={{ position: 'relative', paddingLeft: 16, marginTop: 6 }}>
-      <span style={{ position: 'absolute', left: 0, top: 15, width: 12, height: 2, background: '#cbd5e1' }} />
-      <span style={{ position: 'absolute', left: 12, top: 11, width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '5px solid #cbd5e1' }} />
-      {renderNode(t, childrenOf, seen)}
     </div>
   );
-  // Flow-chart node: a task box, with a trunk down to the tasks that run after it.
   const renderNode = (t: Template, childrenOf: Record<string, string[]>, seen: Set<string>): React.ReactNode => {
     if (seen.has(t.id)) return null;
     seen.add(t.id);
     const kids = (childrenOf[t.id] ?? []).map((cid) => byId(cid)).filter(Boolean) as Template[];
     return (
-      <div>
+      <div className="wf-node">
         {taskBox(t)}
-        {kids.length > 0 && <div style={{ marginLeft: 9, borderLeft: '2px solid #cbd5e1' }}>{kids.map((k) => branch(k, childrenOf, seen))}</div>}
+        {kids.length === 1 && <><div className="wf-subconn" />{renderNode(kids[0], childrenOf, seen)}</>}
+        {kids.length > 1 && <div className="wf-branch">{kids.map((k) => <div className="wf-leg" key={k.id}>{renderNode(k, childrenOf, seen)}</div>)}</div>}
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      <style>{WF_CSS}</style>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Workflow</strong>
@@ -229,50 +243,50 @@ export default function WorkflowCanvas() {
           </div>
         )}
 
-        {/* The DAG of stages: nodes left→right, arrows between the beats. */}
         {!loading && stages.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto', padding: '4px 2px 12px' }} onClick={() => setSelected(null)}>
-            {stages.map((s, i) => {
-              const { list, childrenOf, roots } = stageTree(s.key);
-              const isOpen = !!open[s.key];
-              const emailCount = list.filter((t) => t.node_kind === 'EMAIL').length;
-              const color = stageColor(s.key);
-              return (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', flex: 'none' }}>
-                  <div style={{ width: isOpen ? 280 : 210, flex: 'none', background: '#fff', border: '1px solid #e6e8ee', borderTop: `3px solid ${color}`, borderRadius: 12, boxShadow: '0 1px 3px rgba(16,24,40,0.06)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
-                    {/* Stage node header */}
-                    <div style={{ padding: '9px 10px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <button onClick={() => setOpen((o) => ({ ...o, [s.key]: !o[s.key] }))} title={isOpen ? 'Collapse' : 'Expand'} style={{ ...iconBtn, transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</button>
-                        <span style={{ width: 9, height: 9, borderRadius: 3, background: color, flex: 'none' }} />
-                        <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)}
-                          style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', border: '1px solid transparent', borderRadius: 6, background: 'transparent', padding: '2px 3px', flex: 1, minWidth: 0 }} />
-                        <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier" style={arrowBtn}>‹</button>
-                        <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later" style={arrowBtn}>›</button>
-                        <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#cbd5e1' }}>×</button>
+          <div style={{ ...card, padding: '28px 12px' }}>
+            <div className="wf-flow">
+              {stages.map((s, i) => {
+                const { list, childrenOf, roots } = stageTree(s.key);
+                const isOpen = !!open[s.key];
+                const color = stageColor(s.key);
+                return (
+                  <Fragment key={s.id}>
+                    <div className={`wf-stage${isOpen ? ' open' : ''}`} style={{ borderLeftColor: color }}>
+                      <div className="wf-hd" onClick={() => setOpen((o) => ({ ...o, [s.key]: !o[s.key] }))}>
+                        <span className={`wf-chev${isOpen ? ' open' : ''}`}>▸</span>
+                        <span className="wf-dot" style={{ background: color }} />
+                        <input className="wf-name" value={s.name} onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)} />
+                        <span className="wf-count">{list.length} task{list.length === 1 ? '' : 's'}</span>
+                        <span className="wf-ctrls" onClick={(e) => e.stopPropagation()}>
+                          <button className="wf-ic" onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier">↑</button>
+                          <button className="wf-ic" onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later">↓</button>
+                          <button className="wf-ic" onClick={() => removeStage(s.id)} title="Delete stage">×</button>
+                        </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 21 }}>
-                        <span style={{ fontSize: 11, color: '#94a3b8', flex: 1 }}>{list.length} task{list.length === 1 ? '' : 's'}{emailCount ? ` · ${emailCount} ✉` : ''}</span>
-                        <button onClick={() => addTask(s.key, 'TASK')} title="Add a task" style={{ ...miniBtn }}>+ task</button>
-                        <button onClick={() => addTask(s.key, 'EMAIL')} title="Add an email step" style={{ ...miniBtn, color: '#0369a1', borderColor: '#bae6fd' }}>+ ✉</button>
-                      </div>
+                      {isOpen && (
+                        <div className="wf-body">
+                          {list.length === 0
+                            ? <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>No tasks yet.</div>
+                            : (() => {
+                                const seen = new Set<string>();
+                                return roots.length === 1
+                                  ? <div className="wf-subflow">{renderNode(roots[0], childrenOf, seen)}</div>
+                                  : <div className="wf-roots">{roots.map((r) => <div key={r.id}>{renderNode(r, childrenOf, seen)}</div>)}</div>;
+                              })()}
+                          <div className="wf-addbar">
+                            <button className="wf-add" onClick={() => addTask(s.key, 'TASK')}>+ task</button>
+                            <button className="wf-add" style={{ color: '#0369a1', borderColor: '#bae6fd' }} onClick={() => addTask(s.key, 'EMAIL')}>+ ✉ email</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {/* Expanded: the subtask tree */}
-                    {isOpen && (
-                      <div style={{ padding: '4px 10px 10px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
-                        {list.length === 0
-                          ? <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 2px' }}>No tasks yet.</div>
-                          : (() => { const seen = new Set<string>(); return <div style={{ marginLeft: 9, borderLeft: '2px solid #cbd5e1' }}>{roots.map((t) => branch(t, childrenOf, seen))}</div>; })()}
-                      </div>
-                    )}
-                  </div>
-                  {/* Beat → beat connector */}
-                  {i < stages.length - 1 && (
-                    <div style={{ flex: 'none', alignSelf: 'flex-start', marginTop: 16, color: '#cbd5e1', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>→</div>
-                  )}
-                </div>
-              );
-            })}
+                    {i < stages.length - 1 && <div className="wf-conn" />}
+                  </Fragment>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -291,7 +305,6 @@ export default function WorkflowCanvas() {
             {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
           </select>
 
-          {/* Runs after — intra-stage prerequisites */}
           <label style={lbl}>Runs after (in this stage)</label>
           {(() => {
             const prereqs = edges.filter((e) => e.to_template_id === sel.id).map((e) => byId(e.from_template_id)).filter((t): t is Template => !!t && t.stage === sel.stage);
@@ -368,8 +381,5 @@ export default function WorkflowCanvas() {
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: 12 };
 const btn: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#334155', cursor: 'pointer' };
-const miniBtn: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 6, border: '1px solid #d0d5dd', background: '#fff', color: '#475569', cursor: 'pointer' };
-const iconBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, width: 16, flex: 'none', transition: 'transform .12s' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '10px 0 3px' };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
-const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px', flex: 'none' };
