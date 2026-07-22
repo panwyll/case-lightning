@@ -339,7 +339,9 @@ export default function WorkflowCanvas() {
           {/* Sizer at the scaled dimensions so the scroll area matches what's drawn. */}
           <div style={{ width: 2000 * zoom, height: 1200 * zoom, position: 'relative' }}>
           <div style={{ position: 'relative', width: 2000, height: 1200, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
-            <svg width={2000} height={1200} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+            {/* zIndex 5 lifts the arrows above the task boxes; the container stays
+                pointer-transparent so only the line strokes themselves are clickable. */}
+            <svg width={2000} height={1200} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
               <defs>
                 <marker id="wf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
                   <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
