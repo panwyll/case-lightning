@@ -45,7 +45,7 @@ interface Member { id: string; name: string; role: string }
 const WF_CSS = `
 .wf-flow{display:flex;flex-direction:column;align-items:center}
 .wf-stage{width:360px;background:#fff;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;box-shadow:0 1px 3px rgba(16,24,40,.08);overflow:hidden}
-.wf-stage.open{width:620px;max-width:100%}
+.wf-stage.open{width:660px;max-width:100%}
 .wf-hd{display:flex;align-items:center;gap:10px;padding:11px 13px;cursor:pointer}
 .wf-dot{width:11px;height:11px;border-radius:3px;flex:none}
 .wf-name{font-size:14.5px;font-weight:700;color:#0f172a;flex:1;min-width:0;border:1px solid transparent;border-radius:6px;background:transparent;padding:2px 4px;font-family:inherit}
@@ -61,19 +61,13 @@ const WF_CSS = `
 .wf-conn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #c3cbd6}
 .wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
 .wf-subflow{display:flex;flex-direction:column;align-items:center;min-width:min-content}
-.wf-roots{display:flex;gap:36px;align-items:flex-start;justify-content:center;min-width:min-content}
-.wf-node{display:flex;flex-direction:column;align-items:center}
+.wf-level{display:flex;gap:20px;justify-content:center;align-items:stretch;flex-wrap:wrap}
 .wf-task{width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:pointer;text-align:left}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
 .wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
 .wf-m{font-size:10.5px;color:#94a3b8;margin-top:3px}
-.wf-subconn{width:2px;height:18px;background:#c3cbd6;position:relative}
-.wf-subconn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
-.wf-branch{display:flex;gap:36px;position:relative;padding-top:18px}
-.wf-branch::before{content:'';position:absolute;top:0;left:25%;right:25%;height:2px;background:#c3cbd6}
-.wf-leg{display:flex;flex-direction:column;align-items:center;position:relative}
-.wf-leg::before{content:'';position:absolute;top:-18px;left:50%;width:2px;height:18px;background:#c3cbd6}
-.wf-leg::after{content:'';position:absolute;top:-6px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
+.wf-lvlconn{width:2px;height:20px;background:#c3cbd6;position:relative;margin:2px 0}
+.wf-lvlconn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:4px solid transparent;border-right:4px solid transparent;border-top:6px solid #c3cbd6}
 .wf-addbar{margin-top:16px;display:flex;gap:6px;justify-content:center}
 .wf-add{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid #d0d5dd;background:#fff;color:#475569;cursor:pointer}
 `;
@@ -114,19 +108,26 @@ export default function WorkflowCanvas() {
     return m;
   }, [templates]);
 
-  const stageTree = (key: string) => {
+  // Group a stage's tasks into dependency levels (longest-path rank). Tasks at the same
+  // level have no ordering between them → they run IN PARALLEL (one row); each level runs
+  // after the one above. This renders forks and merges correctly (a task that runs after
+  // two parallel tasks just lands on the next level below both).
+  const stageLevels = (key: string): Template[][] => {
     const list = tasksByStage[key] ?? [];
     const inStage = new Set(list.map((t) => t.id));
-    const childrenOf: Record<string, string[]> = {};
-    const hasParent = new Set<string>();
-    for (const e of edges) {
-      if (inStage.has(e.from_template_id) && inStage.has(e.to_template_id)) {
-        (childrenOf[e.from_template_id] ??= []).push(e.to_template_id);
-        hasParent.add(e.to_template_id);
-      }
-    }
-    const roots = list.filter((t) => !hasParent.has(t.id));
-    return { list, childrenOf, roots };
+    const prereqs: Record<string, string[]> = {};
+    for (const e of edges) if (inStage.has(e.from_template_id) && inStage.has(e.to_template_id)) (prereqs[e.to_template_id] ??= []).push(e.from_template_id);
+    const memo: Record<string, number> = {};
+    const calc = (id: string, stack: Set<string>): number => {
+      if (memo[id] != null) return memo[id];
+      let lv = 0;
+      for (const p of prereqs[id] ?? []) if (!stack.has(p)) lv = Math.max(lv, calc(p, new Set([...stack, id])) + 1);
+      return (memo[id] = lv);
+    };
+    const maxLv = list.reduce((m, t) => Math.max(m, calc(t.id, new Set())), 0);
+    const levels: Template[][] = Array.from({ length: maxLv + 1 }, () => []);
+    for (const t of list) levels[memo[t.id]].push(t);
+    return levels;
   };
 
   const byId = (id: string) => templates.find((t) => t.id === id) || null;
@@ -207,19 +208,6 @@ export default function WorkflowCanvas() {
       </div>
     </div>
   );
-  const renderNode = (t: Template, childrenOf: Record<string, string[]>, seen: Set<string>): React.ReactNode => {
-    if (seen.has(t.id)) return null;
-    seen.add(t.id);
-    const kids = (childrenOf[t.id] ?? []).map((cid) => byId(cid)).filter(Boolean) as Template[];
-    return (
-      <div className="wf-node">
-        {taskBox(t)}
-        {kids.length === 1 && <><div className="wf-subconn" />{renderNode(kids[0], childrenOf, seen)}</>}
-        {kids.length > 1 && <div className="wf-branch">{kids.map((k) => <div className="wf-leg" key={k.id}>{renderNode(k, childrenOf, seen)}</div>)}</div>}
-      </div>
-    );
-  };
-
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <style>{WF_CSS}</style>
@@ -247,7 +235,8 @@ export default function WorkflowCanvas() {
           <div style={{ ...card, padding: '28px 12px' }}>
             <div className="wf-flow">
               {stages.map((s, i) => {
-                const { list, childrenOf, roots } = stageTree(s.key);
+                const list = tasksByStage[s.key] ?? [];
+                const levels = stageLevels(s.key);
                 const isOpen = !!open[s.key];
                 const color = stageColor(s.key);
                 return (
@@ -269,12 +258,14 @@ export default function WorkflowCanvas() {
                         <div className="wf-body">
                           {list.length === 0
                             ? <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>No tasks yet.</div>
-                            : (() => {
-                                const seen = new Set<string>();
-                                return roots.length === 1
-                                  ? <div className="wf-subflow">{renderNode(roots[0], childrenOf, seen)}</div>
-                                  : <div className="wf-roots">{roots.map((r) => <div key={r.id}>{renderNode(r, childrenOf, seen)}</div>)}</div>;
-                              })()}
+                            : <div className="wf-subflow">
+                                {levels.map((lvl, li) => (
+                                  <Fragment key={li}>
+                                    {li > 0 && <div className="wf-lvlconn" />}
+                                    <div className="wf-level">{lvl.map((t) => <div key={t.id}>{taskBox(t)}</div>)}</div>
+                                  </Fragment>
+                                ))}
+                              </div>}
                           <div className="wf-addbar">
                             <button className="wf-add" onClick={() => addTask(s.key, 'TASK')}>+ task</button>
                             <button className="wf-add" style={{ color: '#0369a1', borderColor: '#bae6fd' }} onClick={() => addTask(s.key, 'EMAIL')}>+ ✉ email</button>
