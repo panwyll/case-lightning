@@ -142,13 +142,13 @@ type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templa
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   mywork: { label: 'My work', subtitle: 'Replies drafted and waiting in your Outlook Drafts, and threads that need a chase.' },
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: '' },
+  board: { label: 'Matter board', subtitle: 'Every live matter as a card, in the stage it has reached — the case flow, live.' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
-  workflow: { label: 'Task workflow', subtitle: 'Build the DAG of tasks that are auto-created and assigned when a matter reaches each stage.' },
+  workflow: { label: 'Task workflow', subtitle: 'The backbone of the case flow: the DAG of tasks auto-created and assigned when a matter reaches each stage. Automations and playbooks act on this.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
-  playbooks: { label: 'Workflows', subtitle: 'Named multi-step actions your team runs against an email in one click. Nothing is sent.' },
-  rules: { label: 'Auto-rules', subtitle: 'Premium automation that fires only on very-high-confidence matches.' },
+  playbooks: { label: 'Playbooks', subtitle: 'Named multi-step actions your team runs against an email in one click — create a matter, draft a reply, generate docs. Nothing is sent automatically.' },
+  rules: { label: 'Automations', subtitle: 'Rules that act automatically on very-high-confidence emails — optionally only at chosen stages of the case flow. Any auto-send goes through the cancellable send queue.' },
   team: { label: 'Team', subtitle: 'Who can access the firm, and their roles.' },
   policy: { label: 'Policy', subtitle: 'Firm-wide disclaimer, case-folder naming and allowed external domains.' },
   actions: { label: 'Tools', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
@@ -158,8 +158,11 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
-  { label: 'Work', tabs: ['mywork', 'board', 'workload'] },
-  { label: 'Automation & templates', tabs: ['workflow', 'templates', 'docpacks', 'playbooks', 'rules'] },
+  { label: 'Work', tabs: ['mywork', 'workload'] },
+  // The case flow is the spine: the board is it live, Task workflow is the DAG that
+  // drives it, and automations + playbooks are the two ways to act on it.
+  { label: 'Case flow', tabs: ['board', 'workflow', 'rules', 'playbooks'] },
+  { label: 'Content', tabs: ['templates', 'docpacks'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
   { label: 'Account', tabs: ['billing', 'help'] },
@@ -2129,17 +2132,17 @@ export default function AdminPage() {
         {tab === 'playbooks' && (
           <>
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <h3 style={{ marginTop: 0, fontSize: 15 }}>Workflows</h3>
+              <h3 style={{ marginTop: 0, fontSize: 15 }}>Playbooks</h3>
               <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                A workflow is a named sequence of steps your team runs against an email in one click
+                A playbook is a named sequence of steps your team runs against an email in one click
                 (e.g. <strong>Onboard client</strong>). Add steps in order; running it creates/drafts
-                everything for review — nothing is sent. Workflows are suggested by the assistant.
+                everything for review — nothing is sent. Playbooks are suggested by the assistant.
               </p>
             </div>
 
             {/* Builder */}
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit workflow' : 'New workflow'}</h3>
+              <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit playbook' : 'New playbook'}</h3>
               <input style={input} placeholder="Name (e.g. Onboard client)" value={pb.name} onChange={(e) => setPb({ ...pb, name: e.target.value })} />
               <input style={input} placeholder="Description (helps the assistant suggest it)" value={pb.description} onChange={(e) => setPb({ ...pb, description: e.target.value })} />
 
@@ -2198,7 +2201,7 @@ export default function AdminPage() {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
-                  {editingId ? 'Update workflow' : 'Save workflow'}
+                  {editingId ? 'Update playbook' : 'Save playbook'}
                 </button>
                 {editingId ? (
                   <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={cancelEdit}>
@@ -2206,7 +2209,7 @@ export default function AdminPage() {
                   </button>
                 ) : (
                   <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={loadExampleWorkflows}>
-                    Load example workflows
+                    Load example playbooks
                   </button>
                 )}
               </div>

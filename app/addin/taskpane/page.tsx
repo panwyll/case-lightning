@@ -2708,12 +2708,12 @@ export default function Taskpane() {
                     </div>
                   )}
 
-                  {/* Workflows — named multi-step actions */}
+                  {/* Playbooks — named multi-step actions */}
                   {(playbooks.length > 0 || me?.role === 'ADMIN') && (
                     <div style={{ marginTop: 12 }}>
-                      <span style={S.updateLabel}>Workflows</span>
+                      <span style={S.updateLabel}>Playbooks</span>
                       {playbooks.length === 0 && (
-                        <p style={{ ...S.muted, margin: '4px 0 0' }}>No workflows yet.</p>
+                        <p style={{ ...S.muted, margin: '4px 0 0' }}>No playbooks yet.</p>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                         {[...playbooks]
@@ -2781,7 +2781,7 @@ export default function Taskpane() {
                       )}
                       {me?.role === 'ADMIN' && (
                         <button onClick={() => openAdmin('playbooks')} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          Manage workflows →
+                          Manage playbooks →
                         </button>
                       )}
                     </div>
