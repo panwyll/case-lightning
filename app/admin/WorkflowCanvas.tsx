@@ -40,14 +40,13 @@ interface Edge { from_template_id: string; to_template_id: string; }
 interface Member { id: string; name: string; role: string }
 
 /**
- * The workflow builder, as a stage tree.
+ * The workflow builder as a two-level DAG.
  *
- * The conveyancing process is a pipeline of stages; each stage owns a set of tasks
- * with their own internal ordering. So the UI is a vertical accordion of stage blocks
- * (the pipeline, top→bottom), and expanding a block reveals its tasks as an indented
- * tree — a task nested under another "runs after" it (an intra-stage prerequisite).
- * Stage order sequences the stages; the tree sequences the tasks within one. Editing a
- * task (assignee, due, email, prerequisites) happens in the side panel.
+ * Top level = the "main beats": the stages flow left→right as nodes (Instruction →
+ * Contract pack → …). Each stage node is collapsed by default; expand it in place to
+ * reveal its subtasks and their dependencies as an indented tree (a task nested under
+ * another "runs after" it — an intra-stage prerequisite). Stage order sequences the
+ * beats; the tree sequences the tasks within a beat. Editing is in the side panel.
  */
 export default function WorkflowCanvas() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -58,7 +57,7 @@ export default function WorkflowCanvas() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [open, setOpen] = useState<Record<string, boolean>>({}); // expanded stage keys
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,7 +77,6 @@ export default function WorkflowCanvas() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  // ── Tasks + intra-stage hierarchy ───────────────────────────────────────────
   const tasksByStage = useMemo(() => {
     const m: Record<string, Template[]> = {};
     for (const t of templates) (m[t.stage] ??= []).push(t);
@@ -86,8 +84,7 @@ export default function WorkflowCanvas() {
     return m;
   }, [templates]);
 
-  // For a stage: which tasks are roots (no prerequisite *within this stage*) and the
-  // children map (prerequisite → dependents), from edges whose both ends are in-stage.
+  // Roots (no in-stage prerequisite) + children map, from edges whose both ends are in-stage.
   const stageTree = (key: string) => {
     const list = tasksByStage[key] ?? [];
     const inStage = new Set(list.map((t) => t.id));
@@ -115,11 +112,10 @@ export default function WorkflowCanvas() {
       else body.detail = 'New task';
       const r = await api<{ template: Template }>('/admin/workflow', { method: 'POST', body: JSON.stringify(body) });
       setTemplates((ts) => [...ts, r.template]);
-      setCollapsed((c) => ({ ...c, [stageKey]: false }));
+      setOpen((o) => ({ ...o, [stageKey]: true }));
       setSelected(r.template.id);
     } catch (e: any) { setErr(e?.message || 'Could not add.'); }
   };
-
   const saveNode = async (t: Template) => {
     try {
       const r = await api<{ template: Template }>('/admin/workflow', {
@@ -152,7 +148,7 @@ export default function WorkflowCanvas() {
     await api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
   };
 
-  // ── Stage CRUD (the pipeline itself) ────────────────────────────────────────
+  // ── Stage CRUD (the beats themselves) ───────────────────────────────────────
   const stageColor = (key: string) => { const i = stages.findIndex((s) => s.key === key); return STAGE_COLORS[(i < 0 ? 0 : i) % STAGE_COLORS.length]; };
   const addStage = async () => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); } catch (e: any) { setErr(e?.message || 'Could not add stage.'); } };
   const saveStageName = async (s: Stage) => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, sortOrder: s.sort_order, active: s.active }) }); } catch (e: any) { setErr(e?.message || 'Could not save stage.'); } };
@@ -168,45 +164,50 @@ export default function WorkflowCanvas() {
     t.assignee_kind === 'USER' ? users.find((u) => u.id === t.assignee_user_id)?.name ?? 'a person'
       : t.assignee_role === 'OWNER' ? 'Matter owner' : (t.assignee_role ?? '').charAt(0) + (t.assignee_role ?? '').slice(1).toLowerCase();
 
-  // Render one task and its intra-stage dependents, indented.
+  const allOpen = stages.length > 0 && stages.every((s) => open[s.key]);
+  const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
+
+  // One task + its intra-stage dependents, indented (the "· runs after" arrow is the nesting).
   const renderTask = (t: Template, childrenOf: Record<string, string[]>, depth: number, seen: Set<string>): React.ReactNode => {
     if (seen.has(t.id)) return null;
     seen.add(t.id);
     const isSel = t.id === selected;
     const kids = (childrenOf[t.id] ?? []).map((cid) => byId(cid)).filter(Boolean) as Template[];
     return (
-      <div key={t.id} style={{ marginLeft: depth ? 18 : 0, borderLeft: depth ? '1.5px solid #e2e8f0' : undefined, paddingLeft: depth ? 10 : 0 }}>
+      <div key={t.id} style={{ marginLeft: depth ? 14 : 0, borderLeft: depth ? '1.5px solid #dbe1ea' : undefined, paddingLeft: depth ? 8 : 0 }}>
         <div
-          onClick={() => setSelected(isSel ? null : t.id)}
+          onClick={(e) => { e.stopPropagation(); setSelected(isSel ? null : t.id); }}
           style={{
-            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 9, cursor: 'pointer', marginBottom: 6,
+            padding: '6px 8px', borderRadius: 8, cursor: 'pointer', marginBottom: 5,
             background: isSel ? '#EDE7FB' : '#fff', border: `1px solid ${isSel ? '#5A27E0' : '#e6e8ee'}`, opacity: t.active ? 1 : 0.5,
           }}>
-          <span style={{ width: 8, height: 8, borderRadius: 3, background: stageColor(t.stage), flex: 'none' }} />
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
-            {t.node_kind === 'EMAIL' && <span style={{ fontSize: 10, fontWeight: 800, color: '#0ea5e9', marginRight: 6 }}>✉ EMAIL</span>}
-            {t.detail}
-          </span>
-          <span style={{ fontSize: 11, color: '#94a3b8', flex: 'none', whiteSpace: 'nowrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {depth > 0 && <span style={{ color: '#94a3b8', fontSize: 11, flex: 'none' }}>↳</span>}
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>
+              {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
+              {t.detail}
+            </span>
+          </div>
+          <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
             {t.node_kind === 'EMAIL'
               ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
-              : `${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
-          </span>
+              : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+          </div>
         </div>
-        {kids.length > 0 && kids.map((k) => renderTask(k, childrenOf, depth + 1, seen))}
+        {kids.map((k) => renderTask(k, childrenOf, depth + 1, seen))}
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-      {/* Left: the stage pipeline */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 15, color: '#0f172a' }}>Workflow</strong>
-          <span style={{ fontSize: 12.5, color: '#64748b', flex: 1, minWidth: 200 }}>
-            The pipeline of stages. Tasks in a stage are created &amp; assigned when a matter reaches it; nest a task under another to make it run after it.
+          <span style={{ fontSize: 12.5, color: '#64748b', flex: 1, minWidth: 180 }}>
+            The main beats of a matter, left to right. Expand a stage to see its tasks; nest one under another to make it run after it.
           </span>
+          {stages.length > 0 && <button onClick={toggleAll} style={btn}>{allOpen ? 'Collapse all' : 'Expand all'}</button>}
           <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
 
@@ -223,43 +224,52 @@ export default function WorkflowCanvas() {
           </div>
         )}
 
-        {!loading && stages.map((s, i) => {
-          const { list, childrenOf, roots } = stageTree(s.key);
-          const isOpen = !collapsed[s.key];
-          const emailCount = list.filter((t) => t.node_kind === 'EMAIL').length;
-          const color = stageColor(s.key);
-          return (
-            <div key={s.id}>
-              <div style={{ ...card, padding: 0, overflow: 'hidden', borderLeft: `4px solid ${color}` }}>
-                {/* Stage header */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
-                  <button onClick={() => setCollapsed((c) => ({ ...c, [s.key]: !c[s.key] }))} title={isOpen ? 'Collapse' : 'Expand'} style={{ ...iconBtn, transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</button>
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: color, flex: 'none' }} />
-                  <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)} onClick={(e) => e.stopPropagation()}
-                    style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', border: '1px solid transparent', borderRadius: 6, background: 'transparent', padding: '2px 4px', width: `${Math.max(10, s.name.length + 1)}ch`, minWidth: 90 }} />
-                  <span style={{ fontSize: 11.5, color: '#94a3b8', flex: 1 }}>{list.length} task{list.length === 1 ? '' : 's'}{emailCount ? ` · ${emailCount} email` : ''}</span>
-                  <button onClick={() => addTask(s.key, 'TASK')} style={{ ...btn, padding: '4px 9px', fontSize: 11.5 }}>+ Task</button>
-                  <button onClick={() => addTask(s.key, 'EMAIL')} style={{ ...btn, padding: '4px 9px', fontSize: 11.5, color: '#0369a1', borderColor: '#bae6fd' }}>+ Email</button>
-                  <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move up" style={arrowBtn}>↑</button>
-                  <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move down" style={arrowBtn}>↓</button>
-                  <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#cbd5e1' }}>×</button>
-                </div>
-                {/* Stage body: the task tree */}
-                {isOpen && (
-                  <div style={{ padding: '2px 12px 12px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
-                    {list.length === 0 ? (
-                      <div style={{ fontSize: 12.5, color: '#94a3b8', padding: '10px 2px' }}>No tasks in this stage yet — add one above.</div>
-                    ) : (
-                      (() => { const seen = new Set<string>(); return roots.map((t) => renderTask(t, childrenOf, 0, seen)); })()
+        {/* The DAG of stages: nodes left→right, arrows between the beats. */}
+        {!loading && stages.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', overflowX: 'auto', padding: '4px 2px 12px' }} onClick={() => setSelected(null)}>
+            {stages.map((s, i) => {
+              const { list, childrenOf, roots } = stageTree(s.key);
+              const isOpen = !!open[s.key];
+              const emailCount = list.filter((t) => t.node_kind === 'EMAIL').length;
+              const color = stageColor(s.key);
+              return (
+                <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', flex: 'none' }}>
+                  <div style={{ width: isOpen ? 250 : 210, flex: 'none', background: '#fff', border: '1px solid #e6e8ee', borderTop: `3px solid ${color}`, borderRadius: 12, boxShadow: '0 1px 3px rgba(16,24,40,0.06)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                    {/* Stage node header */}
+                    <div style={{ padding: '9px 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button onClick={() => setOpen((o) => ({ ...o, [s.key]: !o[s.key] }))} title={isOpen ? 'Collapse' : 'Expand'} style={{ ...iconBtn, transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</button>
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: color, flex: 'none' }} />
+                        <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)}
+                          style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', border: '1px solid transparent', borderRadius: 6, background: 'transparent', padding: '2px 3px', flex: 1, minWidth: 0 }} />
+                        <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier" style={arrowBtn}>‹</button>
+                        <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later" style={arrowBtn}>›</button>
+                        <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#cbd5e1' }}>×</button>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 21 }}>
+                        <span style={{ fontSize: 11, color: '#94a3b8', flex: 1 }}>{list.length} task{list.length === 1 ? '' : 's'}{emailCount ? ` · ${emailCount} ✉` : ''}</span>
+                        <button onClick={() => addTask(s.key, 'TASK')} title="Add a task" style={{ ...miniBtn }}>+ task</button>
+                        <button onClick={() => addTask(s.key, 'EMAIL')} title="Add an email step" style={{ ...miniBtn, color: '#0369a1', borderColor: '#bae6fd' }}>+ ✉</button>
+                      </div>
+                    </div>
+                    {/* Expanded: the subtask tree */}
+                    {isOpen && (
+                      <div style={{ padding: '6px 10px 10px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
+                        {list.length === 0
+                          ? <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 2px' }}>No tasks yet.</div>
+                          : (() => { const seen = new Set<string>(); return roots.map((t) => renderTask(t, childrenOf, 0, seen)); })()}
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
-              {/* Pipeline connector to the next stage */}
-              {i < stages.length - 1 && <div style={{ textAlign: 'center', color: '#cbd5e1', fontSize: 14, lineHeight: '10px', height: 12 }}>↓</div>}
-            </div>
-          );
-        })}
+                  {/* Beat → beat connector */}
+                  {i < stages.length - 1 && (
+                    <div style={{ flex: 'none', alignSelf: 'flex-start', marginTop: 16, color: '#cbd5e1', fontSize: 20, lineHeight: 1, padding: '0 4px' }}>→</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Right: the selected-task editor */}
@@ -354,7 +364,8 @@ export default function WorkflowCanvas() {
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: 12 };
 const btn: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#334155', cursor: 'pointer' };
-const iconBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, width: 16, transition: 'transform .12s' };
+const miniBtn: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 6, border: '1px solid #d0d5dd', background: '#fff', color: '#475569', cursor: 'pointer' };
+const iconBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, width: 16, flex: 'none', transition: 'transform .12s' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '10px 0 3px' };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
-const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px' };
+const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px', flex: 'none' };
