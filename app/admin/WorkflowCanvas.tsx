@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -39,75 +39,26 @@ interface Template {
 interface Edge { from_template_id: string; to_template_id: string; }
 interface Member { id: string; name: string; role: string }
 
-const NODE_W = 190;
-const NODE_H = 74;
-
-// Flow-chart edge: a cubic bezier that leaves the source's right port horizontally
-// and enters the target's left port horizontally, so the vertical travel happens in
-// the empty gaps between stage columns instead of slicing diagonally across boxes.
-function edgePath(p1: { x: number; y: number }, p2: { x: number; y: number }): string {
-  const dx = Math.max(30, Math.abs(p2.x - p1.x) * 0.4);
-  return `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y} ${p2.x - dx} ${p2.y} ${p2.x} ${p2.y}`;
-}
-
+/**
+ * The workflow builder, as a stage tree.
+ *
+ * The conveyancing process is a pipeline of stages; each stage owns a set of tasks
+ * with their own internal ordering. So the UI is a vertical accordion of stage blocks
+ * (the pipeline, top→bottom), and expanding a block reveals its tasks as an indented
+ * tree — a task nested under another "runs after" it (an intra-stage prerequisite).
+ * Stage order sequences the stages; the tree sequences the tasks within one. Editing a
+ * task (assignee, due, email, prerequisites) happens in the side panel.
+ */
 export default function WorkflowCanvas() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [users, setUsers] = useState<Member[]>([]);
-  const [statuses, setStatuses] = useState<Array<{ id: string; name: string; kind: string; color: string | null; sort_order: number }>>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject_template: string | null }>>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLDivElement>(null);
-
-  // Live drag/connect state (kept in a ref so mousemove doesn't thrash React state).
-  const drag = useRef<{ kind: 'move' | 'connect'; id: string; dx: number; dy: number } | null>(null);
-  const [override, setOverride] = useState<Record<string, { x: number; y: number }>>({});
-  const [linking, setLinking] = useState<{ from: string; x: number; y: number } | null>(null);
-
-  // Zoom (clamped). The inner canvas is CSS-scaled; a sizer at the scaled size keeps
-  // scrolling correct, and pointer→canvas math divides by zoom (see relPos). Focal
-  // zoom keeps the point under the cursor put by adjusting scroll after the resize.
-  const ZMIN = 0.4, ZMAX = 1.6, ZSTEP = 0.15;
-  const [zoom, setZoom] = useState(1);
-  const zoomRef = useRef(1);
-  zoomRef.current = zoom;
-  const pendingScroll = useRef<{ left: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const c = canvasRef.current;
-    if (c && pendingScroll.current) {
-      c.scrollLeft = pendingScroll.current.left;
-      c.scrollTop = pendingScroll.current.top;
-      pendingScroll.current = null;
-    }
-  }, [zoom]);
-  const applyZoom = (target: number, focal?: { sx: number; sy: number }) => {
-    const z1 = Math.min(ZMAX, Math.max(ZMIN, Math.round(target * 100) / 100));
-    const c = canvasRef.current;
-    if (c) {
-      const f = focal ?? { sx: c.clientWidth / 2, sy: c.clientHeight / 2 };
-      const z0 = zoomRef.current;
-      const cx = (f.sx + c.scrollLeft) / z0;
-      const cy = (f.sy + c.scrollTop) / z0;
-      pendingScroll.current = { left: cx * z1 - f.sx, top: cy * z1 - f.sy };
-    }
-    setZoom(z1);
-  };
-  // Ctrl/⌘ + wheel to zoom toward the cursor. Native (non-passive) so we can preventDefault.
-  useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault();
-      const b = c.getBoundingClientRect();
-      applyZoom(zoomRef.current * (e.deltaY < 0 ? 1.1 : 0.9), { sx: e.clientX - b.left, sy: e.clientY - b.top });
-    };
-    c.addEventListener('wheel', onWheel, { passive: false });
-    return () => c.removeEventListener('wheel', onWheel);
-  }, []);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,7 +68,6 @@ export default function WorkflowCanvas() {
       setEdges(r.edges ?? []);
       setUsers(r.users ?? []);
       setEmailTemplates(r.emailTemplates ?? []);
-      try { setStatuses((await api<{ statuses: any[] }>('/admin/statuses')).statuses ?? []); } catch { /* palette optional */ }
       try { setStages((await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []); } catch { /* stages optional */ }
       setErr(null);
     } catch (e: any) {
@@ -128,86 +78,46 @@ export default function WorkflowCanvas() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const relPos = (e: { clientX: number; clientY: number }) => {
-    const c = canvasRef.current;
-    if (!c) return { x: 0, y: 0 };
-    const b = c.getBoundingClientRect();
-    // The inner canvas is scaled by `zoom` (origin 0,0), so screen deltas map back to
-    // canvas coordinates by dividing through the zoom.
-    return { x: (e.clientX - b.left + c.scrollLeft) / zoom, y: (e.clientY - b.top + c.scrollTop) / zoom };
-  };
-  const posOf = (t: Template) => override[t.id] ?? { x: t.pos_x, y: t.pos_y };
+  // ── Tasks + intra-stage hierarchy ───────────────────────────────────────────
+  const tasksByStage = useMemo(() => {
+    const m: Record<string, Template[]> = {};
+    for (const t of templates) (m[t.stage] ??= []).push(t);
+    for (const k of Object.keys(m)) m[k].sort((a, b) => (a.pos_y - b.pos_y) || (a.sort_order - b.sort_order));
+    return m;
+  }, [templates]);
 
-  const onMouseMove = (e: React.MouseEvent) => {
-    const p = relPos(e);
-    if (drag.current?.kind === 'move') {
-      setOverride((o) => ({ ...o, [drag.current!.id]: { x: p.x - drag.current!.dx, y: p.y - drag.current!.dy } }));
-    } else if (linking) {
-      setLinking((l) => (l ? { ...l, x: p.x, y: p.y } : l));
-    }
-  };
-  const onMouseUp = async () => {
-    if (drag.current?.kind === 'move') {
-      const id = drag.current.id;
-      const pos = override[id];
-      drag.current = null;
-      if (pos) {
-        setTemplates((ts) => ts.map((t) => (t.id === id ? { ...t, pos_x: pos.x, pos_y: pos.y } : t)));
-        await api('/admin/workflow/positions', { method: 'POST', body: JSON.stringify({ positions: [{ id, x: Math.round(pos.x), y: Math.round(pos.y) }] }) }).catch(() => {});
+  // For a stage: which tasks are roots (no prerequisite *within this stage*) and the
+  // children map (prerequisite → dependents), from edges whose both ends are in-stage.
+  const stageTree = (key: string) => {
+    const list = tasksByStage[key] ?? [];
+    const inStage = new Set(list.map((t) => t.id));
+    const childrenOf: Record<string, string[]> = {};
+    const hasParent = new Set<string>();
+    for (const e of edges) {
+      if (inStage.has(e.from_template_id) && inStage.has(e.to_template_id)) {
+        (childrenOf[e.from_template_id] ??= []).push(e.to_template_id);
+        hasParent.add(e.to_template_id);
       }
     }
-    drag.current = null;
-    setLinking(null);
+    const roots = list.filter((t) => !hasParent.has(t.id));
+    return { list, childrenOf, roots };
   };
 
-  const startMove = (e: React.MouseEvent, t: Template) => {
-    e.stopPropagation();
-    const p = relPos(e);
-    const pos = posOf(t);
-    drag.current = { kind: 'move', id: t.id, dx: p.x - pos.x, dy: p.y - pos.y };
-  };
-  const startLink = (e: React.MouseEvent, t: Template) => {
-    e.stopPropagation();
-    const p = relPos(e);
-    setLinking({ from: t.id, x: p.x, y: p.y });
-  };
-  const finishLink = async (target: Template) => {
-    if (!linking || linking.from === target.id) { setLinking(null); return; }
-    try {
-      await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from: linking.from, to: target.id }) });
-      await load();
-    } catch (e: any) {
-      setErr(e?.message || 'Could not add dependency.');
-    }
-    setLinking(null);
-  };
+  const byId = (id: string) => templates.find((t) => t.id === id) || null;
+  const sel = selected ? byId(selected) : null;
 
-  const addTask = async () => {
-    const stage = stages[0]?.key ?? 'INSTRUCTION';
-    const y = 40 + templates.filter((t) => t.stage === stage).length * 90;
+  // ── Mutations ───────────────────────────────────────────────────────────────
+  const addTask = async (stageKey: string, nodeKind: 'TASK' | 'EMAIL' = 'TASK') => {
+    const posY = (tasksByStage[stageKey]?.length ?? 0) * 10;
     try {
-      const r = await api<{ template: Template }>('/admin/workflow', {
-        method: 'POST',
-        body: JSON.stringify({ stage, detail: 'New task', assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: 40, posY: y }),
-      });
+      const body: any = { stage: stageKey, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: 0, posY };
+      if (nodeKind === 'EMAIL') { body.detail = 'Send email'; body.nodeKind = 'EMAIL'; body.sendMode = 'DRAFT'; body.emailTemplateId = emailTemplates[0]?.id ?? null; }
+      else body.detail = 'New task';
+      const r = await api<{ template: Template }>('/admin/workflow', { method: 'POST', body: JSON.stringify(body) });
       setTemplates((ts) => [...ts, r.template]);
+      setCollapsed((c) => ({ ...c, [stageKey]: false }));
       setSelected(r.template.id);
-    } catch (e: any) {
-      setErr(e?.message || 'Could not add task.');
-    }
-  };
-
-  const addEmail = async () => {
-    const stage = stages[0]?.key ?? 'INSTRUCTION';
-    const y = 40 + templates.filter((t) => t.stage === stage).length * 90;
-    try {
-      const r = await api<{ template: Template }>('/admin/workflow', {
-        method: 'POST',
-        body: JSON.stringify({ stage, detail: 'Send email', nodeKind: 'EMAIL', sendMode: 'DRAFT', emailTemplateId: emailTemplates[0]?.id ?? null, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: 260, posY: y }),
-      });
-      setTemplates((ts) => [...ts, r.template]);
-      setSelected(r.template.id);
-    } catch (e: any) { setErr(e?.message || 'Could not add email.'); }
+    } catch (e: any) { setErr(e?.message || 'Could not add.'); }
   };
 
   const saveNode = async (t: Template) => {
@@ -233,31 +143,18 @@ export default function WorkflowCanvas() {
       setSelected(null);
     } catch (e: any) { setErr(e?.message || 'Could not delete.'); }
   };
+  const addPrereq = async (from: string, to: string) => {
+    try { await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) }); await load(); }
+    catch (e: any) { setErr(e?.message || 'Could not add prerequisite (would it create a loop?).'); }
+  };
   const deleteEdge = async (from: string, to: string) => {
     setEdges((es) => es.filter((e) => !(e.from_template_id === from && e.to_template_id === to)));
     await api(`/admin/workflow/edges?from=${from}&to=${to}`, { method: 'DELETE' }).catch(() => {});
   };
 
-  const addStatus = async () => {
-    try { await api('/admin/statuses', { method: 'POST', body: JSON.stringify({ name: 'New status', kind: 'OPEN', color: '#64748b', sortOrder: statuses.length }) }); await load(); }
-    catch (e: any) { setErr(e?.message || 'Could not add status.'); }
-  };
-  const saveStatus = async (s: { id: string; name: string; kind: string; color: string | null; sort_order: number }) => {
-    try { await api('/admin/statuses', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, kind: s.kind, color: s.color, sortOrder: s.sort_order }) }); }
-    catch (e: any) { setErr(e?.message || 'Could not save status.'); }
-  };
-  const removeStatus = async (id: string) => {
-    if (!window.confirm('Delete this status?')) return;
-    setStatuses((ss) => ss.filter((x) => x.id !== id));
-    await api(`/admin/statuses?id=${id}`, { method: 'DELETE' }).catch(() => {});
-  };
-
+  // ── Stage CRUD (the pipeline itself) ────────────────────────────────────────
   const stageColor = (key: string) => { const i = stages.findIndex((s) => s.key === key); return STAGE_COLORS[(i < 0 ? 0 : i) % STAGE_COLORS.length]; };
-  const stageLabel = (key: string) => stages.find((s) => s.key === key)?.name ?? key;
-  const addStage = async () => {
-    try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); }
-    catch (e: any) { setErr(e?.message || 'Could not add stage.'); }
-  };
+  const addStage = async () => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); } catch (e: any) { setErr(e?.message || 'Could not add stage.'); } };
   const saveStageName = async (s: Stage) => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, sortOrder: s.sort_order, active: s.active }) }); } catch (e: any) { setErr(e?.message || 'Could not save stage.'); } };
   const removeStage = async (id: string) => { if (!window.confirm('Delete this stage? (Kept but hidden if matters are on it.)')) return; await api(`/admin/stages?id=${id}`, { method: 'DELETE' }).catch(() => {}); await load(); };
   const moveStage = async (idx: number, dir: -1 | 1) => {
@@ -267,212 +164,160 @@ export default function WorkflowCanvas() {
     await api('/admin/stages', { method: 'POST', body: JSON.stringify({ order: reordered.map((s, i) => ({ id: s.id, sortOrder: i })) }) }).catch(() => {});
   };
 
-  const sel = templates.find((t) => t.id === selected) || null;
-  // Edges run from the OUT port (right edge of the prerequisite) to the IN port (left edge of
-  // the dependent), at a fixed offset from the node top so they line up with the visible dots.
-  const PORT_Y = 30;
-  const outPt = (t: Template) => { const p = posOf(t); return { x: p.x + NODE_W, y: p.y + PORT_Y }; };
-  const inPt = (t: Template) => { const p = posOf(t); return { x: p.x, y: p.y + PORT_Y }; };
   const assigneeText = (t: Template) =>
     t.assignee_kind === 'USER' ? users.find((u) => u.id === t.assignee_user_id)?.name ?? 'a person'
       : t.assignee_role === 'OWNER' ? 'Matter owner' : (t.assignee_role ?? '').charAt(0) + (t.assignee_role ?? '').slice(1).toLowerCase();
 
+  // Render one task and its intra-stage dependents, indented.
+  const renderTask = (t: Template, childrenOf: Record<string, string[]>, depth: number, seen: Set<string>): React.ReactNode => {
+    if (seen.has(t.id)) return null;
+    seen.add(t.id);
+    const isSel = t.id === selected;
+    const kids = (childrenOf[t.id] ?? []).map((cid) => byId(cid)).filter(Boolean) as Template[];
+    return (
+      <div key={t.id} style={{ marginLeft: depth ? 18 : 0, borderLeft: depth ? '1.5px solid #e2e8f0' : undefined, paddingLeft: depth ? 10 : 0 }}>
+        <div
+          onClick={() => setSelected(isSel ? null : t.id)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', borderRadius: 9, cursor: 'pointer', marginBottom: 6,
+            background: isSel ? '#EDE7FB' : '#fff', border: `1px solid ${isSel ? '#5A27E0' : '#e6e8ee'}`, opacity: t.active ? 1 : 0.5,
+          }}>
+          <span style={{ width: 8, height: 8, borderRadius: 3, background: stageColor(t.stage), flex: 'none' }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', flex: 1, minWidth: 0, wordBreak: 'break-word' }}>
+            {t.node_kind === 'EMAIL' && <span style={{ fontSize: 10, fontWeight: 800, color: '#0ea5e9', marginRight: 6 }}>✉ EMAIL</span>}
+            {t.detail}
+          </span>
+          <span style={{ fontSize: 11, color: '#94a3b8', flex: 'none', whiteSpace: 'nowrap' }}>
+            {t.node_kind === 'EMAIL'
+              ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
+              : `${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+          </span>
+        </div>
+        {kids.length > 0 && kids.map((k) => renderTask(k, childrenOf, depth + 1, seen))}
+      </div>
+    );
+  };
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      {/* Left: the stage pipeline */}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 15, color: '#0f172a' }}>Workflow</strong>
           <span style={{ fontSize: 12.5, color: '#64748b', flex: 1, minWidth: 200 }}>
-            Tasks auto-created &amp; assigned when a matter hits a stage. Drag a node's dot onto another to make it a prerequisite.
+            The pipeline of stages. Tasks in a stage are created &amp; assigned when a matter reaches it; nest a task under another to make it run after it.
           </span>
-          <button onClick={addTask} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ Add task</button>
-          <button onClick={addEmail} style={{ ...btn, background: '#0ea5e9', color: '#fff', border: 'none' }}>+ Add email</button>
+          <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
-        {/* Pipeline stages (checkpoints) — rename, reorder, add your own. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3 }}>Pipeline stages</span>
-          <button onClick={addStage} style={{ ...btn, padding: '3px 9px', fontSize: 11.5 }}>+ Add stage</button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {stages.map((s, i) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, border: '1px solid #e2e8f0', borderRadius: 8, padding: '3px 5px', background: '#fff' }}>
-              <span style={{ width: 9, height: 9, borderRadius: 3, background: stageColor(s.key), flex: 'none' }} />
-              <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)}
-                style={{ width: `${Math.max(8, s.name.length + 1)}ch`, minWidth: 60, fontSize: 12, padding: '2px 4px', border: '1px solid transparent', borderRadius: 5, background: 'transparent' }} />
-              <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier" style={arrowBtn}>‹</button>
-              <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later" style={arrowBtn}>›</button>
-              <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#94a3b8' }}>×</button>
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Task statuses — the firm's own labels. Each maps to a kind that drives the logic. */}
-      <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <strong style={{ fontSize: 13, color: '#0f172a' }}>Task statuses</strong>
-          <span style={{ fontSize: 11.5, color: '#94a3b8', flex: 1 }}>Kind drives the logic: <b>Done</b> completes a task (and unblocks dependents); <b>Open</b>/<b>In&nbsp;progress</b> stay actionable.</span>
-          <button onClick={addStatus} style={btn}>+ Add status</button>
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {statuses.map((s) => (
-            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #e2e8f0', borderRadius: 8, padding: '5px 7px', background: '#fff' }}>
-              <input type="color" value={s.color || '#64748b'} onChange={(e) => { const v = e.target.value; setStatuses((ss) => ss.map((x) => x.id === s.id ? { ...x, color: v } : x)); }} onBlur={() => saveStatus({ ...s, color: s.color })} style={{ width: 22, height: 22, border: 'none', background: 'none', padding: 0, cursor: 'pointer' }} />
-              <input value={s.name} onChange={(e) => { const v = e.target.value; setStatuses((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStatus(s)} style={{ width: 110, fontSize: 12, padding: '3px 5px', border: '1px solid #d0d5dd', borderRadius: 6 }} />
-              <select value={s.kind} onChange={(e) => { const v = e.target.value; const next = { ...s, kind: v }; setStatuses((ss) => ss.map((x) => x.id === s.id ? next : x)); saveStatus(next); }} style={{ fontSize: 11.5, padding: '3px 4px', border: '1px solid #d0d5dd', borderRadius: 6 }}>
-                <option value="OPEN">Open</option>
-                <option value="IN_PROGRESS">In progress</option>
-                <option value="DONE">Done</option>
-              </select>
-              <button onClick={() => removeStatus(s.id)} title="Delete status" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
-            </div>
-          ))}
-          {statuses.length === 0 && <span style={{ fontSize: 12, color: '#94a3b8' }}>Loading…</span>}
-        </div>
-      </div>
+        {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
+        {loading && <div style={{ ...card, color: '#94a3b8', fontSize: 13 }}>Loading…</div>}
 
-      {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
+        {!loading && stages.length === 0 && templates.length === 0 && (
+          <div style={{ ...card }}>
+            <div style={{ marginBottom: 10, color: '#64748b', fontSize: 13 }}>No workflow yet.</div>
+            <button onClick={async () => { try { await api('/admin/workflow/seed', { method: 'POST' }); await load(); } catch (e: any) { setErr(e?.message || 'Could not load defaults.'); } }}
+              style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>
+              Load the standard conveyancing flow
+            </button>
+          </div>
+        )}
 
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-        {/* Canvas (with a floating zoom toolbar over it) */}
-        <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-        <div
-          ref={canvasRef}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={() => { drag.current = null; setLinking(null); }}
-          onClick={() => setSelected(null)}
-          style={{ position: 'relative', width: '100%', height: '68vh', overflow: 'auto', background: '#F8FAFC', border: '1px solid #e2e8f0', borderRadius: 12 }}
-        >
-          {/* Sizer at the scaled dimensions so the scroll area matches what's drawn. */}
-          <div style={{ width: 2000 * zoom, height: 1200 * zoom, position: 'relative' }}>
-          <div style={{ position: 'relative', width: 2000, height: 1200, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
-            {/* zIndex 5 lifts the arrows above the task boxes; the container stays
-                pointer-transparent so only the line strokes themselves are clickable. */}
-            <svg width={2000} height={1200} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
-              <defs>
-                <marker id="wf-arrow" markerWidth="9" markerHeight="9" refX="6.5" refY="4" orient="auto">
-                  <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
-                </marker>
-                <marker id="wf-arrow-sel" markerWidth="9" markerHeight="9" refX="6.5" refY="4" orient="auto">
-                  <path d="M0 0 L8 4 L0 8 z" fill="#5A27E0" />
-                </marker>
-              </defs>
-              {edges.map((e) => {
-                const a = templates.find((t) => t.id === e.from_template_id);
-                const b = templates.find((t) => t.id === e.to_template_id);
-                if (!a || !b) return null;
-                const p1 = outPt(a), p2 = inPt(b);
-                const d = edgePath(p1, p2);
-                const active = !!selected && (e.from_template_id === selected || e.to_template_id === selected);
-                const dim = !!selected && !active;
-                return (
-                  <g key={`${e.from_template_id}-${e.to_template_id}`} opacity={dim ? 0.25 : 1}>
-                    {/* Wide invisible hit-path so the thin curve is easy to click-to-delete. */}
-                    <path d={d} fill="none" stroke="transparent" strokeWidth={14}
-                      style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                      onClick={(ev) => { ev.stopPropagation(); void deleteEdge(e.from_template_id, e.to_template_id); }}>
-                      <title>Click to remove dependency</title>
-                    </path>
-                    <path d={d} fill="none" stroke={active ? '#5A27E0' : '#94a3b8'} strokeWidth={active ? 2.5 : 1.75}
-                      strokeLinecap="round" markerEnd={`url(#wf-arrow${active ? '-sel' : ''})`} style={{ pointerEvents: 'none' }} />
-                  </g>
-                );
-              })}
-              {linking && (() => {
-                const a = templates.find((t) => t.id === linking.from); if (!a) return null; const p1 = outPt(a);
-                return <path d={edgePath(p1, { x: linking.x, y: linking.y })} fill="none" stroke="#5A27E0" strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" markerEnd="url(#wf-arrow-sel)" />;
-              })()}
-            </svg>
-
-            {templates.map((t) => {
-              const p = posOf(t);
-              const isSel = t.id === selected;
-              return (
-                <div key={t.id}
-                  onMouseDown={(e) => startMove(e, t)}
-                  onMouseUp={() => { if (linking) void finishLink(t); }}
-                  onClick={(e) => { e.stopPropagation(); setSelected(t.id); }}
-                  style={{
-                    position: 'absolute', left: p.x, top: p.y, width: NODE_W, minHeight: NODE_H,
-                    background: '#fff', border: `2px solid ${isSel ? '#5A27E0' : stageColor(t.stage)}`,
-                    borderRadius: 10, boxShadow: isSel ? '0 2px 10px rgba(90,39,224,0.2)' : '0 1px 3px rgba(16,24,40,0.08)',
-                    padding: '7px 9px', cursor: 'grab', opacity: t.active ? 1 : 0.5, userSelect: 'none',
-                  }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 3, background: stageColor(t.stage), flex: 'none' }} />
-                    <span style={{ fontSize: 9.5, fontWeight: 700, color: stageColor(t.stage), textTransform: 'uppercase', letterSpacing: 0.3 }}>{stageLabel(t.stage)}</span>
-                    {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginLeft: 'auto' }}>✉ EMAIL</span>}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>{t.detail}</div>
-                  {t.node_kind === 'EMAIL' ? (
-                    <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>
-                      {emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · {t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: 10.5, color: '#64748b', marginTop: 3 }}>→ {assigneeText(t)}{t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}</div>
-                  )}
-                  {/* IN port (left) — where incoming dependency arrows land. */}
-                  <div title={linking ? 'Drop here to make the dragged task a prerequisite of this one' : 'Dependencies arrive here'}
-                    style={{ position: 'absolute', left: -6, top: PORT_Y - 6, width: 12, height: 12, borderRadius: 999, background: linking && linking.from !== t.id ? '#5A27E0' : '#cbd5e1', border: '2px solid #fff' }} />
-                  {/* OUT port (right) — drag to another node's left port to make THIS a prerequisite. */}
-                  <div title="Drag onto another task to make this its prerequisite"
-                    onMouseDown={(e) => startLink(e, t)}
-                    style={{ position: 'absolute', right: -7, top: PORT_Y - 7, width: 14, height: 14, borderRadius: 999, background: '#5A27E0', border: '2px solid #fff', cursor: 'crosshair', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+        {!loading && stages.map((s, i) => {
+          const { list, childrenOf, roots } = stageTree(s.key);
+          const isOpen = !collapsed[s.key];
+          const emailCount = list.filter((t) => t.node_kind === 'EMAIL').length;
+          const color = stageColor(s.key);
+          return (
+            <div key={s.id}>
+              <div style={{ ...card, padding: 0, overflow: 'hidden', borderLeft: `4px solid ${color}` }}>
+                {/* Stage header */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px' }}>
+                  <button onClick={() => setCollapsed((c) => ({ ...c, [s.key]: !c[s.key] }))} title={isOpen ? 'Collapse' : 'Expand'} style={{ ...iconBtn, transform: isOpen ? 'rotate(90deg)' : 'none' }}>▸</button>
+                  <span style={{ width: 10, height: 10, borderRadius: 3, background: color, flex: 'none' }} />
+                  <input value={s.name} onChange={(e) => { const v = e.target.value; setStages((ss) => ss.map((x) => x.id === s.id ? { ...x, name: v } : x)); }} onBlur={() => saveStageName(s)} onClick={(e) => e.stopPropagation()}
+                    style={{ fontSize: 14, fontWeight: 700, color: '#0f172a', border: '1px solid transparent', borderRadius: 6, background: 'transparent', padding: '2px 4px', width: `${Math.max(10, s.name.length + 1)}ch`, minWidth: 90 }} />
+                  <span style={{ fontSize: 11.5, color: '#94a3b8', flex: 1 }}>{list.length} task{list.length === 1 ? '' : 's'}{emailCount ? ` · ${emailCount} email` : ''}</span>
+                  <button onClick={() => addTask(s.key, 'TASK')} style={{ ...btn, padding: '4px 9px', fontSize: 11.5 }}>+ Task</button>
+                  <button onClick={() => addTask(s.key, 'EMAIL')} style={{ ...btn, padding: '4px 9px', fontSize: 11.5, color: '#0369a1', borderColor: '#bae6fd' }}>+ Email</button>
+                  <button onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move up" style={arrowBtn}>↑</button>
+                  <button onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move down" style={arrowBtn}>↓</button>
+                  <button onClick={() => removeStage(s.id)} title="Delete stage" style={{ ...arrowBtn, color: '#cbd5e1' }}>×</button>
                 </div>
-              );
-            })}
-            {!loading && templates.length === 0 && (
-              <div style={{ position: 'absolute', left: 40, top: 40, color: '#64748b', fontSize: 13 }}>
-                <div style={{ marginBottom: 10 }}>No tasks yet.</div>
-                <button onClick={async () => { try { await api('/admin/workflow/seed', { method: 'POST' }); await load(); } catch (e: any) { setErr(e?.message || 'Could not load defaults.'); } }}
-                  style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none', marginRight: 8 }}>
-                  Load the standard conveyancing flow
-                </button>
-                <button onClick={addTask} style={btn}>Start from scratch</button>
+                {/* Stage body: the task tree */}
+                {isOpen && (
+                  <div style={{ padding: '2px 12px 12px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
+                    {list.length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: '#94a3b8', padding: '10px 2px' }}>No tasks in this stage yet — add one above.</div>
+                    ) : (
+                      (() => { const seen = new Set<string>(); return roots.map((t) => renderTask(t, childrenOf, 0, seen)); })()
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          </div>
-        </div>
-          {/* Floating zoom toolbar */}
-          <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 2, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 2px 8px rgba(16,24,40,0.12)', padding: 3 }}>
-            <button onClick={() => applyZoom(zoom - ZSTEP)} disabled={zoom <= ZMIN} title="Zoom out" style={zoomBtn}>−</button>
-            <button onClick={() => applyZoom(1)} title="Reset zoom" style={{ ...zoomBtn, width: 46, fontSize: 11, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{Math.round(zoom * 100)}%</button>
-            <button onClick={() => applyZoom(zoom + ZSTEP)} disabled={zoom >= ZMAX} title="Zoom in" style={zoomBtn}>+</button>
-          </div>
-        </div>
-
-        {/* Editor */}
-        {sel && (
-          <div style={{ ...card, width: 260, flex: 'none' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <strong style={{ fontSize: 13, color: '#0f172a' }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
-              <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
+              {/* Pipeline connector to the next stage */}
+              {i < stages.length - 1 && <div style={{ textAlign: 'center', color: '#cbd5e1', fontSize: 14, lineHeight: '10px', height: 12 }}>↓</div>}
             </div>
-            <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
-            <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
-            <label style={lbl}>Checkpoint (stage)</label>
-            <select value={sel.stage} onChange={(e) => { const v = e.target.value; setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, stage: v } : x)); saveNode({ ...sel, stage: v }); }} style={input}>
-              {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
-            </select>
-            {sel.node_kind === 'EMAIL' && (
+          );
+        })}
+      </div>
+
+      {/* Right: the selected-task editor */}
+      {sel && (
+        <div style={{ ...card, width: 280, flex: 'none', position: 'sticky', top: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <strong style={{ fontSize: 13, color: '#0f172a' }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
+            <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
+          </div>
+          <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
+          <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
+          <label style={lbl}>Stage</label>
+          <select value={sel.stage} onChange={(e) => { const v = e.target.value; setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, stage: v } : x)); saveNode({ ...sel, stage: v }); }} style={input}>
+            {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
+          </select>
+
+          {/* Runs after — intra-stage prerequisites */}
+          <label style={lbl}>Runs after (in this stage)</label>
+          {(() => {
+            const prereqs = edges.filter((e) => e.to_template_id === sel.id).map((e) => byId(e.from_template_id)).filter((t): t is Template => !!t && t.stage === sel.stage);
+            const candidates = (tasksByStage[sel.stage] ?? []).filter((t) => t.id !== sel.id && !prereqs.some((p) => p.id === t.id) && !edges.some((e) => e.from_template_id === sel.id && e.to_template_id === t.id));
+            return (
               <>
-                <label style={lbl}>Email template</label>
-                <select value={sel.email_template_id ?? ''} onChange={(e) => { const v = e.target.value || null; const next = { ...sel, email_template_id: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
-                  <option value="">— pick a template —</option>
-                  {emailTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
-                <label style={lbl}>When it fires</label>
-                <select value={sel.send_mode ?? 'DRAFT'} onChange={(e) => { const v = e.target.value as 'DRAFT' | 'SEND'; const next = { ...sel, send_mode: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
-                  <option value="DRAFT">Draft into the send queue (human sends)</option>
-                  <option value="SEND">Auto-send (only if a client email is on file)</option>
-                </select>
-                {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
-                {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
+                {prereqs.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#334155', background: '#f1f5f9', borderRadius: 7, padding: '4px 8px', marginBottom: 4 }}>
+                    <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.detail}</span>
+                    <button onClick={() => deleteEdge(p.id, sel.id)} title="Remove prerequisite" style={{ border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                  </div>
+                ))}
+                {candidates.length > 0 ? (
+                  <select value="" onChange={(e) => { if (e.target.value) void addPrereq(e.target.value, sel.id); }} style={input}>
+                    <option value="">+ Add a prerequisite…</option>
+                    {candidates.map((t) => <option key={t.id} value={t.id}>{t.detail.slice(0, 60)}</option>)}
+                  </select>
+                ) : prereqs.length === 0 ? (
+                  <div style={{ fontSize: 11.5, color: '#94a3b8' }}>Runs as soon as the stage is reached.</div>
+                ) : null}
               </>
-            )}
-            {sel.node_kind !== 'EMAIL' && <>
+            );
+          })()}
+
+          {sel.node_kind === 'EMAIL' && (
+            <>
+              <label style={lbl}>Email template</label>
+              <select value={sel.email_template_id ?? ''} onChange={(e) => { const v = e.target.value || null; const next = { ...sel, email_template_id: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                <option value="">— pick a template —</option>
+                {emailTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <label style={lbl}>When it fires</label>
+              <select value={sel.send_mode ?? 'DRAFT'} onChange={(e) => { const v = e.target.value as 'DRAFT' | 'SEND'; const next = { ...sel, send_mode: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                <option value="DRAFT">Draft into the send queue (human sends)</option>
+                <option value="SEND">Auto-send (only if a client email is on file)</option>
+              </select>
+              {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
+              {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
+            </>
+          )}
+          {sel.node_kind !== 'EMAIL' && <>
             <label style={lbl}>Assign to</label>
             <select value={sel.assignee_kind === 'USER' ? `u:${sel.assignee_user_id}` : `r:${sel.assignee_role}`}
               onChange={(e) => {
@@ -495,22 +340,21 @@ export default function WorkflowCanvas() {
             <input type="number" min={0} value={sel.due_offset_days ?? ''} placeholder="—"
               onChange={(e) => { const v = e.target.value === '' ? null : Math.max(0, parseInt(e.target.value, 10) || 0); setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, due_offset_days: v } : x)); }}
               onBlur={() => saveNode(sel)} style={input} />
-            </>}
-            <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-              <input type="checkbox" checked={sel.active} onChange={(e) => { const next = { ...sel, active: e.target.checked }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} />
-              Active
-            </label>
-            <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>Changes save automatically. Drag the purple dot to another task to add a prerequisite; click a line to remove one.</p>
-          </div>
-        )}
-      </div>
+          </>}
+          <label style={{ ...lbl, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <input type="checkbox" checked={sel.active} onChange={(e) => { const next = { ...sel, active: e.target.checked }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} />
+            Active
+          </label>
+          <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>Changes save automatically.</p>
+        </div>
+      )}
     </div>
   );
 }
 
 const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: 12 };
 const btn: React.CSSProperties = { fontSize: 12.5, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#334155', cursor: 'pointer' };
+const iconBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, width: 16, transition: 'transform .12s' };
 const lbl: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '10px 0 3px' };
 const input: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
 const arrowBtn: React.CSSProperties = { border: 'none', background: 'none', color: '#64748b', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: '0 2px' };
-const zoomBtn: React.CSSProperties = { width: 28, height: 28, border: 'none', background: 'none', color: '#334155', cursor: 'pointer', fontSize: 16, fontWeight: 700, borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' };
