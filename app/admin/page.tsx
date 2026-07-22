@@ -137,22 +137,21 @@ function describeAudit(row: any): string {
 
 type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
-// One entry per tab — the label and a subtitle that matches what the section does,
-// so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
+// One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
-  mywork: { label: 'My work', subtitle: 'Replies drafted and waiting in your Outlook Drafts, and threads that need a chase.' },
-  billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
-  board: { label: 'Matter board', subtitle: 'Every live matter as a card, in the stage it has reached — the case flow, live.' },
-  workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
-  workflow: { label: 'Task workflow', subtitle: 'The backbone of the case flow: the DAG of tasks auto-created and assigned when a matter reaches each stage. Automations act on this.' },
-  templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
-  docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
-  automations: { label: 'Automations', subtitle: 'One list of email recipes. Automatic ones fire by themselves on a high-confidence matching email (premium; can send, on the cancellable delay); manual ones you run by hand in one click from the add-in.' },
-  team: { label: 'Team', subtitle: 'Who can access the firm, and their roles.' },
-  policy: { label: 'Policy', subtitle: 'Firm-wide disclaimer, case-folder naming and allowed external domains.' },
-  actions: { label: 'Tools', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
-  audit: { label: 'Audit log', subtitle: 'Recent actions taken across the firm.' },
-  help: { label: 'Help & support', subtitle: 'Common questions and how to reach us.' },
+  mywork: { label: 'My work', subtitle: '' },
+  billing: { label: 'Billing & referrals', subtitle: '' },
+  board: { label: 'Matter board', subtitle: '' },
+  workload: { label: 'Workload', subtitle: '' },
+  workflow: { label: 'Task workflow', subtitle: '' },
+  templates: { label: 'Email templates', subtitle: '' },
+  docpacks: { label: 'Doc packs', subtitle: '' },
+  automations: { label: 'Automations', subtitle: '' },
+  team: { label: 'Team', subtitle: '' },
+  policy: { label: 'Policy', subtitle: '' },
+  actions: { label: 'Tools', subtitle: '' },
+  audit: { label: 'Audit log', subtitle: '' },
+  help: { label: 'Help & support', subtitle: '' },
 };
 
 // Grouped left-nav. Empty groups (after role filtering) are hidden.

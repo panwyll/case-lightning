@@ -169,11 +169,6 @@ export default function Automations() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-        <strong>One concept, two triggers.</strong> An automation is a named list of steps run against an email.
-        An <strong>Automatic</strong> one fires by itself on a high-confidence matching email (premium; the only kind that can send,
-        and only through the cancellable send queue). A <strong>Manual</strong> one is what you run by hand in one click from the add-in.
-      </div>
       <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Automations</strong>
         <button onClick={() => create('MANUAL')} style={{ ...btn }}>+ Manual</button>
