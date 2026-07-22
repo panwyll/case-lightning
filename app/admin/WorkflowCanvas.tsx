@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -60,13 +60,15 @@ const WF_CSS = `
 .wf-chev.open{transform:rotate(90deg)}
 .wf-ctrls{display:flex;gap:1px;opacity:0;transition:opacity .1s}
 .wf-stage:hover .wf-ctrls{opacity:1}
-.wf-ic{border:none;background:none;color:#94a3b8;cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:5px}
+.wf-ic{display:inline-flex;align-items:center;justify-content:center;border:none;background:none;color:#94a3b8;cursor:pointer;font-size:13px;line-height:1;padding:2px 5px;border-radius:5px}
 .wf-ic:disabled{opacity:.3;cursor:default}
+.wf-ic.wf-del:hover{color:#b91c1c}
 .wf-conn{width:2px;height:26px;background:#c3cbd6;position:relative}
 .wf-conn::after{content:'';position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #c3cbd6}
 .wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
-.wf-subflow{display:flex;flex-direction:column;align-items:center;min-width:min-content}
-.wf-level{display:flex;gap:20px;justify-content:center;align-items:stretch;flex-wrap:wrap}
+.wf-subflow{position:relative;display:flex;flex-direction:column;align-items:center;min-width:min-content;gap:44px}
+.wf-arrows{position:absolute;top:0;left:0;pointer-events:none;overflow:visible;z-index:0}
+.wf-level{display:flex;gap:24px;justify-content:center;align-items:stretch;flex-wrap:wrap;position:relative;z-index:1}
 .wf-task{position:relative;width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left;user-select:none}
 .wf-task:active{cursor:grabbing}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
@@ -225,6 +227,27 @@ export default function WorkflowCanvas() {
   const allOpen = stages.length > 0 && stages.every((s) => open[s.key]);
   const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
 
+  // Measured pill positions (per stage sub-flow), so each dependency can be drawn as
+  // its own arrow — you can see exactly which task runs after which.
+  const [posMap, setPosMap] = useState<Record<string, { cx: number; top: number; bottom: number; stage: string }>>({});
+  const [sizeMap, setSizeMap] = useState<Record<string, { w: number; h: number }>>({});
+  const measure = useCallback(() => {
+    const pos: Record<string, { cx: number; top: number; bottom: number; stage: string }> = {};
+    const size: Record<string, { w: number; h: number }> = {};
+    document.querySelectorAll<HTMLElement>('.wf-subflow').forEach((sf) => {
+      const key = sf.getAttribute('data-stagekey') || '';
+      const sr = sf.getBoundingClientRect();
+      size[key] = { w: sf.scrollWidth, h: sf.scrollHeight };
+      sf.querySelectorAll<HTMLElement>('[data-taskid]').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        pos[el.getAttribute('data-taskid')!] = { cx: r.left - sr.left + sf.scrollLeft + r.width / 2, top: r.top - sr.top + sf.scrollTop, bottom: r.bottom - sr.top + sf.scrollTop, stage: key };
+      });
+    });
+    setPosMap(pos); setSizeMap(size);
+  }, []);
+  useLayoutEffect(() => { measure(); }, [measure, templates, edges, open, stages]);
+  useEffect(() => { window.addEventListener('resize', measure); return () => window.removeEventListener('resize', measure); }, [measure]);
+
   // ── Sub-flow render (a task box, then a fork/chain to its dependents) ─────────
   // Drag one task onto another (same stage) to make the dragged task run AFTER the
   // one it's dropped on. Leaving tasks unconnected = they run in parallel. Mouse-based
@@ -288,9 +311,22 @@ export default function WorkflowCanvas() {
                 const from = dragFrom.current?.id;
                 dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null);
                 if (!from) return;
-                // Read the drop target synchronously from the DOM (state updates land too late for a fast drag).
-                const box = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
-                const to = box?.getAttribute('data-taskid');
+                // Read the drop target from the DOM (state updates land too late for a fast drag).
+                const elAt = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+                let to = elAt?.closest('[data-taskid]')?.getAttribute('data-taskid') ?? null;
+                if (!to) {
+                  // Dropped in the gap — link to the nearest task ABOVE the drop point in that stage.
+                  const sf = elAt?.closest('.wf-subflow');
+                  if (sf) {
+                    let best: { id: string; d: number } | null = null;
+                    sf.querySelectorAll<HTMLElement>('[data-taskid]').forEach((el) => {
+                      const id = el.getAttribute('data-taskid')!; if (id === from) return;
+                      const r = el.getBoundingClientRect();
+                      if (r.top <= e.clientY) { const d = e.clientY - r.bottom; if (!best || Math.abs(d) < Math.abs(best.d)) best = { id, d }; }
+                    });
+                    to = best ? (best as { id: string }).id : null;
+                  }
+                }
                 if (to && to !== from && byId(from)?.stage === byId(to)?.stage) { didDrag.current = true; void addPrereq(to, from); }
               }}
               onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null); }}
@@ -312,19 +348,35 @@ export default function WorkflowCanvas() {
                         <span className="wf-ctrls" onClick={(e) => e.stopPropagation()}>
                           <button className="wf-ic" onClick={() => moveStage(i, -1)} disabled={i === 0} title="Move earlier">↑</button>
                           <button className="wf-ic" onClick={() => moveStage(i, 1)} disabled={i === stages.length - 1} title="Move later">↓</button>
-                          <button className="wf-ic" onClick={() => removeStage(s.id)} title="Delete stage">×</button>
+                          <button className="wf-ic wf-del" onClick={() => removeStage(s.id)} title="Delete stage" aria-label="Delete stage">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                          </button>
                         </span>
                       </div>
                       {isOpen && (
                         <div className="wf-body">
                           {list.length === 0
                             ? <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'center', padding: '4px 0' }}>No tasks yet.</div>
-                            : <div className="wf-subflow">
+                            : <div className="wf-subflow" data-stagekey={s.key}>
+                                {(() => {
+                                  const sz = sizeMap[s.key];
+                                  const se = edges.filter((e) => posMap[e.from_template_id]?.stage === s.key && posMap[e.to_template_id]?.stage === s.key);
+                                  if (!sz || !se.length) return null;
+                                  return (
+                                    <svg className="wf-arrows" width={sz.w} height={sz.h}>
+                                      <defs>
+                                        <marker id={`wa-${s.key}`} markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#94a3b8" /></marker>
+                                      </defs>
+                                      {se.map((e) => {
+                                        const a = posMap[e.from_template_id], b = posMap[e.to_template_id];
+                                        const dy = Math.max(16, (b.top - a.bottom) * 0.5);
+                                        return <path key={`${e.from_template_id}-${e.to_template_id}`} d={`M ${a.cx} ${a.bottom} C ${a.cx} ${a.bottom + dy} ${b.cx} ${b.top - dy} ${b.cx} ${b.top}`} fill="none" stroke="#94a3b8" strokeWidth={1.75} markerEnd={`url(#wa-${s.key})`} />;
+                                      })}
+                                    </svg>
+                                  );
+                                })()}
                                 {levels.map((lvl, li) => (
-                                  <Fragment key={li}>
-                                    {li > 0 && <div className="wf-lvlconn" />}
-                                    <div className="wf-level">{lvl.map((t) => <div key={t.id}>{taskBox(t)}</div>)}</div>
-                                  </Fragment>
+                                  <div className="wf-level" key={li}>{lvl.map((t) => <div key={t.id}>{taskBox(t)}</div>)}</div>
                                 ))}
                               </div>}
                           <div className="wf-addbar">
