@@ -95,6 +95,9 @@ export default function WorkflowCanvas() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragFrom = useRef<{ id: string; x: number; y: number } | null>(null); // mousedown origin
   const didDrag = useRef(false); // set on a real drag, so the trailing click doesn't also select
+  const [note, setNoteRaw] = useState<string | null>(null); // gentle, auto-clearing hint
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setNote = (m: string) => { setNoteRaw(m); if (noteTimer.current) clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNoteRaw(null), 3500); };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -182,12 +185,21 @@ export default function WorkflowCanvas() {
       setSelected(null);
     } catch (e: any) { setErr(e?.message || 'Could not delete.'); }
   };
+  // Is there already a path a → … → b along the edges? Used to catch a cycle client-side.
+  const reaches = (a: string, b: string, es: Edge[]) => {
+    const seen = new Set<string>(); const stack = [a];
+    while (stack.length) { const n = stack.pop()!; if (n === b) return true; if (seen.has(n)) continue; seen.add(n); for (const e of es) if (e.from_template_id === n) stack.push(e.to_template_id); }
+    return false;
+  };
   const addPrereq = async (from: string, to: string) => {
-    // Optimistic: update the edge locally so the flow re-levels instantly. No full
-    // reload (that was what made the view "flash/reload" after a connect).
-    setEdges((es) => (es.some((e) => e.from_template_id === from && e.to_template_id === to) ? es : [...es, { from_template_id: from, to_template_id: to }]));
+    if (from === to) return;
+    if (edges.some((e) => e.from_template_id === from && e.to_template_id === to)) return; // already linked
+    // "to" already runs before "from" — linking would loop them. Say so gently, don't act.
+    if (reaches(to, from, edges)) { setNote('Those two already run in that order — they can’t depend on each other both ways.'); return; }
+    // Optimistic: update locally so the flow re-levels instantly; no full reload.
+    setEdges((es) => [...es, { from_template_id: from, to_template_id: to }]);
     try { await api('/admin/workflow/edges', { method: 'POST', body: JSON.stringify({ from, to }) }); }
-    catch (e: any) { setEdges((es) => es.filter((x) => !(x.from_template_id === from && x.to_template_id === to))); setErr(e?.message || 'Could not link those (would it create a loop?).'); }
+    catch (e: any) { setEdges((es) => es.filter((x) => !(x.from_template_id === from && x.to_template_id === to))); setNote(e?.message || 'Couldn’t link those.'); }
   };
   const deleteEdge = async (from: string, to: string) => {
     setEdges((es) => es.filter((e) => !(e.from_template_id === from && e.to_template_id === to)));
@@ -244,6 +256,9 @@ export default function WorkflowCanvas() {
   return (
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <style>{WF_CSS}</style>
+      {note && (
+        <div style={{ position: 'fixed', top: 74, left: '50%', transform: 'translateX(-50%)', zIndex: 60, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 10, padding: '8px 14px', fontSize: 12.5, fontWeight: 600, boxShadow: '0 8px 24px rgba(16,24,40,0.14)' }}>{note}</div>
+      )}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Case Flow</strong>
