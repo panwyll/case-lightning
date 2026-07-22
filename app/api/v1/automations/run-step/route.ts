@@ -1,8 +1,8 @@
 /**
- * POST /api/v1/playbooks/run-step
+ * POST /api/v1/automations/run-step
  *   { step: { type, config }, messageId?, conversationId?, subject?, matterId?, inputs? }
- * Runs ONE workflow step (a one-off action, e.g. Delegate or Notify) without a
- * saved playbook. Reuses the same step executor. Never sends.
+ * Runs ONE automation step (a one-off action, e.g. Delegate or Notify) without a
+ * saved automation. Reuses the same step executor. Never sends (manual path).
  */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -10,7 +10,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { executeSteps } from '@/lib/server/playbooks';
+import { executeSteps } from '@/lib/server/automations';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -24,7 +24,10 @@ export async function POST(req: NextRequest) {
     const body = z
       .object({
         step: z.object({
-          type: z.enum(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY']),
+          type: z.enum([
+            'CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY',
+            'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY', 'TAG', 'APPEND_TRACKER', 'ASSIGN',
+          ]),
           config: z.record(z.any()).default({}),
         }),
         messageId: z.string().optional(),

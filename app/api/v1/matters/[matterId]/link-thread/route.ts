@@ -6,7 +6,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
-import { matterColor } from '@/lib/server/triage';
+import { matterColor } from '@/lib/server/colors';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 

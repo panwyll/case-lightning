@@ -1,6 +1,6 @@
 /**
- * POST /api/v1/playbooks/:id/run  { messageId?, conversationId?, subject?, matterId? }
- * Run a playbook's steps against the open email/matter. Run-all-then-review:
+ * POST /api/v1/automations/:id/run  { messageId?, conversationId?, subject?, matterId? }
+ * Run a MANUAL automation's steps against the open email/matter. Run-all-then-review:
  * nothing is sent. Returns a per-step result list.
  */
 import { NextRequest } from 'next/server';
@@ -9,7 +9,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { runPlaybook } from '@/lib/server/playbooks';
+import { runAutomation } from '@/lib/server/automations';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
     if (body.matterId) await assertMatterAccess(user, body.matterId);
 
-    const result = await runPlaybook(
+    const result = await runAutomation(
       user,
       id,
       {

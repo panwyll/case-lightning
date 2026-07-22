@@ -5,7 +5,7 @@ import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import EmailTemplates from './EmailTemplates';
-import AutoRules from './AutoRules';
+import Automations from './Automations';
 import NewMatter from './NewMatter';
 
 interface MatterHit {
@@ -135,7 +135,7 @@ function describeAudit(row: any): string {
   }
 }
 
-type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'playbooks' | 'rules' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — the label and a subtitle that matches what the section does,
 // so a deep link (e.g. ?tab=docpacks) lands somewhere coherent.
@@ -144,11 +144,10 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   billing: { label: 'Billing & referrals', subtitle: 'Your plan, subscription, seats and referral credit. Card, invoices and cancellation are handled by Stripe.' },
   board: { label: 'Matter board', subtitle: 'Every live matter as a card, in the stage it has reached — the case flow, live.' },
   workload: { label: 'Workload', subtitle: 'Who’s carrying what — open matters, what needs attention, overdue chases and drafts waiting, per fee-earner.' },
-  workflow: { label: 'Task workflow', subtitle: 'The backbone of the case flow: the DAG of tasks auto-created and assigned when a matter reaches each stage. Automations and playbooks act on this.' },
+  workflow: { label: 'Task workflow', subtitle: 'The backbone of the case flow: the DAG of tasks auto-created and assigned when a matter reaches each stage. Automations act on this.' },
   templates: { label: 'Email templates', subtitle: 'Reusable reply templates the assistant drafts from, organised by tone.' },
   docpacks: { label: 'Doc packs', subtitle: 'Word (.docx) document templates filled with a matter’s data on demand — upload or generate with AI.' },
-  playbooks: { label: 'Playbooks', subtitle: 'Named multi-step actions your team runs against an email in one click — create a matter, draft a reply, generate docs. Nothing is sent automatically.' },
-  rules: { label: 'Automations', subtitle: 'Rules that act automatically on very-high-confidence emails — optionally only at chosen stages of the case flow. Any auto-send goes through the cancellable send queue.' },
+  automations: { label: 'Automations', subtitle: 'One list of email recipes. Automatic ones fire by themselves on a high-confidence matching email (premium; can send, on the cancellable delay); manual ones you run by hand in one click from the add-in.' },
   team: { label: 'Team', subtitle: 'Who can access the firm, and their roles.' },
   policy: { label: 'Policy', subtitle: 'Firm-wide disclaimer, case-folder naming and allowed external domains.' },
   actions: { label: 'Tools', subtitle: 'One-off admin operations, such as merging duplicate matters.' },
@@ -160,8 +159,8 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   { label: 'Work', tabs: ['mywork', 'workload'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
-  // drives it, and automations + playbooks are the two ways to act on it.
-  { label: 'Case flow', tabs: ['board', 'workflow', 'rules', 'playbooks'] },
+  // drives it, and automations (automatic + manual) are how you act on it.
+  { label: 'Case flow', tabs: ['board', 'workflow', 'automations'] },
   { label: 'Content', tabs: ['templates', 'docpacks'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
@@ -176,8 +175,7 @@ const TAB_ICON: Record<TabKey, string> = {
   workflow: '🔀',
   templates: '✉️',
   docpacks: '📄',
-  playbooks: '⚡',
-  rules: '🤖',
+  automations: '🤖',
   team: '👥',
   policy: '🛡️',
   actions: '🔧',
@@ -188,7 +186,7 @@ const TAB_ICON: Record<TabKey, string> = {
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'workflow', 'templates', 'docpacks', 'playbooks', 'rules', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
@@ -544,21 +542,9 @@ export default function AdminPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [policy, setPolicy] = useState<any>(null);
   const [audit, setAudit] = useState<any[]>([]);
-  const [rules, setRules] = useState<any[]>([]);
-  const [playbooks, setPlaybooks] = useState<any[]>([]);
-  const [pb, setPb] = useState<{ name: string; description: string; steps: Array<{ type: string; config: any }> }>({ name: '', description: '', steps: [] });
-  const [editingId, setEditingId] = useState<string | null>(null);
+  // Automations (auto-rules + playbooks, merged) live in the self-contained
+  // <Automations /> component — no page-level state needed here.
   const [t, setT] = useState({ name: '', category: 'enquiry_response', subjectTemplate: '', bodyTemplate: '', styleTag: 'NEUTRAL' });
-  const [rule, setRule] = useState({
-    name: '',
-    intents: 'STATUS_UPDATE',
-    minConfidence: 0.9,
-    requireNoAttention: true,
-    replyMode: 'NONE' as 'NONE' | 'DRAFT' | 'SEND',
-    riskAccepted: false,
-    riskAcknowledgement: '',
-    enabled: false,
-  });
 
   const load = useCallback(async () => {
     try {
@@ -588,13 +574,8 @@ export default function AdminPage() {
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
-      if (tab === 'rules') setRules((await api<{ rules: any[] }>('/admin/rules')).rules);
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
       if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
-      if (tab === 'playbooks') {
-        setPlaybooks((await api<{ playbooks: any[] }>('/admin/playbooks')).playbooks);
-        setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
-      }
       setStatus('');
     } catch (e) {
       setStatus((e as Error).message);
@@ -609,28 +590,6 @@ export default function AdminPage() {
     try {
       await api('/admin/templates', { method: 'POST', body: JSON.stringify(t) });
       setT({ name: '', category: 'enquiry_response', subjectTemplate: '', bodyTemplate: '', styleTag: 'NEUTRAL' });
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
-
-  async function createRule() {
-    try {
-      await api('/admin/rules', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: rule.name,
-          intents: rule.intents.split(',').map((s) => s.trim()).filter(Boolean),
-          minConfidence: Number(rule.minConfidence),
-          requireNoAttention: rule.requireNoAttention,
-          replyMode: rule.replyMode,
-          riskAccepted: rule.riskAccepted,
-          riskAcknowledgement: rule.riskAcknowledgement,
-          enabled: rule.enabled,
-        }),
-      });
-      setRule({ ...rule, name: '', riskAccepted: false, riskAcknowledgement: '', enabled: false });
       await load();
     } catch (e) {
       setStatus((e as Error).message);
@@ -785,79 +744,6 @@ export default function AdminPage() {
       setStatus((e as Error).message);
     } finally {
       setMergeBusy(false);
-    }
-  }
-
-  // ── Playbooks ──────────────────────────────────────────────────────────────
-  const STEP_LABEL: Record<string, string> = {
-    CREATE_MATTER: 'Create matter (from the email)',
-    GENERATE_DOCS: 'Generate documents',
-    CREATE_TASK: 'Create a task',
-    DRAFT_REPLY: 'Draft a reply',
-    ARCHIVE_MATTER: 'Archive matter (close it)',
-    DELEGATE: 'Delegate (assign + forward)',
-    NOTIFY: 'Notify someone',
-  };
-  function addStep(type: string) {
-    const config = type === 'DRAFT_REPLY' ? { tone: 'NEUTRAL' } : type === 'CREATE_TASK' ? { detail: '', dueOffsetDays: '' } : type === 'GENERATE_DOCS' ? { templateIds: [] } : {};
-    setPb((p) => ({ ...p, steps: [...p.steps, { type, config }] }));
-  }
-  function setStepConfig(i: number, config: any) {
-    setPb((p) => ({ ...p, steps: p.steps.map((s, j) => (j === i ? { ...s, config } : s)) }));
-  }
-  function removeStep(i: number) {
-    setPb((p) => ({ ...p, steps: p.steps.filter((_, j) => j !== i) }));
-  }
-  function moveStep(i: number, dir: -1 | 1) {
-    setPb((p) => {
-      const steps = [...p.steps];
-      const j = i + dir;
-      if (j < 0 || j >= steps.length) return p;
-      [steps[i], steps[j]] = [steps[j], steps[i]];
-      return { ...p, steps };
-    });
-  }
-  async function savePlaybook() {
-    if (!pb.name.trim() || !pb.steps.length) { setStatus('Give the workflow a name and at least one step.'); return; }
-    try {
-      const payload = JSON.stringify({ name: pb.name.trim(), description: pb.description.trim(), steps: pb.steps });
-      if (editingId) {
-        await api(`/admin/playbooks/${editingId}`, { method: 'PATCH', body: payload });
-      } else {
-        await api('/admin/playbooks', { method: 'POST', body: payload });
-      }
-      setPb({ name: '', description: '', steps: [] });
-      setEditingId(null);
-      await load();
-      setStatus(editingId ? 'Workflow updated.' : 'Workflow saved.');
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
-  function editPlaybook(p: any) {
-    setEditingId(p.id);
-    setPb({ name: p.name, description: p.description ?? '', steps: (p.steps ?? []).map((s: any) => ({ type: s.type, config: s.config ?? {} })) });
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-  function cancelEdit() {
-    setEditingId(null);
-    setPb({ name: '', description: '', steps: [] });
-  }
-  async function deletePlaybook(id: string) {
-    try {
-      await api(`/admin/playbooks/${id}`, { method: 'DELETE' });
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
-  async function loadExampleWorkflows() {
-    try {
-      const r = await api<{ added: string[] }>('/admin/playbooks/examples', { method: 'POST' });
-      await load();
-      setStatus(r.added.length ? `Added: ${r.added.join(', ')}.` : 'Example workflows already present.');
-    } catch (e) {
-      setStatus((e as Error).message);
     }
   }
 
@@ -1155,7 +1041,7 @@ export default function AdminPage() {
               <div style={overline}>Frequently asked</div>
               <div style={{ marginTop: 6 }}>
                 {[
-                  ['Does CONVEYi ever send email on my behalf?', 'No. Everything it produces — replies, updates, notifications — is created as an Outlook draft for you to review and send. Auto-rules default to draft-only; only an explicitly enabled auto-SEND rule (which requires a signed risk acknowledgement) ever sends.'],
+                  ['Does CONVEYi ever send email on my behalf?', 'No. Everything it produces — replies, updates, notifications — is created as an Outlook draft for you to review and send. Automations default to draft-only; only an automatic automation with an explicitly enabled send step (which requires a signed risk acknowledgement) ever sends, and even then on a cancellable delay.'],
                   ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
                   ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
                   ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
@@ -2127,118 +2013,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {tab === 'rules' && <AutoRules />}
-
-        {tab === 'playbooks' && (
-          <>
-            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <h3 style={{ marginTop: 0, fontSize: 15 }}>Playbooks</h3>
-              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                A playbook is a named sequence of steps your team runs against an email in one click
-                (e.g. <strong>Onboard client</strong>). Add steps in order; running it creates/drafts
-                everything for review — nothing is sent. Playbooks are suggested by the assistant.
-              </p>
-            </div>
-
-            {/* Builder */}
-            <div style={card}>
-              <h3 style={{ marginTop: 0 }}>{editingId ? 'Edit playbook' : 'New playbook'}</h3>
-              <input style={input} placeholder="Name (e.g. Onboard client)" value={pb.name} onChange={(e) => setPb({ ...pb, name: e.target.value })} />
-              <input style={input} placeholder="Description (helps the assistant suggest it)" value={pb.description} onChange={(e) => setPb({ ...pb, description: e.target.value })} />
-
-              {pb.steps.map((s, i) => (
-                <div key={i} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: 10, marginBottom: 8, background: '#fff' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                    <strong style={{ fontSize: 13 }}>{i + 1}. {STEP_LABEL[s.type] ?? s.type}</strong>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button style={{ padding: '2px 7px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => moveStep(i, -1)}>↑</button>
-                      <button style={{ padding: '2px 7px', border: '1px solid #cbd5e1', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => moveStep(i, 1)}>↓</button>
-                      <button style={{ padding: '2px 7px', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 6, background: '#fff', cursor: 'pointer' }} onClick={() => removeStep(i)}>✕</button>
-                    </div>
-                  </div>
-                  {s.type === 'DRAFT_REPLY' && (
-                    <select style={{ ...input, marginTop: 8, marginBottom: 0 }} value={s.config.tone ?? 'NEUTRAL'} onChange={(e) => setStepConfig(i, { ...s.config, tone: e.target.value })}>
-                      <option value="NEUTRAL">Neutral tone</option>
-                      <option value="FIRM">Firm tone</option>
-                      <option value="CHASING">Chasing tone</option>
-                    </select>
-                  )}
-                  {s.type === 'CREATE_TASK' && (
-                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                      <input style={{ ...input, marginBottom: 0, flex: 2 }} placeholder="Task detail" value={s.config.detail ?? ''} onChange={(e) => setStepConfig(i, { ...s.config, detail: e.target.value })} />
-                      <input style={{ ...input, marginBottom: 0, flex: 1 }} type="number" placeholder="Due in N days" value={s.config.dueOffsetDays ?? ''} onChange={(e) => setStepConfig(i, { ...s.config, dueOffsetDays: e.target.value })} />
-                    </div>
-                  )}
-                  {s.type === 'GENERATE_DOCS' && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Templates to generate:</div>
-                      {docTemplates.length === 0 && <div style={{ fontSize: 12, color: '#94a3b8' }}>No templates yet — add some in Doc packs first.</div>}
-                      {docTemplates.map((tpl) => {
-                        const ids: string[] = s.config.templateIds ?? [];
-                        const on = ids.includes(tpl.id);
-                        return (
-                          <label key={tpl.id} style={{ display: 'flex', gap: 6, fontSize: 13, marginBottom: 2 }}>
-                            <input type="checkbox" checked={on} onChange={(e) => setStepConfig(i, { ...s.config, templateIds: e.target.checked ? [...ids, tpl.id] : ids.filter((x) => x !== tpl.id) })} />
-                            {tpl.name}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {s.type === 'CREATE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Provisions a matter from the email (no setup needed).</div>}
-                  {s.type === 'ARCHIVE_MATTER' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Closes the matter so it drops off the live board (no setup needed).</div>}
-                  {s.type === 'DELEGATE' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Assigns the matter on the tracker and forwards the email. You pick the team member when you run it.</div>}
-                  {s.type === 'NOTIFY' && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>Drafts an update email. You choose the recipient (client or any address) when you run it.</div>}
-                </div>
-              ))}
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>
-                {(['CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY', 'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY'] as const).map((tp) => (
-                  <button key={tp} style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 7, background: '#f8fafc', fontSize: 12, fontWeight: 600, cursor: 'pointer' }} onClick={() => addStep(tp)}>
-                    + {STEP_LABEL[tp]}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }} onClick={savePlaybook}>
-                  {editingId ? 'Update playbook' : 'Save playbook'}
-                </button>
-                {editingId ? (
-                  <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={cancelEdit}>
-                    Cancel
-                  </button>
-                ) : (
-                  <button style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }} onClick={loadExampleWorkflows}>
-                    Load example playbooks
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Existing */}
-            {playbooks.map((p) => (
-              <div key={p.id} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div>
-                    <strong>{p.name}</strong>
-                    {p.description && <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{p.description}</div>}
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
-                      {(p.steps ?? []).map((s: any, i: number) => `${i + 1}. ${STEP_LABEL[s.type] ?? s.type}`).join('  ·  ')}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button style={{ padding: '4px 10px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} onClick={() => editPlaybook(p)}>
-                      Edit
-                    </button>
-                    <button style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} onClick={() => deletePlaybook(p.id)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </>
-        )}
+        {tab === 'automations' && <Automations />}
 
         {tab === 'actions' && (
           <>

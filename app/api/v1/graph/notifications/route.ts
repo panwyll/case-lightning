@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
-import { runTriage, runAutoRules, applyTriageTags } from '@/lib/server/triage';
+import { runTriage, applyTriageTags } from '@/lib/server/triage';
+import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest) {
         const message = await getMessage(user.userId, messageId);
         const triage = await runTriage(user, message);
         await applyTriageTags(user, message, triage);
-        await runAutoRules(user, message, triage);
+        await runAutoAutomations(user, message, triage);
 
         // Auto-file attachments into a case's knowledge base ONLY on a trusted link
         // the firm created — never a case-ref token (attacker-injectable) or fuzzy

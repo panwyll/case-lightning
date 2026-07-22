@@ -507,7 +507,7 @@ export default function Taskpane() {
       setPlan(null);
     }
     try {
-      setPlaybooks((await api<{ playbooks: any[] }>('/playbooks')).playbooks ?? []);
+      setPlaybooks((await api<{ automations: any[] }>('/automations')).automations ?? []);
     } catch {
       setPlaybooks([]);
     }
@@ -1379,7 +1379,7 @@ export default function Taskpane() {
     setPbInputs(null);
     try {
       const r = await api<{ matterId: string | null; results: Array<{ type: string; ok: boolean; detail: string }> }>(
-        `/playbooks/${p.id}/run`,
+        `/automations/${p.id}/run`,
         {
           method: 'POST',
           body: JSON.stringify({
@@ -1433,7 +1433,7 @@ export default function Taskpane() {
         : { notifyEmail: quick.notifyEmail.trim(), notifyName: quick.notifyName.trim() || undefined };
     setQuick(null);
     try {
-      const r = await api<{ results: Array<{ type: string; ok: boolean; detail: string }> }>('/playbooks/run-step', {
+      const r = await api<{ results: Array<{ type: string; ok: boolean; detail: string }> }>('/automations/run-step', {
         method: 'POST',
         body: JSON.stringify({
           step: { type: quick.type, config: {} },
@@ -1790,11 +1790,11 @@ export default function Taskpane() {
     if (suggestedFor.current === messageId) return;
     suggestedFor.current = messageId;
     setPbSuggestion(null);
-    api<{ playbookId: string | null; reason: string }>('/playbooks/suggest', {
+    api<{ automationId: string | null; reason: string }>('/automations/suggest', {
       method: 'POST',
       body: JSON.stringify({ messageId, conversationId, subject: subject || undefined }),
     })
-      .then((r) => { if (r.playbookId) setPbSuggestion({ playbookId: r.playbookId, reason: r.reason }); })
+      .then((r) => { if (r.automationId) setPbSuggestion({ playbookId: r.automationId, reason: r.reason }); })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveAction, messageId, conversationId, playbooks.length]);
@@ -2708,12 +2708,12 @@ export default function Taskpane() {
                     </div>
                   )}
 
-                  {/* Playbooks — named multi-step actions */}
+                  {/* Automations — named multi-step actions you run by hand */}
                   {(playbooks.length > 0 || me?.role === 'ADMIN') && (
                     <div style={{ marginTop: 12 }}>
-                      <span style={S.updateLabel}>Playbooks</span>
+                      <span style={S.updateLabel}>Automations</span>
                       {playbooks.length === 0 && (
-                        <p style={{ ...S.muted, margin: '4px 0 0' }}>No playbooks yet.</p>
+                        <p style={{ ...S.muted, margin: '4px 0 0' }}>No automations yet.</p>
                       )}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}>
                         {[...playbooks]
@@ -2780,8 +2780,8 @@ export default function Taskpane() {
                         </div>
                       )}
                       {me?.role === 'ADMIN' && (
-                        <button onClick={() => openAdmin('playbooks')} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          Manage playbooks →
+                        <button onClick={() => openAdmin('automations')} style={{ display: 'inline-block', marginTop: 10, fontSize: 12, color: '#5A27E0', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          Manage automations →
                         </button>
                       )}
                     </div>

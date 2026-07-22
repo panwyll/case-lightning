@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { getMessage } from '@/lib/server/graph';
-import { runTriage, runAutoRules } from '@/lib/server/triage';
+import { runTriage } from '@/lib/server/triage';
+import { runAutoAutomations } from '@/lib/server/automations';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const { messageId } = z.object({ messageId: z.string(), conversationId: z.string().optional() }).parse(await req.json());
     const message = await getMessage(user.userId, messageId);
     const triage = await runTriage(user, message);
-    const outcome = await runAutoRules(user, message, triage);
+    const outcome = await runAutoAutomations(user, message, triage);
     return ok({ triage, outcome });
   } catch (error) {
     return fail(error);
