@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
-  BaseEdge, getBezierPath, EdgeLabelRenderer, MarkerType,
+  BaseEdge, getBezierPath, EdgeLabelRenderer, MarkerType, useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -47,7 +47,9 @@ function TaskNode({ data, selected }: any) {
 function StageNode({ data }: any) {
   return (
     <div style={{ width: '100%', height: '100%', background: 'rgba(255,255,255,0.55)', border: `1px solid #e6e8ee`, borderLeft: `4px solid ${data.color}`, borderRadius: 14, boxShadow: '0 1px 3px rgba(16,24,40,0.05)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
+        <button className="nodrag nopan" onClick={(e) => { e.stopPropagation(); data.onToggle(); }} title={data.collapsed ? 'Expand' : 'Collapse'}
+          style={{ width: 22, height: 22, border: 'none', background: 'none', color: '#475569', fontSize: 18, lineHeight: 1, cursor: 'pointer', transform: data.collapsed ? 'none' : 'rotate(90deg)', transition: 'transform .12s' }}>▸</button>
         <span style={{ width: 10, height: 10, borderRadius: 3, background: data.color, flex: 'none' }} />
         <span style={{ fontSize: 14, fontWeight: 700, color: '#0f172a' }}>{data.name}</span>
         <span style={{ fontSize: 11.5, color: '#94a3b8' }}>{data.count} task{data.count === 1 ? '' : 's'}</span>
@@ -83,6 +85,8 @@ function CaseFlowInner() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const toggleCollapse = useCallback((key: string) => setCollapsed((c) => ({ ...c, [key]: !c[key] })), []);
   const [note, setNoteRaw] = useState<string | null>(null);
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setNote = (m: string) => { setNoteRaw(m); if (noteTimer.current) clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNoteRaw(null), 3500); };
@@ -153,35 +157,60 @@ function CaseFlowInner() {
   const addStage = async () => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ name: 'New stage', sortOrder: stages.length }) }); await load(); } catch (e: any) { setNote(e?.message || 'Could not add stage.'); } };
   const saveStageName = async (s: Stage) => { try { await api('/admin/stages', { method: 'POST', body: JSON.stringify({ id: s.id, name: s.name, sortOrder: s.sort_order, active: s.active }) }); } catch (e: any) { setNote(e?.message || 'Could not save stage.'); } };
 
-  // ── Layout → React Flow nodes/edges ──────────────────────────────────────────
-  const rfNodes = useMemo(() => {
+  // ── Layout → React Flow nodes ────────────────────────────────────────────────
+  // Positions come from the task's stored pos_x/pos_y (persisted on drag) when set,
+  // otherwise a tidy dependency-level default. Groups auto-size to fit; collapsed
+  // stages shrink to just their header.
+  const computeNodes = useCallback(() => {
     const nodes: any[] = [];
     let y = 0;
     for (const s of stages) {
-      const levels = stageLevels(s.key);
+      const isCol = !!collapsed[s.key];
       const list = tasksByStage[s.key] ?? [];
-      const maxCols = Math.max(1, ...levels.map((l) => l.length));
-      const groupW = Math.max(NODE_W + STAGE_PAD * 2 + 40, STAGE_PAD * 2 + maxCols * NODE_W + (maxCols - 1) * GAP_X);
-      const bodyH = levels.length ? levels.length * NODE_H + (levels.length - 1) * GAP_Y : NODE_H;
-      const groupH = STAGE_HEADER + STAGE_PAD + bodyH + STAGE_PAD;
+      const levels = stageLevels(s.key);
+      const levelPos: Record<string, { x: number; y: number }> = {};
+      levels.forEach((lvl, li) => lvl.forEach((t, ti) => { levelPos[t.id] = { x: ti * (NODE_W + GAP_X), y: li * (NODE_H + GAP_Y) }; }));
+      const taskPos = (t: Template) => (t.pos_x || t.pos_y) ? { x: t.pos_x, y: t.pos_y } : (levelPos[t.id] || { x: 0, y: 0 });
+      let contentW = NODE_W, contentH = NODE_H;
+      if (!isCol) for (const t of list) { const p = taskPos(t); contentW = Math.max(contentW, p.x + NODE_W); contentH = Math.max(contentH, p.y + NODE_H); }
+      const groupW = STAGE_PAD * 2 + contentW;
+      const groupH = isCol ? STAGE_HEADER + 6 : STAGE_HEADER + STAGE_PAD * 2 + contentH;
       const gid = `stage-${s.key}`;
-      nodes.push({ id: gid, type: 'stage', position: { x: 0, y }, data: { name: s.name, color: stageColor(s.key), count: list.length }, draggable: false, selectable: false, style: { width: groupW, height: groupH } });
-      levels.forEach((lvl, li) => {
-        const totalW = lvl.length * NODE_W + (lvl.length - 1) * GAP_X;
-        const startX = (groupW - totalW) / 2;
-        lvl.forEach((t, ti) => {
-          nodes.push({
-            id: t.id, type: 'task', parentId: gid, extent: 'parent',
-            position: { x: startX + ti * (NODE_W + GAP_X), y: STAGE_HEADER + STAGE_PAD + li * (NODE_H + GAP_Y) },
-            data: { detail: t.detail, email: t.node_kind === 'EMAIL', active: t.active, meta: t.node_kind === 'EMAIL' ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}` : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}` },
-            selected: t.id === selected,
-          });
+      nodes.push({ id: gid, type: 'stage', position: { x: 0, y }, data: { name: s.name, color: stageColor(s.key), count: list.length, collapsed: isCol, onToggle: () => toggleCollapse(s.key) }, draggable: false, selectable: false, style: { width: groupW, height: groupH, zIndex: 0 } });
+      if (!isCol) for (const t of list) {
+        const p = taskPos(t);
+        nodes.push({
+          id: t.id, type: 'task', parentId: gid, extent: 'parent', draggable: true,
+          position: { x: STAGE_PAD + p.x, y: STAGE_HEADER + STAGE_PAD + p.y },
+          data: { detail: t.detail, email: t.node_kind === 'EMAIL', active: t.active, meta: t.node_kind === 'EMAIL' ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}` : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}` },
+          selected: t.id === selected,
         });
-      });
+      }
       y += groupH + STAGE_GAP;
     }
     return nodes;
-  }, [stages, tasksByStage, stageLevels, emailTemplates, assigneeText, stageColor, selected]);
+  }, [stages, tasksByStage, stageLevels, emailTemplates, assigneeText, stageColor, selected, collapsed, toggleCollapse]);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
+  useEffect(() => { setNodes(computeNodes()); }, [computeNodes, setNodes]);
+
+  const onNodeDragStop = useCallback((_e: any, node: any) => {
+    if (node.type !== 'task') return;
+    const px = Math.max(0, Math.round(node.position.x - STAGE_PAD));
+    const py = Math.max(0, Math.round(node.position.y - STAGE_HEADER - STAGE_PAD));
+    setTemplates((ts) => ts.map((t) => (t.id === node.id ? { ...t, pos_x: px, pos_y: py } : t)));
+    api('/admin/workflow/positions', { method: 'POST', body: JSON.stringify({ positions: [{ id: node.id, x: px, y: py }] }) }).catch(() => {});
+  }, []);
+
+  const autoArrange = useCallback(() => {
+    const updates: Array<{ id: string; x: number; y: number }> = [];
+    for (const s of stages) {
+      const levels = stageLevels(s.key);
+      levels.forEach((lvl, li) => lvl.forEach((t, ti) => updates.push({ id: t.id, x: ti * (NODE_W + GAP_X), y: li * (NODE_H + GAP_Y) })));
+    }
+    setTemplates((ts) => ts.map((t) => { const u = updates.find((x) => x.id === t.id); return u ? { ...t, pos_x: u.x, pos_y: u.y } : t; }));
+    api('/admin/workflow/positions', { method: 'POST', body: JSON.stringify({ positions: updates }) }).catch(() => {});
+  }, [stages, stageLevels]);
 
   const rfEdges = useMemo(() => {
     const inSameStage = (a: string, b: string) => byId(a)?.stage && byId(a)?.stage === byId(b)?.stage;
@@ -204,7 +233,8 @@ function CaseFlowInner() {
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Case Flow</strong>
-          <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Drag a dot to link tasks · click an arrow’s × to unlink</span>
+          <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Drag tasks to arrange · drag a dot to link · click an arrow’s × to unlink</span>
+          {stages.length > 0 && <button onClick={autoArrange} style={btn} title="Reset the layout to a tidy order">Auto-arrange</button>}
           {stages[0] && <button onClick={() => addTask(stages[0].key, 'TASK')} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ Task</button>}
           <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
@@ -219,14 +249,14 @@ function CaseFlowInner() {
         {!loading && stages.length > 0 && (
           <div style={{ height: '74vh', border: '1px solid #e2e8f0', borderRadius: 12, background: '#F8FAFC', overflow: 'hidden' }}>
             <ReactFlow
-              nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
-              onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={() => setSelected(null)}
-              nodesDraggable={false} nodesConnectable elementsSelectable
+              nodes={nodes} edges={rfEdges} onNodesChange={onNodesChange} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
+              onConnect={onConnect} onNodeClick={onNodeClick} onNodeDragStop={onNodeDragStop} onPaneClick={() => setSelected(null)}
+              nodesConnectable elementsSelectable
               defaultViewport={{ x: 60, y: 28, zoom: 0.9 }} minZoom={0.3} maxZoom={1.6} proOptions={{ hideAttribution: true }}
             >
               <Background gap={22} color="#e6e9f0" />
               <Controls showInteractive={false} />
-              <MiniMap pannable zoomable nodeColor={(n: any) => (n.type === 'stage' ? '#e2e8f0' : '#c7b6f5')} style={{ background: '#fff' }} />
+              <MiniMap pannable zoomable nodeStrokeWidth={3} nodeColor={(n: any) => (n.type === 'stage' ? '#eef0f5' : '#a78bfa')} nodeBorderRadius={4} maskColor="rgba(90,39,224,0.08)" style={{ background: '#fff', border: '1px solid #e2e8f0' }} />
             </ReactFlow>
           </div>
         )}
