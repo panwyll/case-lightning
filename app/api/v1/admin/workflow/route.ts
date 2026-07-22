@@ -15,12 +15,12 @@ export async function GET() {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
     await ensureDefaultWorkflow(user.tenantId); // seed the standard conveyancing flow on first open
-    const { templates, edges } = await getWorkflow(user.tenantId);
+    const { templates, edges, emailTemplates } = await getWorkflow(user.tenantId);
     const users = await query(
       `select id, coalesce(display_name, email) as name, role from app_user where tenant_id = $1 order by created_at asc`,
       [user.tenantId]
     );
-    return ok({ templates, edges, users });
+    return ok({ templates, edges, users, emailTemplates });
   } catch (error) {
     return fail(error);
   }

@@ -11,7 +11,11 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   });
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  if (!res.ok) {
+    // Surface which field a 400 rejected, so "Invalid request." is actually diagnosable.
+    const detail = Array.isArray(json.details) ? json.details.map((d: any) => `${(d.path || []).join('.')}: ${d.message}`).join('; ') : '';
+    throw new Error([json.error || `HTTP ${res.status}`, detail].filter(Boolean).join(' — '));
+  }
   return json as T;
 }
 
