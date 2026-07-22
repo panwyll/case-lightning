@@ -33,6 +33,7 @@ interface Rule {
   min_confidence: number;
   require_no_attention: boolean;
   sender_domains: string[];
+  match_stages: string[];
   do_categorize: boolean;
   category_label: string | null;
   do_assign: boolean;
@@ -45,25 +46,29 @@ interface Rule {
 }
 interface Tpl { id: string; name: string }
 interface Member { id: string; display_name: string | null; email: string }
+interface Stage { key: string; name: string }
 
 export default function AutoRules() {
   const [rules, setRules] = useState<Rule[]>([]);
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [stages, setStages] = useState<Stage[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [r, t, u] = await Promise.all([
+      const [r, t, u, s] = await Promise.all([
         api<{ rules: Rule[] }>('/admin/rules'),
         api<{ templates: Tpl[] }>('/admin/templates').catch(() => ({ templates: [] })),
         api<{ users: Member[] }>('/admin/users').catch(() => ({ users: [] })),
+        api<{ stages: Stage[] }>('/stages').catch(() => ({ stages: [] })),
       ]);
       setRules(r.rules ?? []);
       setTemplates(t.templates ?? []);
       setMembers(u.users ?? []);
+      setStages((s.stages ?? []).filter((x: any) => x.active ?? true));
     } catch (e: any) { setErr(e?.message || 'Could not load rules.'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -77,7 +82,7 @@ export default function AutoRules() {
         method: 'PATCH',
         body: JSON.stringify({
           name: r.name, enabled: r.enabled, intents: r.intents, minConfidence: r.min_confidence,
-          requireNoAttention: r.require_no_attention, senderDomains: r.sender_domains,
+          requireNoAttention: r.require_no_attention, senderDomains: r.sender_domains, matchStages: r.match_stages,
           doCategorize: r.do_categorize, categoryLabel: r.category_label || null,
           doAssign: r.do_assign, assignTo: r.assign_to || null, doAppendTracker: r.do_append_tracker,
           replyMode: r.reply_mode, replyTemplateId: r.reply_template_id || null,
@@ -124,8 +129,9 @@ export default function AutoRules() {
     const bits = [
       r.intents.length ? r.intents.map((i) => INTENTS.find((x) => x[0] === i)?.[1] ?? i).join(', ') : 'any email',
       `≥${Math.round(r.min_confidence * 100)}% match`,
+      r.match_stages.length ? `in ${r.match_stages.map((k) => stages.find((s) => s.key === k)?.name ?? k).join('/')}` : null,
       r.reply_mode === 'SEND' ? 'auto-send' : r.reply_mode === 'DRAFT' ? 'auto-draft' : 'no reply',
-    ];
+    ].filter(Boolean);
     return bits.join(' · ');
   };
 
@@ -190,6 +196,21 @@ export default function AutoRules() {
                   </label>
                   <label style={lbl}>Sender domains <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optional allowlist, comma-separated)</span></label>
                   <input value={r.sender_domains.join(', ')} onChange={(e) => set(r.id, { sender_domains: e.target.value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean) })} placeholder="e.g. hunters.com, santander.co.uk" style={input} />
+
+                  {stages.length > 0 && (
+                    <>
+                      <label style={lbl}>Matter stage <span style={{ color: '#94a3b8', fontWeight: 400 }}>(none = any stage)</span></label>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {stages.map((s) => {
+                          const on = r.match_stages.includes(s.key);
+                          return (
+                            <button key={s.key} onClick={() => set(r.id, { match_stages: on ? r.match_stages.filter((x) => x !== s.key) : [...r.match_stages, s.key] })}
+                              style={{ fontSize: 11.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999, cursor: 'pointer', border: '1px solid ' + (on ? '#5A27E0' : '#d0d5dd'), background: on ? '#5A27E0' : '#fff', color: on ? '#fff' : '#475569' }}>{s.name}</button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Actions */}

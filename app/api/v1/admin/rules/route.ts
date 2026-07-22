@@ -28,6 +28,7 @@ const ruleSchema = z.object({
   minConfidence: z.number().min(0).max(1).default(0.9),
   requireNoAttention: z.boolean().default(true),
   senderDomains: z.array(z.string()).default([]),
+  matchStages: z.array(z.string()).default([]),
   doCategorize: z.boolean().default(true),
   categoryLabel: z.string().optional(),
   doAssign: z.boolean().default(false),
@@ -61,10 +62,10 @@ export async function POST(req: NextRequest) {
 
     const row = await queryOne<any>(
       `insert into auto_rule
-        (tenant_id, name, enabled, intents, min_confidence, require_no_attention, sender_domains,
+        (tenant_id, name, enabled, intents, min_confidence, require_no_attention, sender_domains, match_stages,
          do_categorize, category_label, do_assign, assign_to, do_append_tracker, reply_mode, reply_template_id,
          risk_accepted, risk_acknowledgement, risk_accepted_by, risk_accepted_at, created_by)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        returning *`,
       [
         user.tenantId,
@@ -74,6 +75,7 @@ export async function POST(req: NextRequest) {
         b.minConfidence,
         b.requireNoAttention,
         b.senderDomains,
+        b.matchStages,
         b.doCategorize,
         b.categoryLabel ?? null,
         b.doAssign,

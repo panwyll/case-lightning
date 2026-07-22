@@ -220,6 +220,8 @@ interface AutoRuleRow {
   min_confidence: number;
   require_no_attention: boolean;
   sender_domains: string[];
+  /** Optional allowlist of matter stages the rule applies in. Empty = any stage. */
+  match_stages: string[];
   do_categorize: boolean;
   category_label: string | null;
   do_assign: boolean;
@@ -282,11 +284,20 @@ export async function runAutoRules(
   const match = triage.top;
   const cls = triage.classification;
 
+  // Read the matched matter once — its stage gates stage-scoped rules, and its
+  // tracker id is reused below for do_append_tracker.
+  const matter = await queryOne<{ stage: string | null; tracker_item_id: string | null }>(
+    `select stage, tracker_item_id from matter where id = $1 and tenant_id = $2`,
+    [match.matterId, user.tenantId]
+  );
+
   const rule = rules.find((r) => {
     if (r.intents.length && !r.intents.includes(cls.intent)) return false;
     if (match.score < r.min_confidence) return false;
     if (r.require_no_attention && cls.needsAttention) return false;
     if (r.sender_domains.length && (!senderDomain || !r.sender_domains.includes(senderDomain))) return false;
+    // Stage gate: the rule only fires while the matter is on one of its stages.
+    if (r.match_stages.length && (!matter?.stage || !r.match_stages.includes(matter.stage))) return false;
     return true;
   });
 
@@ -319,11 +330,6 @@ export async function runAutoRules(
     await addMessageCategories(user.userId, message.id, [label]).catch(() => {});
     actions.push('categorized');
   }
-
-  const matter = await queryOne<{ tracker_item_id: string | null }>(
-    `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
-    [match.matterId, user.tenantId]
-  );
 
   if (rule.do_append_tracker && matter?.tracker_item_id) {
     await appendTrackerRow(user.userId, matter.tracker_item_id, {

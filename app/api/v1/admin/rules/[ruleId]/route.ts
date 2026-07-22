@@ -23,6 +23,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ru
         minConfidence: z.number().min(0).max(1).optional(),
         requireNoAttention: z.boolean().optional(),
         senderDomains: z.array(z.string()).optional(),
+        matchStages: z.array(z.string()).optional(),
         doCategorize: z.boolean().optional(),
         categoryLabel: z.string().nullable().optional(),
         doAssign: z.boolean().optional(),
@@ -63,6 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ru
          min_confidence       = coalesce($4, min_confidence),
          require_no_attention = coalesce($5, require_no_attention),
          sender_domains       = coalesce($6, sender_domains),
+         match_stages         = coalesce($23, match_stages),
          do_categorize        = coalesce($7, do_categorize),
          category_label       = case when $8 then $9 else category_label end,
          do_assign            = coalesce($10, do_assign),
@@ -99,6 +101,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ru
         user.userId,
         ruleId,
         user.tenantId,
+        b.matchStages ?? null, // $23
       ]
     );
 
