@@ -10,12 +10,12 @@ import { onStageAdvanced } from './tasks';
 import { classifyEmail, draftReply, retrieveMatterContext, type EmailIntent } from './ai';
 import {
   createReplyDraft,
-  createAndSendReply,
   appendTrackerRow,
   listThreadMessages,
   ensureMasterCategory,
   addMessageCategories,
 } from './graph';
+import { scheduleSend } from './scheduledSend';
 import { threadToText, stripHtml } from './text';
 import { writeAudit } from './audit';
 import { externalDomainsAllowed } from './guard';
@@ -381,15 +381,28 @@ export async function runAutoRules(
         policy.auto_send_enabled &&
         externalDomainsAllowed(recipients, policy.allowed_external_domains ?? []);
       if (sendOk) {
-        const id = await createAndSendReply(user.userId, message.id, draft.bodyHtml);
-        actions.push('auto-sent');
+        // Don't fire-and-forget. Create the reply draft and park it in the ONE send
+        // queue with the standard grace window, so an auto-send is cancellable and
+        // shows up in "scheduled sends" exactly like a workflow or human send — one
+        // pipeline, one "why did this send?" story. processDueSends flushes it.
+        const d = await createReplyDraft(user.userId, message.id, draft.bodyHtml);
+        const sched = await scheduleSend({
+          tenantId: user.tenantId,
+          userId: user.userId,
+          matterId: match.matterId,
+          graphMessageId: d.id,
+          subject: d.subject,
+          recipient: recipients[0] ?? null,
+          source: 'REPLY',
+        });
+        actions.push('auto-send scheduled');
         await writeAudit({
           tenantId: user.tenantId,
           matterId: match.matterId,
           actorUserId: user.userId,
           actionType: 'AUTO_REPLY_SENT',
           actionStatus: 'SUCCESS',
-          payload: { ruleId: rule.id, draftId: id, recipients },
+          payload: { ruleId: rule.id, draftId: d.id, scheduledSendId: sched.id, scheduledAt: sched.scheduledAt, scheduled: true, recipients },
         });
       } else {
         // Fail safe: degrade to a draft and record why the send was blocked.

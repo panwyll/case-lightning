@@ -72,7 +72,9 @@ function describeAudit(row: any): string {
     case 'EMAIL_SENT':
       return `Sent an email${p.subject ? ` ${q(p.subject)}` : ''}${p.source === 'SCHEDULED' ? ' (on the send delay)' : p.source === 'WORKLIST_WEB' ? ' from My work' : ''}`;
     case 'AUTO_REPLY_SENT':
-      return row.action_status === 'SUCCESS' ? `Auto-sent a reply${p.recipients ? ` to ${p.recipients}` : ''}` : `Auto-reply held back — ${p.reason || 'safety check failed'}`;
+      return row.action_status === 'SUCCESS'
+        ? `${p.scheduled ? 'Scheduled an auto-reply' : 'Auto-sent a reply'}${p.recipients ? ` to ${p.recipients}` : ''}${p.scheduled ? ' (on the send delay — cancellable)' : ''}`
+        : `Auto-reply held back — ${p.reason || 'safety check failed'}`;
     case 'DRAFT_GENERATED':
       return `Drafted a reply${p.tone ? ` (${p.tone} tone)` : ''}`;
     case 'OUTLOOK_DRAFT_CREATED':

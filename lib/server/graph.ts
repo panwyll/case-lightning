@@ -547,16 +547,9 @@ export async function deleteSubscription(userId: string, subscriptionId: string)
  * that sends mail and is reachable ONLY through an enabled, risk-accepted SEND
  * auto-rule (and the tenant kill-switches) — never from the interactive flow.
  */
-export async function createAndSendReply(
-  userId: string,
-  messageId: string,
-  bodyHtml: string
-): Promise<string> {
-  const draft = await createReplyDraft(userId, messageId, bodyHtml);
-  const client = await graphClientForUser(userId);
-  await client.api(`/me/messages/${draft.id}/send`).post({});
-  return draft.id;
-}
+// NOTE: there is deliberately no "create and send immediately" helper. Every
+// outbound email goes through scheduleSend → processDueSends so it lands in the
+// one send queue with a cancellable grace window (see scheduledSend.ts).
 
 // ── OneDrive (per-case knowledge base) ──────────────────────────────────────
 
