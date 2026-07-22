@@ -374,11 +374,15 @@ export default function WorkflowCanvas() {
           const x1 = pa.x + PILL_W / 2, y1 = pa.y + heightOf(a.id), x2 = pb.x + PILL_W / 2, y2 = pb.y;
           const dy = Math.max(18, Math.abs(y2 - y1) * 0.4);
           const d = `M ${x1} ${y1} C ${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`;
+          // The click-to-delete region starts BELOW the source handle, so the handle stays
+          // grabbable — you can pull a second (branching) arrow out of the same task.
+          const gap = Math.min(22, dy);
+          const dHit = `M ${x1} ${y1 + gap} C ${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`;
           const key = `${e.from_template_id}-${e.to_template_id}`;
           const hot = hoverEdge === key;
           return (
             <g key={key} onMouseEnter={() => setHoverEdge(key)} onMouseLeave={() => setHoverEdge((k) => (k === key ? null : k))}>
-              <path className="wf-hit" d={d} onClick={() => { deleteEdge(e.from_template_id, e.to_template_id); setNote('Removed — those now run in parallel.'); }}>
+              <path className="wf-hit" d={dHit} onClick={() => { deleteEdge(e.from_template_id, e.to_template_id); setNote('Removed — those now run in parallel.'); }}>
                 <title>Click to remove this dependency</title>
               </path>
               <path d={d} fill="none" stroke={hot ? '#5A27E0' : '#94a3b8'} strokeWidth={hot ? 2.5 : 1.75} markerEnd={`url(#wa-${hot ? 'h-' : ''}${s.key})`} style={{ pointerEvents: 'none' }} />
