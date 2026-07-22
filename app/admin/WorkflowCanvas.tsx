@@ -222,7 +222,7 @@ function CaseFlowInner() {
               nodes={rfNodes} edges={rfEdges} nodeTypes={nodeTypes} edgeTypes={edgeTypes}
               onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={() => setSelected(null)}
               nodesDraggable={false} nodesConnectable elementsSelectable
-              fitView fitViewOptions={{ padding: 0.15 }} minZoom={0.2} maxZoom={1.6} proOptions={{ hideAttribution: true }}
+              defaultViewport={{ x: 60, y: 28, zoom: 0.9 }} minZoom={0.3} maxZoom={1.6} proOptions={{ hideAttribution: true }}
             >
               <Background gap={22} color="#e6e9f0" />
               <Controls showInteractive={false} />
