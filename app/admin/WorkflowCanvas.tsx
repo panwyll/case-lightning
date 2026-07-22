@@ -70,7 +70,6 @@ const WF_CSS = `
 .wf-task{position:relative;width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left;user-select:none}
 .wf-task:active{cursor:grabbing}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
-.wf-task.dragging{opacity:.35}
 .wf-task.drop{border-color:#5A27E0;box-shadow:0 0 0 3px #ddd6fe}
 .wf-task.drop::after{content:'▲ runs after this';position:absolute;top:-19px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:800;color:#5A27E0;white-space:nowrap}
 .wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
@@ -92,7 +91,7 @@ export default function WorkflowCanvas() {
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [dragId, setDragId] = useState<string | null>(null);   // task being dragged (visual)
-  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null); // cursor pos for the ghost
+  const [dragDelta, setDragDelta] = useState<{ dx: number; dy: number }>({ dx: 0, dy: 0 }); // how far the pill has moved from the cursor-down point
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragFrom = useRef<{ id: string; x: number; y: number } | null>(null); // mousedown origin
   const didDrag = useRef(false); // set on a real drag, so the trailing click doesn't also select
@@ -221,13 +220,17 @@ export default function WorkflowCanvas() {
   const taskBox = (t: Template) => (
     <div
       data-taskid={t.id}
-      className={`wf-task${t.id === selected ? ' sel' : ''}${dropTarget === t.id ? ' drop' : ''}${dragId === t.id ? ' dragging' : ''}`}
+      className={`wf-task${t.id === selected ? ' sel' : ''}${dropTarget === t.id ? ' drop' : ''}`}
       onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
       onMouseEnter={() => { if (dragId && dragId !== t.id && byId(dragId)?.stage === t.stage) setDropTarget(t.id); }}
       onMouseLeave={() => setDropTarget((d) => (d === t.id ? null : d))}
-      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null); void addPrereq(t.id, from); } }}
+      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null); void addPrereq(t.id, from); } }}
       onClick={(e) => { e.stopPropagation(); if (didDrag.current) { didDrag.current = false; return; } setSelected(t.id === selected ? null : t.id); }}
-      style={{ opacity: t.active ? 1 : 0.5 }}
+      style={t.id === dragId
+        // The pill itself lifts and follows the cursor. pointerEvents:none so the task
+        // it's dragged over still receives the hover/drop.
+        ? { transform: `translate(${dragDelta.dx}px, ${dragDelta.dy}px) rotate(-1.5deg) scale(1.03)`, zIndex: 50, borderColor: '#5A27E0', boxShadow: '0 12px 28px rgba(90,39,224,0.3)', pointerEvents: 'none', opacity: 1 }
+        : { opacity: t.active ? 1 : 0.5 }}
       title="Drag onto another task to make this run after it"
     >
       <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
@@ -265,17 +268,17 @@ export default function WorkflowCanvas() {
           <div style={{ ...card, padding: '28px 12px' }}>
             <div
               className="wf-flow"
-              onMouseMove={(e) => { const f = dragFrom.current; if (f) { if (!dragId && Math.hypot(e.clientX - f.x, e.clientY - f.y) > 5) setDragId(f.id); setDragPos({ x: e.clientX, y: e.clientY }); } }}
+              onMouseMove={(e) => { const f = dragFrom.current; if (f) { const dx = e.clientX - f.x, dy = e.clientY - f.y; if (!dragId && Math.hypot(dx, dy) > 4) setDragId(f.id); setDragDelta({ dx, dy }); } }}
               onMouseUp={(e) => {
                 const from = dragFrom.current?.id;
-                dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null);
+                dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null);
                 if (!from) return;
                 // Read the drop target synchronously from the DOM (state updates land too late for a fast drag).
                 const box = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
                 const to = box?.getAttribute('data-taskid');
                 if (to && to !== from && byId(from)?.stage === byId(to)?.stage) { didDrag.current = true; void addPrereq(to, from); }
               }}
-              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null); }}
+              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDragDelta({ dx: 0, dy: 0 }); setDropTarget(null); }}
             >
               {stages.map((s, i) => {
                 const list = tasksByStage[s.key] ?? [];
@@ -325,24 +328,13 @@ export default function WorkflowCanvas() {
         )}
       </div>
 
-      {/* Drag ghost — the pill lifts and follows the cursor while dragging. */}
-      {dragId && dragPos && (() => {
-        const t = byId(dragId);
-        if (!t) return null;
-        return (
-          <div style={{ position: 'fixed', left: dragPos.x + 12, top: dragPos.y + 8, width: 230, pointerEvents: 'none', zIndex: 50, background: '#fff', border: '1.5px solid #5A27E0', borderRadius: 9, boxShadow: '0 10px 28px rgba(90,39,224,0.28)', padding: '8px 11px', transform: 'rotate(-1.5deg)' }}>
-            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b' }}>{t.detail}</div>
-            <div style={{ fontSize: 10.5, color: '#5A27E0', marginTop: 2, fontWeight: 700 }}>drop onto a task to run after it</div>
-          </div>
-        );
-      })()}
-
       {/* Selected-task editor — a floating panel so opening/closing it never reflows the flow. */}
       {sel && (
         <div style={{ ...card, position: 'fixed', right: 18, top: 92, width: 300, flex: 'none', maxHeight: '82vh', overflowY: 'auto', zIndex: 20, boxShadow: '0 12px 40px rgba(16,24,40,0.2)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <strong style={{ fontSize: 13, color: '#0f172a' }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
             <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
+            <button onClick={() => setSelected(null)} title="Close" aria-label="Close" style={{ width: 26, height: 26, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, cursor: 'pointer', color: '#64748b', fontSize: 13, lineHeight: 1 }}>✕</button>
           </div>
           <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
           <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
