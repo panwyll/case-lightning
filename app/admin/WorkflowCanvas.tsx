@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -66,8 +66,11 @@ const WF_CSS = `
 .wf-body{border-top:1px solid #eef2f7;background:#fafbfc;padding:18px 16px;overflow-x:auto}
 .wf-subflow{display:flex;flex-direction:column;align-items:center;min-width:min-content}
 .wf-level{display:flex;gap:20px;justify-content:center;align-items:stretch;flex-wrap:wrap}
-.wf-task{width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:pointer;text-align:left}
+.wf-task{width:250px;background:#fff;border:1px solid #dfe3ea;border-radius:9px;box-shadow:0 1px 2px rgba(16,24,40,.06);padding:8px 11px;cursor:grab;text-align:left}
+.wf-task:active{cursor:grabbing}
 .wf-task.sel{border-color:#5A27E0;background:#EDE7FB}
+.wf-task.dragging{opacity:.4}
+.wf-task.drop{border-color:#5A27E0;box-shadow:0 0 0 2px #c4b5fd}
 .wf-t{font-size:12.5px;font-weight:600;color:#1e293b;line-height:1.3;word-break:break-word}
 .wf-m{font-size:10.5px;color:#94a3b8;margin-top:3px}
 .wf-lvlconn{width:2px;height:20px;background:#c3cbd6;position:relative;margin:2px 0}
@@ -86,6 +89,10 @@ export default function WorkflowCanvas() {
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [dragId, setDragId] = useState<string | null>(null);   // task being dragged (visual)
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const dragFrom = useRef<{ id: string; x: number; y: number } | null>(null); // mousedown origin
+  const didDrag = useRef(false); // set on a real drag, so the trailing click doesn't also select
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -202,8 +209,20 @@ export default function WorkflowCanvas() {
   const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
 
   // ── Sub-flow render (a task box, then a fork/chain to its dependents) ─────────
+  // Drag one task onto another (same stage) to make the dragged task run AFTER the
+  // one it's dropped on. Leaving tasks unconnected = they run in parallel. Mouse-based
+  // (not HTML5 DnD) so it's reliable and the drop target is tracked by hover.
   const taskBox = (t: Template) => (
-    <div className={`wf-task${t.id === selected ? ' sel' : ''}`} onClick={(e) => { e.stopPropagation(); setSelected(t.id === selected ? null : t.id); }} style={{ opacity: t.active ? 1 : 0.5 }}>
+    <div
+      data-taskid={t.id}
+      className={`wf-task${t.id === selected ? ' sel' : ''}${dropTarget === t.id ? ' drop' : ''}${dragId === t.id ? ' dragging' : ''}`}
+      onMouseDown={(e) => { e.stopPropagation(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
+      onMouseEnter={() => { if (dragId && dragId !== t.id && byId(dragId)?.stage === t.stage) setDropTarget(t.id); }}
+      onMouseLeave={() => setDropTarget((d) => (d === t.id ? null : d))}
+      onClick={(e) => { e.stopPropagation(); if (didDrag.current) { didDrag.current = false; return; } setSelected(t.id === selected ? null : t.id); }}
+      style={{ opacity: t.active ? 1 : 0.5 }}
+      title="Drag onto another task to make this run after it"
+    >
       <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
       <div className="wf-m">
         {t.node_kind === 'EMAIL'
@@ -237,7 +256,20 @@ export default function WorkflowCanvas() {
 
         {!loading && stages.length > 0 && (
           <div style={{ ...card, padding: '28px 12px' }}>
-            <div className="wf-flow">
+            <div
+              className="wf-flow"
+              onMouseMove={(e) => { const f = dragFrom.current; if (f && !dragId && Math.hypot(e.clientX - f.x, e.clientY - f.y) > 5) setDragId(f.id); }}
+              onMouseUp={(e) => {
+                const from = dragFrom.current?.id;
+                dragFrom.current = null; setDragId(null); setDropTarget(null);
+                if (!from) return;
+                // Read the drop target synchronously from the DOM (state updates land too late for a fast drag).
+                const box = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
+                const to = box?.getAttribute('data-taskid');
+                if (to && to !== from && byId(from)?.stage === byId(to)?.stage) { didDrag.current = true; void addPrereq(to, from); }
+              }}
+              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDropTarget(null); }}
+            >
               {stages.map((s, i) => {
                 const list = tasksByStage[s.key] ?? [];
                 const levels = stageLevels(s.key);
