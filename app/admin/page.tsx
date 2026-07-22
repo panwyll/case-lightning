@@ -1823,11 +1823,6 @@ export default function AdminPage() {
                   Full guide →
                 </a>
               </div>
-              <p style={{ fontSize: 13, color: '#334155', margin: '0 0 10px' }}>
-                Upload your firm&apos;s Word (.docx) templates here. On any matter, a conveyancer opens the{' '}
-                <strong>Files → Templates</strong> panel and clicks <strong>Generate</strong> — the template is
-                filled with that matter&apos;s data and saved straight into the case&apos;s OneDrive folder.
-              </p>
               <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Placeholder syntax</p>
               <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
                 <tbody>
@@ -2016,14 +2011,6 @@ export default function AdminPage() {
 
         {tab === 'actions' && (
           <>
-            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <h3 style={{ marginTop: 0, fontSize: 15 }}>Merge cases</h3>
-              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                If the same case was created as two separate matters, merge the duplicate into the one
-                you want to keep. All emails, documents, tasks, contacts and identifiers move across; the
-                duplicate is archived (its OneDrive folder is left in place and noted on the survivor’s case log).
-              </p>
-            </div>
             <div style={card}>
               <label style={{ fontSize: 13, fontWeight: 600 }}>Keep this matter</label>
               <div style={{ marginTop: 4, marginBottom: 12 }}>

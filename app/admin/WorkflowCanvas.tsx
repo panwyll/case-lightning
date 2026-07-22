@@ -167,34 +167,42 @@ export default function WorkflowCanvas() {
   const allOpen = stages.length > 0 && stages.every((s) => open[s.key]);
   const toggleAll = () => setOpen(allOpen ? {} : Object.fromEntries(stages.map((s) => [s.key, true])));
 
-  // One task + its intra-stage dependents, indented (the "· runs after" arrow is the nesting).
-  const renderTask = (t: Template, childrenOf: Record<string, string[]>, depth: number, seen: Set<string>): React.ReactNode => {
+  const taskBox = (t: Template) => {
+    const isSel = t.id === selected;
+    return (
+      <div onClick={(e) => { e.stopPropagation(); setSelected(isSel ? null : t.id); }}
+        style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer', background: isSel ? '#EDE7FB' : '#fff',
+          border: `1px solid ${isSel ? '#5A27E0' : '#dfe3ea'}`, boxShadow: '0 1px 2px rgba(16,24,40,0.05)', opacity: t.active ? 1 : 0.5 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>
+          {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
+          {t.detail}
+        </div>
+        <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
+          {t.node_kind === 'EMAIL'
+            ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
+            : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+        </div>
+      </div>
+    );
+  };
+
+  // A branch: an elbow line + arrowhead from the trunk into a node's box, then the node.
+  const branch = (t: Template, childrenOf: Record<string, string[]>, seen: Set<string>): React.ReactNode => (
+    <div key={t.id} style={{ position: 'relative', paddingLeft: 16, marginTop: 6 }}>
+      <span style={{ position: 'absolute', left: 0, top: 15, width: 12, height: 2, background: '#cbd5e1' }} />
+      <span style={{ position: 'absolute', left: 12, top: 11, width: 0, height: 0, borderTop: '4px solid transparent', borderBottom: '4px solid transparent', borderLeft: '5px solid #cbd5e1' }} />
+      {renderNode(t, childrenOf, seen)}
+    </div>
+  );
+  // Flow-chart node: a task box, with a trunk down to the tasks that run after it.
+  const renderNode = (t: Template, childrenOf: Record<string, string[]>, seen: Set<string>): React.ReactNode => {
     if (seen.has(t.id)) return null;
     seen.add(t.id);
-    const isSel = t.id === selected;
     const kids = (childrenOf[t.id] ?? []).map((cid) => byId(cid)).filter(Boolean) as Template[];
     return (
-      <div key={t.id} style={{ marginLeft: depth ? 14 : 0, borderLeft: depth ? '1.5px solid #dbe1ea' : undefined, paddingLeft: depth ? 8 : 0 }}>
-        <div
-          onClick={(e) => { e.stopPropagation(); setSelected(isSel ? null : t.id); }}
-          style={{
-            padding: '6px 8px', borderRadius: 8, cursor: 'pointer', marginBottom: 5,
-            background: isSel ? '#EDE7FB' : '#fff', border: `1px solid ${isSel ? '#5A27E0' : '#e6e8ee'}`, opacity: t.active ? 1 : 0.5,
-          }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {depth > 0 && <span style={{ color: '#94a3b8', fontSize: 11, flex: 'none' }}>↳</span>}
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b', lineHeight: 1.3, wordBreak: 'break-word' }}>
-              {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
-              {t.detail}
-            </span>
-          </div>
-          <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 2 }}>
-            {t.node_kind === 'EMAIL'
-              ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
-              : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
-          </div>
-        </div>
-        {kids.map((k) => renderTask(k, childrenOf, depth + 1, seen))}
+      <div>
+        {taskBox(t)}
+        {kids.length > 0 && <div style={{ marginLeft: 9, borderLeft: '2px solid #cbd5e1' }}>{kids.map((k) => branch(k, childrenOf, seen))}</div>}
       </div>
     );
   };
@@ -203,10 +211,7 @@ export default function WorkflowCanvas() {
     <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <strong style={{ fontSize: 15, color: '#0f172a' }}>Workflow</strong>
-          <span style={{ fontSize: 12.5, color: '#64748b', flex: 1, minWidth: 180 }}>
-            The main beats of a matter, left to right. Expand a stage to see its tasks; nest one under another to make it run after it.
-          </span>
+          <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Workflow</strong>
           {stages.length > 0 && <button onClick={toggleAll} style={btn}>{allOpen ? 'Collapse all' : 'Expand all'}</button>}
           <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
@@ -234,7 +239,7 @@ export default function WorkflowCanvas() {
               const color = stageColor(s.key);
               return (
                 <div key={s.id} style={{ display: 'flex', alignItems: 'flex-start', flex: 'none' }}>
-                  <div style={{ width: isOpen ? 250 : 210, flex: 'none', background: '#fff', border: '1px solid #e6e8ee', borderTop: `3px solid ${color}`, borderRadius: 12, boxShadow: '0 1px 3px rgba(16,24,40,0.06)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+                  <div style={{ width: isOpen ? 280 : 210, flex: 'none', background: '#fff', border: '1px solid #e6e8ee', borderTop: `3px solid ${color}`, borderRadius: 12, boxShadow: '0 1px 3px rgba(16,24,40,0.06)', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
                     {/* Stage node header */}
                     <div style={{ padding: '9px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -254,10 +259,10 @@ export default function WorkflowCanvas() {
                     </div>
                     {/* Expanded: the subtask tree */}
                     {isOpen && (
-                      <div style={{ padding: '6px 10px 10px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
+                      <div style={{ padding: '4px 10px 10px', background: '#fafbfc', borderTop: '1px solid #eef2f7' }}>
                         {list.length === 0
                           ? <div style={{ fontSize: 11.5, color: '#94a3b8', padding: '6px 2px' }}>No tasks yet.</div>
-                          : (() => { const seen = new Set<string>(); return roots.map((t) => renderTask(t, childrenOf, 0, seen)); })()}
+                          : (() => { const seen = new Set<string>(); return <div style={{ marginLeft: 9, borderLeft: '2px solid #cbd5e1' }}>{roots.map((t) => branch(t, childrenOf, seen))}</div>; })()}
                       </div>
                     )}
                   </div>
@@ -355,7 +360,6 @@ export default function WorkflowCanvas() {
             <input type="checkbox" checked={sel.active} onChange={(e) => { const next = { ...sel, active: e.target.checked }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} />
             Active
           </label>
-          <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>Changes save automatically.</p>
         </div>
       )}
     </div>
