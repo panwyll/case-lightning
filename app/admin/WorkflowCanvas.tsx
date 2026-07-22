@@ -190,6 +190,22 @@ export default function WorkflowCanvas() {
     return { x, y };
   }, [drag]);
 
+  // Pills grow with their (wrapping) text, so arrow starts and the connection handle
+  // must anchor to each pill's REAL height — a constant would leave the arrow floating
+  // above the circle on a two-line task. Measured after layout; converges (only sets
+  // state when a height actually changed).
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const next: Record<string, number> = {};
+    document.querySelectorAll<HTMLElement>('.wf-task[data-taskid]').forEach((el) => { next[el.getAttribute('data-taskid')!] = el.offsetHeight; });
+    setHeights((prev) => {
+      const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+      for (const k of keys) if (prev[k] !== next[k]) return next;
+      return prev;
+    });
+  }, [templates, open, stages, edges]);
+  const heightOf = (id: string) => heights[id] ?? PILL_H;
+
   // ── Mutations ───────────────────────────────────────────────────────────────
   const addTask = async (stageKey: string, nodeKind: 'TASK' | 'EMAIL' = 'TASK') => {
     const list = tasksByStage[stageKey] ?? [];
@@ -313,7 +329,7 @@ export default function WorkflowCanvas() {
     const rect = canvas?.getBoundingClientRect();
     gesture.current = { kind, id: t.id, stageKey: t.stage, startX: e.clientX, startY: e.clientY, rectLeft: rect?.left ?? 0, rectTop: rect?.top ?? 0, dx: 0, dy: 0, moved: false };
     if (kind === 'drag') setDrag({ id: t.id, dx: 0, dy: 0 });
-    else { const p = posOf(t); setWire({ from: t.id, stageKey: t.stage, sx: p.x + PILL_W / 2, sy: p.y + PILL_H, cx: p.x + PILL_W / 2, cy: p.y + PILL_H }); }
+    else { const p = posOf(t); const sy = p.y + heightOf(t.id); setWire({ from: t.id, stageKey: t.stage, sx: p.x + PILL_W / 2, sy, cx: p.x + PILL_W / 2, cy: sy }); }
   };
 
   const taskBox = (t: Template) => {
@@ -355,7 +371,7 @@ export default function WorkflowCanvas() {
         {se.map((e) => {
           const a = byId(e.from_template_id), b = byId(e.to_template_id); if (!a || !b) return null;
           const pa = posOf(a), pb = posOf(b);
-          const x1 = pa.x + PILL_W / 2, y1 = pa.y + PILL_H, x2 = pb.x + PILL_W / 2, y2 = pb.y;
+          const x1 = pa.x + PILL_W / 2, y1 = pa.y + heightOf(a.id), x2 = pb.x + PILL_W / 2, y2 = pb.y;
           const dy = Math.max(18, Math.abs(y2 - y1) * 0.4);
           const d = `M ${x1} ${y1} C ${x1} ${y1 + dy} ${x2} ${y2 - dy} ${x2} ${y2}`;
           const key = `${e.from_template_id}-${e.to_template_id}`;
@@ -410,7 +426,7 @@ export default function WorkflowCanvas() {
                 const isOpen = !!open[s.key];
                 const color = stageColor(s.key);
                 let w = 480, h = 130;
-                for (const t of list) { const p = posOf(t); w = Math.max(w, p.x + PILL_W + PAD); h = Math.max(h, p.y + PILL_H + PAD + 14); }
+                for (const t of list) { const p = posOf(t); w = Math.max(w, p.x + PILL_W + PAD); h = Math.max(h, p.y + heightOf(t.id) + PAD + 14); }
                 return (
                   <Fragment key={s.id}>
                     <div className={`wf-stage${isOpen ? ' open' : ''}`} style={{ borderLeftColor: color }}>
