@@ -55,8 +55,8 @@ const WF_CSS = `
 .wf-name{font-size:14.5px;font-weight:700;color:#0f172a;flex:1;min-width:0;border:1px solid transparent;border-radius:6px;background:transparent;padding:2px 4px;font-family:inherit}
 .wf-name:focus{outline:none;border-color:#d0d5dd;background:#fff}
 .wf-count{font-size:12px;color:#94a3b8;white-space:nowrap}
-.wf-chev{display:inline-flex;align-items:center;justify-content:center;flex:none;width:26px;height:26px;border-radius:7px;border:none;background:#f1f5f9;color:#475569;font-size:14px;cursor:pointer;transition:transform .12s}
-.wf-chev:hover{background:#e2e8f0}
+.wf-chev{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;border:none;background:none;color:#334155;font-size:20px;line-height:1;cursor:pointer;transition:transform .12s}
+.wf-chev:hover{color:#5A27E0}
 .wf-chev.open{transform:rotate(90deg)}
 .wf-ctrls{display:flex;gap:1px;opacity:0;transition:opacity .1s}
 .wf-stage:hover .wf-ctrls{opacity:1}
@@ -92,6 +92,7 @@ export default function WorkflowCanvas() {
   const [selected, setSelected] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [dragId, setDragId] = useState<string | null>(null);   // task being dragged (visual)
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null); // cursor pos for the ghost
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const dragFrom = useRef<{ id: string; x: number; y: number } | null>(null); // mousedown origin
   const didDrag = useRef(false); // set on a real drag, so the trailing click doesn't also select
@@ -224,7 +225,7 @@ export default function WorkflowCanvas() {
       onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); dragFrom.current = { id: t.id, x: e.clientX, y: e.clientY }; didDrag.current = false; }}
       onMouseEnter={() => { if (dragId && dragId !== t.id && byId(dragId)?.stage === t.stage) setDropTarget(t.id); }}
       onMouseLeave={() => setDropTarget((d) => (d === t.id ? null : d))}
-      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDropTarget(null); void addPrereq(t.id, from); } }}
+      onMouseUp={() => { const from = dragFrom.current?.id; if (from && from !== t.id && byId(from)?.stage === t.stage) { didDrag.current = true; dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null); void addPrereq(t.id, from); } }}
       onClick={(e) => { e.stopPropagation(); if (didDrag.current) { didDrag.current = false; return; } setSelected(t.id === selected ? null : t.id); }}
       style={{ opacity: t.active ? 1 : 0.5 }}
       title="Drag onto another task to make this run after it"
@@ -264,17 +265,17 @@ export default function WorkflowCanvas() {
           <div style={{ ...card, padding: '28px 12px' }}>
             <div
               className="wf-flow"
-              onMouseMove={(e) => { const f = dragFrom.current; if (f && !dragId && Math.hypot(e.clientX - f.x, e.clientY - f.y) > 5) setDragId(f.id); }}
+              onMouseMove={(e) => { const f = dragFrom.current; if (f) { if (!dragId && Math.hypot(e.clientX - f.x, e.clientY - f.y) > 5) setDragId(f.id); setDragPos({ x: e.clientX, y: e.clientY }); } }}
               onMouseUp={(e) => {
                 const from = dragFrom.current?.id;
-                dragFrom.current = null; setDragId(null); setDropTarget(null);
+                dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null);
                 if (!from) return;
                 // Read the drop target synchronously from the DOM (state updates land too late for a fast drag).
                 const box = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest('[data-taskid]');
                 const to = box?.getAttribute('data-taskid');
                 if (to && to !== from && byId(from)?.stage === byId(to)?.stage) { didDrag.current = true; void addPrereq(to, from); }
               }}
-              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDropTarget(null); }}
+              onMouseLeave={() => { dragFrom.current = null; setDragId(null); setDragPos(null); setDropTarget(null); }}
             >
               {stages.map((s, i) => {
                 const list = tasksByStage[s.key] ?? [];
@@ -323,6 +324,18 @@ export default function WorkflowCanvas() {
           </div>
         )}
       </div>
+
+      {/* Drag ghost — the pill lifts and follows the cursor while dragging. */}
+      {dragId && dragPos && (() => {
+        const t = byId(dragId);
+        if (!t) return null;
+        return (
+          <div style={{ position: 'fixed', left: dragPos.x + 12, top: dragPos.y + 8, width: 230, pointerEvents: 'none', zIndex: 50, background: '#fff', border: '1.5px solid #5A27E0', borderRadius: 9, boxShadow: '0 10px 28px rgba(90,39,224,0.28)', padding: '8px 11px', transform: 'rotate(-1.5deg)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1e293b' }}>{t.detail}</div>
+            <div style={{ fontSize: 10.5, color: '#5A27E0', marginTop: 2, fontWeight: 700 }}>drop onto a task to run after it</div>
+          </div>
+        );
+      })()}
 
       {/* Selected-task editor — a floating panel so opening/closing it never reflows the flow. */}
       {sel && (
