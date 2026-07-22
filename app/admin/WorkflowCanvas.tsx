@@ -42,6 +42,14 @@ interface Member { id: string; name: string; role: string }
 const NODE_W = 190;
 const NODE_H = 74;
 
+// Flow-chart edge: a cubic bezier that leaves the source's right port horizontally
+// and enters the target's left port horizontally, so the vertical travel happens in
+// the empty gaps between stage columns instead of slicing diagonally across boxes.
+function edgePath(p1: { x: number; y: number }, p2: { x: number; y: number }): string {
+  const dx = Math.max(30, Math.abs(p2.x - p1.x) * 0.4);
+  return `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y} ${p2.x - dx} ${p2.y} ${p2.x} ${p2.y}`;
+}
+
 export default function WorkflowCanvas() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -343,8 +351,11 @@ export default function WorkflowCanvas() {
                 pointer-transparent so only the line strokes themselves are clickable. */}
             <svg width={2000} height={1200} style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 5 }}>
               <defs>
-                <marker id="wf-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                <marker id="wf-arrow" markerWidth="9" markerHeight="9" refX="6.5" refY="4" orient="auto">
                   <path d="M0 0 L8 4 L0 8 z" fill="#94a3b8" />
+                </marker>
+                <marker id="wf-arrow-sel" markerWidth="9" markerHeight="9" refX="6.5" refY="4" orient="auto">
+                  <path d="M0 0 L8 4 L0 8 z" fill="#5A27E0" />
                 </marker>
               </defs>
               {edges.map((e) => {
@@ -352,18 +363,25 @@ export default function WorkflowCanvas() {
                 const b = templates.find((t) => t.id === e.to_template_id);
                 if (!a || !b) return null;
                 const p1 = outPt(a), p2 = inPt(b);
+                const d = edgePath(p1, p2);
+                const active = !!selected && (e.from_template_id === selected || e.to_template_id === selected);
+                const dim = !!selected && !active;
                 return (
-                  <line key={`${e.from_template_id}-${e.to_template_id}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                    stroke="#94a3b8" strokeWidth={2} markerEnd="url(#wf-arrow)"
-                    style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                    onClick={(ev) => { ev.stopPropagation(); void deleteEdge(e.from_template_id, e.to_template_id); }}>
-                    <title>Click to remove dependency</title>
-                  </line>
+                  <g key={`${e.from_template_id}-${e.to_template_id}`} opacity={dim ? 0.25 : 1}>
+                    {/* Wide invisible hit-path so the thin curve is easy to click-to-delete. */}
+                    <path d={d} fill="none" stroke="transparent" strokeWidth={14}
+                      style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                      onClick={(ev) => { ev.stopPropagation(); void deleteEdge(e.from_template_id, e.to_template_id); }}>
+                      <title>Click to remove dependency</title>
+                    </path>
+                    <path d={d} fill="none" stroke={active ? '#5A27E0' : '#94a3b8'} strokeWidth={active ? 2.5 : 1.75}
+                      strokeLinecap="round" markerEnd={`url(#wf-arrow${active ? '-sel' : ''})`} style={{ pointerEvents: 'none' }} />
+                  </g>
                 );
               })}
               {linking && (() => {
                 const a = templates.find((t) => t.id === linking.from); if (!a) return null; const p1 = outPt(a);
-                return <line x1={p1.x} y1={p1.y} x2={linking.x} y2={linking.y} stroke="#5A27E0" strokeWidth={2} strokeDasharray="4 3" markerEnd="url(#wf-arrow)" />;
+                return <path d={edgePath(p1, { x: linking.x, y: linking.y })} fill="none" stroke="#5A27E0" strokeWidth={2} strokeDasharray="5 4" strokeLinecap="round" markerEnd="url(#wf-arrow-sel)" />;
               })()}
             </svg>
 
