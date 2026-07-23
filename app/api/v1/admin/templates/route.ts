@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { upsertChunks } from '@/lib/server/ai';
-import { rowToSafeTemplate } from '@/lib/server/text';
+import { rowToSafeTemplate, uniqueName } from '@/lib/server/text';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -43,12 +43,16 @@ export async function POST(req: NextRequest) {
       })
       .parse(await req.json());
 
+    // Keep template names unique within the firm (macOS-style: "name", "name_1", "name_2"…).
+    const taken = (await query<{ name: string }>(`select name from template where tenant_id = $1 and is_active = true`, [user.tenantId])).map((r) => r.name);
+    const name = uniqueName(taken, body.name);
+
     const row = await queryOne<any>(
       `insert into template (tenant_id, name, category, subject_template, body_template, style_tag, policy_tags, created_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8) returning *`,
       [
         user.tenantId,
-        body.name,
+        name,
         body.category,
         body.subjectTemplate ?? null,
         body.bodyTemplate,
@@ -62,7 +66,7 @@ export async function POST(req: NextRequest) {
       tenantId: user.tenantId,
       sourceKind: 'TEMPLATE',
       sourceId: row!.id,
-      text: `${body.name}\n${body.subjectTemplate ?? ''}\n${body.bodyTemplate}`,
+      text: `${name}\n${body.subjectTemplate ?? ''}\n${body.bodyTemplate}`,
       metadata: { category: body.category, styleTag: body.styleTag },
     }).catch(() => {});
 

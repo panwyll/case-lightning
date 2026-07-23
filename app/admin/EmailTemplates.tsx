@@ -50,7 +50,9 @@ export default function EmailTemplates() {
 
   const save = async (t: Tpl) => {
     try {
-      await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateIds: t.attachDocTemplateIds ?? [] }) });
+      const r = await api<{ template: Tpl }>(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateIds: t.attachDocTemplateIds ?? [] }) });
+      // The server may have de-duplicated the name (macOS-style _1); reflect what it stored.
+      if (r?.template?.name && r.template.name !== t.name) setTemplates((ts) => ts.map((x) => x.id === t.id ? { ...x, name: r.template.name } : x));
       setSaved(true); setTimeout(() => setSaved(false), 1200);
     } catch (e: any) { setErr(e?.message || 'Could not save.'); }
   };

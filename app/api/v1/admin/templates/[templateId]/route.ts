@@ -2,8 +2,8 @@ import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
-import { queryOne } from '@/lib/server/db';
-import { rowToSafeTemplate } from '@/lib/server/text';
+import { query, queryOne } from '@/lib/server/db';
+import { rowToSafeTemplate, uniqueName } from '@/lib/server/text';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -27,6 +27,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ te
       })
       .parse(await req.json());
 
+    // Keep names unique within the firm (macOS-style suffix), ignoring this template's own row.
+    let name = body.name;
+    if (name !== undefined) {
+      const taken = (await query<{ name: string }>(`select name from template where tenant_id = $1 and is_active = true and id <> $2`, [user.tenantId, templateId])).map((r) => r.name);
+      name = uniqueName(taken, name);
+    }
+
     // Attachments set separately (an array of doc templates), guarded so a deploy before
     // migration 055 still saves the rest of the template.
     if (body.attachDocTemplateIds !== undefined) {
@@ -48,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ te
          updated_at = now()
        where id = $8 and tenant_id = $9 returning *`,
       [
-        body.name ?? null,
+        name ?? null,
         body.category ?? null,
         body.subjectTemplate ?? null,
         body.bodyTemplate ?? null,
