@@ -45,7 +45,7 @@ export interface TaskEdge {
 const TPL_BASE = 'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
 const TPL_EMAIL = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
 const TPL_COLS = `${TPL_EMAIL}, doc_template_id`;
-export interface EmailTemplateLite { id: string; name: string; subject_template: string | null }
+export interface EmailTemplateLite { id: string; name: string; subject_template: string | null; attach_doc_template_id: string | null }
 export interface DocTemplateLite { id: string; name: string }
 
 // Read task_template rows, degrading gracefully if a migration hasn't run: doc column (052) →
@@ -117,9 +117,12 @@ export async function getWorkflow(
     return { templates: [], edges: [], emailTemplates: [], docTemplates: [] }; // not migrated (039) yet
   }
   try {
-    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
+    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template, attach_doc_template_id from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
   } catch {
-    /* template table always exists — ignore */
+    // Pre-migration 054 — no attachment column; read without it.
+    try {
+      emailTemplates = (await query<any>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId])).map((e) => ({ ...e, attach_doc_template_id: null }));
+    } catch { /* template table always exists — ignore */ }
   }
   try {
     docTemplates = await query<DocTemplateLite>(`select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
@@ -194,10 +197,11 @@ export async function saveTemplate(
       [id, input.nodeKind ?? 'TASK', input.nodeKind === 'EMAIL' ? input.emailTemplateId ?? null : null, input.nodeKind === 'EMAIL' ? input.sendMode ?? 'DRAFT' : null, user.tenantId]
     ).catch(() => {});
     // Doc column (052) separately guarded so a pre-052 deploy still saves email/task nodes.
-    // A DOC node generates+files it; an EMAIL node with a doc set attaches it to the email.
+    // Only DOC nodes carry a doc template here (generate+file). Email attachments live on the
+    // email template itself (template.attach_doc_template_id), not the node.
     await query(
       `update task_template set doc_template_id=$2 where id=$1 and tenant_id=$3`,
-      [id, input.nodeKind === 'DOC' || input.nodeKind === 'EMAIL' ? input.docTemplateId ?? null : null, user.tenantId]
+      [id, input.nodeKind === 'DOC' ? input.docTemplateId ?? null : null, user.tenantId]
     ).catch(() => {});
   }
   return fetchTemplate(user.tenantId, id);
@@ -327,8 +331,8 @@ async function matterEmailVars(tenantId: string, matterId: string): Promise<Reco
  *  actually send it (SEND, only when a recipient is known — otherwise it falls back to a draft). */
 async function fireEmailNode(userId: string, tenantId: string, matterId: string, t: TaskTemplate): Promise<void> {
   if (!t.email_template_id) return;
-  const tpl = await queryOne<{ name: string; subject_template: string | null; body_template: string }>(
-    `select name, subject_template, body_template from template where id=$1 and tenant_id=$2`,
+  const tpl = await queryOne<{ name: string; subject_template: string | null; body_template: string; attach_doc_template_id?: string | null }>(
+    `select * from template where id=$1 and tenant_id=$2`,
     [t.email_template_id, tenantId]
   ).catch(() => null);
   if (!tpl) return;
@@ -347,12 +351,12 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   const wantsSend = t.send_mode === 'SEND' && !!recipient;
   const draft = await createDraftMessage(userId, subject, body, wantsSend && recipient ? [recipient] : []).catch(() => null);
   if (!draft?.id) return;
-  // The killer combo: generate the configured document and attach it to this email, so an
-  // "Issue client care letter" node produces the letter AND the covering email carrying it.
-  if (t.doc_template_id) {
+  // The killer combo: if this email TEMPLATE carries a document, generate it from the matter
+  // and attach it — so a "Client care letter" template always sends the letter with the email.
+  if (tpl.attach_doc_template_id) {
     try {
       const isPremium = await isPremiumTenant(tenantId).catch(() => false);
-      const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, t.doc_template_id, isPremium);
+      const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, tpl.attach_doc_template_id, isPremium);
       await addAttachmentToMessage(userId, draft.id, fileName, buffer, DOCX_CT);
     } catch { /* attachment is best-effort — the email still goes out without it */ }
   }

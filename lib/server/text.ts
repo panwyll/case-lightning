@@ -29,6 +29,7 @@ export function rowToSafeTemplate(row: any) {
     bodyTemplate: row.body_template,
     styleTag: row.style_tag,
     policyTags: row.policy_tags,
+    attachDocTemplateId: row.attach_doc_template_id ?? null,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

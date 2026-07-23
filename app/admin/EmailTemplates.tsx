@@ -14,7 +14,8 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
-interface Tpl { id: string; name: string; category: string; subjectTemplate: string | null; bodyTemplate: string; styleTag: string; isActive?: boolean }
+interface Tpl { id: string; name: string; category: string; subjectTemplate: string | null; bodyTemplate: string; styleTag: string; attachDocTemplateId?: string | null; isActive?: boolean }
+interface DocTpl { id: string; name: string }
 
 const STYLES = ['NEUTRAL', 'FIRM', 'CHASING'];
 // The {{placeholders}} that fill from matter data (mirrors buildMatterVars).
@@ -28,13 +29,18 @@ const fill = (s: string) => (s || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) =>
 
 export default function EmailTemplates() {
   const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [docTemplates, setDocTemplates] = useState<DocTpl[]>([]);
   const [sel, setSel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
   const load = useCallback(async () => {
-    try { setTemplates((await api<{ templates: Tpl[] }>('/admin/templates')).templates ?? []); }
+    try {
+      const r = await api<{ templates: Tpl[]; docTemplates: DocTpl[] }>('/admin/templates');
+      setTemplates(r.templates ?? []);
+      setDocTemplates(r.docTemplates ?? []);
+    }
     catch (e: any) { setErr(e?.message || 'Could not load templates.'); }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -44,7 +50,7 @@ export default function EmailTemplates() {
 
   const save = async (t: Tpl) => {
     try {
-      await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag }) });
+      await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateId: t.attachDocTemplateId ?? null }) });
       setSaved(true); setTimeout(() => setSaved(false), 1200);
     } catch (e: any) { setErr(e?.message || 'Could not save.'); }
   };
@@ -113,6 +119,14 @@ export default function EmailTemplates() {
                   <button key={k} onClick={() => insertPlaceholder(k)} title={`Sample: ${SAMPLE[k]}`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
                 ))}
               </div>
+              <label style={lbl}>Attach document</label>
+              <select value={cur.attachDocTemplateId ?? ''} onChange={(e) => { const v = e.target.value || null; set({ attachDocTemplateId: v }); save({ ...cur, attachDocTemplateId: v }); }} style={{ ...input, width: 320 }}>
+                <option value="">— none —</option>
+                {docTemplates.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {cur.attachDocTemplateId
+                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}>📎 Whenever this email is sent from the workflow, this document is generated from the matter and attached.</p>
+                : docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '6px 0 0' }}>No document templates yet — add one in Doc packs to attach it here.</p>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
                 {saved && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>}

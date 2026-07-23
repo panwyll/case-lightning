@@ -17,7 +17,12 @@ export async function GET() {
     const rows = await query<any>(`select * from template where tenant_id = $1 order by updated_at desc`, [
       user.tenantId,
     ]);
-    return ok({ templates: rows.map(rowToSafeTemplate) });
+    // Document templates a firm can attach to an email template.
+    const docTemplates = await query<{ id: string; name: string }>(
+      `select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`,
+      [user.tenantId]
+    ).catch(() => []);
+    return ok({ templates: rows.map(rowToSafeTemplate), docTemplates });
   } catch (error) {
     return fail(error);
   }
