@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
+import Onboarding from './Onboarding';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
@@ -135,10 +136,11 @@ function describeAudit(row: any): string {
   }
 }
 
-type TabKey = 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
+  getstarted: { label: 'Get started', subtitle: '' },
   mywork: { label: 'My work', subtitle: '' },
   billing: { label: 'Billing & referrals', subtitle: '' },
   board: { label: 'Matter board', subtitle: '' },
@@ -156,6 +158,8 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
+  // Shown only until the firm finishes onboarding (filtered out below once complete).
+  { label: 'Start', tabs: ['getstarted'] },
   { label: 'Work', tabs: ['mywork', 'workload'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
   // drives it, and automations (automatic + manual) are how you act on it.
@@ -168,6 +172,7 @@ const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
 
 // Small icon per tab — the nav reads at a glance, Monday/Jira style.
 const TAB_ICON: Record<TabKey, string> = {
+  getstarted: '🚀',
   mywork: '☑️',
   board: '🗂️',
   workload: '⚖️',
@@ -185,7 +190,7 @@ const TAB_ICON: Record<TabKey, string> = {
 const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['getstarted', 'board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
@@ -277,6 +282,10 @@ export default function AdminPage() {
   const visibleTabs = me && !isAdmin ? TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k)) : TAB_KEYS;
 
   const [tab, setTab] = useState<TabKey>('mywork');
+  // Onboarding progress (admins only) — drives the "Get started" nav item + auto-open.
+  const [onb, setOnb] = useState<{ completed: number; total: number; onboarded: boolean } | null>(null);
+  const onbAutoNav = useRef(false);
+  const showGetStarted = isAdmin && !!onb && !onb.onboarded;
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
   // so the web app is operable day-to-day without the add-in.
@@ -380,6 +389,20 @@ export default function AdminPage() {
   useEffect(() => {
     if (me && !isAdmin && ADMIN_ONLY.includes(tab)) setTab('mywork');
   }, [me, isAdmin, tab]);
+  // Load onboarding progress for admins; open "Get started" first for a firm that hasn't finished.
+  useEffect(() => {
+    if (!isAdmin) return;
+    let cancelled = false;
+    api<{ completed: number; total: number; onboarded: boolean }>('/admin/onboarding')
+      .then((s) => {
+        if (cancelled) return;
+        setOnb({ completed: s.completed, total: s.total, onboarded: s.onboarded });
+        const hasTabParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab');
+        if (!s.onboarded && !onbAutoNav.current && !hasTabParam) { onbAutoNav.current = true; setTab('getstarted'); }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isAdmin]);
   function go(t: TabKey) {
     setTab(t);
     if (typeof window !== 'undefined') window.history.replaceState(null, '', `/admin?tab=${t}`);
@@ -882,7 +905,8 @@ export default function AdminPage() {
         {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
         <nav style={{ width: 208, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '14px 10px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           {NAV_GROUPS.map((grp) => {
-            const items = grp.tabs.filter((k) => visibleTabs.includes(k));
+            // "Get started" only appears while the firm is still onboarding.
+            const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
             if (!items.length) return null;
             return (
               <div key={grp.label} style={{ marginBottom: 22 }}>
@@ -890,7 +914,10 @@ export default function AdminPage() {
                 {items.map((k) => (
                   <button key={k} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
                     <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center', filter: tab === k ? 'none' : 'grayscale(0.4)', opacity: tab === k ? 1 : 0.75 }}>{TAB_ICON[k]}</span>
-                    {TAB_META[k].label}
+                    <span style={{ flex: 1 }}>{TAB_META[k].label}</span>
+                    {k === 'getstarted' && onb && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -904,6 +931,8 @@ export default function AdminPage() {
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
+
+        {tab === 'getstarted' && <Onboarding onNavigate={(t) => go(t as TabKey)} onChange={(s) => setOnb(s)} />}
 
         {tab === 'billing' && (
           !billing ? (

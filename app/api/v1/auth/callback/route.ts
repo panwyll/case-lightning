@@ -7,6 +7,7 @@ import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/se
 import { hasTeamAccess } from '@/lib/server/plan';
 import { syncFirmSeats } from '@/lib/server/billing';
 import { ensureSubscription } from '@/lib/server/subscriptions';
+import { applyInviteOnJoin } from '@/lib/server/invites';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -139,6 +140,10 @@ export async function GET(req: NextRequest) {
     // A new colleague just took a seat → reconcile the Firm per-seat overage. Fire-and-
     // forget: a Stripe hiccup must never block sign-in (no-op off Firm / under the cap).
     if (user.created) void syncFirmSeats(tenant.id).catch(() => {});
+
+    // If this address was invited to the firm, apply the invited role and mark the invite
+    // accepted. No-op when there's no matching invite; never blocks sign-in.
+    await applyInviteOnJoin(tenant.id, user.id, email).catch(() => {});
 
     // Arm (or self-heal) the auto-triage inbox subscription right away. Add-in users get
     // this on taskpane open, but a web-only sign-in has no taskpane — without this they'd

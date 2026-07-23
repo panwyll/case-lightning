@@ -35,6 +35,7 @@ interface Me {
   email: string;
   displayName: string | null;
   role: string;
+  onboarded?: boolean;
 }
 interface DraftPackage {
   subject: string;
@@ -271,6 +272,7 @@ function hasSignInHint(): boolean {
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
+  const [setupNudgeHidden, setSetupNudgeHidden] = useState(false);
   const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean; usage?: { used: number; cap: number | null; hoursSavedThisMonth: number } } | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showCreateMatter, setShowCreateMatter] = useState(false);
@@ -2007,6 +2009,16 @@ export default function Taskpane() {
       {/* First run: bring the firm's existing cases in before anything else. */}
       {me && !setupView && (
         <>
+          {/* Finish-setup nudge — admins whose firm hasn't completed onboarding. Opens the
+              web "Get started" checklist. Dismissible for the session. */}
+          {me.role === 'ADMIN' && me.onboarded === false && !setupNudgeHidden && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#EDE7FB', border: '1px solid #d8ccf7', borderRadius: 10, padding: '8px 10px', margin: '0 0 8px' }}>
+              <span aria-hidden style={{ fontSize: 14 }}>🚀</span>
+              <span style={{ flex: 1, fontSize: 12, color: '#3b1f8a', fontWeight: 600 }}>Finish setting up your firm</span>
+              <button onClick={() => openAdmin('getstarted')} style={{ fontSize: 11.5, fontWeight: 700, border: 'none', background: '#5A27E0', color: '#fff', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>Open</button>
+              <button onClick={() => setSetupNudgeHidden(true)} aria-label="Dismiss" style={{ border: 'none', background: 'none', color: '#7c6bb0', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
+            </div>
+          )}
           {/* ── Hero: one compact status pill — a coloured dot (green = certain,
                 amber = unsure, red = none/error), the matter name, and an expand
                 arrow. Always tappable to open the link/create drawer. ── */}

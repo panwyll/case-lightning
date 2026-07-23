@@ -409,6 +409,19 @@ export async function setMessageCategory(userId: string, messageId: string, cate
   await client.api(`/me/messages/${messageId}`).patch({ categories: [category] });
 }
 
+/** Send an email immediately on the user's behalf (no draft). Used for team invites. */
+export async function sendMail(userId: string, to: string, subject: string, bodyHtml: string): Promise<void> {
+  const client = await graphClientForUser(userId);
+  await client.api('/me/sendMail').post({
+    message: {
+      subject,
+      body: { contentType: 'HTML', content: bodyHtml },
+      toRecipients: [{ emailAddress: { address: to } }],
+    },
+    saveToSentItems: true,
+  });
+}
+
 /**
  * Sets (or refreshes) an Outlook follow-up flag with a due date on a message. Once set,
  * the message surfaces natively in Outlook's To-Do bar, the Flagged view and Microsoft
