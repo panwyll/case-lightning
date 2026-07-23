@@ -36,9 +36,10 @@ interface Template {
   stage: string;
   detail: string;
   type: string;
-  node_kind?: 'TASK' | 'EMAIL';
+  node_kind?: 'TASK' | 'EMAIL' | 'DOC';
   email_template_id?: string | null;
   send_mode?: 'DRAFT' | 'SEND' | null;
+  doc_template_id?: string | null;
   assignee_kind: 'ROLE' | 'USER';
   assignee_role: string | null;
   assignee_user_id: string | null;
@@ -120,6 +121,7 @@ export default function WorkflowCanvas() {
   const [users, setUsers] = useState<Member[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject_template: string | null }>>([]);
+  const [docTemplates, setDocTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -139,7 +141,7 @@ export default function WorkflowCanvas() {
     try {
       let stageList: Stage[] = [];
       try { stageList = (await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []; } catch { /* stages optional */ }
-      const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[]; emailTemplates: any[] }>('/admin/workflow');
+      const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[]; emailTemplates: any[]; docTemplates: any[] }>('/admin/workflow');
       let tmpl = r.templates ?? [];
       const eds = r.edges ?? [];
 
@@ -164,6 +166,7 @@ export default function WorkflowCanvas() {
       setEdges(eds);
       setUsers(r.users ?? []);
       setEmailTemplates(r.emailTemplates ?? []);
+      setDocTemplates(r.docTemplates ?? []);
       setErr(null);
     } catch (e: any) {
       setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
@@ -207,12 +210,13 @@ export default function WorkflowCanvas() {
   const heightOf = (id: string) => heights[id] ?? PILL_H;
 
   // ── Mutations ───────────────────────────────────────────────────────────────
-  const addTask = async (stageKey: string, nodeKind: 'TASK' | 'EMAIL' = 'TASK') => {
+  const addTask = async (stageKey: string, nodeKind: 'TASK' | 'EMAIL' | 'DOC' = 'TASK') => {
     const list = tasksByStage[stageKey] ?? [];
     const posY = list.length ? Math.max(...list.map((t) => t.pos_y)) + PILL_H + GAP_Y : PAD;
     try {
       const body: any = { stage: stageKey, assigneeKind: 'ROLE', assigneeRole: 'OWNER', posX: PAD, posY };
       if (nodeKind === 'EMAIL') { body.detail = 'Send email'; body.nodeKind = 'EMAIL'; body.sendMode = 'DRAFT'; body.emailTemplateId = emailTemplates[0]?.id ?? null; }
+      else if (nodeKind === 'DOC') { body.detail = 'Generate document'; body.nodeKind = 'DOC'; body.docTemplateId = docTemplates[0]?.id ?? null; }
       else body.detail = 'New task';
       const r = await api<{ template: Template }>('/admin/workflow', { method: 'POST', body: JSON.stringify(body) });
       setTemplates((ts) => [...ts, r.template]);
@@ -347,11 +351,17 @@ export default function WorkflowCanvas() {
         onMouseDown={(e) => { if (e.button !== 0) return; e.stopPropagation(); startGesture('drag', t, e); }}
         title="Drag to move · drag the dot below to link to another task"
       >
-        <div className="wf-t">{t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}{t.detail}</div>
+        <div className="wf-t">
+          {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
+          {t.node_kind === 'DOC' && <span style={{ fontSize: 9, fontWeight: 800, color: '#d97706', marginRight: 5 }}>📄</span>}
+          {t.detail}
+        </div>
         <div className="wf-m">
           {t.node_kind === 'EMAIL'
-            ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}`
-            : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
+            ? `${emailTemplates.find((e) => e.id === t.email_template_id)?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}${t.doc_template_id ? ' · 📎 doc' : ''}`
+            : t.node_kind === 'DOC'
+              ? `${docTemplates.find((d) => d.id === t.doc_template_id)?.name ?? 'no template'} · → Case files`
+              : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
         </div>
         <div className="wf-handle" title="Drag to the next task to link them" onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); startGesture('wire', t, e); }} />
       </div>
@@ -459,6 +469,7 @@ export default function WorkflowCanvas() {
                           <div className="wf-addbar">
                             <button className="wf-add" onClick={() => addTask(s.key, 'TASK')}>+ task</button>
                             <button className="wf-add" style={{ color: '#0369a1', borderColor: '#bae6fd' }} onClick={() => addTask(s.key, 'EMAIL')}>+ ✉ email</button>
+                            <button className="wf-add" style={{ color: '#b45309', borderColor: '#fde68a' }} onClick={() => addTask(s.key, 'DOC')}>+ 📄 document</button>
                           </div>
                         </div>
                       )}
@@ -476,11 +487,11 @@ export default function WorkflowCanvas() {
       {sel && (
         <div style={{ ...card, position: 'fixed', right: 18, top: 92, width: 300, flex: 'none', maxHeight: '82vh', overflowY: 'auto', zIndex: 20, boxShadow: '0 12px 40px rgba(16,24,40,0.2)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : 'Edit task'}</strong>
+            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : sel.node_kind === 'DOC' ? '📄 Edit document' : 'Edit task'}</strong>
             <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
             <button onClick={() => setSelected(null)} title="Close" aria-label="Close" style={{ width: 26, height: 26, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, cursor: 'pointer', color: '#64748b', fontSize: 13, lineHeight: 1 }}>✕</button>
           </div>
-          <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
+          <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : sel.node_kind === 'DOC' ? 'Label' : 'Task'}</label>
           <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
           <label style={lbl}>Stage</label>
           <select value={sel.stage} onChange={(e) => {
@@ -532,9 +543,26 @@ export default function WorkflowCanvas() {
               </select>
               {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
               {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
+              <label style={lbl}>Attach document (optional)</label>
+              <select value={sel.doc_template_id ?? ''} onChange={(e) => { const v = e.target.value || null; const next = { ...sel, doc_template_id: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                <option value="">— none —</option>
+                {docTemplates.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              {sel.doc_template_id && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>The document is generated from the matter and attached to this email.</p>}
             </>
           )}
-          {sel.node_kind !== 'EMAIL' && <>
+          {sel.node_kind === 'DOC' && (
+            <>
+              <label style={lbl}>Document template</label>
+              <select value={sel.doc_template_id ?? ''} onChange={(e) => { const v = e.target.value || null; const next = { ...sel, doc_template_id: v }; setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x)); saveNode(next); }} style={input}>
+                <option value="">— pick a template —</option>
+                {docTemplates.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+              <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>When this stage is reached (and any prerequisites are done), the template is filled from the matter and filed in its Case files.</p>
+              {docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No document templates yet — add one in the Document templates area.</p>}
+            </>
+          )}
+          {sel.node_kind !== 'EMAIL' && sel.node_kind !== 'DOC' && <>
             <label style={lbl}>Assign to</label>
             <select value={sel.assignee_kind === 'USER' ? `u:${sel.assignee_user_id}` : `r:${sel.assignee_role}`}
               onChange={(e) => {
@@ -574,6 +602,7 @@ function templateBody(t: Template) {
     id: t.id, stage: t.stage, detail: t.detail, assigneeKind: t.assignee_kind,
     assigneeRole: t.assignee_role, assigneeUserId: t.assignee_user_id, dueOffsetDays: t.due_offset_days,
     nodeKind: t.node_kind ?? 'TASK', emailTemplateId: t.email_template_id ?? null, sendMode: t.send_mode ?? null,
+    docTemplateId: t.doc_template_id ?? null,
     posX: Math.round(t.pos_x), posY: Math.round(t.pos_y), active: t.active,
   };
 }

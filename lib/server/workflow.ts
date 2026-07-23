@@ -9,21 +9,25 @@
  * simply behaves as "no workflow configured".
  */
 import { query, queryOne, transaction } from './db';
-import { createDraftMessage } from './graph';
+import { createDraftMessage, addAttachmentToMessage, uploadToMatterFolder } from './graph';
 import { scheduleSend } from './scheduledSend';
-import { buildMatterVars } from './doc-templates';
+import { buildMatterVars, generateTemplateForMatter } from './doc-templates';
+import { isPremiumTenant } from './plan';
 import { addDraftReady } from './worklist';
 import { DEFAULT_TASKS, DEFAULT_DEPS } from './process-model';
 import type { SessionUser } from './types';
+
+const DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export interface TaskTemplate {
   id: string;
   stage: string;
   detail: string;
   type: string;
-  node_kind: 'TASK' | 'EMAIL';
+  node_kind: 'TASK' | 'EMAIL' | 'DOC';
   email_template_id: string | null;
   send_mode: 'DRAFT' | 'SEND' | null;
+  doc_template_id: string | null;
   assignee_kind: 'ROLE' | 'USER';
   assignee_role: string | null;
   assignee_user_id: string | null;
@@ -39,8 +43,25 @@ export interface TaskEdge {
 }
 
 const TPL_BASE = 'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
-const TPL_COLS = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
+const TPL_EMAIL = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
+const TPL_COLS = `${TPL_EMAIL}, doc_template_id`;
 export interface EmailTemplateLite { id: string; name: string; subject_template: string | null }
+export interface DocTemplateLite { id: string; name: string }
+
+// Read task_template rows, degrading gracefully if a migration hasn't run: doc column (052) →
+// email columns (043) → base only. Pass the `where … order by …` suffix and its params.
+async function selectTemplates(suffix: string, params: any[]): Promise<TaskTemplate[]> {
+  const run = (cols: string) => query<TaskTemplate>(`select ${cols} from task_template ${suffix}`, params);
+  try {
+    return await run(TPL_COLS);
+  } catch {
+    try {
+      return (await run(TPL_EMAIL)).map((t) => ({ ...t, doc_template_id: null }));
+    } catch {
+      return (await run(TPL_BASE)).map((t) => ({ ...t, node_kind: 'TASK' as const, email_template_id: null, send_mode: null, doc_template_id: null }));
+    }
+  }
+}
 
 // The default conveyancing task DAG (DEFAULT_TASKS / DEFAULT_DEPS) lives in the
 // canonical process-model.ts, alongside the stage list and the email signals.
@@ -84,37 +105,32 @@ export async function ensureDefaultWorkflow(tenantId: string, force = false): Pr
 
 export async function getWorkflow(
   tenantId: string
-): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[]; emailTemplates: EmailTemplateLite[] }> {
+): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[]; emailTemplates: EmailTemplateLite[]; docTemplates: DocTemplateLite[] }> {
   let templates: TaskTemplate[] = [];
   let edges: TaskEdge[] = [];
   let emailTemplates: EmailTemplateLite[] = [];
+  let docTemplates: DocTemplateLite[] = [];
   try {
-    try {
-      templates = await query<TaskTemplate>(`select ${TPL_COLS} from task_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
-    } catch {
-      // Pre-migration 043 — email columns absent; read the base set and default them.
-      const base = await query<TaskTemplate>(`select ${TPL_BASE} from task_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
-      templates = base.map((t) => ({ ...t, node_kind: 'TASK', email_template_id: null, send_mode: null }));
-    }
+    templates = await selectTemplates('where tenant_id = $1 order by sort_order, created_at', [tenantId]);
     edges = await query<TaskEdge>(`select from_template_id, to_template_id from task_template_edge where tenant_id = $1`, [tenantId]);
   } catch {
-    return { templates: [], edges: [], emailTemplates: [] }; // not migrated (039) yet
+    return { templates: [], edges: [], emailTemplates: [], docTemplates: [] }; // not migrated (039) yet
   }
   try {
     emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
   } catch {
     /* template table always exists — ignore */
   }
-  return { templates, edges, emailTemplates };
+  try {
+    docTemplates = await query<DocTemplateLite>(`select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
+  } catch {
+    /* pre-migration 021 (doc_template) — no doc templates to pick from */
+  }
+  return { templates, edges, emailTemplates, docTemplates };
 }
 
 async function fetchTemplate(tenantId: string, id: string): Promise<TaskTemplate> {
-  try {
-    return (await queryOne<TaskTemplate>(`select ${TPL_COLS} from task_template where id=$1 and tenant_id=$2`, [id, tenantId]))!;
-  } catch {
-    const b = (await queryOne<TaskTemplate>(`select ${TPL_BASE} from task_template where id=$1 and tenant_id=$2`, [id, tenantId]))!;
-    return { ...b, node_kind: 'TASK', email_template_id: null, send_mode: null };
-  }
+  return (await selectTemplates('where id=$1 and tenant_id=$2', [id, tenantId]))[0]!;
 }
 
 export async function saveTemplate(
@@ -124,9 +140,10 @@ export async function saveTemplate(
     stage: string;
     detail: string;
     type?: string;
-    nodeKind?: 'TASK' | 'EMAIL';
+    nodeKind?: 'TASK' | 'EMAIL' | 'DOC';
     emailTemplateId?: string | null;
     sendMode?: 'DRAFT' | 'SEND' | null;
+    docTemplateId?: string | null;
     assigneeKind: 'ROLE' | 'USER';
     assigneeRole?: string | null;
     assigneeUserId?: string | null;
@@ -171,10 +188,16 @@ export async function saveTemplate(
     id = row!.id;
   }
   // Email-node fields in a guarded statement so a deploy before migration 043 still saves tasks.
-  if (input.nodeKind !== undefined || input.emailTemplateId !== undefined || input.sendMode !== undefined) {
+  if (input.nodeKind !== undefined || input.emailTemplateId !== undefined || input.sendMode !== undefined || input.docTemplateId !== undefined) {
     await query(
       `update task_template set node_kind=$2, email_template_id=$3, send_mode=$4 where id=$1 and tenant_id=$5`,
       [id, input.nodeKind ?? 'TASK', input.nodeKind === 'EMAIL' ? input.emailTemplateId ?? null : null, input.nodeKind === 'EMAIL' ? input.sendMode ?? 'DRAFT' : null, user.tenantId]
+    ).catch(() => {});
+    // Doc column (052) separately guarded so a pre-052 deploy still saves email/task nodes.
+    // A DOC node generates+files it; an EMAIL node with a doc set attaches it to the email.
+    await query(
+      `update task_template set doc_template_id=$2 where id=$1 and tenant_id=$3`,
+      [id, input.nodeKind === 'DOC' || input.nodeKind === 'EMAIL' ? input.docTemplateId ?? null : null, user.tenantId]
     ).catch(() => {});
   }
   return fetchTemplate(user.tenantId, id);
@@ -324,6 +347,15 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   const wantsSend = t.send_mode === 'SEND' && !!recipient;
   const draft = await createDraftMessage(userId, subject, body, wantsSend && recipient ? [recipient] : []).catch(() => null);
   if (!draft?.id) return;
+  // The killer combo: generate the configured document and attach it to this email, so an
+  // "Issue client care letter" node produces the letter AND the covering email carrying it.
+  if (t.doc_template_id) {
+    try {
+      const isPremium = await isPremiumTenant(tenantId).catch(() => false);
+      const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, t.doc_template_id, isPremium);
+      await addAttachmentToMessage(userId, draft.id, fileName, buffer, DOCX_CT);
+    } catch { /* attachment is best-effort — the email still goes out without it */ }
+  }
   if (wantsSend) {
     // Don't fire instantly — park it on the deferred-send queue (~20 min) so a human
     // can catch/cancel the auto-update before it leaves. The worker sends it when due.
@@ -334,14 +366,25 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   }
 }
 
+/** Fire a DOC node: fill the configured doc template into a real .docx and file it in the
+ *  matter's Case files, then surface it on the worklist so the fee-earner sees it landed. */
+async function fireDocNode(userId: string, tenantId: string, matterId: string, t: TaskTemplate): Promise<void> {
+  if (!t.doc_template_id) return;
+  const matter = await queryOne<{ folder_path: string | null }>(`select folder_path from matter where id=$1 and tenant_id=$2`, [matterId, tenantId]).catch(() => null);
+  if (!matter?.folder_path) return;
+  try {
+    const isPremium = await isPremiumTenant(tenantId).catch(() => false);
+    const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, t.doc_template_id, isPremium);
+    await uploadToMatterFolder(userId, matter.folder_path, fileName, buffer);
+    await addDraftReady({ tenantId, matterId, dedupKey: `wfdoc:${t.id}`, title: `Document generated — ${t.detail}`, detail: fileName }).catch(() => {});
+  } catch { /* best-effort — a failed generation never breaks the stage change */ }
+}
+
 /** A matter reached `stage` — create its (not-yet-created) templates, blocking any with an
  *  unfinished prerequisite. Called from onStageAdvanced. */
 export async function instantiateStageTemplates(user: SessionUser, matterId: string, stage: string): Promise<number> {
   try {
-    const templates = await query<TaskTemplate>(
-      `select ${TPL_COLS} from task_template where tenant_id = $1 and stage = $2 and active = true order by sort_order`,
-      [user.tenantId, stage]
-    );
+    const templates = await selectTemplates('where tenant_id = $1 and stage = $2 and active = true order by sort_order', [user.tenantId, stage]);
     if (!templates.length) return 0;
 
     const existing = new Set(
@@ -362,6 +405,10 @@ export async function instantiateStageTemplates(user: SessionUser, matterId: str
         // Fire now if unblocked; track state via a hidden EMAIL row (DONE = fired, BLOCKED = waiting).
         if (!blocked) await fireEmailNode(user.userId, user.tenantId, matterId, t);
         await createTemplateTask(user.tenantId, matterId, user.userId, { ...t, type: 'EMAIL' }, null, null, blocked ? 'BLOCKED' : 'DONE');
+      } else if (t.node_kind === 'DOC') {
+        // Generate now if unblocked; a hidden DOC row records fired (DONE) / waiting (BLOCKED).
+        if (!blocked) await fireDocNode(user.userId, user.tenantId, matterId, t);
+        await createTemplateTask(user.tenantId, matterId, user.userId, { ...t, type: 'DOC' }, null, null, blocked ? 'BLOCKED' : 'DONE');
       } else {
         const { assignee, assigneeUserId } = await resolveAssignee(user.tenantId, matterId, t);
         await createTemplateTask(user.tenantId, matterId, user.userId, t, assignee, assigneeUserId, blocked ? 'BLOCKED' : 'OPEN');
@@ -395,7 +442,7 @@ export async function unblockDependents(user: { userId: string; tenantId: string
     const depIds = deps.map((d) => d.to_template_id);
     let byId: Record<string, TaskTemplate> = {};
     try {
-      const rows = await query<TaskTemplate>(`select ${TPL_COLS} from task_template where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, depIds]);
+      const rows = await selectTemplates('where tenant_id = $1 and id = any($2::uuid[])', [tenantId, depIds]);
       byId = Object.fromEntries(rows.map((r) => [r.id, r]));
     } catch { /* email cols absent — treat all as TASK */ }
     for (const d of deps) {
@@ -404,6 +451,9 @@ export async function unblockDependents(user: { userId: string; tenantId: string
       const t = byId[d.to_template_id];
       if (t?.node_kind === 'EMAIL') {
         await fireEmailNode(user.userId, tenantId, matterId, t);
+        await query(`update matter_task set status = 'DONE', updated_at = now() where matter_id = $1 and template_id = $2 and status = 'BLOCKED'`, [matterId, d.to_template_id]);
+      } else if (t?.node_kind === 'DOC') {
+        await fireDocNode(user.userId, tenantId, matterId, t);
         await query(`update matter_task set status = 'DONE', updated_at = now() where matter_id = $1 and template_id = $2 and status = 'BLOCKED'`, [matterId, d.to_template_id]);
       } else {
         await query(`update matter_task set status = 'OPEN', updated_at = now() where matter_id = $1 and template_id = $2 and status = 'BLOCKED'`, [matterId, d.to_template_id]);

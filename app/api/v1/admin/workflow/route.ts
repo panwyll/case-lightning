@@ -15,12 +15,12 @@ export async function GET() {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
     await ensureDefaultWorkflow(user.tenantId); // seed the standard conveyancing flow on first open
-    const { templates, edges, emailTemplates } = await getWorkflow(user.tenantId);
+    const { templates, edges, emailTemplates, docTemplates } = await getWorkflow(user.tenantId);
     const users = await query(
       `select id, coalesce(display_name, email) as name, role from app_user where tenant_id = $1 order by created_at asc`,
       [user.tenantId]
     );
-    return ok({ templates, edges, users, emailTemplates });
+    return ok({ templates, edges, users, emailTemplates, docTemplates });
   } catch (error) {
     return fail(error);
   }
@@ -37,9 +37,10 @@ export async function POST(req: NextRequest) {
         stage: z.string().min(1).max(40), // any of the firm's configured stage keys
         detail: z.string().min(1).max(500),
         type: z.string().optional(),
-        nodeKind: z.enum(['TASK', 'EMAIL']).optional(),
+        nodeKind: z.enum(['TASK', 'EMAIL', 'DOC']).optional(),
         emailTemplateId: z.string().uuid().nullable().optional(),
         sendMode: z.enum(['DRAFT', 'SEND']).nullable().optional(),
+        docTemplateId: z.string().uuid().nullable().optional(),
         assigneeKind: z.enum(['ROLE', 'USER']),
         assigneeRole: z.enum(['OWNER', 'CONVEYANCER', 'ASSISTANT', 'ADMIN']).nullable().optional(),
         assigneeUserId: z.string().uuid().nullable().optional(),
