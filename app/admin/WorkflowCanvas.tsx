@@ -483,7 +483,21 @@ export default function WorkflowCanvas() {
           <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : 'Task'}</label>
           <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
           <label style={lbl}>Stage</label>
-          <select value={sel.stage} onChange={(e) => { const v = e.target.value; setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, stage: v } : x)); saveNode({ ...sel, stage: v }); }} style={input}>
+          <select value={sel.stage} onChange={(e) => {
+            const v = e.target.value; if (v === sel.stage) return;
+            // Land it in a free slot in the destination and reveal that stage, so moving a
+            // task never makes it vanish (into a collapsed stage or on top of another pill).
+            const dest = tasksByStage[v] ?? [];
+            const posY = dest.length ? Math.max(...dest.map((t) => t.pos_y)) + PILL_H + GAP_Y : PAD;
+            const next = { ...sel, stage: v, pos_x: PAD, pos_y: posY };
+            // Its arrows belonged to the old stage's flow — clear them so the UI matches the backend.
+            const touching = edges.filter((e2) => e2.from_template_id === sel.id || e2.to_template_id === sel.id);
+            touching.forEach((e2) => deleteEdge(e2.from_template_id, e2.to_template_id));
+            setTemplates((ts) => ts.map((x) => x.id === sel.id ? next : x));
+            setOpen((o) => ({ ...o, [v]: true }));
+            saveNode(next);
+            if (touching.length) setNote('Moved to a new stage — its previous dependencies were cleared.');
+          }} style={input}>
             {stages.map((s) => <option key={s.id} value={s.key}>{s.name}</option>)}
           </select>
 
