@@ -18,6 +18,9 @@ import { DEFAULT_TASKS, DEFAULT_DEPS } from './process-model';
 import type { SessionUser } from './types';
 
 const DOCX_CT = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+// Total generated-attachment ceiling for a workflow email — a safe Outlook/Graph message
+// limit. Over this we don't silently drop: we flag it and hold an auto-send back as a draft.
+const MAX_ATTACH_TOTAL = 25 * 1024 * 1024;
 
 export interface TaskTemplate {
   id: string;
@@ -45,7 +48,7 @@ export interface TaskEdge {
 const TPL_BASE = 'id, stage, detail, type, assignee_kind, assignee_role, assignee_user_id, due_offset_days, pos_x, pos_y, sort_order, active';
 const TPL_EMAIL = `${TPL_BASE}, node_kind, email_template_id, send_mode`;
 const TPL_COLS = `${TPL_EMAIL}, doc_template_id`;
-export interface EmailTemplateLite { id: string; name: string; subject_template: string | null; attach_doc_template_id: string | null }
+export interface EmailTemplateLite { id: string; name: string; subject_template: string | null; attach_doc_template_ids: string[] }
 export interface DocTemplateLite { id: string; name: string }
 
 // Read task_template rows, degrading gracefully if a migration hasn't run: doc column (052) →
@@ -117,11 +120,11 @@ export async function getWorkflow(
     return { templates: [], edges: [], emailTemplates: [], docTemplates: [] }; // not migrated (039) yet
   }
   try {
-    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template, attach_doc_template_id from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
+    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template, attach_doc_template_ids from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
   } catch {
-    // Pre-migration 054 — no attachment column; read without it.
+    // Pre-migration 055 — no attachments column; read without it.
     try {
-      emailTemplates = (await query<any>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId])).map((e) => ({ ...e, attach_doc_template_id: null }));
+      emailTemplates = (await query<any>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId])).map((e) => ({ ...e, attach_doc_template_ids: [] }));
     } catch { /* template table always exists — ignore */ }
   }
   try {
@@ -331,7 +334,7 @@ async function matterEmailVars(tenantId: string, matterId: string): Promise<Reco
  *  actually send it (SEND, only when a recipient is known — otherwise it falls back to a draft). */
 async function fireEmailNode(userId: string, tenantId: string, matterId: string, t: TaskTemplate): Promise<void> {
   if (!t.email_template_id) return;
-  const tpl = await queryOne<{ name: string; subject_template: string | null; body_template: string; attach_doc_template_id?: string | null }>(
+  const tpl = await queryOne<{ name: string; subject_template: string | null; body_template: string; attach_doc_template_ids?: string[] | null }>(
     `select * from template where id=$1 and tenant_id=$2`,
     [t.email_template_id, tenantId]
   ).catch(() => null);
@@ -351,22 +354,38 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   const wantsSend = t.send_mode === 'SEND' && !!recipient;
   const draft = await createDraftMessage(userId, subject, body, wantsSend && recipient ? [recipient] : []).catch(() => null);
   if (!draft?.id) return;
-  // The killer combo: if this email TEMPLATE carries a document, generate it from the matter
-  // and attach it — so a "Client care letter" template always sends the letter with the email.
-  if (tpl.attach_doc_template_id) {
+  // The killer combo: generate and attach every document the TEMPLATE carries (a "Client care
+  // letter" template always sends the letter). Never fail silently — if a document can't be
+  // generated/attached, or the total is over the size ceiling, flag it and (below) hold any
+  // auto-send back as a draft for a human.
+  let attachWarning: string | null = null;
+  const attachIds = (tpl.attach_doc_template_ids ?? []).filter(Boolean);
+  if (attachIds.length) {
     try {
       const isPremium = await isPremiumTenant(tenantId).catch(() => false);
-      const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, tpl.attach_doc_template_id, isPremium);
-      await addAttachmentToMessage(userId, draft.id, fileName, buffer, DOCX_CT);
-    } catch { /* attachment is best-effort — the email still goes out without it */ }
+      const files: Array<{ fileName: string; buffer: Buffer }> = [];
+      for (const dtid of attachIds) files.push(await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, dtid, isPremium));
+      const total = files.reduce((n, f) => n + f.buffer.length, 0);
+      if (total > MAX_ATTACH_TOTAL) {
+        attachWarning = `attachments too large (${(total / 1048576).toFixed(1)} MB, limit ${Math.round(MAX_ATTACH_TOTAL / 1048576)} MB) — email held without them`;
+      } else {
+        for (const f of files) await addAttachmentToMessage(userId, draft.id, f.fileName, f.buffer, DOCX_CT);
+      }
+    } catch {
+      attachWarning = 'one or more documents could not be attached — email held for review';
+    }
   }
-  if (wantsSend) {
+  // An auto-send that was meant to carry documents but couldn't must NOT leave silently:
+  // downgrade it to a flagged draft so a human sees the problem.
+  const send = wantsSend && !attachWarning;
+  const flag = attachWarning ? ` · ⚠ ${attachWarning}` : '';
+  if (send) {
     // Don't fire instantly — park it on the deferred-send queue (~20 min) so a human
     // can catch/cancel the auto-update before it leaves. The worker sends it when due.
     await scheduleSend({ tenantId, userId, matterId, graphMessageId: draft.id, subject, recipient, source: 'WORKFLOW' }).catch(() => {});
     await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Update email scheduled — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
   } else {
-    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Email drafted — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
+    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: attachWarning ? `Email needs attention — ${tpl.name}` : `Email drafted — ${tpl.name}`, detail: subject + flag, graphMessageId: draft.id }).catch(() => {});
   }
 }
 

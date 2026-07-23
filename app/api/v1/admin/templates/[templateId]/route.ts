@@ -22,17 +22,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ te
         bodyTemplate: z.string().optional(),
         styleTag: z.string().optional(),
         policyTags: z.array(z.string()).optional(),
-        attachDocTemplateId: z.string().uuid().nullable().optional(),
+        attachDocTemplateIds: z.array(z.string().uuid()).max(20).optional(),
         isActive: z.boolean().optional(),
       })
       .parse(await req.json());
 
-    // Attachment set separately so it can be cleared to null (coalesce can't), and guarded so
-    // a deploy before migration 054 still saves the rest of the template.
-    if (body.attachDocTemplateId !== undefined) {
+    // Attachments set separately (an array of doc templates), guarded so a deploy before
+    // migration 055 still saves the rest of the template.
+    if (body.attachDocTemplateIds !== undefined) {
       await queryOne(
-        `update template set attach_doc_template_id = $1, updated_at = now() where id = $2 and tenant_id = $3`,
-        [body.attachDocTemplateId, templateId, user.tenantId]
+        `update template set attach_doc_template_ids = $1::uuid[], updated_at = now() where id = $2 and tenant_id = $3`,
+        [body.attachDocTemplateIds, templateId, user.tenantId]
       ).catch(() => {});
     }
 

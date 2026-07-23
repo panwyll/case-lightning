@@ -120,7 +120,7 @@ export default function WorkflowCanvas() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [users, setUsers] = useState<Member[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
-  const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject_template: string | null; attach_doc_template_id?: string | null }>>([]);
+  const [emailTemplates, setEmailTemplates] = useState<Array<{ id: string; name: string; subject_template: string | null; attach_doc_template_ids?: string[] }>>([]);
   const [docTemplates, setDocTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -358,7 +358,7 @@ export default function WorkflowCanvas() {
         </div>
         <div className="wf-m">
           {t.node_kind === 'EMAIL'
-            ? (() => { const et = emailTemplates.find((e) => e.id === t.email_template_id); return `${et?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}${et?.attach_doc_template_id ? ' · 📎 doc' : ''}`; })()
+            ? (() => { const et = emailTemplates.find((e) => e.id === t.email_template_id); const nDoc = et?.attach_doc_template_ids?.length ?? 0; return `${et?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}${nDoc ? ` · 📎 ${nDoc}` : ''}`; })()
             : t.node_kind === 'DOC'
               ? `${docTemplates.find((d) => d.id === t.doc_template_id)?.name ?? 'no template'} · → Case files`
               : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
@@ -543,9 +543,9 @@ export default function WorkflowCanvas() {
               </select>
               {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
               {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
-              {emailTemplates.find((e) => e.id === sel.email_template_id)?.attach_doc_template_id
-                ? <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>📎 This template attaches a document, generated from the matter.</p>
-                : <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>To attach a document, set it on the template in the Email templates tab.</p>}
+              {(() => { const n = emailTemplates.find((e) => e.id === sel.email_template_id)?.attach_doc_template_ids?.length ?? 0; return n
+                ? <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>📎 This template attaches {n} document{n === 1 ? '' : 's'}, generated from the matter.</p>
+                : <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>To attach documents, set them on the template in the Email templates tab.</p>; })()}
             </>
           )}
           {sel.node_kind === 'DOC' && (

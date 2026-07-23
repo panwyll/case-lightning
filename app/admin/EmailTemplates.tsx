@@ -14,7 +14,7 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   return json as T;
 }
 
-interface Tpl { id: string; name: string; category: string; subjectTemplate: string | null; bodyTemplate: string; styleTag: string; attachDocTemplateId?: string | null; isActive?: boolean }
+interface Tpl { id: string; name: string; category: string; subjectTemplate: string | null; bodyTemplate: string; styleTag: string; attachDocTemplateIds?: string[]; isActive?: boolean }
 interface DocTpl { id: string; name: string }
 
 const STYLES = ['NEUTRAL', 'FIRM', 'CHASING'];
@@ -50,7 +50,7 @@ export default function EmailTemplates() {
 
   const save = async (t: Tpl) => {
     try {
-      await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateId: t.attachDocTemplateId ?? null }) });
+      await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateIds: t.attachDocTemplateIds ?? [] }) });
       setSaved(true); setTimeout(() => setSaved(false), 1200);
     } catch (e: any) { setErr(e?.message || 'Could not save.'); }
   };
@@ -119,13 +119,33 @@ export default function EmailTemplates() {
                   <button key={k} onClick={() => insertPlaceholder(k)} title={`Sample: ${SAMPLE[k]}`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
                 ))}
               </div>
-              <label style={lbl}>Attach document</label>
-              <select value={cur.attachDocTemplateId ?? ''} onChange={(e) => { const v = e.target.value || null; set({ attachDocTemplateId: v }); save({ ...cur, attachDocTemplateId: v }); }} style={{ ...input, width: 320 }}>
-                <option value="">— none —</option>
-                {docTemplates.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-              {cur.attachDocTemplateId
-                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}>📎 Whenever this email is sent from the workflow, this document is generated from the matter and attached.</p>
+              <label style={lbl}>Attach documents</label>
+              {(() => {
+                const ids = cur.attachDocTemplateIds ?? [];
+                const setIds = (next: string[]) => { set({ attachDocTemplateIds: next }); save({ ...cur, attachDocTemplateIds: next }); };
+                const available = docTemplates.filter((d) => !ids.includes(d.id));
+                return (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                    {ids.map((id) => {
+                      const d = docTemplates.find((x) => x.id === id);
+                      return (
+                        <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: '#7c4a03', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 6px 3px 9px' }}>
+                          📎 {d?.name ?? 'document'}
+                          <button onClick={() => setIds(ids.filter((x) => x !== id))} title="Remove" style={{ border: 'none', background: 'none', color: '#b45309', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+                        </span>
+                      );
+                    })}
+                    {available.length > 0 && (
+                      <select value="" onChange={(e) => { if (e.target.value) setIds([...ids, e.target.value]); }} style={{ ...input, width: 'auto' }}>
+                        <option value="">{ids.length ? '+ add another…' : '+ attach a document…'}</option>
+                        {available.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
+              {(cur.attachDocTemplateIds?.length ?? 0) > 0
+                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}>📎 Generated from the matter and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
                 : docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '6px 0 0' }}>No document templates yet — add one in Doc packs to attach it here.</p>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
