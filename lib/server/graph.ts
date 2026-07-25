@@ -149,6 +149,38 @@ export async function listMailSince(
   return { messages: result.value ?? [], nextLink: result['@odata.nextLink'] ?? null };
 }
 
+/**
+ * One page of the user's INBOX, newest first — the web portal's mail list.
+ *
+ * Deliberately a light projection (no bodies): the list renders from cached assist
+ * results, and the body is only fetched when a message is actually opened. Pass the
+ * returned `nextLink` back to page. Graph hands back REST ids here, so they feed our
+ * other helpers (and the /assist route) directly — no EWS conversion, unlike the
+ * add-in path.
+ */
+export async function listInboxMessages(
+  userId: string,
+  opts?: { top?: number; nextLink?: string | null; search?: string | null }
+): Promise<{ messages: any[]; nextLink: string | null }> {
+  const client = await graphClientForUser(userId);
+  const select = 'id,subject,from,toRecipients,receivedDateTime,bodyPreview,conversationId,hasAttachments,isRead,categories,webLink';
+  try {
+    if (opts?.nextLink) {
+      const page = await client.api(opts.nextLink).get();
+      return { messages: page.value ?? [], nextLink: page['@odata.nextLink'] ?? null };
+    }
+    let req = client.api("/me/mailFolders('inbox')/messages").select(select).top(opts?.top ?? 40);
+    // $search and $orderby are mutually exclusive in Graph — search returns by relevance.
+    if (opts?.search) req = req.search(`"${opts.search.replace(/"/g, '')}"`);
+    else req = req.orderby('receivedDateTime desc');
+    const page = await req.get();
+    return { messages: page.value ?? [], nextLink: page['@odata.nextLink'] ?? null };
+  } catch (error) {
+    // Same body-less 401 case as listMailSince: no accessible Exchange mailbox.
+    throw new Error(describeGraphError(error));
+  }
+}
+
 export async function listMessageAttachments(userId: string, messageId: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/messages/${messageId}/attachments`).get();

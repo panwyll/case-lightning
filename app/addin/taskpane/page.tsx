@@ -44,13 +44,6 @@ interface DraftPackage {
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
-interface ExtractedFacts {
-  facts: Record<string, unknown>;
-  risks: string[];
-  outstanding: string[];
-  timeline: Array<{ title: string; details: string }>;
-}
-
 interface AssistData {
   triageId: string;
   classification: { intent: string; needsAttention: boolean; urgency: string; reason: string };
@@ -129,8 +122,6 @@ interface ObCase {
 }
 const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
 
-const TONES = ['NEUTRAL', 'FIRM', 'CHASING'] as const;
-type Tone = (typeof TONES)[number];
 // run() busy labels for the reply flow — also used to drive the panel's spinner.
 const REPLY_BUSY_CREATE = 'Writing the reply into Outlook';
 const REPLY_BUSY_REGEN = 'Updating the reply in Outlook';
@@ -330,11 +321,6 @@ export default function Taskpane() {
   const [triage, setTriage] = useState<any>(null);
   const [riskOk, setRiskOk] = useState(false);
 
-  // AI outputs
-  const [summary, setSummary] = useState<{ happened: string[]; outstanding: string[] } | null>(null);
-  const [facts, setFacts] = useState<ExtractedFacts | null>(null);
-  // Reply tone — NEUTRAL by default; the user can switch it and regenerate.
-  const [tone, setTone] = useState<Tone>('NEUTRAL');
   // Free-text steer for the reply redraft, and whether a reply draft now exists in
   // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
   const [guidance, setGuidance] = useState('');
@@ -420,7 +406,6 @@ export default function Taskpane() {
   const [boardLoading, setBoardLoading] = useState(false);
 
   // Documents & sharing
-  const [docs, setDocs] = useState<any[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [templates, setTemplates] = useState<MatterTemplate[]>([]);
   const [templatesPremium, setTemplatesPremium] = useState(false);
@@ -973,13 +958,9 @@ export default function Taskpane() {
           setDraftId(null);
           setReplyFailed(false);
           setGuidance('');
-          setTone('NEUTRAL');
           setMatterId('');
           setMatterInfo(null);
-          setSummary(null);
-          setFacts(null);
           setTasks([]);
-          setDocs([]);
           setChanging(false);
           setShowNewMatter(false);
           setMatterSearch('');
@@ -1250,25 +1231,6 @@ export default function Taskpane() {
       setStatus(`Linked to ${m.matterRef}.`);
     });
     runAssist(m.id);
-  }
-
-  async function summarise() {
-    const r = await run('Summarising', async () => {
-      requireThread();
-      return api<{ happened: string[]; outstanding: string[] }>(`/threads/${encodeURIComponent(conversationId)}/summarise`, {
-        method: 'POST',
-        body: JSON.stringify({ matterId: matterId || undefined, conversationId }),
-      });
-    });
-    if (r) setSummary(r);
-  }
-
-  async function loadDocs() {
-    await run('Loading documents', async () => {
-      requireMatter();
-      const r = await api<{ documents: any[] }>(`/matters/${matterId}/documents`);
-      setDocs(r.documents);
-    });
   }
 
   // Live contents of the matter's OneDrive folder (incl. files dropped in directly,
@@ -1611,7 +1573,7 @@ export default function Taskpane() {
         const g = await api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
           method: 'POST',
           signal: ctrl.signal,
-          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone, guidance: guidance.trim() || undefined }),
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone: 'NEUTRAL', guidance: guidance.trim() || undefined }),
         });
         subject = g.subject;
         bodyHtml = g.bodyHtml;
@@ -2846,37 +2808,6 @@ export default function Taskpane() {
           )}
 
 
-          {tab === 'email' && summary && summary.happened.length > 0 && (
-            <Card>
-              <Label>Thread history</Label>
-              <ul style={S.ul}>{summary.happened.map((h, i) => <li key={i}>{h}</li>)}</ul>
-            </Card>
-          )}
-
-          {tab === 'email' && facts && (
-            <Card>
-              <Label>Extracted Facts{!matterId && ' — not saved (link a matter to persist)'}</Label>
-              {Object.entries(facts.facts).map(([k, v]) => (
-                <div key={k} style={S.kv}>
-                  <span>{humanize(k)}</span>
-                  <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                </div>
-              ))}
-              {facts.outstanding.length > 0 && (
-                <>
-                  <SubLabel>Outstanding</SubLabel>
-                  <ul style={S.ul}>{facts.outstanding.map((o, i) => <li key={i}>{o}</li>)}</ul>
-                </>
-              )}
-              {facts.risks.length > 0 && (
-                <>
-                  <SubLabel>Risks</SubLabel>
-                  <ul style={S.ul}>{facts.risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
-                </>
-              )}
-            </Card>
-          )}
-
           {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
           {tab === 'email' && matterId && (() => {
             const rawFlag = matterInfo?.matter?.status_flag || 'ON_TRACK';
@@ -3775,16 +3706,6 @@ export default function Taskpane() {
 }
 
 // ── Small presentational helpers ─────────────────────────────────────────────
-// Visually dim a button when its action isn't ready yet — but keep it clickable
-// so the handler's guard can explain what's missing (vs. a silently-dead
-// `disabled` button, whose inline dark style hides the disabled state entirely).
-function btn(base: React.CSSProperties, dim: boolean): React.CSSProperties {
-  return dim ? { ...base, opacity: 0.5 } : base;
-}
-
-// Turn an UPPER_SNAKE enum or snake_case key into human text for display:
-// "IN_PROGRESS" → "In progress", "completion_date" → "Completion date". The raw
-// value stays the source of truth — this only ever touches what the user reads.
 // Bytes → a short human size for the file-explorer rows.
 function fmtSize(n: number | null): string {
   if (!n && n !== 0) return '';
@@ -3793,13 +3714,11 @@ function fmtSize(n: number | null): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Turn an UPPER_SNAKE enum or snake_case key into human text for display:
+// "IN_PROGRESS" → "In progress". The raw value stays the source of truth.
 function humanize(s: string): string {
   const t = s.replace(/[_-]+/g, ' ').trim().toLowerCase();
   return t ? t[0].toUpperCase() + t.slice(1) : s;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 }
 
 // Small inline SVG icons, stroke-based to match the header gear — keeps the
