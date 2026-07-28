@@ -5,6 +5,7 @@ import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import Onboarding from './Onboarding';
+import Inbox from './Inbox';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
@@ -136,11 +137,12 @@ function describeAudit(row: any): string {
   }
 }
 
-type TabKey = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'getstarted' | 'inbox' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   getstarted: { label: 'Get started', subtitle: '' },
+  inbox: { label: 'Inbox', subtitle: '' },
   mywork: { label: 'My work', subtitle: '' },
   billing: { label: 'Billing & referrals', subtitle: '' },
   board: { label: 'Matter board', subtitle: '' },
@@ -160,7 +162,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   // Shown only until the firm finishes onboarding (filtered out below once complete).
   { label: 'Start', tabs: ['getstarted'] },
-  { label: 'Work', tabs: ['mywork', 'workload'] },
+  { label: 'Work', tabs: ['inbox', 'mywork', 'workload'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
   // drives it, and automations (automatic + manual) are how you act on it.
   { label: 'Case flow', tabs: ['board', 'workflow', 'automations'] },
@@ -173,6 +175,7 @@ const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
 // Small icon per tab — the nav reads at a glance, Monday/Jira style.
 const TAB_ICON: Record<TabKey, string> = {
   getstarted: '🚀',
+  inbox: '📥',
   mywork: '☑️',
   board: '🗂️',
   workload: '⚖️',
@@ -931,6 +934,8 @@ export default function AdminPage() {
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
+
+        {tab === 'inbox' && <Inbox api={api} />}
 
         {tab === 'getstarted' && <Onboarding onNavigate={(t) => go(t as TabKey)} onChange={(s) => setOnb(s)} />}
 
