@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import NewMatter from '@/app/admin/NewMatter';
+import Onboarding from '@/app/admin/Onboarding';
 import { composeAddress, parseAddress, type AddrParts } from '@/lib/address';
 import CallNotes from './CallNotes';
 // Assist UI primitives, styles and constants — shared with the web inbox so both
@@ -224,6 +225,17 @@ function hasSignInHint(): boolean {
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
   const [setupNudgeHidden, setSetupNudgeHidden] = useState(false);
+  // Get-started checklist in the pane. `checklistRun` bumps on every open so the
+  // panel remounts fresh (re-fetches, re-derives progress) rather than resuming
+  // whatever state it held last time — toggling off and on is a clean restart.
+  const [showChecklist, setShowChecklist] = useState(false);
+  const [checklistRun, setChecklistRun] = useState(0);
+  // Bump the run OUTSIDE the toggle's updater — a setState inside another updater is
+  // impure and fires twice under StrictMode, which would skip a run number each open.
+  const toggleChecklist = () => {
+    if (!showChecklist) setChecklistRun((n) => n + 1);
+    setShowChecklist((open) => !open);
+  };
   const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean; usage?: { used: number; cap: number | null; hoursSavedThisMonth: number } } | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showCreateMatter, setShowCreateMatter] = useState(false);
@@ -1852,6 +1864,22 @@ export default function Taskpane() {
               <Icon name="phone" size={18} />
             </button>
           )}
+          {me?.role === 'ADMIN' && (
+            <button
+              style={{ ...S.iconBtn, color: '#5A27E0', background: showChecklist ? '#EDE7FB' : 'transparent' }}
+              onClick={toggleChecklist}
+              title="Get started — firm setup checklist"
+              aria-label="Get started checklist"
+              aria-pressed={showChecklist}
+            >
+              {/* clipboard-with-tick — the setup checklist */}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z" />
+                <path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
+                <path d="m9 13 2 2 4-4" />
+              </svg>
+            </button>
+          )}
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1876,6 +1904,23 @@ export default function Taskpane() {
           <span style={S.user}>{booting ? 'Connecting…' : connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
       </header>
+
+      {/* Get-started checklist — the same one the admin centre shows, mounted in the
+          pane. Keyed by checklistRun so each open is a fresh start. Deep links open
+          the admin centre in a browser tab (there are no tabs to switch to here). */}
+      {showChecklist && me?.role === 'ADMIN' && (
+        <section style={{ ...S.card, marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>Get started</strong>
+            <button onClick={toggleChecklist} style={S.iconBtn} title="Close" aria-label="Close checklist">✕</button>
+          </div>
+          <Onboarding
+            key={checklistRun}
+            onNavigate={(t) => openAdmin(t)}
+            onChange={(s) => { if (s.onboarded) void refreshMe(); }}
+          />
+        </section>
+      )}
 
       {boxedOut && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(255,255,255,0.97)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
