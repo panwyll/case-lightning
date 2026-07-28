@@ -232,17 +232,16 @@ export default function Taskpane() {
   };
 
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Your queue across every matter — chases to send, drafts waiting for approval. Start here each morning.', before: () => setHomeView(true) },
-    { target: '[data-tour="tab-email"]', title: 'Email', body: 'What this message is, where the case stands, and a reply already written for you to approve.', before: () => { setHomeView(false); setTab('email'); } },
-    { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record — price, dates, the other side, and the people on the matter. Edit it here and the tracker follows.', before: () => { setHomeView(false); setTab('house'); } },
-    { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder, live. Upload, attach to a reply, or generate a document from one of your templates.', before: () => { setHomeView(false); setTab('paperclip'); } },
-    { target: '[data-tour="tab-log"]', title: 'Log', body: 'Everything that has happened on the case — stage moves, automations, documents, calls — in date order.', before: () => { setHomeView(false); setTab('log'); } },
-    { target: '[data-tour="callnotes"]', title: 'Record a call', body: 'Record a client call and it is transcribed, summarised and filed to the matter, with any actions pulled out as tasks.' },
-    { target: '[data-tour="newmatter"]', title: 'Start a matter', body: 'Creates the matter, its OneDrive folder and its tracker row in one go. The open email pre-fills it.' },
-    { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app — the case board, your Case Flow, templates, automations and the team.' },
-    { target: '[data-tour="account"]', title: 'Plan and usage', body: 'Your plan, how much you have used this month, your firm setup checklist and the way out.' },
+    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Chases and drafts waiting.', before: () => setHomeView(true) },
+    { target: '[data-tour="tab-email"]', title: 'Email', body: 'The situation, and a reply ready to approve.', before: () => { setHomeView(false); setTab('email'); } },
+    { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record.', before: () => { setHomeView(false); setTab('house'); } },
+    { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder.', before: () => { setHomeView(false); setTab('paperclip'); } },
+    { target: '[data-tour="tab-log"]', title: 'Log', body: 'Everything that’s happened.', before: () => { setHomeView(false); setTab('log'); } },
+    { target: '[data-tour="callnotes"]', title: 'Call notes', body: 'Record a call — transcribed and filed.' },
+    { target: '[data-tour="newmatter"]', title: 'New matter', body: 'Matter, folder and tracker in one go.' },
+    { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app.' },
+    { target: '[data-tour="account"]', title: 'Account', body: 'Plan, usage and firm setup.' },
   ];
-
   const toggleChecklist = () => {
     if (!showChecklist) setChecklistRun((n) => n + 1);
     setShowChecklist((open) => !open);

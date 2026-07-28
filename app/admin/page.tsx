@@ -427,15 +427,15 @@ export default function AdminPage() {
   // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
   // because their nav button simply isn't in the DOM.
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, triaged. Every message already matched to its matter, with the situation and a prepared reply — no add-in needed.', before: () => go('inbox') },
-    { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'The queue: chases due, drafts waiting to be sent, matters that need a decision.', before: () => go('mywork') },
-    { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every live matter by stage. Open one for its files, emails, tasks and its position on the Case Flow.', before: () => go('board') },
-    { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'The spine — the stages a matter moves through and the tasks, documents and emails each one fires. Drag to arrange, draw arrows to set what waits on what.', before: () => go('workflow') },
-    { target: '[data-tour="nav-automations"]', title: 'Automations', body: 'Rules that act on incoming mail, and one-click actions you run on a matter.', before: () => go('automations') },
-    { target: '[data-tour="nav-templates"]', title: 'Email templates', body: 'Reusable emails with {{placeholders}} that fill from the matter — and the documents each one carries.', before: () => go('templates') },
-    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Your .docx templates. These are what the Case Flow generates and attaches.', before: () => go('docpacks') },
-    { target: '[data-tour="nav-team"]', title: 'Team', body: 'Who is in the firm and what they can see. Invite colleagues here.', before: () => go('team') },
-    { target: '[data-tour="nav-billing"]', title: 'Billing', body: 'Your plan, usage against the monthly cap, and your referral link.', before: () => go('billing') },
+    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, already triaged.', before: () => go('inbox') },
+    { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
+    { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
+    { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'Stages, tasks and what waits on what.', before: () => go('workflow') },
+    { target: '[data-tour="nav-automations"]', title: 'Automations', body: 'Rules and one-click actions.', before: () => go('automations') },
+    { target: '[data-tour="nav-templates"]', title: 'Email templates', body: 'Emails that fill from the matter.', before: () => go('templates') },
+    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Your document templates.', before: () => go('docpacks') },
+    { target: '[data-tour="nav-team"]', title: 'Team', body: 'Who is in the firm.', before: () => go('team') },
+    { target: '[data-tour="nav-billing"]', title: 'Billing', body: 'Plan, usage and referrals.', before: () => go('billing') },
   ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
