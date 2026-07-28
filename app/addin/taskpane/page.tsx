@@ -11,6 +11,7 @@ import CallNotes from './CallNotes';
 import { S } from '@/app/shared/assist/styles';
 import { Icon, Card, LoadingRow, Section, Label, SubLabel, Field, TagInput, fmtSize, humanize } from '@/app/shared/assist/ui';
 import { HousePanel, ContactsPanel } from '@/app/shared/assist/HousePanel';
+import { useAssist, type AssistData } from '@/app/shared/assist/useAssist';
 import {
   REPLY_BUSY_CREATE, REPLY_BUSY_REGEN, REPLY_BUSY_SEND,
   STAGES, stageLabel, isWaitingOnOthers, TRACKS, STATUS_FLAGS, hhmm,
@@ -54,24 +55,6 @@ interface DraftPackage {
   referencedDocuments: Array<{ id: string; file_name: string; web_url: string | null }>;
 }
 
-interface AssistData {
-  triageId: string;
-  classification: { intent: string; needsAttention: boolean; urgency: string; reason: string };
-  matchBand: string;
-  matter: { id: string; matterRef: string; propertyAddress: string | null } | null;
-  candidates: Array<{ matterId: string; matterRef: string; propertyAddress: string; score: number; band: string }>;
-  ask: string;
-  /** Short assistant-voice heads-up (from the slow phase); falls back to `ask` until ready. */
-  brief: string;
-  whatWeKnow: string[];
-  outstanding: string[];
-  draft: { subject: string; bodyHtml: string; why: string[] } | null;
-  /** Per-attachment summaries for the email tab (empty until the slow half lands). */
-  documents?: Array<{ name: string; docType: string; summary: string }>;
-  highlighted: string[];
-  /** False while the slow half (thread summary + draft) is still being prepared. */
-  ready: boolean;
-}
 
 interface MatterTask {
   id: string;
@@ -332,9 +315,7 @@ export default function Taskpane() {
   const [homeView, setHomeView] = useState(false);
 
   // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
-  const [assist, setAssist] = useState<AssistData | null>(null);
-  // Tracks which message the assist poller is following; changing it cancels any
-  // in-flight poll so a fast email-switch never lands stale results.
+  // assist / assistError / runAssist now come from the shared useAssist hook below.
   // True when /me failed for a reason *other* than being signed out (a 5xx or a
   // network error). We're still "not connected", but telling the user to connect
   // their account won't help — the server is the problem, so offer a retry.
@@ -344,10 +325,6 @@ export default function Taskpane() {
   // "Connecting…" instead of "Not connected", but a first-timer goes straight to
   // the Connect button. Set false in an effect to keep server/client render in step.
   const [booting, setBooting] = useState(false);
-  const assistPollRef = useRef<string>('');
-  // True when the initial analysis of the open email failed — lets the hero show
-  // a recoverable error + retry instead of an endless "Reading…" spinner.
-  const [assistError, setAssistError] = useState(false);
   const [tasks, setTasks] = useState<MatterTask[]>([]);
   const [statusOpts, setStatusOpts] = useState<TaskStatusOpt[]>([]);
   const [stageOpts, setStageOpts] = useState<Array<{ key: string; name: string }>>([]);
@@ -1452,77 +1429,18 @@ export default function Taskpane() {
   }
 
   // ── Assistant + tasks ────────────────────────────────────────────────────
-  // `matterOverride` lets a just-linked matter be read immediately, before the
-  // matterId state update has flushed (the auto-run uses the current state).
-  async function runAssist(matterOverride?: string) {
-    const mid = matterOverride ?? matterId;
-    const pollKey = messageId;
-    assistPollRef.current = pollKey; // cancels any in-flight poll for a prior email
-    setAssistError(false);
-    // Watchdog every /assist call: a request stalled in the Office webview would
-    // otherwise leave the "Reading the email…" toast hanging forever. Abort after
-    // 30s so the toast clears and the panel can show a retry.
-    const call = async (): Promise<AssistData> => {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 30000);
-      try {
-        return await api<AssistData>('/assist', {
-          method: 'POST',
-          signal: ctrl.signal,
-          // Omit tone so the response matches the precomputed cache; tone-specific
-          // redrafts go through the dedicated draft-reply path.
-          body: JSON.stringify({ messageId, conversationId, matterId: mid || undefined }),
-        });
-      } finally {
-        clearTimeout(t);
-      }
-    };
-
-    // The first call returns fast — either the cached full result or just the
-    // fast half — so the spinner clears quickly and the situation shows at once.
-    const first = await run('Reading the email', async () => {
-      requireThread();
-      if (!messageId) throw new Error('Open an email first.');
-      return call();
-    });
-    if (!first) {
-      // Only surface the error when the email is still the one we tried to read —
-      // a fast switch to another message shouldn't flash a stale failure.
-      if (assistPollRef.current === pollKey) setAssistError(true);
-      return;
-    }
-    // Hit the monthly email cap → show the time-saving + upgrade nudge, don't analyse.
-    if ((first as any).overQuota) {
-      if (assistPollRef.current === pollKey) {
-        setQuotaModal({ used: (first as any).emailsUsed ?? 0, cap: (first as any).emailsCap ?? 0, hoursSaved: (first as any).hoursSavedThisMonth ?? 0 });
-        setAssistError(true);
-      }
-      return;
-    }
-    setAssist(first);
-    if (first.matter && !mid) {
-      setMatterId(first.matter.id);
-      loadMatter(first.matter.id);
-    }
-
-    // Slow half (summary + draft) not ready yet → poll quietly until it lands,
-    // updating the panel in place. No blocking spinner; placeholders fill in.
-    let current = first;
-    let tries = 0;
-    while (!current.ready && assistPollRef.current === pollKey && tries < 40) {
-      await new Promise((res) => setTimeout(res, 1500));
-      if (assistPollRef.current !== pollKey) return; // a newer email took over
-      tries++;
-      try {
-        const next = await call();
-        if (assistPollRef.current !== pollKey) return;
-        setAssist(next);
-        current = next;
-      } catch {
-        /* transient — keep polling */
-      }
-    }
-  }
+  // The assist call + its poll/cancel/quota rules live in the shared hook, so the
+  // web inbox behaves identically. `matterOverride` lets a just-linked matter be read
+  // immediately, before the matterId state update has flushed.
+  const { assist, setAssist, assistError, setAssistError, runAssist: runAssistHook } = useAssist({
+    messageId,
+    conversationId,
+    api,
+    run,
+    onQuota: (q) => setQuotaModal(q),
+    onMatterFound: (id) => { setMatterId(id); loadMatter(id); },
+  });
+  const runAssist = (matterOverride?: string) => runAssistHook(matterOverride ?? matterId);
 
   // Clicking Reply creates an actual draft reply in Outlook (never sent): use the
   // precomputed draft if ready, otherwise generate one (which also reviews any
