@@ -12,6 +12,7 @@ import { S } from '@/app/shared/assist/styles';
 import { Icon, Card, LoadingRow, Section, Label, SubLabel, Field, TagInput, fmtSize, humanize } from '@/app/shared/assist/ui';
 import { HousePanel, ContactsPanel } from '@/app/shared/assist/HousePanel';
 import { useAssist, type AssistData } from '@/app/shared/assist/useAssist';
+import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import {
   REPLY_BUSY_CREATE, REPLY_BUSY_REGEN, REPLY_BUSY_SEND,
   STAGES, stageLabel, isWaitingOnOthers, TRACKS, STATUS_FLAGS, hhmm,
@@ -212,10 +213,23 @@ export default function Taskpane() {
   // Get-started checklist in the pane. `checklistRun` bumps on every open so the
   // panel remounts fresh (re-fetches, re-derives progress) rather than resuming
   // whatever state it held last time — toggling off and on is a clean restart.
+  // Guided tour of the pane's controls — what the checklist can't teach, because the
+  // answer is "that icon, there" rather than a list of tasks. Runs once automatically,
+  // and can be replayed from the Get started panel.
+  const [tourOn, setTourOn] = useState(false);
   const [showChecklist, setShowChecklist] = useState(false);
   const [checklistRun, setChecklistRun] = useState(0);
   // Bump the run OUTSIDE the toggle's updater — a setState inside another updater is
   // impure and fires twice under StrictMode, which would skip a run number each open.
+  const TOUR_STEPS: TourStep[] = [
+    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Your queue across every matter — chases to send, drafts waiting for approval. Start here each morning.' },
+    { target: '[data-tour="tabs"]', title: 'The open email', body: 'Email is the situation and a prepared reply. House is the property record, Files the case documents, and Log everything that has happened.' },
+    { target: '[data-tour="callnotes"]', title: 'Record a call', body: 'Record a client call and it is transcribed, summarised and filed to the matter — with any actions pulled out as tasks.' },
+    { target: '[data-tour="newmatter"]', title: 'Start a matter', body: 'Creates the matter, its OneDrive folder and its tracker row in one go. The open email is used to pre-fill it.' },
+    { target: '[data-tour="getstarted"]', title: 'Firm setup', body: 'Your setup checklist — name the firm, load the workflow and templates, invite colleagues. Replay this tour from here any time.' },
+    { target: '[data-tour="account"]', title: 'Plan and usage', body: 'Your plan, how much you have used this month, and the way through to the admin centre.' },
+  ];
+
   const toggleChecklist = () => {
     if (!showChecklist) setChecklistRun((n) => n + 1);
     setShowChecklist((open) => !open);
@@ -1562,6 +1576,18 @@ export default function Taskpane() {
   const onboardingBusy = !!obJob && (OB_ACTIVE.includes(obJob.status) || obJob.status === 'AWAITING_REVIEW');
   const setupView = !!me && (showSetup || onboardingBusy || (obFetched && !obJob && !obSkipped));
 
+  // First signed-in open gets the tour automatically; after that it's opt-in.
+  useEffect(() => {
+    if (!me || setupView || tourOn) return;
+    try {
+      if (window.localStorage.getItem('cl_tour_seen')) return;
+      window.localStorage.setItem('cl_tour_seen', '1');
+      const t = setTimeout(() => setTourOn(true), 700); // let the header paint first
+      return () => clearTimeout(t);
+    } catch { /* private mode — just don't auto-run */ }
+  }, [me, setupView, tourOn]);
+
+
   // ── What did we find? ──────────────────────────────────────────────────────
   // The hero is a single status the moment an email opens: do we know whose
   // matter this is? `band` comes from the matcher (AUTO = nailed it, STRONG/WEAK
@@ -1755,6 +1781,7 @@ export default function Taskpane() {
           {me && (
             <button
               style={{ ...S.iconBtn, color: '#5A27E0', background: homeView && !setupView ? '#EDE7FB' : 'transparent' }}
+              data-tour="worklist"
               onClick={() => { if (showSetup) { setShowSetup(false); setHomeView(true); } else setHomeView((h) => !h); }}
               title={homeView ? 'Back to this email' : 'What needs me — the worklist'}
               aria-label={homeView ? 'Back to this email' : 'Open worklist'}
@@ -1775,6 +1802,7 @@ export default function Taskpane() {
           {me && (
             <button
               style={{ ...S.iconBtn, color: '#5A27E0', background: showCallNotes ? '#EDE7FB' : 'transparent' }}
+              data-tour="callnotes"
               onClick={() => setShowCallNotes(true)}
               title="Call notes — record & transcribe a client call"
               aria-label="Call notes"
@@ -1785,6 +1813,7 @@ export default function Taskpane() {
           {me?.role === 'ADMIN' && (
             <button
               style={{ ...S.iconBtn, color: '#5A27E0', background: showChecklist ? '#EDE7FB' : 'transparent' }}
+              data-tour="getstarted"
               onClick={toggleChecklist}
               title="Get started — firm setup checklist"
               aria-label="Get started checklist"
@@ -1803,6 +1832,7 @@ export default function Taskpane() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <button
               style={{ ...S.iconBtn, color: '#5A27E0' }}
+              data-tour="newmatter"
               onClick={() => setShowCreateMatter(true)}
               title="New matter"
               aria-label="New matter"
@@ -1811,6 +1841,7 @@ export default function Taskpane() {
             </button>
             <button
               style={{ ...S.iconBtn, color: '#5A27E0', background: showAccount ? '#EDE7FB' : 'transparent' }}
+              data-tour="account"
               onClick={() => setShowAccount(true)}
               title={`${me.displayName || me.email} — account`}
               aria-label="Account"
@@ -1830,6 +1861,12 @@ export default function Taskpane() {
         <section style={{ ...S.card, marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>Get started</strong>
+            <button
+              onClick={() => { setShowChecklist(false); setTourOn(true); }}
+              style={{ fontSize: 11.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 7, padding: '4px 9px', cursor: 'pointer' }}
+            >
+              Show me around
+            </button>
             <button onClick={toggleChecklist} style={S.iconBtn} title="Close" aria-label="Close checklist">✕</button>
           </div>
           <Onboarding
@@ -2395,7 +2432,7 @@ export default function Taskpane() {
               these switch what we show for it. House/Files need a linked matter. */}
           {!homeView && (
           <>
-          <div style={S.tabBar}>
+          <div style={S.tabBar} data-tour="tabs">
             {([
               ['email', 'mail', 'Email'],
               ['house', 'home', 'House'],
@@ -3583,6 +3620,8 @@ export default function Taskpane() {
       )}
 
       {/* Account panel — person icon in the header. Plan, usage, and the exits. */}
+      {tourOn && <Tour steps={TOUR_STEPS} onClose={() => setTourOn(false)} />}
+
       {showAccount && me && (
         <div style={S.modalOverlay} onClick={() => setShowAccount(false)}>
           <div style={{ ...S.modalCard, maxWidth: 340 }} onClick={(e) => e.stopPropagation()}>
