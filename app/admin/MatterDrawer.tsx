@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import MatterFlow from './MatterFlow';
 
 /**
  * Slide-over matter detail for the board — click a card to open it. Reuses the existing
@@ -96,7 +97,7 @@ export default function MatterDrawer({
   onClose: () => void;
 }) {
   const id = matter.id as string;
-  const [tab, setTab] = useState<'overview' | 'emails' | 'files' | 'todo' | 'activity'>('overview');
+  const [tab, setTab] = useState<'overview' | 'flow' | 'emails' | 'files' | 'todo' | 'activity'>('overview');
   const [detail, setDetail] = useState<any>(null);
   const [files, setFiles] = useState<{ files: any[]; folderProvisioned: boolean } | null>(null);
   const [threads, setThreads] = useState<any[] | null>(null);
@@ -298,6 +299,7 @@ export default function MatterDrawer({
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, padding: '0 12px', borderBottom: '1px solid #eef1f5' }}>
           <button style={tabBtn(tab === 'overview')} onClick={() => setTab('overview')}>Overview</button>
+          <button style={tabBtn(tab === 'flow')} onClick={() => setTab('flow')}>Flow</button>
           <button style={tabBtn(tab === 'emails')} onClick={() => setTab('emails')}>Emails{threads ? ` (${threads.length})` : ''}</button>
           <button style={tabBtn(tab === 'files')} onClick={() => setTab('files')}>Files</button>
           <button style={tabBtn(tab === 'todo')} onClick={() => setTab('todo')}>To-do{todo ? ` (${todo.tasks.filter((t) => !TASK_DONE.has(t.status)).length})` : ''}</button>
@@ -538,6 +540,8 @@ export default function MatterDrawer({
               </div>
             </>
           )}
+
+          {tab === 'flow' && <MatterFlow matterId={id} api={api} />}
 
           {tab === 'activity' && (
             <>
