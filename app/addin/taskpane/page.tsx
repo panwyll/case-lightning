@@ -217,17 +217,30 @@ export default function Taskpane() {
   // answer is "that icon, there" rather than a list of tasks. Runs once automatically,
   // and can be replayed from the Get started panel.
   const [tourOn, setTourOn] = useState(false);
+  // Where the user was before the tour moved them around, so Skip/Done returns them.
+  const tourReturn = useRef<{ tab: 'email' | 'house' | 'paperclip' | 'log'; homeView: boolean } | null>(null);
   const [showChecklist, setShowChecklist] = useState(false);
   const [checklistRun, setChecklistRun] = useState(0);
   // Bump the run OUTSIDE the toggle's updater — a setState inside another updater is
   // impure and fires twice under StrictMode, which would skip a run number each open.
+  const startTour = () => { tourReturn.current = { tab, homeView }; setTourOn(true); };
+  const endTour = () => {
+    setTourOn(false);
+    const back = tourReturn.current;
+    tourReturn.current = null;
+    if (back) { setTab(back.tab); setHomeView(back.homeView); }
+  };
+
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Your queue across every matter — chases to send, drafts waiting for approval. Start here each morning.' },
-    { target: '[data-tour="tabs"]', title: 'The open email', body: 'Email is the situation and a prepared reply. House is the property record, Files the case documents, and Log everything that has happened.' },
-    { target: '[data-tour="callnotes"]', title: 'Record a call', body: 'Record a client call and it is transcribed, summarised and filed to the matter — with any actions pulled out as tasks.' },
-    { target: '[data-tour="newmatter"]', title: 'Start a matter', body: 'Creates the matter, its OneDrive folder and its tracker row in one go. The open email is used to pre-fill it.' },
-    { target: '[data-tour="getstarted"]', title: 'Firm setup', body: 'Your setup checklist — name the firm, load the workflow and templates, invite colleagues. Replay this tour from here any time.' },
-    { target: '[data-tour="account"]', title: 'Plan and usage', body: 'Your plan, how much you have used this month, and the way through to the admin centre.' },
+    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Your queue across every matter — chases to send, drafts waiting for approval. Start here each morning.', before: () => setHomeView(true) },
+    { target: '[data-tour="tab-email"]', title: 'Email', body: 'What this message is, where the case stands, and a reply already written for you to approve.', before: () => { setHomeView(false); setTab('email'); } },
+    { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record — price, dates, the other side, and the people on the matter. Edit it here and the tracker follows.', before: () => { setHomeView(false); setTab('house'); } },
+    { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder, live. Upload, attach to a reply, or generate a document from one of your templates.', before: () => { setHomeView(false); setTab('paperclip'); } },
+    { target: '[data-tour="tab-log"]', title: 'Log', body: 'Everything that has happened on the case — stage moves, automations, documents, calls — in date order.', before: () => { setHomeView(false); setTab('log'); } },
+    { target: '[data-tour="callnotes"]', title: 'Record a call', body: 'Record a client call and it is transcribed, summarised and filed to the matter, with any actions pulled out as tasks.' },
+    { target: '[data-tour="newmatter"]', title: 'Start a matter', body: 'Creates the matter, its OneDrive folder and its tracker row in one go. The open email pre-fills it.' },
+    { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app — the case board, your Case Flow, templates, automations and the team.' },
+    { target: '[data-tour="account"]', title: 'Plan and usage', body: 'Your plan, how much you have used this month, your firm setup checklist and the way out.' },
   ];
 
   const toggleChecklist = () => {
@@ -1582,7 +1595,7 @@ export default function Taskpane() {
     try {
       if (window.localStorage.getItem('cl_tour_seen')) return;
       window.localStorage.setItem('cl_tour_seen', '1');
-      const t = setTimeout(() => setTourOn(true), 700); // let the header paint first
+      const t = setTimeout(startTour, 700); // let the header paint first
       return () => clearTimeout(t);
     } catch { /* private mode — just don't auto-run */ }
   }, [me, setupView, tourOn]);
@@ -1812,12 +1825,11 @@ export default function Taskpane() {
           )}
           {me?.role === 'ADMIN' && (
             <button
-              style={{ ...S.iconBtn, color: '#5A27E0', background: showChecklist ? '#EDE7FB' : 'transparent' }}
+              style={{ ...S.iconBtn, color: '#5A27E0', background: tourOn ? '#EDE7FB' : 'transparent' }}
               data-tour="getstarted"
-              onClick={toggleChecklist}
-              title="Get started — firm setup checklist"
-              aria-label="Get started checklist"
-              aria-pressed={showChecklist}
+              onClick={startTour}
+              title="Show me around"
+              aria-label="Show me around"
             >
               {/* clipboard-with-tick — the setup checklist */}
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1861,12 +1873,6 @@ export default function Taskpane() {
         <section style={{ ...S.card, marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
             <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>Get started</strong>
-            <button
-              onClick={() => { setShowChecklist(false); setTourOn(true); }}
-              style={{ fontSize: 11.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 7, padding: '4px 9px', cursor: 'pointer' }}
-            >
-              Show me around
-            </button>
             <button onClick={toggleChecklist} style={S.iconBtn} title="Close" aria-label="Close checklist">✕</button>
           </div>
           <Onboarding
@@ -2444,6 +2450,7 @@ export default function Taskpane() {
               return (
                 <button
                   key={key}
+                  data-tour={`tab-${key}`}
                   style={{ ...S.tabBtn, ...(active ? S.tabBtnActive : {}), ...(locked ? S.tabBtnLocked : {}) }}
                   onClick={() => { if (!locked) setTab(key); }}
                   disabled={locked}
@@ -3620,7 +3627,7 @@ export default function Taskpane() {
       )}
 
       {/* Account panel — person icon in the header. Plan, usage, and the exits. */}
-      {tourOn && <Tour steps={TOUR_STEPS} onClose={() => setTourOn(false)} />}
+      {tourOn && <Tour steps={TOUR_STEPS} onClose={endTour} />}
 
       {showAccount && me && (
         <div style={S.modalOverlay} onClick={() => setShowAccount(false)}>
@@ -3660,6 +3667,14 @@ export default function Taskpane() {
               </div>
             </div>
 
+            {me.role === 'ADMIN' && (
+              <button
+                style={{ ...S.acctRow }}
+                onClick={() => { setShowAccount(false); if (!showChecklist) toggleChecklist(); }}
+              >
+                <Icon name="check" size={16} /> <span>Get started checklist</span>
+              </button>
+            )}
             <button
               style={{ ...S.acctRow }}
               onClick={() => { setShowAccount(false); setShowSetup(true); }}

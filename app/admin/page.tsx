@@ -6,6 +6,7 @@ import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import Onboarding from './Onboarding';
 import Inbox from './Inbox';
+import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
@@ -288,6 +289,10 @@ export default function AdminPage() {
   // Onboarding progress (admins only) — drives the "Get started" nav item + auto-open.
   const [onb, setOnb] = useState<{ completed: number; total: number; onboarded: boolean } | null>(null);
   const onbAutoNav = useRef(false);
+  // Guided tour of the admin nav. Each step opens the section it describes, and Skip/Done
+  // puts the user back on whatever tab they started from.
+  const [tourOn, setTourOn] = useState(false);
+  const tourReturn = useRef<TabKey | null>(null);
   const showGetStarted = isAdmin && !!onb && !onb.onboarded;
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
@@ -410,6 +415,28 @@ export default function AdminPage() {
     setTab(t);
     if (typeof window !== 'undefined') window.history.replaceState(null, '', `/admin?tab=${t}`);
   }
+
+  const startTour = () => { tourReturn.current = tab; setTourOn(true); };
+  const endTour = () => {
+    setTourOn(false);
+    const back = tourReturn.current;
+    tourReturn.current = null;
+    if (back) go(back);
+  };
+  // Each step opens its section — showing a nav item without opening it teaches nothing.
+  // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
+  // because their nav button simply isn't in the DOM.
+  const TOUR_STEPS: TourStep[] = [
+    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, triaged. Every message already matched to its matter, with the situation and a prepared reply — no add-in needed.', before: () => go('inbox') },
+    { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'The queue: chases due, drafts waiting to be sent, matters that need a decision.', before: () => go('mywork') },
+    { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every live matter by stage. Open one for its files, emails, tasks and its position on the Case Flow.', before: () => go('board') },
+    { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'The spine — the stages a matter moves through and the tasks, documents and emails each one fires. Drag to arrange, draw arrows to set what waits on what.', before: () => go('workflow') },
+    { target: '[data-tour="nav-automations"]', title: 'Automations', body: 'Rules that act on incoming mail, and one-click actions you run on a matter.', before: () => go('automations') },
+    { target: '[data-tour="nav-templates"]', title: 'Email templates', body: 'Reusable emails with {{placeholders}} that fill from the matter — and the documents each one carries.', before: () => go('templates') },
+    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Your .docx templates. These are what the Case Flow generates and attaches.', before: () => go('docpacks') },
+    { target: '[data-tour="nav-team"]', title: 'Team', body: 'Who is in the firm and what they can see. Invite colleagues here.', before: () => go('team') },
+    { target: '[data-tour="nav-billing"]', title: 'Billing', body: 'Your plan, usage against the monthly cap, and your referral link.', before: () => go('billing') },
+  ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
   const aiGenFileRef = useRef<HTMLInputElement>(null);
@@ -891,6 +918,13 @@ export default function AdminPage() {
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
               <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
+              <button
+                onClick={startTour}
+                title="Show me around"
+                style={{ background: tourOn ? '#ede9fe' : 'none', border: 'none', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 9px', borderRadius: 7, fontFamily: 'inherit' }}
+              >
+                Show me around
+              </button>
               <span title={me.email} style={{ width: 30, height: 30, borderRadius: 999, background: '#ede9fe', color: '#5A27E0', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials}</span>
               <button
                 onClick={() => { try { window.localStorage.removeItem(TOKEN_KEY); } catch {} window.location.href = '/api/v1/auth/logout'; }}
@@ -915,7 +949,7 @@ export default function AdminPage() {
               <div key={grp.label} style={{ marginBottom: 22 }}>
                 <div style={navGroupLabel}>{grp.label}</div>
                 {items.map((k) => (
-                  <button key={k} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
+                  <button key={k} data-tour={`nav-${k}`} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
                     <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center', filter: tab === k ? 'none' : 'grayscale(0.4)', opacity: tab === k ? 1 : 0.75 }}>{TAB_ICON[k]}</span>
                     <span style={{ flex: 1 }}>{TAB_META[k].label}</span>
                     {k === 'getstarted' && onb && (
@@ -934,6 +968,8 @@ export default function AdminPage() {
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
+
+        {tourOn && <Tour steps={TOUR_STEPS} onClose={endTour} />}
 
         {tab === 'inbox' && <Inbox api={api} />}
 

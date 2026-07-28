@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * A coach-mark tour: dims the surface, cuts a hole around one control and anchors a
@@ -16,6 +16,12 @@ export interface TourStep {
   target?: string;
   title: string;
   body: string;
+  /**
+   * Put the surface into the state this step describes — open the tab, switch the view.
+   * Showing someone a tab without opening it teaches them nothing. The caller is
+   * responsible for restoring whatever this changed when the tour closes.
+   */
+  before?: () => void;
 }
 
 const PURPLE = '#5A27E0';
@@ -27,36 +33,49 @@ export default function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (
   const [vw, setVw] = useState(0);
   const [vh, setVh] = useState(0);
 
-  // Resolve the step's target, skipping any whose element isn't present.
-  const resolve = useCallback(
-    (from: number, dir: 1 | -1): number => {
-      for (let n = from; n >= 0 && n < steps.length; n += dir) {
-        const s = steps[n];
-        if (!s.target) return n;
-        if (document.querySelector(s.target)) return n;
-      }
-      return -1;
-    },
-    [steps]
-  );
+  // Callers build `steps` inline, so it's a new array every render — and `onClose` a new
+  // function. Read both through refs so effects don't re-fire on identity alone (which
+  // otherwise re-resolves the first step forever and the tour never appears).
+  const stepsRef = useRef(steps); stepsRef.current = steps;
+  const onCloseRef = useRef(onClose); onCloseRef.current = onClose;
 
-  // Land on the first showable step on mount.
+  /** First showable step at or after `from`, walking in `dir`. -1 when there is none. */
+  const resolve = useCallback((from: number, dir: 1 | -1): number => {
+    const list = stepsRef.current;
+    for (let n = from; n >= 0 && n < list.length; n += dir) {
+      const s = list[n];
+      if (!s.target) return n;
+      if (document.querySelector(s.target)) return n;
+    }
+    return -1;
+  }, []);
+
+  // Land on the first showable step — once, on mount.
   useEffect(() => {
     const first = resolve(0, 1);
-    if (first < 0) onClose();
+    if (first < 0) onCloseRef.current();
     else setI(first);
-  }, [resolve, onClose]);
+  }, [resolve]);
 
   const measure = useCallback(() => {
     setVw(window.innerWidth);
     setVh(window.innerHeight);
-    const sel = steps[i]?.target;
+    const sel = stepsRef.current[i]?.target;
     if (!sel) return setRect(null);
     const el = document.querySelector(sel);
     setRect(el ? el.getBoundingClientRect() : null);
-  }, [i, steps]);
+  }, [i]);
 
   useLayoutEffect(() => { measure(); }, [measure]);
+
+  // Entering a step opens whatever it describes, then re-measures once the surface has
+  // re-rendered — the target may only exist (or may have moved) after `before` runs.
+  useEffect(() => {
+    stepsRef.current[i]?.before?.();
+    const t = setTimeout(measure, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [i]);
   useEffect(() => {
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
@@ -69,7 +88,7 @@ export default function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (
   // Escape always exits — a tour you can't leave is a trap.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') onCloseRef.current();
       if (e.key === 'ArrowRight') next();
       if (e.key === 'ArrowLeft') back();
     };
