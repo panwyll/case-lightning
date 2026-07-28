@@ -309,7 +309,7 @@ export default function Taskpane() {
   //   email     → what this email is about + what we're doing about it
   //   house     → the transaction/matter record (details, stage, tasks) — editable
   //   paperclip → files on the matter + the email-derived transaction knowledge
-  const [tab, setTab] = useState<'email' | 'house' | 'paperclip'>('email');
+  const [tab, setTab] = useState<'email' | 'house' | 'paperclip' | 'log'>('email');
   // Home/worklist view: the pane only opens on a selected email, so the "what needs me"
   // queue was unreachable while any email was open. This toggle surfaces it on demand.
   const [homeView, setHomeView] = useState(false);
@@ -342,7 +342,6 @@ export default function Taskpane() {
   const [wlMeta, setWlMeta] = useState<{ team: boolean; isAdmin: boolean; assignee: string }>({ team: false, isAdmin: false, assignee: '' });
   const [teamMembers, setTeamMembers] = useState<Array<{ id: string; display_name: string | null; email: string; role: string }>>([]);
   const [assignees, setAssignees] = useState<Assignee[]>([]);
-  const [showHistory, setShowHistory] = useState(false); // status card: audit-log panel
   // Referral popup (the gift icon in the header).
   const [referral, setReferral] = useState<{ referralLink: string; referralCode: string; commissionPennies: number } | null>(null);
   const [showReferral, setShowReferral] = useState(false);
@@ -2401,6 +2400,7 @@ export default function Taskpane() {
               ['email', 'mail', 'Email'],
               ['house', 'home', 'House'],
               ['paperclip', 'clip', 'Files'],
+              ['log', 'history', 'Log'],
             ] as const).map(([key, icon, lbl]) => {
               const active = tab === key;
               const locked = key !== 'email' && !hasMatter;
@@ -2745,8 +2745,6 @@ export default function Taskpane() {
             const curStage = matterInfo?.matter?.stage || 'INSTRUCTION';
             const curAssigned = matterInfo?.matter?.assigned_to || '';
             const savedNotes = (matterInfo?.matter?.notes as string | undefined) ?? '';
-            const timeline: Array<{ title?: string; details?: string; event_type?: string; event_at?: string; created_at?: string }> =
-              (matterInfo?.timeline as any) ?? [];
             const ctrl: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', color: '#0f172a', marginBottom: 7, fontFamily: 'inherit', cursor: 'pointer' };
             return (
               <Card>
@@ -2766,43 +2764,12 @@ export default function Taskpane() {
                     <Icon name="refresh" size={13} />
                   </button>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button
-                      style={{ ...S.ghostIcon, ...(showHistory ? { background: '#ede9fe', color: '#5A27E0' } : {}) }}
-                      onClick={() => setShowHistory((v) => !v)}
-                      title="Case history"
-                      aria-label="Case history"
-                    >
-                      <Icon name="history" size={14} />
-                    </button>
                     <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team tracker in a new tab">
                       {boardLoading ? 'Syncing…' : 'Tracker'} <Icon name="external" size={11} />
                     </button>
                   </div>
                 </div>
 
-                {showHistory ? (
-                  /* Case audit log — emails matched, stage moves, reassignments, edits. */
-                  <div style={{ maxHeight: 260, overflowY: 'auto' }}>
-                    {timeline.length === 0 ? (
-                      <p style={{ ...S.muted, margin: '2px 0' }}>No history yet — activity shows here as email arrives and the matter changes.</p>
-                    ) : (
-                      timeline.map((e, i) => {
-                        const when = e.event_at || e.created_at;
-                        return (
-                          <div key={i} style={{ display: 'flex', gap: 8, padding: '7px 0', borderTop: i ? '1px solid #f1f5f9' : 'none' }}>
-                            <span style={{ width: 6, height: 6, borderRadius: 999, background: '#c4b5fd', marginTop: 5, flex: 'none' }} />
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: 12.5, color: '#0f172a' }}>{e.title || (e.event_type || '').toLowerCase().replace(/_/g, ' ')}</div>
-                              {e.details && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1 }}>{e.details}</div>}
-                              {when && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{new Date(when).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                ) : (
-                  <>
                     {/* Stage + assignee side by side — unlabeled, edit in place */}
                     <div style={{ display: 'flex', gap: 6 }}>
                       <select value={curStage} onChange={(e) => updateMatterField({ stage: e.target.value })} disabled={!!busy} style={{ ...ctrl, flex: 1, minWidth: 0, width: 'auto' }} title="Stage">
@@ -2821,8 +2788,6 @@ export default function Taskpane() {
                       onBlur={(e) => { if (e.target.value !== savedNotes) updateMatterField({ notes: e.target.value }); }}
                       style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, minHeight: 60, resize: 'vertical', fontFamily: 'inherit', color: '#0f172a', lineHeight: 1.45 }}
                     />
-                  </>
-                )}
               </Card>
             );
           })()}
@@ -2955,6 +2920,64 @@ export default function Taskpane() {
                 </Card>
               )}
             </>
+          )}
+
+          {/* ── LOG TAB — everything that has happened on this matter ──
+              The same matter_timeline_event feed the status card used to hide behind an
+              icon: stage moves (with the email that caused them), automations that ran,
+              facts extracted, call notes, imports. Grouped by day so a long-running case
+              reads as a diary rather than an undifferentiated list. */}
+          {tab === 'log' && matterId && (
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <Label>Case log</Label>
+                <button
+                  style={{ ...S.ghostIcon, marginLeft: 'auto' }}
+                  onClick={() => loadMatter()}
+                  title="Refresh"
+                  aria-label="Refresh the log"
+                >
+                  <Icon name="refresh" size={13} />
+                </button>
+              </div>
+              {(() => {
+                const events: Array<{ title?: string; details?: string; event_type?: string; event_at?: string; created_at?: string }> =
+                  (matterInfo?.timeline as any) ?? [];
+                if (!events.length) {
+                  return <p style={{ ...S.muted, margin: '2px 0' }}>Nothing logged yet — actions show here as email arrives and the case moves.</p>;
+                }
+                // Bucket by calendar day, newest first (the feed already arrives sorted).
+                const days: Array<{ day: string; items: typeof events }> = [];
+                for (const e of events) {
+                  const when = e.event_at || e.created_at;
+                  const day = when ? new Date(when).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Undated';
+                  const last = days[days.length - 1];
+                  if (last && last.day === day) last.items.push(e);
+                  else days.push({ day, items: [e] });
+                }
+                return days.map((d) => (
+                  <div key={d.day} style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, margin: '0 0 5px' }}>{d.day}</div>
+                    {d.items.map((e, i) => {
+                      const when = e.event_at || e.created_at;
+                      const time = when ? new Date(when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+                      return (
+                        <div key={i} style={{ display: 'flex', gap: 8, padding: '6px 0', borderTop: i ? '1px solid #f1f5f9' : 'none' }}>
+                          <span style={{ width: 6, height: 6, borderRadius: 999, background: '#c4b5fd', marginTop: 6, flex: 'none' }} />
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 12.5, color: '#0f172a', lineHeight: 1.4 }}>
+                              {e.title || humanize(e.event_type || '')}
+                            </div>
+                            {e.details && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1, lineHeight: 1.4 }}>{e.details}</div>}
+                          </div>
+                          {time && <span style={{ fontSize: 10.5, color: '#cbd5e1', flex: 'none', marginTop: 1 }}>{time}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ));
+              })()}
+            </Card>
           )}
 
           {/* ── FILES TAB — Case files (live OneDrive folder) + Templates ── */}
