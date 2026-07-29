@@ -4,6 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
 import { getWorkflow, saveTemplate, deleteTemplate, ensureDefaultWorkflow } from '@/lib/server/workflow';
+import { listStages } from '@/lib/server/stages';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -15,12 +16,14 @@ export async function GET() {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
     await ensureDefaultWorkflow(user.tenantId); // seed the standard conveyancing flow on first open
-    const { templates, edges, emailTemplates, docTemplates } = await getWorkflow(user.tenantId);
-    const users = await query(
-      `select id, coalesce(display_name, email) as name, role from app_user where tenant_id = $1 order by created_at asc`,
-      [user.tenantId]
-    );
-    return ok({ templates, edges, users, emailTemplates, docTemplates });
+    // Everything the canvas needs in ONE response, fetched in parallel. The client used
+    // to make two sequential calls (stages, then this) which doubled the wait.
+    const [wf, users, stages] = await Promise.all([
+      getWorkflow(user.tenantId),
+      query(`select id, coalesce(display_name, email) as name, role from app_user where tenant_id = $1 order by created_at asc`, [user.tenantId]),
+      listStages(user.tenantId).catch(() => []),
+    ]);
+    return ok({ ...wf, users, stages });
   } catch (error) {
     return fail(error);
   }

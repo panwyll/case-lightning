@@ -109,29 +109,21 @@ export async function ensureDefaultWorkflow(tenantId: string, force = false): Pr
 export async function getWorkflow(
   tenantId: string
 ): Promise<{ templates: TaskTemplate[]; edges: TaskEdge[]; emailTemplates: EmailTemplateLite[]; docTemplates: DocTemplateLite[] }> {
-  let templates: TaskTemplate[] = [];
-  let edges: TaskEdge[] = [];
-  let emailTemplates: EmailTemplateLite[] = [];
-  let docTemplates: DocTemplateLite[] = [];
-  try {
-    templates = await selectTemplates('where tenant_id = $1 order by sort_order, created_at', [tenantId]);
-    edges = await query<TaskEdge>(`select from_template_id, to_template_id from task_template_edge where tenant_id = $1`, [tenantId]);
-  } catch {
-    return { templates: [], edges: [], emailTemplates: [], docTemplates: [] }; // not migrated (039) yet
-  }
-  try {
-    emailTemplates = await query<EmailTemplateLite>(`select id, name, subject_template, attach_doc_template_ids from template where tenant_id = $1 and is_active = true order by name`, [tenantId]);
-  } catch {
-    // Pre-migration 055 — no attachments column; read without it.
-    try {
-      emailTemplates = (await query<any>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId])).map((e) => ({ ...e, attach_doc_template_ids: [] }));
-    } catch { /* template table always exists — ignore */ }
-  }
-  try {
-    docTemplates = await query<DocTemplateLite>(`select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]);
-  } catch {
-    /* pre-migration 021 (doc_template) — no doc templates to pick from */
-  }
+  // All four reads are independent — run them together. Serially these were four
+  // round trips to the database on every open of the Case Flow tab.
+  const [templates, edges, emailTemplates, docTemplates] = await Promise.all([
+    selectTemplates('where tenant_id = $1 order by sort_order, created_at', [tenantId]).catch(() => [] as TaskTemplate[]),
+    query<TaskEdge>(`select from_template_id, to_template_id from task_template_edge where tenant_id = $1`, [tenantId]).catch(() => [] as TaskEdge[]),
+    query<EmailTemplateLite>(
+      `select id, name, subject_template, attach_doc_template_ids from template where tenant_id = $1 and is_active = true order by name`,
+      [tenantId]
+    ).catch(async () =>
+      // Pre-migration 055 — no attachments column; read without it.
+      (await query<any>(`select id, name, subject_template from template where tenant_id = $1 and is_active = true order by name`, [tenantId]).catch(() => []))
+        .map((e: any) => ({ ...e, attach_doc_template_ids: [] }))
+    ),
+    query<DocTemplateLite>(`select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`, [tenantId]).catch(() => [] as DocTemplateLite[]),
+  ]);
   return { templates, edges, emailTemplates, docTemplates };
 }
 

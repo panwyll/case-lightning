@@ -136,44 +136,63 @@ export default function WorkflowCanvas() {
   const noteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const setNote = (m: string) => { setNoteRaw(m); if (noteTimer.current) clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNoteRaw(null), 3500); };
 
+  // Paint from the last-seen payload immediately, then refresh in the background. The
+  // Case Flow is heavy to assemble server-side, and it barely changes between opens, so
+  // waiting on the network before showing anything is the wrong trade.
+  const CACHE_KEY = 'cl_caseflow_v1';
+  // apply() runs twice per load (cache, then network), so the legacy-position fix-up must
+  // only fire once — otherwise it POSTs the same patches twice.
+  const normalised = useRef(false);
+  const apply = useCallback((r: any) => {
+    const stageList: Stage[] = r.stages ?? [];
+    let tmpl: Template[] = r.templates ?? [];
+    const eds: Edge[] = r.edges ?? [];
+
+    // One-time normalisation: legacy tasks were all stored at x=0 (stacked). Give each
+    // stage a tidy default grid so the free-form canvas doesn't open as a pile, and
+    // persist it so positions become real coordinates from here on.
+    const patches: Template[] = [];
+    for (const st of stageList) {
+      const list = tmpl.filter((t) => t.stage === st.key);
+      if (list.length > 1 && new Set(list.map((t) => t.pos_x)).size <= 1) {
+        const lay = computeLayout(list, eds);
+        for (const t of list) { const pt = lay[t.id]; if (pt) patches.push({ ...t, pos_x: pt.x, pos_y: pt.y }); }
+      }
+    }
+    if (patches.length && !normalised.current) {
+      normalised.current = true;
+      tmpl = tmpl.map((t) => patches.find((pp) => pp.id === t.id) ?? t);
+      void Promise.all(patches.map((pp) => api('/admin/workflow', { method: 'POST', body: JSON.stringify(templateBody(pp)) }))).catch(() => {});
+    }
+
+    setStages(stageList);
+    setTemplates(tmpl);
+    setEdges(eds);
+    setUsers(r.users ?? []);
+    setEmailTemplates(r.emailTemplates ?? []);
+    setDocTemplates(r.docTemplates ?? []);
+    setErr(null);
+  }, []);
+
   const load = useCallback(async () => {
-    setLoading(true);
+    // Warm start: render whatever we saw last time, so the canvas is on screen at once.
+    let warm = false;
     try {
-      let stageList: Stage[] = [];
-      try { stageList = (await api<{ stages: Stage[] }>('/admin/stages')).stages ?? []; } catch { /* stages optional */ }
-      const r = await api<{ templates: Template[]; edges: Edge[]; users: Member[]; emailTemplates: any[]; docTemplates: any[] }>('/admin/workflow');
-      let tmpl = r.templates ?? [];
-      const eds = r.edges ?? [];
-
-      // One-time normalisation: legacy tasks were all stored at x=0 (stacked). Give each
-      // stage a tidy default grid so the free-form canvas doesn't open as a pile, and
-      // persist it so positions become real coordinates from here on.
-      const patches: Template[] = [];
-      for (const s of stageList) {
-        const list = tmpl.filter((t) => t.stage === s.key);
-        if (list.length > 1 && new Set(list.map((t) => t.pos_x)).size <= 1) {
-          const lay = computeLayout(list, eds);
-          for (const t of list) { const p = lay[t.id]; if (p) patches.push({ ...t, pos_x: p.x, pos_y: p.y }); }
-        }
-      }
-      if (patches.length) {
-        tmpl = tmpl.map((t) => patches.find((p) => p.id === t.id) ?? t);
-        void Promise.all(patches.map((p) => api('/admin/workflow', { method: 'POST', body: JSON.stringify(templateBody(p)) }))).catch(() => {});
-      }
-
-      setStages(stageList);
-      setTemplates(tmpl);
-      setEdges(eds);
-      setUsers(r.users ?? []);
-      setEmailTemplates(r.emailTemplates ?? []);
-      setDocTemplates(r.docTemplates ?? []);
-      setErr(null);
+      const cached = window.sessionStorage.getItem(CACHE_KEY);
+      if (cached) { apply(JSON.parse(cached)); setLoading(false); warm = true; }
+    } catch { /* no/broken cache — fall through to the network */ }
+    if (!warm) setLoading(true);
+    try {
+      const r = await api<any>('/admin/workflow');
+      apply(r);
+      try { window.sessionStorage.setItem(CACHE_KEY, JSON.stringify(r)); } catch { /* quota — not fatal */ }
     } catch (e: any) {
-      setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
+      // A failed refresh must not blank a canvas we already painted from cache.
+      if (!warm) setErr(e?.message || 'Could not load the workflow. Has migration 039 been run?');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apply]);
   useEffect(() => { void load(); }, [load]);
 
   const tasksByStage = useMemo(() => {
