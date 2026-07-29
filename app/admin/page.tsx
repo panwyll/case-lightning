@@ -427,9 +427,9 @@ export default function AdminPage() {
   // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
   // because their nav button simply isn't in the DOM.
   // Only the sections whose value isn't obvious from the nav label. Team, Billing and
-  // Email templates say what they are — people find those on their own.
+  // Email templates say what they are — people find those on their own. Inbox is left
+  // out too while its future as a feature is undecided.
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, already triaged and matched to matters.', before: () => go('inbox') },
     { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
     { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
     { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'Stages, tasks and what waits on what.', before: () => go('workflow') },
