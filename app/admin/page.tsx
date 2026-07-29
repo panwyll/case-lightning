@@ -426,16 +426,15 @@ export default function AdminPage() {
   // Each step opens its section — showing a nav item without opening it teaches nothing.
   // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
   // because their nav button simply isn't in the DOM.
+  // Only the sections whose value isn't obvious from the nav label. Team, Billing and
+  // Email templates say what they are — people find those on their own.
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, already triaged.', before: () => go('inbox') },
+    { target: '[data-tour="nav-inbox"]', title: 'Inbox', body: 'Your mail, already triaged and matched to matters.', before: () => go('inbox') },
     { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
     { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
     { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'Stages, tasks and what waits on what.', before: () => go('workflow') },
     { target: '[data-tour="nav-automations"]', title: 'Automations', body: 'Rules and one-click actions.', before: () => go('automations') },
-    { target: '[data-tour="nav-templates"]', title: 'Email templates', body: 'Emails that fill from the matter.', before: () => go('templates') },
-    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Your document templates.', before: () => go('docpacks') },
-    { target: '[data-tour="nav-team"]', title: 'Team', body: 'Who is in the firm.', before: () => go('team') },
-    { target: '[data-tour="nav-billing"]', title: 'Billing', body: 'Plan, usage and referrals.', before: () => go('billing') },
+    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Templates the flow fills and files for you.', before: () => go('docpacks') },
   ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
