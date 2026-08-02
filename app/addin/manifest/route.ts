@@ -31,8 +31,8 @@ function manifest(origin: string): string {
   xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
   xsi:type="MailApp">
   <Id>${ADDIN_ID}</Id>
-  <Version>1.0.4.0</Version>
-  <ProviderName>CaseLightning</ProviderName>
+  <Version>1.0.5.0</Version>
+  <ProviderName>AIFTRC LTD</ProviderName>
   <DefaultLocale>en-GB</DefaultLocale>
   <DisplayName DefaultValue="CaseLightning"/>
   <Description DefaultValue="Case-aware AI email drafting and AI case management for UK conveyancers — inside Outlook."/>

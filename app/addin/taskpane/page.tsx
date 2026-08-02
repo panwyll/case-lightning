@@ -1917,6 +1917,16 @@ export default function Taskpane() {
             </>
           ) : (
             <>
+              {/* First-run value proposition — AppSource policy 1100.1.5 requires the
+                  add-in to say what it does and why it's worth signing in BEFORE asking. */}
+              <p style={{ fontSize: 13.5, lineHeight: 1.5, color: '#1e293b', margin: '0 0 6px' }}>
+                CONVEYi reads the email you have open, matches it to the right conveyancing
+                matter, and prepares a reply for you to approve — without leaving Outlook.
+              </p>
+              <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748b', margin: '0 0 12px' }}>
+                It files documents to your firm’s own OneDrive and keeps a tracker per matter.
+                Built for UK conveyancing teams — sign in with your work Microsoft account.
+              </p>
               <button style={S.primary} onClick={() => connect()}>
                 Connect Outlook
               </button>
