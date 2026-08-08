@@ -31,11 +31,15 @@ const tools = [
   },
 ];
 
-// The post-install flow. Outlook hides add-ins behind the Apps button and opens the pane
-// unpinned, so it closes the moment you open the next email — the single most common
-// reason a new install looks broken. Spelling it out here, on the store listing and in
-// the pane's own tour is deliberate belt-and-braces.
+// Install → find → pin → sign in. Outlook hides add-ins behind the Apps button and opens
+// the pane unpinned, so it closes the moment you open the next email — the single most
+// common reason a new install looks broken. Spelling it out here, on the store listing and
+// in the pane's own tour is deliberate belt-and-braces.
 const firstRun = [
+  {
+    name: 'Install it',
+    body: 'From Microsoft AppSource, or in Outlook: Apps → Get add-ins → search CONVEYi. Nothing downloads to your machine.',
+  },
   {
     name: 'Open an email',
     body: 'Any client email, in Outlook on Windows, Mac or the web. CONVEYi works on the message you are reading.',
@@ -141,19 +145,19 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── FIRST RUN / POST-INSTALL ── */}
+      {/* ── INSTALL & FIRST RUN ── */}
       <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">After you install</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">Installing &amp; getting started</p>
           <h2 className="mt-4 max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            Four clicks, once. Then it’s just there.
+            Set it up once. Then it’s just there.
           </h2>
           <p className="mt-4 max-w-2xl text-lg text-ink-soft">
-            Outlook tucks new add-ins behind the <strong className="font-semibold text-ink">Apps</strong> button
-            and opens them unpinned — so the pane closes each time you move to another email until you pin it.
-            Here’s the whole setup.
+            There’s nothing to download. Outlook tucks new add-ins behind the{' '}
+            <strong className="font-semibold text-ink">Apps</strong> button and opens them unpinned — so the pane
+            closes each time you move to another email until you pin it. Here’s the whole setup, start to finish.
           </p>
-          <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-4">
+          <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-5">
             {firstRun.map((s, i) => (
               <li key={s.name} className="bg-paper p-8">
                 <div className="flex items-baseline gap-3">
