@@ -1457,7 +1457,7 @@ export default function AdminPage() {
                                           title="Assign to"
                                           onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
                                           onDragStart={(e) => e.preventDefault()}
-                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
+                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
                                         >
                                           <option value="">Unassigned</option>
                                           {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
@@ -1467,7 +1467,7 @@ export default function AdminPage() {
                                           title="Status"
                                           onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
                                           onDragStart={(e) => e.preventDefault()}
-                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
+                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
                                         >
                                           <option value="ON_TRACK">On track</option>
                                           <option value="NEEDS_ATTENTION">Attention</option>
