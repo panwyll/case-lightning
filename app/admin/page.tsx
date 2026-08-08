@@ -161,10 +161,13 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   // Shown only until the firm finishes onboarding (filtered out below once complete).
   { label: 'Start', tabs: ['getstarted'] },
-  { label: 'Work', tabs: ['mywork', 'workload'] },
+  { label: 'Work', tabs: ['mywork'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
-  // drives it, and automations (automatic + manual) are how you act on it.
-  { label: 'Case flow', tabs: ['board', 'workflow', 'automations'] },
+  // drives it.
+  // ARCHIVED, not deleted: 'workload' and 'automations' are off the nav pending a
+  // rethink — workload was filler. Their tabs and data-loading still work if you
+  // navigate to ?tab=workload / ?tab=automations directly.
+  { label: 'Case flow', tabs: ['board', 'workflow'] },
   { label: 'Content', tabs: ['templates', 'docpacks'] },
   { label: 'Firm', tabs: ['team', 'policy'] },
   { label: 'Tools', tabs: ['actions', 'audit'] },
@@ -429,7 +432,6 @@ export default function AdminPage() {
     { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
     { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
     { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'Stages, tasks and what waits on what.', before: () => go('workflow') },
-    { target: '[data-tour="nav-automations"]', title: 'Automations', body: 'Rules and one-click actions.', before: () => go('automations') },
     { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Templates the flow fills and files for you.', before: () => go('docpacks') },
   ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
