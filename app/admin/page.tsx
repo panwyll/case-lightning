@@ -1218,7 +1218,7 @@ export default function AdminPage() {
                 <div
                   onClick={onToggle}
                   title={`${label} — click to collapse`}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '8px 6px 9px', cursor: 'pointer', minHeight: 42, boxSizing: 'border-box', position: 'sticky', top: 56, zIndex: 3, background: '#f6f7fb' }}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '18px 6px 9px', cursor: 'pointer', minHeight: 52, boxSizing: 'border-box', position: 'sticky', top: 40, zIndex: 3, background: '#f6f7fb' }}
                 >
                   <span aria-hidden style={{ fontSize: 9, color: '#94a3b8', flexShrink: 0, lineHeight: 1 }}>▾</span>
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
