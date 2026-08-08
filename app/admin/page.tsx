@@ -197,6 +197,8 @@ const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
 const ADMIN_ONLY: TabKey[] = ['getstarted', 'board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
+// Grey → red over ten steps: the age-dot ramp on board cards (one dot per 10 days).
+const AGE_RAMP = ['#cbd5e1', '#bcc2cc', '#c3bcb4', '#d0b48d', '#dda36a', '#e58d4f', '#e5743a', '#dd5a2e', '#cf3f26', '#b91c1c'];
 const STAGE_ORDER = ['INSTRUCTION', 'CONTRACT_PACK', 'SEARCHES_ENQUIRIES', 'REVIEW_SIGNING', 'EXCHANGE', 'COMPLETION', 'POST_COMPLETION'] as const;
 // Each stage gets a hue — column headers and card accents key off it, Monday-style.
 const STAGE_COLOR: Record<string, string> = {
@@ -1206,11 +1208,11 @@ export default function AdminPage() {
                 <div
                   onClick={onToggle}
                   title={`${label} — click to collapse`}
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 6px 9px', cursor: 'pointer' }}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '2px 6px 9px', cursor: 'pointer' }}
                 >
                   <span aria-hidden style={{ fontSize: 9, color: '#94a3b8', flexShrink: 0, lineHeight: 1 }}>▾</span>
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, textTransform: 'uppercase', lineHeight: 1.2, wordBreak: 'break-word' }}>{label}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
                 </div>
               );
@@ -1392,8 +1394,11 @@ export default function AdminPage() {
                             {col.map((m) => {
                               const target = m.completionTargetDate || m.exchangeTargetDate;
                               const days = Math.max(0, Math.floor((Date.now() - new Date(m.stageEnteredAt || m.updatedAt).getTime()) / 86_400_000));
-                              const ageFg = days <= 7 ? '#8b93a3' : days <= 21 ? '#b45309' : '#b91c1c';
-                              const ageBg = days <= 7 ? '#f1f5f9' : days <= 21 ? '#fef3c7' : '#fee2e2';
+                              // Days in stage as dots: one per 10 days, capped at 10 (so 90+ days
+                              // fills the row), each stepped along a grey→red ramp. A stalled
+                              // matter then reads as both longer AND redder at a glance, which a
+                              // single number never did.
+                              const dotCount = Math.min(AGE_RAMP.length, Math.max(1, Math.ceil((days + 1) / 10)));
                               const chip: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' };
                               return (
                                 <div
@@ -1409,7 +1414,14 @@ export default function AdminPage() {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                       <strong style={{ fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
                                       {boardPrefs.age && (
-                                        <span title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`} style={{ ...chip, color: ageFg, background: ageBg, flexShrink: 0 }}>{days}d</span>
+                                        <span
+                                          title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`}
+                                          style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}
+                                        >
+                                          {Array.from({ length: dotCount }).map((_, di) => (
+                                            <span key={di} style={{ width: 5, height: 5, borderRadius: 999, background: AGE_RAMP[di] }} />
+                                          ))}
+                                        </span>
                                       )}
                                     </div>
                                     {boardPrefs.address && m.propertyAddress && (
@@ -1439,13 +1451,13 @@ export default function AdminPage() {
                                   {/* Owner row — quick-edit dropdowns, or a read-only avatar chip */}
                                   {boardPrefs.owner && (
                                     boardPrefs.quickEdit ? (
-                                      <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
                                         <select
                                           value={m.assignedTo || ''}
                                           title="Assign to"
                                           onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
                                           onDragStart={(e) => e.preventDefault()}
-                                          style={{ flex: 1.6, minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
+                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
                                         >
                                           <option value="">Unassigned</option>
                                           {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
@@ -1455,7 +1467,7 @@ export default function AdminPage() {
                                           title="Status"
                                           onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
                                           onDragStart={(e) => e.preventDefault()}
-                                          style={{ flex: 1, minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
+                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400, appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
                                         >
                                           <option value="ON_TRACK">On track</option>
                                           <option value="NEEDS_ATTENTION">Attention</option>
