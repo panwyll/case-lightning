@@ -31,6 +31,29 @@ const tools = [
   },
 ];
 
+// The post-install flow. Outlook hides add-ins behind the Apps button and opens the pane
+// unpinned, so it closes the moment you open the next email — the single most common
+// reason a new install looks broken. Spelling it out here, on the store listing and in
+// the pane's own tour is deliberate belt-and-braces.
+const firstRun = [
+  {
+    name: 'Open an email',
+    body: 'Any client email, in Outlook on Windows, Mac or the web. CONVEYi works on the message you are reading.',
+  },
+  {
+    name: 'Find it under Apps',
+    body: 'Click the Apps button in the email’s toolbar (the ⋯ more menu on some versions), then choose CONVEYi.',
+  },
+  {
+    name: 'Pin the pane',
+    body: 'Click the 📌 pin at the top of the pane. Without this it closes every time you open a different email.',
+  },
+  {
+    name: 'Sign in once',
+    body: 'Sign in with the same Microsoft 365 account. From then on the pane follows you from email to email.',
+  },
+];
+
 const proof = [
   ['GDPR-compliant by design', 'Your data never leaves your own Microsoft 365 tenant. We don’t copy your files to a third-party portal.'],
   ['Zero onboarding', 'No migration, no new logins, no training day. If your team can use Outlook, they can use this today.'],
@@ -61,7 +84,7 @@ export default function Page() {
             <Cta label="See how it works" href={ctaHref(ROUTES.howItWorks, PAGE_SOURCE, 'hero_how')} dataCta="hero_how" variant="secondary" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
-            From £39/month · 30-day money-back guarantee · nothing to install
+            From £200/month · 30-day money-back guarantee · nothing to install
           </p>
         </div>
       </section>
@@ -118,6 +141,36 @@ export default function Page() {
         </div>
       </section>
 
+      {/* ── FIRST RUN / POST-INSTALL ── */}
+      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
+        <div className="mx-auto max-w-6xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">After you install</p>
+          <h2 className="mt-4 max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+            Four clicks, once. Then it’s just there.
+          </h2>
+          <p className="mt-4 max-w-2xl text-lg text-ink-soft">
+            Outlook tucks new add-ins behind the <strong className="font-semibold text-ink">Apps</strong> button
+            and opens them unpinned — so the pane closes each time you move to another email until you pin it.
+            Here’s the whole setup.
+          </p>
+          <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-4">
+            {firstRun.map((s, i) => (
+              <li key={s.name} className="bg-paper p-8">
+                <div className="flex items-baseline gap-3">
+                  <span className="font-serif text-3xl font-semibold text-violet">{String(i + 1).padStart(2, '0')}</span>
+                  <h3 className="text-lg font-bold">{s.name}</h3>
+                </div>
+                <p className="mt-3 text-ink-soft">{s.body}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-6 text-sm text-ink-soft">
+            Miss the pin and CONVEYi still works — you’ll just have to reopen it from Apps each time. The add-in
+            shows you where it is the first time you open it.
+          </p>
+        </div>
+      </section>
+
       {/* ── PROOF / TRUST ── */}
       <section className="border-y border-line bg-paper-soft px-6 py-20 md:py-24">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-3">
@@ -148,19 +201,14 @@ export default function Page() {
       <section className="border-t border-line px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Three plans. No lock-in.</h2>
+            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Two plans. No lock-in.</h2>
             <Cta label="See full pricing" href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'pricing_teaser')} dataCta="pricing_teaser" variant="ghost" />
           </div>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Solo</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£39<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">Everything the individual conveyancer needs to clear the inbox and move every case faster.</p>
-            </div>
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Pro</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£199<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">Adds auto-triage and auto-rules: routine emails get matched, filed and answered for you.</p>
+              <div className="mt-3 font-serif text-5xl font-semibold">£200<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <p className="mt-3 text-ink-soft">Everything one conveyancer needs, with auto-triage and auto-rules: routine emails get matched, filed and answered for you.</p>
             </div>
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
               <div className="text-sm font-semibold uppercase tracking-widest text-violet">Firm</div>
