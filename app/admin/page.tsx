@@ -1178,9 +1178,13 @@ export default function AdminPage() {
               // Two piles: work in flight (stage columns) and Completed (done — capped
               // server-side so it never bloats). No backlog: conveyancing has no sprint-
               // grooming phase; a new instruction simply starts on the board.
-              const active = visible.filter((m) => m.status !== 'CLOSED');
+              // Post-completion sits with Completed rather than holding its own column:
+              // once a matter completes, what's left is filing and admin, not work in
+              // flight, and a near-empty column at the end of the rail earned no space.
+              const isDone = (m: any) => m.status === 'CLOSED' || (m.stage || 'INSTRUCTION') === 'POST_COMPLETION';
+              const active = visible.filter((m) => !isDone(m));
               const donePile = visible
-                .filter((m) => m.status === 'CLOSED')
+                .filter(isDone)
                 .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
               // Dropping a completed card onto a stage reactivates it there.
               const dropOnStage = (stage: string) => {
@@ -1195,10 +1199,18 @@ export default function AdminPage() {
               const initialsOf = (n: string) =>
                 n.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('');
               // Column chrome shared by stages and piles.
+              // The whole header is the collapse control, with a chevron to say so — only
+              // the label text used to be clickable, so once you expanded a column it read
+              // as a one-way door.
               const colHead = (label: string, dot: string, count: React.ReactNode, onToggle: () => void) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 6px 9px' }}>
+                <div
+                  onClick={onToggle}
+                  title={`${label} — click to collapse`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 6px 9px', cursor: 'pointer' }}
+                >
+                  <span aria-hidden style={{ fontSize: 9, color: '#94a3b8', flexShrink: 0, lineHeight: 1 }}>▾</span>
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
-                  <span onClick={onToggle} title={`${label} — click to collapse`} style={{ fontSize: 12, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', textTransform: 'uppercase' }}>{label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{label}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
                 </div>
               );
@@ -1260,8 +1272,10 @@ export default function AdminPage() {
                           </div>
                         ))
                       )}
-                      {status === 'CLOSED' && doneTotal > pile.length && (
-                        <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: '4px 0 2px' }}>+ {doneTotal - pile.length} older</div>
+                      {status === 'CLOSED' && doneTotal > pile.filter((m: any) => m.status === 'CLOSED').length && (
+                        <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: '4px 0 2px' }}>
+                          + {doneTotal - pile.filter((m: any) => m.status === 'CLOSED').length} older
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1353,7 +1367,7 @@ export default function AdminPage() {
 
                   {/* Kanban rail — fixed-width columns on a horizontal scroll, Completed pile at the end */}
                   <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
-                    {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).map((stage) => {
+                    {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).filter((stage) => stage !== 'POST_COMPLETION').map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       if (collapsedStages.includes(stage)) {
                         return collapsedStrip(stage, (stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, (e) => {
@@ -1494,7 +1508,7 @@ export default function AdminPage() {
                         </div>
                       );
                     })}
-                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#22c55e', doneTotal ? String(doneTotal) : undefined)}
+                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#22c55e', doneTotal ? String(doneTotal + donePile.filter((m: any) => m.status !== 'CLOSED').length) : undefined)}
                   </div>
                 </>
               );
