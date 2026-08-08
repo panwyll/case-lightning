@@ -27,7 +27,21 @@ export interface TourStep {
 const PURPLE = '#5A27E0';
 const PAD = 6; // breathing room around the highlighted control
 
-export default function Tour({ steps, onClose }: { steps: TourStep[]; onClose: () => void }) {
+export default function Tour({
+  steps,
+  onClose,
+  onNeverAgain,
+}: {
+  steps: TourStep[];
+  onClose: () => void;
+  /**
+   * Opt out permanently. When supplied, a "Don't show again" control appears beside
+   * Skip — Skip dismisses this run, this one stops the tour returning. Omit it and the
+   * control is hidden, for callers (like the replay button) where opting out is
+   * meaningless because the user asked for the tour.
+   */
+  onNeverAgain?: () => void;
+}) {
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<DOMRect | null>(null);
   const [vw, setVw] = useState(0);
@@ -173,6 +187,11 @@ export default function Tour({ steps, onClose }: { steps: TourStep[]; onClose: (
         <p style={{ fontSize: 12.5, lineHeight: 1.5, color: '#475569', margin: '5px 0 10px' }}>{step.body}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button onClick={onClose} style={ghost}>Skip</button>
+          {onNeverAgain && (
+            <button onClick={onNeverAgain} style={{ ...ghost, padding: '5px 4px', color: '#94a3b8' }}>
+              Don’t show again
+            </button>
+          )}
           <span style={{ flex: 1 }} />
           {pos > 1 && <button onClick={back} style={ghost}>Back</button>}
           <button onClick={next} style={primary}>{pos === showable.length ? 'Done' : 'Next'}</button>

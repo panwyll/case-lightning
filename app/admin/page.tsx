@@ -5,7 +5,6 @@ import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import Onboarding from './Onboarding';
-import Inbox from './Inbox';
 import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
@@ -138,12 +137,11 @@ function describeAudit(row: any): string {
   }
 }
 
-type TabKey = 'getstarted' | 'inbox' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   getstarted: { label: 'Get started', subtitle: '' },
-  inbox: { label: 'Inbox', subtitle: '' },
   mywork: { label: 'My work', subtitle: '' },
   billing: { label: 'Billing & referrals', subtitle: '' },
   board: { label: 'Matter board', subtitle: '' },
@@ -163,7 +161,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
   // Shown only until the firm finishes onboarding (filtered out below once complete).
   { label: 'Start', tabs: ['getstarted'] },
-  { label: 'Work', tabs: ['inbox', 'mywork', 'workload'] },
+  { label: 'Work', tabs: ['mywork', 'workload'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
   // drives it, and automations (automatic + manual) are how you act on it.
   { label: 'Case flow', tabs: ['board', 'workflow', 'automations'] },
@@ -176,7 +174,6 @@ const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
 // Small icon per tab — the nav reads at a glance, Monday/Jira style.
 const TAB_ICON: Record<TabKey, string> = {
   getstarted: '🚀',
-  inbox: '📥',
   mywork: '☑️',
   board: '🗂️',
   workload: '⚖️',
@@ -427,8 +424,7 @@ export default function AdminPage() {
   // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
   // because their nav button simply isn't in the DOM.
   // Only the sections whose value isn't obvious from the nav label. Team, Billing and
-  // Email templates say what they are — people find those on their own. Inbox is left
-  // out too while its future as a feature is undecided.
+  // Email templates say what they are — people find those on their own.
   const TOUR_STEPS: TourStep[] = [
     { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
     { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
@@ -970,7 +966,6 @@ export default function AdminPage() {
 
         {tourOn && <Tour steps={TOUR_STEPS} onClose={endTour} />}
 
-        {tab === 'inbox' && <Inbox api={api} />}
 
         {tab === 'getstarted' && <Onboarding onNavigate={(t) => go(t as TabKey)} onChange={(s) => setOnb(s)} />}
 
