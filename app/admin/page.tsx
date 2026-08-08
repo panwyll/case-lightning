@@ -1355,7 +1355,7 @@ export default function AdminPage() {
                           <div onClick={() => setShowDisplayMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
                           <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, boxShadow: '0 10px 30px rgba(16,24,40,0.14)', padding: '10px 12px', width: 210 }}>
                             <div style={{ fontSize: 10.5, fontWeight: 800, color: '#8b93a3', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Card fields</div>
-                            {([['address', 'Property address'], ['owner', 'Owner'], ['dates', 'Dates & task chips'], ['tasks', 'Open-task count'], ['age', 'Days in stage'], ['quickEdit', 'Quick-edit dropdowns']] as const).map(([k, label]) => (
+                            {([['address', 'Property address'], ['owner', 'Owner'], ['dates', 'Target dates'], ['tasks', 'Next task due'], ['age', 'Days in stage'], ['quickEdit', 'Quick-edit dropdowns']] as const).map(([k, label]) => (
                               <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', padding: '4px 0', cursor: 'pointer' }}>
                                 <input type="checkbox" checked={Boolean(boardPrefs[k])} onChange={() => togglePref(k)} style={{ accentColor: '#5A27E0' }} />
                                 {label}
@@ -1427,15 +1427,12 @@ export default function AdminPage() {
                                     {boardPrefs.address && m.propertyAddress && (
                                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{m.propertyAddress}</div>
                                     )}
-                                    {boardPrefs.dates && (target || Number(m.openTasks) > 0 || m.nextDue) && (
+                                    {boardPrefs.dates && (target || m.nextDue) && (
                                       <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
                                         {target && (
                                           <span title={m.completionTargetDate ? 'Completion target' : 'Exchange target'} style={{ ...chip, color: '#0e7490', background: '#ecfeff' }}>
                                             🎯 {new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                                           </span>
-                                        )}
-                                        {boardPrefs.tasks && Number(m.openTasks) > 0 && (
-                                          <span title={`${m.openTasks} open task${Number(m.openTasks) === 1 ? '' : 's'}`} style={{ ...chip, color: '#475569', background: '#f1f5f9' }}>☑ {m.openTasks}</span>
                                         )}
                                         {boardPrefs.tasks && m.nextDue && (() => {
                                           const overdue = new Date(m.nextDue).getTime() < Date.now() - 86_400_000;
