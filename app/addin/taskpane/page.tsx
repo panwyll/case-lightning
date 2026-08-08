@@ -231,8 +231,11 @@ export default function Taskpane() {
     // Targetless (centred): the pin is Outlook's own chrome, outside our DOM, so there is
     // nothing here to spotlight. First step because an unpinned pane closes the moment
     // they open the next email — which is when most people conclude the add-in is broken.
-    { title: 'Pin this pane', body: 'Click the 📌 pin at the top of this pane. It then stays open as you move from email to email, instead of closing each time.' },
-    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Chases and drafts waiting.', before: () => setHomeView(true) },
+    { title: 'Pin this pane', body: 'Click the 📌 at the top — it then stays open as you move between emails.' },
+    // No `before` on purpose: opening the worklist swaps this very button's icon for a
+    // back arrow, so the spotlight would land on a back arrow while the tooltip talks
+    // about the worklist. Point at the button in its resting state instead.
+    { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Chases and drafts waiting.' },
     { target: '[data-tour="tab-email"]', title: 'Email', body: 'The situation, and a reply ready to approve.', before: () => { setHomeView(false); setTab('email'); } },
     { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record.', before: () => { setHomeView(false); setTab('house'); } },
     { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder.', before: () => { setHomeView(false); setTab('paperclip'); } },
