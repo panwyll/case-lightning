@@ -117,6 +117,8 @@ const OB_ACTIVE = ['SCANNING', 'CLUSTERING', 'PROPOSING', 'PROVISIONING'];
 
 // run() busy labels for the reply flow — also used to drive the panel's spinner.
 const TOKEN_KEY = 'cl_token';
+// Set once we've PROVED the pane is pinned (see panePinned in Taskpane).
+const PANE_PINNED_KEY = 'cl_pane_pinned';
 
 // A 401/403 from ANY call means the session lapsed mid-use. Rather than let the
 // individual caller surface a dead-end "unauthorized" toast, we drop the whole
@@ -208,6 +210,24 @@ function hasSignInHint(): boolean {
 
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
+  // Is the pane pinned? Office exposes no "am I pinned" API, but ItemChanged only ever
+  // fires if the pane STAYED OPEN while the user selected a different message — which
+  // only a pinned pane does. So the first ItemChanged is proof, and it's remembered.
+  // Until we have that proof we prompt, because an unpinned pane closing on the next
+  // email is the single most common reason a fresh install looks broken.
+  const [panePinned, setPanePinned] = useState(true); // assume pinned until mounted, so the prompt never flashes on hydration
+  const [pinPromptHidden, setPinPromptHidden] = useState(false);
+  useEffect(() => {
+    try {
+      setPanePinned(window.localStorage.getItem(PANE_PINNED_KEY) === '1');
+    } catch {
+      setPanePinned(true); // private mode — don't nag
+    }
+  }, []);
+  const markPinned = useCallback(() => {
+    setPanePinned(true);
+    try { window.localStorage.setItem(PANE_PINNED_KEY, '1'); } catch { /* private mode */ }
+  }, []);
   // Guided tour of the pane's controls — the pane's only onboarding. It teaches what a
   // checklist can't, because the answer is "that icon, there" rather than a list of
   // tasks. Runs once automatically on first open, and can be replayed from the header.
@@ -940,8 +960,13 @@ export default function Taskpane() {
         Office.onReady(() => {
           loadItem();
           // Re-read when the user selects a different message (pinned task pane).
+          // Reaching this handler at all proves the pane survived a message switch,
+          // i.e. it is pinned — so stop prompting for the pin from here on.
           try {
-            Office?.context?.mailbox?.addHandlerAsync?.(Office?.EventType?.ItemChanged ?? 'olkItemSelectedChanged', loadItem);
+            Office?.context?.mailbox?.addHandlerAsync?.(Office?.EventType?.ItemChanged ?? 'olkItemSelectedChanged', () => {
+              markPinned();
+              loadItem();
+            });
           } catch {
             /* event not available on this host — the pane just won't auto-refresh */
           }
@@ -1859,6 +1884,27 @@ export default function Taskpane() {
         )}
       </header>
 
+      {/* Pin prompt. Sits above everything and shows in every state — including signed
+          out, which is when a brand-new user first meets the pane and is most likely to
+          lose it. Disappears for good the moment we can prove it's pinned (see
+          panePinned); dismissible for the session in the meantime. */}
+      {!panePinned && !pinPromptHidden && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#EDE7FB', border: '1px solid #d8ccf7', borderRadius: 10, padding: '9px 10px', margin: '0 0 8px' }}>
+          <span aria-hidden style={{ fontSize: 14, lineHeight: '16px' }}>📌</span>
+          <span style={{ flex: 1, fontSize: 12, color: '#3b1f8a', lineHeight: 1.45 }}>
+            <strong>Pin this pane.</strong> Use the pin at the top of the pane — otherwise
+            CONVEYi closes each time you open a different email.
+          </span>
+          <button
+            onClick={() => setPinPromptHidden(true)}
+            aria-label="Dismiss"
+            style={{ border: 'none', background: 'none', color: '#7c6bb0', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {boxedOut && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(255,255,255,0.97)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ maxWidth: 320, textAlign: 'center' }}>
@@ -2263,9 +2309,6 @@ export default function Taskpane() {
                         );
                       })()}
                     </Card>
-                    <p style={{ ...S.muted, fontSize: 11, margin: '-2px 2px 4px' }}>
-                      📌 Tip: pin CONVEYi (the pin at the top of this pane) to keep this open as you work.
-                    </p>
                   </>
                 );
               })()}
