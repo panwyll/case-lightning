@@ -937,9 +937,9 @@ export default function AdminPage() {
         </div>
       </div>
 
-      <div style={{ ...box, display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 20px 56px' }}>
+      <div style={{ ...box, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 14px 56px' }}>
         {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
-        <nav style={{ width: 176, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '10px 8px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+        <nav style={{ width: 162, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '10px 8px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           {NAV_GROUPS.map((grp) => {
             // "Get started" only appears while the firm is still onboarding.
             const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
@@ -1411,19 +1411,17 @@ export default function AdminPage() {
                                 >
                                   {/* Card face opens the full matter drawer */}
                                   <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      <strong style={{ fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
-                                      {boardPrefs.age && (
-                                        <span
-                                          title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`}
-                                          style={{ display: 'flex', gap: 2, alignItems: 'center', flexShrink: 0 }}
-                                        >
-                                          {Array.from({ length: dotCount }).map((_, di) => (
-                                            <span key={di} style={{ width: 5, height: 5, borderRadius: 999, background: AGE_RAMP[di] }} />
-                                          ))}
-                                        </span>
-                                      )}
-                                    </div>
+                                    {boardPrefs.age && (
+                                      <span
+                                        title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`}
+                                        style={{ display: 'flex', gap: 2, alignItems: 'center', marginBottom: 4 }}
+                                      >
+                                        {Array.from({ length: dotCount }).map((_, di) => (
+                                          <span key={di} style={{ width: 5, height: 5, borderRadius: 999, background: AGE_RAMP[di] }} />
+                                        ))}
+                                      </span>
+                                    )}
+                                    <strong style={{ display: 'block', fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
                                     {boardPrefs.address && m.propertyAddress && (
                                       <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{m.propertyAddress}</div>
                                     )}
