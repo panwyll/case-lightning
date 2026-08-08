@@ -141,26 +141,26 @@ type TabKey = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'work
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
-  getstarted: { label: 'Get started', subtitle: '' },
-  mywork: { label: 'My work', subtitle: '' },
-  billing: { label: 'Billing & referrals', subtitle: '' },
-  board: { label: 'Matter board', subtitle: '' },
+  getstarted: { label: 'Get Started', subtitle: '' },
+  mywork: { label: 'My Work', subtitle: '' },
+  billing: { label: 'Billing & Referrals', subtitle: '' },
+  board: { label: 'Matter Board', subtitle: '' },
   workload: { label: 'Workload', subtitle: '' },
   workflow: { label: 'Case Flow', subtitle: '' },
-  templates: { label: 'Email templates', subtitle: '' },
-  docpacks: { label: 'Doc packs', subtitle: '' },
+  templates: { label: 'Email Templates', subtitle: '' },
+  docpacks: { label: 'Doc Packs', subtitle: '' },
   automations: { label: 'Automations', subtitle: '' },
   team: { label: 'Team', subtitle: '' },
   policy: { label: 'Policy', subtitle: '' },
   actions: { label: 'Tools', subtitle: '' },
-  audit: { label: 'Audit log', subtitle: '' },
-  help: { label: 'Help & support', subtitle: '' },
+  audit: { label: 'Audit Log', subtitle: '' },
+  help: { label: 'Help & Support', subtitle: '' },
 };
 
 // Grouped left-nav. Empty groups (after role filtering) are hidden.
 const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
-  // Shown only until the firm finishes onboarding (filtered out below once complete).
-  { label: 'Start', tabs: ['getstarted'] },
+  // 'getstarted' deliberately absent — it lives in the top bar while the firm is
+  // still onboarding, not in the left nav.
   { label: 'Work', tabs: ['mywork'] },
   // The case flow is the spine: the board is it live, Task workflow is the DAG that
   // drives it.
@@ -915,6 +915,16 @@ export default function AdminPage() {
           <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
           {me && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+              {showGetStarted && (
+                <button
+                  onClick={() => go('getstarted')}
+                  title="Get your firm set up"
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : 'none', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 10px', borderRadius: 8, fontFamily: 'inherit' }}
+                >
+                  <span aria-hidden>🚀</span> Get Started
+                  {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
+                </button>
+              )}
               {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
               <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
               <button
