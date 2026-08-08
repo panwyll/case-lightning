@@ -4,8 +4,11 @@
  * Internal keys are stable; the customer-facing names differ (see PLAN_LABEL in the
  * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
  *
- *   plus       — "Solo". Entry. No premium AI/automation, single seat. £39/mo.
- *   pro        — "Pro". Premium AI/automation, single seat, heavy-LLM usage capped. £199/mo.
+ *   plus       — "Solo". RETIRED (was £39/mo, no premium AI, single seat). Not sellable:
+ *                the checkout route rejects it. Kept as a valid key so any legacy row
+ *                still resolves to a tier rather than throwing.
+ *   pro        — "Pro". ENTRY TIER. Premium AI/automation, single seat, heavy-LLM
+ *                usage capped. £200/mo.
  *   enterprise — "Firm". Premium AI/automation + team (multi-seat), uncapped. £399/mo,
  *                3 seats included then £59/seat (per-seat billing not yet wired — flat today).
  *

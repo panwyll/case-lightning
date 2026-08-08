@@ -1053,7 +1053,7 @@ export default function AdminPage() {
                 <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
                   {billing.plan === 'enterprise'
                     ? 'Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in, or just at this web address. Your first 3 seats are included; extra seats are £59/month each.'
-                    : 'Solo and Pro are single-seat. Firm opens up the matter board, workload and assignment, with 3 seats included — upgrade above.'}
+                    : 'Pro is single-seat. Firm opens up the matter board, workload and assignment, with 3 seats included — upgrade above.'}
                 </p>
               </div>
 

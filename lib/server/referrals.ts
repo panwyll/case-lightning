@@ -148,9 +148,10 @@ export async function accrueCommission(args: {
   );
   if (!edge) return;
 
-  // Commission is a share of what the referred firm actually paid this invoice, capped —
-  // so it scales down on low tiers (a flat £50 would overpay a £39 Solo referee) and up
-  // with Firm seat overage, while never exceeding the cap. A £0 invoice (trial) accrues
+  // Commission is a share of what the referred firm actually paid this invoice, capped.
+  // The scaling mattered when Solo (£39) was the entry tier; with Pro (£200) the floor,
+  // 0.25 × invoice exceeds the £50 cap on every plan, so this is effectively a flat £50
+  // (see the note on referralCommissionRate in config.ts). A £0 invoice (trial) accrues
   // nothing; you only ever pay commission out of revenue you've collected.
   const paid = Math.max(0, args.amountPaidPennies ?? 0);
   const amount = Math.min(config.referralCommissionPennies, Math.round(paid * config.referralCommissionRate));

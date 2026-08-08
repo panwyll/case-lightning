@@ -55,6 +55,8 @@ export async function getOnboardingStatus(tenantId: string): Promise<OnboardingS
   const steps: OnboardingStep[] = [
     { key: 'firm', title: 'Name your firm', detail: 'So letters and emails go out under the right name.', done: !isDefault(t?.name) },
     { key: 'workspace', title: 'Set up your workspace', detail: 'Seed the conveyancing workflow, document templates and starter automations.', done: !!(seeded?.workflow_seeded && docCount > 0 && autoCount > 0) || !!state.workspace },
+    // NB: "pin the task pane" deliberately lives in the add-in's tour, not here — it's an
+    // Outlook action you can't perform from this browser tab.
     { key: 'caseflow', title: 'Tune your Case Flow', detail: 'Review the stages, tasks, documents and emails your matters will run through.', done: !!state.caseflow },
     { key: 'matter', title: 'Create your first matter', detail: 'Start a matter, or import your existing cases from your inbox.', done: matterCount > 0 },
     { key: 'team', title: 'Invite your team', detail: 'Bring colleagues in with the right role.', done: userCount > 1 || inviteCount > 0 || !!state.team },

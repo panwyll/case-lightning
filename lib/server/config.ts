@@ -136,16 +136,19 @@ export const config = {
   // last message and no reply has arrived within this many days. Tune via env.
   chaseSlaDays: Number(env('CHASE_SLA_DAYS') ?? '5'),
   // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
-  // Default: the entry tier (plus/"Solo") is capped so it funnels into Pro; pro/enterprise
-  // are unlimited. EMAIL_CAP_PLUS is the Solo funnel lever — calibrate it so an active
-  // conveyancer exhausts it ~2–3 weeks in (long enough to bed in, short enough to bite).
+  // pro/enterprise are unlimited. EMAIL_CAP_PLUS only applies to plus/"Solo", which is
+  // retired and no longer sellable — it now binds nothing but legacy rows, so it is no
+  // longer a funnel lever. Pro is the entry tier and is uncapped.
   emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
   emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
   emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
-  // Recurring single-level referral commission. Now a share of what the *referred* firm
-  // actually pays each invoice, capped — so it never exceeds a sensible cut of low tiers
-  // (a flat £50 would overpay against Solo at £39). Commission = min(cap, rate × invoice).
-  // rate 0.25 + cap £50 → Solo ≈ £10, Pro ≈ £50 (hits cap), Firm = £50.
+  // Recurring single-level referral commission — a share of what the *referred* firm
+  // actually pays each invoice, capped. Commission = min(cap, rate × invoice).
+  // NOTE: the rate/cap were calibrated against the old £39 Solo entry tier, which scaled
+  // the payout down on cheap plans (Solo ≈ £10). With Solo retired and Pro (£200) the
+  // entry tier, 0.25 × £200 = £50 — so EVERY referral now hits the £50 cap from the
+  // first invoice. The cap is doing all the work and the rate no longer differentiates.
+  // Revisit both if referral cost per customer matters.
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
   referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

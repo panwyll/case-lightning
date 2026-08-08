@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'FAQ — CONVEYi',
   description:
-    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the referral scheme, the 30-day money-back guarantee, and the Solo, Pro and Firm plans.',
+    'Common questions about CONVEYi: GDPR, where your data lives, onboarding, the referral scheme, the 30-day money-back guarantee, and the Pro and Firm plans.',
 };
 
 const PAGE_SOURCE = 'faq';
@@ -35,8 +35,8 @@ const faqs = [
     a: 'It’s the most generous in legal software: refer another firm and you earn a quarter of what they pay — up to £50 — every month they remain a customer, recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
   },
   {
-    q: 'What’s the difference between the Solo, Pro and Firm plans?',
-    a: 'Solo (£39/month) gives one conveyancer the Outlook add-in, case-aware drafting, the chase-up worklist, the OneDrive knowledge base and the Excel tracker. Pro (£199/month) adds the automation: incoming mail is auto-matched to the right case, tagged, filed, and — where you allow it — answered automatically, plus AI document packs. Firm (£399/month, three seats included then £59 a seat) opens the practice up to the whole team: a matter board, a workload dashboard and matter assignment, with admin oversight.',
+    q: 'What’s the difference between the Pro and Firm plans?',
+    a: 'Pro (£200/month) gives one conveyancer the Outlook add-in, case-aware drafting, the chase-up worklist, the OneDrive knowledge base and the Excel tracker — plus the automation: incoming mail is auto-matched to the right case, tagged, filed, and, where you allow it, answered automatically, along with AI document packs. Firm (£399/month, three seats included then £59 a seat) opens the practice up to the whole team: a matter board, a workload dashboard and matter assignment, with admin oversight.',
   },
   {
     q: 'What if it doesn’t work for us?',
