@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  CaseLightning Outlook add-in manifest.
+  CONVEYi Outlook add-in manifest.
 
   URLs below point at the production origin (https://www.caselightning.co.uk) so the
   committed manifest matches what is deployed. For LOCAL sideloading, replace every
@@ -14,10 +14,10 @@
   xsi:type="MailApp">
 
   <Id>6ac8bf48-cb10-4ba5-8469-5fd32f77d4b0</Id>
-  <Version>1.0.5.0</Version>
+  <Version>1.0.6.0</Version>
   <ProviderName>AIFTRC LTD</ProviderName>
   <DefaultLocale>en-GB</DefaultLocale>
-  <DisplayName DefaultValue="CaseLightning"/>
+  <DisplayName DefaultValue="CONVEYi"/>
   <Description DefaultValue="Case-aware AI email drafting and AI case management for UK conveyancers — inside Outlook."/>
   <IconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-64.png"/>
   <HighResolutionIconUrl DefaultValue="https://www.caselightning.co.uk/addin/icon-128.png"/>
@@ -95,8 +95,8 @@
           <bt:Url id="Taskpane.Url" DefaultValue="https://www.caselightning.co.uk/addin/taskpane"/>
         </bt:Urls>
         <bt:ShortStrings>
-          <bt:String id="GroupLabel" DefaultValue="CaseLightning"/>
-          <bt:String id="TaskpaneButton.Label" DefaultValue="Open CaseLightning"/>
+          <bt:String id="GroupLabel" DefaultValue="CONVEYi"/>
+          <bt:String id="TaskpaneButton.Label" DefaultValue="Open CONVEYi"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the case-aware drafting &amp; case-management sidebar."/>
