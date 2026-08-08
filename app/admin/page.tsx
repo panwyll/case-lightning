@@ -1216,7 +1216,10 @@ export default function AdminPage() {
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
                 </div>
               );
-              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, maxHeight: 'calc(100vh - 340px)', overflowY: 'auto', transition: 'background .12s' };
+              // No per-column scroll: each column grows to its cards and the PAGE scrolls, the way
+              // Jira and ADO boards behave. A scroll box per column meant six scrollbars on
+              // one screen and cards you could only reach by scrolling the right container.
+              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, transition: 'background .12s' };
               const collapsedStrip = (key: string, label: string, dot: string, count: React.ReactNode, onDrop: (e: React.DragEvent) => void) => (
                 <div
                   key={key}
@@ -1368,7 +1371,10 @@ export default function AdminPage() {
                   </div>
 
                   {/* Kanban rail — fixed-width columns on a horizontal scroll, Completed pile at the end */}
-                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start', overflowX: 'auto' }}>
+                  {/* No overflow on the rail: setting overflow-x alone makes overflow-y compute to
+                      auto, which would keep a scroll box around the whole board and defeat the
+                      point. Columns are sized to fit, so the page scrolls instead. */}
+                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start' }}>
                     {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).filter((stage) => stage !== 'POST_COMPLETION').map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       if (collapsedStages.includes(stage)) {
