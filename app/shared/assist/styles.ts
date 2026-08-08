@@ -3,14 +3,14 @@
 import type * as React from 'react';
 
 export const S: Record<string, React.CSSProperties> = {
-  page: { maxWidth: 480, margin: '0 auto', padding: 8, paddingBottom: 60 },
+  page: { maxWidth: 480, margin: '0 auto', padding: '2px 8px 60px' },
   header: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '4px 4px 12px',
+    padding: '0 4px 7px',
     borderBottom: '1px solid #e2e8f0',
-    marginBottom: 12,
+    marginBottom: 7,
   },
   bolt: { color: '#5A27E0', fontSize: 18 },
   user: { fontSize: 12, color: '#64748b' },
