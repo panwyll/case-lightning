@@ -1219,7 +1219,7 @@ export default function AdminPage() {
               // No per-column scroll: each column grows to its cards and the PAGE scrolls, the way
               // Jira and ADO boards behave. A scroll box per column meant six scrollbars on
               // one screen and cards you could only reach by scrolling the right container.
-              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, transition: 'background .12s' };
+              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, flex: '1 1 auto', transition: 'background .12s' };
               const collapsedStrip = (key: string, label: string, dot: string, count: React.ReactNode, onDrop: (e: React.DragEvent) => void) => (
                 <div
                   key={key}
@@ -1246,7 +1246,7 @@ export default function AdminPage() {
                 };
                 if (collapsedStages.includes(key)) return collapsedStrip(key, label, dot, countLabel ?? pile.length, onDrop);
                 return (
-                  <div key={key} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 260 }}>
+                  <div key={key} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 260, display: 'flex', flexDirection: 'column' }}>
                     {colHead(label, dot, countLabel ?? pile.length, () => toggleStage(key))}
                     <div
                       onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
@@ -1374,7 +1374,7 @@ export default function AdminPage() {
                   {/* No overflow on the rail: setting overflow-x alone makes overflow-y compute to
                       auto, which would keep a scroll box around the whole board and defeat the
                       point. Columns are sized to fit, so the page scrolls instead. */}
-                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'stretch' }}>
                     {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).filter((stage) => stage !== 'POST_COMPLETION').map((stage) => {
                       const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
                       if (collapsedStages.includes(stage)) {
@@ -1384,7 +1384,7 @@ export default function AdminPage() {
                         });
                       }
                       return (
-                        <div key={stage} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 290 }}>
+                        <div key={stage} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 290, display: 'flex', flexDirection: 'column' }}>
                           {colHead((stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
                           <div
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
