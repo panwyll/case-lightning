@@ -3,7 +3,7 @@
 import type * as React from 'react';
 
 export const S: Record<string, React.CSSProperties> = {
-  page: { maxWidth: 480, margin: '0 auto', padding: 12, paddingBottom: 60 },
+  page: { maxWidth: 480, margin: '0 auto', padding: 8, paddingBottom: 60 },
   header: {
     display: 'flex',
     alignItems: 'center',
@@ -53,7 +53,7 @@ export const S: Record<string, React.CSSProperties> = {
     border: '1px solid',
     borderRadius: 999,
     cursor: 'pointer',
-    marginBottom: 10,
+    marginBottom: 6,
   },
   statusDot: {
     display: 'inline-flex',
