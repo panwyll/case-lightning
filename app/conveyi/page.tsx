@@ -88,7 +88,7 @@ export default function Page() {
             <Cta label="See how it works" href={ctaHref(ROUTES.howItWorks, PAGE_SOURCE, 'hero_how')} dataCta="hero_how" variant="secondary" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
-            From £200/month · 30-day money-back guarantee · nothing to install
+            From £200/month · 30-day money-back guarantee · nothing to download
           </p>
         </div>
       </section>
@@ -157,14 +157,18 @@ export default function Page() {
             <strong className="font-semibold text-ink">Apps</strong> button and opens them unpinned — so the pane
             closes each time you move to another email until you pin it. Here’s the whole setup, start to finish.
           </p>
-          <ol className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-5">
+          {/* A vertical list, not a grid: five steps never divide evenly into a card grid,
+              and a sequence reads better stacked than wrapped across rows anyway. */}
+          <ol className="mt-12 max-w-3xl divide-y divide-line overflow-hidden rounded-2xl border border-line bg-paper">
             {firstRun.map((s, i) => (
-              <li key={s.name} className="bg-paper p-8">
-                <div className="flex items-baseline gap-3">
-                  <span className="font-serif text-3xl font-semibold text-violet">{String(i + 1).padStart(2, '0')}</span>
-                  <h3 className="text-lg font-bold">{s.name}</h3>
+              <li key={s.name} className="flex gap-5 p-6 md:gap-6 md:p-7">
+                <span className="shrink-0 font-serif text-2xl font-semibold leading-none text-violet md:text-3xl">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold leading-tight">{s.name}</h3>
+                  <p className="mt-2 text-ink-soft">{s.body}</p>
                 </div>
-                <p className="mt-3 text-ink-soft">{s.body}</p>
               </li>
             ))}
           </ol>
