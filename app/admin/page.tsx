@@ -808,7 +808,7 @@ export default function AdminPage() {
     gap: 9,
     width: '100%',
     textAlign: 'left',
-    padding: '7px 10px',
+    padding: '5px 9px',
     borderRadius: 8,
     border: 'none',
     // No inline background when inactive so the .adm-nav:hover class can show through.
@@ -825,7 +825,7 @@ export default function AdminPage() {
   const btnPrimary: React.CSSProperties = { padding: '9px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14 };
   const btnGhost: React.CSSProperties = { padding: '9px 16px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 9, fontWeight: 600, cursor: 'pointer', fontSize: 14 };
   const overline: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#64748b' };
-  const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 6px', marginBottom: 6, borderBottom: '1px solid #eef1f5' };
+  const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 3px', marginBottom: 3, borderBottom: '1px solid #eef1f5' };
   const planBadge: React.CSSProperties = { background: '#ede9fe', color: '#6d28d9', borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 800 };
 
   // Gate the whole page on auth: a 'logging you in' spinner while /me is in flight,
@@ -943,7 +943,7 @@ export default function AdminPage() {
             const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
             if (!items.length) return null;
             return (
-              <div key={grp.label} style={{ marginBottom: 22 }}>
+              <div key={grp.label} style={{ marginBottom: 12 }}>
                 <div style={navGroupLabel}>{grp.label}</div>
                 {items.map((k) => (
                   <button key={k} data-tour={`nav-${k}`} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
@@ -1229,7 +1229,7 @@ export default function AdminPage() {
                 };
                 if (collapsedStages.includes(key)) return collapsedStrip(key, label, dot, countLabel ?? pile.length, onDrop);
                 return (
-                  <div key={key} style={{ flex: '0 0 260px', minWidth: 0 }}>
+                  <div key={key} style={{ flex: '1 1 0', minWidth: 176, maxWidth: 260 }}>
                     {colHead(label, dot, countLabel ?? pile.length, () => toggleStage(key))}
                     <div
                       onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
@@ -1362,7 +1362,7 @@ export default function AdminPage() {
                         });
                       }
                       return (
-                        <div key={stage} style={{ flex: '0 0 290px', minWidth: 0 }}>
+                        <div key={stage} style={{ flex: '1 1 0', minWidth: 176, maxWidth: 290 }}>
                           {colHead((stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
                           <div
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
