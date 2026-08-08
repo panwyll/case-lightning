@@ -937,7 +937,7 @@ export default function AdminPage() {
 
       <div style={{ ...box, display: 'flex', gap: 28, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 20px 56px' }}>
         {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
-        <nav style={{ width: 208, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '10px 8px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+        <nav style={{ width: 176, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '10px 8px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           {NAV_GROUPS.map((grp) => {
             // "Get started" only appears while the firm is still onboarding.
             const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
@@ -1241,7 +1241,7 @@ export default function AdminPage() {
                 };
                 if (collapsedStages.includes(key)) return collapsedStrip(key, label, dot, countLabel ?? pile.length, onDrop);
                 return (
-                  <div key={key} style={{ flex: '1 1 0', minWidth: 176, maxWidth: 260 }}>
+                  <div key={key} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 260 }}>
                     {colHead(label, dot, countLabel ?? pile.length, () => toggleStage(key))}
                     <div
                       onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
@@ -1376,7 +1376,7 @@ export default function AdminPage() {
                         });
                       }
                       return (
-                        <div key={stage} style={{ flex: '1 1 0', minWidth: 176, maxWidth: 290 }}>
+                        <div key={stage} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 290 }}>
                           {colHead((stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
                           <div
                             onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
