@@ -810,7 +810,7 @@ export default function AdminPage() {
     gap: 9,
     width: '100%',
     textAlign: 'left',
-    padding: '6px 9px',
+    padding: '4px 9px',
     borderRadius: 8,
     border: 'none',
     // No inline background when inactive so the .adm-nav:hover class can show through.
@@ -827,7 +827,7 @@ export default function AdminPage() {
   const btnPrimary: React.CSSProperties = { padding: '9px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14 };
   const btnGhost: React.CSSProperties = { padding: '9px 16px', background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 9, fontWeight: 600, cursor: 'pointer', fontSize: 14 };
   const overline: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: '#64748b' };
-  const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 4px', marginBottom: 4, borderBottom: '1px solid #eef1f5' };
+  const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 3px', marginBottom: 3, borderBottom: '1px solid #eef1f5' };
   const planBadge: React.CSSProperties = { background: '#ede9fe', color: '#6d28d9', borderRadius: 999, padding: '3px 10px', fontSize: 11, fontWeight: 800 };
 
   // Gate the whole page on auth: a 'logging you in' spinner while /me is in flight,
@@ -949,13 +949,13 @@ export default function AdminPage() {
 
       <div style={{ ...box, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 14px 56px' }}>
         {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
-        <nav style={{ width: 162, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '13px 9px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
+        <nav style={{ width: 162, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '11px 9px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
           {NAV_GROUPS.map((grp) => {
             // "Get started" only appears while the firm is still onboarding.
             const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
             if (!items.length) return null;
             return (
-              <div key={grp.label} style={{ marginBottom: 11 }}>
+              <div key={grp.label} style={{ marginBottom: 8 }}>
                 <div style={navGroupLabel}>{grp.label}</div>
                 {items.map((k) => (
                   <button key={k} data-tour={`nav-${k}`} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
