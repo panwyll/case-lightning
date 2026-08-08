@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import NewMatter from '@/app/admin/NewMatter';
-import Onboarding from '@/app/admin/Onboarding';
 import { composeAddress, parseAddress, type AddrParts } from '@/lib/address';
 import CallNotes from './CallNotes';
 // Assist UI primitives, styles and constants — shared with the web inbox so both
@@ -210,19 +209,15 @@ function hasSignInHint(): boolean {
 export default function Taskpane() {
   const [me, setMe] = useState<Me | null>(null);
   const [setupNudgeHidden, setSetupNudgeHidden] = useState(false);
-  // Get-started checklist in the pane. `checklistRun` bumps on every open so the
-  // panel remounts fresh (re-fetches, re-derives progress) rather than resuming
-  // whatever state it held last time — toggling off and on is a clean restart.
-  // Guided tour of the pane's controls — what the checklist can't teach, because the
-  // answer is "that icon, there" rather than a list of tasks. Runs once automatically,
-  // and can be replayed from the Get started panel.
+  // Guided tour of the pane's controls — the pane's only onboarding. It teaches what a
+  // checklist can't, because the answer is "that icon, there" rather than a list of
+  // tasks. Runs once automatically on first open, and can be replayed from the header.
+  // (There used to be a copy of the admin Get-started checklist mounted here too, but
+  // every one of its steps deep-linked out to the admin centre in a browser tab, which
+  // is a dead end from inside Outlook. The checklist now lives only in the admin centre.)
   const [tourOn, setTourOn] = useState(false);
   // Where the user was before the tour moved them around, so Skip/Done returns them.
   const tourReturn = useRef<{ tab: 'email' | 'house' | 'paperclip' | 'log'; homeView: boolean } | null>(null);
-  const [showChecklist, setShowChecklist] = useState(false);
-  const [checklistRun, setChecklistRun] = useState(0);
-  // Bump the run OUTSIDE the toggle's updater — a setState inside another updater is
-  // impure and fires twice under StrictMode, which would skip a run number each open.
   const startTour = () => { tourReturn.current = { tab, homeView }; setTourOn(true); };
   const endTour = () => {
     setTourOn(false);
@@ -232,6 +227,10 @@ export default function Taskpane() {
   };
 
   const TOUR_STEPS: TourStep[] = [
+    // Targetless (centred): the pin is Outlook's own chrome, outside our DOM, so there is
+    // nothing here to spotlight. First step because an unpinned pane closes the moment
+    // they open the next email — which is when most people conclude the add-in is broken.
+    { title: 'Pin this pane', body: 'Click the 📌 pin at the top of this pane. It then stays open as you move from email to email, instead of closing each time.' },
     { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Chases and drafts waiting.', before: () => setHomeView(true) },
     { target: '[data-tour="tab-email"]', title: 'Email', body: 'The situation, and a reply ready to approve.', before: () => { setHomeView(false); setTab('email'); } },
     { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record.', before: () => { setHomeView(false); setTab('house'); } },
@@ -242,10 +241,6 @@ export default function Taskpane() {
     { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app.' },
     { target: '[data-tour="account"]', title: 'Account', body: 'Plan, usage and firm setup.' },
   ];
-  const toggleChecklist = () => {
-    if (!showChecklist) setChecklistRun((n) => n + 1);
-    setShowChecklist((open) => !open);
-  };
   const [plan, setPlan] = useState<{ plan: string | null; status: string; entitled: boolean; trialing: boolean; usage?: { used: number; cap: number | null; hoursSavedThisMonth: number } } | null>(null);
   const [showAccount, setShowAccount] = useState(false);
   const [showCreateMatter, setShowCreateMatter] = useState(false);
@@ -1864,23 +1859,6 @@ export default function Taskpane() {
           <span style={S.user}>{booting ? 'Connecting…' : connError ? 'Can’t reach server' : 'Not connected'}</span>
         )}
       </header>
-
-      {/* Get-started checklist — the same one the admin centre shows, mounted in the
-          pane. Keyed by checklistRun so each open is a fresh start. Deep links open
-          the admin centre in a browser tab (there are no tabs to switch to here). */}
-      {showChecklist && me?.role === 'ADMIN' && (
-        <section style={{ ...S.card, marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>Get started</strong>
-            <button onClick={toggleChecklist} style={S.iconBtn} title="Close" aria-label="Close checklist">✕</button>
-          </div>
-          <Onboarding
-            key={checklistRun}
-            onNavigate={(t) => openAdmin(t)}
-            onChange={(s) => { if (s.onboarded) void refreshMe(); }}
-          />
-        </section>
-      )}
 
       {boxedOut && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(255,255,255,0.97)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -3676,14 +3654,6 @@ export default function Taskpane() {
               </div>
             </div>
 
-            {me.role === 'ADMIN' && (
-              <button
-                style={{ ...S.acctRow }}
-                onClick={() => { setShowAccount(false); if (!showChecklist) toggleChecklist(); }}
-              >
-                <Icon name="check" size={16} /> <span>Get started checklist</span>
-              </button>
-            )}
             <button
               style={{ ...S.acctRow }}
               onClick={() => { setShowAccount(false); setShowSetup(true); }}
