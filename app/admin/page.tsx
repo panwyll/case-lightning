@@ -1208,11 +1208,11 @@ export default function AdminPage() {
                 <div
                   onClick={onToggle}
                   title={`${label} — click to collapse`}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '2px 6px 9px', cursor: 'pointer' }}
+                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '2px 6px 9px', cursor: 'pointer', minHeight: 42, boxSizing: 'border-box' }}
                 >
                   <span aria-hidden style={{ fontSize: 9, color: '#94a3b8', flexShrink: 0, lineHeight: 1 }}>▾</span>
                   <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, textTransform: 'uppercase', lineHeight: 1.2, wordBreak: 'break-word' }}>{label}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, textTransform: 'uppercase', lineHeight: 1.2, wordBreak: 'break-word', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{label}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
                 </div>
               );
