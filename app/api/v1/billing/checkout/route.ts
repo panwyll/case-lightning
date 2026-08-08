@@ -9,7 +9,10 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const Body = z.object({ plan: z.enum(['plus', 'pro', 'enterprise']) });
+// 'plus' ("Solo", £39) is retired and no longer sellable — Pro is the entry tier.
+// The key still exists in Plan/billing mappings so any legacy row resolves, but a
+// new subscription can't be opened on it.
+const Body = z.object({ plan: z.enum(['pro', 'enterprise']) });
 
 // Change the signed-in firm's plan. Existing subscribers get an in-place,
 // prorated swap ({ updated: true }); new subscribers get a Checkout URL to
