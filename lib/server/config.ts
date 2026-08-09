@@ -147,11 +147,10 @@ export const config = {
   emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
   // Recurring single-level referral commission — a share of what the *referred* firm
   // actually pays each invoice, capped. Commission = min(cap, rate × invoice).
-  // NOTE: with the Go/Pro/Firm ladder the cap binds on every tier. 0.25 × £199 = £49.75
-  // (just under), 0.25 × £399 = £99.75 and 0.25 × £1,000 = £250 — both clipped to £50.
-  // So the rate only differentiates at Go, by 25p. Effectively a flat £50 per referral
-  // whatever they buy, which is generous on Go and cheap on Firm. Revisit if referral
-  // cost per customer starts to matter.
+  // NOTE: with the Go/Pro/Firm ladder the cap binds on every tier. 0.25 × £200 = £50 exactly,
+  // 0.25 × £500 = £125 and 0.25 × £1,000 = £250 — every tier meets or exceeds the cap.
+  // So it is a flat £50 per referral whatever they buy: a quarter of Go, a twentieth of
+  // Firm. Revisit if referral cost per customer starts to matter.
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
   referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

@@ -4,9 +4,9 @@
  * Internal keys are stable; the customer-facing names differ (see PLAN_LABEL in the
  * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
  *
- *   plus       — "Go".   ENTRY TIER. £199/mo, single seat. Gets the premium features
+ *   plus       — "Go".   ENTRY TIER. £200/mo, single seat. Gets the premium features
  *                but on tight meters — the point is to like them and run out.
- *   pro        — "Pro".  £399/mo, single seat. Same features, room to actually work.
+ *   pro        — "Pro".  £500/mo, single seat. Same features, room to actually work.
  *   enterprise — "Firm". £1,000/mo. The only multi-seat tier, and uncapped.
  *
  * The keys are historical (plus/pro/enterprise) and deliberately left alone: they are

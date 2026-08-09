@@ -92,7 +92,7 @@ export default function Page() {
             <Cta label="Get it on AppSource" href={APPSOURCE_URL} dataCta="hero_appsource" variant="ghost" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
-            From £199/month · 30-day money-back guarantee · nothing to download
+            From £200/month · 30-day money-back guarantee · nothing to download
           </p>
         </div>
       </section>
@@ -235,12 +235,12 @@ export default function Page() {
           <div className="mt-10 grid gap-6 md:grid-cols-3">
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Go</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£199<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£200<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
               <p className="mt-3 text-ink-soft">The whole product on a meter — auto-triage, auto-rules and AI drafting, with monthly limits.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Pro</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£399<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£500<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
               <p className="mt-3 text-ink-soft">The same tools with the limits taken off — unlimited email volume and a far bigger AI document allowance.</p>
             </div>
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">

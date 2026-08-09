@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'Simple pricing for CONVEYi. Go £199, Pro £399, Firm £1,000 with 3 seats included. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
+    'Simple pricing for CONVEYi. Go £200, Pro £500, Firm £1,000 with 3 seats included. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -12,7 +12,7 @@ const PAGE_SOURCE = 'pricing';
 const tiers = [
   {
     name: 'Go',
-    price: '£199',
+    price: '£200',
     seats: 'One seat',
     blurb: 'The whole product, on a meter. For the conveyancer who wants to see what it does to their week.',
     features: [
@@ -29,7 +29,7 @@ const tiers = [
   },
   {
     name: 'Pro',
-    price: '£399',
+    price: '£500',
     seats: 'One seat',
     blurb: 'The same tools with room to actually work. For the sole practitioner running a full caseload.',
     features: [

@@ -9,7 +9,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// All three tiers are sellable: plus = "Go" (£199), pro = "Pro" (£399),
+// All three tiers are sellable: plus = "Go" (£200), pro = "Pro" (£500),
 // enterprise = "Firm" (£1,000). The keys are historical; read them as Go/Pro/Firm.
 const Body = z.object({ plan: z.enum(['plus', 'pro', 'enterprise']) });
 
