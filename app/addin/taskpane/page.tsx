@@ -2504,7 +2504,11 @@ export default function Taskpane() {
                       onClick={() => {
                         recordAction(key);
                         setChosenAction(key);
-                        if (key === 'reply') openReply();
+                        // Only draft if there isn't one yet. Switching Action → Reply used to
+                        // re-run this: a wasted round trip at best, and since a manual call
+                        // sends no skipIfExists, it overwrote whatever the user had edited in
+                        // the Outlook draft. Regenerate is the deliberate way to redraft.
+                        if (key === 'reply' && !replyReady && !replySent && !busy) openReply();
                       }}
                     >
                       <Icon name={icon} size={16} />
