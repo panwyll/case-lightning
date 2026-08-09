@@ -114,9 +114,12 @@ export function emailMonthlyCap(plan: Plan | null): number | null {
  * (one per email triaged); a cached re-open does no new work and isn't counted.
  */
 export async function emailQuotaStatus(
-  tenantId: string
+  tenantId: string,
+  // Callers that have already resolved the billing posture can pass it in rather than
+  // making us re-query for it — /billing/account was resolving it twice per request.
+  known?: TenantBilling
 ): Promise<{ allowed: boolean; used: number; cap: number | null; hoursSavedThisMonth: number; plan: Plan | null }> {
-  const billing = await getTenantBilling(tenantId);
+  const billing = known ?? (await getTenantBilling(tenantId));
   // A trial is held to the lower of its evaluated tier's cap and the trial cap, so
   // trialing on an "unlimited" tier doesn't hand out unlimited volume.
   const trialCap = billing.trialing && config.emailCapTrial > 0 ? config.emailCapTrial : null;

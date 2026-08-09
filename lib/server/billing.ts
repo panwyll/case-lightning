@@ -50,28 +50,33 @@ export interface BillingSummary {
 }
 
 export async function getBillingSummary(user: SessionUser): Promise<BillingSummary> {
-  const account = await accountForUser(user.tenantId, user.email);
+  // The account row and the tenant's billing posture are the only things anything else
+  // depends on, so resolve those two together and fan the rest out in parallel. This ran
+  // as seven sequential round trips — the pane's plan badge waited for all of them.
+  const [account, billing] = await Promise.all([
+    accountForUser(user.tenantId, user.email),
+    getTenantBilling(user.tenantId),
+  ]);
 
-  const seats = await query<{ email: string; display_name: string | null; role: string }>(
-    `select email, display_name, role from app_user where tenant_id = $1 order by created_at asc`,
-    [user.tenantId]
-  );
-
-  const referees = await query<{ status: string }>(
-    `select ba.status from referral_edge e join billing_account ba on ba.id = e.referee_account_id
-     where e.referrer_account_id = $1`,
-    [account.id]
-  );
-
-  const totals = await query<{ status: string; total: string }>(
-    `select status, coalesce(sum(amount_pennies),0)::text as total
-     from commission_ledger where referrer_account_id = $1 group by status`,
-    [account.id]
-  );
+  const [seats, referees, totals, quota] = await Promise.all([
+    query<{ email: string; display_name: string | null; role: string }>(
+      `select email, display_name, role from app_user where tenant_id = $1 order by created_at asc`,
+      [user.tenantId]
+    ),
+    query<{ status: string }>(
+      `select ba.status from referral_edge e join billing_account ba on ba.id = e.referee_account_id
+       where e.referrer_account_id = $1`,
+      [account.id]
+    ),
+    query<{ status: string; total: string }>(
+      `select status, coalesce(sum(amount_pennies),0)::text as total
+       from commission_ledger where referrer_account_id = $1 group by status`,
+      [account.id]
+    ),
+    // Pass the posture we just resolved — this used to re-resolve it internally.
+    emailQuotaStatus(user.tenantId, billing),
+  ]);
   const totalFor = (s: string) => Number(totals.find((t) => t.status === s)?.total ?? 0);
-
-  const billing = await getTenantBilling(user.tenantId);
-  const quota = await emailQuotaStatus(user.tenantId);
   const appUrl = config.appUrl.replace(/\/$/, '');
   return {
     plan: account.plan,
