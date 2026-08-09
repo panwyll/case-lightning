@@ -2899,66 +2899,6 @@ export default function Taskpane() {
                 )}
               </Card>
 
-              {/* Figure history — who changed each figure, when, why, and the email/doc
-                  it came from. Every price/date/party edit is auditable. */}
-              {Array.isArray(matterInfo.figureHistory) && matterInfo.figureHistory.length > 0 && (
-                <Card>
-                  <Label>Figure History</Label>
-                  <p style={{ ...S.muted, margin: '0 0 8px' }}>
-                    Who changed each figure, when and why — and the email or document it came from.
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {matterInfo.figureHistory.slice(0, 50).map((h: any) => (
-                      <div key={h.id} style={{ padding: '8px 10px', border: '1px solid #ECE7F8', borderRadius: 10, background: '#FBFAFF' }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#1C1530' }}>
-                          {h.label}:{' '}
-                          <span style={{ color: '#94a3b8', fontWeight: 500, textDecoration: h.old_value ? 'line-through' : 'none' }}>
-                            {h.old_value || '—'}
-                          </span>{' '}
-                          → <span style={{ color: '#5A27E0' }}>{h.new_value || '—'}</span>
-                        </div>
-                        <div style={{ fontSize: 11.5, color: '#7A7388', marginTop: 2 }}>
-                          {h.actor || (h.source === 'MANUAL' ? 'Someone' : 'CONVEYi')} ·{' '}
-                          {new Date(h.created_at).toLocaleString()} ·{' '}
-                          {h.source === 'MANUAL'
-                            ? 'edited by hand'
-                            : h.source === 'AI_EMAIL'
-                            ? 'read from an email'
-                            : h.source === 'AI_DOC'
-                            ? 'read from a document'
-                            : h.source === 'IMPORT'
-                            ? 'from import'
-                            : String(h.source).toLowerCase()}
-                        </div>
-                        {h.reason && h.source === 'MANUAL' && (
-                          <div style={{ fontSize: 11.5, color: '#4A4358', marginTop: 2, fontStyle: 'italic' }}>{h.reason}</div>
-                        )}
-                        {h.ref_kind && (
-                          <div style={{ marginTop: 4 }}>
-                            {h.ref_url ? (
-                              <a
-                                href={h.ref_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ display: 'inline-block', fontSize: 11, color: '#5A27E0', textDecoration: 'none', border: '1px solid #D9D2EC', borderRadius: 8, padding: '2px 8px' }}
-                              >
-                                {h.ref_kind === 'EMAIL' ? '✉' : '📎'} {h.ref_label || (h.ref_kind === 'EMAIL' ? 'Source email' : 'Source document')}
-                              </a>
-                            ) : (
-                              <span
-                                style={{ display: 'inline-block', fontSize: 11, color: '#5A27E0', border: '1px solid #D9D2EC', borderRadius: 8, padding: '2px 8px' }}
-                                title={h.ref_kind === 'EMAIL' ? 'The email this came from' : 'The document this came from'}
-                              >
-                                {h.ref_kind === 'EMAIL' ? '✉' : '📎'} {h.ref_label || (h.ref_kind === 'EMAIL' ? 'Source email' : 'Source document')}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </Card>
-              )}
             </>
           )}
 
