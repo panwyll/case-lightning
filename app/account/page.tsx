@@ -69,7 +69,7 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   none: { label: 'No subscription', cls: 'bg-slate-100 text-slate-600' },
 };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Solo', pro: 'Pro', enterprise: 'Firm' };
+const PLAN_LABEL: Record<string, string> = { plus: 'Go', pro: 'Pro', enterprise: 'Firm' };
 
 export default function AccountPage() {
   const [summary, setSummary] = useState<Summary | null>(null);

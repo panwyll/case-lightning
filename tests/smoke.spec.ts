@@ -27,8 +27,9 @@ test('pricing page renders with plan tiers', async ({ page }) => {
   await page.goto('/conveyi/pricing');
 
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await expect(page.getByText('£200', { exact: true })).toBeVisible();
+  await expect(page.getByText('£199', { exact: true })).toBeVisible();
   await expect(page.getByText('£399', { exact: true })).toBeVisible();
+  await expect(page.getByText('£1,200', { exact: true })).toBeVisible();
 });
 
 test('how-it-works page renders', async ({ page }) => {

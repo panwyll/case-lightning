@@ -115,6 +115,9 @@ export const config = {
   // matter reconciliation) is capped to a few attempts so they get a flavour without
   // running up cost. Trial backlog/onboarding lookback is also clamped (days).
   trialExpensiveCap: Number(env('TRIAL_EXPENSIVE_CAP') ?? '3'),
+  // Go's monthly heavy-LLM (doc fill) ceiling. Small on purpose: enough to run doc
+  // packs on a couple of matters and want them, not enough to run a practice on.
+  goHeavyLlmMonthlyCap: Number(env('GO_HEAVY_LLM_MONTHLY_CAP') ?? '25'),
   trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '7'),
   // Length of the free trial, in days. Stripe owns the clock: this is passed as
   // subscription_data.trial_period_days at checkout, and the subscription webhook
@@ -136,19 +139,19 @@ export const config = {
   // last message and no reply has arrived within this many days. Tune via env.
   chaseSlaDays: Number(env('CHASE_SLA_DAYS') ?? '5'),
   // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
-  // pro/enterprise are unlimited. EMAIL_CAP_PLUS only applies to plus/"Solo", which is
-  // retired and no longer sellable — it now binds nothing but legacy rows, so it is no
-  // longer a funnel lever. Pro is the entry tier and is uncapped.
+  // EMAIL_CAP_PLUS is Go's funnel lever and the main reason to upgrade: calibrate it so
+  // an active conveyancer exhausts it two to three weeks in — long enough to bed the
+  // habit in, short enough to bite. Pro and Firm are unlimited.
   emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
   emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
   emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
   // Recurring single-level referral commission — a share of what the *referred* firm
   // actually pays each invoice, capped. Commission = min(cap, rate × invoice).
-  // NOTE: the rate/cap were calibrated against the old £39 Solo entry tier, which scaled
-  // the payout down on cheap plans (Solo ≈ £10). With Solo retired and Pro (£200) the
-  // entry tier, 0.25 × £200 = £50 — so EVERY referral now hits the £50 cap from the
-  // first invoice. The cap is doing all the work and the rate no longer differentiates.
-  // Revisit both if referral cost per customer matters.
+  // NOTE: with the Go/Pro/Firm ladder the cap binds on every tier. 0.25 × £199 = £49.75
+  // (just under), 0.25 × £399 = £99.75 and 0.25 × £1,200 = £300 — both clipped to £50.
+  // So the rate only differentiates at Go, by 25p. Effectively a flat £50 per referral
+  // whatever they buy, which is generous on Go and cheap on Firm. Revisit if referral
+  // cost per customer starts to matter.
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
   referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

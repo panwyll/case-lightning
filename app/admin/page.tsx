@@ -250,7 +250,7 @@ const STAGE_LABEL: Record<string, string> = {
 };
 const FLAG_DOT: Record<string, string> = { ON_TRACK: '#16a34a', NEEDS_ATTENTION: '#f59e0b', BLOCKED: '#dc2626' };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Solo', pro: 'Pro', enterprise: 'Firm' };
+const PLAN_LABEL: Record<string, string> = { plus: 'Go', pro: 'Pro', enterprise: 'Firm' };
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   active: { label: 'Active', bg: '#dcfce7', color: '#166534' },
   trialing: { label: 'Trial', bg: '#ede9fe', color: '#6d28d9' },

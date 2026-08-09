@@ -4,18 +4,21 @@
  * Internal keys are stable; the customer-facing names differ (see PLAN_LABEL in the
  * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
  *
- *   plus       — "Solo". RETIRED (was £39/mo, no premium AI, single seat). Not sellable:
- *                the checkout route rejects it. Kept as a valid key so any legacy row
- *                still resolves to a tier rather than throwing.
- *   pro        — "Pro". ENTRY TIER. Premium AI/automation, single seat, heavy-LLM
- *                usage capped. £200/mo.
- *   enterprise — "Firm". Premium AI/automation + team (multi-seat), uncapped. £399/mo,
- *                3 seats included then £59/seat (per-seat billing not yet wired — flat today).
+ *   plus       — "Go".   ENTRY TIER. £199/mo, single seat. Gets the premium features
+ *                but on tight meters — the point is to like them and run out.
+ *   pro        — "Pro".  £399/mo, single seat. Same features, room to actually work.
+ *   enterprise — "Firm". £1,200/mo. The only multi-seat tier, and uncapped.
  *
- * Premium features (auto-rules, unlimited onboarding lookback, AI doc-template
- * [[prompt]] fills) require pro OR enterprise. Team/multi-seat requires enterprise.
- * When Stripe isn't configured (pilot / self-host) there's no billing to check, so
- * we grant the top tier — nothing is gated.
+ * The keys are historical (plus/pro/enterprise) and deliberately left alone: they are
+ * written into billing_account rows and Stripe metadata, and renaming them would buy a
+ * migration for no behavioural gain. Read them as Go/Pro/Firm.
+ *
+ * EVERY tier gets the premium features (auto-rules, unlimited onboarding lookback, AI
+ * doc-template [[prompt]] fills) — the ladder is metered, not feature-gated. What Go
+ * lacks is headroom: an email cap that bites two to three weeks in, and a heavy-LLM
+ * cap of a couple of dozen doc fills. Team/multi-seat is the one true feature gate and
+ * it requires Firm. When Stripe isn't configured (pilot / self-host) there's no billing
+ * to check, so we grant the top tier — nothing is gated.
  */
 import { config } from './config';
 import { queryOne } from './db';
@@ -24,7 +27,9 @@ import type { UsageFeature } from './usage';
 export type Plan = 'plus' | 'pro' | 'enterprise';
 
 const PLANS: readonly Plan[] = ['plus', 'pro', 'enterprise'];
-const PREMIUM_PLANS = new Set<Plan>(['pro', 'enterprise']);
+// Every paid tier gets the premium features; Go is limited by its meters, not by a
+// feature wall. Kept as a set so a future non-premium tier stays easy to express.
+const PREMIUM_PLANS = new Set<Plan>(['plus', 'pro', 'enterprise']);
 
 /** 402 — caller is signed in but has no active entitlement (trial ended / unpaid). */
 export class EntitlementError extends Error {
@@ -161,7 +166,8 @@ export async function canUseExpensiveFeature(
   return { allowed: used < cap, trialing: true, used, cap };
 }
 
-/** Team / multi-seat: enterprise only (pro and plus are single-seat). */
+/** Team / multi-seat: Firm only. Go and Pro are single-seat — this is the one
+ *  genuine feature gate in the ladder, and the reason to move up from Pro. */
 export async function hasTeamAccess(tenantId: string): Promise<boolean> {
   return (await getTenantPlan(tenantId)) === 'enterprise';
 }
@@ -192,8 +198,12 @@ export async function canUseHeavyLlm(tenantId: string): Promise<{ allowed: boole
     const gate = await canUseExpensiveFeature(tenantId, 'DOC_FILL');
     return { allowed: gate.allowed, plan: billing.plan, capped: !gate.allowed };
   }
-  if (billing.plan !== 'pro') return { allowed: true, plan: billing.plan, capped: false }; // enterprise uncapped
+  // Firm is uncapped. Go and Pro each have a monthly ceiling — Go's is deliberately
+  // small enough to run out on. NB the old `plan !== 'pro'` short-circuit would have
+  // handed Go unlimited doc fills, which is the opposite of the intent.
+  if (billing.plan === 'enterprise') return { allowed: true, plan: billing.plan, capped: false };
+  const cap = billing.plan === 'plus' ? config.goHeavyLlmMonthlyCap : config.proHeavyLlmMonthlyCap;
   const used = await heavyLlmCallsThisMonth(tenantId);
-  const allowed = used < config.proHeavyLlmMonthlyCap;
+  const allowed = used < cap;
   return { allowed, plan: billing.plan, capped: !allowed };
 }

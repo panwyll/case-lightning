@@ -3567,7 +3567,7 @@ export default function Taskpane() {
               <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>Plan</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
-                  {plan?.plan === 'enterprise' ? 'Firm' : plan?.plan === 'pro' ? 'Pro' : plan?.plan === 'plus' ? 'Solo' : plan?.status === 'trialing' ? 'Trial' : 'Free'}
+                  {plan?.plan === 'enterprise' ? 'Firm' : plan?.plan === 'pro' ? 'Pro' : plan?.plan === 'plus' ? 'Go' : plan?.status === 'trialing' ? 'Trial' : 'Free'}
                 </div>
                 {plan?.status && plan.status !== 'active' && (
                   <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>
