@@ -7,6 +7,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { getMatterSummary } from '@/lib/server/matter';
 import { recordFigureChanges, type FigureChange } from '@/lib/server/figure-audit';
 import { onStageAdvanced } from '@/lib/server/tasks';
+import { writeAudit } from '@/lib/server/audit';
 import { stageKeys } from '@/lib/server/stages';
 import { ok, fail } from '@/lib/server/http';
 
@@ -184,6 +185,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     // (exchange/completion) get a pre-drafted update in the ready-to-send queue; other
     // moves raise a lightweight task. Deduped + best-effort inside onStageAdvanced.
     if (body.stage !== undefined && body.stage !== before?.stage) {
+      // Audited so the log can answer "who moved this and when" — the single most
+      // asked question about a matter, and previously unrecorded.
+      await writeAudit({
+        tenantId: user.tenantId,
+        matterId,
+        actorUserId: user.userId,
+        actionType: 'STAGE_CHANGED',
+        actionStatus: 'SUCCESS',
+        payload: { from: before?.stage ?? null, to: body.stage },
+      }).catch(() => {});
       await onStageAdvanced(user, matterId, body.stage).catch(() => {});
     }
 

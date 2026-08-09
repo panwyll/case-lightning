@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
     // Join the actor (who) and matter (which case) so the log reads as a sentence,
     // not a bare action code. left joins so a system/tenant-level action still shows.
-    const cols = `a.id, a.created_at, a.action_type, a.action_status, a.payload, a.matter_id,
+    const cols = `a.id, a.created_at, a.action_type, a.action_status, a.payload, a.matter_id, a.request_id, a.trace_id,
                   coalesce(u.display_name, u.email) as actor_name, m.matter_ref`;
     const from = `from audit_log a
                   left join app_user u on u.id = a.actor_user_id

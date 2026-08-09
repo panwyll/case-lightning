@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
@@ -67,6 +67,31 @@ function fmtDuration(mins: number): string {
 // Turn a raw audit row (action_type + payload) into a plain-English sentence. Weaves in the
 // payload's specifics (subject, counts, rule names, reasons) so the log reads like a story of
 // what actually happened, not a wall of enum codes.
+// Every action_type sorted into a bucket the filter can offer. Anything unmapped falls
+// into 'other' rather than disappearing, so a new event type is still visible.
+const AUDIT_CATEGORY: Record<string, string> = {
+  EMAIL_SENT: 'email', AUTO_REPLY_SENT: 'email', DRAFT_GENERATED: 'email',
+  OUTLOOK_DRAFT_CREATED: 'email', EMAIL_TRIAGED: 'email', EMAIL_FILED: 'email',
+  EMAIL_SAVED_TO_MATTER: 'email', OUTLOOK_CATEGORY_UPDATED: 'email',
+  THREAD_LINKED: 'email', THREAD_SUMMARISED: 'email', FACTS_EXTRACTED: 'email',
+  MATCH_CONFIRMED: 'email', USER_ACTION_CHOSEN: 'email',
+  STAGE_CHANGED: 'matter', MATTER_CREATED: 'matter', MATTER_MERGED: 'matter',
+  CALL_NOTE_RECORDED: 'matter', CALL_NOTE_UNASSIGNED: 'matter',
+  WORKFLOW_TASKS_CREATED: 'tasks',
+  DOCUMENT_UPLOADED: 'docs', DOCUMENT_REVIEWED: 'docs', FILE_PROCESSED: 'docs',
+  AUTO_RULE_APPLIED: 'automation', AUTO_RULE_CREATED: 'automation',
+  AUTO_RULE_UPDATED: 'automation', AUTO_RULE_DELETED: 'automation',
+  TEAMS_SUMMARY_POSTED: 'automation',
+  USER_ROLE_CHANGED: 'admin', AI_KEY_SET: 'admin', AI_KEY_REMOVED: 'admin',
+  ONBOARDING_STARTED: 'admin', ONBOARDING_CONFIRMED: 'admin',
+  ONBOARDING_CASE_PROVISIONED: 'admin', ONBOARDING_CANCELLED: 'admin',
+};
+const AUDIT_FILTERS: Array<[string, string]> = [
+  ['', 'Everything'], ['email', 'Email'], ['matter', 'Matter & status'], ['tasks', 'Tasks'],
+  ['docs', 'Documents'], ['automation', 'Automation'], ['admin', 'Admin & access'], ['other', 'Other'],
+];
+const auditCategory = (row: any) => AUDIT_CATEGORY[String(row.action_type)] ?? 'other';
+
 function describeAudit(row: any): string {
   const p = (row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<string, any>;
   const q = (s: any) => (s ? `“${String(s).slice(0, 80)}”` : '');
@@ -93,6 +118,10 @@ function describeAudit(row: any): string {
       return `Uploaded a document${p.fileName ? ` ${q(p.fileName)}` : ''}`;
     case 'DOCUMENT_REVIEWED':
       return `Reviewed a document${p.fileName ? ` ${q(p.fileName)}` : ''}`;
+    case 'STAGE_CHANGED':
+      return `Moved the matter${p.from ? ` from ${String(p.from).toLowerCase().replace(/_/g, ' ')}` : ''} to ${String(p.to || '').toLowerCase().replace(/_/g, ' ')}`;
+    case 'WORKFLOW_TASKS_CREATED':
+      return `Case Flow raised ${p.count ?? 'some'} task${p.count === 1 ? '' : 's'} for the ${String(p.stage || '').toLowerCase().replace(/_/g, ' ')} stage`;
     case 'MATTER_CREATED':
       return `Created a new matter`;
     case 'MATTER_MERGED':
@@ -452,6 +481,12 @@ export default function AdminPage() {
   const [openMatter, setOpenMatter] = useState<any | null>(null);
   const [boardQuery, setBoardQuery] = useState('');
   const [doneTotal, setDoneTotal] = useState(0);
+  // Audit log: filters and per-row expansion. Client-side over the fetched page — a few
+  // hundred rows, so no round trip per keystroke.
+  const [auditCat, setAuditCat] = useState('');
+  const [auditStatus, setAuditStatus] = useState('');
+  const [auditQuery, setAuditQuery] = useState('');
+  const [auditOpen, setAuditOpen] = useState<string | null>(null);
   // What each card shows — the board is customisable per browser, Jira-style.
   const BOARD_PREF_DEFAULTS = { address: true, owner: true, dates: true, tasks: true, age: true, quickEdit: true };
   const [boardPrefs, setBoardPrefs] = useState<Record<string, boolean>>(() => {
@@ -2134,8 +2169,35 @@ export default function AdminPage() {
           </>
         )}
 
-        {tab === 'audit' && (
+        {tab === 'audit' && (() => {
+          const q = auditQuery.trim().toLowerCase();
+          const rows = audit.filter((r) =>
+            (!auditCat || auditCategory(r) === auditCat) &&
+            (!auditStatus || String(r.action_status) === auditStatus) &&
+            (!q || `${describeAudit(r)} ${r.actor_name || ''} ${r.matter_ref || ''} ${r.action_type}`.toLowerCase().includes(q))
+          );
+          return (
           <div style={card}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+              <input
+                value={auditQuery}
+                onChange={(e) => setAuditQuery(e.target.value)}
+                placeholder="Search the log…"
+                style={{ ...filterSelect, flex: 1, minWidth: 180, cursor: 'text' }}
+              />
+              <select value={auditCat} onChange={(e) => setAuditCat(e.target.value)} style={filterSelect}>
+                {AUDIT_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              <select value={auditStatus} onChange={(e) => setAuditStatus(e.target.value)} style={filterSelect}>
+                <option value="">Any result</option>
+                <option value="SUCCESS">Done</option>
+                <option value="BLOCKED">Blocked</option>
+                <option value="FAILED">Failed</option>
+              </select>
+              <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                {rows.length} of {audit.length}
+              </span>
+            </div>
             <table style={{ width: '100%', fontSize: 12.5, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ textAlign: 'left', color: '#64748b' }}>
@@ -2146,17 +2208,24 @@ export default function AdminPage() {
                 </tr>
               </thead>
               <tbody>
-                {audit.map((row) => {
+                {rows.map((row) => {
                   const status = String(row.action_status || '');
                   const sc = status === 'SUCCESS' ? { c: '#166534', b: '#dcfce7' } : status === 'BLOCKED' ? { c: '#92400e', b: '#fef3c7' } : { c: '#b91c1c', b: '#fee2e2' };
                   const when = new Date(row.created_at);
+                  const open = auditOpen === row.id;
+                  const detail = Object.entries((row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<string, any>);
                   return (
-                    <tr key={row.id} style={{ borderTop: '1px solid #eef2f7', verticalAlign: 'top' }}>
+                    <Fragment key={row.id}>
+                    <tr
+                      onClick={() => setAuditOpen(open ? null : row.id)}
+                      style={{ borderTop: '1px solid #eef2f7', verticalAlign: 'top', cursor: 'pointer', background: open ? '#f8fafc' : undefined }}
+                    >
                       <td style={{ padding: '9px 10px 9px 0', color: '#64748b', whiteSpace: 'nowrap' }} title={when.toLocaleString()}>
                         {when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}<span style={{ color: '#cbd5e1' }}> · </span>{when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td style={{ padding: '9px 10px 9px 0', color: '#334155', whiteSpace: 'nowrap' }}>{row.actor_name || 'System'}</td>
                       <td style={{ padding: '9px 10px 9px 0', color: '#0f172a', lineHeight: 1.45 }}>
+                        <span aria-hidden style={{ color: '#cbd5e1', marginRight: 6, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>›</span>
                         {describeAudit(row)}
                         {row.matter_ref && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px', whiteSpace: 'nowrap' }}>{row.matter_ref}</span>}
                       </td>
@@ -2166,15 +2235,49 @@ export default function AdminPage() {
                         </span>
                       </td>
                     </tr>
+                    {open && (
+                      <tr style={{ background: '#f8fafc' }}>
+                        <td colSpan={4} style={{ padding: '2px 0 14px 0' }}>
+                          <div style={{ background: '#fff', border: '1px solid #e8eaf0', borderRadius: 10, padding: '10px 12px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 12 }}>
+                              <span style={{ color: '#94a3b8' }}>Event <code style={{ color: '#475569' }}>{row.action_type}</code></span>
+                              <span style={{ color: '#94a3b8' }}>When <span style={{ color: '#475569' }}>{when.toLocaleString()}</span></span>
+                              {row.matter_ref && <span style={{ color: '#94a3b8' }}>Matter <span style={{ color: '#475569' }}>{row.matter_ref}</span></span>}
+                              {row.trace_id && <span style={{ color: '#94a3b8' }}>Trace <code style={{ color: '#475569' }}>{row.trace_id}</code></span>}
+                              {row.request_id && <span style={{ color: '#94a3b8' }}>Request <code style={{ color: '#475569' }}>{row.request_id}</code></span>}
+                            </div>
+                            {detail.length > 0 && (
+                              <table style={{ marginTop: 10, fontSize: 12, borderCollapse: 'collapse' }}>
+                                <tbody>
+                                  {detail.map(([k, v]) => (
+                                    <tr key={k}>
+                                      <td style={{ padding: '2px 14px 2px 0', color: '#94a3b8', whiteSpace: 'nowrap', verticalAlign: 'top' }}>{k}</td>
+                                      <td style={{ padding: '2px 0', color: '#334155', wordBreak: 'break-word' }}>
+                                        {typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                            {detail.length === 0 && <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>No extra detail recorded for this event.</div>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
-                {audit.length === 0 && (
-                  <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>No activity recorded yet.</td></tr>
+                {rows.length === 0 && (
+                  <tr><td colSpan={4} style={{ padding: 20, textAlign: 'center', color: '#94a3b8' }}>
+                    {audit.length === 0 ? 'No activity recorded yet.' : 'Nothing matches those filters.'}
+                  </td></tr>
                 )}
               </tbody>
             </table>
           </div>
-        )}
+          );
+        })()}
         </div>
       </div>
 

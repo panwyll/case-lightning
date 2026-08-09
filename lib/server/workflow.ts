@@ -9,6 +9,7 @@
  * simply behaves as "no workflow configured".
  */
 import { query, queryOne, transaction } from './db';
+import { writeAudit } from './audit';
 import { createDraftMessage, addAttachmentToMessage, uploadToMatterFolder } from './graph';
 import { scheduleSend } from './scheduledSend';
 import { buildMatterVars, generateTemplateForMatter } from './doc-templates';
@@ -429,6 +430,18 @@ export async function instantiateStageTemplates(user: SessionUser, matterId: str
         await createTemplateTask(user.tenantId, matterId, user.userId, t, assignee, assigneeUserId, blocked ? 'BLOCKED' : 'OPEN');
       }
       created += 1;
+    }
+    // One audit row per stage move, not per task: four tasks appearing because a matter
+    // reached Searches is a single thing that happened, and N rows would be noise.
+    if (created) {
+      await writeAudit({
+        tenantId: user.tenantId,
+        matterId,
+        actorUserId: user.userId,
+        actionType: 'WORKFLOW_TASKS_CREATED',
+        actionStatus: 'SUCCESS',
+        payload: { stage, count: created },
+      }).catch(() => {});
     }
     return created;
   } catch {
