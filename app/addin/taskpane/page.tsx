@@ -1835,22 +1835,6 @@ export default function Taskpane() {
               <Icon name="phone" size={18} />
             </button>
           )}
-          {me?.role === 'ADMIN' && (
-            <button
-              style={{ ...S.iconBtn, color: '#5A27E0', background: tourOn ? '#EDE7FB' : 'transparent' }}
-              data-tour="getstarted"
-              onClick={startTour}
-              title="Show me around"
-              aria-label="Show me around"
-            >
-              {/* clipboard-with-tick — the setup checklist */}
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1z" />
-                <path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2" />
-                <path d="m9 13 2 2 4-4" />
-              </svg>
-            </button>
-          )}
         </div>
         {me ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -3608,6 +3592,14 @@ export default function Taskpane() {
               onClick={() => { setShowAccount(false); setShowSetup(true); }}
             >
               <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
+            </button>
+            {/* The tour's only manual trigger, now the header icon has gone. Worth keeping
+                somewhere: it's how anyone who hit "Don't show again" gets it back. */}
+            <button
+              style={{ ...S.acctRow }}
+              onClick={() => { setShowAccount(false); startTour(); }}
+            >
+              <Icon name="info" size={16} /> <span>Show me around</span>
             </button>
             <button
               style={{ ...S.acctRow }}
