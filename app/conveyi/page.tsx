@@ -6,6 +6,7 @@ import {
   NavHeader,
   SiteFooter,
   NinetyNinePie,
+  APPSOURCE_URL,
 } from '../_components/shared';
 
 export const metadata: Metadata = {
@@ -38,7 +39,9 @@ const tools = [
 const firstRun = [
   {
     name: 'Install it',
-    body: 'From Microsoft AppSource, or in Outlook: Apps → Get add-ins → search CONVEYi. Nothing downloads to your machine.',
+    body: 'Or in Outlook: Apps → Get add-ins → search CONVEYi. Nothing downloads to your machine.',
+    href: APPSOURCE_URL,
+    linkLabel: 'Get it on Microsoft AppSource',
   },
   {
     name: 'Open an email',
@@ -86,6 +89,7 @@ export default function Page() {
           <div className="mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'hero_signup')} dataCta="hero_signup" size="lg" />
             <Cta label="See how it works" href={ctaHref(ROUTES.howItWorks, PAGE_SOURCE, 'hero_how')} dataCta="hero_how" variant="secondary" size="lg" />
+            <Cta label="Get it on AppSource" href={APPSOURCE_URL} dataCta="hero_appsource" variant="ghost" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
             From £200/month · 30-day money-back guarantee · nothing to download
@@ -167,7 +171,23 @@ export default function Page() {
                 </span>
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold leading-tight">{s.name}</h3>
-                  <p className="mt-2 text-ink-soft">{s.body}</p>
+                  <p className="mt-2 text-ink-soft">
+                    {'href' in s && s.href && (
+                      <>
+                        <a
+                          href={s.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          data-cta="firstrun_appsource"
+                          className="font-semibold text-violet underline underline-offset-4 decoration-violet/40 hover:decoration-violet"
+                        >
+                          {s.linkLabel}
+                        </a>
+                        {' — '}
+                      </>
+                    )}
+                    {s.body}
+                  </p>
                 </div>
               </li>
             ))}

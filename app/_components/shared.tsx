@@ -37,6 +37,11 @@ export const ROUTES = {
   faq: '/conveyi/faq',
 } as const;
 
+// The live Microsoft Marketplace (AppSource) listing — product id assigned at publish.
+// appsource.microsoft.com redirects to marketplace.microsoft.com; kept on the AppSource
+// host because that's the name people recognise.
+export const APPSOURCE_URL = 'https://appsource.microsoft.com/en-gb/product/office/WA200011627';
+
 // Nav links for the CONVEYi product site.
 export const CONVEYI_NAV = [
   { href: ROUTES.howItWorks, label: 'How it works' },
