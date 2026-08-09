@@ -3593,14 +3593,6 @@ export default function Taskpane() {
             >
               <Icon name="settings" size={16} /> <span>Setup &amp; settings</span>
             </button>
-            {/* The tour's only manual trigger, now the header icon has gone. Worth keeping
-                somewhere: it's how anyone who hit "Don't show again" gets it back. */}
-            <button
-              style={{ ...S.acctRow }}
-              onClick={() => { setShowAccount(false); startTour(); }}
-            >
-              <Icon name="info" size={16} /> <span>Show me around</span>
-            </button>
             <button
               style={{ ...S.acctRow }}
               onClick={() => { setShowAccount(false); openReferral(); }}
