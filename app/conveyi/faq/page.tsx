@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'What’s the difference between the Go, Pro and Firm plans?',
-    a: 'Every plan has the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, the OneDrive knowledge base and the Excel tracker. What changes is headroom and seats. Go (£199/month) meters you: a monthly email allowance and a small AI document allowance, enough to see what it does to your week. Pro (£399/month) takes the limits off — unlimited email volume and a far larger document allowance, for one fee earner running a full caseload. Firm (£1,200/month, three seats included then £59 a seat) is the only plan with more than one seat, and adds the team layer: a matter board, a workload dashboard, matter assignment and admin oversight.',
+    a: 'Every plan has the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, the OneDrive knowledge base and the Excel tracker. What changes is headroom and seats. Go (£199/month) meters you: a monthly email allowance and a small AI document allowance, enough to see what it does to your week. Pro (£399/month) takes the limits off — unlimited email volume and a far larger document allowance, for one fee earner running a full caseload. Firm (£1,000/month, three seats included then £59 a seat) is the only plan with more than one seat, and adds the team layer: a matter board, a workload dashboard, matter assignment and admin oversight.',
   },
   {
     q: 'What if it doesn’t work for us?',

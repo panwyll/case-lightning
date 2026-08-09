@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // All three tiers are sellable: plus = "Go" (£199), pro = "Pro" (£399),
-// enterprise = "Firm" (£1,200). The keys are historical; read them as Go/Pro/Firm.
+// enterprise = "Firm" (£1,000). The keys are historical; read them as Go/Pro/Firm.
 const Body = z.object({ plan: z.enum(['plus', 'pro', 'enterprise']) });
 
 // Change the signed-in firm's plan. Existing subscribers get an in-place,

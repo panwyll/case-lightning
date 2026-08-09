@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'Pricing — CONVEYi',
   description:
-    'Simple pricing for CONVEYi. Go £199, Pro £399, Firm £1,200 with 3 seats included. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
+    'Simple pricing for CONVEYi. Go £199, Pro £399, Firm £1,000 with 3 seats included. 30-day money-back guarantee. No lock-in. Earn £50/month recurring for every firm you refer.',
 };
 
 const PAGE_SOURCE = 'pricing';
@@ -44,7 +44,7 @@ const tiers = [
   },
   {
     name: 'Firm',
-    price: '£1,200',
+    price: '£1,000',
     seats: '3 seats included · £59/seat after',
     blurb: 'For the practice that runs its cases as a team — and the only plan with more than one seat.',
     features: [

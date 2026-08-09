@@ -245,7 +245,7 @@ export default function Page() {
             </div>
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
               <div className="text-sm font-semibold uppercase tracking-widest text-violet">Firm</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£1,200<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£1,000<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
               <p className="mt-3 text-ink-soft">The whole practice as a team — matter board, workload and assignment. The only multi-seat plan; 3 seats included.</p>
             </div>
           </div>

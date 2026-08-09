@@ -7,7 +7,7 @@
  *   plus       — "Go".   ENTRY TIER. £199/mo, single seat. Gets the premium features
  *                but on tight meters — the point is to like them and run out.
  *   pro        — "Pro".  £399/mo, single seat. Same features, room to actually work.
- *   enterprise — "Firm". £1,200/mo. The only multi-seat tier, and uncapped.
+ *   enterprise — "Firm". £1,000/mo. The only multi-seat tier, and uncapped.
  *
  * The keys are historical (plus/pro/enterprise) and deliberately left alone: they are
  * written into billing_account rows and Stripe metadata, and renaming them would buy a
