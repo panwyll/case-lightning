@@ -2948,7 +2948,7 @@ export default function Taskpane() {
                             <div style={{ fontSize: 12.5, color: '#0f172a', lineHeight: 1.4 }}>
                               {e.title || humanize(e.event_type || '')}
                             </div>
-                            {e.details && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1, lineHeight: 1.4 }}>{e.details}</div>}
+                            {e.details && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 1, lineHeight: 1.4, whiteSpace: 'pre-line' }}>{e.details}</div>}
                           </div>
                           {time && <span style={{ fontSize: 10.5, color: '#cbd5e1', flex: 'none', marginTop: 1 }}>{time}</span>}
                         </div>

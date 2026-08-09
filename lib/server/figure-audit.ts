@@ -7,6 +7,7 @@
  * can't break the underlying figure edits — the history simply starts once the table exists.
  */
 import { query } from './db';
+import { emitMatterEvent } from './events';
 
 export type FigureSource = 'MANUAL' | 'AI_EMAIL' | 'AI_DOC' | 'IMPORT' | 'TRACKER';
 
@@ -87,4 +88,23 @@ export async function recordFigureChanges(input: {
   } catch {
     /* matter_figure_change not migrated yet — history starts once 034 runs */
   }
+
+  // Also surface on the Case Log. Deliberately outside the try above so a missing
+  // matter_figure_change table doesn't cost the log entry too, and deliberately ONE
+  // event for the batch rather than one per figure — an edit that touches three fields
+  // is one thing that happened, and three rows would just be noise in the diary.
+  const how =
+    input.source === 'MANUAL' ? 'edited by hand'
+    : input.source === 'AI_EMAIL' ? 'read from an email'
+    : input.source === 'AI_DOC' ? 'read from a document'
+    : input.source === 'IMPORT' ? 'from import'
+    : 'from the tracker';
+  const lines = real.map((c) => `${c.label}: ${c.oldValue || '—'} → ${c.newValue || '—'}`).join('\n');
+  await emitMatterEvent({
+    tenantId: input.tenantId,
+    matterId: input.matterId,
+    eventType: 'FIGURES_UPDATED',
+    title: real.length === 1 ? `${real[0].label} updated` : `${real.length} figures updated`,
+    details: `${lines}\n(${how}${input.reason ? ` — ${input.reason}` : ''})`,
+  }).catch(() => {});
 }
