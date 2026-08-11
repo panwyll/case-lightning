@@ -123,26 +123,6 @@ export default function InternalDashboard() {
     if (key) load(key);
   }, [key, load]);
 
-  if (!key) {
-    return (
-      <main className="gate">
-        <style>{css}</style>
-        <div className="gate-box">
-          <h1>Internal dashboard</h1>
-          <p>Enter the dashboard key (INTERNAL_DASHBOARD_KEY).</p>
-          <input type="password" value={input} onChange={(e) => setInput(e.target.value)} placeholder="key" onKeyDown={(e) => e.key === 'Enter' && input && (localStorage.setItem(KEY_STORE, input), setKey(input))} />
-          <button onClick={() => { if (input) { localStorage.setItem(KEY_STORE, input); setKey(input); } }}>Unlock</button>
-          {error && <p className="err">{error}</p>}
-        </div>
-      </main>
-    );
-  }
-
-  const g = data?.economics?.global;
-  const r = data?.retention;
-  const topVisitors = data?.funnel?.find((s: any) => s.stage_order === 1)?.count;
-  const maxFunnel = Math.max(1, ...(data?.funnel?.map((s: any) => Number(s.count)) ?? [1]));
-
   // Everything worth a nudge, derived from data already fetched — no extra round trips.
   // Ordered worst-first so the top of the list is the thing to do next.
   const attention = useMemo(() => {
@@ -176,6 +156,27 @@ export default function InternalDashboard() {
 
     return out;
   }, [data]);
+
+  if (!key) {
+    return (
+      <main className="gate">
+        <style>{css}</style>
+        <div className="gate-box">
+          <h1>Internal dashboard</h1>
+          <p>Enter the dashboard key (INTERNAL_DASHBOARD_KEY).</p>
+          <input type="password" value={input} onChange={(e) => setInput(e.target.value)} placeholder="key" onKeyDown={(e) => e.key === 'Enter' && input && (localStorage.setItem(KEY_STORE, input), setKey(input))} />
+          <button onClick={() => { if (input) { localStorage.setItem(KEY_STORE, input); setKey(input); } }}>Unlock</button>
+          {error && <p className="err">{error}</p>}
+        </div>
+      </main>
+    );
+  }
+
+  const g = data?.economics?.global;
+  const r = data?.retention;
+  const topVisitors = data?.funnel?.find((s: any) => s.stage_order === 1)?.count;
+  const maxFunnel = Math.max(1, ...(data?.funnel?.map((s: any) => Number(s.count)) ?? [1]));
+
 
   return (
     <main className="dash">
