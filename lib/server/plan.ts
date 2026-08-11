@@ -131,6 +131,29 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
   return { plan, status, entitled, trialing, pilot: false, trialEndsAt };
 }
 
+/**
+ * Whole days left on the tenant's card-free trial, 0 once it has elapsed.
+ *
+ * Checkout uses this for trial_period_days instead of a flat config.trialDays. Without
+ * it a firm that had already spent its 14 card-free days got a *second* 14-day Stripe
+ * trial the moment it subscribed — 28 days free and revenue a fortnight late. Passing
+ * the REMAINDER rather than a yes/no also means deciding early isn't punished: subscribe
+ * on day 3 and Stripe carries the other 11 days, so the firm still gets exactly one
+ * trial of exactly TRIAL_DAYS however it arrives at checkout.
+ */
+export async function trialDaysRemaining(tenantId: string): Promise<number> {
+  const row = await queryOne<{ trial_ends_at: string | null; created_at: string }>(
+    `select trial_ends_at, created_at from tenant where id = $1`,
+    [tenantId]
+  );
+  if (!row) return 0;
+  const endsAt = row.trial_ends_at
+    ? new Date(row.trial_ends_at)
+    : new Date(new Date(row.created_at).getTime() + config.trialDays * 86_400_000);
+  const days = Math.ceil((endsAt.getTime() - Date.now()) / 86_400_000);
+  return Math.max(0, days);
+}
+
 /** Whether the tenant may use the app at all (active subscription or live trial). */
 export async function isEntitled(tenantId: string): Promise<boolean> {
   return (await getTenantBilling(tenantId)).entitled;

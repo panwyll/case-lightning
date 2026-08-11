@@ -16,7 +16,7 @@ import { config } from './config';
 import { query, queryOne } from './db';
 import { stripe } from './stripe';
 import { accountForUser } from './referrals';
-import { getTenantBilling, emailQuotaStatus, type Plan } from './plan';
+import { getTenantBilling, emailQuotaStatus, trialDaysRemaining, type Plan } from './plan';
 import type { SessionUser } from './types';
 
 /** The Firm (enterprise) base price bundles this many seats; extras bill per-seat. */
@@ -279,6 +279,11 @@ export async function changePlan(
   const ref = referrerCode?.toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
   const clientReferenceId = ref && ref !== account.referral_code ? ref : undefined;
 
+  // Only ever hand over the trial the firm hasn't already used. Every tenant starts a
+  // card-free trial at sign-in, so a flat config.trialDays here granted a SECOND one at
+  // checkout. See trialDaysRemaining.
+  const trialLeft = await trialDaysRemaining(user.tenantId);
+
   const session = await stripe().checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price, quantity: 1 }],
@@ -288,10 +293,11 @@ export async function changePlan(
     success_url: `${appUrl}/account?upgraded=1`,
     cancel_url: `${appUrl}/account`,
     allow_promotion_codes: true,
-    // Stripe owns the trial clock — it emits customer.subscription.updated as the
-    // trial converts (trialing → active) or lapses, and the webhook writes that
-    // status straight through. Nothing in our DB has to expire anything.
-    ...(config.trialDays > 0 ? { subscription_data: { trial_period_days: config.trialDays } } : {}),
+    // Stripe owns the trial clock from here — it emits customer.subscription.updated as
+    // the trial converts (trialing → active) or lapses, and the webhook writes that
+    // status straight through. Nothing in our DB has to expire anything. No days left
+    // (the card-free trial is spent) → no subscription_data, so billing starts now.
+    ...(trialLeft > 0 ? { subscription_data: { trial_period_days: trialLeft } } : {}),
   });
   return { url: session.url! };
 }
