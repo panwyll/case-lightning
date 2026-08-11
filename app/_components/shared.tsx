@@ -30,7 +30,12 @@ export const UTM = {
 
 export const ROUTES = {
   home: '/',
-  signup: '/waitlist',
+  // The primary conversion path: explain the Microsoft consent screen, then sign the
+  // firm in and let it scan its own mailbox. No card. /waitlist is still live as the
+  // "talk to a human first" route (ROUTES.contact) — it just isn't the default CTA any
+  // more, because a paid visitor landing on a waitlist form converts nobody.
+  signup: '/get-started',
+  contact: '/waitlist',
   conveyi: '/conveyi',
   pricing: '/conveyi/pricing',
   howItWorks: '/conveyi/how-it-works',

@@ -10,6 +10,10 @@ import type { SessionUser } from './types';
 
 export const SESSION_COOKIE = 'cl_session';
 export const OAUTH_STATE_COOKIE = 'cl_oauth_state';
+// Which surface started the OAuth round trip. The add-in signs in inside an Office
+// dialog and needs the /addin/auth-complete bridge to hand the token back to the task
+// pane; a web signup has no dialog and should land straight in the app.
+export const OAUTH_FLOW_COOKIE = 'cl_oauth_flow';
 
 function secret(): Uint8Array {
   if (!config.sessionJwtSecret) throw new Error('SESSION_JWT_SECRET is not set');

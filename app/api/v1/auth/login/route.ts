@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertFeature } from '@/lib/server/config';
 import { getAuthUrl } from '@/lib/server/oauth';
-import { OAUTH_STATE_COOKIE } from '@/lib/server/session';
+import { OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE } from '@/lib/server/session';
 import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -26,6 +26,19 @@ export async function GET(req: NextRequest) {
       sameSite: 'lax',
       secure: true,
     });
+    // ?flow=web marks a browser signup (the /get-started path). The callback uses it to
+    // land the user in the app directly instead of via the Office dialog bridge, which
+    // otherwise costs them a couple of seconds waiting for an Office.js probe to fail.
+    // Absent → the add-in flow, which is the safe default.
+    if (req.nextUrl.searchParams.get('flow') === 'web') {
+      res.cookies.set(OAUTH_FLOW_COOKIE, 'web', {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: true,
+        maxAge: 600,
+      });
+    }
     return res;
   } catch (error) {
     return fail(error);

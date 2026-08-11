@@ -34,6 +34,7 @@ export interface BillingSummary {
   status: string; // trialing | active | past_due | canceled
   entitled: boolean; // may use the app at all (active/trialing/pilot)
   trialing: boolean; // on a free trial (tier features, capped usage)
+  trialEndsAt: string | null; // end of a card-free trial, for the "N days left" nudge
   hasSubscription: boolean; // a Stripe customer exists → portal is available
   seats: Seat[];
   seatCount: number;
@@ -79,10 +80,14 @@ export async function getBillingSummary(user: SessionUser): Promise<BillingSumma
   const totalFor = (s: string) => Number(totals.find((t) => t.status === s)?.total ?? 0);
   const appUrl = config.appUrl.replace(/\/$/, '');
   return {
-    plan: account.plan,
-    status: account.status,
+    // Report the RESOLVED posture, not the raw billing_account row. A card-free trial has
+    // no subscription, so the row still reads plan=null/status='none' while the firm is
+    // genuinely entitled — showing that verbatim told a trialing firm it had no plan.
+    plan: billing.plan ?? account.plan,
+    status: billing.status === 'none' ? account.status : billing.status,
     entitled: billing.entitled,
     trialing: billing.trialing,
+    trialEndsAt: billing.trialEndsAt,
     hasSubscription: Boolean(account.stripe_customer_id),
     seats: seats.map((s) => ({ email: s.email, displayName: s.display_name, role: s.role })),
     seatCount: seats.length,

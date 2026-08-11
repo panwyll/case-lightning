@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { config } from '@/lib/server/config';
 import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/shared';
 
 export const metadata: Metadata = {
@@ -73,9 +74,10 @@ export default function PricingPage() {
             Priced per firm. Not per headache.
           </h1>
           <p className="mt-5 max-w-xl text-lg text-ink-soft">
-            No setup fees, no annual lock-in. Every plan has the full product — the difference is
-            how much of it you can use, and whether your team comes with you. Try it for 30 days;
-            if it doesn’t save you time, get your money back.
+            Start with {config.trialDays} days free — no card, no sales call. Every plan has the full
+            product; the difference is how much of it you can use, and whether your team comes with
+            you. No setup fees and no annual lock-in, and if you subscribe and it doesn’t save you
+            time in the first 30 days, get your money back.
           </p>
         </div>
       </section>

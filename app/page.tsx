@@ -52,8 +52,10 @@ const products = [
     name: 'Finance',
     domain: 'Lending, mortgages & brokerage',
     status: 'In build',
+    // Not built yet, so this registers interest — it must NOT drop someone into the
+    // CONVEYi sign-in, which is a conveyancing product they didn't ask for.
     live: false,
-    href: ROUTES.signup,
+    href: ROUTES.contact,
     body: 'Case management for document-heavy finance work — applications, packaging and client chasing handled in the inbox your team already runs on.',
   },
   {
@@ -61,7 +63,7 @@ const products = [
     domain: 'Litigation & private client',
     status: 'In build',
     live: false,
-    href: ROUTES.signup,
+    href: ROUTES.contact,
     body: 'Matter management for fee earners who live in email — correspondence, filing and next-action tracking without a new system to learn.',
   },
 ];
@@ -209,7 +211,7 @@ export default function Page() {
           </p>
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Cta label="Open CONVEYi" href={ROUTES.conveyi} dataCta="footer_conveyi" size="lg" />
-            <Cta label="Register interest" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'footer_signup')} dataCta="footer_signup" variant="secondary" size="lg" className="border-paper/30 text-paper hover:bg-paper hover:text-ink" />
+            <Cta label="Register interest" href={ctaHref(ROUTES.contact, PAGE_SOURCE, 'footer_signup')} dataCta="footer_signup" variant="secondary" size="lg" className="border-paper/30 text-paper hover:bg-paper hover:text-ink" />
           </div>
         </div>
       </section>

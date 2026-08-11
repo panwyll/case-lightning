@@ -1,5 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import MailboxScan from './MailboxScan';
+import { APPSOURCE_URL } from '../_components/shared';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -103,16 +105,24 @@ export default function Onboarding({ onNavigate, onChange }: { onNavigate?: (tab
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', fontSize: 13 }}>{err}</div>}
       {msg && <div style={{ ...card, color: '#065f46', background: '#ecfdf5', border: '1px solid #a7f3d0', fontSize: 13 }}>{msg}</div>}
 
-      {/* 1. Firm name */}
-      <StepCard step={stepOf('firm')} n={1}>
+      {/* 1. The mailbox scan — first, because it's the only step that shows the firm its
+             own data. Importing matters ticks the step server-side (matterCount > 0). */}
+      <StepCard step={stepOf('matter')} n={1}>
+        <div style={{ marginTop: 8 }}>
+          <MailboxScan onImported={() => { void load(); }} />
+        </div>
+      </StepCard>
+
+      {/* 2. Firm name */}
+      <StepCard step={stepOf('firm')} n={2}>
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <input value={firm} onChange={(e) => setFirm(e.target.value)} placeholder="e.g. Oakwood Property Law" style={{ ...input, flex: 1 }} />
           <button onClick={saveFirm} disabled={busy === 'firm' || !firm.trim()} style={primary}>{busy === 'firm' ? 'Saving…' : 'Save'}</button>
         </div>
       </StepCard>
 
-      {/* 2. Workspace provisioning */}
-      <StepCard step={stepOf('workspace')} n={2}>
+      {/* 3. Workspace provisioning */}
+      <StepCard step={stepOf('workspace')} n={3}>
         {stepOf('workspace').done && !provisioned ? (
           <div style={hint}>Your workflow, document templates and automations are ready. <button onClick={provision} disabled={busy === 'provision'} style={link}>Re-run setup</button></div>
         ) : (
@@ -123,25 +133,54 @@ export default function Onboarding({ onNavigate, onChange }: { onNavigate?: (tab
         )}
       </StepCard>
 
-      {/* 3. Case Flow */}
-      <StepCard step={stepOf('caseflow')} n={3}>
+      {/* 4. Connect Outlook — the add-in install, walked through properly. The store
+             listing can't give this much detail, and "find the button in Outlook" is
+             where people were dropping out. */}
+      <StepCard step={stepOf('outlook')} n={4}>
+        {!stepOf('outlook').done && (
+          <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={hint}>
+              Everything above works here in the browser. The add-in puts it in Outlook, so replies
+              are drafted against the email you’re actually reading.
+            </div>
+            <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: '#334155', lineHeight: 1.65 }}>
+              <li>
+                Open the CONVEYi listing and choose <strong>Get it now</strong> — sign in with the
+                same Microsoft account you used here.
+              </li>
+              <li>
+                Open Outlook and click any email. The <strong>CONVEYi</strong> button appears on the
+                ribbon, or under the <strong>…</strong> (More actions) menu at the top-right of the
+                message.
+              </li>
+              <li>
+                Click it to open the task pane, then <strong>pin</strong> it using the pin icon in
+                the pane’s top-right corner so it stays open as you move between emails.
+              </li>
+            </ol>
+            <div style={{ ...hint, color: '#64748b' }}>
+              New add-ins can take a few minutes to appear in Outlook, and if your firm restricts
+              them your IT administrator may need to approve it first.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <a href={APPSOURCE_URL} target="_blank" rel="noopener noreferrer" style={primaryLink}>
+                Open the CONVEYi listing →
+              </a>
+              <button onClick={() => ackStep('outlook')} style={link}>I’ve installed it</button>
+            </div>
+          </div>
+        )}
+      </StepCard>
+
+      {/* 5. Case Flow */}
+      <StepCard step={stepOf('caseflow')} n={5}>
         <div style={{ marginTop: 8 }}>
           <button onClick={() => goTo('workflow', 'caseflow')} style={secondary}>Open Case Flow →</button>
         </div>
       </StepCard>
 
-      {/* 4. First matter */}
-      <StepCard step={stepOf('matter')} n={4}>
-        {!stepOf('matter').done && (
-          <div style={{ marginTop: 8 }}>
-            <div style={hint}>Add a matter from the Outlook add-in — open an email from a client and choose “New matter”, or import your existing cases from the add-in’s Setup screen.</div>
-            <button onClick={() => goTo('board', 'matter')} style={{ ...secondary, marginTop: 8 }}>View the case board →</button>
-          </div>
-        )}
-      </StepCard>
-
-      {/* 5. Team invites */}
-      <StepCard step={stepOf('team')} n={5}>
+      {/* 6. Team invites */}
+      <StepCard step={stepOf('team')} n={6}>
         <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@yourfirm.co.uk" type="email" style={{ ...input, flex: 1, minWidth: 200 }} />
@@ -166,8 +205,8 @@ export default function Onboarding({ onNavigate, onChange }: { onNavigate?: (tab
         </div>
       </StepCard>
 
-      {/* 6. Plan */}
-      <StepCard step={stepOf('plan')} n={6}>
+      {/* 7. Plan */}
+      <StepCard step={stepOf('plan')} n={7}>
         {!stepOf('plan').done && (
           <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
             <button onClick={() => goTo('billing', 'plan')} style={secondary}>Choose a plan →</button>
@@ -208,5 +247,6 @@ const card: React.CSSProperties = { background: '#fff', border: '1px solid #e8ea
 const input: React.CSSProperties = { boxSizing: 'border-box', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' };
 const primary: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 8, border: 'none', background: PURPLE, color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' };
 const secondary: React.CSSProperties = { fontSize: 12.5, fontWeight: 700, padding: '7px 12px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#334155', cursor: 'pointer' };
+const primaryLink: React.CSSProperties = { ...primary, display: 'inline-block', textDecoration: 'none' };
 const link: React.CSSProperties = { fontSize: 12, fontWeight: 600, border: 'none', background: 'none', color: PURPLE, cursor: 'pointer', padding: 0 };
 const hint: React.CSSProperties = { fontSize: 11.5, color: '#94a3b8', lineHeight: 1.5 };

@@ -14,7 +14,7 @@ import { DEFAULT_AUTOMATIONS, indexAutomation } from './automations';
 import type { SessionUser } from './types';
 
 export interface OnboardingStep {
-  key: 'firm' | 'workspace' | 'caseflow' | 'matter' | 'team' | 'plan';
+  key: 'matter' | 'firm' | 'workspace' | 'outlook' | 'caseflow' | 'team' | 'plan';
   title: string;
   detail: string;
   done: boolean;
@@ -52,15 +52,21 @@ export async function getOnboardingStatus(tenantId: string): Promise<OnboardingS
   ]);
 
   const hasPlan = !!(billing?.comp_plan || (billing?.status && billing.status !== 'none') || (billing?.plan && billing.plan !== 'free'));
+  // Order matters: the mailbox scan comes FIRST because it's the only step that shows a
+  // new firm its own data. Everything else is configuration, and configuration before
+  // payoff is how a trial gets abandoned. Naming the firm and provisioning can happen
+  // while the scan runs.
   const steps: OnboardingStep[] = [
+    { key: 'matter', title: 'Find your live matters', detail: 'Scan your recent mail and let CONVEYi pull out the transactions it finds.', done: matterCount > 0 },
     { key: 'firm', title: 'Name your firm', detail: 'So letters and emails go out under the right name.', done: !isDefault(t?.name) },
     { key: 'workspace', title: 'Set up your workspace', detail: 'Seed the conveyancing workflow, document templates and starter automations.', done: !!(seeded?.workflow_seeded && docCount > 0 && autoCount > 0) || !!state.workspace },
-    // NB: "pin the task pane" deliberately lives in the add-in's tour, not here — it's an
-    // Outlook action you can't perform from this browser tab.
+    // The add-in install can't be detected from here, so this step is acknowledged by the
+    // user. NB "pin the task pane" stays in the add-in's own tour — it's an Outlook action
+    // you can't perform from this browser tab.
+    { key: 'outlook', title: 'Connect Outlook', detail: 'Add the task pane so drafting and triage happen where you read your email.', done: !!state.outlook },
     { key: 'caseflow', title: 'Tune your Case Flow', detail: 'Review the stages, tasks, documents and emails your matters will run through.', done: !!state.caseflow },
-    { key: 'matter', title: 'Create your first matter', detail: 'Start a matter, or import your existing cases from your inbox.', done: matterCount > 0 },
     { key: 'team', title: 'Invite your team', detail: 'Bring colleagues in with the right role.', done: userCount > 1 || inviteCount > 0 || !!state.team },
-    { key: 'plan', title: 'Choose your plan', detail: 'Start your trial or pick a plan when you’re ready.', done: hasPlan || !!state.plan },
+    { key: 'plan', title: 'Choose your plan', detail: 'Your trial needs no card. Pick a plan when you’re ready to keep going.', done: hasPlan || !!state.plan },
   ];
   const completed = steps.filter((s) => s.done).length;
   return {

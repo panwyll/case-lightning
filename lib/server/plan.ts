@@ -45,6 +45,7 @@ export interface TenantBilling {
   entitled: boolean; // may use the app at all
   trialing: boolean; // on a free trial → tier features but capped usage
   pilot: boolean; // no Stripe configured → full access, no billing
+  trialEndsAt: string | null; // when a card-free trial runs out (null if not on one)
 }
 
 /**
@@ -53,30 +54,81 @@ export interface TenantBilling {
  * firm can evaluate it, but expensive AI work is capped (see canUseExpensiveFeature)
  * and backlog lookback is clamped. When Stripe isn't configured we're in pilot mode:
  * full access, nothing gated.
+ *
+ * Trials come from two places and behave identically once granted:
+ *   - CARD-FREE (the signup path): a firm that has never subscribed is entitled for
+ *     TRIAL_DAYS from tenant.created_at, with no payment details at all. This is what
+ *     lets someone sign in, scan their own mailbox and see real matters before deciding.
+ *   - STRIPE-MANAGED: a subscription in `trialing` (trial_period_days at checkout).
+ * The card-free branch requires the ABSENCE of a billing_account row, so cancelling a
+ * subscription can never hand a firm a second free trial.
  */
 export async function getTenantBilling(tenantId: string): Promise<TenantBilling> {
   if (!config.stripeSecretKey) {
-    return { plan: 'enterprise', status: 'pilot', entitled: true, trialing: false, pilot: true };
+    return { plan: 'enterprise', status: 'pilot', entitled: true, trialing: false, pilot: true, trialEndsAt: null };
   }
-  const account = await queryOne<{ plan: string | null; status: string; comp_plan: string | null }>(
-    `select plan, status, comp_plan from billing_account where tenant_id = $1 order by updated_at desc limit 1`,
+  // One read for both the subscription and the tenant's own trial clock. The lateral
+  // keeps the "latest billing_account row" semantics the previous query had.
+  const row = await queryOne<{
+    plan: string | null;
+    status: string | null;
+    comp_plan: string | null;
+    has_account: boolean;
+    ever_subscribed: boolean;
+    trial_ends_at: string | null;
+    tenant_created_at: string;
+  }>(
+    `select b.plan, b.status, b.comp_plan, (b.tenant_id is not null) as has_account,
+            (b.stripe_subscription_id is not null) as ever_subscribed,
+            t.trial_ends_at, t.created_at as tenant_created_at
+       from tenant t
+       left join lateral (
+         select tenant_id, plan, status, comp_plan, stripe_subscription_id from billing_account
+         where tenant_id = t.id order by updated_at desc limit 1
+       ) b on true
+      where t.id = $1`,
     [tenantId]
   );
+  const account = row?.has_account ? row : null;
   // Comp override (test / pilot / internal) — full tier access for free, above Stripe,
   // so a webhook resync can't clobber it. See migration 032.
   if (account?.comp_plan && PLANS.includes(account.comp_plan as Plan)) {
-    return { plan: account.comp_plan as Plan, status: 'active', entitled: true, trialing: false, pilot: false };
+    return { plan: account.comp_plan as Plan, status: 'active', entitled: true, trialing: false, pilot: false, trialEndsAt: null };
   }
-  const status = account?.status ?? 'none';
-  const entitled = status === 'active' || status === 'trialing';
-  const trialing = status === 'trialing';
+  let status = account?.status ?? 'none';
+  let entitled = status === 'active' || status === 'trialing';
+  let trialing = status === 'trialing';
+
+  // Card-free trial: a firm that has NEVER subscribed gets full trial access from first
+  // sign-in, so it can scan its own mailbox and see real matters before paying.
+  //
+  // The gate is "never had a Stripe SUBSCRIPTION", not "has no billing_account row":
+  // accountForUser() inserts a row for every signed-in user so they get a referral code
+  // (referrals.ts), so a row-based check would end the trial the moment they opened the
+  // account page. Keying on stripe_subscription_id also means a cancelled subscriber
+  // can't unsubscribe their way into a second free trial, while someone who abandoned
+  // checkout (customer created, no subscription) keeps the trial they were promised.
+  let trialEndsAt: string | null = null;
+  if (!entitled && !row?.ever_subscribed && row) {
+    const endsAt = row.trial_ends_at
+      ? new Date(row.trial_ends_at)
+      : new Date(new Date(row.tenant_created_at).getTime() + config.trialDays * 86_400_000);
+    if (Date.now() < endsAt.getTime()) {
+      entitled = true;
+      trialing = true;
+      // Report it as a trial, not as 'none' — the account panel and the upgrade nudges
+      // key off this string, and 'none' would read as "no access" to a firm that has it.
+      status = 'trialing';
+      trialEndsAt = endsAt.toISOString();
+    }
+  }
   let plan = entitled && PLANS.includes(account?.plan as Plan) ? (account!.plan as Plan) : null;
   // A trial must be evaluable: if the subscription didn't resolve to a known tier,
   // grant Pro features rather than nothing, so auto-rules/doc AI can be tried. Volume
   // is still held down by the trial email cap and trialExpensiveCap — features, not
   // throughput. Without this a plan-less trial silently gets the free-tier experience.
   if (trialing && plan === null) plan = 'pro';
-  return { plan, status, entitled, trialing, pilot: false };
+  return { plan, status, entitled, trialing, pilot: false, trialEndsAt };
 }
 
 /** Whether the tenant may use the app at all (active subscription or live trial). */

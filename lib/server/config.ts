@@ -118,12 +118,17 @@ export const config = {
   // Go's monthly heavy-LLM (doc fill) ceiling. Small on purpose: enough to run doc
   // packs on a couple of matters and want them, not enough to run a practice on.
   goHeavyLlmMonthlyCap: Number(env('GO_HEAVY_LLM_MONTHLY_CAP') ?? '25'),
-  trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '7'),
-  // Length of the free trial, in days. Stripe owns the clock: this is passed as
-  // subscription_data.trial_period_days at checkout, and the subscription webhook
-  // drives status trialing → active (or unpaid/canceled if they never pay). 0 = no
-  // trial. NOTE: the /start-trial funnel uses a hosted Stripe Payment Link, whose
-  // trial is configured in the Stripe dashboard, not here.
+  // How far back a trial's backlog scan may reach. This is the first thing a new firm
+  // sees, so it has to surface REAL matters: 7 days was a demo, and a live conveyance
+  // can easily go a fortnight without traffic. 30 days catches anything active while
+  // still excluding a full historical backfill (that's what paying unlocks).
+  trialLookbackDays: Number(env('TRIAL_LOOKBACK_DAYS') ?? '30'),
+  // Length of the free trial, in days — used by BOTH trial routes. For the card-free
+  // signup path (see getTenantBilling) we own the clock: the trial runs this many days
+  // from tenant.created_at with no payment details. For a Stripe-managed trial it's
+  // passed as subscription_data.trial_period_days at checkout and the subscription
+  // webhook drives status trialing → active. 0 = no trial. NOTE: the /start-trial
+  // funnel uses a hosted Stripe Payment Link, whose trial is set in the dashboard.
   trialDays: Number(env('TRIAL_DAYS') ?? '14'),
   // Emails a trial may process per month, whatever tier it's evaluating — trials get
   // Pro features but not Pro volume. 0 = fall back to the evaluated tier's cap.

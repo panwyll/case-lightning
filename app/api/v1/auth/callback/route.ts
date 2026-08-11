@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { assertFeature, config } from '@/lib/server/config';
 import { exchangeCodeForToken } from '@/lib/server/oauth';
 import { transaction } from '@/lib/server/db';
-import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE } from '@/lib/server/session';
+import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE } from '@/lib/server/session';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { syncFirmSeats } from '@/lib/server/billing';
 import { ensureSubscription } from '@/lib/server/subscriptions';
@@ -151,10 +151,18 @@ export async function GET(req: NextRequest) {
     void ensureSubscription(user.id, tenant.id).catch(() => {});
 
     const session = await signSession(user.id);
-    // Land on a tiny completion page. The token rides in the URL fragment (never
-    // sent to a server or logged) so the dialog can hand it to the taskpane via
-    // postMessage — needed because desktop Outlook isolates the dialog's cookies.
-    const res = NextResponse.redirect(`${config.appUrl}/addin/auth-complete#s=${session}`);
+    // A browser signup goes straight into the app — there's no Office dialog to hand a
+    // token back to, and no reason to make a brand-new user watch an Office.js probe
+    // time out. The add-in flow still lands on the completion bridge: the token rides in
+    // the URL fragment (never sent to a server or logged) so the dialog can hand it to
+    // the taskpane via postMessage, which desktop Outlook needs because it isolates the
+    // dialog's cookies. First run of a new firm opens on Get started (?tab=getstarted).
+    const webFlow = req.cookies.get(OAUTH_FLOW_COOKIE)?.value === 'web';
+    const dest = webFlow
+      ? `${config.appUrl}/admin?tab=getstarted`
+      : `${config.appUrl}/addin/auth-complete#s=${session}`;
+    const res = NextResponse.redirect(dest);
+    if (webFlow) res.cookies.delete(OAUTH_FLOW_COOKIE);
     res.cookies.set(SESSION_COOKIE, session, {
       path: '/',
       httpOnly: true,
