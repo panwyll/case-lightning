@@ -53,6 +53,8 @@ export async function GET(req: NextRequest) {
       visitsDaily,
       visitsByChannel,
       revenueByTenant,
+      signupsDaily,
+      tenantSignups,
     ] = await Promise.all([
       safe('select * from v_funnel_global'),
       safe('select * from v_global_economics'),
@@ -67,6 +69,8 @@ export async function GET(req: NextRequest) {
       safe("select * from v_visits_daily where day >= current_date - interval '60 days' order by day"),
       safe('select * from v_visits_by_channel limit 50'),
       safe('select * from v_revenue_by_tenant'),
+      safe("select * from v_signups_daily where day >= current_date - interval '60 days' order by day"),
+      safe('select * from v_tenant_signups limit 200'),
     ]);
 
     return ok({
@@ -74,6 +78,8 @@ export async function GET(req: NextRequest) {
       funnel,
       economics: { global: global[0] ?? null, byTenant: tenants, byUser: users },
       usage: { byFeature: usageByFeature, byUser: usageByUser },
+      // Pre-revenue view: who has connected at all, not just who has paid.
+      signups: { daily: signupsDaily, byTenant: tenantSignups },
       acquisition: acquisitionMonthly,
       churn: churnMonthly,
       mrrMovement,

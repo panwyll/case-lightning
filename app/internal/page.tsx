@@ -151,6 +151,46 @@ export default function InternalDashboard() {
             </div>
           </section>
 
+          <section className="panel">
+            <h2>Signups per day &mdash; who has connected at all</h2>
+            <p className="note">
+              Counts every firm that signed in, paid or not. The funnel&rsquo;s acquisition
+              figures only count paid conversions, so before the first sale they read as
+              zero even when firms are turning up.
+            </p>
+            <Table
+              rows={[...(data.signups?.daily ?? [])].reverse().slice(0, 30)}
+              columns={[
+                { key: 'day', label: 'Day', fmt: (v) => String(v ?? '').slice(0, 10) },
+                { key: 'new_tenants', label: 'New firms', fmt: num, align: 'right' },
+                { key: 'new_users', label: 'New users', fmt: num, align: 'right' },
+                { key: 'activated_tenants', label: 'Activated', fmt: num, align: 'right' },
+              ]}
+            />
+          </section>
+
+          <section className="panel">
+            <h2>Every firm that has signed in</h2>
+            <p className="note">
+              &ldquo;Unnamed&rdquo; means the firm never completed step 1 of onboarding &mdash; it&rsquo;s
+              still called Tenant-&lt;id&gt;. Actions is audit rows: zero means they connected
+              and did nothing.
+            </p>
+            <Table
+              rows={data.signups?.byTenant ?? []}
+              columns={[
+                { key: 'firm_name', label: 'Firm' },
+                { key: 'signed_up_at', label: 'Signed up', fmt: (v) => String(v ?? '').slice(0, 10) },
+                { key: 'users', label: 'Users', fmt: num, align: 'right' },
+                { key: 'matters', label: 'Matters', fmt: num, align: 'right' },
+                { key: 'actions', label: 'Actions', fmt: num, align: 'right' },
+                { key: 'last_seen_at', label: 'Last seen', fmt: (v) => String(v ?? '').slice(0, 10) },
+                { key: 'billing_status', label: 'Billing', fmt: (v) => String(v ?? 'none') },
+                { key: 'plan', label: 'Plan', fmt: (v) => String(v ?? '—') },
+              ]}
+            />
+          </section>
+
           <div className="grid2">
             <section className="panel">
               <h2>MRR movement (monthly)</h2>
@@ -250,6 +290,7 @@ const css = `
   .card-sub { color:#6b7384; font-size:12px; margin-top:4px; }
   .panel { background:#171a21; border:1px solid #262b36; border-radius:14px; padding:18px; margin-bottom:18px; }
   .panel h2 { font-size:14px; margin:0 0 14px; color:#c7cdd9; }
+  .note { font-size:12px; line-height:1.5; color:#7e8798; margin:-8px 0 14px; max-width:70ch; }
   .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; }
   .funnel { display:flex; flex-direction:column; gap:14px; }
   .fstage { }
