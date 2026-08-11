@@ -29,7 +29,7 @@ type Col = { key: string; label: string; fmt?: (v: unknown) => string; align?: '
 /** Sortable, optionally filterable table. Sorting is what turns a dump into something
  *  you can investigate: click a header to find the biggest spender, the quietest firm,
  *  the oldest signup. Numbers sort numerically, everything else as text. */
-function Table({ columns, rows, filter, empty }: { columns: Col[]; rows: any[]; filter?: boolean; empty?: string }) {
+function Table({ columns, rows, filter, empty, maxHeight }: { columns: Col[]; rows: any[]; filter?: boolean; empty?: string; maxHeight?: number }) {
   const [q, setQ] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
 
@@ -59,6 +59,7 @@ function Table({ columns, rows, filter, empty }: { columns: Col[]; rows: any[]; 
       {filter && (
         <input className="tfilter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter…" />
       )}
+      <div className="tscroll" style={maxHeight ? { maxHeight, overflowY: 'auto' } : undefined}>
       <table>
         <thead>
           <tr>{columns.map((c) => (
@@ -84,6 +85,10 @@ function Table({ columns, rows, filter, empty }: { columns: Col[]; rows: any[]; 
           ))}
         </tbody>
       </table>
+      </div>
+      {maxHeight && view.length > 0 && (
+        <div className="tcount">{view.length} row{view.length === 1 ? '' : 's'}{q ? ' matching' : ''} &middot; scroll for more</div>
+      )}
     </div>
   );
 }
@@ -253,6 +258,7 @@ export default function InternalDashboard() {
               zero even when firms are turning up.
             </p>
             <Table
+              maxHeight={260}
               rows={[...(data.signups?.daily ?? [])].reverse().slice(0, 30)}
               columns={[
                 { key: 'day', label: 'Day', fmt: (v) => String(v ?? '').slice(0, 10) },
@@ -272,6 +278,7 @@ export default function InternalDashboard() {
             </p>
             <Table
               filter
+              maxHeight={340}
               empty="Nobody has signed in yet."
               rows={data.signups?.byTenant ?? []}
               columns={[
@@ -411,6 +418,10 @@ const css = `
   .fmeta { color:#6b7384; font-size:11px; margin-top:4px; display:flex; gap:6px; }
   .fmeta .drop { color:#f59e0b; }
   .table-wrap { overflow-x:auto; }
+  .tscroll { overflow-x:auto; }
+  /* Sticky header so the column you're reading stays labelled while you scroll. */
+  .tscroll thead th { position:sticky; top:0; z-index:1; background:#141821; }
+  .tcount { font-size:11px; color:#6b7488; padding:8px 10px 0; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th { text-align:left; color:#7c8597; font-weight:500; padding:6px 10px; border-bottom:1px solid #262b36; font-size:11px; text-transform:uppercase; letter-spacing:.03em; }
   td { padding:7px 10px; border-bottom:1px solid #1d222b; }
