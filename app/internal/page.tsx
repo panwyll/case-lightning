@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /* Owner-only internal analytics dashboard. Not linked from the site; gated by
  * INTERNAL_DASHBOARD_KEY (entered once, kept in localStorage). Renders the funnel,
@@ -24,16 +24,56 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-function Table({ columns, rows }: { columns: Array<{ key: string; label: string; fmt?: (v: unknown) => string; align?: 'right' }>; rows: any[] }) {
-  if (!rows?.length) return <div className="empty">No data yet.</div>;
+type Col = { key: string; label: string; fmt?: (v: unknown) => string; align?: 'right' };
+
+/** Sortable, optionally filterable table. Sorting is what turns a dump into something
+ *  you can investigate: click a header to find the biggest spender, the quietest firm,
+ *  the oldest signup. Numbers sort numerically, everything else as text. */
+function Table({ columns, rows, filter, empty }: { columns: Col[]; rows: any[]; filter?: boolean; empty?: string }) {
+  const [q, setQ] = useState('');
+  const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
+
+  const view = useMemo(() => {
+    let out = rows ?? [];
+    const needle = q.trim().toLowerCase();
+    if (needle) out = out.filter((r) => columns.some((c) => String(r[c.key] ?? '').toLowerCase().includes(needle)));
+    if (sort) {
+      const { key, dir } = sort;
+      out = [...out].sort((a, b) => {
+        const av = a[key], bv = b[key];
+        const an = Number(av), bn = Number(bv);
+        const numeric = av !== null && bv !== null && av !== '' && bv !== '' && !isNaN(an) && !isNaN(bn);
+        if (numeric) return (an - bn) * dir;
+        return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
+      });
+    }
+    return out;
+  }, [rows, columns, q, sort]);
+
+  const toggle = (key: string) =>
+    setSort((s) => (s?.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: -1 }));
+
+  if (!rows?.length) return <div className="empty">{empty ?? 'No data yet.'}</div>;
   return (
     <div className="table-wrap">
+      {filter && (
+        <input className="tfilter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter…" />
+      )}
       <table>
         <thead>
-          <tr>{columns.map((c) => <th key={c.key} style={c.align === 'right' ? { textAlign: 'right' } : undefined}>{c.label}</th>)}</tr>
+          <tr>{columns.map((c) => (
+            <th
+              key={c.key}
+              onClick={() => toggle(c.key)}
+              className="sortable"
+              style={c.align === 'right' ? { textAlign: 'right' } : undefined}
+            >
+              {c.label}{sort?.key === c.key ? (sort.dir === -1 ? ' ↓' : ' ↑') : ''}
+            </th>
+          ))}</tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {view.map((r, i) => (
             <tr key={i}>
               {columns.map((c) => (
                 <td key={c.key} style={c.align === 'right' ? { textAlign: 'right' } : undefined}>
@@ -103,6 +143,40 @@ export default function InternalDashboard() {
   const topVisitors = data?.funnel?.find((s: any) => s.stage_order === 1)?.count;
   const maxFunnel = Math.max(1, ...(data?.funnel?.map((s: any) => Number(s.count)) ?? [1]));
 
+  // Everything worth a nudge, derived from data already fetched — no extra round trips.
+  // Ordered worst-first so the top of the list is the thing to do next.
+  const attention = useMemo(() => {
+    const out: Array<{ level: 'bad' | 'warn' | 'info'; title: string; detail: string }> = [];
+    const firms: any[] = data?.signups?.byTenant ?? [];
+    const days = 86_400_000;
+    const ago = (d: any) => (d ? (Date.now() - new Date(d).getTime()) / days : Infinity);
+
+    const pastDue = firms.filter((f) => f.billing_status === 'past_due');
+    if (pastDue.length) out.push({ level: 'bad', title: `${pastDue.length} firm(s) past due`,
+      detail: `Payment failed: ${pastDue.map((f) => f.firm_name).join(', ')}. They keep access until Stripe gives up.` });
+
+    const stalled = firms.filter((f) => Number(f.actions) === 0);
+    if (stalled.length) out.push({ level: 'warn', title: `${stalled.length} firm(s) connected but never did anything`,
+      detail: `Signed in, then nothing: ${stalled.map((f) => f.firm_name).join(', ')}. This is the activation gap — worth a personal email.` });
+
+    const unnamed = firms.filter((f) => f.unnamed && Number(f.actions) > 0);
+    if (unnamed.length) out.push({ level: 'warn', title: `${unnamed.length} firm(s) never finished onboarding`,
+      detail: 'Still called Tenant-<id>, so step 1 (name your firm) was skipped. Letters and emails go out unbranded.' });
+
+    const quiet = firms.filter((f) => Number(f.actions) > 0 && ago(f.last_seen_at) > 7 && ago(f.signed_up_at) > 7);
+    if (quiet.length) out.push({ level: 'warn', title: `${quiet.length} firm(s) have gone quiet`,
+      detail: `No activity in over a week: ${quiet.map((f) => f.firm_name).join(', ')}.` });
+
+    const trialing = firms.filter((f) => f.billing_status === 'trialing');
+    if (trialing.length) out.push({ level: 'info', title: `${trialing.length} firm(s) on trial`,
+      detail: 'Stripe owns the clock — they convert or lapse without you doing anything.' });
+
+    if (!(data?.funnel ?? []).length) out.push({ level: 'info', title: 'Funnel has no data',
+      detail: 'v_funnel_global returned nothing — likely no pageview_event rows yet, so top-of-funnel is blind.' });
+
+    return out;
+  }, [data]);
+
   return (
     <main className="dash">
       <style>{css}</style>
@@ -129,6 +203,7 @@ export default function InternalDashboard() {
             <Card label="Visitors" value={num(topVisitors)} sub="all time" />
           </section>
 
+          {(data.funnel ?? []).length > 0 && (
           <section className="panel">
             <h2>Acquisition funnel — where people drop out</h2>
             <div className="funnel">
@@ -150,6 +225,24 @@ export default function InternalDashboard() {
               ))}
             </div>
           </section>
+          )}
+
+          {attention.length > 0 && (
+            <section className="panel attention">
+              <h2>Needs your attention</h2>
+              <ul className="alerts">
+                {attention.map((a, i) => (
+                  <li key={i} className={`alert ${a.level}`}>
+                    <span className="adot" />
+                    <div>
+                      <strong>{a.title}</strong>
+                      <span className="awhy">{a.detail}</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="panel">
             <h2>Signups per day &mdash; who has connected at all</h2>
@@ -177,6 +270,8 @@ export default function InternalDashboard() {
               and did nothing.
             </p>
             <Table
+              filter
+              empty="Nobody has signed in yet."
               rows={data.signups?.byTenant ?? []}
               columns={[
                 { key: 'firm_name', label: 'Firm' },
@@ -291,6 +386,19 @@ const css = `
   .panel { background:#171a21; border:1px solid #262b36; border-radius:14px; padding:18px; margin-bottom:18px; }
   .panel h2 { font-size:14px; margin:0 0 14px; color:#c7cdd9; }
   .note { font-size:12px; line-height:1.5; color:#7e8798; margin:-8px 0 14px; max-width:70ch; }
+  .attention { border-color:#3a3320; background:#191712; }
+  .alerts { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  .alert { display:flex; gap:10px; align-items:flex-start; font-size:13px; line-height:1.5; }
+  .alert strong { display:block; color:#e8ecf4; font-weight:600; }
+  .awhy { color:#8b94a5; }
+  .adot { width:8px; height:8px; border-radius:99px; margin-top:6px; flex:none; background:#64748b; }
+  .alert.bad .adot { background:#f87171; }
+  .alert.warn .adot { background:#fbbf24; }
+  .alert.info .adot { background:#60a5fa; }
+  th.sortable { cursor:pointer; user-select:none; }
+  th.sortable:hover { color:#e8ecf4; }
+  .tfilter { width:100%; max-width:280px; margin:0 0 10px; padding:7px 10px; border-radius:8px;
+             border:1px solid #2a3040; background:#12151c; color:#e8ecf4; font-size:13px; font-family:inherit; }
   .grid2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:18px; }
   .funnel { display:flex; flex-direction:column; gap:14px; }
   .fstage { }
