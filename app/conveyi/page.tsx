@@ -17,6 +17,34 @@ export const metadata: Metadata = {
 
 const PAGE_SOURCE = 'landing';
 
+// The five panels from the Microsoft Marketplace listing, reused so the site and the store
+// tell one story. NB these are ILLUSTRATIONS of the pane, not captures of the running app,
+// and each already carries its own headline and body copy baked into the artwork — so they
+// get no visible caption here (it would duplicate the image) but they do need real alt text,
+// because everything written on them is invisible to a screen reader.
+const panels: Array<{ src: string; alt: string }> = [
+  {
+    src: '/product/pane-1.png',
+    alt: 'The CONVEYi pane beside an email: the thread has been matched to matter SMITH-X at 12 Oak Lane, tagged “Reply needed”, with a summary of what the sender is asking for and a Draft reply button.',
+  },
+  {
+    src: '/product/pane-2.png',
+    alt: 'A drafted reply in the pane with Neutral, Firm and Chasing tone options, confirming receipt of the draft contract and enclosing the EPC and TA10 form. A note reads “Saved to your Outlook Drafts — review and send there.”',
+  },
+  {
+    src: '/product/pane-3.png',
+    alt: 'A list of live matters — SMITH-X, JONES-P, PATEL-K, OKAFOR-D — each showing its stage, how long it has sat there as a coloured age dot, and what is outstanding, including one marked “Chase needed”.',
+  },
+  {
+    src: '/product/pane-4.png',
+    alt: 'Document generation in the pane: a client care letter template filled from the matter file with the property, price and completion terms highlighted, noting six fields filled from the matter.',
+  },
+  {
+    src: '/product/pane-5.png',
+    alt: 'The matter’s files in the firm’s own OneDrive — a live Excel tracker plus the draft contract, EPC and TA10 form filed from email, and a generated client care letter.',
+  },
+];
+
 const tools = [
   {
     name: 'Outlook',
@@ -144,6 +172,34 @@ export default function Page() {
                 </div>
                 <p className="mt-3 text-ink-soft">{t.body}</p>
               </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── WHAT IT LOOKS LIKE ── */}
+      <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
+        <div className="mx-auto max-w-5xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">What it looks like</p>
+          <h2 className="mt-4 max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+            The whole job, in a panel beside your email.
+          </h2>
+          <p className="mt-4 max-w-2xl text-lg text-ink-soft">
+            Everything below happens without leaving the message you were already reading.
+          </p>
+          <div className="mt-12 flex flex-col gap-8 md:gap-12">
+            {panels.map((p) => (
+              <img
+                key={p.src}
+                src={p.src}
+                alt={p.alt}
+                width={1366}
+                height={768}
+                // The first panel is close enough to the fold to be worth fetching eagerly;
+                // the rest are well below it and would only compete for bandwidth.
+                loading={p.src.endsWith('pane-1.png') ? undefined : 'lazy'}
+                className="w-full rounded-2xl border border-line shadow-sm"
+              />
             ))}
           </div>
         </div>
