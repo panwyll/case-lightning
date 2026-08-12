@@ -5,9 +5,9 @@ import {
   Cta,
   NavHeader,
   SiteFooter,
-  NinetyNinePie,
   APPSOURCE_URL,
 } from '../_components/shared';
+import { PanelCarousel } from '../_components/PanelCarousel';
 
 export const metadata: Metadata = {
   title: 'CONVEYi — AI for conveyancers. Inside Outlook. | Case Lightning',
@@ -184,42 +184,14 @@ export default function Page() {
       <section className="border-y border-line bg-paper-soft px-6 py-14 md:py-16">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-3">
           {proof.map((p) => (
-            <div key={p.title}>
+            <div key={p.title} className="flex flex-col items-center text-center">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet/10 text-violet">
                 <Icon name={p.icon} />
               </div>
               <h3 className="mt-4 font-serif text-2xl font-semibold tracking-tight">{p.title}</h3>
-              <p className="mt-2 text-ink-soft">{p.body}</p>
+              <p className="mt-2 max-w-xs text-ink-soft">{p.body}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* ── 99% / 1% (ink section for contrast) ── */}
-      <section className="bg-ink px-6 py-20 text-paper md:py-28">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 md:grid-cols-2">
-          <div>
-            <h2 className="font-sans text-5xl font-extrabold leading-none tracking-tight md:text-7xl">
-              Leave the <span className="text-[#A78BFA]">99%</span> to us.
-            </h2>
-            <p className="mt-6 max-w-md text-lg text-paper/70">
-              The work that eats the day isn’t the law — it’s the inbox. CONVEYi handles the 99% so
-              your people spend their hours on the 1% that actually needs a conveyancer.
-            </p>
-          </div>
-          <div className="flex flex-col items-center">
-            <NinetyNinePie size={240} />
-            <div className="mt-6 grid w-full max-w-xs grid-cols-2 gap-4 text-sm">
-              <div className="rounded-xl bg-white/5 p-4">
-                <div className="text-2xl font-extrabold text-[#A78BFA]">99%</div>
-                <div className="mt-1 text-paper/70">Emails, updates, chasing, more emails</div>
-              </div>
-              <div className="rounded-xl bg-white/5 p-4">
-                <div className="text-2xl font-extrabold">1%</div>
-                <div className="mt-1 text-paper/70">Actual conveyancing</div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -247,31 +219,11 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── WHAT IT LOOKS LIKE ── */}
+      {/* ── WHAT IT LOOKS LIKE ── No heading: each panel carries its own headline and
+           copy in the artwork, so a section title would only say it a second time. */}
       <section className="border-t border-line bg-paper-soft px-6 py-20 md:py-24">
         <div className="mx-auto max-w-5xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">What it looks like</p>
-          <h2 className="mt-4 max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            The whole job, in a panel beside your email.
-          </h2>
-          <p className="mt-4 max-w-2xl text-lg text-ink-soft">
-            Everything below happens without leaving the message you were already reading.
-          </p>
-          <div className="mt-12 flex flex-col gap-8 md:gap-12">
-            {panels.map((p) => (
-              <img
-                key={p.src}
-                src={p.src}
-                alt={p.alt}
-                width={1366}
-                height={768}
-                // The first panel is close enough to the fold to be worth fetching eagerly;
-                // the rest are well below it and would only compete for bandwidth.
-                loading={p.src.endsWith('pane-1.png') ? undefined : 'lazy'}
-                className="w-full rounded-2xl border border-line shadow-sm"
-              />
-            ))}
-          </div>
+          <PanelCarousel panels={panels} />
         </div>
       </section>
 
