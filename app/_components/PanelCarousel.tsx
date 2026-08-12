@@ -4,23 +4,44 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type Panel = { src: string; alt: string };
 
+/** How long each panel is held before advancing. */
+const AUTOPLAY_MS = 5500;
+/** Slide duration. Long enough to read as movement, short enough not to feel slow. */
+const GLIDE_MS = 550;
+
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
 /**
- * Horizontal carousel for the product panels.
+ * Auto-advancing carousel for the product panels.
  *
- * Scrolling is CSS scroll-snap, not JS animation — so a swipe on a phone, a trackpad
- * flick and the arrow buttons all use the same mechanism and it still works if the JS
- * hasn't hydrated. The script only adds the affordances a pure-CSS version can't have:
- * arrows, dots, and knowing which panel you're on.
+ * Scrolling is CSS scroll-snap, so a swipe and a trackpad flick behave natively. The
+ * script adds what CSS can't: arrows, dots, knowing which panel you're on, and autoplay.
  *
- * The panels carry their own headline and body copy inside the artwork, so there is no
- * caption here by design — it would say the same thing twice.
+ * The animation is a hand-rolled requestAnimationFrame tween on scrollLeft rather than
+ * scrollTo({behavior:'smooth'}) or CSS scroll-smooth. BOTH of those silently do nothing
+ * in some engines — the state updated and the panel never moved, which is the kind of
+ * failure that ships unnoticed. A tween we drive ourselves works everywhere and lets us
+ * pick the duration.
+ *
+ * The panels carry their own headline and copy inside the artwork, so there is no caption
+ * here by design — it would say the same thing twice.
  */
 export function PanelCarousel({ panels }: { panels: Panel[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
+  // Autoplay stops for good once someone takes control — an arrow, a dot, a keypress or
+  // a swipe. Fighting a user who has chosen a panel is worse than not auto-advancing.
+  const [userTook, setUserTook] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const rafRef = useRef<number | null>(null);
+  const landRef = useRef<number | null>(null);
 
-  // Derive the active panel from real scroll position rather than tracking it ourselves,
-  // so a swipe, a keypress and an arrow click can't disagree about where we are.
+  // Two writers, deliberately. glideTo sets the index for moves WE command, and this
+  // reconciles it from real scroll position for moves the user makes (swipe, trackpad,
+  // native scroll). Neither alone is enough: scroll events don't fire in every context
+  // (verified — a background tab dispatches none at all, which froze the dots), and an
+  // optimistic value alone can't see a swipe. Both write, scroll wins whenever it fires,
+  // and Math.round means a partial scroll still resolves to the nearest panel.
   const onScroll = useCallback(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -28,21 +49,66 @@ export function PanelCarousel({ panels }: { panels: Panel[] }) {
     setIndex(Math.max(0, Math.min(panels.length - 1, i)));
   }, [panels.length]);
 
-  // Deliberately an instant jump: no scrollTo({behavior:'smooth'}) and no CSS
-  // scroll-smooth on the track. Smooth scrolling silently does NOTHING in some engines
-  // (verified — the arrows and dots moved the state but never the panel, via both
-  // routes), and a carousel whose buttons might not move anything is worse than one
-  // that doesn't animate. Swiping still feels right because snap points do that work.
-  const goTo = useCallback((i: number) => {
+  const glideTo = useCallback((i: number, animate: boolean) => {
     const el = trackRef.current;
     if (!el) return;
     const clamped = Math.max(0, Math.min(panels.length - 1, i));
-    el.scrollLeft = clamped * el.clientWidth;
+    const to = clamped * el.clientWidth;
     setIndex(clamped);
+
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    // Reduced motion, or an explicit jump: land immediately.
+    const reduce =
+      typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!animate || reduce) {
+      el.scrollLeft = to;
+      return;
+    }
+
+    const from = el.scrollLeft;
+    if (Math.abs(to - from) < 1) return;
+    const start = performance.now();
+
+    const settle = () => {
+      rafRef.current = null;
+      if (landRef.current !== null) { clearTimeout(landRef.current); landRef.current = null; }
+    };
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / GLIDE_MS);
+      el.scrollLeft = from + (to - from) * easeOutCubic(t);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(step);
+      } else {
+        settle();
+      }
+    };
+    rafRef.current = requestAnimationFrame(step);
+
+    // Guaranteed landing. requestAnimationFrame is paused entirely in a background tab
+    // (verified: zero callbacks), and this is the third animation route this session that
+    // silently moved nothing — scrollTo({behavior:'smooth'}) and CSS scroll-smooth were
+    // the first two. If the tween hasn't arrived by the time it should have, put the
+    // panel where it belongs. Getting there always matters more than the glide.
+    if (landRef.current !== null) clearTimeout(landRef.current);
+    landRef.current = window.setTimeout(() => {
+      if (Math.abs(el.scrollLeft - to) > 1) el.scrollLeft = to;
+      settle();
+    }, GLIDE_MS + 80);
   }, [panels.length]);
 
-  // Left/right arrows when the carousel has focus — expected of anything that behaves
-  // like a slideshow, and free to support.
+  /** Navigation the user asked for — cancels autoplay. */
+  const goTo = useCallback((i: number) => {
+    setUserTook(true);
+    glideTo(i, true);
+  }, [glideTo]);
+
+  useEffect(() => () => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    if (landRef.current !== null) clearTimeout(landRef.current);
+  }, []);
+
+  // Left/right arrows when the carousel has focus.
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
@@ -54,14 +120,39 @@ export function PanelCarousel({ panels }: { panels: Panel[] }) {
     return () => el.removeEventListener('keydown', onKey);
   }, [goTo, index]);
 
+  // Autoplay. Held while the pointer is over it or focus is inside (so it can't slide out
+  // from under someone reading or tabbing), while the tab is hidden, and under
+  // prefers-reduced-motion it never starts at all.
+  useEffect(() => {
+    if (userTook || paused) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const tick = () => {
+      if (document.hidden) return;
+      const el = trackRef.current;
+      if (!el) return;
+      const at = Math.round(el.scrollLeft / el.clientWidth);
+      glideTo(at >= panels.length - 1 ? 0 : at + 1, true);
+    };
+    const id = window.setInterval(tick, AUTOPLAY_MS);
+    return () => window.clearInterval(id);
+  }, [userTook, paused, glideTo, panels.length]);
+
   const atStart = index === 0;
   const atEnd = index === panels.length - 1;
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={() => setPaused(false)}
+    >
       <div
         ref={trackRef}
         onScroll={onScroll}
+        onPointerDown={() => setUserTook(true)}
         tabIndex={0}
         role="group"
         aria-roledescription="carousel"
@@ -81,8 +172,8 @@ export function PanelCarousel({ panels }: { panels: Panel[] }) {
               alt={p.alt}
               width={1366}
               height={768}
-              // Only the first panel is worth fetching eagerly; the rest are off-screen
-              // and would just compete for bandwidth on load.
+              // Only the first is worth fetching eagerly; autoplay reaches the rest soon
+              // enough, and eager-loading all five just competes for bandwidth on load.
               loading={i === 0 ? undefined : 'lazy'}
               className="w-full rounded-2xl border border-line"
             />

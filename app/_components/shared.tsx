@@ -64,17 +64,6 @@ export function ctaHref(path: string, source: string, content: string) {
   return `${path}?${p.toString()}`;
 }
 
-// ── The 99% / 1% motif (the core marketing angle) ──────────────────────────────
-export function NinetyNinePie({ size = 220 }: { size?: number }) {
-  const r = 16;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg viewBox="0 0 40 40" width={size} height={size} role="img" aria-label="99% admin, 1% conveyancing" className="-rotate-90">
-      <circle cx="20" cy="20" r={r} fill="none" stroke="#5A27E0" strokeWidth="8" />
-      <circle cx="20" cy="20" r={r} fill="none" stroke="#C7B8F5" strokeWidth="8" strokeDasharray={`${c * 0.01} ${c * 0.99}`} />
-    </svg>
-  );
-}
 
 // ── Shared exports ─────────────────────────────────────────────────────────────
 export { NavHeader } from './NavHeader';

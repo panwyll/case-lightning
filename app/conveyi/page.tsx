@@ -114,7 +114,7 @@ const proof: Array<{ icon: IconName; title: string; body: string }> = [
 type IconName = 'shield' | 'bolt' | 'draft';
 
 // Hand-rolled rather than pulling in an icon package for three glyphs — the site already
-// draws its own SVG (see NinetyNinePie and the wordmark). Stroked, currentColor, so they
+// draws its own SVG (see the wordmark and the carousel arrows). Stroked, currentColor, so they
 // inherit the brand violet and stay crisp at any size.
 const ICON_PATHS: Record<IconName, React.ReactNode> = {
   shield: (
