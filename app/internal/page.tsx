@@ -24,6 +24,14 @@ function Card({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+/** Human label for the selected window — shown next to any figure it applies to, so a
+ *  number can never be read against the wrong period. */
+function rangeLabel(days: string): string {
+  if (days === 'all') return 'all time';
+  if (days === '365') return 'last 12 months';
+  return `last ${days} days`;
+}
+
 type Col = { key: string; label: string; fmt?: (v: unknown) => string; align?: 'right' };
 
 /** Sortable, optionally filterable table. Sorting is what turns a dump into something
@@ -99,17 +107,21 @@ export default function InternalDashboard() {
   const [data, setData] = useState<any>(null);
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const [error, setError] = useState('');
+  // The funnel used to count everything ever recorded, which can only answer "how have
+  // we done in total". 30 days is the default because the question is nearly always
+  // "how are we doing lately".
+  const [days, setDays] = useState<string>('30');
 
   useEffect(() => {
     const saved = localStorage.getItem(KEY_STORE);
     if (saved) setKey(saved);
   }, []);
 
-  const load = useCallback(async (k: string) => {
+  const load = useCallback(async (k: string, d: string) => {
     setStatus('loading');
     setError('');
     try {
-      const res = await fetch('/api/v1/internal/metrics', { headers: { authorization: `Bearer ${k}` } });
+      const res = await fetch(`/api/v1/internal/metrics?days=${encodeURIComponent(d)}`, { headers: { authorization: `Bearer ${k}` } });
       if (res.status === 401) {
         localStorage.removeItem(KEY_STORE);
         setKey('');
@@ -125,8 +137,8 @@ export default function InternalDashboard() {
   }, []);
 
   useEffect(() => {
-    if (key) load(key);
-  }, [key, load]);
+    if (key) load(key, days);
+  }, [key, days, load]);
 
   // Everything worth a nudge, derived from data already fetched — no extra round trips.
   // Ordered worst-first so the top of the list is the thing to do next.
@@ -156,8 +168,13 @@ export default function InternalDashboard() {
     if (trialing.length) out.push({ level: 'info', title: `${trialing.length} firm(s) on trial`,
       detail: 'Stripe owns the clock — they convert or lapse without you doing anything.' });
 
-    if (!(data?.funnel ?? []).length) out.push({ level: 'info', title: 'Funnel has no data',
-      detail: 'v_funnel_global returned nothing — likely no pageview_event rows yet, so top-of-funnel is blind.' });
+    // The funnel query returns a fixed set of stages, so an EMPTY result means the query
+    // itself failed — a missing table or view, not an absence of traffic. Saying "no rows
+    // yet" sent me looking for missing pageviews when pageview_event didn't exist at all.
+    if (!(data?.funnel ?? []).length) out.push({ level: 'warn', title: 'Funnel query failed',
+      detail: 'The funnel always returns its stages, so an empty result means the query errored — usually a missing table or view (check pageview_event and subscription_event exist). See the server logs for the reason.' });
+    else if (Number(data.funnel[0]?.count ?? 0) === 0) out.push({ level: 'info', title: 'No visitors in this window',
+      detail: 'The funnel is working but no pageviews were recorded in the selected range. Widen the range, or check the beacon is firing.' });
 
     return out;
   }, [data]);
@@ -190,7 +207,14 @@ export default function InternalDashboard() {
         <h1>Case Lightning — global metrics</h1>
         <div className="actions">
           <span className="ts">{data ? `updated ${new Date(data.generatedAt).toLocaleString()}` : ''}</span>
-          <button onClick={() => load(key)} disabled={status === 'loading'}>{status === 'loading' ? '…' : 'Refresh'}</button>
+          <select className="range" value={days} onChange={(e) => setDays(e.target.value)} aria-label="Time range">
+            <option value="7">Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last 12 months</option>
+            <option value="all">All time</option>
+          </select>
+          <button onClick={() => load(key, days)} disabled={status === 'loading'}>{status === 'loading' ? '…' : 'Refresh'}</button>
           <button className="ghost" onClick={() => { localStorage.removeItem(KEY_STORE); setKey(''); setData(null); }}>Lock</button>
         </div>
       </header>
@@ -206,12 +230,12 @@ export default function InternalDashboard() {
             <Card label="AI cost (30d)" value={gbp(g?.ai_cost_pennies_gbp_30d)} sub={usd(g?.ai_cost_usd_30d) + ' raw'} />
             <Card label="Active customers" value={num(r?.active_now)} sub={`${num(r?.trialing_now)} trialing`} />
             <Card label="Lifetime churn" value={pct(r?.lifetime_churn_rate_pct)} sub={`${num(r?.ever_churned)} of ${num(r?.ever_paid)} paid`} />
-            <Card label="Visitors" value={num(topVisitors)} sub="all time" />
+            <Card label="Visitors" value={num(topVisitors)} sub={rangeLabel(days)} />
           </section>
 
           {(data.funnel ?? []).length > 0 && (
           <section className="panel">
-            <h2>Acquisition funnel — where people drop out</h2>
+            <h2>Acquisition funnel — where people drop out <span className="hint">· {rangeLabel(days)}</span></h2>
             <div className="funnel">
               {(data.funnel ?? []).map((s: any) => (
                 <div className="fstage" key={s.stage_order}>
@@ -386,6 +410,8 @@ const css = `
   header h1 { font-size:20px; margin:0; }
   .actions { display:flex; gap:10px; align-items:center; }
   .ts { color:#6b7384; font-size:12px; }
+  .range { font:inherit; font-size:12.5px; padding:6px 9px; border-radius:8px; border:1px solid #d7dbe3; background:#fff; color:#0f172a; cursor:pointer; }
+  .hint { color:#6b7384; font-weight:400; font-size:13px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; margin-bottom:22px; }
   .card { background:#171a21; border:1px solid #262b36; border-radius:14px; padding:16px; }
   .card-label { color:#9aa3b2; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
