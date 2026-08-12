@@ -8,8 +8,17 @@
  */
 import { query, queryOne } from './db';
 
-// GBP pennies per plan — mirrors plan_price (009_analytics.sql).
-const PLAN_MRR_PENNIES: Record<string, number> = { standard: 20000, team: 50000 };
+// GBP pennies per plan — mirrors plan_price (see 058_plan_price_refresh.sql).
+//
+// These keys MUST match what billing_account.plan actually stores. They were
+// 'standard'/'team', which no plan has been called since the Go/Pro/Firm rename, so
+// every lookup missed and every event recorded mrr_pennies = 0 — MRR, churn and
+// acquisition analytics would all have read zero however many customers paid.
+const PLAN_MRR_PENNIES: Record<string, number> = {
+  plus: 20_000, // Go   — £200
+  pro: 50_000, // Pro  — £500
+  enterprise: 100_000, // Firm — £1,000
+};
 
 type SubEventType = 'CHECKOUT' | 'PAID' | 'PAST_DUE' | 'SUBSCRIPTION' | 'CANCELED';
 

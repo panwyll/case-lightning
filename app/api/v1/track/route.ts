@@ -57,8 +57,12 @@ export async function POST(req: NextRequest) {
         ua.slice(0, 512),
       ]
     );
-  } catch {
-    /* best-effort: swallow everything, still return 204 */
+  } catch (err) {
+    // Best-effort: never error the caller — a tracking failure must not break the site.
+    // But LOG it. This swallowed every insert silently while pageview_event didn't even
+    // exist (migration 010 was never applied), so the funnel read empty for weeks with
+    // nothing anywhere to say why.
+    console.warn('[track] pageview not recorded:', (err as Error)?.message ?? err);
   }
   return res;
 }
