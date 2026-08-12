@@ -45,21 +45,6 @@ const panels: Array<{ src: string; alt: string }> = [
   },
 ];
 
-const tools = [
-  {
-    name: 'Outlook',
-    body: 'The add-in lives in your inbox. It reads the thread, drafts the reply, and files everything — you never leave the email you were already in.',
-  },
-  {
-    name: 'OneDrive',
-    body: 'Every matter gets its own folder in the OneDrive you already have. Contracts, searches, saved emails — one tidy place, automatically.',
-  },
-  {
-    name: 'Excel',
-    body: 'A live Excel tracker per case keeps parties, key dates and outstanding tasks in one sheet. It updates itself, so nothing slips through.',
-  },
-];
-
 // Install → find → pin → sign in. Outlook hides add-ins behind the Apps button and opens
 // the pane unpinned, so it closes the moment you open the next email — the single most
 // common reason a new install looks broken. Spelling it out here, on the store listing and
@@ -161,12 +146,11 @@ export default function Page() {
             AI for conveyancers · inside Outlook
           </p>
           <h1 className="mt-5 font-serif text-5xl font-semibold leading-[1.02] tracking-tight md:text-7xl">
-            Triple your transaction output.
-            <span className="block italic text-violet">Without hiring.</span>
+            The world still runs on email.
+            <span className="block italic text-violet">So do we.</span>
           </h1>
           <p className="mt-7 max-w-2xl text-lg leading-relaxed text-ink-soft md:text-xl">
-            Conveyancing is mostly email — chasing, updating, replying, filing. CONVEYi takes that
-            off your fee earners’ plates, right inside Outlook, so the same team moves far more cases.
+            Double your transaction output without leaving your inbox.
           </p>
           <div className="mt-9 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
             <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'hero_signup')} dataCta="hero_signup" size="lg" />
@@ -192,30 +176,6 @@ export default function Page() {
               <p className="mt-2 max-w-xs text-ink-soft">{p.body}</p>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* ── LIVES IN YOUR TOOLS ── */}
-      <section className="px-6 py-20 md:py-28">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="max-w-2xl font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            It lives in the tools you already pay for.
-          </h2>
-          <p className="mt-4 max-w-2xl text-lg text-ink-soft">
-            No new portal to log into. No “system” to learn. Your cases stay where they already are —
-            in Microsoft 365.
-          </p>
-          <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-3">
-            {tools.map((t, i) => (
-              <div key={t.name} className="bg-paper-soft p-8">
-                <div className="flex items-baseline gap-3">
-                  <span className="font-serif text-3xl font-semibold text-violet">{String(i + 1).padStart(2, '0')}</span>
-                  <h3 className="text-xl font-bold">{t.name}</h3>
-                </div>
-                <p className="mt-3 text-ink-soft">{t.body}</p>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
