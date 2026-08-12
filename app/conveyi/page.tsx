@@ -89,11 +89,65 @@ const firstRun = [
   },
 ];
 
-const proof = [
-  ['GDPR-compliant by design', 'Your data never leaves your own Microsoft 365 tenant. We don’t copy your files to a third-party portal.'],
-  ['Zero onboarding', 'No migration, no new logins, no training day. If your team can use Outlook, they can use this today.'],
-  ['Draft-only, always', 'Nothing is sent without a human. Every reply lands in your Drafts for you to check and send.'],
+// The three objections every firm raises before they'll try it: is our data safe, how much
+// upheaval is this, and can it email a client without us. Answered directly under the hero
+// rather than three-quarters down the page, because an unanswered objection is where the
+// visitor leaves.
+const proof: Array<{ icon: IconName; title: string; body: string }> = [
+  {
+    icon: 'shield',
+    title: 'GDPR-compliant by design',
+    body: 'Your data never leaves your own Microsoft 365 tenant. We don’t copy your files to a third-party portal.',
+  },
+  {
+    icon: 'bolt',
+    title: 'Zero onboarding',
+    body: 'No migration, no new logins, no training day. If your team can use Outlook, they can use this today.',
+  },
+  {
+    icon: 'draft',
+    title: 'Draft-only, always',
+    body: 'Nothing is sent without a human. Every reply lands in your Drafts for you to check and send.',
+  },
 ];
+
+type IconName = 'shield' | 'bolt' | 'draft';
+
+// Hand-rolled rather than pulling in an icon package for three glyphs — the site already
+// draws its own SVG (see NinetyNinePie and the wordmark). Stroked, currentColor, so they
+// inherit the brand violet and stay crisp at any size.
+const ICON_PATHS: Record<IconName, React.ReactNode> = {
+  shield: (
+    <>
+      <path d="M12 3l7 3v5.2c0 4.4-2.9 8-7 9.8-4.1-1.8-7-5.4-7-9.8V6l7-3z" />
+      <path d="m9 12 2 2 4-4" />
+    </>
+  ),
+  bolt: <path d="M13 2 4.5 13.5H11l-1 8.5L19 10.5h-6.5L13 2z" />,
+  draft: (
+    <>
+      <path d="M12.5 20H21" />
+      <path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7.5 18.5 3 20l1.5-4.5L16.4 3.6z" />
+    </>
+  ),
+};
+
+function Icon({ name }: { name: IconName }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-6 w-6"
+      aria-hidden="true"
+    >
+      {ICON_PATHS[name]}
+    </svg>
+  );
+}
 
 export default function Page() {
   return (
@@ -122,6 +176,22 @@ export default function Page() {
           <p className="mt-5 text-sm text-ink-soft">
             From £200/month · 30-day money-back guarantee · nothing to download
           </p>
+        </div>
+      </section>
+
+      {/* ── PROOF / TRUST ── Directly under the hero: these are the objections, and they
+           should be answered before the pitch continues, not after it. */}
+      <section className="border-y border-line bg-paper-soft px-6 py-14 md:py-16">
+        <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-3">
+          {proof.map((p) => (
+            <div key={p.title}>
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet/10 text-violet">
+                <Icon name={p.icon} />
+              </div>
+              <h3 className="mt-4 font-serif text-2xl font-semibold tracking-tight">{p.title}</h3>
+              <p className="mt-2 text-ink-soft">{p.body}</p>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -252,18 +322,6 @@ export default function Page() {
             Miss the pin and CONVEYi still works — you’ll just have to reopen it from Apps each time. The add-in
             shows you where it is the first time you open it.
           </p>
-        </div>
-      </section>
-
-      {/* ── PROOF / TRUST ── */}
-      <section className="border-y border-line bg-paper-soft px-6 py-20 md:py-24">
-        <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-3">
-          {proof.map(([title, body]) => (
-            <div key={title}>
-              <h3 className="font-serif text-2xl font-semibold tracking-tight">{title}</h3>
-              <p className="mt-3 text-ink-soft">{body}</p>
-            </div>
-          ))}
         </div>
       </section>
 
