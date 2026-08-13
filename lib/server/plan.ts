@@ -224,6 +224,12 @@ export async function emailQuotaStatus(
  * Expensive-feature gate for TRIAL users: give a flavour, don't run up cost. During
  * a trial each pricey feature (doc fills, matter reconciliation) is capped to a few
  * attempts; active subscribers pass through (their per-tier caps apply elsewhere).
+ *
+ * The window is ROLLING 14 days, not per-trial. That distinction didn't matter when the
+ * trial was itself 14 days, but at TRIAL_DAYS=60 it means roughly trialExpensiveCap
+ * attempts per fortnight (~12 across the trial) rather than 3 in total. Deliberate: a
+ * trial long enough to span a real conveyance needs to allow more than three document
+ * fills, while still pacing the spend.
  */
 export async function canUseExpensiveFeature(
   tenantId: string,
