@@ -18,7 +18,7 @@ import { query } from './db';
 export type Band = 'AUTO' | 'STRONG' | 'WEAK' | 'NONE';
 
 export interface MatchSignal {
-  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'NAME' | 'SENDER_DOMAIN';
+  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'FIRM_REF' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'NAME' | 'SENDER_DOMAIN';
   detail: string;
   weight: number;
 }
@@ -60,8 +60,52 @@ export function extractPostcodes(text: string): string[] {
   return Array.from(text.matchAll(POSTCODE_RE)).map((m) => m[0].replace(/\s+/g, '').toUpperCase());
 }
 
+// Addresses that are clearly automated / bulk senders (no-reply, ESPs, marketing).
+// Used to keep them out of clustering and to gate what reaches the AI. Lives here
+// rather than in onboarding.ts so the per-email path can use it without importing
+// the whole backlog-scan module.
+const NOISE_RE =
+  /(no-?reply|do-?not-?reply|donotreply|noreply|notification|notify|mailer-daemon|mailer|newsletter|news@|bounce|postmaster|automated|campaign|unsubscribe|alerts?@|marketing|promo|mailchimp|sendgrid|amazonses|mailgun|sendinblue|hubspot|mktomail|sparkpost|salesforce)/i;
+
+export function isNoiseAddress(a?: string | null): boolean {
+  return !a || NOISE_RE.test(a);
+}
+
 export function extractCaseRefTokens(text: string): string[] {
   return Array.from(text.matchAll(CASE_REF_RE)).map((m) => m[1].toUpperCase());
+}
+
+/**
+ * The FIRM's own matter reference, as written in correspondence.
+ *
+ * Every conveyancer already has a reference allocated by whatever system they run,
+ * and it appears on essentially every email in the transaction: "Our ref: ABC/1234"
+ * on what they send, quoted back as "Your ref: ABC/1234" by the other side. Reading
+ * it off the correspondence gives us their identifier without integrating with their
+ * case management system at all.
+ *
+ * Direction matters, and gets it wrong if ignored. On mail the firm SENT, "our ref"
+ * is theirs. On mail they RECEIVED, "our ref" belongs to the sender — the other
+ * side's reference, which must never be stored as ours — and "your ref" is theirs.
+ *
+ * Deliberately conservative: at least one digit (so it can't latch onto "Our ref:
+ * as discussed"), a length band that covers real formats without swallowing
+ * sentences, and a stop at the first line break.
+ */
+const REF_LINE_RE = /\b(our|your)\s*(?:file\s*)?ref(?:erence)?\s*[:.\-]?\s*([A-Za-z0-9][A-Za-z0-9\/\-_.]{2,30})/gi;
+
+export function extractFirmRef(text: string, opts: { outbound: boolean }): string | null {
+  if (!text) return null;
+  const want = opts.outbound ? 'our' : 'your';
+  for (const m of text.matchAll(REF_LINE_RE)) {
+    if (m[1].toLowerCase() !== want) continue;
+    const raw = m[2].replace(/[.,;:)\]]+$/, '').trim();
+    // Must carry a digit — "Our ref: above" and similar prose are not references.
+    if (!/\d/.test(raw)) continue;
+    if (raw.length < 3 || raw.length > 32) continue;
+    return raw.toUpperCase();
+  }
+  return null;
 }
 
 export interface SelfAddresses {
@@ -119,7 +163,13 @@ export function messageSignals(message: any): MessageSignals {
  * INJECTION must require this; tagging/suggesting can use any AUTO match.
  */
 export function hasDefinitiveSignal(c: { signals?: MatchSignal[] } | null | undefined): boolean {
-  return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD' || s.kind === 'CASE_REF_TOKEN');
+  // FIRM_REF sits with CASE_REF_TOKEN, not with LINKED_THREAD: both are deliberate
+  // references read out of email content, good enough to surface case data to the
+  // firm's own reviewer, but neither is server-side state and so neither authorises
+  // a write (see hasTrustedLink).
+  return !!c?.signals?.some(
+    (s) => s.kind === 'LINKED_THREAD' || s.kind === 'CASE_REF_TOKEN' || s.kind === 'FIRM_REF'
+  );
 }
 
 /**
@@ -137,7 +187,7 @@ export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined
 
 function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
-  const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN');
+  const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN') || kinds.has('FIRM_REF');
   const corroborating = ['PARTICIPANT_EMAIL', 'ADDRESS', 'NAME'].filter((k) => kinds.has(k as MatchSignal['kind'])).length;
   // AUTO requires a definitive signal OR at least two independent corroborating ones.
   if (score >= 0.9 && (hasDefinitive || corroborating >= 2)) return 'AUTO';
@@ -154,6 +204,12 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
   const haystack = `${signals.subject}\n${signals.bodyText}`;
   const tokens = extractCaseRefTokens(haystack);
   const postcodes = extractPostcodes(haystack);
+  // Either direction is worth trying as a lookup: on an inbound email the firm's ref
+  // is under "your ref", on one they sent it's under "our ref". We don't know the
+  // direction here, so collect both and let the match decide.
+  const refCandidates = Array.from(
+    new Set([extractFirmRef(haystack, { outbound: true }), extractFirmRef(haystack, { outbound: false })].filter(Boolean) as string[])
+  );
 
   // Drop the firm's own mailbox addresses/domains: they appear on virtually every
   // email and so are not evidence of *which* matter this is. Without this, an
@@ -185,6 +241,20 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
     byToken.forEach((r) => candidateIds.add(r.id));
   }
 
+  // The firm's own reference, if we've learned one. Guarded so a deploy that lands
+  // before migration 059 degrades to the old behaviour instead of erroring.
+  if (refCandidates.length) {
+    try {
+      const byFirmRef = await query<{ id: string }>(
+        `select id from matter where tenant_id = $1 and firm_ref is not null and upper(firm_ref) = any($2)`,
+        [tenantId, refCandidates]
+      );
+      byFirmRef.forEach((r) => candidateIds.add(r.id));
+    } catch {
+      /* firm_ref column not migrated yet */
+    }
+  }
+
   const idValues = [...participants, ...domains, ...postcodes];
   if (idValues.length) {
     const byIdent = await query<{ matter_id: string }>(
@@ -199,11 +269,24 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
 
   // 2) Load candidates + their identifiers, then score deterministically.
   const ids = [...candidateIds];
-  const matters = await query<{ id: string; matter_ref: string; property_address: string; case_ref_token: string | null; buyer_names: string[]; seller_names: string[] }>(
-    `select id, matter_ref, property_address, case_ref_token, buyer_names, seller_names
-     from matter where tenant_id = $1 and id = any($2)`,
-    [tenantId, ids]
-  );
+  type MatterRow = { id: string; matter_ref: string; property_address: string; case_ref_token: string | null; firm_ref: string | null; buyer_names: string[]; seller_names: string[] };
+  let matters: MatterRow[];
+  try {
+    matters = await query<MatterRow>(
+      `select id, matter_ref, property_address, case_ref_token, firm_ref, buyer_names, seller_names
+       from matter where tenant_id = $1 and id = any($2)`,
+      [tenantId, ids]
+    );
+  } catch {
+    // Pre-059 deploy: same query without the new column.
+    matters = (
+      await query<Omit<MatterRow, 'firm_ref'>>(
+        `select id, matter_ref, property_address, case_ref_token, buyer_names, seller_names
+         from matter where tenant_id = $1 and id = any($2)`,
+        [tenantId, ids]
+      )
+    ).map((m) => ({ ...m, firm_ref: null }));
+  }
   const idents = await query<{ matter_id: string; kind: string; value: string }>(
     `select matter_id, kind, value from matter_identifier where tenant_id = $1 and matter_id = any($2)`,
     [tenantId, ids]
@@ -233,6 +316,12 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
     }
     if (m.case_ref_token && tokens.includes(m.case_ref_token.toUpperCase())) {
       signalsHit.push({ kind: 'CASE_REF_TOKEN', detail: `Subject/body carries [#${m.case_ref_token}]`, weight: 0.9 });
+    }
+    // The firm's own reference. Weighted just under our own token: it's a strong,
+    // deliberate identifier written by a fee earner, but unlike [#TOKEN] it wasn't
+    // minted by us, so a mistyped or recycled ref is possible.
+    if (m.firm_ref && refCandidates.includes(m.firm_ref.toUpperCase())) {
+      signalsHit.push({ kind: 'FIRM_REF', detail: `Correspondence quotes your ref ${m.firm_ref}`, weight: 0.85 });
     }
     // Exact participant email (strong, but capped — counterparties recur)
     const emailMatches = mIdents.filter((i) => i.kind === 'EMAIL' && participants.includes(i.value));

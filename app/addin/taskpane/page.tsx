@@ -1069,10 +1069,25 @@ export default function Taskpane() {
       return;
     }
     const contact = senderContact();
+    // Prefer what the assistant actually read out of the email. It has the property,
+    // the parties and the other side; the subject-line guess and the sender address
+    // are the fallback for when there's no proposal (a match was found, or the email
+    // isn't a conveyance).
+    const p = assist?.proposal ?? null;
+    const otherSide = [p?.counterpartySolicitor, p?.counterpartyAgent].filter(Boolean) as string[];
     setForm((f) => ({
       ...f,
-      propertyAddress: f.propertyAddress || addressFromSubject(subject),
-      counterparties: f.counterparties.length ? f.counterparties : contact ? [contact] : [],
+      matterRef: f.matterRef || p?.suggestedRef || '',
+      propertyAddress: f.propertyAddress || p?.propertyAddress || addressFromSubject(subject),
+      buyerNames: f.buyerNames.length ? f.buyerNames : p?.buyerNames ?? [],
+      sellerNames: f.sellerNames.length ? f.sellerNames : p?.sellerNames ?? [],
+      counterparties: f.counterparties.length
+        ? f.counterparties
+        : otherSide.length
+        ? otherSide
+        : contact
+        ? [contact]
+        : [],
     }));
     setShowNewMatter(true);
   }
@@ -2349,13 +2364,37 @@ export default function Taskpane() {
                         );
                       })}
                     </>
+                  ) : assist?.proposal ? (
+                    /* Nothing matched, but the email reads as a conveyance — show what
+                       we found so "create it" is one click on real details, not a
+                       blank form. Everything here is still confirmed by the user. */
+                    <div style={{ ...S.candidate, background: '#faf7ff', borderColor: '#ddd0fb', marginBottom: 8 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#5A27E0', marginBottom: 4 }}>
+                        Looks like a new matter
+                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                        {assist.proposal.propertyAddress || 'Property not identified'}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        {[
+                          assist.proposal.buyerNames?.length ? `Buyer: ${assist.proposal.buyerNames.join(', ')}` : null,
+                          assist.proposal.sellerNames?.length ? `Seller: ${assist.proposal.sellerNames.join(', ')}` : null,
+                          assist.proposal.counterpartySolicitor ? `Other side: ${assist.proposal.counterpartySolicitor}` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ') || 'Parties not identified'}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 3 }}>
+                        {Math.round((assist.proposal.confidence ?? 0) * 100)}% confident · you confirm before anything is created
+                      </div>
+                    </div>
                   ) : (
                     <p style={{ ...S.muted, marginBottom: 8 }}>No suggested matter for this email.</p>
                   )}
 
                   <div style={S.rowWrap}>
                     <button style={!matterId ? S.primary : S.secondary} onClick={openNewMatter}>
-                      + New matter
+                      {assist?.proposal && !matterId ? 'Create this matter' : '+ New matter'}
                     </button>
                     {matterId && (
                       <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>

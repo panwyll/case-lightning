@@ -18,13 +18,13 @@
 import { query, queryOne } from './db';
 import { getMessage, listThreadMessages } from './graph';
 import { runTriage, applyTriageTags } from './triage';
-import { summarizeThread, draftReply, retrieveMatterContext, actingForPhrase } from './ai';
+import { summarizeThread, draftReply, retrieveMatterContext, actingForPhrase, proposeMatter } from './ai';
 import { summarizeAttachments, attachmentGroundTruth, type AttachmentDoc } from './files';
-import { recordContactsFromMessage } from './contacts';
+import { learnFirmRef, recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
-import { hasDefinitiveSignal, hasTrustedLink, type Candidate } from './matching';
+import { hasDefinitiveSignal, hasTrustedLink, isNoiseAddress, type Candidate } from './matching';
 
 // Intents where a reply is the expected next step — so we spend the draft call.
 const REPLY_INTENTS = new Set(['ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
@@ -40,6 +40,24 @@ export interface FastAssist {
   ask: string;
   /** Outlook category tags applied to the message so it stands out in the list. */
   highlighted: string[];
+  /**
+   * When nothing matched: a proposed matter read out of this email, so the pane can
+   * offer "create this" with the details filled in rather than an empty form. Null
+   * whenever a matter matched, or the email isn't a conveyancing matter.
+   */
+  proposal: MatterProposal | null;
+}
+
+/** A new matter suggested from an unmatched email — never created without a click. */
+export interface MatterProposal {
+  propertyAddress: string;
+  buyerNames: string[];
+  sellerNames: string[];
+  counterpartySolicitor?: string;
+  counterpartyAgent?: string;
+  suggestedRef?: string;
+  confidence: number;
+  rationale: string;
 }
 
 /** The slow half: the two LLM-backed pieces (thread summary + prepared reply). */
@@ -63,6 +81,14 @@ export interface AssistInput {
   conversationId?: string;
   matterId?: string;
   tone?: 'NEUTRAL' | 'FIRM' | 'CHASING';
+  /**
+   * Spend an AI call proposing a new matter when nothing matched. Set ONLY by the
+   * interactive taskpane path: this same code runs from the Graph webhook on every
+   * arriving email, and the proposal is read only when a human has the link drawer
+   * open. Precomputing it would mean an AI call per unmatched email — colleagues,
+   * banks, suppliers — for a result nobody ever sees.
+   */
+  propose?: boolean;
 }
 
 /** Empty slow half — what a PARTIAL (fast-only) result carries until the slow half lands. */
@@ -100,6 +126,76 @@ async function loadStoredTriage(tenantId: string, messageId: string): Promise<Tr
   const candidates = Array.isArray(row.candidates) ? row.candidates : [];
   const top = candidates[0] ?? null;
   return { triageId: row.id, classification: row.classification, candidates, top, band: top?.band ?? 'NONE' };
+}
+
+/** Below this the proposal is noise — the same floor onboarding uses for a cluster. */
+const PROPOSE_MIN_CONFIDENCE = 0.5;
+
+/**
+ * Suggest a new matter from an email that matched nothing.
+ *
+ * "No matter found" used to be a dead end: the pane offered a create form pre-filled
+ * with a guess at the address from the subject line and the sender as a counterparty,
+ * despite having just read the whole email. The onboarding scan already extracts the
+ * property, parties and the other side's solicitor properly, so this reuses exactly
+ * that extraction on a single message.
+ *
+ * Costs an AI call, so it is gated hard: only when nothing matched at all, only on
+ * mail from a human (a no-reply marketing blast is never a conveyance), and only when
+ * the model is confident it IS a conveyancing matter. Never creates anything — the
+ * proposal is a suggestion the user accepts with a click.
+ *
+ * Deliberately reads the single OPEN message rather than fetching the whole thread:
+ * this runs on the fast path where latency shows, and the first email of a matter —
+ * the case this exists for — is a thread of one.
+ */
+async function proposeFromMessage(
+  user: SessionUser,
+  message: any,
+  matterId: string | null,
+  matchBand: string,
+  wanted: boolean
+): Promise<MatterProposal | null> {
+  if (!wanted || matterId || matchBand !== 'NONE') return null;
+
+  const from = message?.from?.emailAddress?.address ?? '';
+  if (isNoiseAddress(from)) return null;
+
+  const to = (message?.toRecipients ?? [])
+    .map((r: any) => r?.emailAddress?.address)
+    .filter(Boolean)
+    .join(', ');
+  const body = message?.body?.content ?? message?.bodyPreview ?? '';
+  const when = message?.receivedDateTime ?? message?.sentDateTime ?? '';
+  const digest = `[${String(when).slice(0, 10)}] from ${from} | to ${to}\nSubject: ${message?.subject ?? ''}\n${body}`
+    .slice(0, 8000);
+  if (digest.trim().length < 40) return null;
+
+  const p = await proposeMatter({ userId: user.userId, tenantId: user.tenantId, threadDigest: digest });
+  if (!p.isConveyancingCase || (p.confidence ?? 0) < PROPOSE_MIN_CONFIDENCE) return null;
+  return {
+    propertyAddress: p.propertyAddress,
+    buyerNames: p.buyerNames ?? [],
+    sellerNames: p.sellerNames ?? [],
+    counterpartySolicitor: p.counterpartySolicitor,
+    counterpartyAgent: p.counterpartyAgent,
+    suggestedRef: p.suggestedRef,
+    confidence: p.confidence,
+    rationale: p.rationale,
+  };
+}
+
+/**
+ * Propose a matter for a message we've already analysed and cached.
+ *
+ * The webhook precomputes the assist for every arriving email but deliberately skips
+ * the proposal (see AssistInput.propose), so a warm open would otherwise show a
+ * cached `proposal: null` forever. The taskpane calls this on a cached, unmatched
+ * email — one AI call, at the moment a human is actually looking at the drawer.
+ */
+export async function proposeForMessage(user: SessionUser, messageId: string): Promise<MatterProposal | null> {
+  const message = await getMessage(user.userId, messageId);
+  return proposeFromMessage(user, message, null, 'NONE', true);
 }
 
 async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast: FastAssist; ctx: AssistContext }> {
@@ -152,6 +248,8 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     // Harvest contacts into the matter's address book only on a trusted link — never
     // on a token/fuzzy match (a persisted write off attacker-controllable content).
     if (writeMatterId) await recordContactsFromMessage(user, writeMatterId, message).catch(() => {});
+    // Learn the firm's own matter reference off the correspondence, same trust rule.
+    if (writeMatterId) await learnFirmRef(user, writeMatterId, message).catch(() => {});
   }
 
   // Highlight the email in the Outlook message list (coloured categories) so it
@@ -194,6 +292,7 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
     candidates,
     ask: triage.classification.reason,
     highlighted,
+    proposal: await proposeFromMessage(user, message, matterId, matchBand, !!input.propose).catch(() => null),
   };
   const ctx: AssistContext = {
     message,

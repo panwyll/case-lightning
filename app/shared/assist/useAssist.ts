@@ -25,6 +25,21 @@ export interface AssistData {
   /** Per-attachment summaries for the email tab (empty until the slow half lands). */
   documents?: Array<{ name: string; docType: string; summary: string }>;
   highlighted: string[];
+  /**
+   * A matter suggested from this email when nothing matched — property, parties and
+   * the other side, read out of the message. Null when a matter matched or the email
+   * isn't a conveyance. Presented for confirmation; never created on its own.
+   */
+  proposal?: {
+    propertyAddress: string;
+    buyerNames: string[];
+    sellerNames: string[];
+    counterpartySolicitor?: string;
+    counterpartyAgent?: string;
+    suggestedRef?: string;
+    confidence: number;
+    rationale: string;
+  } | null;
   /** False while the slow half (thread summary + draft) is still being prepared. */
   ready: boolean;
 }

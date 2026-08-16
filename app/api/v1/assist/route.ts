@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { assistPhase1, assistPhase2, assistOnMessage, emptySlow } from '@/lib/server/assist';
+import { assistPhase1, assistPhase2, assistOnMessage, emptySlow, proposeForMessage } from '@/lib/server/assist';
+import type { SessionUser } from '@/lib/server/types';
 import { readAssistCache, writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import { ok, fail } from '@/lib/server/http';
 
@@ -23,6 +24,28 @@ export const dynamic = 'force-dynamic';
  *    `ready: true`.
  *  - An explicit matterId is a deliberate re-analysis → always compute fresh.
  */
+/**
+ * Fill in the matter proposal on a cached result.
+ *
+ * The webhook precomputes each email's assist without proposing (an AI call per
+ * arriving email, for something only read when the drawer is open). So on a warm
+ * open of an email that matched nothing, propose now and write it back so the next
+ * open is free. Best-effort: a failure here just leaves the old "no suggested
+ * matter" behaviour rather than breaking the pane.
+ */
+async function withProposal(user: SessionUser, messageId: string, result: any) {
+  if (!result || result.matter || result.proposal || result.matchBand !== 'NONE') return result;
+  try {
+    const proposal = await proposeForMessage(user, messageId);
+    if (!proposal) return result;
+    const merged = { ...result, proposal };
+    await writeAssistCache(user.tenantId, messageId, merged, 'READY').catch(() => {});
+    return merged;
+  } catch {
+    return result;
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     assertFeature('auth');
@@ -47,10 +70,14 @@ export async function POST(req: NextRequest) {
     // Warm path: the webhook (or a prior cold open) already did the work.
     const cached = await readAssistCache(user.tenantId, body.messageId);
     if (cached?.status === 'READY') {
-      return ok({ ...cached.result, ready: true });
+      const result = await withProposal(user, body.messageId, cached.result);
+      return ok({ ...result, ready: true });
     }
     if (cached?.status === 'PARTIAL') {
-      // Slow half is already computing from the first open; keep polling.
+      // Slow half is already computing from the first open; keep polling. No proposal
+      // here on purpose: writing the merged result back would stamp a still-computing
+      // entry as READY, and the in-flight slow write would clobber it anyway. The
+      // poll lands on READY in a moment and proposes then.
       return ok({ ...cached.result, ready: false });
     }
 
@@ -63,7 +90,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Cold open: compute the fast half now, fill the slow half in the background.
-    const { fast, ctx } = await assistPhase1(user, body);
+    // propose:true — this is the interactive path, so a matter proposal for an
+    // unmatched email is worth the AI call. The webhook never sets it.
+    const { fast, ctx } = await assistPhase1(user, { ...body, propose: true });
     await writeAssistCache(user.tenantId, body.messageId, { ...fast, ...emptySlow() }, 'PARTIAL');
     after(async () => {
       try {

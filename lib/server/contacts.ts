@@ -7,7 +7,8 @@
  * Capture is best-effort and idempotent on (matter, email): we never overwrite a
  * human-assigned role, and a name fills in the first time we learn one.
  */
-import { query } from './db';
+import { query, queryOne } from './db';
+import { extractFirmRef } from './matching';
 
 export type ContactRole = 'CLIENT' | 'OTHER_SIDE' | 'AGENT' | 'LENDER' | 'OUR_FIRM' | 'OTHER' | 'UNKNOWN';
 
@@ -64,4 +65,42 @@ export async function recordContactsFromMessage(
   msg: any
 ): Promise<number> {
   return recordMatterContacts(user, matterId, contactsFromGraphMessage(msg));
+}
+
+/**
+ * Learn and store the firm's OWN matter reference from a message on a linked matter.
+ *
+ * Conveyancers put "Our ref: ABC/1234" on everything they send, and the other side
+ * quotes it back as "Your ref: ABC/1234". Reading it here means matching and the
+ * audit trail can use the reference the firm's case management system allocated —
+ * so their file and ours reconcile — without integrating with that system at all.
+ *
+ * Written once and then left alone: the first reference seen on a matter wins, so a
+ * later email quoting some other firm's reference can't overwrite it. Best-effort
+ * throughout; a failure here must never disturb the analysis.
+ */
+export async function learnFirmRef(
+  user: { tenantId: string },
+  matterId: string,
+  msg: any
+): Promise<string | null> {
+  const text = `${msg?.subject ?? ''}\n${msg?.body?.content ?? msg?.bodyPreview ?? ''}`;
+  if (!text.trim()) return null;
+  // sentDateTime with no receivedDateTime, or an explicit flag, marks our own mail.
+  // Graph gives both on most messages, so fall back to treating it as inbound —
+  // the conservative choice, since "your ref" on inbound really is ours.
+  const outbound = Boolean(msg?.isDraft) || (!!msg?.sentDateTime && !msg?.receivedDateTime);
+  const ref = extractFirmRef(text, { outbound });
+  if (!ref) return null;
+  try {
+    const row = await queryOne<{ firm_ref: string | null }>(
+      `update matter set firm_ref = $3
+         where id = $1 and tenant_id = $2 and (firm_ref is null or firm_ref = '')
+       returning firm_ref`,
+      [matterId, user.tenantId, ref]
+    );
+    return row?.firm_ref ?? null;
+  } catch {
+    return null; // firm_ref column not migrated yet
+  }
 }

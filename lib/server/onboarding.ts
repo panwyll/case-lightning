@@ -17,7 +17,7 @@
  */
 import { query, queryOne } from './db';
 import { listMailSince, listThreadMessages, describeGraphError } from './graph';
-import { extractPostcodes } from './matching';
+import { extractPostcodes, isNoiseAddress } from './matching';
 import { proposeMatter, extractFacts, upsertChunks } from './ai';
 import { createMatter } from './matter';
 import { seedTasksFromOutstanding } from './tasks';
@@ -77,13 +77,6 @@ const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noi
 const THREADS_PER_CASE = 3;      // conversations pulled for fact extraction (kept low so the
                                  // enrich slice's thread fetches + AI extract stay under the cap)
 
-// Addresses that are clearly automated / bulk senders (no-reply, ESPs, marketing).
-// Used both to keep these out of clustering and to gate what reaches the AI.
-const NOISE_RE =
-  /(no-?reply|do-?not-?reply|donotreply|noreply|notification|notify|mailer-daemon|mailer|newsletter|news@|bounce|postmaster|automated|campaign|unsubscribe|alerts?@|marketing|promo|mailchimp|sendgrid|amazonses|mailgun|sendinblue|hubspot|mktomail|sparkpost|salesforce)/i;
-function isNoiseAddress(a?: string | null): boolean {
-  return !a || NOISE_RE.test(a);
-}
 
 /** Lookback cutoff. null months = unlimited (premium only — gated by the caller). */
 export function sinceForLookback(months: number | null): string | null {
