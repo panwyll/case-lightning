@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import MailboxScan from './MailboxScan';
+import MatterImport from './MatterImport';
 import { APPSOURCE_URL } from '../_components/shared';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -108,8 +109,12 @@ export default function Onboarding({ onNavigate, onChange }: { onNavigate?: (tab
       {/* 1. The mailbox scan — first, because it's the only step that shows the firm its
              own data. Importing matters ticks the step server-side (matterCount > 0). */}
       <StepCard step={stepOf('matter')} n={1}>
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <MailboxScan onImported={() => { void load(); }} />
+          {/* The other route in: firms already running a case management system have
+              an authoritative matter list, and the scan can only find what's still
+              active in the mailbox. */}
+          <MatterImport onImported={() => { void load(); }} />
         </div>
       </StepCard>
 
