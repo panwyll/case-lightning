@@ -13,7 +13,8 @@
  * underlying draft creation or doc filing — the worklist just starts populating once it exists.
  */
 import crypto from 'node:crypto';
-import { query } from './db';
+import { query, queryOne } from './db';
+import { stripHtml } from './text';
 import { detectChases } from './chase';
 
 // Backstop for pre-existing / mis-classified tasks: an item where we're waiting on another
@@ -92,7 +93,12 @@ export async function addDraftReady(input: {
 
 /** Stable hash of a draft body, so a later edit by the user is detectable. */
 export function draftBodyHash(bodyHtml: string): string {
-  return crypto.createHash('sha256').update((bodyHtml ?? '').replace(/\s+/g, ' ').trim()).digest('hex');
+  // Hash the VISIBLE TEXT, not the HTML. Outlook reformats markup on save (wrapping,
+  // whitespace between tags), so an HTML hash flags every untouched draft as edited.
+  // Stripping to text + collapsing whitespace means only a real content change counts
+  // as an edit — which is exactly the question ("did the human change the message?").
+  const text = stripHtml(bodyHtml ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+  return crypto.createHash('sha256').update(text).digest('hex');
 }
 
 /**
@@ -349,4 +355,29 @@ export async function clearDraftReadyForThread(tenantId: string, threadId: strin
       where tenant_id = $1 and kind = 'DRAFT_READY' and thread_id = $2 and done_at is null`,
     [tenantId, threadId]
   ).catch(() => {});
+}
+
+
+/**
+ * Is this thread's ready draft stale, and if so has the user edited it since we
+ * wrote it? Returns the verdict only — the caller regenerates via the normal draft
+ * path (which resets staleness and body_hash on write), so nothing here touches the
+ * draft. `graphMessageId`/`bodyHash` let the caller fetch the live body and compare.
+ */
+export async function getStaleDraftForThread(
+  tenantId: string,
+  graphThreadId: string
+): Promise<{ id: string; graphMessageId: string | null; bodyHash: string | null } | null> {
+  try {
+    return await queryOne<{ id: string; graphMessageId: string | null; bodyHash: string | null }>(
+      `select id, graph_message_id as "graphMessageId", body_hash as "bodyHash"
+         from worklist_item
+        where tenant_id = $1 and kind = 'DRAFT_READY' and dedup_key = $2
+          and done_at is null and stale_since is not null
+        limit 1`,
+      [tenantId, `thread:${graphThreadId}`]
+    );
+  } catch {
+    return null; // pre-061 (no stale_since column) — nothing is ever stale
+  }
 }

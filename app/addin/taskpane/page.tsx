@@ -310,6 +310,9 @@ export default function Taskpane() {
   // Reply length/formality. null = follow the email's intent (status requests default
   // to brief); the user can pin it either way and it regenerates.
   const [replyTone, setReplyTone] = useState<'BRIEF' | 'NEUTRAL' | null>(null);
+  // Draft went stale (case moved) AND the user has edited it — warn, don't rewrite.
+  const [draftStaleEdited, setDraftStaleEdited] = useState(false);
+  const staleCheckedFor = useRef('');
   const [replyReady, setReplyReady] = useState(false);
   const [replySent, setReplySent] = useState(false); // this email's reply has been sent
   const [draftId, setDraftId] = useState<string | null>(null); // the Outlook draft to send
@@ -938,6 +941,8 @@ export default function Taskpane() {
           setReplyFailed(false);
           setGuidance('');
           setReplyTone(null);
+          setDraftStaleEdited(false);
+          staleCheckedFor.current = '';
           setMatterId('');
           setMatterInfo(null);
           setTasks([]);
@@ -1493,6 +1498,33 @@ export default function Taskpane() {
   // Writes the reply straight into the Outlook draft — no in-pane preview. The first
   // call reuses the cached assist draft (instant); `regen` forces a fresh draft with
   // the current tone + guidance, which create-draft folds into the SAME Outlook draft.
+  // When a thread with a ready draft is opened, ask the server whether the draft has
+  // gone stale (case updated since it was written). Untouched → silently regenerate
+  // with the newer context; edited by the user → just warn, never overwrite their
+  // words. Owner-token only and conservative — a draft we can't verify is left alone.
+  useEffect(() => {
+    if (!messageId || !conversationId) return;
+    if (!(assist?.draft || replyReady)) return;        // only once there's a draft to judge
+    if (staleCheckedFor.current === messageId) return; // once per email
+    staleCheckedFor.current = messageId;
+    (async () => {
+      try {
+        const v = await api<{ stale: boolean; edited?: boolean }>(
+          `/threads/${encodeURIComponent(conversationId)}/draft-staleness`,
+          { method: 'POST', body: JSON.stringify({}) }
+        );
+        if (!v?.stale) return;
+        if (v.edited) {
+          setDraftStaleEdited(true); // human edits present — hands off, flag it
+        } else {
+          void openReply({ regen: true, auto: true }); // untouched — refresh silently
+        }
+      } catch {
+        /* best-effort — staleness is a nicety, never blocks the reply */
+      }
+    })();
+  }, [messageId, conversationId, assist?.draft, replyReady]);
+
   async function openReply(opts: { regen?: boolean; auto?: boolean } = {}) {
     setReplyFailed(false);
     // Watchdog: drafting goes through the LLM + Graph, so bound it. If it stalls,
@@ -2594,6 +2626,11 @@ export default function Taskpane() {
                       </p>
                     ) : null}
 
+                    {draftStaleEdited && (
+                      <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 9px', lineHeight: 1.4 }}>
+                        ⚠ New activity on this case since you drafted this - and you've edited it, so I've left it as-is. Worth a check, or Regenerate to rebuild from the latest.
+                      </div>
+                    )}
                     <div style={{ marginTop: 10 }}>
                       {/* Length. Status requests default to Brief (a quick "any update?"
                           shouldn't get 200 words back); either can be pinned and it
