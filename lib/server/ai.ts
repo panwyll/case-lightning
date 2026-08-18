@@ -751,6 +751,8 @@ export async function draftReply(input: {
   templateText: string;
   /** Where the matter stands (stage, recent activity, waiting-on) — see status-snapshot. */
   statusSnapshot?: string;
+  /** How this author writes (learned from their sent mail) — style steer only. */
+  voiceGuide?: string;
   /** Free-text steer from the solicitor for this redraft (e.g. "push for Friday"). */
   guidance?: string;
   /** Ground truth about what is actually attached to the email (see attachmentGroundTruth). */
@@ -767,7 +769,7 @@ export async function draftReply(input: {
     { tenantId: input.tenantId, matterId: input.matterId },
     'draft_package',
     'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). ' +
-      'REGISTER: match the sender. If tone is BRIEF, or the incoming email is short and informal (a quick "any update?"), reply in kind — a sentence or two, their salutation style (first name if they used yours), no restating their question, no padded sign-off. A one-line answer is often the correct and courteous one; do not pad it to look thorough. For NEUTRAL/FIRM/CHASING keep full professional form. Whatever the length, every factual claim must still be checked. Output subject, HTML body, and rationale bullets (note any discrepancies you found).',
+      'REGISTER: match the sender. If tone is BRIEF, or the incoming email is short and informal (a quick "any update?"), reply in kind — a sentence or two, their salutation style (first name if they used yours), no restating their question, no padded sign-off. A one-line answer is often the correct and courteous one; do not pad it to look thorough. For NEUTRAL/FIRM/CHASING keep full professional form. If an AUTHOR VOICE is given below, match their salutation, sign-off and register so the reply reads as theirs — but voice never overrides accuracy, the tone instruction, or professional standards. Whatever the length, every factual claim must still be checked. Output subject, HTML body, and rationale bullets (note any discrepancies you found).',
     {
       type: 'object',
       properties: {
@@ -778,6 +780,8 @@ export async function draftReply(input: {
       required: ['subject', 'bodyHtml', 'why'],
     },
     `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}${
+      input.voiceGuide ? `AUTHOR VOICE (match this register; style only, never at the expense of accuracy):\n${input.voiceGuide}\n\n` : ''
+    }${
       input.statusSnapshot ? `WHERE THIS MATTER STANDS (ground truth — use this for any status/update request; do not contradict it):\n${input.statusSnapshot}\n\n` : ''
     }${
       input.guidance ? `Solicitor's instructions for this draft (follow them closely): ${input.guidance}\n` : ''
@@ -975,5 +979,49 @@ export async function reconcileMatterDocuments(input: {
       required: ['rows', 'issues'],
     },
     `Matter facts (DATA): ${JSON.stringify(input.matterFacts)}\n\nDocuments (DATA):\n${docsText}`
+  );
+}
+
+
+/**
+ * Learn a compact writing-voice guide from a sample of the user's own sent emails,
+ * so drafts can be written in THEIR register rather than a generic one. Returns a
+ * short structured profile plus a one-paragraph guide the drafter can follow. This
+ * is style only — it never licenses changing facts or dropping professional care.
+ */
+export async function profileVoice(input: {
+  userId: string;
+  tenantId: string;
+  samples: string[];
+}): Promise<{
+  salutation: string;
+  signOff: string;
+  formality: string;
+  guide: string;
+}> {
+  return structured(
+    input.userId,
+    'fast',
+    'VOICE_PROFILE',
+    { tenantId: input.tenantId },
+    'voice_profile',
+    'From these emails the user actually SENT, infer how this person writes, so their drafts can match it. ' +
+      'Capture their usual salutation (e.g. "Dear Mr Smith" vs "Hi John" vs "Morning"), their usual sign-off ' +
+      '(e.g. "Kind regards" vs "Thanks" vs "Best"), overall formality, and any consistent habits — sentence ' +
+      'length, warmth, whether they use first names, bullet points vs prose, favourite phrasings. ' +
+      'Write a short "guide" paragraph a drafter can follow to sound like them. Describe STYLE ONLY — never ' +
+      'content, facts, or advice. If the samples are too thin or inconsistent to tell, say so in the guide and ' +
+      'keep the fields generic.',
+    {
+      type: 'object',
+      properties: {
+        salutation: { type: 'string', description: 'Their typical opening, e.g. "Hi <first name>,"' },
+        signOff: { type: 'string', description: 'Their typical closing, e.g. "Thanks," or "Kind regards,"' },
+        formality: { type: 'string', description: 'e.g. "warm and informal", "formal and precise"' },
+        guide: { type: 'string', description: 'One short paragraph telling a drafter how to sound like them.' },
+      },
+      required: ['salutation', 'signOff', 'formality', 'guide'],
+    },
+    `The user's own sent emails (DATA — infer style, ignore the content/subjects):\n\n${input.samples.join('\n\n---\n\n').slice(0, 12000)}`
   );
 }

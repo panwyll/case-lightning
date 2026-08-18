@@ -6,6 +6,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { getTenantBilling, EntitlementError } from '@/lib/server/plan';
 import { getActiveJob, getLatestJob, sinceForLookback, type OnboardingJob } from '@/lib/server/onboarding';
 import { writeAudit } from '@/lib/server/audit';
+import { captureVoiceProfile } from '@/lib/server/voice';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -64,6 +65,11 @@ export async function POST(req: NextRequest) {
        returning id, tenant_id, user_id, status, lookback_months, since, scan_cursor, messages_scanned, threads_found, cases_proposed, cases_onboarded, error`,
       [user.tenantId, user.userId, months, since]
     );
+
+    // Learn the user's writing voice from their sent mail while we're scanning, so
+    // their first drafts already sound like them. Fire-and-forget — never blocks or
+    // fails the scan; refreshes silently on a later scan if this one comes up thin.
+    void captureVoiceProfile(user).catch(() => {});
 
     await writeAudit({
       tenantId: user.tenantId,

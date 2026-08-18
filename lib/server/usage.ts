@@ -24,6 +24,7 @@ export type UsageFeature =
   | 'DOC_TEMPLATE_GEN'
   | 'RECONCILE'
   | 'MATTER_PROPOSE'
+  | 'VOICE_PROFILE'
   | 'PLAYBOOK_SUGGEST'
   | 'EMBED';
 

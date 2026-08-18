@@ -568,6 +568,22 @@ export async function addMessageCategories(userId: string, messageId: string, to
 export const INBOX_RESOURCE = "/me/mailFolders('inbox')/messages";
 export const SENTITEMS_RESOURCE = "/me/mailFolders('sentitems')/messages";
 
+/**
+ * The user's most recent SENT messages, full bodies — for learning their writing
+ * voice. Sent Items only, newest first, plain-text bodies (Graph converts HTML).
+ */
+export async function listRecentSent(userId: string, top = 20): Promise<any[]> {
+  const client = await graphClientForUser(userId);
+  const res = await client
+    .api("/me/mailFolders('sentitems')/messages")
+    .select('subject,body,bodyPreview,toRecipients,sentDateTime')
+    .top(top)
+    .orderby('sentDateTime desc')
+    .header('Prefer', 'outlook.body-content-type="text"')
+    .get();
+  return (res.value ?? []) as any[];
+}
+
 export async function createMailSubscription(
   userId: string,
   resource: string,

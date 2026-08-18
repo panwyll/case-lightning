@@ -8,6 +8,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
 import { draftReply, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
 import { getStatusSnapshot, renderStatusSnapshot } from '@/lib/server/status-snapshot';
+import { getVoiceGuide } from '@/lib/server/voice';
 import { reviewAttachmentsContext, attachmentGroundTruth } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
@@ -104,6 +105,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     const statusSnapshot = body.matterId
       ? renderStatusSnapshot(await getStatusSnapshot(user.tenantId, body.matterId).catch(() => null))
       : '';
+    const voiceGuide = await getVoiceGuide(user.userId, user.tenantId).catch(() => '');
 
     const draft = await draftReply({
       userId: user.userId,
@@ -116,6 +118,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       retrievedContext,
       templateText,
       statusSnapshot,
+      voiceGuide,
       guidance: body.guidance,
       attachmentSummary,
     });

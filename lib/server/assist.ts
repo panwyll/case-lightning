@@ -26,6 +26,7 @@ import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
 import { hasDefinitiveSignal, hasTrustedLink, isNoiseAddress, type Candidate } from './matching';
 import { getStatusSnapshot, renderStatusSnapshot } from './status-snapshot';
+import { getVoiceGuide } from './voice';
 
 // Intents where a reply is the expected next step — so we spend the draft call.
 const REPLY_INTENTS = new Set(['STATUS_UPDATE', 'ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
@@ -369,6 +370,8 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
     const statusSnapshot = ctx.matterId
       ? renderStatusSnapshot(await getStatusSnapshot(user.tenantId, ctx.matterId).catch(() => null))
       : '';
+    // Write in the drafting user's own voice, learned from their sent mail.
+    const voiceGuide = await getVoiceGuide(user.userId, user.tenantId).catch(() => '');
 
     const generated = await draftReply({
       userId: user.userId,
@@ -381,6 +384,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       retrievedContext,
       templateText,
       statusSnapshot,
+      voiceGuide,
       attachmentSummary,
     });
     draft = { subject: generated.subject, bodyHtml: generated.bodyHtml, why: generated.why };
