@@ -3,7 +3,7 @@ import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
-import { hasTrustedLink } from '@/lib/server/matching';
+import { hasTrustedLink, hasDefinitiveSignal } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
@@ -77,10 +77,18 @@ export async function POST(req: NextRequest) {
         const triage = await runTriage(user, message);
 
         if (outbound) {
-          // On a trusted link only, mirror the inbound learning: file attachments,
-          // index the body, learn our own reference (direction known for certain),
-          // and flag drafts the send may have overtaken. Nothing that acts on mail.
-          if (triage.top && hasTrustedLink(triage.top)) {
+          // Mirror the inbound learning: file attachments, index the body, learn our
+          // own reference (direction known for certain), flag drafts the send overtook.
+          //
+          // Gate is DEFINITIVE, not trusted-link. Inbound requires a trusted link
+          // because its content is attacker-controllable — a stranger quoting a case
+          // ref could inject into a victim's file. A SENT email is authored by the
+          // firm from its own account, so that threat is absent: a definitive
+          // reference the firm itself wrote (our token / the firm's own "Our ref:")
+          // is trustworthy. This is what stops the fee earner's own outbound reply —
+          // often quoting the ref on a thread nobody manually linked — vanishing.
+          // Still definitive-only: a fuzzy address match is not adopted for a write.
+          if (triage.top && hasDefinitiveSignal(triage.top)) {
             const mId = triage.top.matterId;
             if (message.hasAttachments) {
               await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
