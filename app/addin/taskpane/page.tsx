@@ -307,6 +307,9 @@ export default function Taskpane() {
   // Free-text steer for the reply redraft, and whether a reply draft now exists in
   // Outlook for this email (so the panel shows "Regenerate" + a written-to-Outlook hint).
   const [guidance, setGuidance] = useState('');
+  // Reply length/formality. null = follow the email's intent (status requests default
+  // to brief); the user can pin it either way and it regenerates.
+  const [replyTone, setReplyTone] = useState<'BRIEF' | 'NEUTRAL' | null>(null);
   const [replyReady, setReplyReady] = useState(false);
   const [replySent, setReplySent] = useState(false); // this email's reply has been sent
   const [draftId, setDraftId] = useState<string | null>(null); // the Outlook draft to send
@@ -934,6 +937,7 @@ export default function Taskpane() {
           setDraftId(null);
           setReplyFailed(false);
           setGuidance('');
+          setReplyTone(null);
           setMatterId('');
           setMatterInfo(null);
           setTasks([]);
@@ -1505,7 +1509,7 @@ export default function Taskpane() {
         const g = await api<DraftPackage>(`/threads/${encodeURIComponent(conversationId)}/draft-reply`, {
           method: 'POST',
           signal: ctrl.signal,
-          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone: 'NEUTRAL', guidance: guidance.trim() || undefined }),
+          body: JSON.stringify({ matterId: matterId || undefined, messageId, conversationId, tone: replyTone ?? (assist?.classification?.intent === 'STATUS_UPDATE' ? 'BRIEF' : 'NEUTRAL'), guidance: guidance.trim() || undefined }),
         });
         subject = g.subject;
         bodyHtml = g.bodyHtml;
@@ -2591,6 +2595,31 @@ export default function Taskpane() {
                     ) : null}
 
                     <div style={{ marginTop: 10 }}>
+                      {/* Length. Status requests default to Brief (a quick "any update?"
+                          shouldn't get 200 words back); either can be pinned and it
+                          regenerates. */}
+                      {(() => {
+                        const effTone = replyTone ?? (assist?.classification?.intent === 'STATUS_UPDATE' ? 'BRIEF' : 'NEUTRAL');
+                        const pick = (t: 'BRIEF' | 'NEUTRAL') => { if (t !== effTone) { setReplyTone(t); if (replyReady) openReply({ regen: true }); } };
+                        return (
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                            {(['BRIEF', 'NEUTRAL'] as const).map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => pick(t)}
+                                disabled={!!busy}
+                                style={{
+                                  flex: 1, fontSize: 11.5, fontWeight: 700, padding: '5px 8px', borderRadius: 7,
+                                  cursor: 'pointer', border: '1px solid ' + (effTone === t ? '#5A27E0' : '#d7dbe3'),
+                                  background: effTone === t ? '#ede9fe' : '#fff', color: effTone === t ? '#5A27E0' : '#64748b',
+                                }}
+                              >
+                                {t === 'BRIEF' ? 'Brief' : 'Full'}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       <span style={S.updateLabel}>Add guidance</span>
                       <textarea
                         value={guidance}

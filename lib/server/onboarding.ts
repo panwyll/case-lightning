@@ -490,9 +490,16 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
   );
 
   await query(
-    `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb, updated_at = now()
+    `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb,
+            awaiting = $6::jsonb, updated_at = now()
      where matter_id = $4 and tenant_id = $5`,
-    [JSON.stringify(extracted.facts), JSON.stringify(extracted.outstanding), JSON.stringify(extracted.risks), matterId, user.tenantId]
+    [JSON.stringify(extracted.facts), JSON.stringify(extracted.outstanding), JSON.stringify(extracted.risks), matterId, user.tenantId, JSON.stringify(extracted.awaiting ?? [])]
+  ).catch(async () =>
+    query(
+      `update matter_summary set facts = $1::jsonb, outstanding_items = $2::jsonb, risks = $3::jsonb, updated_at = now()
+       where matter_id = $4 and tenant_id = $5`,
+      [JSON.stringify(extracted.facts), JSON.stringify(extracted.outstanding), JSON.stringify(extracted.risks), matterId, user.tenantId]
+    )
   );
   // Turn the outstanding items the extractor just produced into real, actionable tasks on the
   // matter — so an imported case lands with its to-do list already populated. Reuses the

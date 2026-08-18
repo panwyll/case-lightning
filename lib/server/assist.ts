@@ -25,9 +25,10 @@ import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
 import { hasDefinitiveSignal, hasTrustedLink, isNoiseAddress, type Candidate } from './matching';
+import { getStatusSnapshot, renderStatusSnapshot } from './status-snapshot';
 
 // Intents where a reply is the expected next step — so we spend the draft call.
-const REPLY_INTENTS = new Set(['ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
+const REPLY_INTENTS = new Set(['STATUS_UPDATE', 'ACTION_REQUIRED', 'ENQUIRY', 'CHASE', 'DOCUMENT_DELIVERY']);
 
 /** The fast half: everything available without an LLM round-trip on the thread. */
 export interface FastAssist {
@@ -80,7 +81,7 @@ export interface AssistInput {
   messageId: string;
   conversationId?: string;
   matterId?: string;
-  tone?: 'NEUTRAL' | 'FIRM' | 'CHASING';
+  tone?: 'NEUTRAL' | 'FIRM' | 'CHASING' | 'BRIEF';
   /**
    * Spend an AI call proposing a new matter when nothing matched. Set ONLY by the
    * interactive taskpane path: this same code runs from the Graph webhook on every
@@ -333,7 +334,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
   const wantsReply = ctx.needsAttention || REPLY_INTENTS.has(ctx.intent);
   let draft: SlowAssist['draft'] = null;
   if (wantsReply) {
-    const tone = ctx.tone ?? (ctx.intent === 'CHASE' ? 'CHASING' : 'NEUTRAL');
+    const tone = ctx.tone ?? (ctx.intent === 'CHASE' ? 'CHASING' : ctx.intent === 'STATUS_UPDATE' ? 'BRIEF' : 'NEUTRAL');
 
     const template = await queryOne<any>(
       `select * from template where tenant_id = $1 and style_tag = $2 and is_active = true order by updated_at desc limit 1`,
@@ -363,6 +364,12 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       ? await attachmentGroundTruth(user.userId, ctx.message.id, { hasAttachments: !!ctx.message?.hasAttachments }).catch(() => '')
       : '';
 
+    // Where the matter stands — stage, recent activity, waiting-on. Cheap, DB-only,
+    // and the substance behind any status/update reply. Only when linked to a matter.
+    const statusSnapshot = ctx.matterId
+      ? renderStatusSnapshot(await getStatusSnapshot(user.tenantId, ctx.matterId).catch(() => null))
+      : '';
+
     const generated = await draftReply({
       userId: user.userId,
       tenantId: user.tenantId,
@@ -373,6 +380,7 @@ async function buildSlow(user: SessionUser, ctx: AssistContext): Promise<SlowAss
       matterFacts: ctx.facts,
       retrievedContext,
       templateText,
+      statusSnapshot,
       attachmentSummary,
     });
     draft = { subject: generated.subject, bodyHtml: generated.bodyHtml, why: generated.why };

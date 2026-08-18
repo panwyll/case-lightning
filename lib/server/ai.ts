@@ -377,6 +377,7 @@ export async function extractFacts(input: {
   facts: Record<string, unknown>;
   risks: string[];
   outstanding: string[];
+  awaiting: string[];
   timeline: Array<{ title: string; details: string }>;
 }> {
   return structured(
@@ -385,10 +386,10 @@ export async function extractFacts(input: {
     'FACT_EXTRACT',
     { tenantId: input.tenantId, matterId: input.matterId },
     'fact_extract',
-    'Extract conveyancing facts, risks, the FIRM\'s outstanding actions, and timeline events from the thread. ' +
-      '"outstanding" must contain ONLY the next actions THIS firm/conveyancer has to take (e.g. "reply to enquiries", ' +
-      '"send TA6", "order local search"). Do NOT include anything you are merely waiting on another party to do ' +
-      '(client, buyer, seller, lender, agent, or the other side’s solicitor) — those are statuses we chase, not our tasks.',
+    'Extract conveyancing facts, risks, the FIRM\'s outstanding actions, what the firm is AWAITING from others, and timeline events from the thread. ' +
+      '"outstanding" = ONLY the next actions THIS firm/conveyancer must take (e.g. "reply to enquiries", "send TA6", "order local search"). ' +
+      '"awaiting" = things the firm is waiting on ANOTHER party to do (e.g. "other side to return enquiries", "client to sign contract", "lender to issue offer", "buyer\'s solicitor to confirm completion date"). ' +
+      'Every pending item belongs in exactly one of the two — our task vs their turn. This split is what lets a status update say both what we are doing and what we are waiting on.',
     {
       type: 'object',
       properties: {
@@ -396,7 +397,12 @@ export async function extractFacts(input: {
         risks: { type: 'array', items: { type: 'string' } },
         outstanding: {
           type: 'array',
-          description: 'ONLY the firm’s own next actions. Exclude anything awaiting another party (client/buyer/seller/lender/other side).',
+          description: 'ONLY the firm’s own next actions. Anything awaiting another party goes in "awaiting", not here.',
+          items: { type: 'string' },
+        },
+        awaiting: {
+          type: 'array',
+          description: 'Things the firm is waiting on another party to do (other side, client, lender, agent).',
           items: { type: 'string' },
         },
         timeline: {
@@ -408,7 +414,7 @@ export async function extractFacts(input: {
           },
         },
       },
-      required: ['facts', 'risks', 'outstanding', 'timeline'],
+      required: ['facts', 'risks', 'outstanding', 'awaiting', 'timeline'],
     },
     `Existing facts: ${JSON.stringify(input.existingFacts)}\n\nThread (DATA):\n${input.threadText}`
   );
@@ -736,13 +742,15 @@ export async function draftReply(input: {
   userId: string;
   tenantId: string;
   matterId?: string | null;
-  tone: 'NEUTRAL' | 'FIRM' | 'CHASING';
+  tone: 'NEUTRAL' | 'FIRM' | 'CHASING' | 'BRIEF';
   /** Which side we act for — e.g. "the buyer (purchase)". Steers the draft. */
   actingFor?: string;
   threadText: string;
   matterFacts: Record<string, unknown>;
   retrievedContext: string;
   templateText: string;
+  /** Where the matter stands (stage, recent activity, waiting-on) — see status-snapshot. */
+  statusSnapshot?: string;
   /** Free-text steer from the solicitor for this redraft (e.g. "push for Friday"). */
   guidance?: string;
   /** Ground truth about what is actually attached to the email (see attachmentGroundTruth). */
@@ -758,7 +766,8 @@ export async function draftReply(input: {
     'DRAFT_REPLY',
     { tenantId: input.tenantId, matterId: input.matterId },
     'draft_package',
-    'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). Output subject, HTML body, and rationale bullets (note any discrepancies you found).',
+    'Draft a conveyancing reply (draft only — never sent) as a diligent, sceptical solicitor, NOT a cheerful assistant. Verify every claim in the email against the thread, the matter facts and the attachment ground truth before accepting it. Never thank for or acknowledge documents that are not actually attached — if the sender refers to enclosures that are absent, say so plainly and request them. Scrutinise names, property addresses, figures/amounts, dates, references and spelling; cross-check them against the matter facts and flag or query any discrepancy, inconsistency or missing item rather than glossing over it. No empty pleasantries or filler — every sentence must do real work (confirm, query, request, or instruct). ' +
+      'REGISTER: match the sender. If tone is BRIEF, or the incoming email is short and informal (a quick "any update?"), reply in kind — a sentence or two, their salutation style (first name if they used yours), no restating their question, no padded sign-off. A one-line answer is often the correct and courteous one; do not pad it to look thorough. For NEUTRAL/FIRM/CHASING keep full professional form. Whatever the length, every factual claim must still be checked. Output subject, HTML body, and rationale bullets (note any discrepancies you found).',
     {
       type: 'object',
       properties: {
@@ -769,6 +778,8 @@ export async function draftReply(input: {
       required: ['subject', 'bodyHtml', 'why'],
     },
     `Tone: ${input.tone}\n${input.actingFor ? `We act for: ${input.actingFor}.\n` : ''}${
+      input.statusSnapshot ? `WHERE THIS MATTER STANDS (ground truth — use this for any status/update request; do not contradict it):\n${input.statusSnapshot}\n\n` : ''
+    }${
       input.guidance ? `Solicitor's instructions for this draft (follow them closely): ${input.guidance}\n` : ''
     }${input.attachmentSummary ? `${input.attachmentSummary}\n` : ''}\nDISCERNMENT — before drafting, reconcile the email against the facts:\n` +
       `- If the email claims to attach/enclose documents, check the ATTACHMENTS line above. If nothing is attached, do NOT acknowledge receipt — state that no attachment was found and ask the sender to resend it.\n` +

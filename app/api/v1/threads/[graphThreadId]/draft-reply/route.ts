@@ -7,6 +7,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
 import { draftReply, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
+import { getStatusSnapshot, renderStatusSnapshot } from '@/lib/server/status-snapshot';
 import { reviewAttachmentsContext, attachmentGroundTruth } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       .object({
         matterId: z.string().uuid().optional(),
         messageId: z.string(),
-        tone: z.enum(['NEUTRAL', 'FIRM', 'CHASING']).default('NEUTRAL'),
+        tone: z.enum(['NEUTRAL', 'FIRM', 'CHASING', 'BRIEF']).default('NEUTRAL'),
         templateId: z.string().uuid().optional(),
         conversationId: z.string().optional(),
         guidance: z.string().max(2000).optional(),
@@ -98,6 +99,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     // enclosures that aren't there.
     const attachmentSummary = await attachmentGroundTruth(user.userId, body.messageId).catch(() => '');
 
+    // Same stage / recent-activity / waiting-on snapshot the auto-draft uses, so a
+    // manual regenerate (incl. a BRIEF status reply) has the identical ground truth.
+    const statusSnapshot = body.matterId
+      ? renderStatusSnapshot(await getStatusSnapshot(user.tenantId, body.matterId).catch(() => null))
+      : '';
+
     const draft = await draftReply({
       userId: user.userId,
       tenantId: user.tenantId,
@@ -108,6 +115,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       matterFacts: matterSummary?.facts ?? {},
       retrievedContext,
       templateText,
+      statusSnapshot,
       guidance: body.guidance,
       attachmentSummary,
     });
