@@ -5,7 +5,7 @@ import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { assistOnMessage } from '@/lib/server/assist';
 import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
@@ -69,9 +69,19 @@ export async function POST(req: NextRequest) {
         // the firm created — never a case-ref token (attacker-injectable) or fuzzy
         // corroboration, or this email's documents could be filed into the wrong
         // client's case. Token/fuzzy matches wait for the user to confirm. Best-effort.
-        if (triage.top && hasTrustedLink(triage.top) && message.hasAttachments) {
-          await saveEmailAttachmentsToMatter(user, triage.top.matterId, messageId, message.subject).catch((e) =>
-            console.error('[graph notification] auto-save attachments failed', (e as Error).message)
+        if (triage.top && hasTrustedLink(triage.top)) {
+          const mId = triage.top.matterId;
+          if (message.hasAttachments) {
+            await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch((e) =>
+              console.error('[graph notification] auto-save attachments failed', (e as Error).message)
+            );
+          }
+          // ...and the message text itself, so the case record is genuinely shared.
+          // listThreadMessages reads the CALLING user's mailbox, so without this a
+          // colleague asked for an update can't see what an email in someone else's
+          // inbox actually said — only that it was triaged. Same trusted-link gate.
+          await indexEmailBodyToMatter(user, mId, message).catch((e) =>
+            console.error('[graph notification] index email body failed', (e as Error).message)
           );
         }
 

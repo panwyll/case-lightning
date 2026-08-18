@@ -14,6 +14,8 @@ import { query, queryOne } from './db';
 import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
+import { stripHtml } from './text';
+import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { emitMatterEvent } from './events';
 
@@ -114,10 +116,11 @@ export async function processMatterFile(
     }).catch(() => {});
   }
 
-  // Always reflect the arrival in the Excel tracker.
+  // Always reflect the arrival in the Excel tracker. Written as the matter's drive
+  // owner, since the tracker is a file inside the matter folder.
   let trackerUpdated = false;
   if (matter.tracker_item_id) {
-    await appendTrackerRow(user.userId, matter.tracker_item_id, {
+    await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
       date: new Date().toISOString().slice(0, 10),
       type: documentType || 'Document',
       detail: `Received file: ${opts.fileName}${substantive ? '' : readable ? ' (appears empty/uninformative)' : ''}`,
@@ -380,6 +383,9 @@ export async function saveEmailAttachmentsToMatter(
   );
   if (!matter?.folder_path) return 0;
 
+  // Files go to the matter's own drive, not the drive of whoever happened to
+  // receive the email — otherwise a case's documents scatter across colleagues.
+  const driveUser = await driveUserFor(user.tenantId, matterId, user.userId);
   const attachments = await listMessageAttachments(user.userId, messageId);
   let saved = 0;
   const savedNames: string[] = [];
@@ -395,7 +401,7 @@ export async function saveEmailAttachmentsToMatter(
       [matterId, user.tenantId, hash]
     );
     if (exists) continue; // identical content already filed
-    const uploaded = await uploadToMatterKb(user.userId, matter.folder_path, att.name, buffer);
+    const uploaded = await uploadToMatterKb(driveUser, matter.folder_path, att.name, buffer);
     const doc = await queryOne<{ id: string }>(
       `insert into document
         (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, hash_sha256, doc_type, created_by)
@@ -430,7 +436,8 @@ export async function saveEmailAttachmentsToMatter(
   }
 
   if (saved > 0 && matter.tracker_item_id) {
-    await appendTrackerRow(user.userId, matter.tracker_item_id, {
+    // Same drive as the folder — the tracker is a file inside it.
+    await appendTrackerRow(driveUser, matter.tracker_item_id, {
       date: new Date().toISOString().slice(0, 10),
       type: 'DOC_SAVED',
       detail: `Auto-saved ${saved} attachment(s) from email: ${subject ?? ''}`.slice(0, 250),
@@ -468,4 +475,58 @@ export async function saveEmailAttachmentsToMatter(
     }).catch(() => {});
   }
   return saved;
+}
+
+/**
+ * Index an email's BODY into the matter's shared knowledge base.
+ *
+ * Attachments were already auto-filed on a trusted link, but the message text never
+ * was — so the substance of a conversation stayed inside the one mailbox it arrived
+ * in. In a firm where an assistant, a fee earner and a manager each hold part of the
+ * correspondence, a colleague asked for an update could see that an email had been
+ * triaged to the case, and read its attachments, but not what it actually said.
+ * Thread bodies can't be fetched on their behalf either: listThreadMessages reads
+ * the CALLING user's mailbox, so a thread living only in a colleague's inbox comes
+ * back empty.
+ *
+ * Writing the body into kb_chunk (tenant + matter scoped) is what makes the case
+ * record genuinely shared. No new Graph permission is involved: the message has
+ * already been read, it simply wasn't being stored anywhere a colleague could reach.
+ *
+ * Gated on the same trusted link as attachment filing — a guessed match must never
+ * write case content, since the reference it matched on lives in attacker-controlled
+ * email text.
+ */
+export async function indexEmailBodyToMatter(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  message: any
+): Promise<boolean> {
+  const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  if (!body.trim()) return false;
+
+  const from = message?.from?.emailAddress?.address ?? 'unknown';
+  const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');
+  const when = message?.receivedDateTime ?? message?.sentDateTime ?? '';
+  const text = `From: ${from}\nTo: ${to}\nDate: ${when}\nSubject: ${message?.subject ?? ''}\n\n${body}`.slice(0, 20000);
+
+  try {
+    await upsertChunks({
+      tenantId: user.tenantId,
+      matterId,
+      sourceKind: 'EMAIL',
+      text,
+      metadata: {
+        graphMessageId: message?.id ?? null,
+        graphThreadId: message?.conversationId ?? null,
+        subject: message?.subject ?? null,
+        from,
+        receivedAt: when || null,
+        source: 'EMAIL_BODY_AUTO',
+      },
+    });
+    return true;
+  } catch {
+    return false; // best-effort: never block triage on the index
+  }
 }

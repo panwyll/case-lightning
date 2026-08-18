@@ -11,6 +11,7 @@
  */
 import { transaction, queryOne } from './db';
 import { appendTrackerRow } from './graph';
+import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import type { SessionUser } from './types';
 
@@ -111,7 +112,7 @@ export async function mergeMatters(user: SessionUser, keepId: string, mergeId: s
 
   // Best-effort: note the merge on the survivor's Excel case log, and audit it.
   if (keep.tracker_item_id) {
-    await appendTrackerRow(user.userId, keep.tracker_item_id, {
+    await appendTrackerRow(await driveUserFor(user.tenantId, keep.id, user.userId), keep.tracker_item_id, {
       date: new Date().toISOString().slice(0, 10),
       type: 'Merge',
       detail: `Merged in ${merge.matter_ref}${merge.folder_web_url ? ` — old folder: ${merge.folder_web_url}` : ''}`,

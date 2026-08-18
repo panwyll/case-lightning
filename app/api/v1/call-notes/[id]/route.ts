@@ -6,6 +6,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { query, queryOne } from '@/lib/server/db';
 import { upsertChunks } from '@/lib/server/ai';
 import { uploadToMatterKb, matterKbPath, deleteDriveItem } from '@/lib/server/graph';
+import { driveUserFor } from '@/lib/server/matter-drive';
 import { emitMatterEvent } from '@/lib/server/events';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -41,7 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // where it doesn't belong. Best-effort per step; then clear the tracked artifact ids.
     if (changingMatter && existing.matter_id) {
       await query(`delete from kb_chunk where tenant_id = $1 and matter_id = $2 and source_id = $3`, [user.tenantId, existing.matter_id, existing.id]).catch(() => {});
-      if (existing.drive_item_id) await deleteDriveItem(user.userId, existing.drive_item_id).catch(() => {});
+      if (existing.drive_item_id) await deleteDriveItem(await driveUserFor(user.tenantId, existing.matter_id, user.userId), existing.drive_item_id).catch(() => {});
       if (existing.document_id) await query(`delete from document where id = $1 and tenant_id = $2`, [existing.document_id, user.tenantId]).catch(() => {});
       await emitMatterEvent({ tenantId: user.tenantId, matterId: existing.matter_id, eventType: 'CALL_NOTE_REMOVED', title: `Call note removed: ${existing.title}` }).catch(() => {});
       await writeAudit({ tenantId: user.tenantId, actorUserId: user.userId, matterId: existing.matter_id, actionType: 'CALL_NOTE_UNASSIGNED', actionStatus: 'SUCCESS', payload: { callNoteId: existing.id, movedTo: body.matterId ?? null } }).catch(() => {});
@@ -72,7 +73,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           const safeTitle = (title || 'Call note').replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
           const fileName = `Call note — ${safeTitle} — ${dateStr}.txt`;
           const content = `Call note: ${title}\nDate: ${new Date().toLocaleString('en-GB')}\n\nSUMMARY\n${existing.summary || '(none)'}\n\nFULL TRANSCRIPT\n${existing.transcript || '(none)'}\n`;
-          const uploaded = await uploadToMatterKb(user.userId, matter.folder_path, fileName, Buffer.from(content, 'utf8'));
+          // Into the matter's own drive, so the note sits with the rest of the case file.
+          const uploaded = await uploadToMatterKb(await driveUserFor(user.tenantId, body.matterId, user.userId), matter.folder_path, fileName, Buffer.from(content, 'utf8'));
           const doc = await queryOne<{ id: string }>(
             `insert into document (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, doc_type, created_by)
              values ($1,$2,'CALL_NOTE',$3,$4,$5,$6,$7,'text/plain','CALL_NOTE',$8) returning id`,
@@ -117,7 +119,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     );
     if (n?.matter_id) {
       await query(`delete from kb_chunk where tenant_id = $1 and matter_id = $2 and source_id = $3`, [user.tenantId, n.matter_id, id]).catch(() => {});
-      if (n.drive_item_id) await deleteDriveItem(user.userId, n.drive_item_id).catch(() => {});
+      if (n.drive_item_id) await deleteDriveItem(n.matter_id ? await driveUserFor(user.tenantId, n.matter_id, user.userId) : user.userId, n.drive_item_id).catch(() => {});
       if (n.document_id) await query(`delete from document where id = $1 and tenant_id = $2`, [n.document_id, user.tenantId]).catch(() => {});
     }
     await query(`delete from call_note where id = $1 and tenant_id = $2 and user_id = $3`, [id, user.tenantId, user.userId]);

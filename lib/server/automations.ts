@@ -32,6 +32,7 @@ import { scheduleSend } from './scheduledSend';
 import { matterColor } from './colors';
 import { externalDomainsAllowed } from './guard';
 import { hasTrustedLink } from './matching';
+import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import type { SessionUser } from './types';
 import type { TriageResult } from './triage';
@@ -257,7 +258,7 @@ export async function executeSteps(
         for (const templateId of templateIds) {
           const { buffer, fileName } = await generateTemplateForMatter(user, matterId, templateId, isPremium);
           if (matter?.folder_path) {
-            await uploadToMatterFolder(user.userId, matter.folder_path, fileName, buffer);
+            await uploadToMatterFolder(await driveUserFor(user.tenantId, matterId, user.userId), matter.folder_path, fileName, buffer);
             made++;
           }
         }
@@ -365,7 +366,11 @@ export async function executeSteps(
         results.push({ type: step.type, ok: true, detail: `Tagged in Outlook: ${label}` });
       } else if (step.type === 'APPEND_TRACKER') {
         if (!opts.trackerItemId) throw new Error('no Excel tracker for this matter');
-        await appendTrackerRow(user.userId, opts.trackerItemId, {
+        // The tracker sits inside the matter folder, so write it as that folder's owner.
+        await appendTrackerRow(
+          matterId ? await driveUserFor(user.tenantId, matterId, user.userId) : user.userId,
+          opts.trackerItemId,
+          {
           date: new Date().toISOString().slice(0, 10),
           type: opts.classification?.intent ?? 'NOTE',
           detail: `${opts.classification?.reason ?? ctx.subject ?? ''}`.slice(0, 250),

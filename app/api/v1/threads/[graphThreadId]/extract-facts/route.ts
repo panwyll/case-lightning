@@ -10,6 +10,7 @@ import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
 import { recordFigureChanges, factToStr, prettyLabel } from '@/lib/server/figure-audit';
 import { ok, fail } from '@/lib/server/http';
+import { driveUserFor } from '@/lib/server/matter-drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       if (matter?.tracker_item_id) {
         const today = new Date().toISOString().slice(0, 10);
         for (const item of extracted.timeline) {
-          await appendTrackerRow(user.userId, matter.tracker_item_id, {
+          await appendTrackerRow(await driveUserFor(user.tenantId, body.matterId, user.userId), matter.tracker_item_id, {
             date: today,
             type: 'UPDATE',
             detail: `${item.title}: ${item.details}`.slice(0, 250),
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           }).catch(() => {});
         }
         for (const o of extracted.outstanding) {
-          await appendTrackerRow(user.userId, matter.tracker_item_id, {
+          await appendTrackerRow(await driveUserFor(user.tenantId, body.matterId, user.userId), matter.tracker_item_id, {
             date: today,
             type: 'OUTSTANDING',
             detail: String(o).slice(0, 250),

@@ -8,6 +8,7 @@ import { getMessageAttachment, downloadDriveItem, appendTrackerRow } from '@/lib
 import { reviewDocument, retrieveMatterContext, upsertChunks } from '@/lib/server/ai';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
+import { driveUserFor } from '@/lib/server/matter-drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -173,7 +174,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     );
 
     if (matter?.tracker_item_id) {
-      await appendTrackerRow(user.userId, matter.tracker_item_id, {
+      await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
         date: new Date().toISOString().slice(0, 10),
         type: 'DOC_REVIEW',
         detail: `${review.documentType}: ${review.summary}`.slice(0, 250),

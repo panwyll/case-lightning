@@ -161,6 +161,16 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     }
   }
 
+  // Record whose OneDrive the folder and tracker physically landed in. Every later
+  // drive operation for this matter runs as that user, so a colleague filing a
+  // document adds to the same folder instead of creating a copy in their own drive.
+  // Separate statement, and swallowed, so a pre-060 deploy still provisions.
+  await query(`update matter set drive_owner_user_id = $1 where id = $2 and tenant_id = $3`, [
+    user.userId,
+    matterId,
+    user.tenantId,
+  ]).catch(() => {});
+
   await query(
     `update matter set drive_id = $1, folder_item_id = $2, folder_web_url = $3,
        tracker_item_id = $4, tracker_web_url = $5, mail_folder_id = $6, mail_folder_name = $7

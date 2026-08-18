@@ -25,6 +25,7 @@ import {
 } from '@/lib/server/doc-templates';
 import { ok, fail } from '@/lib/server/http';
 import { NextResponse } from 'next/server';
+import { driveUserFor } from '@/lib/server/matter-drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -97,11 +98,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     const { buffer } = await generateTemplateForMatter(user, matterId, body.templateId, useAi);
 
-    const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, fileName, buffer);
+    const uploaded = await uploadToMatterFolder(await driveUserFor(user.tenantId, matterId, user.userId), matter.folder_path, fileName, buffer);
 
     // Log to the tracker as a generated document — not an arrival, so no review/draft.
     if (matter.tracker_item_id) {
-      await appendTrackerRow(user.userId, matter.tracker_item_id, {
+      await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
         date: new Date().toISOString().slice(0, 10),
         type: 'Document',
         detail: `Generated from template: ${tplRow.name}`,

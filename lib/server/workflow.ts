@@ -11,6 +11,7 @@
 import { query, queryOne, transaction } from './db';
 import { writeAudit } from './audit';
 import { createDraftMessage, addAttachmentToMessage, uploadToMatterFolder } from './graph';
+import { driveUserFor } from './matter-drive';
 import { scheduleSend } from './scheduledSend';
 import { buildMatterVars, generateTemplateForMatter } from './doc-templates';
 import { isPremiumTenant } from './plan';
@@ -391,7 +392,9 @@ async function fireDocNode(userId: string, tenantId: string, matterId: string, t
   try {
     const isPremium = await isPremiumTenant(tenantId).catch(() => false);
     const { buffer, fileName } = await generateTemplateForMatter({ userId, tenantId } as SessionUser, matterId, t.doc_template_id, isPremium);
-    await uploadToMatterFolder(userId, matter.folder_path, fileName, buffer);
+    // Into the matter's own drive — a generated document belongs with the case,
+    // not in the drive of whoever happened to trigger the stage change.
+    await uploadToMatterFolder(await driveUserFor(tenantId, matterId, userId), matter.folder_path, fileName, buffer);
     await addDraftReady({ tenantId, matterId, dedupKey: `wfdoc:${t.id}`, title: `Document generated — ${t.detail}`, detail: fileName }).catch(() => {});
   } catch { /* best-effort — a failed generation never breaks the stage change */ }
 }

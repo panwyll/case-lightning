@@ -14,6 +14,7 @@ import { upsertChunks } from '@/lib/server/ai';
 import { stripHtml } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
+import { driveUserFor } from '@/lib/server/matter-drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     ].join('\n');
 
     const emailFileName = `${(message.subject ?? 'email').replace(/[^a-z0-9\-_. ]/gi, '').slice(0, 80) || 'email'}.txt`;
+    // All of a matter's files belong in one drive — the matter's owner — not in the
+    // drive of whichever colleague happens to be filing this email.
+    const driveUser = await driveUserFor(user.tenantId, body.matterId, user.userId);
     const emailUploaded = await uploadToMatterFolder(
       user.userId,
       matter.folder_path,
@@ -87,7 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     for (const attachment of attachments) {
       if (!attachment.contentBytes || !attachment.name) continue;
       const buffer = Buffer.from(attachment.contentBytes, 'base64');
-      const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, attachment.name, buffer);
+      const uploaded = await uploadToMatterFolder(driveUser, matter.folder_path, attachment.name, buffer);
       const doc = await queryOne<{ id: string }>(
         `insert into document
           (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, doc_type, created_by)
@@ -117,7 +121,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     }
 
     if (matter.tracker_item_id) {
-      await appendTrackerRow(user.userId, matter.tracker_item_id, {
+      await appendTrackerRow(driveUser, matter.tracker_item_id, {
         date: new Date().toISOString().slice(0, 10),
         type: 'DOC_SAVED',
         detail: `Saved ${savedDocs.length} file(s) from email: ${message.subject ?? ''}`.slice(0, 250),

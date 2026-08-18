@@ -8,6 +8,7 @@ import { uploadToMatterFolder } from '@/lib/server/graph';
 import { upsertChunks } from '@/lib/server/ai';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
+import { driveUserFor } from '@/lib/server/matter-drive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned'));
 
     const buffer = Buffer.from(body.base64, 'base64');
-    const uploaded = await uploadToMatterFolder(user.userId, matter.folder_path, body.fileName, buffer);
+    const uploaded = await uploadToMatterFolder(await driveUserFor(user.tenantId, matterId, user.userId), matter.folder_path, body.fileName, buffer);
 
     const doc = await queryOne<{ id: string }>(
       `insert into document
