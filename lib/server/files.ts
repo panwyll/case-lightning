@@ -114,6 +114,8 @@ export async function processMatterFile(
       text: indexText ? `${opts.fileName}\n${indexText}` : `${opts.fileName}\n${opts.mimeType ?? ''}`,
       metadata: { fileName: opts.fileName, graphItemId: opts.itemId, source: 'ONEDRIVE_UPLOAD', indexed: indexText ? 'content' : 'name' },
     }).catch(() => {});
+    // A changed file with this name supersedes older versions on the matter.
+    if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, opts.fileName, doc.id).catch(() => {});
   }
 
   // Always reflect the arrival in the Excel tracker. Written as the matter's drive
@@ -430,6 +432,8 @@ export async function saveEmailAttachmentsToMatter(
       sourceId: doc!.id,
       text: indexText ? `${att.name}\n${indexText}` : `${att.name}\n${att.contentType ?? ''}`,
       metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
+    }).then(async () => {
+      if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, att.name, doc.id).catch(() => {});
     }).catch(() => {});
     saved += 1;
     savedNames.push(att.name);
@@ -528,5 +532,51 @@ export async function indexEmailBodyToMatter(
     return true;
   } catch {
     return false; // best-effort: never block triage on the index
+  }
+}
+
+/**
+ * Mark earlier versions of a just-filed document superseded, and drop their index
+ * chunks so the drafter can't cite a stale figure from an old version.
+ *
+ * "Same document, new version" = same matter + same filename (case-insensitive),
+ * different content — which is exactly what the hash-based dedupe already let
+ * through as a new row. Within one matter, a reused filename is a new version of
+ * the same thing (Contract.pdf → Contract.pdf), which is the intuitive behaviour.
+ *
+ * The old rows are KEPT (with superseded_at/superseded_by) for history and audit —
+ * OneDrive holds the file's own version history too — but their kb_chunks are
+ * deleted, because the index is derived and rebuildable and we want retrieval to
+ * see only the current version. Best-effort; guarded so a pre-063 deploy no-ops.
+ */
+export async function supersedePriorVersions(
+  tenantId: string,
+  matterId: string,
+  fileName: string,
+  newDocId: string
+): Promise<number> {
+  if (!fileName?.trim()) return 0;
+  try {
+    const prior = await query<{ id: string }>(
+      `update document
+          set superseded_at = now(), superseded_by = $4
+        where tenant_id = $1 and matter_id = $2
+          and lower(file_name) = lower($3)
+          and id <> $4
+          and superseded_at is null
+        returning id`,
+      [tenantId, matterId, fileName, newDocId]
+    );
+    if (prior.length) {
+      const ids = prior.map((r) => r.id);
+      // Remove the superseded versions' chunks from the searchable index.
+      await query(
+        `delete from kb_chunk where tenant_id = $1 and source_kind = 'DOCUMENT' and source_id = any($2)`,
+        [tenantId, ids]
+      ).catch(() => {});
+    }
+    return prior.length;
+  } catch {
+    return 0; // pre-063: supersede columns not present
   }
 }
