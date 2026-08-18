@@ -6,7 +6,7 @@ import { queryOne } from '@/lib/server/db';
 import { assertMatterAccess, externalDomainsAllowed } from '@/lib/server/guard';
 import { getMessage, createReplyDraft } from '@/lib/server/graph';
 import { writeAudit } from '@/lib/server/audit';
-import { addDraftReady } from '@/lib/server/worklist';
+import { addDraftReady, draftBodyHash } from '@/lib/server/worklist';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -81,6 +81,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         detail: draft.subject ?? body.subject ?? null,
         threadId: thread?.id ?? null,
         graphMessageId: draft.id,
+        // Hash what WE wrote, so we can tell later whether the user edited it and
+        // must therefore never have it regenerated from under them.
+        bodyHash: draftBodyHash(body.bodyHtml),
       });
     }
 

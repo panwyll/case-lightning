@@ -189,6 +189,8 @@ type WorklistEntry = {
   urgent?: boolean; // key date OR task due within a week — top of the queue
   due?: string | null; // TASK's own due date (YYYY-MM-DD)
   stage?: string | null; // matter's current stage — the row's status
+  stale?: boolean; // DRAFT_READY: case info arrived after it was written
+  staleReason?: string | null;
 };
 // Remember across opens that this user was signed in, so a cold taskpane shows a
 // brief "Connecting…" instead of flashing "Not connected" while /me is in flight.
@@ -2083,6 +2085,14 @@ export default function Taskpane() {
                       <span style={{ display: 'block', fontSize: 12, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>
                         {primaryText}
                       </span>
+                      {w.kind === 'DRAFT_READY' && w.stale && (
+                        /* The case moved after this was drafted. Deliberately a warning
+                           and not an auto-rewrite: the draft may already carry the fee
+                           earner's own edits. */
+                        <span style={{ display: 'block', marginTop: 3, fontSize: 10, color: '#b45309', fontWeight: 700, lineHeight: 1.35 }}>
+                          ⚠ Case updated since this was drafted{w.staleReason ? ` — ${w.staleReason}` : ''}. Check before sending.
+                        </span>
+                      )}
                       {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10 }}>
                           {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
@@ -2098,7 +2108,16 @@ export default function Taskpane() {
                         <>
                           {w.graphMessageId && <button title="Open the draft in Outlook to read/edit" style={iconBtn('ghost')} onClick={() => openInOutlook(w.graphMessageId!)}>{iOpen}</button>}
                           <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => worklistAction(w, 'dismiss')}>{iCheck}</button>
-                          {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => sendWorklistDraft(w, w.graphMessageId!)}>{busy ? <span style={S.spinnerLight} /> : iSend}</button>}
+                          {w.graphMessageId && (
+                            <button
+                              title={w.stale ? 'Case updated since this was drafted — open and check first' : 'Send now'}
+                              style={w.stale ? { ...iconBtn('primary'), background: '#b45309' } : iconBtn('primary')}
+                              disabled={busy}
+                              onClick={() => sendWorklistDraft(w, w.graphMessageId!)}
+                            >
+                              {busy ? <span style={S.spinnerLight} /> : iSend}
+                            </button>
+                          )}
                         </>
                       )}
                       {w.kind === 'CHASE' &&

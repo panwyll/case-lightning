@@ -12,6 +12,7 @@
  * Everything is best-effort / guarded so a deploy before migration 035 can't break the
  * underlying draft creation or doc filing — the worklist just starts populating once it exists.
  */
+import crypto from 'node:crypto';
 import { query } from './db';
 import { detectChases } from './chase';
 
@@ -37,6 +38,9 @@ export interface WorklistEntry {
   ageDays: number;
   threadId?: string | null; // CHASE: the thread to snooze; DRAFT_READY: its thread if it's a reply
   graphMessageId?: string | null; // the ready draft to send (DRAFT_READY)
+  /** DRAFT_READY: case information arrived after this was written, so it may be wrong. */
+  stale?: boolean;
+  staleReason?: string | null;
   keyDate?: string | null; // the matter's nearest exchange/completion target — drives urgency
   urgent?: boolean; // key date OR task due within a week: sorts to the very top
   due?: string | null; // TASK: the task's own due date (YYYY-MM-DD), if set
@@ -52,19 +56,73 @@ export async function addDraftReady(input: {
   detail?: string | null;
   threadId?: string | null;
   graphMessageId?: string | null;
+  /** SHA-256 of the body as we wrote it, so a later edit by the user is detectable. */
+  bodyHash?: string | null;
 }): Promise<void> {
   try {
+    // A freshly written draft is by definition not stale, so clear any previous flag.
     await query(
-      `insert into worklist_item (tenant_id, matter_id, kind, dedup_key, title, detail, thread_id, graph_message_id)
-       values ($1,$2,'DRAFT_READY',$3,$4,$5,$6,$7)
+      `insert into worklist_item (tenant_id, matter_id, kind, dedup_key, title, detail, thread_id, graph_message_id, body_hash)
+       values ($1,$2,'DRAFT_READY',$3,$4,$5,$6,$7,$8)
        on conflict (tenant_id, kind, dedup_key) do update
          set title = excluded.title, detail = excluded.detail,
              thread_id = excluded.thread_id, graph_message_id = excluded.graph_message_id,
+             body_hash = excluded.body_hash,
+             stale_since = null, stale_reason = null,
              created_at = now(), done_at = null, snoozed_until = null`,
-      [input.tenantId, input.matterId, input.dedupKey, input.title, input.detail ?? null, input.threadId ?? null, input.graphMessageId ?? null]
+      [input.tenantId, input.matterId, input.dedupKey, input.title, input.detail ?? null, input.threadId ?? null, input.graphMessageId ?? null, input.bodyHash ?? null]
     );
   } catch {
-    /* worklist_item not migrated yet — surfacing starts once 035 runs */
+    // Pre-061 deploy: same row without the staleness columns.
+    try {
+      await query(
+        `insert into worklist_item (tenant_id, matter_id, kind, dedup_key, title, detail, thread_id, graph_message_id)
+         values ($1,$2,'DRAFT_READY',$3,$4,$5,$6,$7)
+         on conflict (tenant_id, kind, dedup_key) do update
+           set title = excluded.title, detail = excluded.detail,
+               thread_id = excluded.thread_id, graph_message_id = excluded.graph_message_id,
+               created_at = now(), done_at = null, snoozed_until = null`,
+        [input.tenantId, input.matterId, input.dedupKey, input.title, input.detail ?? null, input.threadId ?? null, input.graphMessageId ?? null]
+      );
+    } catch {
+      /* worklist_item not migrated yet — surfacing starts once 035 runs */
+    }
+  }
+}
+
+/** Stable hash of a draft body, so a later edit by the user is detectable. */
+export function draftBodyHash(bodyHtml: string): string {
+  return crypto.createHash('sha256').update((bodyHtml ?? '').replace(/\s+/g, ' ').trim()).digest('hex');
+}
+
+/**
+ * Flag every open draft on a matter as overtaken by new information.
+ *
+ * Called when case content arrives — a new email indexed to the matter — because a
+ * reply written before it may now be wrong. We only ever FLAG: regenerating is the
+ * user's decision, and a draft the fee earner has edited must never be touched at
+ * all (the pane compares body_hash against the live draft before offering to
+ * rewrite). Returns how many were marked, for the audit line.
+ */
+export async function markMatterDraftsStale(
+  tenantId: string,
+  matterId: string,
+  reason: string,
+  exceptDedupKey?: string | null
+): Promise<number> {
+  try {
+    const rows = await query<{ id: string }>(
+      `update worklist_item
+          set stale_since = coalesce(stale_since, now()), stale_reason = $3
+        where tenant_id = $1 and matter_id = $2 and kind = 'DRAFT_READY'
+          and done_at is null and stale_since is null
+          and ($4::text is null or dedup_key <> $4)
+        returning id`,
+      [tenantId, matterId, reason.slice(0, 200), exceptDedupKey ?? null]
+    );
+    return rows.length;
+  } catch {
+    return 0; // pre-061
   }
 }
 
@@ -100,6 +158,9 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       created_at: string;
     }>(
       `select w.id, w.matter_id, w.title, w.detail, w.thread_id, w.graph_message_id, w.created_at,
+              -- Guarded below: a pre-061 deploy retries without these two columns
+              -- rather than silently returning an empty worklist.
+              w.stale_since, w.stale_reason,
               m.matter_ref, m.property_address
          from worklist_item w
          join matter m on m.id = w.matter_id
@@ -110,6 +171,22 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
           and ($2::uuid is null or m.assigned_to = $2::uuid)
         order by w.created_at asc`,
       [tenantId, assignedToUserId ?? null]
+    ).catch(async () =>
+      // Pre-061: same rows, no staleness. Better a worklist without the flag than
+      // no worklist at all.
+      query<any>(
+        `select w.id, w.matter_id, w.title, w.detail, w.thread_id, w.graph_message_id, w.created_at,
+                m.matter_ref, m.property_address
+           from worklist_item w
+           join matter m on m.id = w.matter_id
+          where w.tenant_id = $1 and w.kind = 'DRAFT_READY'
+            and w.done_at is null
+            and coalesce(w.snoozed_until, to_timestamp(0)) < now()
+            and m.status = 'OPEN'
+            and ($2::uuid is null or m.assigned_to = $2::uuid)
+          order by w.created_at asc`,
+        [tenantId, assignedToUserId ?? null]
+      )
     );
     const now = Date.now();
     draftEntries = rows.map((r) => ({
@@ -123,6 +200,10 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       ageDays: Math.floor((now - new Date(r.created_at).getTime()) / 86_400_000),
       threadId: r.thread_id,
       graphMessageId: (r as any).graph_message_id ?? null,
+      // Overtaken by later case activity — the pane shows this so nobody sends a
+      // reply written against a case that has since moved on.
+      stale: Boolean((r as any).stale_since),
+      staleReason: (r as any).stale_reason ?? null,
     }));
   } catch {
     /* not migrated yet */
@@ -153,6 +234,22 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
         order by t.created_at asc
         limit 300`,
       [tenantId, assignedToUserId ?? null]
+    ).catch(async () =>
+      // Pre-061: same rows, no staleness. Better a worklist without the flag than
+      // no worklist at all.
+      query<any>(
+        `select w.id, w.matter_id, w.title, w.detail, w.thread_id, w.graph_message_id, w.created_at,
+                m.matter_ref, m.property_address
+           from worklist_item w
+           join matter m on m.id = w.matter_id
+          where w.tenant_id = $1 and w.kind = 'DRAFT_READY'
+            and w.done_at is null
+            and coalesce(w.snoozed_until, to_timestamp(0)) < now()
+            and m.status = 'OPEN'
+            and ($2::uuid is null or m.assigned_to = $2::uuid)
+          order by w.created_at asc`,
+        [tenantId, assignedToUserId ?? null]
+      )
     );
     const now = Date.now();
     taskEntries = rows.filter((r) => !isWaitingOnOthers(r.detail)).map((r) => ({

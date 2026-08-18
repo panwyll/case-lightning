@@ -6,6 +6,7 @@ import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { markMatterDraftsStale } from '@/lib/server/worklist';
 import { assistOnMessage } from '@/lib/server/assist';
 import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
@@ -83,6 +84,21 @@ export async function POST(req: NextRequest) {
           await indexEmailBodyToMatter(user, mId, message).catch((e) =>
             console.error('[graph notification] index email body failed', (e as Error).message)
           );
+
+          // New information on the case can invalidate a reply already sitting in
+          // Drafts — the other side confirms a completion date twenty minutes after
+          // we drafted around not having one. Flag those drafts rather than rewrite
+          // them: regenerating is the fee earner's call, and one they may already
+          // have edited. The thread this email belongs to is excluded, since a reply
+          // being drafted on this very conversation is about to be reconsidered
+          // anyway by the assist that follows.
+          const fromWho = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
+          await markMatterDraftsStale(
+            user.tenantId,
+            mId,
+            `New email from ${fromWho}${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`,
+            `thread:${message.conversationId ?? ''}`
+          ).catch(() => 0);
         }
 
         // Precompute the full taskpane "situation" (thread summary + drafted
