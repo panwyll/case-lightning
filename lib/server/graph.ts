@@ -561,8 +561,16 @@ export async function addMessageCategories(userId: string, messageId: string, to
 
 // ── Change-notification subscriptions (auto-triage on arrival) ────────────────
 
-export async function createInboxSubscription(
+// Mail folders we watch for change notifications. Inbox catches what arrives; sent
+// items catches what the fee earner sends — which never lands in the inbox, so
+// without this second subscription the firm's own outbound correspondence never
+// reaches the shared case record in real time.
+export const INBOX_RESOURCE = "/me/mailFolders('inbox')/messages";
+export const SENTITEMS_RESOURCE = "/me/mailFolders('sentitems')/messages";
+
+export async function createMailSubscription(
   userId: string,
+  resource: string,
   notificationUrl: string,
   clientState: string,
   expiresAt: string
@@ -571,10 +579,20 @@ export async function createInboxSubscription(
   return client.api('/subscriptions').post({
     changeType: 'created',
     notificationUrl,
-    resource: "/me/mailFolders('inbox')/messages",
+    resource,
     expirationDateTime: expiresAt,
     clientState,
   });
+}
+
+/** @deprecated use createMailSubscription(userId, INBOX_RESOURCE, …) */
+export async function createInboxSubscription(
+  userId: string,
+  notificationUrl: string,
+  clientState: string,
+  expiresAt: string
+): Promise<{ id: string; resource: string; expirationDateTime: string }> {
+  return createMailSubscription(userId, INBOX_RESOURCE, notificationUrl, clientState, expiresAt);
 }
 
 export async function renewSubscription(userId: string, subscriptionId: string, expiresAt: string): Promise<void> {

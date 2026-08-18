@@ -13,7 +13,7 @@
  */
 import { config } from './config';
 import { query, queryOne } from './db';
-import { createInboxSubscription, renewSubscription } from './graph';
+import { createMailSubscription, renewSubscription, INBOX_RESOURCE, SENTITEMS_RESOURCE } from './graph';
 import crypto from 'node:crypto';
 
 // Graph caps Outlook-message subscriptions at ~4230 minutes; stay safely under.
@@ -65,7 +65,8 @@ export async function isAutoTriageDesired(_userId: string): Promise<boolean> {
  */
 export async function createSubscription(
   userId: string,
-  tenantId: string
+  tenantId: string,
+  resource: string = INBOX_RESOURCE
 ): Promise<{ id: string; expiresAt: string }> {
   if (config.appUrl.includes('localhost')) {
     throw new SubscriptionSetupError(
@@ -76,7 +77,7 @@ export async function createSubscription(
   const expiresAt = new Date(Date.now() + SUB_MINUTES * 60_000).toISOString();
   let sub;
   try {
-    sub = await createInboxSubscription(userId, `${config.appUrl}/api/v1/graph/notifications`, clientState, expiresAt);
+    sub = await createMailSubscription(userId, resource, `${config.appUrl}/api/v1/graph/notifications`, clientState, expiresAt);
   } catch (graphError) {
     throw humanizeSubscriptionError(graphError);
   }
@@ -100,9 +101,20 @@ export async function ensureSubscription(userId: string, tenantId: string): Prom
   const desired = await isAutoTriageDesired(userId);
   if (!desired) return { enabled: false, desired: false, expiresAt: null };
 
+  // Inbox is the headline subscription and its status is what the UI shows. Sent
+  // items is reconciled too — so the firm's own outbound mail reaches the case
+  // record — but best-effort: a sent-items hiccup must not tell the user their
+  // auto-triage is broken when inbound is working fine.
+  const inbox = await reconcileResource(userId, tenantId, INBOX_RESOURCE);
+  await reconcileResource(userId, tenantId, SENTITEMS_RESOURCE).catch(() => {});
+  return inbox;
+}
+
+/** Reconcile a single folder subscription (see ensureSubscription). Never throws. */
+async function reconcileResource(userId: string, tenantId: string, resource: string): Promise<SubscriptionStatus> {
   const existing = await queryOne<{ id: string; expires_at: string }>(
-    `select id, expires_at from graph_subscription where user_id = $1 order by created_at desc limit 1`,
-    [userId]
+    `select id, expires_at from graph_subscription where user_id = $1 and resource = $2 order by created_at desc limit 1`,
+    [userId, resource]
   );
 
   // Healthy — nothing to do.
@@ -118,15 +130,12 @@ export async function ensureSubscription(userId: string, tenantId: string): Prom
       await query(`update graph_subscription set expires_at = $1 where id = $2`, [newExpiry, existing.id]);
       return { enabled: true, desired: true, expiresAt: newExpiry };
     } catch {
-      // Subscription is dead on Graph's side — drop the stale row and recreate.
       await query(`delete from graph_subscription where id = $1`, [existing.id]).catch(() => {});
     }
   }
 
-  // Missing or un-renewable — recreate. If THIS fails (e.g. token lapsed), keep the
-  // intent flag set so a later open (after reconnecting) heals it.
   try {
-    const created = await createSubscription(userId, tenantId);
+    const created = await createSubscription(userId, tenantId, resource);
     return { enabled: true, desired: true, expiresAt: created.expiresAt };
   } catch {
     return { enabled: false, desired: true, expiresAt: null, needsReconnect: true };

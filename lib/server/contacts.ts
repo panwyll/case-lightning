@@ -82,14 +82,17 @@ export async function recordContactsFromMessage(
 export async function learnFirmRef(
   user: { tenantId: string },
   matterId: string,
-  msg: any
+  msg: any,
+  opts?: { outbound?: boolean }
 ): Promise<string | null> {
   const text = `${msg?.subject ?? ''}\n${msg?.body?.content ?? msg?.bodyPreview ?? ''}`;
   if (!text.trim()) return null;
-  // sentDateTime with no receivedDateTime, or an explicit flag, marks our own mail.
-  // Graph gives both on most messages, so fall back to treating it as inbound —
-  // the conservative choice, since "your ref" on inbound really is ours.
-  const outbound = Boolean(msg?.isDraft) || (!!msg?.sentDateTime && !msg?.receivedDateTime);
+  // Direction decides which reference is the firm's own (see extractFirmRef). The
+  // caller knows it for certain when the message came off the Sent Items folder;
+  // otherwise infer, conservatively treating ambiguous mail as inbound.
+  const outbound =
+    opts?.outbound ??
+    (Boolean(msg?.isDraft) || (!!msg?.sentDateTime && !msg?.receivedDateTime));
   const ref = extractFirmRef(text, { outbound });
   if (!ref) return null;
   try {

@@ -7,6 +7,7 @@ import { hasTrustedLink } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
+import { learnFirmRef } from '@/lib/server/contacts';
 import { assistOnMessage } from '@/lib/server/assist';
 import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
@@ -62,7 +63,40 @@ export async function POST(req: NextRequest) {
         if (!messageId) continue;
 
         const message = await getMessage(user.userId, messageId);
+
+        // A notification off the Sent Items folder is the fee earner's OWN mail. It
+        // must reach the shared case record — that's the whole point of watching sent
+        // items — but it is not an actionable inbound: we don't tag it in Outlook,
+        // don't run auto-rules against it, don't draft a reply to it, and don't
+        // announce "new email from <the lawyer themselves>". Detect by sender rather
+        // than trusting the folder, so a cc'd copy in the inbox can't be misread.
+        const selfAddr = (user.email || '').toLowerCase();
+        const fromAddr = (message.from?.emailAddress?.address || '').toLowerCase();
+        const outbound = !!selfAddr && fromAddr === selfAddr;
+
         const triage = await runTriage(user, message);
+
+        if (outbound) {
+          // On a trusted link only, mirror the inbound learning: file attachments,
+          // index the body, learn our own reference (direction known for certain),
+          // and flag drafts the send may have overtaken. Nothing that acts on mail.
+          if (triage.top && hasTrustedLink(triage.top)) {
+            const mId = triage.top.matterId;
+            if (message.hasAttachments) {
+              await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
+            }
+            await indexEmailBodyToMatter(user, mId, message).catch(() => {});
+            await learnFirmRef(user, mId, message, { outbound: true }).catch(() => {});
+            await markMatterDraftsStale(
+              user.tenantId,
+              mId,
+              `You sent an email${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`,
+              `thread:${message.conversationId ?? ''}`
+            ).catch(() => 0);
+          }
+          continue; // done with this (outbound) notification
+        }
+
         await applyTriageTags(user, message, triage);
         await runAutoAutomations(user, message, triage);
 
