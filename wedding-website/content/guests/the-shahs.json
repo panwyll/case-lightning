@@ -1,0 +1,76 @@
+{
+  "slug": "the-shahs",
+  "status": "live",
+  "displayName": "The Shahs",
+  "hero": {
+    "kicker": "For all four of you",
+    "headline": "Nisha, Raj, Aanya and Kiran",
+    "blurb": "A whole household invited, which felt like the only sensible option given how much of our own lives you have been in."
+  },
+  "party": [
+    { "id": "nisha", "name": "Nisha Shah" },
+    { "id": "raj", "name": "Raj Shah" },
+    { "id": "aanya", "name": "Aanya Shah", "tag": "age 9" },
+    { "id": "kiran", "name": "Kiran Shah", "tag": "age 4" }
+  ],
+  "invitedTo": ["ceremony", "reception", "brunch"],
+  "menu": {
+    "intro": "Adults pick from the full menu. Aanya and Kiran have their own, designed after careful consultation with a nine-year-old.",
+    "courses": [
+      {
+        "id": "starter",
+        "title": "Starter",
+        "options": [
+          { "id": "burrata", "label": "Burrata, peach and basil" },
+          { "id": "soup", "label": "Chilled pea and mint soup" },
+          { "id": "kids-bread", "label": "Bread and butter (children)", "description": "Aanya specified 'the soft kind'." }
+        ]
+      },
+      {
+        "id": "main",
+        "title": "Main",
+        "options": [
+          { "id": "beef", "label": "Featherblade of beef" },
+          { "id": "hake", "label": "Roast hake" },
+          { "id": "veg", "label": "Wild mushroom pithivier" },
+          { "id": "kids-pasta", "label": "Tomato pasta (children)" },
+          { "id": "kids-nuggets", "label": "Chicken and chips (children)" }
+        ]
+      },
+      {
+        "id": "pudding",
+        "title": "Pudding",
+        "options": [
+          { "id": "tart", "label": "Lemon tart" },
+          { "id": "cheese", "label": "Cheese" },
+          { "id": "ice-cream", "label": "Ice cream, three scoops (children)", "description": "Kiran has been promised this. Do not let us renege." }
+        ]
+      }
+    ]
+  },
+  "sections": [
+    {
+      "type": "note",
+      "title": "The children's situation",
+      "body": "There is a quiet room off the main barn with beanbags, a projector and someone we are paying specifically to supervise it from 7pm. Bring pyjamas; several children will end the night asleep in a heap."
+    },
+    {
+      "type": "facts",
+      "title": "Practical bits",
+      "facts": [
+        { "label": "Table", "value": "2, next to the window" },
+        { "label": "High chair", "value": "Reserved for Kiran" },
+        { "label": "Room", "value": "Family room held at The Wickham Arms" }
+      ]
+    }
+  ],
+  "faq": [
+    { "q": "Is there somewhere to warm things up?", "a": "Yes — the barn kitchen is happy to help, just find Maria on the day." }
+  ],
+  "privateNotes": "Nisha is a bridesmaid — she'll need to arrive at 10am on the day. Raj is handling the kids until the ceremony.",
+  "adminMeta": {
+    "table": "2",
+    "known dietary": "Raj — no pork.",
+    "role": "Nisha: bridesmaid"
+  }
+}

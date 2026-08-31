@@ -1,0 +1,37 @@
+{
+  "slug": "the-office-lot",
+  "status": "draft",
+  "displayName": "The Office Lot",
+  "hero": {
+    "kicker": "Evening invitation",
+    "headline": "You are invited to the good half",
+    "blurb": "You have been spared the speeches and given the bar. This is not a downgrade, it is a favour."
+  },
+  "party": [
+    { "id": "sam-b", "name": "Sam Brennan", "skipMenu": true },
+    { "id": "leah", "name": "Leah Okafor", "skipMenu": true },
+    { "id": "tomasz", "name": "Tomasz Nowak", "skipMenu": true }
+  ],
+  "invitedTo": ["evening"],
+  "sections": [
+    {
+      "type": "note",
+      "title": "When to turn up",
+      "body": "From 7:30pm. Dinner will be finished; the dancing will not have started, because nobody ever starts the dancing. That is your job."
+    },
+    {
+      "type": "list",
+      "title": "A short list of things not to mention",
+      "items": [
+        "The Q3 reforecast.",
+        "The migration.",
+        "Anything with the word 'roadmap' in it."
+      ]
+    }
+  ],
+  "faq": [],
+  "privateNotes": "Draft — not sending until the evening numbers are confirmed with the venue in April.",
+  "adminMeta": {
+    "status note": "Waiting on venue evening capacity"
+  }
+}

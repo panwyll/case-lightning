@@ -1,0 +1,87 @@
+{
+  "slug": "dave-collins",
+  "status": "live",
+  "displayName": "Dave",
+  "hero": {
+    "kicker": "Built specifically, and exclusively, for one man",
+    "headline": "Dave. You're invited. Obviously.",
+    "blurb": "Twenty-two years of friendship have led to this: a bespoke website, a bespoke menu, and a seat as far from the speakers as we could manage."
+  },
+  "party": [
+    { "id": "dave", "name": "Dave Collins" },
+    { "id": "priya", "name": "Priya Rao", "tag": "plus one" }
+  ],
+  "invitedTo": ["ceremony", "reception", "brunch"],
+  "menu": {
+    "intro": "Dave, your menu has been curated by a panel of people who have watched you eat. Priya's is the normal one; hers is on the second tab of her own choosing, because we like her.",
+    "courses": [
+      {
+        "id": "starter",
+        "title": "Starter",
+        "note": "You have three options and we both know which one you'll pick.",
+        "options": [
+          { "id": "soup", "label": "Soup of the day", "description": "Tomato. It is always tomato." },
+          { "id": "prawn", "label": "Prawn cocktail, 1974 presentation", "description": "Served in a glass, with a slice of lemon on the rim, as God intended.", "tongueInCheek": true },
+          { "id": "garlic-bread", "label": "Garlic bread", "description": "You asked for this at a Michelin-starred restaurant in 2019. We have not forgotten.", "tongueInCheek": true }
+        ]
+      },
+      {
+        "id": "main",
+        "title": "Main",
+        "options": [
+          { "id": "beef", "label": "Featherblade of beef", "description": "The actual, real main course." },
+          { "id": "hake", "label": "Roast hake", "description": "Also real. Also good." },
+          { "id": "veg", "label": "Wild mushroom pithivier", "description": "Genuinely excellent, before you say anything." },
+          { "id": "well-done", "label": "Beef, well done, with ketchup", "description": "The chef has agreed to this only in writing and only for you.", "tongueInCheek": true }
+        ]
+      },
+      {
+        "id": "pudding",
+        "title": "Pudding",
+        "options": [
+          { "id": "tart", "label": "Lemon tart" },
+          { "id": "cheese", "label": "Cheese" },
+          { "id": "viennetta", "label": "A whole Viennetta, unsliced, handed to you", "description": "Binding. There is no sharing clause.", "tongueInCheek": true }
+        ]
+      }
+    ]
+  },
+  "sections": [
+    {
+      "type": "list",
+      "title": "Terms and conditions of your attendance",
+      "intro": "By RSVPing you agree to the following, which are legally binding in the barn.",
+      "items": [
+        "The 2011 Prague story is retired. Permanently.",
+        "You are not doing a speech. There is no speech slot for you. Do not prepare a speech.",
+        "You may request one song. One. It has already been vetoed.",
+        "You are on Table 4 with people who find you funny. Enjoy it."
+      ]
+    },
+    {
+      "type": "quote",
+      "body": "I'll definitely be there, mate, just need to check a couple of things.",
+      "attribution": "Dave, in response to every invitation since 2008"
+    },
+    {
+      "type": "facts",
+      "title": "Your file",
+      "facts": [
+        { "label": "Table", "value": "4" },
+        { "label": "Distance from the bar", "value": "Deliberately calculated" },
+        { "label": "Best man status", "value": "Considered. Declined. Move on." },
+        { "label": "Brunch", "value": "Invited. Attendance historically 40%." }
+      ]
+    }
+  ],
+  "faq": [
+    { "q": "Can I bring the dog?", "a": "No, Dave." },
+    { "q": "Is there parking for the van?", "a": "Yes, but not next to the marquee. Not again." }
+  ],
+  "privateNotes": "Chase him. He will not reply until the week of the deadline. Priya is the reliable one — her number is in the shared contacts.",
+  "adminMeta": {
+    "table": "4",
+    "known dietary": "None. Claims a shellfish thing that is not real.",
+    "chase via": "Priya"
+  }
+}

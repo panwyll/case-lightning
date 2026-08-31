@@ -1,0 +1,68 @@
+{
+  "slug": "nan",
+  "status": "live",
+  "displayName": "Nan",
+  "hero": {
+    "kicker": "The most important page on this website",
+    "headline": "Nan",
+    "blurb": "We have made this page bigger and simpler than everyone else's, because we love you and because you told us the last website was 'all tiny'."
+  },
+  "party": [
+    { "id": "nan", "name": "Margaret Doyle" },
+    { "id": "companion", "name": "Companion (Auntie Pat, if she'll come)", "tag": "plus one" }
+  ],
+  "invitedTo": ["ceremony", "reception"],
+  "menu": {
+    "intro": "Three courses. Pick one from each. If you would rather just tell us on the phone, do that instead — this is not a test.",
+    "courses": [
+      {
+        "id": "starter",
+        "title": "To start",
+        "options": [
+          { "id": "soup", "label": "Chilled pea and mint soup" },
+          { "id": "burrata", "label": "Burrata with peach" },
+          { "id": "prawn", "label": "Prawn cocktail" }
+        ]
+      },
+      {
+        "id": "main",
+        "title": "Main course",
+        "options": [
+          { "id": "beef", "label": "Beef, slow cooked and very tender" },
+          { "id": "hake", "label": "Fish, with new potatoes" },
+          { "id": "veg", "label": "Mushroom pie" }
+        ]
+      },
+      {
+        "id": "pudding",
+        "title": "Pudding",
+        "options": [
+          { "id": "tart", "label": "Lemon tart" },
+          { "id": "cheese", "label": "Cheese and biscuits" }
+        ]
+      }
+    ]
+  },
+  "sections": [
+    {
+      "type": "note",
+      "title": "Getting you there",
+      "body": "You are not organising any of this. A car is booked to collect you at 11:30am from the house and to take you home whenever you have had enough. The driver's name is Tom and he has your number."
+    },
+    {
+      "type": "note",
+      "title": "Where you'll be sitting",
+      "body": "Front row for the ceremony, on the aisle, with a chair that has a proper back on it. Table 1 for dinner, next to the people you actually like."
+    }
+  ],
+  "faq": [
+    { "q": "How long is the standing bit?", "a": "About ten minutes in total, and there is a seat within reach at every point." },
+    { "q": "What if I need to leave early?", "a": "Then you leave early and nobody minds. Tom is on call from 6pm." }
+  ],
+  "privateNotes": "Print this page and post it to her as well. She will use the website, but she will trust the paper.",
+  "adminMeta": {
+    "table": "1",
+    "known dietary": "Soft food preferred for the main.",
+    "transport": "Car booked — Tom, 11:30am pickup"
+  }
+}

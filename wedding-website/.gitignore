@@ -1,0 +1,22 @@
+node_modules
+.next
+out
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.env
+.env.local
+.vercel
+
+# Local file-store data (dev only)
+.data/
+
+# Playwright
+test-results/
+playwright-report/
+tests/screenshots/
+
+.DS_Store

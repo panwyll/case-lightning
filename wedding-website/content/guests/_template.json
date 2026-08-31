@@ -1,0 +1,46 @@
+{
+  "slug": "change-me",
+  "status": "draft",
+  "displayName": "Their Name",
+  "hero": {
+    "kicker": "A page that exists only for you",
+    "headline": "Their Name, you are invited",
+    "blurb": "One or two lines that could only have been written for this person."
+  },
+  "party": [{ "id": "person-1", "name": "Full Name" }],
+  "invitedTo": ["ceremony", "reception"],
+  "menu": {
+    "intro": "Pick one from each course.",
+    "courses": [
+      {
+        "id": "starter",
+        "title": "Starter",
+        "options": [
+          { "id": "soup", "label": "Soup of the day", "description": "It will be tomato." },
+          { "id": "burrata", "label": "Burrata, peach, basil" }
+        ]
+      },
+      {
+        "id": "main",
+        "title": "Main",
+        "options": [
+          { "id": "beef", "label": "Featherblade of beef" },
+          { "id": "hake", "label": "Roast hake" },
+          { "id": "veg", "label": "Wild mushroom and truffle pithivier" }
+        ]
+      },
+      {
+        "id": "pudding",
+        "title": "Pudding",
+        "options": [
+          { "id": "tart", "label": "Lemon tart" },
+          { "id": "cheese", "label": "Cheese, obviously" }
+        ]
+      }
+    ]
+  },
+  "sections": [],
+  "faq": [],
+  "privateNotes": "Notes for us only. Never rendered on their page.",
+  "adminMeta": {}
+}
