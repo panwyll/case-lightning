@@ -261,6 +261,13 @@ export class EngineService {
             }
           }
         }
+        // Addendum: an enquiry to an INTERNAL counterparty is delivered to the other
+        // side's handler as inbound correspondence — the same event pair as an external
+        // exchange, with no read of the other matter's state (the wall is in the DB too).
+        if (e.type === 'enquiry_raised' && (e.payload as { counterpartyType?: string }).counterpartyType === 'internal' && this.ports.linked) {
+          const p = e.payload as { enquiryId: string; subject: string };
+          await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
+        }
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {

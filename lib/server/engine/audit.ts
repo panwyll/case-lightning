@@ -106,6 +106,8 @@ export interface AuditReport {
     decisionsResolvedWithoutOpeningSource: number;
     aiSentWithoutApproval: number;
     stageMoves: number;
+    /** Addendum requirement 4: correspondence events that crossed to an internal counterparty. */
+    internalCounterpartyEvents: number;
   };
 }
 
@@ -142,6 +144,7 @@ export function buildAuditReport(tenantId: string, matterId: string, events: Eng
       decisionsResolvedWithoutOpeningSource: decisions.filter((d) => d.resolvedBy && !d.openedBy.includes(d.resolvedBy)).length,
       aiSentWithoutApproval,
       stageMoves: events.filter((e) => e.type === 'stage_advanced').length,
+      internalCounterpartyEvents: events.filter((e) => (e.payload as { counterpartyType?: string }).counterpartyType === 'internal').length,
     },
   };
 }
@@ -162,6 +165,6 @@ export function auditCsv(report: AuditReport): string {
     const d = report.state.decisions[e.id];
     return [e.seq, e.createdAt, e.type, e.actor, e.actor === 'system' || e.actor === 'ai' || e.actor === 'external' ? e.actor : 'user', e.sourceDocumentId ?? '', e.confidenceScore ?? '', d?.kind ?? '', d?.status ?? '', e.prevHash ?? '', e.hash ?? '', e.payload].map(csvCell).join(',');
   });
-  const meta = [`# matter ${report.matterId} · generated ${report.generatedAt} · events ${report.summary.events} · chain ${report.chain.ok ? 'OK' : `BROKEN at seq ${report.chain.brokenAtSeq}: ${report.chain.reason}`} · replay ${report.replay.ok ? 'OK' : 'MISMATCH'} · head ${report.headHash ?? ''}`];
+  const meta = [`# matter ${report.matterId} · generated ${report.generatedAt} · events ${report.summary.events} · internal-counterparty events ${report.summary.internalCounterpartyEvents} · chain ${report.chain.ok ? 'OK' : `BROKEN at seq ${report.chain.brokenAtSeq}: ${report.chain.reason}`} · replay ${report.replay.ok ? 'OK' : 'MISMATCH'} · head ${report.headHash ?? ''}`];
   return [...meta, head.join(','), ...rows].join('\n') + '\n';
 }

@@ -143,3 +143,37 @@ Run: `npm run test:unit` · `npm run typecheck` · migration: `npm run migrate` 
 
 Leasehold (flagged for manual handling), chains across matters, a client portal, any
 unapproved outbound AI content.
+
+## Components #2–#8 (as built)
+
+| # | Component | Where | Real when | Otherwise |
+|---|---|---|---|---|
+| 2 | Extraction pipeline | `engine/extraction.ts`, `engine/ingest.ts`, `engine/llm.ts` | `ANTHROPIC_API_KEY` (or `ENGINE_EXTRACTOR=claude`) | `FixtureExtractor` reads `document.extracted_facts` |
+| 3 | AI reasoning (summaries, report drafts) | `engine/ai.ts` | `ANTHROPIC_API_KEY` (or `ENGINE_AI=claude`) | deterministic templates |
+| 4 | InfoTrack (searches, ID/AML, official copies) | `integrations/infotrack*.ts`, webhook route | `INFOTRACK_BASE_URL/CLIENT_ID/CLIENT_SECRET` | mock providers; manual `record_search_ordered` |
+| 5 | Client comms + guarded Q&A + chases | `comms/*`, WhatsApp webhook | `WHATSAPP_*`, `RESEND_*`, or Graph | mocks |
+| 6 | Dashboard | `app/shared/engine/*`, `/decisions`, drawer Engine tab | always | — |
+| 7 | Audit | `engine/audit.ts`, `/matters/:id/engine/audit`, `scripts/engine-audit.ts` | always | — |
+| 8 | Outlook | taskpane "what needs me" feed | always | — |
+
+Key guarantees added: extraction confidence is the minimum across fields and capped by scan
+quality; the AI summary/report is validated (every flag explained, no invented figures, no
+recommendation, every section cites a real document) or the template is used; every event
+is in a per-matter SHA-256 hash chain (`verifyChain`); client Q&A is hard-blocked on
+anything transaction-specific before any model runs.
+
+## Addendum: internally-linked counterparties
+
+The firm may act for the buyer on matter A and, via a **different** handler, for the seller
+on matter B in the same chain — permitted only if the two are walled off as if they were
+separate firms.
+
+| Requirement | Implementation |
+|---|---|
+| 1. Counterparty is a resolver | `matter.counterparty_ref` (`{kind:'external',…}` or `{kind:'internal', matterId}`), `resolveCounterparty()` returns one `Counterparty` shape (name, email, type). Comms, chases and the engine only see that. |
+| 2. Hard wall at the data layer | Migration 068: `engine_wall_check()` raises `42501` when `app.user_id` is the handler of the linked counterparty; RLS (`FORCE`) on `matter` and every table holding confidential facts. `lib/server/db.ts` binds the signed-in user per request (`set_config('app.user_id', …, true)` inside a transaction) — no shared function or admin screen can read across. `GET /api/v1/health` reports `wallEnforced` (the DB role must not have BYPASSRLS). |
+| 3. No silent shortcuts | An enquiry to an internal counterparty emits the same `enquiry_raised` → `enquiry_reply_received` pair; delivery is via `LinkedMatterNotifier` (a task + notification on the other handler's matter), the reply comes back as a filed document. The other matter's state is never read (unit-tested). |
+| 4. Audit flag | `counterpartyType: 'internal' \| 'external'` on `matter_created`, `enquiry_raised`, `enquiry_reply_received` and counterparty `chase_sent`; indexed; counted in the audit report (`internalCounterpartyEvents`). |
+| 5. Never one handler both sides | `assertNoSharedHandler` / `assertCanAssign` in the app (409 with a clear message), plus DB triggers on `matter_link` insert and on `matter.assigned_to` update (`23514`). Consent exceptions are handled outside the system by design. |
+
+Set a counterparty with `POST /api/v1/matters/:id/counterparty` (`{kind:'external', name, email, firm}` or `{kind:'internal', matterId, chainRef}`); read the resolved contact with `GET`.

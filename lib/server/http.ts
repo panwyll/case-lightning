@@ -40,6 +40,15 @@ export function fail(error: unknown) {
   if (error instanceof GraphError) {
     return NextResponse.json({ error: describeGraphError(error) }, { status: 502 });
   }
+  // Rules the DATABASE enforces (migration 068): the ethical wall between handlers of
+  // internally-linked matters (42501) and the shared-handler conflict check (23514).
+  const pgCode = (error as { code?: unknown } | null)?.code;
+  if (pgCode === '42501' && error instanceof Error && /ethical wall/.test(error.message)) {
+    return NextResponse.json({ error: 'You act for the other side of this transaction; this matter is walled off from you.', action: 'Ask the assigned handler or compliance.' }, { status: 403 });
+  }
+  if (pgCode === '23514' && error instanceof Error && /conflict of interest/.test(error.message)) {
+    return NextResponse.json({ error: error.message, action: 'A handler cannot act for both sides of a linked chain. Use the documented-consent process outside this system.' }, { status: 409 });
+  }
   // Errors carrying an explicit HTTP status (e.g. EntitlementError 402, a route's
   // 409/429) — honour it and pass through any `action` hint for the client.
   if (error instanceof Error && typeof (error as { status?: unknown }).status === 'number') {

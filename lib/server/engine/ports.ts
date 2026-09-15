@@ -107,7 +107,21 @@ export interface DocumentClassification {
   reason: string;
 }
 
+/**
+ * Addendum requirement 3: when the counterparty is another matter in this firm, raising an
+ * enquiry must produce the same enquiry_raised → enquiry_reply_received pair an external
+ * exchange would, never a direct read of the other matter. This port delivers the
+ * enquiry to the other side's handler like an incoming letter (a task + notification on
+ * THEIR matter); the reply comes back through the normal document route.
+ */
+export interface LinkedMatterNotifier {
+  readonly name: string;
+  enquiryRaised(input: { tenantId: string; fromMatterId: string; enquiryId: string; subject: string }): Promise<void>;
+}
+
 export interface EnginePorts {
+  /** Optional; only used when a matter's counterparty is internal. */
+  linked?: LinkedMatterNotifier | null;
   documents: DocumentRepository;
   extractor: DocumentExtractor;
   /** Optional: without a classifier, documents must be ingested with an explicit role (the /ingest route). */

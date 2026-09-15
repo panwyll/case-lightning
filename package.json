@@ -9,7 +9,8 @@
     "start": "next start",
     "migrate": "tsx scripts/migrate.ts",
     "test:unit": "node --import tsx --test tests/unit/*/*.test.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

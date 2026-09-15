@@ -9,6 +9,7 @@ import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions, openWaits } from '@/lib/server/engine/types';
 import { requireWriter, requireDecider, toCommand, userCommandSchema } from '@/lib/server/engine/http';
 import { writeAudit } from '@/lib/server/audit';
+import { counterpartyTypeOf } from '@/lib/server/engine/counterparty';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const input = userCommandSchema.parse(await req.json());
+    // Addendum: the audit trail records whether the other side is walled-off internal or external.
+    if (input.type === 'enrol' && input.counterpartyType == null) input.counterpartyType = await counterpartyTypeOf(user.tenantId, matterId);
     const svc = engine();
     let result;
     if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId);

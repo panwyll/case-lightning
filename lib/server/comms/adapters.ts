@@ -12,6 +12,7 @@ import { emitMatterEvent } from '../events';
 import { addDraftReady } from '../worklist';
 import { claudeLlm } from '../engine/llm';
 import { WhatsAppClient } from './whatsapp';
+import { resolveCounterparty } from '../engine/counterparty';
 import { ClientQaService, ProductionChaser, ProductionClientComms, type CommsDeps, type MatterContactInfo } from './client-comms';
 
 export function whatsappConfigured(): boolean {
@@ -40,7 +41,10 @@ async function contactInfo(tenantId: string, matterId: string): Promise<MatterCo
     [matterId, tenantId]
   ).catch(() => []);
   const client = contacts.find((c) => c.role === 'CLIENT') ?? null;
-  const other = contacts.find((c) => c.role === 'OTHER_SIDE') ?? null;
+  // The other side is a RESOLVER (addendum): external firm or walled-off internal matter,
+  // either way just a name and an email to write to.
+  const cp = await resolveCounterparty(tenantId, matterId).catch(() => null);
+  const other = cp?.email ? { email: cp.email, name: cp.name } : contacts.find((c) => c.role === 'OTHER_SIDE') ?? null;
   const agent = contacts.find((c) => c.role === 'AGENT') ?? null;
   const lender = contacts.find((c) => c.role === 'LENDER') ?? null;
   const firstName = (client?.name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null;

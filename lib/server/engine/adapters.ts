@@ -29,6 +29,11 @@ import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } f
 import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
+import { runAsSystem } from '../db';
+import { createTask } from '../tasks';
+import { emitMatterEvent } from '../events';
+import { resolveCounterparty } from './counterparty';
+import type { LinkedMatterNotifier } from './ports';
 
 interface DocRow {
   id: string;
@@ -171,6 +176,25 @@ function chooseComms(): { clientComms: EnginePorts['clientComms']; chaser: Engin
   return { clientComms: productionClientComms(), chaser: productionChaser() };
 }
 
+/** Delivers an enquiry to the linked matter's handler as inbound correspondence (a task + notification on THEIR matter). */
+class PgLinkedMatterNotifier implements LinkedMatterNotifier {
+  readonly name = 'linked-matter-notifier';
+  async enquiryRaised(input: { tenantId: string; fromMatterId: string; enquiryId: string; subject: string }): Promise<void> {
+    const cp = await resolveCounterparty(input.tenantId, input.fromMatterId);
+    if (!cp || cp.type !== 'internal' || !cp.matterId) return;
+    const other = cp.matterId;
+    const from = await runAsSystem(() => queryOne<{ matter_ref: string; handler: string | null }>(`select m.matter_ref, coalesce(u.display_name, u.email) as handler from matter m left join app_user u on u.id = coalesce(m.assigned_to, m.created_by) where m.id = $1`, [input.fromMatterId]));
+    const title = `Enquiry ${input.enquiryId} received from ${from?.handler ?? 'the buyer\'s handler'} (our ref ${from?.matter_ref ?? input.fromMatterId})`;
+    await runAsSystem(async () => {
+      const m = await queryOne<{ assigned_to: string | null; created_by: string }>(`select assigned_to, created_by from matter where id = $1 and tenant_id = $2`, [other, input.tenantId]);
+      const handler = m?.assigned_to ?? m?.created_by;
+      if (!handler) return;
+      await createTask({ userId: handler, tenantId: input.tenantId, role: 'CONVEYANCER', email: '', displayName: null }, other, { type: 'ENQUIRY', detail: `${title}: ${input.subject}`, assigneeUserId: handler, source: 'ASSISTANT' }).catch(() => {});
+      await emitMatterEvent({ tenantId: input.tenantId, matterId: other, eventType: 'LINKED_ENQUIRY_RECEIVED', title, details: `${input.subject}\n\nCounterparty type: internal (ethical wall). Reply by email as you would to an external firm; the reply is filed on the buyer's matter as a document.`, notify: { kind: 'EMAIL_TRIAGED', headline: title, did: 'Logged it on your matter', action: 'Reply to the enquiry', dedupKey: `linked-enquiry:${input.fromMatterId}:${input.enquiryId}` } });
+    });
+  }
+}
+
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
@@ -182,6 +206,7 @@ export function productionPorts(): EnginePorts {
     const { searchProvider, idCheckProvider } = chooseIntegrations();
     const { clientComms, chaser } = chooseComms();
     _ports = {
+      linked: new PgLinkedMatterNotifier(),
       documents: new PgDocumentRepository(),
       extractor,
       classifier,

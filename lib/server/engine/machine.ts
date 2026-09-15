@@ -29,6 +29,7 @@ import {
   type Actor,
   type ChaseSpec,
   type Citation,
+  type CounterpartyType,
   type ClientUpdateSpec,
   type DecisionKind,
   type DecisionOption,
@@ -55,7 +56,7 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null }
+  | { type: 'enrol'; actor: Actor; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -275,6 +276,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
             requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
             targetExchangeDate: cmd.targetExchangeDate ?? null,
             targetCompletionDate: cmd.targetCompletionDate ?? null,
+            counterpartyType: cmd.counterpartyType ?? null,
           },
         },
       ];
@@ -352,14 +354,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_contract', 'Raising an enquiry');
       if (s.enquiries[cmd.enquiryId]) reject(`Enquiry ${cmd.enquiryId} already exists.`);
-      return [{ type: 'enquiry_raised', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, subject: cmd.subject, origin: cmd.origin ?? null } }];
+      // Addendum: correspondence with the other side is stamped internal/external so a
+      // compliance review can find every crossing of an ethical wall from the log alone.
+      return [{ type: 'enquiry_raised', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, subject: cmd.subject, origin: cmd.origin ?? null, counterpartyType: s.counterpartyType } }];
     }
     case 'enquiry_reply_received': {
       requireEnrolled(s);
       const q = s.enquiries[cmd.enquiryId];
       if (!q) reject(`Enquiry ${cmd.enquiryId} was never raised.`);
       if (q.status !== 'raised') reject(`Enquiry ${cmd.enquiryId} is ${q.status}, not awaiting a reply.`);
-      const received: NewEvent = { type: 'enquiry_reply_received', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, facts: cmd.facts ?? null }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts?.confidence ?? null };
+      const received: NewEvent = { type: 'enquiry_reply_received', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, facts: cmd.facts ?? null, counterpartyType: s.counterpartyType }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts?.confidence ?? null };
       return [
         received,
         ...verdictEvents({
@@ -529,7 +533,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       const w = s.waits.find((x) => x.key === cmd.chase.waitKey && x.subject === cmd.chase.subject && x.closedAt === null);
       if (!w) reject(`No open wait for ${cmd.chase.waitKey}:${cmd.chase.subject}.`);
-      return [{ type: 'chase_sent', actor: SYSTEM, payload: cmd.chase }];
+      return [{ type: 'chase_sent', actor: SYSTEM, payload: cmd.chase.recipientRole === 'seller_solicitor' ? { ...cmd.chase, counterpartyType: s.counterpartyType } : cmd.chase }];
     }
     case 'raise_escalation': {
       requireEnrolled(s);
@@ -627,7 +631,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   // "Request further search/enquiry" raises the follow-up enquiry so the wait is tracked.
   if (option === 'request_further' && (d.kind === 'search' || d.kind === 'enquiry' || d.kind === 'title' || d.kind === 'mortgage')) {
     const enquiryId = nextEnquiryId(s, d.kind === 'enquiry' ? subject : d.kind.toUpperCase());
-    out.push({ type: 'enquiry_raised', actor: userId, payload: { enquiryId, subject: `Further enquiry following ${d.kind}${subject ? ` ${subject}` : ''} review${note ? `: ${note}` : ''}`, origin: { decisionEventId: d.eventId, followUpOf: d.kind === 'enquiry' ? subject : undefined } } });
+    out.push({ type: 'enquiry_raised', actor: userId, payload: { enquiryId, subject: `Further enquiry following ${d.kind}${subject ? ` ${subject}` : ''} review${note ? `: ${note}` : ''}`, origin: { decisionEventId: d.eventId, followUpOf: d.kind === 'enquiry' ? subject : undefined }, counterpartyType: s.counterpartyType } });
   }
   // Rejecting an ID check is a hard stop: the matter cannot proceed without a human taking over.
   if (option === 'reject' && d.kind === 'id_check' && !s.manualHandling.required) {

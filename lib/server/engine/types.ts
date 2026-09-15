@@ -46,6 +46,9 @@ export const LEGACY_STAGE: Record<Stage, string> = {
   post_completion: 'POST_COMPLETION',
 };
 
+/** Addendum: is the other side an external firm or another matter in this firm (walled off)? Stamped on correspondence events. */
+export type CounterpartyType = 'internal' | 'external';
+
 export const TRANSACTION_TYPES = ['freehold_purchase'] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
@@ -291,6 +294,8 @@ export interface ChaseSpec {
   template: string;
   channel: 'email' | 'whatsapp' | 'portal' | 'mock';
   messageId?: string | null;
+  /** Stamped by the machine on chases to the counterparty solicitor. */
+  counterpartyType?: CounterpartyType | null;
 }
 
 export interface ClientUpdateSpec {
@@ -308,6 +313,8 @@ export interface Payloads {
     requiredSearches: SearchType[];
     targetExchangeDate?: string | null;
     targetCompletionDate?: string | null;
+    /** null = not yet known; the audit index (068) picks up whichever events carry it. */
+    counterpartyType?: CounterpartyType | null;
   };
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
@@ -324,8 +331,8 @@ export interface Payloads {
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
   search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null };
 
-  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string } | null };
-  enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null };
+  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string } | null; counterpartyType?: CounterpartyType | null };
+  enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
   enquiry_reply_reviewed: { enquiryId: string; decisionEventId: string; option: DecisionOption; note?: string | null };
@@ -449,6 +456,7 @@ export interface MatterState {
   transactionType: TransactionType | null;
   hasLender: boolean;
   requiredSearches: SearchType[];
+  counterpartyType: CounterpartyType | null;
   targetExchangeDate: string | null;
   targetCompletionDate: string | null;
   stage: Stage;
@@ -510,6 +518,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     transactionType: null,
     hasLender: false,
     requiredSearches: [],
+    counterpartyType: null,
     targetExchangeDate: null,
     targetCompletionDate: null,
     stage: 'instruction',

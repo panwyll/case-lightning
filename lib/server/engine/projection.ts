@@ -103,6 +103,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.transactionType = p.transactionType;
       s.hasLender = p.hasLender;
       s.requiredSearches = [...p.requiredSearches];
+      s.counterpartyType = p.counterpartyType ?? null;
       s.targetExchangeDate = p.targetExchangeDate ?? null;
       s.targetCompletionDate = p.targetCompletionDate ?? null;
       s.mortgage.status = p.hasLender ? 'awaiting' : 'not_required';

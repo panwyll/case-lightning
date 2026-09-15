@@ -27,9 +27,14 @@ handler to open the source before resolving. Components around it (extraction, A
 InfoTrack, client comms) are stubbed behind ports. See **docs/conveyance-engine.md**.
 
 ```bash
-npm run test:unit    # machine, rules, SLA, full-lifecycle replay audit
+npm run test:unit         # machine, rules, SLA, extraction, AI harness, InfoTrack, comms, audit, full-lifecycle replay
+npm run test:integration  # the ethical wall (RLS) against a real Postgres — needs DATABASE_URL, migrations ≤ 068
 npm run typecheck
 ```
+
+Internally-linked counterparties (buyer and seller matters in the same firm, different handlers)
+are walled off at the database layer — see the addendum section of the engine doc. The DB role the
+app connects with must not have BYPASSRLS; `GET /api/v1/health` reports `wallEnforced`.
 
 ### Product setup
 

@@ -10,6 +10,7 @@ import { onStageAdvanced } from '@/lib/server/tasks';
 import { writeAudit } from '@/lib/server/audit';
 import { stageKeys } from '@/lib/server/stages';
 import { ok, fail } from '@/lib/server/http';
+import { assertCanAssign } from '@/lib/server/engine/counterparty';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -57,6 +58,9 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
+
+    // Addendum requirement 5: never let one handler act for both sides of a linked chain.
+    if (body.assignedTo !== undefined) await assertCanAssign(user.tenantId, matterId, body.assignedTo ?? null);
 
     // Guard: a stage write must be one of the firm's configured stage keys.
     if (body.stage !== undefined) {

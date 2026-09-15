@@ -4,7 +4,7 @@
  */
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies, headers } from 'next/headers';
-import { queryOne } from './db';
+import { queryOne, bindDbUser } from './db';
 import { config } from './config';
 import type { SessionUser } from './types';
 
@@ -52,11 +52,14 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const verified = await verifySession(token);
   if (!verified) return null;
 
-  return queryOne<SessionUser>(
+  const user = await queryOne<SessionUser>(
     `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName"
      from app_user where id = $1`,
     [verified.userId]
   );
+  // Every query from here on carries this user for the database's ethical-wall check.
+  if (user) bindDbUser(user.userId);
+  return user;
 }
 
 export class UnauthorizedError extends Error {
