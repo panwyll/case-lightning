@@ -408,6 +408,9 @@ export type EngineEvent<T extends EventType = EventType> = NewEvent<T> & {
   /** 1-based, gap-free per matter. Ordering + optimistic concurrency. */
   seq: number;
   createdAt: string;
+  /** Hash chain (component #7): sha256(prevHash + canonical(event)). '' prevHash for the first event. */
+  prevHash?: string;
+  hash?: string;
 };
 
 // ───────────────────────────── Projected state ─────────────────────────────

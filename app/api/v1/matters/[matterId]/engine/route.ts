@@ -8,6 +8,7 @@ import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions, openWaits } from '@/lib/server/engine/types';
 import { requireWriter, requireDecider, toCommand, userCommandSchema } from '@/lib/server/engine/http';
+import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       if (!cmd) throw new Error('Unsupported command.');
       result = await svc.run(user.tenantId, matterId, cmd);
     }
+    await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_COMMAND', actionStatus: 'SUCCESS', payload: { command: input.type, events: result.events.map((e) => ({ seq: e.seq, type: e.type })) } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {
     return fail(error);

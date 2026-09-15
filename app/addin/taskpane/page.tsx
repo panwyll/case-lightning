@@ -12,6 +12,7 @@ import { Icon, Card, LoadingRow, Section, Label, SubLabel, Field, TagInput, fmtS
 import { HousePanel, ContactsPanel } from '@/app/shared/assist/HousePanel';
 import { useAssist, type AssistData } from '@/app/shared/assist/useAssist';
 import Tour, { type TourStep } from '@/app/shared/assist/Tour';
+import { DecisionFeed } from '@/app/shared/engine/DecisionFeed';
 import {
   REPLY_BUSY_CREATE, REPLY_BUSY_REGEN, REPLY_BUSY_SEND,
   STAGES, stageLabel, isWaitingOnOthers, TRACKS, STATUS_FLAGS, hhmm,
@@ -2037,6 +2038,14 @@ export default function Taskpane() {
               worklist button (homeView) even while an email is selected. */}
           {(homeView || !messageId) && !assistError && (
             <>
+              {/* Component #8: the conveyancing engine's decision events, surfaced inside
+                  Outlook. Same shared feed as /decisions — the source-first friction and the
+                  server-side 412 apply here too. Hidden entirely when nothing is pending. */}
+              {me && (
+                <div style={{ marginBottom: 10 }}>
+                  <DecisionFeed api={api} compact hideWhenEmpty limit={50} />
+                </div>
+              )}
               {/* Canonical worklist — the "what needs me today" list, no email required.
                   Two buckets: drafts CONVEYi prepared (replies + doc-received acks) that are
                   ready to send, and matters that have gone quiet and need chasing. */}

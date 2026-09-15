@@ -8,6 +8,7 @@ import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions } from '@/lib/server/engine/types';
 import { ingestSchema, requireWriter } from '@/lib/server/engine/http';
+import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
             : input.role === 'title'
               ? await svc.titleReceived(t, matterId, input.documentId)
               : await svc.idCheckResultReceived(t, matterId, input.documentId);
+    await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_INGEST', actionStatus: 'SUCCESS', payload: { role: input.role, documentId: input.documentId, events: result.events.map((e) => e.type) } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {
     return fail(error);

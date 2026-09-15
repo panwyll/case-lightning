@@ -17,6 +17,7 @@
 import type pg from 'pg';
 import { query as dbQuery, transaction as dbTransaction } from '../db';
 import { project } from './projection';
+import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
 import { LEGACY_STAGE, STAGES, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type WaitKey } from './types';
 
@@ -51,6 +52,8 @@ export interface EventStore {
   /** Any decision (pending or not) by its event id — the dashboard's detail/resolve routes need the matter it belongs to. */
   findDecision(tenantId: string, eventId: string): Promise<PendingDecisionRow | null>;
   loadSla(tenantId: string): Promise<SlaConfig>;
+  /** The cached read model, for the audit's replay check (null when none / in memory). */
+  cachedState(tenantId: string, matterId: string): Promise<MatterState | null>;
 }
 
 export class ConcurrencyError extends Error {
@@ -90,7 +93,9 @@ export class MemoryEventStore implements EventStore {
           const current = this.logs.get(k) ?? [];
           const last = current.length ? current[current.length - 1].seq : 0;
           if (last !== expectedLastSeq) throw new ConcurrencyError();
-          const out: EngineEvent[] = events.map((e, i) => ({ ...e, id: newId(), tenantId, matterId, seq: last + i + 1, createdAt: now.toISOString() }) as EngineEvent);
+          const lastHash = current.length ? current[current.length - 1].hash ?? '' : '';
+          const staged = events.map((e, i) => ({ ...e, id: newId(), tenantId, matterId, seq: last + i + 1, createdAt: now.toISOString() }) as EngineEvent);
+          const out = chainEvents(lastHash, staged) as EngineEvent[];
           this.logs.set(k, [...current, ...out]);
           return out;
         },
@@ -145,6 +150,10 @@ export class MemoryEventStore implements EventStore {
     return null;
   }
 
+  async cachedState(tenantId: string, matterId: string): Promise<MatterState | null> {
+    return this.states.get(this.key(tenantId, matterId)) ?? null;
+  }
+
   setSlaOverrides(tenantId: string, overrides: Array<Partial<SlaRule> & { waitKey: WaitKey }>): void {
     this.slaOverrides.set(tenantId, overrides);
   }
@@ -173,6 +182,8 @@ interface EventRow {
   confidence_score: number | string | null;
   caused_by_event_id: string | null;
   created_at: Date | string;
+  prev_hash?: string | null;
+  hash?: string | null;
 }
 
 const rowToEvent = (r: EventRow): EngineEvent =>
@@ -188,9 +199,11 @@ const rowToEvent = (r: EventRow): EngineEvent =>
     confidenceScore: r.confidence_score === null ? null : Number(r.confidence_score),
     causedByEventId: r.caused_by_event_id,
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : new Date(r.created_at).toISOString(),
+    prevHash: r.prev_hash ?? undefined,
+    hash: r.hash ?? undefined,
   }) as EngineEvent;
 
-const EVENT_COLS = 'id, tenant_id, matter_id, seq, type, actor, payload, source_document_id, confidence_score, caused_by_event_id, created_at';
+const EVENT_COLS = 'id, tenant_id, matter_id, seq, type, actor, payload, source_document_id, confidence_score, caused_by_event_id, created_at, prev_hash, hash';
 
 export class PgEventStore implements EventStore {
   async withMatterLock<T>(tenantId: string, matterId: string, fn: (tx: MatterTx) => Promise<T>): Promise<T> {
@@ -203,16 +216,22 @@ export class PgEventStore implements EventStore {
           return r.rows.map(rowToEvent);
         },
         append: async (events, expectedLastSeq, now, newId) => {
-          const last = await client.query<{ n: string | null }>(`select max(seq)::text as n from matter_event where tenant_id = $1 and matter_id = $2`, [tenantId, matterId]);
+          const last = await client.query<{ n: string | null; hash: string | null }>(
+            `select max(seq)::text as n, (select hash from matter_event where tenant_id = $1 and matter_id = $2 order by seq desc limit 1) as hash
+               from matter_event where tenant_id = $1 and matter_id = $2`,
+            [tenantId, matterId]
+          );
           const lastSeq = Number(last.rows[0]?.n ?? 0);
           if (lastSeq !== expectedLastSeq) throw new ConcurrencyError();
+          const createdAt = now.toISOString();
+          const staged = events.map((e, i) => ({ ...e, id: newId(), tenantId, matterId, seq: lastSeq + i + 1, createdAt }) as EngineEvent);
+          const chained = chainEvents(last.rows[0]?.hash ?? '', staged) as EngineEvent[];
           const out: EngineEvent[] = [];
-          for (let i = 0; i < events.length; i++) {
-            const e = events[i];
+          for (const e of chained) {
             const r = await client.query<EventRow>(
-              `insert into matter_event (id, tenant_id, matter_id, seq, type, actor, payload, source_document_id, confidence_score, caused_by_event_id, created_at)
-               values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11) returning ${EVENT_COLS}`,
-              [newId(), tenantId, matterId, lastSeq + i + 1, e.type, e.actor, JSON.stringify(e.payload), e.sourceDocumentId ?? null, e.confidenceScore ?? null, e.causedByEventId ?? null, now.toISOString()]
+              `insert into matter_event (id, tenant_id, matter_id, seq, type, actor, payload, source_document_id, confidence_score, caused_by_event_id, created_at, prev_hash, hash)
+               values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13) returning ${EVENT_COLS}`,
+              [e.id, tenantId, matterId, e.seq, e.type, e.actor, JSON.stringify(e.payload), e.sourceDocumentId ?? null, e.confidenceScore ?? null, e.causedByEventId ?? null, e.createdAt, e.prevHash ?? '', e.hash ?? '']
             );
             out.push(rowToEvent(r.rows[0]));
           }
@@ -266,6 +285,11 @@ export class PgEventStore implements EventStore {
     );
     const row = r[0];
     return row ? { ...row.decision, tenantId: row.tenant_id, matterId: row.matter_id, matterRef: row.matter_ref, propertyAddress: row.property_address, stage: row.stage } : null;
+  }
+
+  async cachedState(tenantId: string, matterId: string): Promise<MatterState | null> {
+    const r = await dbQuery<{ state: MatterState }>(`select state from matter_engine_state where tenant_id = $1 and matter_id = $2`, [tenantId, matterId]);
+    return r[0]?.state ?? null;
   }
 
   async loadSla(tenantId: string): Promise<SlaConfig> {
