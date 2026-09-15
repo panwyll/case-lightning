@@ -10,8 +10,8 @@
  *   summariser     → ClaudeSummariser when a key is set (component #3, ai.ts); validated,
  *                    falls back to the deterministic template prose
  *   reportDrafter  → ClaudeReportDrafter when a key is set (component #3); TemplateReportDrafter otherwise
- *   searchProvider → MockSearchProvider          (STUB #4 — InfoTrack)
- *   idCheckProvider→ MockIdCheckProvider         (STUB #4 — AML/ID)
+ *   searchProvider → InfoTrackSearchProvider when INFOTRACK_* is set (component #4); mock otherwise
+ *   idCheckProvider→ InfoTrackIdCheckProvider when INFOTRACK_* is set (component #4); mock otherwise
  *   clientComms    → MockClientComms             (STUB #5 — WhatsApp/email status updates)
  *   chaser         → MockChaser                  (STUB #5 — template chase emails)
  */
@@ -27,6 +27,7 @@ import { PgEventStore } from './store';
 import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
 import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
+import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 
 interface DocRow {
   id: string;
@@ -156,6 +157,13 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
   };
 }
 
+/** Real InfoTrack providers (#4) when credentials are present; mocks otherwise. */
+function chooseIntegrations(): { searchProvider: EnginePorts['searchProvider']; idCheckProvider: EnginePorts['idCheckProvider'] } {
+  if (!infotrackConfigured()) return { searchProvider: new MockSearchProvider(), idCheckProvider: new MockIdCheckProvider() };
+  const p = infotrackProviders();
+  return { searchProvider: p.searchProvider, idCheckProvider: p.idCheckProvider };
+}
+
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
@@ -164,14 +172,15 @@ export function productionPorts(): EnginePorts {
     const log = (msg: string, detail?: unknown) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
     const { extractor, classifier } = chooseExtractor();
     const { summariser, reportDrafter } = chooseAi(log);
+    const { searchProvider, idCheckProvider } = chooseIntegrations();
     _ports = {
       documents: new PgDocumentRepository(),
       extractor,
       classifier,
       summariser,
       reportDrafter,
-      searchProvider: new MockSearchProvider(),
-      idCheckProvider: new MockIdCheckProvider(),
+      searchProvider,
+      idCheckProvider,
       clientComms: new MockClientComms(),
       chaser: new MockChaser(),
       now: () => new Date(),
