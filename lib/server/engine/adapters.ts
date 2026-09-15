@@ -12,8 +12,8 @@
  *   reportDrafter  → ClaudeReportDrafter when a key is set (component #3); TemplateReportDrafter otherwise
  *   searchProvider → InfoTrackSearchProvider when INFOTRACK_* is set (component #4); mock otherwise
  *   idCheckProvider→ InfoTrackIdCheckProvider when INFOTRACK_* is set (component #4); mock otherwise
- *   clientComms    → MockClientComms             (STUB #5 — WhatsApp/email status updates)
- *   chaser         → MockChaser                  (STUB #5 — template chase emails)
+ *   clientComms    → ProductionClientComms when WhatsApp/Resend/Graph is configured (component #5); mock otherwise
+ *   chaser         → ProductionChaser (draft-by-default template chases from the fee-earner mailbox); mock otherwise
  */
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
@@ -28,6 +28,7 @@ import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
 import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
+import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
 
 interface DocRow {
   id: string;
@@ -164,6 +165,12 @@ function chooseIntegrations(): { searchProvider: EnginePorts['searchProvider']; 
   return { searchProvider: p.searchProvider, idCheckProvider: p.idCheckProvider };
 }
 
+/** Real client comms + chaser (#5) when any channel is configured (WhatsApp, Resend or Graph); mocks otherwise. */
+function chooseComms(): { clientComms: EnginePorts['clientComms']; chaser: EnginePorts['chaser'] } {
+  if (!commsConfigured()) return { clientComms: new MockClientComms(), chaser: new MockChaser() };
+  return { clientComms: productionClientComms(), chaser: productionChaser() };
+}
+
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
@@ -173,6 +180,7 @@ export function productionPorts(): EnginePorts {
     const { extractor, classifier } = chooseExtractor();
     const { summariser, reportDrafter } = chooseAi(log);
     const { searchProvider, idCheckProvider } = chooseIntegrations();
+    const { clientComms, chaser } = chooseComms();
     _ports = {
       documents: new PgDocumentRepository(),
       extractor,
@@ -181,8 +189,8 @@ export function productionPorts(): EnginePorts {
       reportDrafter,
       searchProvider,
       idCheckProvider,
-      clientComms: new MockClientComms(),
-      chaser: new MockChaser(),
+      clientComms,
+      chaser,
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
       log,
