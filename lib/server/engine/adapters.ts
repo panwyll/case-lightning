@@ -7,8 +7,9 @@
  *   event log      → PgEventStore                (real: migration 065)
  *   extractor      → ClaudeExtractor when ANTHROPIC_API_KEY is set (component #2, extraction.ts);
  *                    FixtureExtractor otherwise (reads document.extracted_facts)
- *   summariser     → TemplateSummariser          (STUB #3 — deterministic prose)
- *   reportDrafter  → TemplateReportDrafter       (STUB #3)
+ *   summariser     → ClaudeSummariser when a key is set (component #3, ai.ts); validated,
+ *                    falls back to the deterministic template prose
+ *   reportDrafter  → ClaudeReportDrafter when a key is set (component #3); TemplateReportDrafter otherwise
  *   searchProvider → MockSearchProvider          (STUB #4 — InfoTrack)
  *   idCheckProvider→ MockIdCheckProvider         (STUB #4 — AML/ID)
  *   clientComms    → MockClientComms             (STUB #5 — WhatsApp/email status updates)
@@ -25,6 +26,7 @@ import { EngineService } from './service';
 import { PgEventStore } from './store';
 import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
+import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
 
 interface DocRow {
   id: string;
@@ -143,25 +145,38 @@ function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: D
   return { extractor: ex, classifier: new ClaudeClassifier(ex) };
 }
 
+/** Real AI layer (#3) when a Claude key is present (or forced), otherwise the deterministic templates. */
+function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: EnginePorts['summariser']; reportDrafter: EnginePorts['reportDrafter'] } {
+  const useClaude = config.engineAi === 'claude' || (config.engineAi === 'auto' && !!config.anthropicApiKey);
+  if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter() };
+  const llm = claudeLlm();
+  return {
+    summariser: new ClaudeSummariser(llm, new PgDocumentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
+    reportDrafter: new ClaudeReportDrafter(llm, { model: config.engineDraftModel, effort: 'high', log }),
+  };
+}
+
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
 export function productionPorts(): EnginePorts {
   if (!_ports) {
+    const log = (msg: string, detail?: unknown) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
     const { extractor, classifier } = chooseExtractor();
+    const { summariser, reportDrafter } = chooseAi(log);
     _ports = {
       documents: new PgDocumentRepository(),
       extractor,
       classifier,
-      summariser: new TemplateSummariser(),
-      reportDrafter: new TemplateReportDrafter(),
+      summariser,
+      reportDrafter,
       searchProvider: new MockSearchProvider(),
       idCheckProvider: new MockIdCheckProvider(),
       clientComms: new MockClientComms(),
       chaser: new MockChaser(),
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
-      log: (msg, detail) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? ''),
+      log,
     };
   }
   return _ports;
