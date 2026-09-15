@@ -7,7 +7,9 @@
     "dev:https": "next dev --experimental-https",
     "build": "next build",
     "start": "next start",
-    "migrate": "tsx scripts/migrate.ts"
+    "migrate": "tsx scripts/migrate.ts",
+    "test:unit": "node --import tsx --test tests/unit/*/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.69.0",

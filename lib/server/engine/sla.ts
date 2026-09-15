@@ -1,0 +1,97 @@
+/**
+ * Timer / SLA system (spec 2.6) — a first-class citizen, not an add-on.
+ *
+ * Every "waiting on someone else" state is a WaitState in the projection (opened and
+ * closed by events). This module answers, purely: "given the waits, the chases and
+ * escalations already logged, and the time now — what is due?" The service turns each
+ * due action into a chase (template message via the comms port → `chase_sent`) or an
+ * escalation (`escalation_raised`, which is a DecisionEvent for a human).
+ *
+ * All durations are E&W WORKING days. Defaults live here; a tenant can override a
+ * wait's numbers via engine_sla_override (store.ts loads them into an SlaConfig).
+ */
+import type { MatterState, WaitKey, WaitState } from './types';
+import { openWaits } from './types';
+import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR } from './working-days';
+
+export interface SlaRule {
+  waitKey: WaitKey;
+  /** First chase after this many working days. */
+  chaseAfter: number;
+  /** Repeat chases every N working days after the first (null = chase once). */
+  chaseEvery: number | null;
+  /** Raise an escalation decision after this many working days. */
+  escalateAfter: number;
+  /** After an escalation is resolved, re-escalate if still waiting after this many more working days. */
+  reEscalateAfter: number;
+  recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr';
+  template: string;
+}
+
+export type SlaConfig = Record<WaitKey, SlaRule>;
+
+export const DEFAULT_SLA: SlaConfig = {
+  // spec: 15 working days default → chase at day 10, escalate at day 18
+  search: { waitKey: 'search', chaseAfter: 10, chaseEvery: 3, escalateAfter: 18, reEscalateAfter: 5, recipientRole: 'search_provider', template: 'chase_search_provider' },
+  // spec: 5 working days → chase at day 5, repeat every 3 days, escalate at day 15
+  enquiry: { waitKey: 'enquiry', chaseAfter: 5, chaseEvery: 3, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_enquiry_reply' },
+  id_check: { waitKey: 'id_check', chaseAfter: 3, chaseEvery: 2, escalateAfter: 7, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_id_documents' },
+  funds: { waitKey: 'funds', chaseAfter: 2, chaseEvery: 1, escalateAfter: 4, reEscalateAfter: 2, recipientRole: 'lender', template: 'chase_completion_funds' },
+  registration: { waitKey: 'registration', chaseAfter: 30, chaseEvery: 10, escalateAfter: 60, reEscalateAfter: 20, recipientRole: 'hmlr', template: 'chase_hmlr_registration' },
+};
+
+export interface DueAction {
+  kind: 'chase' | 'escalate';
+  wait: WaitState;
+  rule: SlaRule;
+  ageWorkingDays: number;
+}
+
+/**
+ * What the timer should do right now for one matter. Deterministic in (state, now).
+ * A wait yields at most one chase and at most one escalation per tick; the events
+ * those produce change the state so the next tick sees them.
+ */
+export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): DueAction[] {
+  const out: DueAction[] = [];
+  for (const wait of openWaits(state)) {
+    const rule = sla[wait.key];
+    if (!rule) continue;
+    const age = workingDaysBetween(new Date(wait.openedAt), now, cal);
+
+    // Chase: first at chaseAfter, then every chaseEvery working days since the last chase.
+    if (age >= rule.chaseAfter) {
+      const last = wait.chasesSentAt[wait.chasesSentAt.length - 1];
+      if (!last) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });
+      else if (rule.chaseEvery !== null && workingDaysBetween(new Date(last), now, cal) >= rule.chaseEvery) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });
+    }
+
+    // Escalate: once at escalateAfter; again only after a resolved escalation has aged reEscalateAfter.
+    if (age >= rule.escalateAfter) {
+      const open = wait.escalations.find((e) => e.resolvedAt === null);
+      if (!open) {
+        const lastResolved = wait.escalations.filter((e) => e.resolvedAt).map((e) => e.resolvedAt as string).sort().pop();
+        if (!lastResolved || workingDaysBetween(new Date(lastResolved), now, cal) >= rule.reEscalateAfter) {
+          out.push({ kind: 'escalate', wait, rule, ageWorkingDays: age });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Merge tenant overrides (partial numbers) onto the defaults. */
+export function withOverrides(overrides: Array<Partial<SlaRule> & { waitKey: WaitKey }>, base: SlaConfig = DEFAULT_SLA): SlaConfig {
+  const cfg: SlaConfig = { ...base };
+  for (const o of overrides) {
+    if (!cfg[o.waitKey]) continue;
+    cfg[o.waitKey] = { ...cfg[o.waitKey], ...stripUndefined(o) };
+  }
+  return cfg;
+}
+
+function stripUndefined<T extends object>(o: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
+  return out;
+}

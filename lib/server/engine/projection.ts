@@ -1,0 +1,458 @@
+/**
+ * Projection: fold the immutable event log into the current MatterState.
+ *
+ * This is a pure reducer. `project(events)` MUST give the same answer every time for
+ * the same log — that is the audit guarantee (spec 2.8: "can you regenerate the current
+ * state purely by replaying events in order?"). Nothing here reads a clock, a database
+ * or a random number; every timestamp comes from the event that carried it.
+ *
+ * Keep the reducer dumb: it records what happened. Deciding what happens NEXT is the
+ * machine's job (machine.ts).
+ */
+import {
+  DECISION_EVENT_TYPES,
+  initialState,
+  type DecisionOption,
+  type DecisionSpec,
+  type DecisionState,
+  type EngineEvent,
+  type EventType,
+  type MatterState,
+  type Payloads,
+  type WaitKey,
+  type WaitState,
+} from './types';
+
+/** Fold a whole log (must be ordered by seq). */
+export function project(tenantId: string, matterId: string, events: EngineEvent[]): MatterState {
+  let state = initialState(tenantId, matterId);
+  for (const e of events) state = applyEvent(state, e);
+  return state;
+}
+
+/** Structural clone that keeps the reducer non-mutating without a dependency. */
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+
+const resolvedStatus = (option: DecisionOption): DecisionState['status'] => (option === 'escalate' ? 'escalated' : 'actioned');
+
+function openWait(state: MatterState, key: WaitKey, subject: string, e: EngineEvent): void {
+  // Re-opening the same wait (e.g. a re-ordered search) closes the stale one first.
+  for (const w of state.waits) if (w.key === key && w.subject === subject && w.closedAt === null) w.closedAt = e.createdAt;
+  state.waits.push({ key, subject, openedAt: e.createdAt, openedBySeq: e.seq, closedAt: null, chasesSentAt: [], escalations: [] });
+}
+
+function closeWait(state: MatterState, key: WaitKey, subject: string | null, e: EngineEvent): void {
+  for (const w of state.waits) {
+    if (w.key === key && (subject === null || w.subject === subject) && w.closedAt === null) w.closedAt = e.createdAt;
+  }
+}
+
+const findOpenWait = (state: MatterState, key: WaitKey, subject: string): WaitState | undefined =>
+  state.waits.find((w) => w.key === key && w.subject === subject && w.closedAt === null);
+
+function addDecision(state: MatterState, e: EngineEvent, spec: DecisionSpec, subject: string | null): void {
+  state.decisions[e.id] = {
+    ...spec,
+    eventId: e.id,
+    seq: e.seq,
+    createdAt: e.createdAt,
+    status: 'pending',
+    openedBy: [],
+    resolvedBy: null,
+    resolvedAt: null,
+    resolution: null,
+    resolutionEventId: null,
+    note: null,
+    subject,
+    origin: e.type === 'escalation_raised' ? ((e.payload as Payloads['escalation_raised']).origin ?? null) : null,
+  };
+}
+
+function resolveDecision(state: MatterState, decisionEventId: string, option: DecisionOption, note: string | null | undefined, e: EngineEvent): void {
+  const d = state.decisions[decisionEventId];
+  if (!d) return; // tolerate a dangling reference in a hand-edited log rather than throw mid-replay
+  d.status = resolvedStatus(option);
+  d.resolvedBy = e.actor;
+  d.resolvedAt = e.createdAt;
+  d.resolution = option;
+  d.resolutionEventId = e.id;
+  d.note = note ?? null;
+}
+
+const decisionOf = <T extends EventType>(e: EngineEvent<T>): DecisionSpec | null => {
+  const p = e.payload as { decision?: DecisionSpec };
+  return p.decision ?? null;
+};
+
+/** Apply one event. Returns a new state; never mutates the input. */
+export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
+  const s = clone(prev);
+  s.lastSeq = e.seq;
+  s.lastEventAt = e.createdAt;
+
+  // Every decision-bearing event registers its decision in one place.
+  if (DECISION_EVENT_TYPES.includes(e.type)) {
+    const spec = decisionOf(e);
+    if (spec) addDecision(s, e, spec, subjectOf(e));
+  }
+
+  switch (e.type) {
+    case 'matter_created': {
+      const p = e.payload as Payloads['matter_created'];
+      s.enrolled = true;
+      s.transactionType = p.transactionType;
+      s.hasLender = p.hasLender;
+      s.requiredSearches = [...p.requiredSearches];
+      s.targetExchangeDate = p.targetExchangeDate ?? null;
+      s.targetCompletionDate = p.targetCompletionDate ?? null;
+      s.mortgage.status = p.hasLender ? 'awaiting' : 'not_required';
+      s.stage = 'instruction';
+      s.stageHistory = [{ stage: 'instruction', at: e.createdAt, seq: e.seq }];
+      break;
+    }
+    case 'stage_advanced': {
+      const p = e.payload as Payloads['stage_advanced'];
+      s.stage = p.to;
+      s.stageHistory.push({ stage: p.to, at: e.createdAt, seq: e.seq });
+      break;
+    }
+    case 'manual_handling_required': {
+      const p = e.payload as Payloads['manual_handling_required'];
+      s.manualHandling = { required: true, reason: p.reason };
+      break;
+    }
+
+    // ── ID / AML ──
+    case 'id_check_requested': {
+      s.idCheck.status = 'requested';
+      s.idCheck.requestedAt = e.createdAt;
+      openWait(s, 'id_check', '', e);
+      break;
+    }
+    case 'id_check_cleared': {
+      s.idCheck.status = 'cleared';
+      s.idCheck.documentId = e.sourceDocumentId ?? s.idCheck.documentId;
+      closeWait(s, 'id_check', null, e);
+      break;
+    }
+    case 'id_check_flagged': {
+      s.idCheck.status = 'flagged';
+      s.idCheck.documentId = e.sourceDocumentId ?? s.idCheck.documentId;
+      s.idCheck.decisionEventId = e.id;
+      closeWait(s, 'id_check', null, e);
+      break;
+    }
+    case 'id_check_reviewed': {
+      const p = e.payload as Payloads['id_check_reviewed'];
+      if (p.option !== 'escalate') s.idCheck.status = 'reviewed';
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Searches ──
+    case 'search_ordered': {
+      const p = e.payload as Payloads['search_ordered'];
+      s.searches[p.searchType] = {
+        searchType: p.searchType,
+        status: 'ordered',
+        orderedAt: e.createdAt,
+        returnedAt: null,
+        documentId: null,
+        facts: null,
+        flags: [],
+        decisionEventId: null,
+        resolution: null,
+      };
+      openWait(s, 'search', p.searchType, e);
+      break;
+    }
+    case 'search_returned': {
+      const p = e.payload as Payloads['search_returned'];
+      const sr = s.searches[p.searchType];
+      if (sr) {
+        sr.status = 'returned';
+        sr.returnedAt = e.createdAt;
+        sr.documentId = e.sourceDocumentId ?? sr.documentId;
+      }
+      closeWait(s, 'search', p.searchType, e);
+      break;
+    }
+    case 'search_extracted': {
+      const p = e.payload as Payloads['search_extracted'];
+      const sr = s.searches[p.searchType];
+      if (sr) {
+        sr.status = 'extracted';
+        sr.facts = p.facts;
+      }
+      break;
+    }
+    case 'search_cleared': {
+      const p = e.payload as Payloads['search_cleared'];
+      const sr = s.searches[p.searchType];
+      if (sr) sr.status = 'cleared';
+      break;
+    }
+    case 'search_flagged': {
+      const p = e.payload as Payloads['search_flagged'];
+      const sr = s.searches[p.searchType];
+      if (sr) {
+        sr.status = 'flagged';
+        sr.flags = p.flags;
+        sr.decisionEventId = e.id;
+      }
+      break;
+    }
+    case 'search_reviewed': {
+      const p = e.payload as Payloads['search_reviewed'];
+      const sr = s.searches[p.searchType];
+      if (sr && p.option !== 'escalate') {
+        sr.status = 'reviewed';
+        sr.resolution = p.option;
+      }
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Enquiries ──
+    case 'enquiry_raised': {
+      const p = e.payload as Payloads['enquiry_raised'];
+      s.enquiries[p.enquiryId] = {
+        enquiryId: p.enquiryId,
+        subject: p.subject,
+        status: 'raised',
+        raisedAt: e.createdAt,
+        repliedAt: null,
+        documentId: null,
+        decisionEventId: null,
+        resolution: null,
+      };
+      openWait(s, 'enquiry', p.enquiryId, e);
+      break;
+    }
+    case 'enquiry_reply_received': {
+      const p = e.payload as Payloads['enquiry_reply_received'];
+      const q = s.enquiries[p.enquiryId];
+      if (q) {
+        q.status = 'replied';
+        q.repliedAt = e.createdAt;
+        q.documentId = e.sourceDocumentId ?? q.documentId;
+      }
+      closeWait(s, 'enquiry', p.enquiryId, e);
+      break;
+    }
+    case 'enquiry_reply_cleared': {
+      const p = e.payload as Payloads['enquiry_reply_cleared'];
+      const q = s.enquiries[p.enquiryId];
+      if (q) q.status = 'cleared';
+      break;
+    }
+    case 'enquiry_reply_flagged': {
+      const p = e.payload as Payloads['enquiry_reply_flagged'];
+      const q = s.enquiries[p.enquiryId];
+      if (q) {
+        q.status = 'flagged';
+        q.decisionEventId = e.id;
+      }
+      break;
+    }
+    case 'enquiry_reply_reviewed': {
+      const p = e.payload as Payloads['enquiry_reply_reviewed'];
+      const q = s.enquiries[p.enquiryId];
+      if (q && p.option !== 'escalate') {
+        q.status = 'reviewed';
+        q.resolution = p.option;
+      }
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Mortgage ──
+    case 'mortgage_offer_received': {
+      s.mortgage.status = 'received';
+      s.mortgage.documentId = e.sourceDocumentId ?? s.mortgage.documentId;
+      s.mortgage.decisionEventId = null;
+      break;
+    }
+    case 'mortgage_offer_extracted': {
+      const p = e.payload as Payloads['mortgage_offer_extracted'];
+      s.mortgage.status = 'extracted';
+      s.mortgage.facts = p.facts;
+      break;
+    }
+    case 'mortgage_offer_cleared':
+      s.mortgage.status = 'cleared';
+      break;
+    case 'mortgage_condition_flagged':
+      s.mortgage.status = 'flagged';
+      s.mortgage.decisionEventId = e.id;
+      break;
+    case 'mortgage_condition_reviewed': {
+      const p = e.payload as Payloads['mortgage_condition_reviewed'];
+      if (p.option !== 'escalate') s.mortgage.status = 'reviewed';
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Title ──
+    case 'title_extracted': {
+      const p = e.payload as Payloads['title_extracted'];
+      s.title.status = 'extracted';
+      s.title.facts = p.facts;
+      s.title.documentId = e.sourceDocumentId ?? s.title.documentId;
+      s.title.decisionEventId = null;
+      break;
+    }
+    case 'title_cleared':
+      s.title.status = 'cleared';
+      break;
+    case 'title_flagged':
+      s.title.status = 'flagged';
+      s.title.decisionEventId = e.id;
+      break;
+    case 'title_reviewed': {
+      const p = e.payload as Payloads['title_reviewed'];
+      if (p.option !== 'escalate') s.title.status = 'reviewed';
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Report on title ──
+    case 'report_on_title_drafted': {
+      const p = e.payload as Payloads['report_on_title_drafted'];
+      s.reportOnTitle = {
+        status: 'drafted',
+        draftId: p.draftId,
+        draftEventId: e.id,
+        draftDocumentId: p.draftDocumentId,
+        approvedEventId: null,
+        approvedBy: null,
+        sentAt: null,
+      };
+      break;
+    }
+    case 'report_on_title_approved': {
+      const p = e.payload as Payloads['report_on_title_approved'];
+      if (s.reportOnTitle.draftId === p.draftId) {
+        s.reportOnTitle.status = 'approved';
+        s.reportOnTitle.approvedEventId = e.id;
+        s.reportOnTitle.approvedBy = e.actor;
+      }
+      resolveDecision(s, p.decisionEventId, 'approve', p.note, e);
+      break;
+    }
+    case 'report_on_title_rejected': {
+      const p = e.payload as Payloads['report_on_title_rejected'];
+      if (s.reportOnTitle.draftId === p.draftId) s.reportOnTitle.status = 'rejected';
+      resolveDecision(s, p.decisionEventId, 'reject', p.note, e);
+      break;
+    }
+    case 'report_on_title_sent': {
+      const p = e.payload as Payloads['report_on_title_sent'];
+      if (s.reportOnTitle.draftId === p.draftId) {
+        s.reportOnTitle.status = 'sent';
+        s.reportOnTitle.sentAt = e.createdAt;
+      }
+      break;
+    }
+
+    // ── Exchange ──
+    case 'deposit_received':
+      s.deposit = { received: true, at: e.createdAt };
+      break;
+    case 'exchange_conditions_met':
+      s.exchange.conditionsMet = true;
+      break;
+    case 'contracts_exchanged': {
+      const p = e.payload as Payloads['contracts_exchanged'];
+      s.exchange.exchangedAt = p.exchangedAt ?? e.createdAt;
+      s.exchange.completionDate = p.completionDate;
+      break;
+    }
+
+    // ── Completion ──
+    case 'completion_statement_generated':
+      s.completion.statementGeneratedAt = e.createdAt;
+      break;
+    case 'funds_requested': {
+      const p = e.payload as Payloads['funds_requested'];
+      s.completion.fundsRequestedAt = e.createdAt;
+      openWait(s, 'funds', p.fromRole, e);
+      break;
+    }
+    case 'funds_received': {
+      const p = e.payload as Payloads['funds_received'];
+      closeWait(s, 'funds', p.fromRole, e);
+      if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null)) s.completion.fundsReceivedAt = e.createdAt;
+      break;
+    }
+    case 'completion_confirmed': {
+      const p = e.payload as Payloads['completion_confirmed'];
+      s.completion.confirmedAt = p.completedAt ?? e.createdAt;
+      break;
+    }
+
+    // ── Post-completion ──
+    case 'sdlt_submitted':
+      s.postCompletion.sdltSubmittedAt = e.createdAt;
+      break;
+    case 'ap1_submitted':
+      s.postCompletion.ap1SubmittedAt = e.createdAt;
+      openWait(s, 'registration', '', e);
+      break;
+    case 'ap1_confirmed':
+      s.postCompletion.ap1ConfirmedAt = e.createdAt;
+      closeWait(s, 'registration', null, e);
+      break;
+
+    // ── Comms / chasing / escalation ──
+    case 'client_update_sent':
+      s.clientUpdatesSent += 1;
+      break;
+    case 'chase_sent': {
+      const p = e.payload as Payloads['chase_sent'];
+      s.chasesSent += 1;
+      const w = findOpenWait(s, p.waitKey, p.subject);
+      if (w) w.chasesSentAt.push(e.createdAt);
+      break;
+    }
+    case 'escalation_raised': {
+      const p = e.payload as Payloads['escalation_raised'];
+      if (p.waitKey) {
+        const w = findOpenWait(s, p.waitKey, p.subject);
+        if (w) w.escalations.push({ eventId: e.id, raisedAt: e.createdAt, resolvedAt: null });
+      }
+      break;
+    }
+    case 'escalation_resolved': {
+      const p = e.payload as Payloads['escalation_resolved'];
+      for (const w of s.waits) {
+        const esc = w.escalations.find((x) => x.eventId === p.escalationEventId);
+        if (esc) esc.resolvedAt = e.createdAt;
+      }
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
+    // ── Decision audit ──
+    case 'decision_source_opened': {
+      const p = e.payload as Payloads['decision_source_opened'];
+      const d = s.decisions[p.decisionEventId];
+      if (d && !d.openedBy.includes(e.actor)) d.openedBy.push(e.actor);
+      break;
+    }
+  }
+  return s;
+}
+
+/** Human-readable subject for a decision-bearing event (what it is about). */
+function subjectOf(e: EngineEvent): string | null {
+  const p = e.payload as Record<string, unknown>;
+  if (typeof p.searchType === 'string') return p.searchType;
+  if (typeof p.enquiryId === 'string') return p.enquiryId;
+  if (typeof p.draftId === 'string') return p.draftId;
+  if (e.type === 'escalation_raised') {
+    const q = p as Payloads['escalation_raised'];
+    return q.waitKey ? `${q.waitKey}:${q.subject}` : q.subject || null;
+  }
+  return null;
+}

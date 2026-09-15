@@ -17,6 +17,20 @@ This single Next.js app serves three things:
 
 The product features are **feature-gated**: if their env vars aren't set, the marketing site still builds and deploys, and product routes return a clean `503` listing the missing variables (`GET /api/v1/health` shows which features are live).
 
+### Conveyancing engine (state machine)
+
+`lib/server/engine/` is the event-sourced state machine that runs a residential freehold
+purchase (buyer-side): an immutable per-matter event log, a pure projection, a deterministic
+rule layer that auto-clears or flags each search / enquiry reply / mortgage condition / title
+entry, a working-day SLA timer that chases and escalates, and a decision feed that forces the
+handler to open the source before resolving. Components around it (extraction, AI drafting,
+InfoTrack, client comms) are stubbed behind ports. See **docs/conveyance-engine.md**.
+
+```bash
+npm run test:unit    # machine, rules, SLA, full-lifecycle replay audit
+npm run typecheck
+```
+
 ### Product setup
 
 1. **Database** — point `DATABASE_URL` at Supabase Postgres, then run migrations (enables `vector` + `pgcrypto`, creates all tables):
