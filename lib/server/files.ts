@@ -18,6 +18,7 @@ import { stripHtml } from './text';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { emitMatterEvent } from './events';
+import { ingestFiledDocument } from './engine/ingest-hook';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
@@ -116,6 +117,9 @@ export async function processMatterFile(
     }).catch(() => {});
     // A changed file with this name supersedes older versions on the matter.
     if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, opts.fileName, doc.id).catch(() => {});
+    // Conveyancing engine (component #2): classify + route the new document into the
+    // matter's sub-flows. No-op unless the matter is enrolled; never fails the filing.
+    if (doc?.id) await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => {});
   }
 
   // Always reflect the arrival in the Excel tracker. Written as the matter's drive

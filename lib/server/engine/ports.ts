@@ -91,9 +91,27 @@ export interface ThirdPartyChaser {
   }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null }>;
 }
 
+/** Component #2, front half: which sub-flow does an arriving document belong to? */
+export interface DocumentClassifier {
+  readonly name: string;
+  classify(doc: DocumentRef): Promise<DocumentClassification>;
+}
+
+export interface DocumentClassification {
+  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'other';
+  searchType: SearchType | null;
+  enquiryReferences: string[];
+  titleNumber: string | null;
+  lender: string | null;
+  confidence: number;
+  reason: string;
+}
+
 export interface EnginePorts {
   documents: DocumentRepository;
   extractor: DocumentExtractor;
+  /** Optional: without a classifier, documents must be ingested with an explicit role (the /ingest route). */
+  classifier?: DocumentClassifier | null;
   summariser: DecisionSummariser;
   reportDrafter: ReportDrafter;
   searchProvider: SearchProvider;

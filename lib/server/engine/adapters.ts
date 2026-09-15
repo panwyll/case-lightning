@@ -5,7 +5,8 @@
  *
  *   documents      → PgDocumentRepository        (real: the existing `document` table)
  *   event log      → PgEventStore                (real: migration 065)
- *   extractor      → FixtureExtractor            (STUB #2 — reads document.extracted_facts)
+ *   extractor      → ClaudeExtractor when ANTHROPIC_API_KEY is set (component #2, extraction.ts);
+ *                    FixtureExtractor otherwise (reads document.extracted_facts)
  *   summariser     → TemplateSummariser          (STUB #3 — deterministic prose)
  *   reportDrafter  → TemplateReportDrafter       (STUB #3)
  *   searchProvider → MockSearchProvider          (STUB #4 — InfoTrack)
@@ -15,10 +16,15 @@
  */
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
+import { config } from '../config';
+import { downloadDriveItem } from '../graph';
+import { driveUserFor } from '../matter-drive';
 import { FixtureExtractor, MockChaser, MockClientComms, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
-import type { DocumentRef, DocumentRepository, EnginePorts } from './ports';
+import type { DocumentClassification, DocumentClassifier, DocumentRef, DocumentRepository, EnginePorts } from './ports';
 import { EngineService } from './service';
 import { PgEventStore } from './store';
+import { claudeLlm, type EngineDocumentInput } from './llm';
+import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
 
 interface DocRow {
   id: string;
@@ -70,14 +76,83 @@ export async function setDocumentFacts(tenantId: string, documentId: string, fac
   await query(`update document set extracted_facts = $3::jsonb, extraction_confidence = $4 where id = $1 and tenant_id = $2`, [documentId, tenantId, JSON.stringify(facts), confidence]);
 }
 
+/**
+ * Reads a document's bytes for the extractor. Engine-generated documents carry their
+ * text inline; user files live in the matter's OneDrive folder (Graph, as the drive
+ * owner); provider downloads that could not be uploaded to OneDrive sit in
+ * document_blob (migration 066). Anything else is unreadable → the extractor fails →
+ * the engine flags it for a human.
+ */
+export class PgDocumentBytesLoader implements DocumentBytesLoader {
+  async load(doc: DocumentRef): Promise<EngineDocumentInput | null> {
+    const inline = (doc.extractedFacts as { content?: string } | null)?.content;
+    if (typeof inline === 'string' && inline.length) return { kind: 'text', data: inline, title: doc.fileName ?? undefined };
+    const row = await queryOne<{ graph_item_id: string | null; mime_type: string | null; created_by: string | null; blob: Buffer | null }>(
+      `select d.graph_item_id, d.mime_type, d.created_by, (select b.bytes from document_blob b where b.document_id = d.id) as blob
+         from document d where d.id = $1 and d.tenant_id = $2`,
+      [doc.id, doc.tenantId]
+    ).catch(() => null);
+    if (!row) return null;
+    let bytes: Buffer | null = row.blob ?? null;
+    if (!bytes && row.graph_item_id) {
+      const owner = await driveUserFor(doc.tenantId, doc.matterId, row.created_by ?? '');
+      if (!owner) return null;
+      bytes = await downloadDriveItem(owner, row.graph_item_id);
+    }
+    if (!bytes) return null;
+    const mime = row.mime_type ?? '';
+    const name = doc.fileName ?? '';
+    if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return { kind: 'pdf', data: bytes.toString('base64'), title: name || undefined };
+    if (/^image\//.test(mime) || /\.(png|jpe?g|gif|webp)$/i.test(name)) return { kind: 'image', data: bytes.toString('base64'), mimeType: mime || 'image/jpeg', title: name || undefined };
+    if (mime.startsWith('text/') || /\.(txt|md|csv)$/i.test(name)) return { kind: 'text', data: bytes.toString('utf8').slice(0, 200_000), title: name || undefined };
+    return null; // .docx etc. — not read by the pipeline yet; the human handles it
+  }
+}
+
+export class PgDocumentFactsWriter implements DocumentFactsWriter {
+  async write(doc: DocumentRef, facts: unknown, confidence: number): Promise<void> {
+    await query(`update document set extracted_facts = $3::jsonb, extraction_confidence = $4 where id = $1 and tenant_id = $2`, [doc.id, doc.tenantId, JSON.stringify(facts), confidence]);
+  }
+}
+
+/** Adapts the extractor's classify() to the DocumentClassifier port. */
+class ClaudeClassifier implements DocumentClassifier {
+  readonly name: string;
+  constructor(private extractor: ClaudeExtractor) {
+    this.name = `claude-classifier:${extractor.name}`;
+  }
+  async classify(doc: DocumentRef): Promise<DocumentClassification> {
+    const c = await this.extractor.classify(doc);
+    return {
+      role: c.role,
+      searchType: c.searchType === 'NONE' ? null : c.searchType,
+      enquiryReferences: c.enquiryReferences,
+      titleNumber: c.titleNumber || null,
+      lender: c.lender || null,
+      confidence: c.scanQuality === 'unreadable' ? 0 : c.confidence,
+      reason: c.reason,
+    };
+  }
+}
+
+/** Real pipeline when a Claude key is present (or forced), otherwise the fixture stub. */
+function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: DocumentClassifier | null } {
+  const useClaude = config.engineExtractor === 'claude' || (config.engineExtractor === 'auto' && !!config.anthropicApiKey);
+  if (!useClaude) return { extractor: new FixtureExtractor(), classifier: null };
+  const ex = new ClaudeExtractor(claudeLlm(), new PgDocumentBytesLoader(), new PgDocumentFactsWriter(), { model: config.engineExtractModel, effort: 'high' });
+  return { extractor: ex, classifier: new ClaudeClassifier(ex) };
+}
+
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
 export function productionPorts(): EnginePorts {
   if (!_ports) {
+    const { extractor, classifier } = chooseExtractor();
     _ports = {
       documents: new PgDocumentRepository(),
-      extractor: new FixtureExtractor(),
+      extractor,
+      classifier,
       summariser: new TemplateSummariser(),
       reportDrafter: new TemplateReportDrafter(),
       searchProvider: new MockSearchProvider(),

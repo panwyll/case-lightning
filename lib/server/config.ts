@@ -66,6 +66,37 @@ export const config = {
   anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-4-6',
   anthropicClassifyModel: env('ANTHROPIC_CLASSIFY_MODEL') ?? 'claude-haiku-4-5',
 
+  // Conveyancing engine models. Extraction reads scanned PDFs and must be right —
+  // it runs on the most capable tier; summaries/report drafts likewise (they are
+  // reviewed by a person but the citations must be exact). Client Q&A is tightly
+  // constrained to FAQ rephrasing so it runs at low effort on the same model.
+  engineExtractModel: env('ENGINE_EXTRACT_MODEL') ?? 'claude-opus-5',
+  engineDraftModel: env('ENGINE_DRAFT_MODEL') ?? 'claude-opus-5',
+  engineQaModel: env('ENGINE_QA_MODEL') ?? 'claude-opus-5',
+  // Which port implementations the engine wires (adapters.ts). Each is 'mock' until
+  // its credentials are present; set explicitly to force one way or the other.
+  engineExtractor: (env('ENGINE_EXTRACTOR') ?? 'auto') as 'auto' | 'claude' | 'fixture',
+  engineAi: (env('ENGINE_AI') ?? 'auto') as 'auto' | 'claude' | 'template',
+
+  // InfoTrack (searches, AML/ID, HMLR official copies) — component #4.
+  infotrackBaseUrl: env('INFOTRACK_BASE_URL'),
+  infotrackClientId: env('INFOTRACK_CLIENT_ID'),
+  infotrackClientSecret: env('INFOTRACK_CLIENT_SECRET'),
+  infotrackTokenUrl: env('INFOTRACK_TOKEN_URL'),
+  infotrackWebhookSecret: env('INFOTRACK_WEBHOOK_SECRET'),
+
+  // Client comms — component #5. WhatsApp via the Meta Cloud API; email via Resend.
+  whatsappPhoneNumberId: env('WHATSAPP_PHONE_NUMBER_ID'),
+  whatsappAccessToken: env('WHATSAPP_ACCESS_TOKEN'),
+  whatsappVerifyToken: env('WHATSAPP_VERIFY_TOKEN'),
+  whatsappAppSecret: env('WHATSAPP_APP_SECRET'),
+  resendApiKey: env('RESEND_API_KEY'),
+  resendFromEmail: env('RESEND_FROM_EMAIL'),
+  // Third-party chases: 'draft' leaves an Outlook draft + worklist item for a human to
+  // send (default, safest); 'send' sends the template chase automatically from the
+  // matter's fee-earner mailbox (spec #5: automated template chases).
+  chaseMode: (env('ENGINE_CHASE_MODE') ?? 'draft') as 'draft' | 'send',
+
   // Groq failover (OpenAI-compatible). Used only when no Anthropic key is set —
   // a cheaper/faster stopgap; Anthropic is preferred for drafting quality.
   groqApiKey: env('GROQ_API_KEY'),

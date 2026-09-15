@@ -26,6 +26,12 @@ export type UsageFeature =
   | 'MATTER_PROPOSE'
   | 'VOICE_PROFILE'
   | 'PLAYBOOK_SUGGEST'
+  // Conveyancing engine (lib/server/engine)
+  | 'DOC_CLASSIFY'
+  | 'DOC_EXTRACT'
+  | 'DECISION_SUMMARY'
+  | 'REPORT_DRAFT'
+  | 'CLIENT_QA'
   | 'EMBED';
 
 export interface UsageContext {
