@@ -19,7 +19,7 @@ import { query as dbQuery, transaction as dbTransaction } from '../db';
 import { project } from './projection';
 import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
-import { LEGACY_STAGE, STAGES, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type WaitKey } from './types';
+import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, pendingDecisions, surfacedDecisions, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type WaitKey } from './types';
 
 export interface MatterTx {
   load(): Promise<EngineEvent[]>;
@@ -41,6 +41,51 @@ export interface PendingDecisionRow extends DecisionState {
   matterRef: string | null;
   propertyAddress: string | null;
   stage: string;
+  shadowMode: boolean;
+}
+
+/** Addendum 3 §3: one queue row per matter. */
+export interface QueueRow {
+  tenantId: string;
+  matterId: string;
+  matterRef: string | null;
+  propertyAddress: string | null;
+  stage: string;
+  shadowMode: boolean;
+  assignedTo: string | null;
+  /** Surfaced decisions waiting on a person (assist-level auto-clear reviews excluded). */
+  pendingCount: number;
+  /** Advisory auto-clear reviews waiting (assist level). */
+  reviewCount: number;
+  /** Every pending decision in the log, surfaced or not (the rollout board counts shadow conclusions). */
+  loggedCount: number;
+  oldestPendingAt: string | null;
+  targetCompletionDate: string | null;
+  targetExchangeDate: string | null;
+  manualHandling: boolean;
+  updatedAt: string;
+}
+
+export interface QueueOptions {
+  /** Only matters assigned to this handler (the default view); null → every enrolled matter. */
+  assignedTo?: string | null;
+  sort?: 'oldest_pending' | 'target_completion';
+  includeShadow?: boolean;
+  limit?: number;
+}
+
+/** Addendum 3 §2: a person's record of whether the engine's conclusion matched what they actually did. */
+export interface ShadowReview {
+  id: string;
+  tenantId: string;
+  matterId: string;
+  eventId: string;
+  subFlow: string;
+  agrees: boolean;
+  humanOutcome: string | null;
+  note: string | null;
+  reviewer: string;
+  createdAt: string;
 }
 
 export interface EventStore {
@@ -48,12 +93,65 @@ export interface EventStore {
   listEvents(tenantId: string, matterId: string, opts?: { afterSeq?: number; limit?: number }): Promise<EngineEvent[]>;
   /** Matters the timer sweep should visit (enrolled and not finished). */
   listActiveMatters(tenantId?: string | null): Promise<EnrolledMatter[]>;
-  listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number }): Promise<PendingDecisionRow[]>;
+  /**
+   * Decisions a person may be shown: pending, on non-shadow matters, from non-shadow
+   * sub-flows (addendum 3 §2). `includeShadow` is for the comparison view only.
+   */
+  listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number; includeShadow?: boolean }): Promise<PendingDecisionRow[]>;
   /** Any decision (pending or not) by its event id — the dashboard's detail/resolve routes need the matter it belongs to. */
   findDecision(tenantId: string, eventId: string): Promise<PendingDecisionRow | null>;
   loadSla(tenantId: string): Promise<SlaConfig>;
   /** The cached read model, for the audit's replay check (null when none / in memory). */
   cachedState(tenantId: string, matterId: string): Promise<MatterState | null>;
+  /** Addendum 3 §2: per-sub-flow trust levels. Missing rows are `assist`. */
+  loadSubflows(tenantId: string): Promise<SubflowConfig>;
+  setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, userId: string | null): Promise<SubflowConfig>;
+  /** Addendum 3 §3: the handler's queue — one row per matter. */
+  listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]>;
+  /** Addendum 3 §2: the comparison record. */
+  listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]>;
+  recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview>;
+}
+
+const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, stage: s.stage, shadowMode: s.shadowMode });
+
+function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, cfg: SubflowConfig): QueueRow {
+  const surfaced = surfacedDecisions(s, cfg);
+  const pending = surfaced.filter((d) => d.kind !== 'auto_clear');
+  return {
+    tenantId: s.tenantId,
+    matterId: s.matterId,
+    matterRef: meta?.matterRef ?? null,
+    propertyAddress: meta?.propertyAddress ?? null,
+    stage: s.stage,
+    shadowMode: s.shadowMode,
+    assignedTo: meta?.assignedTo ?? null,
+    pendingCount: pending.length,
+    reviewCount: surfaced.length - pending.length,
+    loggedCount: pendingDecisions(s).length,
+    oldestPendingAt: pending.length ? pending[0].createdAt : null,
+    targetCompletionDate: s.targetCompletionDate,
+    targetExchangeDate: s.targetExchangeDate,
+    manualHandling: s.manualHandling.required,
+    updatedAt: meta?.updatedAt ?? s.lastEventAt ?? '',
+  };
+}
+
+function sortQueue(rows: QueueRow[], sort: QueueOptions['sort']): QueueRow[] {
+  const byPending = (a: QueueRow, b: QueueRow) => {
+    // Matters with something waiting first, oldest waiting decision first; the rest by last activity.
+    if (a.oldestPendingAt && b.oldestPendingAt) return a.oldestPendingAt.localeCompare(b.oldestPendingAt);
+    if (a.oldestPendingAt) return -1;
+    if (b.oldestPendingAt) return 1;
+    return b.updatedAt.localeCompare(a.updatedAt);
+  };
+  const byTarget = (a: QueueRow, b: QueueRow) => {
+    if (a.targetCompletionDate && b.targetCompletionDate) return a.targetCompletionDate.localeCompare(b.targetCompletionDate) || byPending(a, b);
+    if (a.targetCompletionDate) return -1;
+    if (b.targetCompletionDate) return 1;
+    return byPending(a, b);
+  };
+  return [...rows].sort(sort === 'target_completion' ? byTarget : byPending);
 }
 
 export class ConcurrencyError extends Error {
@@ -71,7 +169,9 @@ export class MemoryEventStore implements EventStore {
   private states = new Map<string, MatterState>();
   private locks = new Map<string, Promise<unknown>>();
   private slaOverrides = new Map<string, Array<Partial<SlaRule> & { waitKey: WaitKey }>>();
-  matterMeta = new Map<string, { matterRef: string | null; propertyAddress: string | null }>();
+  private subflows = new Map<string, SubflowConfig>();
+  private reviews: ShadowReview[] = [];
+  matterMeta = new Map<string, { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null }>();
 
   private key(tenantId: string, matterId: string) {
     return `${tenantId}:${matterId}`;
@@ -124,15 +224,15 @@ export class MemoryEventStore implements EventStore {
     return out;
   }
 
-  async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number }): Promise<PendingDecisionRow[]> {
+  async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number; includeShadow?: boolean }): Promise<PendingDecisionRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
     const rows: PendingDecisionRow[] = [];
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId) continue;
       if (opts?.matterId && s.matterId !== opts.matterId) continue;
       const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
-      for (const d of Object.values(s.decisions)) {
-        if (d.status === 'pending') rows.push({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, stage: s.stage });
-      }
+      const list = opts?.includeShadow ? Object.values(s.decisions).filter((d) => d.status === 'pending') : surfacedDecisions(s, cfg);
+      for (const d of list) rows.push(row(s, d, meta));
     }
     rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.seq - b.seq);
     return opts?.limit ? rows.slice(0, opts.limit) : rows;
@@ -142,12 +242,44 @@ export class MemoryEventStore implements EventStore {
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId) continue;
       const d = s.decisions[eventId];
-      if (d) {
-        const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
-        return { ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, stage: s.stage };
-      }
+      if (d) return row(s, d, this.matterMeta.get(this.key(s.tenantId, s.matterId)));
     }
     return null;
+  }
+
+  async loadSubflows(tenantId: string): Promise<SubflowConfig> {
+    return { ...DEFAULT_SUBFLOW_CONFIG, ...(this.subflows.get(tenantId) ?? {}) };
+  }
+
+  async setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, _userId: string | null = null): Promise<SubflowConfig> {
+    this.subflows.set(tenantId, { ...(await this.loadSubflows(tenantId)), [subFlow]: status });
+    return this.loadSubflows(tenantId);
+  }
+
+  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
+    const rows: QueueRow[] = [];
+    for (const s of this.states.values()) {
+      if (s.tenantId !== tenantId || !s.enrolled) continue;
+      if (s.shadowMode && !opts?.includeShadow) continue;
+      const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
+      if (opts?.assignedTo && meta?.assignedTo !== opts.assignedTo) continue;
+      rows.push(queueRow(s, meta, cfg));
+    }
+    const sorted = sortQueue(rows, opts?.sort);
+    return opts?.limit ? sorted.slice(0, opts.limit) : sorted;
+  }
+
+  async listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]> {
+    return this.reviews.filter((r) => r.tenantId === tenantId && (!matterId || r.matterId === matterId));
+  }
+
+  async recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview> {
+    const existing = this.reviews.findIndex((r) => r.eventId === input.eventId && r.reviewer === input.reviewer);
+    const rec: ShadowReview = { ...input, id: existing >= 0 ? this.reviews[existing].id : `sr-${this.reviews.length + 1}`, createdAt: new Date().toISOString() };
+    if (existing >= 0) this.reviews[existing] = rec;
+    else this.reviews.push(rec);
+    return rec;
   }
 
   async cachedState(tenantId: string, matterId: string): Promise<MatterState | null> {
@@ -205,6 +337,17 @@ const rowToEvent = (r: EventRow): EngineEvent =>
 
 const EVENT_COLS = 'id, tenant_id, matter_id, seq, type, actor, payload, source_document_id, confidence_score, caused_by_event_id, created_at, prev_hash, hash';
 
+interface PgDecisionRow {
+  decision: DecisionState;
+  tenant_id: string;
+  matter_id: string;
+  matter_ref: string | null;
+  property_address: string | null;
+  stage: string;
+  shadow_mode: boolean | null;
+}
+const pgDecisionRow = (r: PgDecisionRow): PendingDecisionRow => ({ ...r.decision, tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, stage: r.stage, shadowMode: !!r.shadow_mode });
+
 export class PgEventStore implements EventStore {
   async withMatterLock<T>(tenantId: string, matterId: string, fn: (tx: MatterTx) => Promise<T>): Promise<T> {
     return dbTransaction(async (client) => {
@@ -261,30 +404,88 @@ export class PgEventStore implements EventStore {
     );
   }
 
-  async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number }): Promise<PendingDecisionRow[]> {
-    const rows = await dbQuery<{ decision: DecisionState; tenant_id: string; matter_id: string; matter_ref: string | null; property_address: string | null; stage: string }>(
-      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, s.stage
+  async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number; includeShadow?: boolean }): Promise<PendingDecisionRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
+    const shadowed = SUB_FLOWS.filter((sf) => cfg[sf] === 'shadow');
+    const hiddenKinds = opts?.includeShadow ? [] : (Object.keys(SUBFLOW_OF_KIND) as Array<keyof typeof SUBFLOW_OF_KIND>).filter((k) => SUBFLOW_OF_KIND[k] && shadowed.includes(SUBFLOW_OF_KIND[k] as SubFlow));
+    const rows = await dbQuery<PgDecisionRow>(
+      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, s.stage, coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) as shadow_mode
          from matter_decision d
          join matter m on m.id = d.matter_id
          left join matter_engine_state s on s.matter_id = d.matter_id
         where d.tenant_id = $1 and d.status = 'pending' and ($2::uuid is null or d.matter_id = $2::uuid)
+          and ($4::boolean or coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) = false)
+          and not (d.kind = any($5::text[]))
         order by d.created_at asc limit $3`,
-      [tenantId, opts?.matterId ?? null, opts?.limit ?? 200]
+      [tenantId, opts?.matterId ?? null, opts?.limit ?? 200, !!opts?.includeShadow, hiddenKinds]
     );
-    return rows.map((r) => ({ ...r.decision, tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, stage: r.stage }));
+    return rows.map(pgDecisionRow);
   }
 
   async findDecision(tenantId: string, eventId: string): Promise<PendingDecisionRow | null> {
-    const r = await dbQuery<{ decision: DecisionState; tenant_id: string; matter_id: string; matter_ref: string | null; property_address: string | null; stage: string }>(
-      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, s.stage
+    const r = await dbQuery<PgDecisionRow>(
+      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, s.stage, coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) as shadow_mode
          from matter_decision d
          join matter m on m.id = d.matter_id
          left join matter_engine_state s on s.matter_id = d.matter_id
         where d.tenant_id = $1 and d.event_id = $2`,
       [tenantId, eventId]
     );
-    const row = r[0];
-    return row ? { ...row.decision, tenantId: row.tenant_id, matterId: row.matter_id, matterRef: row.matter_ref, propertyAddress: row.property_address, stage: row.stage } : null;
+    return r[0] ? pgDecisionRow(r[0]) : null;
+  }
+
+  async loadSubflows(tenantId: string): Promise<SubflowConfig> {
+    const rows = await dbQuery<{ sub_flow: SubFlow; status: SubflowStatus }>(`select sub_flow, status from engine_subflow_status where tenant_id = $1`, [tenantId]).catch(() => []);
+    const cfg: SubflowConfig = { ...DEFAULT_SUBFLOW_CONFIG };
+    for (const r of rows) if ((SUB_FLOWS as readonly string[]).includes(r.sub_flow)) cfg[r.sub_flow] = r.status;
+    return cfg;
+  }
+
+  async setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, userId: string | null): Promise<SubflowConfig> {
+    await dbQuery(
+      `insert into engine_subflow_status (tenant_id, sub_flow, status, updated_by, updated_at) values ($1,$2,$3,$4,now())
+       on conflict (tenant_id, sub_flow) do update set status = excluded.status, updated_by = excluded.updated_by, updated_at = now()`,
+      [tenantId, subFlow, status, userId]
+    );
+    return this.loadSubflows(tenantId);
+  }
+
+  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
+    const rows = await dbQuery<{ state: MatterState; matter_ref: string | null; property_address: string | null; assigned_to: string | null; updated_at: Date | string }>(
+      `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at
+         from matter_engine_state s
+         join matter m on m.id = s.matter_id
+        where s.tenant_id = $1 and s.finished_at is null
+          and ($2::uuid is null or m.assigned_to = $2::uuid)
+          and ($3::boolean or coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) = false)
+        order by s.updated_at desc limit $4`,
+      [tenantId, opts?.assignedTo ?? null, !!opts?.includeShadow, opts?.limit ?? 500]
+    );
+    return sortQueue(
+      rows.map((r) => queueRow(r.state, { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
+      opts?.sort
+    );
+  }
+
+  async listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]> {
+    const rows = await dbQuery<{ id: string; tenant_id: string; matter_id: string; event_id: string; sub_flow: string; agrees: boolean; human_outcome: string | null; note: string | null; reviewer: string; created_at: Date | string }>(
+      `select id, tenant_id, matter_id, event_id, sub_flow, agrees, human_outcome, note, reviewer, created_at from engine_shadow_review
+        where tenant_id = $1 and ($2::uuid is null or matter_id = $2::uuid) order by created_at desc`,
+      [tenantId, matterId ?? null]
+    );
+    return rows.map((r) => ({ id: r.id, tenantId: r.tenant_id, matterId: r.matter_id, eventId: r.event_id, subFlow: r.sub_flow, agrees: r.agrees, humanOutcome: r.human_outcome, note: r.note, reviewer: r.reviewer, createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : new Date(r.created_at).toISOString() }));
+  }
+
+  async recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview> {
+    const r = await dbQuery<{ id: string; created_at: Date | string }>(
+      `insert into engine_shadow_review (tenant_id, matter_id, event_id, sub_flow, agrees, human_outcome, note, reviewer)
+       values ($1,$2,$3,$4,$5,$6,$7,$8)
+       on conflict (event_id, reviewer) do update set agrees = excluded.agrees, human_outcome = excluded.human_outcome, note = excluded.note, created_at = now()
+       returning id, created_at`,
+      [input.tenantId, input.matterId, input.eventId, input.subFlow, input.agrees, input.humanOutcome, input.note, input.reviewer]
+    );
+    return { ...input, id: r[0].id, createdAt: r[0].created_at instanceof Date ? r[0].created_at.toISOString() : new Date(r[0].created_at).toISOString() };
   }
 
   async cachedState(tenantId: string, matterId: string): Promise<MatterState | null> {
@@ -342,8 +543,15 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
       )
       .catch(() => {});
   }
+  // Addendum 3 §2: keep matter.shadow_mode in step with the log (it is queryable without projecting).
+  if (appended.some((e) => e.type === 'matter_created' || e.type === 'shadow_mode_changed')) {
+    await client.query(`update matter set shadow_mode = $1 where id = $2 and tenant_id = $3`, [state.shadowMode, state.matterId, state.tenantId]).catch(() => {});
+  }
   // Mirror stage moves onto the legacy board (forward-only) + the drawer's Activity tab.
+  // NOT in shadow mode: the engine's stage is its conclusion; the human's record stays theirs
+  // (that gap is exactly what the comparison view shows).
   for (const e of appended) {
+    if (state.shadowMode) break;
     if (e.type !== 'stage_advanced' && e.type !== 'matter_created') continue;
     const legacy = LEGACY_STAGE[state.stage];
     await client

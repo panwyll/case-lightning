@@ -138,4 +138,11 @@ export interface EnginePorts {
   newId: () => string;
   /** Where non-fatal effect failures go (never thrown). */
   log: (msg: string, detail?: unknown) => void;
+  /**
+   * Addendum 3 §1: run a block as AUTOMATION (the engine's own post-commit effects, timers).
+   * Production binds this to db.runAsAutomation, which switches the connection to the
+   * conveyi_automation role so the database itself refuses any human-gated event written
+   * from that block. Mocks run the block as-is.
+   */
+  asAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
 }

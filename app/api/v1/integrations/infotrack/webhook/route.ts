@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { assertFeature, config } from '@/lib/server/config';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
+import { runAsAutomation } from '@/lib/server/db';
 import { InfoTrackClient } from '@/lib/server/integrations/infotrack';
 import { handleInfoTrackResult } from '@/lib/server/integrations/infotrack';
 import { PgOrderStore, PgResultFiler, claimWebhookDelivery, finishWebhookDelivery, infotrackClient, infotrackConfigured } from '@/lib/server/integrations/infotrack-adapters';
@@ -33,10 +34,10 @@ export async function POST(req: NextRequest) {
     const svc = engine();
     let outcome;
     try {
-      outcome = await handleInfoTrackResult(
+      outcome = await runAsAutomation(() => handleInfoTrackResult(
         { client: infotrackClient(), orders: new PgOrderStore(), filer: new PgResultFiler(), router: svc },
         event
-      );
+      ));
     } catch (err) {
       await finishWebhookDelivery('infotrack', event.deliveryId, 'FAILED', (err as Error).message);
       throw err;

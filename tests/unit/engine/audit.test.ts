@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { canonicalJson, eventHash, verifyChain, buildAuditReport, auditCsv } from '../../../lib/server/engine/audit';
 import type { EngineEvent } from '../../../lib/server/engine/types';
-import { harness, resolve, TENANT, MATTER, USER, idClear, searchFlagged } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchFlagged } from './helpers';
 
 test('canonicalJson is key-order independent and drops undefined', () => {
   assert.equal(canonicalJson({ b: 1, a: { d: undefined, c: [3, { z: 1, y: 2 }] } }), '{"a":{"c":[3,{"y":2,"z":1}]},"b":1}');
@@ -14,7 +14,7 @@ test('hash chain: every append links to the previous hash; verification is deter
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));
-  await resolve(h, Object.values(r.state.decisions)[0].eventId, 'approve');
+  await resolve(h, firstDecision(r.state).eventId, 'approve');
   const log = h.store.dump(TENANT, MATTER);
   assert.ok(log.length > 8);
   assert.equal(log[0].prevHash, '');
@@ -61,18 +61,19 @@ test('audit report: replay vs read model, summary counts, CSV export', async () 
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));
-  await resolve(h, Object.values(r.state.decisions)[0].eventId, 'approve', USER, 'ok');
+  await resolve(h, firstDecision(r.state).eventId, 'approve', USER, 'ok');
   const log = h.store.dump(TENANT, MATTER);
   const cached = await h.store.cachedState(TENANT, MATTER);
   const report = buildAuditReport(TENANT, MATTER, log, cached, new Date('2026-09-15T00:00:00Z'));
   assert.equal(report.chain.ok, true);
   assert.equal(report.replay.ok, true);
-  assert.equal(report.summary.decisions, 1);
+  assert.equal(report.summary.decisions, 2, 'the flagged search plus the assist-level review of the clear ID check');
+  assert.equal(report.summary.autoClearReviews, 1);
   assert.equal(report.summary.decisionsResolvedWithoutOpeningSource, 0);
   assert.equal(report.summary.aiSentWithoutApproval, 0);
   assert.ok(report.summary.byActorKind.user >= 3);
   assert.ok(report.summary.byActorKind.system >= 3);
-  assert.equal(report.summary.byActorKind.ai, 1);
+  assert.equal(report.summary.byActorKind.ai, 2, 'search_flagged plus the auto_clear_review_raised for the ID check');
   // a drifted read model is caught
   const drifted = JSON.parse(JSON.stringify(cached));
   drifted.stage = 'completed';

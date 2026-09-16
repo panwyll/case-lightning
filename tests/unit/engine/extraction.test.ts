@@ -5,7 +5,7 @@ import { FakeLlm } from '../../../lib/server/engine/llm';
 import { routeClassification, ingestDocument } from '../../../lib/server/engine/ingest';
 import { initialState } from '../../../lib/server/engine/types';
 import type { DocumentClassification, DocumentRef } from '../../../lib/server/engine/ports';
-import { harness, TENANT, MATTER, USER, idClear } from './helpers';
+import { harness, firstDecision, TENANT, MATTER, USER, idClear } from './helpers';
 
 const loc = { page: 4, section: '3.7', quote: 'Enforcement notice served 12/03/2024' };
 
@@ -124,7 +124,7 @@ test('ingestDocument end to end: a classified search result flows into the engin
   assert.equal(report.action.kind, 'search');
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.searches.CON29.status, 'flagged');
-  assert.equal(Object.values(s.decisions)[0].sourceDocumentId, docId);
+  assert.equal(firstDecision(s).sourceDocumentId, docId);
 });
 
 test('ClassificationSchema accepts the shape the classifier prompt asks for', () => {

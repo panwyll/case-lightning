@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, VERIFICATION_METHODS } from './types';
+import { DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
 import type { Command } from './machine';
 
 /** Read-only users can look but never move a matter. */
@@ -24,8 +24,10 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish() }),
+  z.object({ type: z.literal('enrol'), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
+  // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
+  z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('request_id_check') }),
   z.object({ type: z.literal('raise_enquiry'), enquiryId: z.string().min(1).max(60), subject: z.string().min(1).max(500) }),
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
@@ -78,10 +80,33 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('id_check'), documentId: z.string().uuid() }),
 ]);
 
+/** Addendum 3 §3: how the handler engaged with the source section before acting — stored on the resolving event. */
+export const engagementSchema = z.object({ scrolledSource: z.boolean(), dwellMs: z.number().int().nonnegative().max(86_400_000) });
+
+/** The dwell the server accepts as engagement when the source was not scrolled (short enough to fit on one screen). */
+export const MIN_SOURCE_DWELL_MS = 5000;
+
+/**
+ * The UI does not enable any action until the handler has scrolled the source or dwelt
+ * on it; the server refuses (412) without the same evidence, so the gate is not a UI nicety.
+ */
+export function assertEngaged(engagement: Engagement | null | undefined): Engagement {
+  if (!engagement || !(engagement.scrolledSource || engagement.dwellMs >= MIN_SOURCE_DWELL_MS)) {
+    throw Object.assign(new Error('Read the source section before acting: scroll it, or spend a few seconds on it.'), { status: 412 });
+  }
+  return engagement;
+}
+
 export const resolveSchema = z.object({
   option: z.enum(DECISION_OPTIONS),
   note: z.string().max(4000).nullish(),
   /** Addendum 2: required for option 'verify' on a bank-details decision; the machine validates the method. */
   verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),
+  /** Addendum 3 §3: required — see assertEngaged. */
+  engagement: engagementSchema.nullish(),
 });
+
+export const subflowStatusSchema = z.object({ subFlow: z.enum(SUB_FLOWS), status: z.enum(SUBFLOW_STATUSES) });
+export const shadowReviewSchema = z.object({ eventId: z.string().uuid(), agrees: z.boolean(), humanOutcome: z.string().max(2000).nullish(), note: z.string().max(4000).nullish() });
+export const queueQuerySchema = z.object({ sort: z.enum(['oldest_pending', 'target_completion']).default('oldest_pending'), all: z.enum(['0', '1']).default('0'), includeShadow: z.enum(['0', '1']).default('0'), limit: z.coerce.number().int().positive().max(1000).default(300) });
 export { VERIFICATION_METHODS };

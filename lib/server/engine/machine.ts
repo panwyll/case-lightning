@@ -35,6 +35,12 @@ import {
   type PayeeKind,
   type SourceChannel,
   type VerificationMethod,
+  type SubFlow,
+  type SubflowConfig,
+  type SuppressedAction,
+  SUBFLOW_OF_KIND,
+  type Engagement,
+  DEFAULT_SUBFLOW_CONFIG,
   type Actor,
   type ChaseSpec,
   type Citation,
@@ -65,7 +71,7 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null }
+  | { type: 'enrol'; actor: Actor; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -78,7 +84,9 @@ export type Command =
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null }
+  | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
+  | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
   // Addendum 2 — payment verification
   | { type: 'record_bank_details'; actor: Actor; bankDetailsId: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId: string }
   | { type: 'payment_authorised'; actor: Actor; payeeKind: PayeeKind; bankDetailsId: string; amountPennies?: number | null; purpose: 'completion_monies' | 'deposit' | 'other' }
@@ -126,6 +134,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
 
 export interface DecideContext {
   now: Date;
+  /** Addendum 3 §2: trust level per sub-flow (tenant config). Defaults to assist. */
+  subflows?: SubflowConfig;
 }
 
 export interface Decision {
@@ -262,14 +272,31 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   extra: Record<string, unknown>;
   confidence: number;
   causedBy?: string | null;
+  /** assist → the auto-clear is put in front of a person too (non-blocking); autonomous/shadow → not. */
+  subflowStatus?: 'shadow' | 'assist' | 'autonomous';
 }): NewEvent[] {
   if (input.verdict.outcome === 'clear') {
-    return [{ type: input.cleared, actor: SYSTEM, payload: { ...input.extra, reasons: input.verdict.reasons }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
+    const cleared = { type: input.cleared, actor: SYSTEM, payload: { ...input.extra, reasons: input.verdict.reasons }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent;
+    if ((input.subflowStatus ?? 'assist') !== 'assist') return [cleared];
+    const subFlow = SUBFLOW_FOR_KIND[input.kind];
+    const subject = String(input.extra.searchType ?? input.extra.enquiryId ?? input.subjectLabel);
+    const decision: DecisionSpec = {
+      kind: 'auto_clear',
+      summary: `${input.subjectLabel} was auto-cleared by the rule layer (${input.verdict.reasons.join('; ')}). This sub-flow is at ASSIST level: confirm the engine got it right, or escalate. The matter is not held up by this review.`,
+      sourceDocumentId: input.sourceDocumentId,
+      citations: [{ documentId: input.sourceDocumentId, label: `${input.subjectLabel} — full document` }],
+      options: OPTIONS_FOR.auto_clear,
+      summarisedBy: 'template',
+    };
+    assertDecisionSpec(decision);
+    return [cleared, { type: 'auto_clear_review_raised', actor: AI, payload: { subFlow, subject, clearedEventType: input.cleared, reasons: input.verdict.reasons, decision }, sourceDocumentId: input.sourceDocumentId } as NewEvent];
   }
   const decision = buildDecision({ kind: input.kind, subjectLabel: input.subjectLabel, flags: input.verdict.flags, sourceDocumentId: input.sourceDocumentId, summary: input.summary });
   assertDecisionSpec(decision);
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
+
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -296,6 +323,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
             targetExchangeDate: cmd.targetExchangeDate ?? null,
             targetCompletionDate: cmd.targetCompletionDate ?? null,
             counterpartyType: cmd.counterpartyType ?? null,
+            shadowMode: !!cmd.shadowMode,
           },
         },
       ];
@@ -322,6 +350,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
         kind: 'id_check',
+        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).id_check,
         subjectLabel: `ID/AML check (${cmd.facts.provider})`,
         sourceDocumentId: cmd.documentId,
         summary: cmd.summary,
@@ -359,6 +388,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'search_cleared',
           flagged: 'search_flagged',
           kind: 'search',
+        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).search,
           subjectLabel: `${cmd.searchType} search`,
           sourceDocumentId: sr.documentId,
           summary: cmd.summary,
@@ -390,6 +420,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'enquiry_reply_cleared',
           flagged: 'enquiry_reply_flagged',
           kind: 'enquiry',
+        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).enquiry,
           subjectLabel: `Reply to enquiry ${cmd.enquiryId} (${q.subject})`,
           sourceDocumentId: cmd.documentId,
           summary: cmd.summary,
@@ -419,6 +450,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'mortgage_offer_cleared',
           flagged: 'mortgage_condition_flagged',
           kind: 'mortgage',
+        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).mortgage,
           subjectLabel: `Mortgage offer (${cmd.facts.lender})`,
           sourceDocumentId: s.mortgage.documentId,
           summary: cmd.summary,
@@ -438,7 +470,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const verdict = evaluateTitle(cmd.facts);
       const out = [
         extracted,
-        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
+        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).title, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
       // Out-of-scope tenure: flag for the human AND halt automation (spec 2.7).
       if (cmd.facts.tenure !== 'freehold' && !s.manualHandling.required) {
@@ -450,6 +482,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── Decisions ──
     case 'open_decision_source': {
       const d = pendingDecision(s, cmd.decisionEventId);
+      requireSurfaced(s, d, ctx);
       const allowed = new Set([d.sourceDocumentId, ...d.citations.map((c) => c.documentId)]);
       if (!allowed.has(cmd.documentId)) reject('That document is not the source of this decision.', 400);
       return [{ type: 'decision_source_opened', actor: cmd.userId, payload: { decisionEventId: d.eventId, documentId: cmd.documentId } }];
@@ -458,8 +491,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const d = pendingDecision(s, cmd.decisionEventId);
       if (!isUserActor(cmd.userId)) reject('Decisions are resolved by people, not automation.', 403);
       if (!d.options.includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${d.options.join(', ')}).`, 400);
+      requireSurfaced(s, d, ctx);
       if (!d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
-      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null);
+      // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
+      if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
+      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null);
     }
 
     // ── Report on title ──
@@ -483,7 +519,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'record_report_on_title_sent': {
       assertCanSendReport(s, cmd.draftId);
-      return [{ type: 'report_on_title_sent', actor: cmd.actor, payload: { draftId: cmd.draftId, approvedEventId: s.reportOnTitle.approvedEventId as string, channel: cmd.channel, messageId: cmd.messageId ?? null }, sourceDocumentId: s.reportOnTitle.draftDocumentId }];
+      return [{ type: 'report_on_title_sent', actor: cmd.actor, payload: { draftId: cmd.draftId, approvedEventId: s.reportOnTitle.approvedEventId as string, approvedBy: s.reportOnTitle.approvedBy as string, channel: cmd.channel, messageId: cmd.messageId ?? null }, sourceDocumentId: s.reportOnTitle.draftDocumentId }];
     }
 
     // ── Exchange ──
@@ -604,6 +640,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'payment_authorised', actor: cmd.actor, payload: { payeeKind: cmd.payeeKind, bankDetailsId: cmd.bankDetailsId, amountPennies: cmd.amountPennies ?? null, purpose: cmd.purpose, approvedBy: cmd.actor } }];
     }
 
+    case 'record_suppressed': {
+      requireEnrolled(s);
+      return [{ type: 'action_suppressed', actor: SYSTEM, payload: { action: cmd.action, reason: cmd.reason, subFlow: cmd.subFlow, detail: cmd.detail } }];
+    }
+    case 'set_shadow_mode': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Shadow mode is switched by a person, never by automation.', 403);
+      if (s.shadowMode === cmd.shadowMode) reject(`Shadow mode is already ${cmd.shadowMode ? 'on' : 'off'}.`);
+      return [{ type: 'shadow_mode_changed', actor: cmd.actor, payload: { shadowMode: cmd.shadowMode, reason: cmd.reason ?? null } }];
+    }
+
     // ── Timers / comms ──
     case 'record_chase': {
       requireEnrolled(s);
@@ -638,6 +685,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 
 // ───────────────────────────── decision resolution ─────────────────────────────
 
+/**
+ * Addendum 3 §2: a decision on a shadow-mode matter, or from a sub-flow still in shadow,
+ * is logged but never put in front of a person — so it cannot be opened or resolved either.
+ */
+function requireSurfaced(s: MatterState, d: DecisionState, ctx: DecideContext): void {
+  if (s.shadowMode) reject('This matter is in shadow mode: the engine observes and logs, but its decisions are not actioned.', 409);
+  const sf = SUBFLOW_OF_KIND[d.kind];
+  if (sf && (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG)[sf] === 'shadow') reject(`The ${sf.replace(/_/g, ' ')} sub-flow is in shadow mode: its decisions are logged, not actioned.`, 409);
+}
+
 function pendingDecision(s: MatterState, id: string): DecisionState {
   const d = s.decisions[id];
   if (!d) reject('Decision not found.', 404);
@@ -646,9 +703,15 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
+
+  // assist-level auto-clear review: confirm (no state change) or escalate to a person.
+  if (d.kind === 'auto_clear' && option !== 'escalate') {
+    const [subFlow, ...rest] = subject.split(':');
+    return [{ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId }];
+  }
 
   // Addendum 2 §3: a bank-details decision is resolved by a VERIFICATION with a named
   // out-of-band method, or a recorded failure — never by "approve", never by a same-channel reply.
@@ -672,7 +735,14 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   // (kind escalation) is queued, carrying the same source so the senior sees what the
   // handler saw. Resolving that later also resolves the original sub-flow.
   if (option === 'escalate' && d.kind !== 'escalation') {
-    out.push(reviewedEvent(d, option, note, userId, subject));
+    if (d.kind === 'auto_clear') {
+      const [subFlow, ...rest] = subject.split(':');
+      out.push({ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId });
+    } else if (d.kind === 'bank_details') {
+      // handled below via the generic escalation (the bank record stays unverified)
+    } else {
+      out.push(reviewedEvent(d, option, note, userId, subject, engagement));
+    }
     const decision: DecisionSpec = {
       kind: 'escalation',
       summary: `Escalated by handler${note ? `: ${note}` : ''}.\n\nOriginal decision (${d.kind}${subject ? ` ${subject}` : ''}):\n${d.summary}`,
@@ -719,7 +789,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       return out;
     }
     default:
-      out.push(reviewedEvent(d, option, note, userId, subject));
+      out.push(reviewedEvent(d, option, note, userId, subject, engagement));
   }
 
   // "Request further search/enquiry" raises the follow-up enquiry so the wait is tracked.
@@ -734,8 +804,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   return out;
 }
 
-function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string): NewEvent {
-  const base = { decisionEventId: d.eventId, option, note };
+function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string, engagement: Engagement | null = null): NewEvent {
+  const base = { decisionEventId: d.eventId, option, note, engagement };
   switch (d.kind) {
     case 'id_check':
       return { type: 'id_check_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
@@ -750,6 +820,7 @@ function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | 
     case 'report_on_title':
     case 'escalation':
     case 'bank_details':
+    case 'auto_clear':
       return reject('Not a reviewable decision kind.', 500);
   }
 }

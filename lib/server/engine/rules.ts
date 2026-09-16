@@ -54,6 +54,8 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   escalation: ['approve', 'refer_to_client', 'escalate'],
   // Addendum 2: never "approve" — only an out-of-band VERIFICATION (with its method) or a failure.
   bank_details: ['verify', 'reject', 'escalate'],
+  // assist level: confirm the engine's auto-clear was right, or escalate it. Never blocks.
+  auto_clear: ['approve', 'escalate'],
 };
 
 const lowConfidenceFlag = (confidence: number, what: string): Flag => ({

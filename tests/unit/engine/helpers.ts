@@ -5,6 +5,7 @@
 import { EngineService } from '../../../lib/server/engine/service';
 import { MemoryEventStore } from '../../../lib/server/engine/store';
 import { mockPorts, type MockPorts } from '../../../lib/server/engine/mocks';
+import { blockingDecisions, type MatterState, type DecisionKind, type DecisionState } from '../../../lib/server/engine/types';
 import type { EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from '../../../lib/server/engine/types';
 
 export const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -73,4 +74,11 @@ export const titleLeasehold = (): TitleFacts => ({ ...titleClear(), tenure: 'lea
 export async function resolve(h: Harness, decisionEventId: string, option: 'approve' | 'refer_to_client' | 'request_further' | 'escalate' | 'reject', userId = USER, note?: string) {
   await h.svc.openDecisionSource(TENANT, MATTER, decisionEventId, userId);
   return h.svc.resolveDecision(TENANT, MATTER, decisionEventId, userId, option, note);
+}
+
+/** The first pending decision that gates progress (assist-level auto-clear reviews excluded), optionally of one kind. */
+export function firstDecision(state: MatterState, kind?: DecisionKind): DecisionState {
+  const d = blockingDecisions(state).find((x) => !kind || x.kind === kind);
+  if (!d) throw new Error(`no pending ${kind ?? 'blocking'} decision`);
+  return d;
 }

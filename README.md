@@ -27,10 +27,19 @@ handler to open the source before resolving. Components around it (extraction, A
 InfoTrack, client comms) are stubbed behind ports. See **docs/conveyance-engine.md**.
 
 ```bash
-npm run test:unit         # machine, rules, SLA, extraction, AI harness, InfoTrack, comms, audit, full-lifecycle replay
-npm run test:integration  # the ethical wall (RLS) against a real Postgres — needs DATABASE_URL, migrations ≤ 068
+npm run test:unit         # machine, rules, SLA, extraction, AI harness, InfoTrack, comms, audit, shadow mode, full-lifecycle replay
+npm run test:integration  # against a real Postgres (needs DATABASE_URL, migrations ≤ 071): the ethical wall (RLS) and the
+                          # human gate — every path that could write a payment/send event without a human approver is refused
 npm run typecheck
 ```
+
+Human sign-off on payments and outbound AI content is a database fact, not an instruction: a
+trigger refuses those events without a human `approvedBy`, and every automation context runs on
+a role the database denies them to outright (`docs/conveyance-engine.md` → Addendum 3). Matters
+can be enrolled in **shadow mode** (the engine observes and logs; nothing surfaces or sends) and
+each sub-flow is promoted shadow → assist → autonomous from the comparison evidence at
+`/engine/shadow`. The handler's dashboard is the queue (`/decisions`), the timeline
+(`/engine/<matterId>`) and the three-part decision panel (`/decisions/<eventId>`).
 
 Internally-linked counterparties (buyer and seller matters in the same firm, different handlers)
 are walled off at the database layer — see the addendum section of the engine doc. The DB role the

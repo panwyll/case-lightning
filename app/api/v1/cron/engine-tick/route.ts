@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { assertFeature } from '@/lib/server/config';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
+import { runAsAutomation } from '@/lib/server/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     if (secret && req.headers.get('authorization') !== `Bearer ${secret}`) {
       return fail(Object.assign(new Error('Unauthorized'), { status: 401 }));
     }
-    const result = await engine().tickAll(null);
+    const result = await runAsAutomation(() => engine().tickAll(null));
     return ok(result);
   } catch (error) {
     return fail(error);

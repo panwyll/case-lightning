@@ -29,7 +29,7 @@ import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } f
 import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
-import { runAsSystem } from '../db';
+import { runAsSystem, runAsAutomation } from '../db';
 import { createTask } from '../tasks';
 import { emitMatterEvent } from '../events';
 import { resolveCounterparty } from './counterparty';
@@ -219,6 +219,7 @@ export function productionPorts(): EnginePorts {
       chaser,
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
+      asAutomation: runAsAutomation,
       log,
     };
   }

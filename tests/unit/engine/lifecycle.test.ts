@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { project } from '../../../lib/server/engine/projection';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { isUserActor, type EngineEvent } from '../../../lib/server/engine/types';
-import { harness, resolve, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge } from './helpers';
 
 test('full lifecycle: instruction → post_completion, with every decision cited, approved and replayable', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z'));
@@ -206,7 +206,8 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   ports.setNow(new Date('2026-12-01T09:00:00Z'));
   assert.deepEqual(await svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 });
   const pending = await h.store.listPendingDecisions(TENANT);
-  assert.equal(pending.length, 0);
+  assert.equal(pending.filter((d) => d.kind !== 'auto_clear').length, 0, 'nothing gating the matter');
+  assert.ok(pending.every((d) => d.kind === 'auto_clear'), 'only advisory auto-clear reviews (assist level) remain');
 });
 
 test('extraction failure never stalls the matter — it becomes a human decision', async () => {
@@ -217,7 +218,7 @@ test('extraction failure never stalls the matter — it becomes a human decision
   const noFacts = h.doc(null); // pipeline #2 produced nothing
   const r = await h.svc.searchReturned(TENANT, MATTER, 'LLC1', noFacts);
   assert.equal(r.state.searches.LLC1.status, 'flagged');
-  const d = Object.values(r.state.decisions)[0];
+  const d = firstDecision(r.state);
   assert.equal(d.sourceDocumentId, noFacts);
   assert.match(d.summary, /LOW_EXTRACTION_CONFIDENCE|confidence/i);
 });

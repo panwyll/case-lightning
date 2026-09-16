@@ -126,6 +126,11 @@ export const EVENT_TYPES = [
   'bank_details_verified',
   'bank_details_verification_failed',
   'payment_authorised',
+  // addendum 3: shadow mode + assist-level review of auto-clears
+  'action_suppressed',
+  'shadow_mode_changed',
+  'auto_clear_review_raised',
+  'auto_clear_confirmed',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -226,7 +231,7 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify'] as const;
@@ -273,6 +278,12 @@ export interface DecisionState extends DecisionSpec {
   subject: string | null;
   /** For escalations: the decision that was escalated (resolving the escalation resolves it too). */
   origin: { decisionEventId: string; kind: DecisionKind } | null;
+}
+
+/** Addendum 3 §3: how the handler engaged with the source before deciding (recorded on the resolving event). */
+export interface Engagement {
+  scrolledSource: boolean;
+  dwellMs: number;
 }
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
@@ -379,6 +390,8 @@ export interface Payloads {
     targetCompletionDate?: string | null;
     /** null = not yet known; the audit index (068) picks up whichever events carry it. */
     counterpartyType?: CounterpartyType | null;
+    /** Addendum 3 §2: observe only. */
+    shadowMode?: boolean;
   };
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
@@ -386,36 +399,37 @@ export interface Payloads {
   id_check_requested: { provider: string; reference?: string | null };
   id_check_cleared: { facts: IdCheckFacts; reasons: string[] };
   id_check_flagged: { facts: IdCheckFacts; flags: Flag[]; decision: DecisionSpec };
-  id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null };
+  id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   search_ordered: { searchType: SearchType; provider: string; reference?: string | null };
   search_returned: { searchType: SearchType; provider?: string | null };
   search_extracted: { searchType: SearchType; facts: SearchFacts; extractor: string };
   search_cleared: { searchType: SearchType; reasons: string[] };
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
-  search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null };
+  search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string } | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
-  enquiry_reply_reviewed: { enquiryId: string; decisionEventId: string; option: DecisionOption; note?: string | null };
+  enquiry_reply_reviewed: { enquiryId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   mortgage_offer_received: { lender?: string | null };
   mortgage_offer_extracted: { facts: MortgageOfferFacts; extractor: string };
   mortgage_offer_cleared: { reasons: string[] };
   mortgage_condition_flagged: { flags: Flag[]; decision: DecisionSpec };
-  mortgage_condition_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null };
+  mortgage_condition_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   title_extracted: { facts: TitleFacts; extractor: string };
   title_cleared: { reasons: string[] };
   title_flagged: { flags: Flag[]; decision: DecisionSpec };
-  title_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null };
+  title_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   report_on_title_drafted: { draftId: string; draftDocumentId: string; model: string; decision: DecisionSpec; basedOn: string[] };
   report_on_title_approved: { draftId: string; decisionEventId: string; note?: string | null };
   report_on_title_rejected: { draftId: string; decisionEventId: string; note?: string | null };
-  report_on_title_sent: { draftId: string; approvedEventId: string; channel: string; messageId?: string | null };
+  /** approvedBy is validated by the database (071): a human of this firm who wrote the cited approval event. */
+  report_on_title_sent: { draftId: string; approvedEventId: string; approvedBy: string; channel: string; messageId?: string | null };
 
   deposit_received: { amountPennies?: number | null };
   exchange_conditions_met: { conditions: string[] };
@@ -456,6 +470,14 @@ export interface Payloads {
   bank_details_verified: { bankDetailsId: string; decisionEventId: string; verificationMethod: VerificationMethod; verificationRef: string | null; note?: string | null };
   bank_details_verification_failed: { bankDetailsId: string; decisionEventId: string; reason: string | null };
   payment_authorised: { payeeKind: PayeeKind; bankDetailsId: string; amountPennies: number | null; purpose: 'completion_monies' | 'deposit' | 'other'; approvedBy: string };
+
+  /** The intent the engine would have acted on, logged instead of executed (shadow mode / shadowed sub-flow). */
+  action_suppressed: { action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> };
+  /** A person switched shadow mode on or off for this matter (the flag is part of the log, like everything else). */
+  shadow_mode_changed: { shadowMode: boolean; reason?: string | null };
+  /** assist level: an auto-clear put in front of a person for confirmation — never blocks the stage. */
+  auto_clear_review_raised: { subFlow: SubFlow; subject: string; clearedEventType: EventType; reasons: string[]; decision: DecisionSpec };
+  auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
 }
 
 /** Event types whose payload carries a DecisionSpec (i.e. they create a DecisionEvent). */
@@ -468,7 +490,31 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'report_on_title_drafted',
   'escalation_raised',
   'bank_details_change_flagged',
+  'auto_clear_review_raised',
 ];
+
+// ───────────────────────────── Shadow mode / trust levels (addendum 3 §2) ─────────────────────────────
+
+/** The engine's sub-flows, each promoted out of shadow independently. */
+export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
+export type SubFlow = (typeof SUB_FLOWS)[number];
+
+/**
+ * shadow      — logged only: nothing surfaces to a person, nothing is sent/ordered.
+ * assist      — decisions surface; auto-clears ALSO surface as a non-blocking review so
+ *               their accuracy can be measured (the evidence for promotion).
+ * autonomous  — the auto-clear branch runs unobserved. Decision events are never
+ *               autonomous: anything flagged always goes to a person.
+ */
+export const SUBFLOW_STATUSES = ['shadow', 'assist', 'autonomous'] as const;
+export type SubflowStatus = (typeof SUBFLOW_STATUSES)[number];
+export type SubflowConfig = Record<SubFlow, SubflowStatus>;
+export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist' };
+
+/** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null };
+
+export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror';
 
 // ───────────────────────────── Events ─────────────────────────────
 
@@ -533,6 +579,7 @@ export interface MatterState {
   transactionType: TransactionType | null;
   hasLender: boolean;
   requiredSearches: SearchType[];
+  shadowMode: boolean;
   counterpartyType: CounterpartyType | null;
   targetExchangeDate: string | null;
   targetCompletionDate: string | null;
@@ -588,6 +635,8 @@ export interface MatterState {
   /** Addendum 2: every bank-details record ever put on file for this matter (versioned, never overwritten). */
   bankDetails: Record<string, BankDetailsState>;
   payments: PaymentAuthorisation[];
+  /** Intents logged instead of executed (shadow). */
+  suppressed: number;
 }
 
 export function initialState(tenantId: string, matterId: string): MatterState {
@@ -598,6 +647,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     transactionType: null,
     hasLender: false,
     requiredSearches: [],
+    shadowMode: false,
     counterpartyType: null,
     targetExchangeDate: null,
     targetCompletionDate: null,
@@ -630,6 +680,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     chasesSent: 0,
     bankDetails: {},
     payments: [],
+    suppressed: 0,
   };
 }
 
@@ -649,6 +700,22 @@ export function pendingDecisions(state: MatterState): DecisionState[] {
   return Object.values(state.decisions)
     .filter((d) => d.status === 'pending')
     .sort((a, b) => a.seq - b.seq);
+}
+
+/**
+ * What a person may be shown (addendum 3 §2): nothing from a shadow-mode matter, nothing
+ * from a sub-flow still in shadow. Everything is still in the log.
+ */
+/** Pending decisions that gate progress — assist-level auto-clear reviews are advisory and excluded. */
+export function blockingDecisions(state: MatterState): DecisionState[] {
+  return pendingDecisions(state).filter((d) => d.kind !== 'auto_clear');
+}
+export function surfacedDecisions(state: MatterState, cfg: SubflowConfig): DecisionState[] {
+  if (state.shadowMode) return [];
+  return pendingDecisions(state).filter((d) => {
+    const sf = SUBFLOW_OF_KIND[d.kind];
+    return !sf || cfg[sf] !== 'shadow';
+  });
 }
 
 export function openWaits(state: MatterState): WaitState[] {

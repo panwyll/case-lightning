@@ -20,6 +20,25 @@ import { config } from './config';
 const dbUser = new AsyncLocalStorage<{ userId: string | null }>();
 
 /**
+ * Addendum 3 §1: automation contexts (cron, webhooks, ingestion, the engine's own
+ * post-commit effects — anything not a human request) run their statements under the
+ * NOLOGIN role conveyi_automation via SET LOCAL ROLE. A restrictive policy (migration
+ * 071) denies that role the human-gated event types outright, so no automated or
+ * AI-driven code path can write a payment or an outbound-AI-content event, whatever
+ * the application code does. Human request pathways stay on the app role.
+ */
+const dbAutomation = new AsyncLocalStorage<{ automation: boolean }>();
+let automationRoleAvailable: boolean | null = null;
+
+export function runAsAutomation<T>(fn: () => Promise<T>): Promise<T> {
+  return dbAutomation.run({ automation: true }, fn);
+}
+
+export function inAutomationContext(): boolean {
+  return dbAutomation.getStore()?.automation === true;
+}
+
+/**
  * Request-scoped fallback. `AsyncLocalStorage.enterWith` inside an awaited function does
  * not reach the caller's continuation, so a route that merely awaits requireUser() would
  * otherwise run its queries WITHOUT the user bound — and the wall would silently not
@@ -101,10 +120,11 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   values: unknown[] = []
 ): Promise<T[]> {
   const user = await effectiveDbUser();
-  if (!user) {
+  if (!user && !inAutomationContext()) {
     const result = await pool().query<T>(text, values);
     return result.rows;
   }
+  if (!user) return transaction(async (client) => (await client.query<T>(text, values)).rows);
   // A user is bound: run inside a transaction so set_config(..., is_local = true)
   // scopes app.user_id to this statement and never leaks to the next pool borrower.
   return runAsUser(user, () => transaction(async (client) => (await client.query<T>(text, values)).rows));
@@ -124,6 +144,13 @@ export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>
     await client.query('begin');
     const user = await effectiveDbUser();
     if (user) await client.query(`select set_config('app.user_id', $1, true)`, [user]);
+    if (inAutomationContext()) {
+      if (automationRoleAvailable === null) {
+        const r = await client.query<{ ok: boolean }>(`select pg_has_role(current_user, 'conveyi_automation', 'member') as ok`).catch(() => ({ rows: [{ ok: false }] }));
+        automationRoleAvailable = !!r.rows[0]?.ok;
+      }
+      if (automationRoleAvailable) await client.query('set local role conveyi_automation');
+    }
     const value = await work(client);
     await client.query('commit');
     return value;

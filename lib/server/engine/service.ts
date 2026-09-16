@@ -12,11 +12,23 @@
  * comms port sent it — and never without an approval event (assertCanSendReport).
  * Effect failures are logged, never thrown, and never stall the matter: the next tick
  * or a manual-fallback command picks them up.
+ *
+ * Addendum 3 §2 — shadow mode. On a shadow-mode matter, or for a sub-flow the tenant
+ * still has in `shadow`, every outbound action (search order, ID-check request, client
+ * update, chase, report send, linked-enquiry delivery) is NOT performed: the intent is
+ * recorded as an `action_suppressed` event instead, so the comparison view can show
+ * what the engine would have done. Decisions are still created (they are the engine's
+ * conclusions) but the machine refuses to open or resolve them, and the store never
+ * lists them to a person. The real `matter.stage` is not touched (store.ts).
+ *
+ * Addendum 3 §1 — effects and timers run under ports.asAutomation, which in production
+ * puts the connection on the conveyi_automation role: the database refuses human-gated
+ * events from there whatever this code does.
  */
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions } from './sla';
-import { EXTERNAL, SYSTEM, type BankDetails, type DecisionOption, type EngineEvent, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
@@ -39,6 +51,16 @@ const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   ap1_confirmed: 'registration_complete',
 };
 
+/** Which sub-flow an automatic client update belongs to (null → only matter-level shadow suppresses it). */
+const CLIENT_UPDATE_SUBFLOW: Partial<Record<EventType, SubFlow>> = {
+  search_ordered: 'search',
+  search_cleared: 'search',
+  search_flagged: 'search',
+  enquiry_raised: 'enquiry',
+  mortgage_offer_cleared: 'mortgage',
+  report_on_title_sent: 'report_on_title',
+};
+
 export class EngineService {
   constructor(
     private store: EventStore,
@@ -49,18 +71,44 @@ export class EngineService {
 
   /** Run one command atomically, then its effects. */
   async run(tenantId: string, matterId: string, cmd: Command): Promise<RunResult> {
+    const subflows = await this.subflows(tenantId);
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
       const log = await tx.load();
       const state = project(tenantId, matterId, log);
       const now = this.ports.now();
-      const { events } = decide(state, cmd, { now });
+      const { events } = decide(state, cmd, { now, subflows });
       const appended = await tx.append(events, state.lastSeq, now, this.ports.newId);
       const next = project(tenantId, matterId, [...log, ...appended]);
       await tx.afterAppend(next, appended);
       return { events: appended, state: next };
     });
-    await this.effects(tenantId, matterId, result.events);
+    await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
     return result;
+  }
+
+  /** The tenant's per-sub-flow trust levels (addendum 3 §2). */
+  async subflows(tenantId: string): Promise<SubflowConfig> {
+    return this.store.loadSubflows ? this.store.loadSubflows(tenantId) : { ...DEFAULT_SUBFLOW_CONFIG };
+  }
+
+  private asAutomation<T>(fn: () => Promise<T>): Promise<T> {
+    return this.ports.asAutomation ? this.ports.asAutomation(fn) : fn();
+  }
+
+  /**
+   * Shadow gate. Returns true (and logs the intent) when the action must NOT happen:
+   * the matter is in shadow mode, or the sub-flow it belongs to is still in shadow.
+   */
+  private async suppressed(tenantId: string, matterId: string, state: MatterState, subflows: SubflowConfig, action: SuppressedAction, subFlow: SubFlow | null, detail: Record<string, unknown>): Promise<boolean> {
+    const reason = state.shadowMode ? 'shadow_mode' : subFlow && subflows[subFlow] === 'shadow' ? 'subflow_shadow' : null;
+    if (!reason) return false;
+    await this.run(tenantId, matterId, { type: 'record_suppressed', action, reason, subFlow, detail });
+    return true;
+  }
+
+  /** Addendum 3 §2: switch shadow mode for one matter (people only; logged). Mirrors to matter.shadow_mode via the store. */
+  async setShadowMode(tenantId: string, matterId: string, actor: string, shadowMode: boolean, reason?: string | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'set_shadow_mode', actor, shadowMode, reason: reason ?? null });
   }
 
   async getState(tenantId: string, matterId: string): Promise<MatterState> {
@@ -75,10 +123,21 @@ export class EngineService {
     return this.store;
   }
 
+  /** A document on this matter (null if not found / not on this matter). Read-only; logs nothing. */
+  async getDocument(tenantId: string, matterId: string, documentId: string): Promise<DocumentRef | null> {
+    const doc = await this.ports.documents.get(tenantId, documentId);
+    return doc && doc.matterId === matterId ? doc : null;
+  }
+
   // ───────────── sub-flows (external wait → extraction → rule → clear/flag) ─────────────
 
   /** ID/AML: ask the provider, then record the request. */
   async requestIdCheck(tenantId: string, matterId: string, actor: string): Promise<RunResult> {
+    const state = await this.getState(tenantId, matterId);
+    if (await this.suppressed(tenantId, matterId, state, await this.subflows(tenantId), 'id_check_request', 'id_check', { provider: this.ports.idCheckProvider.name, actor })) {
+      // Shadow: the request is logged as an intent, not placed. The wait still opens so the SLA clock is observable.
+      return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference: null });
+    }
     const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId });
     return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference });
   }
@@ -154,8 +213,8 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null): Promise<RunResult> {
-    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null });
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null });
   }
 
   /**
@@ -200,6 +259,9 @@ export class EngineService {
     const draftId = state.reportOnTitle.draftId ?? '';
     assertCanSendReport(state, draftId);
     const doc = await this.requireDoc(tenantId, matterId, state.reportOnTitle.draftDocumentId as string);
+    if (await this.suppressed(tenantId, matterId, state, await this.subflows(tenantId), 'report_send', 'report_on_title', { draftId, actor })) {
+      return { events: [], state: await this.getState(tenantId, matterId) };
+    }
     const sent = await this.ports.clientComms.sendReportOnTitle({ tenantId, matterId, draftDocument: doc });
     return this.run(tenantId, matterId, { type: 'record_report_on_title_sent', actor, draftId, channel: sent.channel, messageId: sent.messageId });
   }
@@ -208,14 +270,24 @@ export class EngineService {
 
   /** One matter's timer sweep: send due chases, raise due escalations. */
   async tick(tenantId: string, matterId: string, now = this.ports.now()): Promise<{ chases: number; escalations: number }> {
+    return this.asAutomation(() => this.tickInner(tenantId, matterId, now));
+  }
+
+  private async tickInner(tenantId: string, matterId: string, now: Date): Promise<{ chases: number; escalations: number }> {
     const state = await this.getState(tenantId, matterId);
     if (!state.enrolled || state.manualHandling.required) return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
+    const subflows = await this.subflows(tenantId);
     let chases = 0;
     let escalations = 0;
     for (const a of dueActions(state, now, sla)) {
       try {
         if (a.kind === 'chase') {
+          // Shadow: the chase is logged as an intent (which still advances the SLA clock, see projection) and not sent.
+          if (await this.suppressed(tenantId, matterId, state, subflows, 'chase', 'chase', { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, ageWorkingDays: a.ageWorkingDays })) {
+            chases += 1;
+            continue;
+          }
           const sent = await this.ports.chaser.sendChase({
             tenantId,
             matterId,
@@ -264,7 +336,7 @@ export class EngineService {
   // ───────────── effects ─────────────
 
   /** Post-commit reactions. Best-effort; each becomes its own command so the log records only what really happened. */
-  private async effects(tenantId: string, matterId: string, events: EngineEvent[]): Promise<void> {
+  private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: SubflowConfig): Promise<void> {
     for (const e of events) {
       try {
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
@@ -272,6 +344,7 @@ export class EngineService {
           const state = await this.getState(tenantId, matterId);
           for (const searchType of state.requiredSearches) {
             if (state.searches[searchType]) continue;
+            if (await this.suppressed(tenantId, matterId, state, subflows, 'search_order', 'search', { searchType, provider: this.ports.searchProvider.name })) continue;
             try {
               const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType });
               await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType, provider: this.ports.searchProvider.name, reference });
@@ -286,11 +359,14 @@ export class EngineService {
         // exchange, with no read of the other matter's state (the wall is in the DB too).
         if (e.type === 'enquiry_raised' && (e.payload as { counterpartyType?: string }).counterpartyType === 'internal' && this.ports.linked) {
           const p = e.payload as { enquiryId: string; subject: string };
-          await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
+          if (!(await this.suppressed(tenantId, matterId, state, subflows, 'linked_enquiry_delivery', 'enquiry', { enquiryId: p.enquiryId, subject: p.subject }))) {
+            await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
+          }
         }
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
+          if (await this.suppressed(tenantId, matterId, state, subflows, 'client_update', CLIENT_UPDATE_SUBFLOW[e.type] ?? null, { template, triggeredByEventId: e.id, eventType: e.type })) continue;
           const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { eventType: e.type, payload: e.payload } });
           await this.run(tenantId, matterId, { type: 'record_client_update', update: { template, channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
         }

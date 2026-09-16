@@ -3,6 +3,7 @@ import { assertFeature } from '@/lib/server/config';
 import { ok, fail } from '@/lib/server/http';
 import { parseInbound } from '@/lib/server/comms/whatsapp';
 import { whatsappClient, clientQa } from '@/lib/server/comms/adapters';
+import { runAsAutomation } from '@/lib/server/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     const qa = clientQa();
     const outcomes = [];
     for (const m of messages) {
-      const o = await qa.handleInbound({ fromAddress: m.from, channel: 'whatsapp', text: m.text }).catch(() => null);
+      const o = await runAsAutomation(() => qa.handleInbound({ fromAddress: m.from, channel: 'whatsapp', text: m.text })).catch(() => null);
       outcomes.push({ messageId: m.messageId, verdict: o?.verdict ?? 'IGNORED' });
     }
     return ok({ received: messages.length, outcomes });

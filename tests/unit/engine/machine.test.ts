@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { decide, stageBlockers, assertCanSendReport } from '../../../lib/server/engine/machine';
 import { project } from '../../../lib/server/engine/projection';
 import { initialState, EngineError, type EngineEvent, type NewEvent } from '../../../lib/server/engine/types';
-import { harness, resolve, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, titleClear, offerClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, titleClear, offerClear } from './helpers';
 
 const now = new Date('2026-09-14T09:00:00Z');
 
@@ -77,7 +77,7 @@ test('flagged search creates a decision that cites the search PDF; resolving req
     { type: 'search_returned', actor: 'external', searchType: 'CON29', documentId: 'd-con29' },
     { type: 'search_extracted', actor: 'system', searchType: 'CON29', facts: searchFlagged('CON29'), extractor: 'fixture' },
   ]);
-  const [d] = Object.values(state.decisions);
+  const d = firstDecision(state);
   assert.equal(d.kind, 'search');
   assert.equal(d.status, 'pending');
   assert.equal(d.sourceDocumentId, 'd-con29');
@@ -107,9 +107,9 @@ test('request_further raises a tracked follow-up enquiry that gates the stage', 
     { type: 'search_returned', actor: 'external', searchType: 'CON29', documentId: 'd-con29' },
     { type: 'search_extracted', actor: 'system', searchType: 'CON29', facts: searchFlagged('CON29'), extractor: 'fixture' },
   ]);
-  const [d] = Object.values(state.decisions);
+  const d = firstDecision(state);
   const opened = decide(state, { type: 'open_decision_source', userId: USER, decisionEventId: d.eventId, documentId: 'd-con29' }, { now }).state;
-  const after = decide(opened, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'request_further' }, { now });
+  const after = decide(opened, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'request_further', note: 'Need the LA enforcement file before advising' }, { now });
   assert.deepEqual(after.events.map((e) => e.type), ['search_reviewed', 'enquiry_raised']);
   assert.equal(after.state.stage, 'pre_contract');
   assert.match(stageBlockers(after.state)[0], /enquiry SEARCH-F1 raised/);
@@ -124,7 +124,7 @@ test('escalate hands the same source to a senior; resolving the escalation resol
     { type: 'search_returned', actor: 'external', searchType: 'CON29', documentId: 'd-con29' },
     { type: 'search_extracted', actor: 'system', searchType: 'CON29', facts: searchFlagged('CON29'), extractor: 'fixture' },
   ]);
-  const [d] = Object.values(state.decisions);
+  const d = firstDecision(state);
   let s = decide(state, { type: 'open_decision_source', userId: USER, decisionEventId: d.eventId, documentId: 'd-con29' }, { now }).state;
   const esc = decide(s, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'escalate', note: 'Not sure this is standard' }, { now });
   assert.deepEqual(esc.events.map((e) => e.type), ['search_reviewed', 'escalation_raised']);
@@ -220,7 +220,7 @@ test('resolve() helper enforces the open-source precondition end to end', async 
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const con29 = h.doc(searchFlagged('CON29'));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', con29);
-  const d = Object.values(r.state.decisions)[0];
+  const d = firstDecision(r.state);
   await assert.rejects(h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve'), /Open the source/);
   const after = await resolve(h, d.eventId, 'approve');
   assert.equal(after.state.searches.CON29.status, 'reviewed');

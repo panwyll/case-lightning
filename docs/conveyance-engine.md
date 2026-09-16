@@ -181,13 +181,23 @@ Set a counterparty with `POST /api/v1/matters/:id/counterparty` (`{kind:'externa
 ## Demo
 
 ```bash
-npm run migrate                # migrations ≤ 069 on the target database
-npm run engine:demo            # seeds "Demo Conveyancing LLP": two handlers, three matters, real PDFs, pending decisions
+npm run migrate                # migrations ≤ 071 on the target database
+npm run engine:demo            # seeds "Demo Conveyancing LLP": two handlers, four matters (one in shadow mode), real PDFs, pending decisions
 ```
 
 The seed prints matter URLs and two session cookies (Alice, the buyer's handler; Bob, the
-seller's handler on the linked matter). Open `/decisions` or `/engine/<matterId>` with the
-`cl_session` cookie set. Without `ANTHROPIC_API_KEY` the seeded PDFs carry pre-extracted
+seller's handler on the linked matter). Open `/decisions` (the queue), `/engine/<matterId>`
+(the timeline), `/decisions/<eventId>` (a decision panel), `/engine/<matterId>/shadow` (the
+comparison view) or `/engine/shadow` (the rollout board) with the `cl_session` cookie set.
+
+Screenshots from the Playwright walkthrough are in `docs/demo/`:
+`01-queue`, `02-timeline-14-oak-street`, `03-decision-panel-locked` (actions disabled until
+the source has been read), `04-decision-panel-unlocked`, `05-decision-panel-reason` (a
+non-approve action asks for a reason), `06-decision-resolved-readonly`,
+`07-bank-details-hard-stop`, `08-report-on-title-panel`, `09-7-mill-lane-report-sent`,
+`10-shadow-timeline` (the non-dismissable banner, every "not performed" intent),
+`11-shadow-decision-not-actionable`, `12-shadow-comparison`, `13-rollout-board`,
+`14-bob-walled-off`. Without `ANTHROPIC_API_KEY` the seeded PDFs carry pre-extracted
 facts and everything else runs on mocks (`ENGINE_COMMS=mock` keeps comms off Graph);
 with a key, the same PDFs go through the real extractor when filed via the Engine tab's
 "File a document into the engine" control or `POST /matters/:id/engine/upload`.
@@ -210,3 +220,40 @@ cookie/bearer token — no route has to remember to do it.
 | 6. Queryable record | `bank_details_change_flagged` / `bank_details_verified` / `bank_details_verification_failed` are distinct event types; the audit report counts flagged/verified/failed/unresolved and `paymentsAuthorisedWithoutVerifiedDetails` (always 0 by construction). |
 
 UI: the decision card for a bank-details change is red-striped and its **Verified out-of-band** button unlocks only after the source is opened *and* a method is chosen; the Engine panel lists every version with status and lets the handler record new details (creating the hard-stop) and authorise the completion payment only from verified records.
+
+## Addendum 3: enforcement not instruction, shadow-mode rollout, the dashboard
+
+### §1 Schema-level enforcement (migration 071, `db/supabase/engine-one-shot-3.sql`)
+
+| Rule | Where it is enforced |
+|---|---|
+| A payment-triggering event (`funds_requested`, `payment_authorised`) or an outbound-AI-content event (`report_on_title_sent`) needs a human approver. | Trigger `matter_event_human_gate` on `matter_event`: the row is refused (`23514`) unless `payload.approvedBy` is an `app_user` of the same tenant; `report_on_title_sent` must also cite a `report_on_title_approved` event on the same matter **written by that same user**. The machine stamps `approvedBy` from the acting user, so a correct write passes; a write that "forgets" cannot exist. |
+| No AI or automation path may write those events at all. | NOLOGIN role `conveyi_automation` + a RESTRICTIVE insert policy on `matter_event` keyed on `current_user`. Every automation context — cron (`/api/v1/cron/engine-tick`), the InfoTrack and WhatsApp webhooks, document ingestion, the engine's own post-commit effects and timer sweep — runs inside `runAsAutomation()` (`lib/server/db.ts`), which issues `SET LOCAL ROLE conveyi_automation` on the transaction. From there the gated types are refused (`42501`) even with a perfectly valid `approvedBy`. Human request pathways stay on the app role. The policy is deliberately *not* `TO conveyi_automation`: a policy targeted at a role also binds every role that inherits membership of it, which would lock the app role itself out. |
+| Success criterion 2.8. | `tests/integration/human-gate.test.ts` attempts every path against a real Postgres: the machine with `system`/`ai` actors; raw SQL with a null, missing, non-uuid, unknown and other-tenant `approvedBy`; `report_on_title_sent` with no / a non-existent / another user's approval event; the automation role with a valid approver; the engine's own `withMatterLock → append` path inside the automation context. All refused. The positive control (a human-approved row from the human pathway) is accepted and rolled back. |
+
+`EnginePorts.asAutomation` is the seam: production binds it to `runAsAutomation`; the mocks run the block as-is, and a unit test asserts effects and the timer sweep run inside it.
+
+### §2 Shadow mode and per-sub-flow trust levels
+
+* **`matter.shadow_mode`** is set at enrolment (`enrol.shadowMode`) or switched by an admin with the `set_shadow_mode` command → `shadow_mode_changed` event (people only; logged like everything else). The column mirrors the log.
+* On a shadow matter the engine runs exactly as normal — extraction, rule verdicts, decisions, its **own** stage moves — but:
+  * no decision is ever surfaced: `surfacedDecisions()` / `listPendingDecisions()` exclude it, the queue omits the matter, and the machine refuses `open_decision_source` / `resolve_decision` with 409;
+  * nothing is sent, ordered or delivered: search orders, the ID-check request, client updates, chases, the report send and linked-enquiry delivery are each replaced by an **`action_suppressed`** event carrying the full intent (`action`, `reason: shadow_mode | subflow_shadow`, `subFlow`, `detail`). A suppressed chase still advances the SLA clock, so escalations are logged on time;
+  * the legacy `matter.stage` mirror and timeline entries are skipped, so the human's record stays the human's.
+* **`engine_subflow_status`** (tenant × sub-flow → `shadow | assist | autonomous`, default `assist`) is loaded into every `decide()` call:
+  * `shadow` — that sub-flow's decisions are logged but hidden and non-actionable; its outbound actions are suppressed;
+  * `assist` — flagged items surface; every auto-clear **also** raises an advisory, non-blocking `auto_clear_review_raised` decision (options: confirm / escalate) citing the source, so a person confirms the engine got it right;
+  * `autonomous` — flagged items still surface (always); auto-clears proceed without a review. `autonomous` only ever changes the auto-clear path.
+* **Comparison view** — `GET /matters/:id/engine/shadow` puts the engine's conclusions (stage + history, every decision incl. hidden ones, every auto-clear, every suppressed action) beside the human record (board stage, tasks, timeline). `POST` records an `engine_shadow_review` (agrees / disagrees, what the handler actually did) against any conclusion. `GET /engine/shadow` (admin) aggregates agreement per sub-flow — the evidence for promotion — and `PUT /admin/engine/subflows` changes a level (audited).
+* Audit: `summary.autoClearReviews`; `action_suppressed` and `shadow_mode_changed` are ordinary chained events.
+
+### §3 The dashboard (`/decisions`, `/engine/:matterId`, `/decisions/:eventId`)
+
+* **Queue** (`GET /engine/queue`): one row per matter assigned to the handler (`all=1` for seniors/admins): address, reference, engine stage, a pending badge counting only surfaced *blocking* decisions (auto-clear reviews shown separately in muted text), the age of the oldest pending decision, target completion date. Sort: oldest pending decision (default) or target completion date. Click → timeline.
+* **Timeline**: header with address, reference, handler, current stage, what blocks the next stage, and on a shadow matter a sticky, non-dismissable banner. Events newest first, grouped by day. Plain events are one muted line (time · type · actor kind, `#seq`) that expands to the raw event JSON; suppressed intents are marked "not performed". Decision events are cards — kind · subject, the first line of the summary, a status badge — clickable whether pending or resolved. A Controls tab keeps the operational panel (commands, uploads, bank details).
+* **Decision panel**: a fixed three-part vertical layout.
+  1. The AI summary with inline citation markers `[n]` attached to the line that references each citation (unplaced citations listed beneath); clicking one jumps the source to the cited page (PDF `#page=`) or the highlighted passage (text).
+  2. The source, **rendered inline and visible without a click**, auto-scrolled to the decision's locator and highlighted. Opening the panel on a pending decision logs `decision_source_opened` (the source is on screen), which is the machine's precondition for resolving.
+  3. The action row, built from the decision's options. Anything other than approve/verify asks for a free-text reason, required, stored on the resolving event (`note`); the machine refuses a non-approve action without one (400).
+  * **Engagement gate**: no action is enabled until the handler has scrolled the source section or dwelt on it while it is in view (8 s in the UI). The engagement (`scrolledSource`, `dwellMs`) is sent with the resolution, recorded on the resolving event, and checked again server-side — `POST /decisions/:id/resolve` returns 412 without it (`assertEngaged`, 5 s floor), so the gate holds even if the UI is bypassed.
+  * Resolved decisions open read-only: the option, reason, who, when, verification method, engagement, who opened the source, and a link to the escalation it raised if any. Shadow decisions open with a "not actionable" notice and no actions.

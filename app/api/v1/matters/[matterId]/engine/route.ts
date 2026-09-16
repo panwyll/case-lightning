@@ -6,7 +6,8 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
-import { pendingDecisions, openWaits } from '@/lib/server/engine/types';
+import { pendingDecisions, openWaits, surfacedDecisions } from '@/lib/server/engine/types';
+import { queryOne } from '@/lib/server/db';
 import { requireWriter, requireDecider, toCommand, userCommandSchema } from '@/lib/server/engine/http';
 import { writeAudit } from '@/lib/server/audit';
 import { counterpartyTypeOf } from '@/lib/server/engine/counterparty';
@@ -25,8 +26,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const user = await requireUser();
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
-    const state = await engine().getState(user.tenantId, matterId);
-    return ok({ state, blockers: stageBlockers(state), waits: openWaits(state), pendingDecisions: pendingDecisions(state) });
+    const svc = engine();
+    const [state, subflows, matter] = await Promise.all([
+      svc.getState(user.tenantId, matterId),
+      svc.subflows(user.tenantId),
+      queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null }>(
+        `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler
+           from matter m left join app_user u on u.id = m.assigned_to where m.id = $1 and m.tenant_id = $2`,
+        [matterId, user.tenantId]
+      ).catch(() => null),
+    ]);
+    return ok({
+      state,
+      blockers: stageBlockers(state),
+      waits: openWaits(state),
+      // Everything the log holds (the panel shows the engine's conclusions) …
+      pendingDecisions: pendingDecisions(state),
+      // … and what a person may act on (addendum 3 §2).
+      surfacedDecisions: surfacedDecisions(state, subflows),
+      subflows,
+      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler } : null,
+    });
   } catch (error) {
     return fail(error);
   }
@@ -52,6 +72,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       result = await svc.sendReportOnTitle(user.tenantId, matterId, user.userId);
     } else if (input.type === 'record_bank_details') {
       result = await svc.recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind: input.payeeKind, payeeRef: input.payeeRef ?? null, details: { ...input.details, firmName: input.details.firmName ?? null }, sourceChannel: input.sourceChannel, sourceDocumentId: input.sourceDocumentId ?? null, note: input.note ?? null });
+    } else if (input.type === 'set_shadow_mode') {
+      if (user.role !== 'ADMIN') throw Object.assign(new Error('Only an admin switches shadow mode.'), { status: 403 });
+      result = await svc.setShadowMode(user.tenantId, matterId, user.userId, input.shadowMode, input.reason ?? null);
     } else if (input.type === 'payment_authorised' || input.type === 'funds_requested') {
       requireDecider(user); // money moves only on a conveyancer's say-so
       const cmd = toCommand(input, user.userId);

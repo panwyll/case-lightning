@@ -103,6 +103,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.transactionType = p.transactionType;
       s.hasLender = p.hasLender;
       s.requiredSearches = [...p.requiredSearches];
+      s.shadowMode = !!p.shadowMode;
       s.counterpartyType = p.counterpartyType ?? null;
       s.targetExchangeDate = p.targetExchangeDate ?? null;
       s.targetCompletionDate = p.targetCompletionDate ?? null;
@@ -489,6 +490,30 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
     }
 
+    // ── Shadow mode / assist (addendum 3) ──
+    case 'shadow_mode_changed': {
+      s.shadowMode = (e.payload as Payloads['shadow_mode_changed']).shadowMode;
+      break;
+    }
+    case 'action_suppressed': {
+      const p = e.payload as Payloads['action_suppressed'];
+      s.suppressed += 1;
+      // A suppressed chase still counts as the chase attempt for the SLA clock, so shadow
+      // matters produce the same chase cadence the live ones would (and don't re-fire every tick).
+      if (p.action === 'chase') {
+        const w = findOpenWait(s, p.detail.waitKey as WaitKey, String(p.detail.subject ?? ''));
+        if (w) w.chasesSentAt.push(e.createdAt);
+      }
+      break;
+    }
+    case 'auto_clear_review_raised':
+      break; // the decision itself is registered generically above; non-blocking by design
+    case 'auto_clear_confirmed': {
+      const p = e.payload as Payloads['auto_clear_confirmed'];
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+
     // ── Decision audit ──
     case 'decision_source_opened': {
       const p = e.payload as Payloads['decision_source_opened'];
@@ -507,6 +532,7 @@ function subjectOf(e: EngineEvent): string | null {
   if (typeof p.enquiryId === 'string') return p.enquiryId;
   if (typeof p.draftId === 'string') return p.draftId;
   if (typeof p.bankDetailsId === 'string') return p.bankDetailsId;
+  if (e.type === 'auto_clear_review_raised') return `${(p as Payloads['auto_clear_review_raised']).subFlow}:${(p as Payloads['auto_clear_review_raised']).subject}`;
   if (e.type === 'escalation_raised') {
     const q = p as Payloads['escalation_raised'];
     return q.waitKey ? `${q.waitKey}:${q.subject}` : q.subject || null;

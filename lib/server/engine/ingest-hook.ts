@@ -7,12 +7,14 @@
 import { engine, productionPorts } from './adapters';
 import { ingestDocument, type IngestReport } from './ingest';
 import { emitMatterEvent } from '../events';
+import { runAsAutomation } from '../db';
 
 export async function ingestFiledDocument(tenantId: string, matterId: string, documentId: string): Promise<IngestReport | null> {
   const ports = productionPorts();
   const doc = await ports.documents.get(tenantId, documentId);
   if (!doc) return null;
-  const report = await ingestDocument(engine(), ports, tenantId, matterId, doc);
+  // Ingestion is automation: it may extract, flag and clear, never write a human-gated event.
+  const report = await runAsAutomation(() => ingestDocument(engine(), ports, tenantId, matterId, doc));
   if (report.action.kind === 'skip' && report.classification && report.classification.role !== 'other') {
     // Something recognisable arrived but could not be routed automatically — tell the
     // fee-earner, don't lose it (the /ingest route files it with an explicit role).

@@ -103,6 +103,8 @@ export interface AuditReport {
     events: number;
     byActorKind: Record<'system' | 'ai' | 'external' | 'user', number>;
     decisions: number;
+    /** Addendum 3 §2: assist-level reviews of auto-clears (advisory, non-blocking) included in `decisions`. */
+    autoClearReviews: number;
     decisionsResolvedWithoutOpeningSource: number;
     aiSentWithoutApproval: number;
     stageMoves: number;
@@ -144,6 +146,7 @@ export function buildAuditReport(tenantId: string, matterId: string, events: Eng
       events: events.length,
       byActorKind,
       decisions: decisions.length,
+      autoClearReviews: decisions.filter((d) => d.kind === 'auto_clear').length,
       decisionsResolvedWithoutOpeningSource: decisions.filter((d) => d.resolvedBy && !d.openedBy.includes(d.resolvedBy)).length,
       aiSentWithoutApproval,
       stageMoves: events.filter((e) => e.type === 'stage_advanced').length,

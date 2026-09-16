@@ -21,8 +21,54 @@ export interface DecisionRow {
   summarisedBy: string;
   status: 'pending' | 'actioned' | 'escalated';
   openedBy: string[];
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
+  resolution?: string | null;
   sourceOpenedByMe?: boolean;
+  shadowMode?: boolean;
 }
+
+/** Addendum 3 §3: how the handler engaged with the source section (recorded on the resolving event). */
+export interface Engagement { scrolledSource: boolean; dwellMs: number }
+
+/** Addendum 3 §3: one queue row per matter. */
+export interface QueueRow {
+  matterId: string;
+  matterRef: string | null;
+  propertyAddress: string | null;
+  stage: string;
+  shadowMode: boolean;
+  assignedTo: string | null;
+  pendingCount: number;
+  reviewCount: number;
+  loggedCount: number;
+  oldestPendingAt: string | null;
+  targetCompletionDate: string | null;
+  targetExchangeDate: string | null;
+  manualHandling: boolean;
+  updatedAt: string;
+}
+
+export interface MatterMeta { matterRef: string; propertyAddress: string; legacyStage?: string | null; shadowMode: boolean; assignedTo?: string | null; handler?: string | null }
+
+export interface DecisionDetail {
+  decision: DecisionRow;
+  matter: MatterMeta | null;
+  raised: { seq: number; type: string; actor: string; createdAt: string; confidenceScore: number | null } | null;
+  resolution: { eventId: string; type: string; by: string; at: string; option: string | null; note: string | null; engagement: Engagement | null; verification: { method: string; reference: string | null } | null } | null;
+  escalation: { eventId: string; at: string } | null;
+  opens: Array<{ by: string; at: string; documentId: string }>;
+  people: Record<string, string>;
+  shadowed: 'matter' | 'subflow' | null;
+  source: SourceDoc | null;
+}
+
+export type SubflowStatus = 'shadow' | 'assist' | 'autonomous';
+export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
+export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', search: 'Searches', enquiry: 'Enquiries', mortgage: 'Mortgage offer', title: 'Title', report_on_title: 'Report on title', chase: 'Chasing & escalation' };
+
+/** Event types that carry a DecisionSpec (mirrors the server's DECISION_EVENT_TYPES). */
+export const DECISION_EVENT_TYPES = new Set(['id_check_flagged', 'search_flagged', 'enquiry_reply_flagged', 'mortgage_condition_flagged', 'title_flagged', 'report_on_title_drafted', 'escalation_raised', 'bank_details_change_flagged', 'auto_clear_review_raised']);
 
 export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl?: string | null }
 
@@ -54,9 +100,13 @@ export interface EngineState {
   chasesSent: number;
   bankDetails: Record<string, BankDetailsRow>;
   payments: PaymentRow[];
+  shadowMode: boolean;
+  suppressed: number;
+  targetCompletionDate: string | null;
+  targetExchangeDate: string | null;
 }
 
-export interface EngineView { state: EngineState; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[] }
+export interface EngineView { state: EngineState; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; subflows?: Record<string, SubflowStatus>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 
@@ -71,6 +121,7 @@ export const KIND_LABEL: Record<string, string> = {
   report_on_title: 'Report on title — approve draft',
   escalation: 'Escalation',
   bank_details: 'Bank details — verify out-of-band',
+  auto_clear: 'Auto-clear review',
 };
 
 export const VERIFICATION_METHOD_LABEL: Record<string, string> = {
@@ -93,5 +144,17 @@ export const OPTION_LABEL: Record<string, string> = {
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');
+export const STAGE_LABEL: Record<string, string> = { instruction: 'Instruction', pre_contract: 'Pre-contract', contract_review: 'Contract review', pre_exchange: 'Pre-exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', completed: 'Completed', post_completion: 'Post-completion' };
+export const ago = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60_000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+};
+export const actorKind = (a: string) => (a === 'system' || a === 'ai' || a === 'external' ? a : 'person');
 export const fmtWhen = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 export const fmtDay = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');

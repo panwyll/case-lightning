@@ -14,6 +14,10 @@
  *   - 7 Mill Lane — Alice's cash purchase at contract_review with an AI-drafted report
  *     on title awaiting approval, and an unanswered enquiry old enough to have been
  *     chased and escalated by the timer.
+ *   - 3 Riverside Court — Bob's purchase enrolled in SHADOW MODE (addendum 3 §2): the
+ *     engine has concluded plenty (a flagged search, auto-clears, a chase it would have
+ *     sent) but nothing surfaced, nothing was sent or ordered, and the board stage was
+ *     never touched — the comparison view shows the gap.
  * Documents are real PDFs (document_blob) carrying pre-extracted facts, so the demo
  * runs without a model key; with ANTHROPIC_API_KEY the same PDFs go through Claude.
  * Prints session cookies for Alice and Bob for a browser or curl walkthrough.
@@ -109,7 +113,7 @@ async function main() {
   const hdr = (title: string, addr: string, ref: string) => [title, '='.repeat(title.length), `Property: ${addr}`, `Our ref: ${ref}    Date: ${clock.toISOString().slice(0, 10)}`, ''];
 
   // ════ Matter A: 14 Oak Street ════
-  await svc.run(tenant, A, { type: 'enrol', actor: alice, hasLender: true, targetExchangeDate: new Date(Date.now() + 56 * 86_400_000).toISOString().slice(0, 10), counterpartyType: 'internal' });
+  await svc.run(tenant, A, { type: 'enrol', actor: alice, hasLender: true, targetExchangeDate: new Date(Date.now() + 56 * 86_400_000).toISOString().slice(0, 10), targetCompletionDate: new Date(Date.now() + 70 * 86_400_000).toISOString().slice(0, 10), counterpartyType: 'internal' });
   await svc.requestIdCheck(tenant, A, alice);
   tick(1);
   await svc.idCheckResultReceived(tenant, A, await doc(A, 'id-aml-report-priya-shah.pdf', 'ID_CHECK_REPORT', [...hdr('ELECTRONIC ID & AML CHECK', '14 Oak Street', 'OAK-14'), 'Subject: Priya Shah', 'Identity: PASS (passport + address verified)', 'PEP / sanctions: no match', 'Overall: CLEAR'], { provider: 'mock-id', outcome: 'clear', flags: [], confidence: 0.99 }, 0.99));
@@ -134,7 +138,7 @@ async function main() {
 
   // ════ Matter C: 7 Mill Lane — further along ════
   clock = new Date(Date.now() - 40 * 86_400_000);
-  await svc.run(tenant, C, { type: 'enrol', actor: alice, hasLender: false, requiredSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER'], counterpartyType: 'external' });
+  await svc.run(tenant, C, { type: 'enrol', actor: alice, hasLender: false, requiredSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER'], targetCompletionDate: new Date(Date.now() + 21 * 86_400_000).toISOString().slice(0, 10), counterpartyType: 'external' });
   await svc.requestIdCheck(tenant, C, alice);
   tick(1);
   await svc.idCheckResultReceived(tenant, C, await doc(C, 'id-aml-nowak.pdf', 'ID_CHECK_REPORT', [...hdr('ELECTRONIC ID & AML CHECK', '7 Mill Lane', 'MILL-7'), 'Subjects: Tomasz Nowak, Ewa Nowak', 'Overall: CLEAR'], { provider: 'mock-id', outcome: 'clear', flags: [], confidence: 0.99 }, 0.99));
@@ -180,6 +184,28 @@ async function main() {
   clock = new Date();
   const t = await svc.tick(tenant, C); // chases + escalation on E2 (working days)
 
+  // ════ Matter D: 3 Riverside Court — SHADOW MODE (addendum 3 §2) ════
+  const D = await matter('RIV-3', '3 Riverside Court, Caversham, RG4 8AA', bob, 'Hannah & Josh Reid', 'Mock Building Society', 'PURCHASE');
+  await contact(D, 'reid.family@example.com', 'Hannah Reid', 'CLIENT', '447700900456');
+  await setCounterparty(tenant, D, { kind: 'external', name: 'Bartlett & Co', email: 'post@bartlett-co.example', firm: 'Bartlett & Co' }, bob);
+  // The handler works the matter the old way on the board meanwhile:
+  await query(`update matter set stage = 'SEARCHES_ENQUIRIES', stage_entered_at = now() - interval '9 days' where id = $1`, [D]);
+  await query(`insert into matter_task (tenant_id, matter_id, ref, detail, status) values ($1,$2,'T-0001','Chase Bartlett & Co for replies to enquiries','OPEN'), ($1,$2,'T-0002','Review CON29 — enforcement notice at 3.7','IN_PROGRESS') on conflict do nothing`, [tenant, D]).catch(() => {});
+  clock = new Date(Date.now() - 20 * 86_400_000);
+  await svc.run(tenant, D, { type: 'enrol', actor: bob, hasLender: true, requiredSearches: ['LLC1', 'CON29'], targetCompletionDate: new Date(Date.now() + 45 * 86_400_000).toISOString().slice(0, 10), counterpartyType: 'external', shadowMode: true });
+  await svc.requestIdCheck(tenant, D, bob); // suppressed: the provider is not asked
+  tick(1);
+  await svc.idCheckResultReceived(tenant, D, await doc(D, 'id-aml-reid.pdf', 'ID_CHECK_REPORT', [...hdr('ELECTRONIC ID & AML CHECK', '3 Riverside Court', 'RIV-3'), 'Subjects: Hannah Reid, Josh Reid', 'Overall: CLEAR'], { provider: 'mock-id', outcome: 'clear', flags: [], confidence: 0.99 }, 0.99));
+  // → the engine's own stage moves to pre_contract; the search orders are SUPPRESSED (logged as intents). Record the orders the handler placed by hand.
+  for (const st of ['LLC1', 'CON29'] as const) await svc.run(tenant, D, { type: 'record_search_ordered', actor: bob, searchType: st, provider: 'InfoTrack (placed by handler)' });
+  tick(7);
+  await svc.searchReturned(tenant, D, 'LLC1', await doc(D, 'LLC1-3-riverside-court.pdf', 'SEARCH_LLC1', [...hdr('OFFICIAL CERTIFICATE OF SEARCH — LLC1', '3 Riverside Court', 'RIV-3'), 'Result: no entries registered.'], { searchType: 'LLC1', flags: [], confidence: 0.97 }, 0.97));
+  tick(2);
+  await svc.searchReturned(tenant, D, 'CON29', await doc(D, 'CON29R-3-riverside-court.pdf', 'SEARCH_CON29', [...hdr('LOCAL AUTHORITY SEARCH — CON29R', '3 Riverside Court', 'RIV-3'), '2.1 Roads: Riverside Court — PRIVATE, not maintainable at public expense', '3.7 Outstanding notices: ENFORCEMENT NOTICE served 02/02/2025 re: decking to river bank; OUTSTANDING', '3.13 Flood: within Environment Agency flood zone 2'], { searchType: 'CON29', flags: [{ code: 'PLANNING_ENFORCEMENT', severity: 'high', description: 'Enforcement notice served 02/02/2025 re: decking to the river bank; outstanding', locator: { page: 1, section: '3.7', quote: 'ENFORCEMENT NOTICE served 02/02/2025' } }, { code: 'PRIVATE_ROAD', severity: 'medium', description: 'Riverside Court is a private road', locator: { page: 1, section: '2.1' } }], confidence: 0.95 }, 0.95));
+  await svc.run(tenant, D, { type: 'raise_enquiry', actor: bob, enquiryId: 'E1', subject: 'Who maintains the private road and at what cost?' });
+  clock = new Date();
+  const tD = await svc.tick(tenant, D); // the chase it WOULD have sent is logged as action_suppressed
+
   // ── session cookies for a walkthrough ──
   const cookieA = config.sessionJwtSecret ? await signSession(alice) : null;
   const cookieB = config.sessionJwtSecret ? await signSession(bob) : null;
@@ -193,7 +219,10 @@ async function main() {
   console.log(`14 Oak Street — sale (Bob)  (matter ${B})  internal counterparty of the above`);
   console.log(`7 Mill Lane  (matter ${C})  stage ${sC.stage}  pending decisions ${Object.values(sC.decisions).filter((d) => d.status === 'pending').length}  timer this run: ${t.chases} chase(s), ${t.escalations} escalation(s)`);
   console.log(`  ${config.appUrl}/engine/${C}`);
-  console.log(`\nDecision feed: ${config.appUrl}/decisions`);
+  const sD = await svc.getState(tenant, D);
+  console.log(`3 Riverside Court  (matter ${D})  SHADOW MODE  engine stage ${sD.stage}  conclusions ${Object.keys(sD.decisions).length}  suppressed actions ${sD.suppressed}  timer this run: ${tD.chases} chase(s) suppressed`);
+  console.log(`  ${config.appUrl}/engine/${D}/shadow`);
+  console.log(`\nQueue: ${config.appUrl}/decisions   Rollout board: ${config.appUrl}/engine/shadow`);
   if (cookieA) console.log(`\nSession cookie (Alice):  cl_session=${cookieA}`);
   if (cookieB) console.log(`Session cookie (Bob):    cl_session=${cookieB}`);
   await pool().end();
