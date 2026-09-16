@@ -172,7 +172,8 @@ function chooseIntegrations(): { searchProvider: EnginePorts['searchProvider']; 
 
 /** Real client comms + chaser (#5) when any channel is configured (WhatsApp, Resend or Graph); mocks otherwise. */
 function chooseComms(): { clientComms: EnginePorts['clientComms']; chaser: EnginePorts['chaser'] } {
-  if (!commsConfigured()) return { clientComms: new MockClientComms(), chaser: new MockChaser() };
+  const useReal = config.engineComms === 'real' || (config.engineComms === 'auto' && commsConfigured());
+  if (!useReal) return { clientComms: new MockClientComms(), chaser: new MockChaser() };
   return { clientComms: productionClientComms(), chaser: productionChaser() };
 }
 

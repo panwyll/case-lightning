@@ -77,6 +77,7 @@ export const config = {
   // its credentials are present; set explicitly to force one way or the other.
   engineExtractor: (env('ENGINE_EXTRACTOR') ?? 'auto') as 'auto' | 'claude' | 'fixture',
   engineAi: (env('ENGINE_AI') ?? 'auto') as 'auto' | 'claude' | 'template',
+  engineComms: (env('ENGINE_COMMS') ?? 'auto') as 'auto' | 'real' | 'mock',
 
   // InfoTrack (searches, AML/ID, HMLR official copies) — component #4.
   infotrackBaseUrl: env('INFOTRACK_BASE_URL'),

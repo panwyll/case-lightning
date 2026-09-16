@@ -46,7 +46,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
       const r = await api<{ document: SourceDoc }>(`/decisions/${d.eventId}/open-source`, { method: 'POST', body: '{}' });
       setSource(r.document);
       setOpened(true);
-      if (r.document.webUrl && !r.document.content) window.open(r.document.webUrl, '_blank', 'noopener');
+      if (r.document.webUrl && !r.document.content && !r.document.rawUrl) window.open(r.document.webUrl, '_blank', 'noopener');
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not open the source.');
     } finally {
@@ -93,7 +93,8 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
             <div className="dc-src">
               <strong>{source.fileName ?? source.id}</strong> {source.docType ? `· ${pretty(source.docType.toLowerCase())}` : ''}{' '}
               {source.webUrl ? <a href={source.webUrl} target="_blank" rel="noopener noreferrer">open in OneDrive</a> : null}
-              {source.content ? <pre>{source.content}</pre> : source.webUrl ? <iframe title="source document" src={source.webUrl} /> : <div className="dc-warn">No inline preview — read the file itself before deciding.</div>}
+              {source.rawUrl ? <a href={source.rawUrl} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 8 }}>open file</a> : null}
+              {source.rawUrl ? <iframe title="source document" src={source.rawUrl} /> : source.content ? <pre>{source.content}</pre> : source.webUrl ? <iframe title="source document" src={source.webUrl} /> : <div className="dc-warn">No inline preview — read the file itself before deciding.</div>}
             </div>
           )}
           <textarea className="dc-note" rows={2} placeholder="Note for the record (what you checked, why)…" value={note} onChange={(e) => setNote(e.target.value)} />

@@ -62,6 +62,11 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const [hasLender, setHasLender] = useState(true);
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
   const [completionDate, setCompletionDate] = useState('');
+  const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check'>('auto');
+  const [upSearch, setUpSearch] = useState('CON29');
+  const [upEnquiry, setUpEnquiry] = useState('');
+  const [upFile, setUpFile] = useState<File | null>(null);
+  const [upMsg, setUpMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -88,6 +93,31 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
       onChanged?.();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Command failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const upload = async () => {
+    if (!upFile) return;
+    setBusy(true);
+    setErr(null);
+    setUpMsg(null);
+    try {
+      const buf = await upFile.arrayBuffer();
+      let bin = '';
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      const r = await api<{ action: { kind: string; reason?: string }; classification: { role: string; confidence: number } | null }>(`/matters/${matterId}/engine/upload`, {
+        method: 'POST',
+        body: JSON.stringify({ fileName: upFile.name, mimeType: upFile.type || 'application/pdf', base64: btoa(bin), role: upRole, searchType: upRole === 'search' ? upSearch : undefined, enquiryId: upRole === 'enquiry_reply' ? upEnquiry.trim() : undefined }),
+      });
+      setUpMsg(r.action.kind === 'skip' ? `Filed, not routed: ${r.action.reason ?? ''}` : `Filed as ${r.action.kind.replace('_', ' ')}${r.classification ? ` (classifier ${Math.round(r.classification.confidence * 100)}% sure)` : ''} — the engine has extracted and rule-checked it.`);
+      setUpFile(null);
+      await load();
+      onChanged?.();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Upload failed.');
     } finally {
       setBusy(false);
     }
@@ -143,7 +173,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
       )}
 
       <div className="ep-sec">Decisions waiting on you ({view.pendingDecisions.length})</div>
-      <DecisionFeed api={api} matterId={matterId} compact />
+      <DecisionFeed api={api} matterId={matterId} compact onResolved={() => { void load(); onChanged?.(); }} />
 
       <div className="ep-sec">Sub-flows</div>
       <div className="ep-grid">
@@ -161,6 +191,30 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         <div className="ep-tile"><b>Exchange</b><Pill s={s.exchange.exchangedAt ? 'sent' : s.deposit.received ? 'approved' : 'awaiting'} />{s.exchange.completionDate ? <div style={{ fontSize: 11.5, color: '#64748b' }}>completion {s.exchange.completionDate}</div> : null}</div>
         <div className="ep-tile"><b>Completion</b><Pill s={s.completion.confirmedAt ? 'sent' : s.completion.fundsReceivedAt ? 'approved' : s.completion.fundsRequestedAt ? 'requested' : 'awaiting'} /></div>
         <div className="ep-tile"><b>Post-completion</b><Pill s={s.postCompletion.ap1ConfirmedAt ? 'sent' : s.postCompletion.ap1SubmittedAt ? 'requested' : s.postCompletion.sdltSubmittedAt ? 'approved' : 'awaiting'} /></div>
+      </div>
+
+      <div className="ep-sec">File a document into the engine</div>
+      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input type="file" accept="application/pdf,image/*,.txt" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12.5 }} />
+          <select className="ep-input" value={upRole} onChange={(e) => setUpRole(e.target.value as typeof upRole)}>
+            <option value="auto">Let the engine classify it</option>
+            <option value="search">Search result</option>
+            <option value="enquiry_reply">Reply to enquiries</option>
+            <option value="mortgage_offer">Mortgage offer</option>
+            <option value="title">Official copy of the register</option>
+            <option value="id_check">ID / AML report</option>
+          </select>
+          {upRole === 'search' && (
+            <select className="ep-input" value={upSearch} onChange={(e) => setUpSearch(e.target.value)}>
+              {['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL'].map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          {upRole === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={upEnquiry} onChange={(e) => setUpEnquiry(e.target.value)} style={{ width: 120 }} />}
+          <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !upFile || (upRole === 'enquiry_reply' && !upEnquiry.trim())} onClick={upload}>File into engine</button>
+        </div>
+        <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 6 }}>Search results, replies, offers, title and ID reports arrive here (or via OneDrive / InfoTrack automatically). The engine extracts, rule-checks and either clears it or raises a decision for you.</div>
+        {upMsg && <div style={{ fontSize: 12.5, color: '#14532d', marginTop: 6 }}>{upMsg}</div>}
       </div>
 
       <div className="ep-sec">Actions</div>

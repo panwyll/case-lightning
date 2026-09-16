@@ -19,6 +19,30 @@ import { config } from './config';
  */
 const dbUser = new AsyncLocalStorage<{ userId: string | null }>();
 
+/**
+ * Request-scoped fallback. `AsyncLocalStorage.enterWith` inside an awaited function does
+ * not reach the caller's continuation, so a route that merely awaits requireUser() would
+ * otherwise run its queries WITHOUT the user bound — and the wall would silently not
+ * apply over HTTP. session.ts registers a resolver that reads the request's session
+ * cookie / bearer token; db.ts consults it whenever no explicit runAsUser/runAsSystem
+ * scope is active. Outside a request (cron, scripts) the resolver returns null → system.
+ */
+let requestUserResolver: (() => Promise<string | null>) | null = null;
+export function registerRequestUserResolver(fn: () => Promise<string | null>): void {
+  requestUserResolver = fn;
+}
+
+async function effectiveDbUser(): Promise<string | null> {
+  const scoped = dbUser.getStore();
+  if (scoped) return scoped.userId; // explicit runAsUser / runAsSystem / bindDbUser wins
+  if (!requestUserResolver) return null;
+  try {
+    return await requestUserResolver();
+  } catch {
+    return null;
+  }
+}
+
 /** Bind the current async context to a user (session.ts calls this after loading the session). */
 export function bindDbUser(userId: string | null): void {
   dbUser.enterWith({ userId });
@@ -76,14 +100,14 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
   text: string,
   values: unknown[] = []
 ): Promise<T[]> {
-  const user = currentDbUser();
+  const user = await effectiveDbUser();
   if (!user) {
     const result = await pool().query<T>(text, values);
     return result.rows;
   }
   // A user is bound: run inside a transaction so set_config(..., is_local = true)
   // scopes app.user_id to this statement and never leaks to the next pool borrower.
-  return transaction(async (client) => (await client.query<T>(text, values)).rows);
+  return runAsUser(user, () => transaction(async (client) => (await client.query<T>(text, values)).rows));
 }
 
 export async function queryOne<T extends QueryResultRow = QueryResultRow>(
@@ -98,7 +122,7 @@ export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>
   const client = await pool().connect();
   try {
     await client.query('begin');
-    const user = currentDbUser();
+    const user = await effectiveDbUser();
     if (user) await client.query(`select set_config('app.user_id', $1, true)`, [user]);
     const value = await work(client);
     await client.query('commit');

@@ -7,6 +7,12 @@ import { queryOne } from './db';
 import type { SessionUser } from './types';
 
 export async function assertMatterAccess(user: SessionUser, matterId: string): Promise<void> {
+  // Ethical wall (migration 068/069): a targeted read of the other side's matter is an
+  // explicit 42501 from the database (→ 403), not a quiet "not found". Lists filter instead.
+  await queryOne('select engine_wall_check($1)', [matterId]).catch((err: Error & { code?: string }) => {
+    if (err.code === '42501') throw err;
+    /* function absent before migration 068 — fall through to the plain lookup */
+  });
   const row = await queryOne<{ id: string }>(
     'select id from matter where id = $1 and tenant_id = $2',
     [matterId, user.tenantId]

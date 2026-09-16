@@ -8,7 +8,7 @@ import { KIND_LABEL, pretty, type Api, type DecisionRow } from './types';
  * by matter, filterable by kind. Used by /decisions, the admin matter drawer (scoped
  * to one matter) and the Outlook taskpane (compact).
  */
-export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCount, hideWhenEmpty = false }: { api: Api; matterId?: string; compact?: boolean; limit?: number; onCount?: (n: number) => void; hideWhenEmpty?: boolean }) {
+export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCount, hideWhenEmpty = false, onResolved }: { api: Api; matterId?: string; compact?: boolean; limit?: number; onCount?: (n: number) => void; hideWhenEmpty?: boolean; onResolved?: () => void }) {
   const [rows, setRows] = useState<DecisionRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [kind, setKind] = useState<string>('all');
@@ -64,7 +64,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
             </div>
           )}
           {list.map((d) => (
-            <DecisionCard key={d.eventId} decision={d} api={api} compact={compact} showMatter={!matterId && compact} onResolved={() => void load()} />
+            <DecisionCard key={d.eventId} decision={d} api={api} compact={compact} showMatter={!matterId && compact} onResolved={() => { void load(); onResolved?.(); }} />
           ))}
         </div>
       ))}

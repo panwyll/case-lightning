@@ -24,7 +24,7 @@ export interface DecisionRow {
   sourceOpenedByMe?: boolean;
 }
 
-export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null }
+export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl?: string | null }
 
 export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }
 

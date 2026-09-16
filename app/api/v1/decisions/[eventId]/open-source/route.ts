@@ -6,6 +6,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { requireDecider } from '@/lib/server/engine/http';
+import { queryOne } from '@/lib/server/db';
 import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
@@ -30,7 +31,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
     const { document } = await svc.openDecisionSource(user.tenantId, d.matterId, eventId, user.userId, body.documentId ?? null);
     await writeAudit({ tenantId: user.tenantId, matterId: d.matterId, actorUserId: user.userId, actionType: 'ENGINE_DECISION_SOURCE_OPENED', actionStatus: 'SUCCESS', payload: { decisionEventId: eventId, documentId: document.id } }).catch(() => {});
     const content = (document.extractedFacts as { content?: string } | null)?.content ?? null;
-    return ok({ document: { id: document.id, fileName: document.fileName, webUrl: document.webUrl, docType: document.docType, content }, locator: d.sourceLocator ?? null });
+    const blob = await queryOne<{ ok: boolean }>(`select true as ok from document_blob where document_id = $1`, [document.id]).catch(() => null);
+    const rawUrl = blob ? `/api/v1/documents/${document.id}/raw` : null;
+    return ok({ document: { id: document.id, fileName: document.fileName, webUrl: document.webUrl, docType: document.docType, content, rawUrl }, locator: d.sourceLocator ?? null });
   } catch (error) {
     return fail(error);
   }

@@ -177,3 +177,23 @@ separate firms.
 | 5. Never one handler both sides | `assertNoSharedHandler` / `assertCanAssign` in the app (409 with a clear message), plus DB triggers on `matter_link` insert and on `matter.assigned_to` update (`23514`). Consent exceptions are handled outside the system by design. |
 
 Set a counterparty with `POST /api/v1/matters/:id/counterparty` (`{kind:'external', name, email, firm}` or `{kind:'internal', matterId, chainRef}`); read the resolved contact with `GET`.
+
+## Demo
+
+```bash
+npm run migrate                # migrations ≤ 069 on the target database
+npm run engine:demo            # seeds "Demo Conveyancing LLP": two handlers, three matters, real PDFs, pending decisions
+```
+
+The seed prints matter URLs and two session cookies (Alice, the buyer's handler; Bob, the
+seller's handler on the linked matter). Open `/decisions` or `/engine/<matterId>` with the
+`cl_session` cookie set. Without `ANTHROPIC_API_KEY` the seeded PDFs carry pre-extracted
+facts and everything else runs on mocks (`ENGINE_COMMS=mock` keeps comms off Graph);
+with a key, the same PDFs go through the real extractor when filed via the Engine tab's
+"File a document into the engine" control or `POST /matters/:id/engine/upload`.
+
+Wall semantics after migration 069: tenant-wide lists silently exclude a handler's walled
+counterparty matter; a targeted read (`assertMatterAccess`, any `/matters/:id/*` route)
+is refused with 403 from a database-raised `42501`; writes to a walled row fail RLS.
+The request's user is bound to every query by `lib/server/db.ts` from the session
+cookie/bearer token — no route has to remember to do it.

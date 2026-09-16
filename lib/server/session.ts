@@ -4,11 +4,37 @@
  */
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies, headers } from 'next/headers';
-import { queryOne, bindDbUser } from './db';
+import { queryOne, bindDbUser, registerRequestUserResolver } from './db';
 import { config } from './config';
 import type { SessionUser } from './types';
 
 export const SESSION_COOKIE = 'cl_session';
+
+// Small cache so the per-query user resolution (db.ts) does not re-verify the JWT each time.
+const tokenUserCache = new Map<string, string | null>();
+async function userIdFromRequest(): Promise<string | null> {
+  let token: string | undefined;
+  try {
+    token = (await cookies()).get(SESSION_COOKIE)?.value;
+    if (!token) {
+      const auth = (await headers()).get('authorization');
+      if (auth?.startsWith('Bearer ')) token = auth.slice(7);
+    }
+  } catch {
+    return null; // not inside a request (cron, scripts, build)
+  }
+  if (!token) return null;
+  const hit = tokenUserCache.get(token);
+  if (hit !== undefined) return hit;
+  const verified = await verifySession(token);
+  const userId = verified?.userId ?? null;
+  if (tokenUserCache.size > 500) tokenUserCache.clear();
+  tokenUserCache.set(token, userId);
+  return userId;
+}
+// Every query made while handling a request now carries the signed-in user for the
+// database's ethical-wall check (migration 068) — no route has to remember to do it.
+registerRequestUserResolver(userIdFromRequest);
 export const OAUTH_STATE_COOKIE = 'cl_oauth_state';
 // Which surface started the OAuth round trip. The add-in signs in inside an Office
 // dialog and needs the /addin/auth-complete bridge to hand the token back to the task

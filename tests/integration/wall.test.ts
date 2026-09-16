@@ -67,16 +67,22 @@ test('ethical wall + handler-conflict rules hold at the database layer', { skip:
   // Requirement 2: Alice cannot read Bob's matter — a DB error (42501), not an empty result.
   await runAsUser(A, async () => {
     assert.match((await queryOne<{ notes: string }>(`select notes from matter where id = $1`, [MA]))!.notes, /BUY-1/);
-    await assert.rejects(query(`select notes from matter where id = $1`, [MB]), (e: Error & { code?: string }) => e.code === '42501' && /ethical wall/.test(e.message));
-    await assert.rejects(query(`select * from matter_event where matter_id = $1`, [MB]), /ethical wall/);
-    await assert.rejects(query(`select * from matter_summary where matter_id = $1`, [MB]), /ethical wall/);
-    await assert.rejects(query(`select * from document where matter_id = $1`, [MB]), /ethical wall/);
-    await assert.rejects(query(`insert into matter_task (tenant_id, matter_id, ref, detail) values ($1,$2,'T-0001','sneaky')`, [t, MB]), /ethical wall/);
-    await assert.rejects(query(`select id, notes from matter where tenant_id = $1`, [t]), /ethical wall/); // a casual "all matters" read
+    // Targeted access: the explicit check raises (this is what assertMatterAccess calls).
+    await assert.rejects(query(`select engine_wall_check($1)`, [MB]), (e: Error & { code?: string }) => e.code === '42501' && /ethical wall/.test(e.message));
+    // Row-level: the other side's rows are simply not there for Alice — reads are empty, writes fail.
+    assert.equal((await query(`select notes from matter where id = $1`, [MB])).length, 0);
+    assert.equal((await query(`select * from matter_event where matter_id = $1`, [MB])).length, 0);
+    assert.equal((await query(`select * from matter_summary where matter_id = $1`, [MB])).length, 0);
+    assert.equal((await query(`select * from document where matter_id = $1`, [MB])).length, 0);
+    await assert.rejects(query(`insert into matter_task (tenant_id, matter_id, ref, detail) values ($1,$2,'T-0001','sneaky')`, [t, MB]), /row-level security/);
+    // A tenant-wide list works and silently excludes Bob's matter.
+    const all = await query<{ id: string }>(`select id from matter where tenant_id = $1`, [t]);
+    assert.ok(all.some((r) => r.id === MA) && all.some((r) => r.id === MX) && !all.some((r) => r.id === MB));
     assert.ok(await queryOne(`select id from matter where id = $1`, [MX]));
   });
   await runAsUser(B, async () => {
-    await assert.rejects(query(`select notes from matter where id = $1`, [MA]), /ethical wall/);
+    await assert.rejects(query(`select engine_wall_check($1)`, [MA]), /ethical wall/);
+    assert.equal((await query(`select notes from matter where id = $1`, [MA])).length, 0);
     assert.ok(await queryOne(`select id from matter where id = $1`, [MB]));
   });
   await runAsUser(C, async () => assert.equal((await query(`select id from matter where id = any($1::uuid[])`, [[MA, MB]])).length, 2));
@@ -92,6 +98,6 @@ test('ethical wall + handler-conflict rules hold at the database layer', { skip:
   assert.deepEqual(delivered, ['E1']);
   assert.equal((await query<{ n: string }>(`select count(*)::text as n from matter_event where matter_id = $1 and payload->>'counterpartyType' = 'internal'`, [MA]))[0].n, '2');
   assert.equal((await query(`select 1 from matter_event where matter_id = $1`, [MB])).length, bobEventsBefore, "Bob's log is untouched by Alice's enquiry");
-  await runAsUser(B, () => assert.rejects(query(`select 1 from matter_event where matter_id = $1`, [MA]), /ethical wall/));
+  await runAsUser(B, async () => assert.equal((await query(`select 1 from matter_event where matter_id = $1`, [MA])).length, 0));
   await pool().end();
 });
