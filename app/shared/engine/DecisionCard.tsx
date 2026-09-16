@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { KIND_LABEL, OPTION_LABEL, fmtWhen, pretty, type Api, type DecisionRow, type SourceDoc } from './types';
+import { KIND_LABEL, OPTION_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Api, type DecisionRow, type SourceDoc } from './types';
 
 /**
  * One decision, the way the spec wants it seen: the pre-digested summary, the source
@@ -12,6 +12,7 @@ import { KIND_LABEL, OPTION_LABEL, fmtWhen, pretty, type Api, type DecisionRow, 
 export const DECISION_CSS = `
 .dc-card{background:#fff;border:1px solid #e6e8ee;border-left:4px solid #f59e0b;border-radius:12px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,24,40,.06);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a}
 .dc-card.opened{border-left-color:#16a34a}
+.dc-card.bank{border-left-color:#dc2626}
 .dc-card.compact{padding:10px 12px;margin-bottom:8px}
 .dc-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
 .dc-kind{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#b45309}
@@ -38,6 +39,9 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(!compact);
+  const [method, setMethod] = useState('');
+  const [reference, setReference] = useState('');
+  const isBank = d.kind === 'bank_details';
 
   const openSource = async () => {
     setBusy(true);
@@ -58,7 +62,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
     setBusy(true);
     setErr(null);
     try {
-      await api(`/decisions/${d.eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note || null }) });
+      await api(`/decisions/${d.eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null }) });
       onResolved?.(d);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not resolve.');
@@ -68,7 +72,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
   };
 
   return (
-    <div className={`dc-card${opened ? ' opened' : ''}${compact ? ' compact' : ''}`}>
+    <div className={`dc-card${opened ? ' opened' : ''}${compact ? ' compact' : ''}${isBank ? ' bank' : ''}`}>
       <div className="dc-top" onClick={() => compact && setExpanded((x) => !x)} style={compact ? { cursor: 'pointer' } : undefined}>
         <div>
           <div className="dc-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject}` : ''}</div>
@@ -97,10 +101,22 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
               {source.rawUrl ? <iframe title="source document" src={source.rawUrl} /> : source.content ? <pre>{source.content}</pre> : source.webUrl ? <iframe title="source document" src={source.webUrl} /> : <div className="dc-warn">No inline preview — read the file itself before deciding.</div>}
             </div>
           )}
+          {isBank && (
+            <div className="dc-src" style={{ background: '#fef2f2', borderColor: '#fecaca' }}>
+              <strong>Hard stop.</strong> Verify these details on a channel the sender does not control. A reply to the same email or portal message is not verification and is not offered.
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                <select className="dc-note" style={{ width: 'auto', marginTop: 0 }} value={method} onChange={(e) => setMethod(e.target.value)}>
+                  <option value="">How did you verify?</option>
+                  {Object.entries(VERIFICATION_METHOD_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
+                <input className="dc-note" style={{ width: 240, marginTop: 0 }} placeholder="Check reference (Lawyer Checker id, who you spoke to)…" value={reference} onChange={(e) => setReference(e.target.value)} />
+              </div>
+            </div>
+          )}
           <textarea className="dc-note" rows={2} placeholder="Note for the record (what you checked, why)…" value={note} onChange={(e) => setNote(e.target.value)} />
           <div>
             {d.options.map((o) => (
-              <button key={o} className="dc-btn" disabled={!opened || busy} title={opened ? '' : 'Open the source document first'} onClick={() => resolve(o)}>
+              <button key={o} className="dc-btn" disabled={!opened || busy || (isBank && o === 'verify' && !method)} title={opened ? (isBank && o === 'verify' && !method ? 'Choose the verification method first' : '') : 'Open the source document first'} onClick={() => resolve(o)}>
                 {OPTION_LABEL[o] ?? pretty(o)}
               </button>
             ))}

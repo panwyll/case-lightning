@@ -161,6 +161,19 @@ async function main() {
   }
   tick(1);
   await svc.draftReportOnTitle(tenant, C); // → decision: approve the AI draft
+  // Addendum 2: the firm's client account (verified) and the seller's solicitor's details (verified),
+  // then a "Friday afternoon" change by email — a hard stop the feed will show.
+  const firmAcct = await svc.recordBankDetails(tenant, C, { actor: alice, payeeKind: 'firm_client_account', payeeRef: 'Demo Conveyancing LLP client account', details: { sortCode: '401234', accountNumber: '00112233', accountName: 'Demo Conveyancing LLP Client A/C', firmName: 'Demo Conveyancing LLP' }, sourceChannel: 'manual' });
+  const fa = Object.values(firmAcct.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
+  await svc.openDecisionSource(tenant, C, fa.eventId, alice);
+  await svc.resolveDecision(tenant, C, fa.eventId, alice, 'verify', 'Matches the firm mandate held by the COFA', { method: 'in_person' });
+  const gl1 = await svc.recordBankDetails(tenant, C, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Greenfield Law LLP', details: { sortCode: '309876', accountNumber: '55667788', accountName: 'Greenfield Law LLP Client Account', firmName: 'Greenfield Law LLP' }, sourceChannel: 'letter', sourceDocumentId: await doc(C, 'greenfield-client-care-letter.pdf', 'LETTER', [...hdr('GREENFIELD LAW LLP — CLIENT ACCOUNT DETAILS', '7 Mill Lane', 'MILL-7'), 'Our client account for completion monies:', '  Sort code 30-98-76   Account 55667788   Greenfield Law LLP Client Account', 'These details will not change during the transaction.'], { content: 'letterhead' }, 1) });
+  const g1 = Object.values(gl1.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
+  await svc.openDecisionSource(tenant, C, g1.eventId, alice);
+  await svc.resolveDecision(tenant, C, g1.eventId, alice, 'verify', 'Called Greenfield on 01491 000000 (Law Society register); confirmed by their accounts team', { method: 'phone_callback_known_number' });
+  clock = new Date(Date.now() - 60_000);
+  await svc.recordBankDetails(tenant, C, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Greenfield Law LLP', details: { sortCode: '040004', accountNumber: '91827364', accountName: 'Greenfield Law Ltd', firmName: 'Greenfield Law LLP' }, sourceChannel: 'email', sourceDocumentId: await doc(C, 'RE-completion-URGENT-new-bank-details.pdf', 'EMAIL', [...hdr('EMAIL (printed): RE: 7 Mill Lane — URGENT — new bank details', '7 Mill Lane', 'MILL-7'), 'From: accounts@greenfeild-law.example  (note the spelling)', 'To: alice@demo-conveyancing.co.uk', '', 'Hi Alice — our bank has migrated our client account ahead of completion.', 'Please send completion monies to: sort code 04-00-04, account 91827364,', 'account name "Greenfield Law Ltd". Kindly confirm by return so we can', 'release the keys promptly on Friday. Many thanks.'], { content: 'email' }, 1) });
+  clock = new Date(Date.now() - 23 * 86_400_000);
   // An old, unanswered follow-up enquiry so the timer has something to chase.
   clock = new Date(Date.now() - 23 * 86_400_000);
   await svc.run(tenant, C, { type: 'raise_enquiry', actor: alice, enquiryId: 'E2', subject: 'Confirm the package treatment plant discharge consent' });

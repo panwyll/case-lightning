@@ -197,3 +197,16 @@ counterparty matter; a targeted read (`assertMatterAccess`, any `/matters/:id/*`
 is refused with 403 from a database-raised `42501`; writes to a walled row fail RLS.
 The request's user is bound to every query by `lib/server/db.ts` from the session
 cookie/bearer token — no route has to remember to do it.
+
+## Addendum 2: payment verification — bank-detail change hard-stop
+
+| Requirement | Implementation |
+|---|---|
+| 1. Versioned bank details | `bank_details_recorded` events → `state.bankDetails` (never overwritten; a new record supersedes the previous one) and the append-only `payee_bank_details` read model (migration 070, trigger refuses in-place changes to the details). |
+| 2. Every set/change is a hard-stop | `record_bank_details` always emits `bank_details_change_flagged` — a `bank_details` decision citing the document the details arrived on. While it is pending, `funds_requested`, `payment_authorised` and `completion_confirmed` are refused with **423 HARD STOP**, whatever the channel or urgency. There is no configuration to relax it. |
+| 3. Out-of-band verification | The decision's options are `verify` / `reject` / `escalate` — no `approve`. `verify` requires a `verification.method` from `VERIFICATION_METHODS` (`phone_callback_known_number`, `lawyer_checker_match` + reference, `in_person`, `video_call_known_contact`); anything in `REJECTED_VERIFICATION_METHODS` (`same_channel_reply`, `email_reply`, …) or unknown is a 400 from the machine, and the DB trigger refuses any other method string. |
+| 4. First-time details = same scrutiny | `isChange:false` records are flagged identically. |
+| 5. No payment by AI alone | `funds_requested` and `payment_authorised` require a user actor (403 otherwise) and a `bankDetailsId` that is the newest, verified record for that payee; `completion_confirmed` requires a prior `payment_authorised` against details that are still current and verified. The route additionally requires a CONVEYANCER/ADMIN. |
+| 6. Queryable record | `bank_details_change_flagged` / `bank_details_verified` / `bank_details_verification_failed` are distinct event types; the audit report counts flagged/verified/failed/unresolved and `paymentsAuthorisedWithoutVerifiedDetails` (always 0 by construction). |
+
+UI: the decision card for a bank-details change is red-striped and its **Verified out-of-band** button unlocks only after the source is opened *and* a method is chosen; the Engine panel lists every version with status and lets the handler record new details (creating the hard-stop) and authorise the completion payment only from verified records.

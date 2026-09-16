@@ -48,6 +48,10 @@ const PILL: Record<string, { bg: string; fg: string }> = {
   not_required: { bg: '#f1f5f9', fg: '#94a3b8' },
   not_started: { bg: '#f1f5f9', fg: '#94a3b8' },
   rejected: { bg: '#fee2e2', fg: '#7f1d1d' },
+  verified: { bg: '#dcfce7', fg: '#14532d' },
+  unverified: { bg: '#fee2e2', fg: '#7f1d1d' },
+  failed: { bg: '#fee2e2', fg: '#7f1d1d' },
+  superseded: { bg: '#f1f5f9', fg: '#94a3b8' },
 };
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{pretty(s)}</span>;
 
@@ -67,6 +71,8 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const [upEnquiry, setUpEnquiry] = useState('');
   const [upFile, setUpFile] = useState<File | null>(null);
   const [upMsg, setUpMsg] = useState<string | null>(null);
+  const [bd, setBd] = useState({ payeeKind: 'seller_solicitor', payeeRef: '', accountName: '', sortCode: '', accountNumber: '', firmName: '', sourceChannel: 'email' });
+  const [payFrom, setPayFrom] = useState<Record<string, string>>({});
 
   const load = useCallback(async () => {
     try {
@@ -193,6 +199,38 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         <div className="ep-tile"><b>Post-completion</b><Pill s={s.postCompletion.ap1ConfirmedAt ? 'sent' : s.postCompletion.ap1SubmittedAt ? 'requested' : s.postCompletion.sdltSubmittedAt ? 'approved' : 'awaiting'} /></div>
       </div>
 
+      <div className="ep-sec">Payee bank details (versioned · every change is a hard stop)</div>
+      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+        {Object.values(s.bankDetails).length === 0 && <div style={{ fontSize: 12.5, color: '#64748b' }}>No bank details on file yet. Nothing can be paid, or requested, until a payee's details are recorded and verified out-of-band.</div>}
+        {Object.values(s.bankDetails).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((b) => (
+          <div key={b.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', padding: '5px 0', borderTop: '1px solid #f1f5f9', fontSize: 12.5 }}>
+            <b style={{ minWidth: 150 }}>{pretty(b.payeeKind)}{b.payeeRef ? ` · ${b.payeeRef}` : ''}</b>
+            <span style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>{b.details.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3')} ····{b.details.accountNumber.slice(-4)}</span>
+            <span>{b.details.accountName}</span>
+            <Pill s={b.status === 'unverified' ? 'unverified' : b.status} />
+            <span style={{ color: '#64748b' }}>via {b.sourceChannel} {fmtDay(b.recordedAt)}{b.verificationMethod ? ` · verified by ${pretty(b.verificationMethod)}${b.verificationRef ? ` (${b.verificationRef})` : ''}` : ''}</span>
+          </div>
+        ))}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 8 }}>
+          <select className="ep-input" value={bd.payeeKind} onChange={(e) => setBd({ ...bd, payeeKind: e.target.value })}>
+            {['seller_solicitor', 'firm_client_account', 'client', 'lender', 'estate_agent', 'other'].map((k) => <option key={k} value={k}>{pretty(k)}</option>)}
+          </select>
+          <input className="ep-input" placeholder="Who (firm / contact)" value={bd.payeeRef} onChange={(e) => setBd({ ...bd, payeeRef: e.target.value })} style={{ width: 150 }} />
+          <input className="ep-input" placeholder="Account name" value={bd.accountName} onChange={(e) => setBd({ ...bd, accountName: e.target.value })} style={{ width: 160 }} />
+          <input className="ep-input" placeholder="Sort code (6 digits)" value={bd.sortCode} onChange={(e) => setBd({ ...bd, sortCode: e.target.value.replace(/\D/g, '') })} style={{ width: 130 }} maxLength={6} />
+          <input className="ep-input" placeholder="Account no. (8 digits)" value={bd.accountNumber} onChange={(e) => setBd({ ...bd, accountNumber: e.target.value.replace(/\D/g, '') })} style={{ width: 150 }} maxLength={8} />
+          <select className="ep-input" value={bd.sourceChannel} onChange={(e) => setBd({ ...bd, sourceChannel: e.target.value })}>
+            {['email', 'portal', 'phone', 'letter', 'in_person', 'manual', 'provider'].map((k) => <option key={k} value={k}>arrived by {pretty(k)}</option>)}
+          </select>
+          <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record details (creates a hard-stop decision)</button>
+        </div>
+        {s.payments.length > 0 && (
+          <div style={{ marginTop: 8, fontSize: 12.5 }}>
+            <b>Payments authorised:</b> {s.payments.map((p) => `${pretty(p.purpose)} → ${pretty(p.payeeKind)}${p.amountPennies ? ` £${(p.amountPennies / 100).toLocaleString('en-GB')}` : ''} (${fmtDay(p.at)})`).join(' · ')}
+          </div>
+        )}
+      </div>
+
       <div className="ep-sec">File a document into the engine</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -237,14 +275,30 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
           </span>
         )}
         {s.stage === 'exchanged' && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'completion_statement_generated' })}>Completion statement generated</button>}
-        {s.stage === 'pre_completion' && (
-          <span>
-            {s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender' })}>Request lender funds</button>}
-            {!openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client' })}>Request client funds</button>}
-            {openWaits.filter((w) => w.key === 'funds').map((w) => <button key={w.subject} className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_received', fromRole: w.subject })}>{pretty(w.subject)} funds received</button>)}
-            {s.completion.fundsReceivedAt && !s.completion.confirmedAt && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'completion_confirmed' })}>Completion confirmed</button>}
-          </span>
-        )}
+        {s.stage === 'pre_completion' && (() => {
+          const verified = (kind: string) => Object.values(s.bankDetails).filter((b) => b.payeeKind === kind && b.status === 'verified');
+          const firm = verified('firm_client_account');
+          const seller = verified('seller_solicitor');
+          const paid = s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies');
+          const sel = (kind: string, list: typeof firm) => (
+            <select className="ep-input" value={payFrom[kind] ?? list[0]?.id ?? ''} onChange={(e) => setPayFrom({ ...payFrom, [kind]: e.target.value })}>
+              {list.map((b) => <option key={b.id} value={b.id}>{b.details.accountName} ····{b.details.accountNumber.slice(-4)}</option>)}
+            </select>
+          );
+          return (
+            <span>
+              {firm.length === 0 && !s.completion.fundsReceivedAt && <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>Record and verify the firm's client-account details before requesting funds.</span>}
+              {firm.length > 0 && !s.completion.fundsReceivedAt && sel('firm_client_account', firm)}
+              {firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request lender funds</button>}
+              {firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request client funds</button>}
+              {openWaits.filter((w) => w.key === 'funds').map((w) => <button key={w.subject} className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_received', fromRole: w.subject })}>{pretty(w.subject)} funds received</button>)}
+              {!paid && seller.length === 0 && <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>No verified seller's-solicitor bank details — completion monies cannot be authorised.</span>}
+              {!paid && seller.length > 0 && sel('seller_solicitor', seller)}
+              {!paid && seller.length > 0 && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'payment_authorised', payeeKind: 'seller_solicitor', bankDetailsId: payFrom.seller_solicitor ?? seller[0].id, purpose: 'completion_monies' })}>Authorise completion payment</button>}
+              {s.completion.fundsReceivedAt && paid && !s.completion.confirmedAt && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'completion_confirmed' })}>Completion confirmed</button>}
+            </span>
+          );
+        })()}
         {['completed', 'post_completion'].includes(s.stage) && (
           <span>
             {!s.postCompletion.sdltSubmittedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'sdlt_submitted' })}>SDLT submitted</button>}

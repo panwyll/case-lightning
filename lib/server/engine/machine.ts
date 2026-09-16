@@ -17,7 +17,7 @@
  *   - every command is either automation (system/ai/external) or a human decision.
  */
 import { applyEvent } from './projection';
-import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, type Verdict } from './rules';
+import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import {
   EngineError,
   isResolved,
@@ -26,6 +26,15 @@ import {
   STAGES,
   SYSTEM,
   AI,
+  currentBankDetails,
+  pendingBankDetailsDecision,
+  maskAccount,
+  VERIFICATION_METHODS,
+  REJECTED_VERIFICATION_METHODS,
+  type BankDetails,
+  type PayeeKind,
+  type SourceChannel,
+  type VerificationMethod,
   type Actor,
   type ChaseSpec,
   type Citation,
@@ -69,13 +78,16 @@ export type Command =
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null }
+  // Addendum 2 — payment verification
+  | { type: 'record_bank_details'; actor: Actor; bankDetailsId: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId: string }
+  | { type: 'payment_authorised'; actor: Actor; payeeKind: PayeeKind; bankDetailsId: string; amountPennies?: number | null; purpose: 'completion_monies' | 'deposit' | 'other' }
   | { type: 'draft_report_on_title'; draftId: string; draftDocumentId: string; model: string; summary: string; citations: Citation[]; basedOn?: string[] }
   | { type: 'record_report_on_title_sent'; actor: Actor; draftId: string; channel: string; messageId?: string | null }
   | { type: 'deposit_received'; actor: Actor; amountPennies?: number | null }
   | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
   | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null }
-  | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null }
+  | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null; bankDetailsId: string }
   | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null }
   | { type: 'completion_confirmed'; actor: Actor; completedAt?: string | null }
   | { type: 'sdlt_submitted'; actor: Actor; reference?: string | null }
@@ -98,6 +110,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'deposit_received',
   'contracts_exchanged',
   'completion_statement_generated',
+  'record_bank_details',
+  'payment_authorised',
   'funds_requested',
   'funds_received',
   'completion_confirmed',
@@ -192,7 +206,12 @@ export function stageBlockers(s: MatterState): string[] {
       if (!s.completion.statementGeneratedAt) b.push('completion statement not generated');
       break;
     case 'pre_completion':
-      if (!s.completion.confirmedAt) b.push(s.completion.fundsReceivedAt ? 'completion not confirmed' : 'funds not received');
+      if (!s.completion.confirmedAt) {
+        if (!s.completion.fundsReceivedAt) b.push('funds not received');
+        if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
+        if (pendingBankDetailsDecision(s, 'seller_solicitor')) b.push('bank-details change awaiting out-of-band verification (hard stop)');
+        if (s.completion.fundsReceivedAt && s.payments.length) b.push('completion not confirmed');
+      }
       break;
     case 'completed':
       if (!s.postCompletion.sdltSubmittedAt && !s.postCompletion.ap1SubmittedAt) b.push('SDLT / AP1 not submitted');
@@ -440,7 +459,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.userId)) reject('Decisions are resolved by people, not automation.', 403);
       if (!d.options.includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${d.options.join(', ')}).`, 400);
       if (!d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
-      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId);
+      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null);
     }
 
     // ── Report on title ──
@@ -494,7 +513,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStage(s, 'pre_completion', 'Requesting funds');
       if (cmd.fromRole === 'lender' && !s.hasLender) reject('Cash purchase — no lender to request funds from.');
       if (s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`Funds already requested from ${cmd.fromRole}.`);
-      return [{ type: 'funds_requested', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null } }];
+      // Addendum 2 §5: a person, and the account the payer is told to use must be our VERIFIED client account.
+      if (!isUserActor(cmd.actor)) reject('A funds request must be made by a person, never by automation.', 403);
+      assertPayableDetails(s, 'firm_client_account', cmd.bankDetailsId);
+      return [{ type: 'funds_requested', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null, bankDetailsId: cmd.bankDetailsId, approvedBy: cmd.actor } }];
     }
     case 'funds_received': {
       requireEnrolled(s);
@@ -505,6 +527,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireStage(s, 'pre_completion', 'Confirming completion');
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
+      // Addendum 2: the completion transfer must have been authorised by a person against
+      // verified seller's-solicitor details, and no bank-details change may be pending.
+      const pend = pendingBankDetailsDecision(s, 'seller_solicitor');
+      if (pend) reject('HARD STOP: the seller\'s solicitor\'s bank details changed and have not been verified out-of-band. Completion cannot be confirmed until that decision is resolved — however urgent.', 423);
+      const auth = s.payments.find((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies');
+      if (!auth) reject('No authorised completion payment: authorise the transfer against verified bank details first.', 412);
+      const cur = currentBankDetails(s, 'seller_solicitor');
+      if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject('HARD STOP: the bank details the payment was authorised against are no longer the current verified record.', 423);
       return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
     }
 
@@ -526,6 +556,52 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.postCompletion.ap1SubmittedAt) reject('AP1 has not been submitted.');
       if (s.postCompletion.ap1ConfirmedAt) reject('Registration already confirmed.');
       return [{ type: 'ap1_confirmed', actor: cmd.actor, payload: { titleNumber: cmd.titleNumber ?? null } }];
+    }
+
+    // ── Payment verification (addendum 2) ──
+    case 'record_bank_details': {
+      requireEnrolled(s);
+      if (!/^\d{6}$/.test(cmd.details.sortCode) || !/^\d{8}$/.test(cmd.details.accountNumber)) reject('Sort code must be 6 digits and account number 8 digits.', 400);
+      if (!cmd.details.accountName.trim()) reject('Account name is required.', 400);
+      if (s.bankDetails[cmd.bankDetailsId]) reject('Duplicate bank-details record id.', 400);
+      const previous = currentBankDetails(s, cmd.payeeKind);
+      const isChange = !!previous;
+      const same = previous && previous.details.sortCode === cmd.details.sortCode && previous.details.accountNumber === cmd.details.accountNumber && previous.status === 'verified';
+      if (same) reject('These details are already on file and verified for this payee; nothing to record.', 409);
+      const recorded: NewEvent = {
+        type: 'bank_details_recorded',
+        actor: cmd.actor,
+        payload: { bankDetailsId: cmd.bankDetailsId, payeeKind: cmd.payeeKind, payeeRef: cmd.payeeRef ?? null, details: cmd.details, sourceChannel: cmd.sourceChannel, supersedesId: previous?.id ?? null, isChange },
+        sourceDocumentId: cmd.sourceDocumentId,
+      };
+      // Every set or change is a hard-stop decision — first-time details get the same scrutiny (§4).
+      const label = cmd.payeeKind.replace(/_/g, ' ');
+      const decision: DecisionSpec = {
+        kind: 'bank_details',
+        summary: [
+          `${isChange ? 'CHANGE OF BANK DETAILS' : 'NEW BANK DETAILS'} for ${label}${cmd.payeeRef ? ` (${cmd.payeeRef})` : ''} — received via ${cmd.sourceChannel}.`,
+          `New: ${maskAccount(cmd.details)}${cmd.details.firmName ? ` · ${cmd.details.firmName}` : ''}`,
+          previous ? `Previously on file: ${maskAccount(previous.details)} (${previous.status})` : 'No details were previously on file for this payee.',
+          '',
+          'This is a mandatory hard-stop. No payment to or for this payee can proceed until the details are verified OUT-OF-BAND — a phone call back to a number you already hold, a Lawyer Checker match, or in person. A reply on the channel the details arrived on is not verification. Urgency ("completion is tomorrow") is the fraud pattern, not a reason to skip this.',
+          `Options: ${OPTIONS_FOR.bank_details.map(optionLabel).join(' · ')}.`,
+        ].join('\n'),
+        sourceDocumentId: cmd.sourceDocumentId,
+        citations: [{ documentId: cmd.sourceDocumentId, label: `Where the details arrived (${cmd.sourceChannel})` }],
+        options: OPTIONS_FOR.bank_details,
+        summarisedBy: 'template',
+      };
+      assertDecisionSpec(decision);
+      const flagged: NewEvent = { type: 'bank_details_change_flagged', actor: AI, payload: { bankDetailsId: cmd.bankDetailsId, payeeKind: cmd.payeeKind, isChange, previous: previous ? maskAccount(previous.details) : null, decision }, sourceDocumentId: cmd.sourceDocumentId };
+      return [recorded, flagged];
+    }
+    case 'payment_authorised': {
+      requireEnrolled(s);
+      requireStageAtLeast(s, 'pre_exchange', 'Authorising a payment');
+      if (!isUserActor(cmd.actor)) reject('A payment can only be authorised by a person, never by automation.', 403);
+      assertPayableDetails(s, cmd.payeeKind, cmd.bankDetailsId);
+      if (cmd.purpose === 'completion_monies' && s.payments.some((p) => p.payeeKind === cmd.payeeKind && p.purpose === 'completion_monies')) reject('Completion monies already authorised for this payee.');
+      return [{ type: 'payment_authorised', actor: cmd.actor, payload: { payeeKind: cmd.payeeKind, bankDetailsId: cmd.bankDetailsId, amountPennies: cmd.amountPennies ?? null, purpose: cmd.purpose, approvedBy: cmd.actor } }];
     }
 
     // ── Timers / comms ──
@@ -570,9 +646,27 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
+
+  // Addendum 2 §3: a bank-details decision is resolved by a VERIFICATION with a named
+  // out-of-band method, or a recorded failure — never by "approve", never by a same-channel reply.
+  if (d.kind === 'bank_details' && option !== 'escalate') {
+    const b = s.bankDetails[subject];
+    if (!b) reject('Bank-details record not found for this decision.', 500);
+    if (option === 'verify') {
+      const method = verification?.method?.trim() ?? '';
+      if ((REJECTED_VERIFICATION_METHODS as readonly string[]).includes(method)) reject(`"${method}" is not verification: confirmation on the channel the details arrived on is exactly what a fraudster controls. Use one of: ${VERIFICATION_METHODS.join(', ')}.`, 400);
+      if (!(VERIFICATION_METHODS as readonly string[]).includes(method)) reject(`A verification method is required — one of: ${VERIFICATION_METHODS.join(', ')}.`, 400);
+      if (method === 'lawyer_checker_match' && !verification?.reference?.trim()) reject('A Lawyer Checker (or equivalent) match needs its check reference.', 400);
+      return [{ type: 'bank_details_verified', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, verificationMethod: method as VerificationMethod, verificationRef: verification?.reference?.trim() || null, note }, sourceDocumentId: d.sourceDocumentId }];
+    }
+    if (option === 'reject') {
+      return [{ type: 'bank_details_verification_failed', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, reason: note }, sourceDocumentId: d.sourceDocumentId }];
+    }
+    reject(`"${option}" is not an option for a bank-details change (verify, reject or escalate).`, 400);
+  }
 
   // "Escalate to senior": the original decision is marked escalated and a NEW decision
   // (kind escalation) is queued, carrying the same source so the senior sees what the
@@ -655,8 +749,21 @@ function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | 
       return { type: 'title_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
     case 'report_on_title':
     case 'escalation':
+    case 'bank_details':
       return reject('Not a reviewable decision kind.', 500);
   }
+}
+
+/** Addendum 2: the only bank details a payment may use — the newest for the payee, verified, with no change pending. */
+function assertPayableDetails(s: MatterState, payeeKind: PayeeKind, bankDetailsId: string): void {
+  const b = s.bankDetails[bankDetailsId];
+  if (!b) reject('Bank-details record not found.', 404);
+  if (b.payeeKind !== payeeKind) reject(`Those bank details belong to ${b.payeeKind.replace(/_/g, ' ')}, not ${payeeKind.replace(/_/g, ' ')}.`, 400);
+  const pend = pendingBankDetailsDecision(s, payeeKind);
+  if (pend) reject(`HARD STOP: a bank-details change for ${payeeKind.replace(/_/g, ' ')} is awaiting out-of-band verification. No payment can proceed until it is resolved.`, 423);
+  const cur = currentBankDetails(s, payeeKind);
+  if (!cur || cur.id !== b.id) reject('Those bank details have been superseded by a newer record; verify the newest record and use that.', 409);
+  if (b.status !== 'verified') reject(`Bank details are ${b.status}; only out-of-band verified details can be paid.`, 412);
 }
 
 function nextEnquiryId(s: MatterState, base: string): string {

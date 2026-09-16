@@ -50,6 +50,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     else if (input.type === 'send_report_on_title') {
       requireDecider(user);
       result = await svc.sendReportOnTitle(user.tenantId, matterId, user.userId);
+    } else if (input.type === 'record_bank_details') {
+      result = await svc.recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind: input.payeeKind, payeeRef: input.payeeRef ?? null, details: { ...input.details, firmName: input.details.firmName ?? null }, sourceChannel: input.sourceChannel, sourceDocumentId: input.sourceDocumentId ?? null, note: input.note ?? null });
+    } else if (input.type === 'payment_authorised' || input.type === 'funds_requested') {
+      requireDecider(user); // money moves only on a conveyancer's say-so
+      const cmd = toCommand(input, user.userId);
+      if (!cmd) throw new Error('Unsupported command.');
+      result = await svc.run(user.tenantId, matterId, cmd);
     } else {
       const cmd = toCommand(input, user.userId);
       if (!cmd) throw new Error('Unsupported command.');

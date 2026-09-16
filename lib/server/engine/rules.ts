@@ -52,6 +52,8 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   title: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   report_on_title: ['approve', 'reject', 'escalate'],
   escalation: ['approve', 'refer_to_client', 'escalate'],
+  // Addendum 2: never "approve" — only an out-of-band VERIFICATION (with its method) or a failure.
+  bank_details: ['verify', 'reject', 'escalate'],
 };
 
 const lowConfidenceFlag = (confidence: number, what: string): Flag => ({
@@ -256,6 +258,8 @@ export function optionLabel(o: DecisionOption): string {
       return 'escalate to senior';
     case 'reject':
       return 'reject';
+    case 'verify':
+      return 'verified out-of-band (method required)';
   }
 }
 

@@ -120,6 +120,12 @@ export const EVENT_TYPES = [
   'escalation_resolved',
   // decision audit
   'decision_source_opened',
+  // payment verification (addendum 2): bank details are versioned; every set/change is a hard-stop
+  'bank_details_recorded',
+  'bank_details_change_flagged',
+  'bank_details_verified',
+  'bank_details_verification_failed',
+  'payment_authorised',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -220,10 +226,10 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
-export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject'] as const;
+export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify'] as const;
 export type DecisionOption = (typeof DECISION_OPTIONS)[number];
 
 export type DecisionStatus = 'pending' | 'actioned' | 'escalated';
@@ -284,6 +290,64 @@ export interface WaitState {
   chasesSentAt: string[];
   escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>;
 }
+
+// ───────────────────────────── Payment verification (addendum 2) ─────────────────────────────
+
+/** Who is being paid (or who pays us). The firm's own client account is a payee too: it is what the client is told to pay into. */
+export const PAYEE_KINDS = ['seller_solicitor', 'firm_client_account', 'client', 'lender', 'estate_agent', 'other'] as const;
+export type PayeeKind = (typeof PAYEE_KINDS)[number];
+
+/** How the details reached us. Deliberately NOT a trust signal — every channel is treated the same. */
+export const SOURCE_CHANNELS = ['email', 'portal', 'phone', 'letter', 'in_person', 'manual', 'provider'] as const;
+export type SourceChannel = (typeof SOURCE_CHANNELS)[number];
+
+/**
+ * Accepted out-of-band verification methods. Anything else — including any form of
+ * "they confirmed by replying" — is rejected by the machine, not merely discouraged.
+ */
+export const VERIFICATION_METHODS = ['phone_callback_known_number', 'lawyer_checker_match', 'in_person', 'video_call_known_contact'] as const;
+export type VerificationMethod = (typeof VERIFICATION_METHODS)[number];
+/** Named so the error message can say exactly why (these are the fraud pattern). */
+export const REJECTED_VERIFICATION_METHODS = ['same_channel_reply', 'email_reply', 'portal_reply', 'caller_stated', 'urgent_instruction', 'none'] as const;
+
+export interface BankDetails {
+  sortCode: string; // 6 digits
+  accountNumber: string; // 8 digits
+  accountName: string;
+  firmName: string | null;
+}
+
+export interface BankDetailsState {
+  id: string;
+  payeeKind: PayeeKind;
+  /** Free-text who: firm name / contact — never a foreign key, so a spoofed contact cannot inherit trust. */
+  payeeRef: string | null;
+  details: BankDetails;
+  sourceChannel: SourceChannel;
+  sourceDocumentId: string;
+  supersedesId: string | null;
+  /** unverified → verified | failed; superseded when a newer record for the same payee arrives. */
+  status: 'unverified' | 'verified' | 'failed' | 'superseded';
+  recordedAt: string;
+  recordedBy: Actor;
+  decisionEventId: string | null;
+  verifiedAt: string | null;
+  verifiedBy: string | null;
+  verificationMethod: VerificationMethod | null;
+  verificationRef: string | null;
+}
+
+export interface PaymentAuthorisation {
+  eventId: string;
+  payeeKind: PayeeKind;
+  bankDetailsId: string;
+  amountPennies: number | null;
+  purpose: 'completion_monies' | 'deposit' | 'other';
+  authorisedBy: string;
+  at: string;
+}
+
+export const maskAccount = (d: BankDetails): string => `${d.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3')} ····${d.accountNumber.slice(-4)} (${d.accountName})`;
 
 // ───────────────────────────── Payloads ─────────────────────────────
 
@@ -358,7 +422,13 @@ export interface Payloads {
   contracts_exchanged: { completionDate: string; exchangedAt?: string | null };
 
   completion_statement_generated: { documentId?: string | null };
-  funds_requested: { fromRole: 'lender' | 'client'; amountPennies?: number | null };
+  funds_requested: {
+    fromRole: 'lender' | 'client';
+    amountPennies?: number | null;
+    /** The VERIFIED firm client-account record the payer is told to pay into (addendum 2 §5). */
+    bankDetailsId: string;
+    approvedBy: string;
+  };
   funds_received: { fromRole: 'lender' | 'client'; amountPennies?: number | null };
   completion_confirmed: { completedAt?: string | null };
 
@@ -380,6 +450,12 @@ export interface Payloads {
   escalation_resolved: { escalationEventId: string; decisionEventId: string; option: DecisionOption; note?: string | null };
 
   decision_source_opened: { decisionEventId: string; documentId: string };
+
+  bank_details_recorded: { bankDetailsId: string; payeeKind: PayeeKind; payeeRef: string | null; details: BankDetails; sourceChannel: SourceChannel; supersedesId: string | null; isChange: boolean };
+  bank_details_change_flagged: { bankDetailsId: string; payeeKind: PayeeKind; isChange: boolean; previous: string | null; decision: DecisionSpec };
+  bank_details_verified: { bankDetailsId: string; decisionEventId: string; verificationMethod: VerificationMethod; verificationRef: string | null; note?: string | null };
+  bank_details_verification_failed: { bankDetailsId: string; decisionEventId: string; reason: string | null };
+  payment_authorised: { payeeKind: PayeeKind; bankDetailsId: string; amountPennies: number | null; purpose: 'completion_monies' | 'deposit' | 'other'; approvedBy: string };
 }
 
 /** Event types whose payload carries a DecisionSpec (i.e. they create a DecisionEvent). */
@@ -391,6 +467,7 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'title_flagged',
   'report_on_title_drafted',
   'escalation_raised',
+  'bank_details_change_flagged',
 ];
 
 // ───────────────────────────── Events ─────────────────────────────
@@ -508,6 +585,9 @@ export interface MatterState {
   waits: WaitState[];
   clientUpdatesSent: number;
   chasesSent: number;
+  /** Addendum 2: every bank-details record ever put on file for this matter (versioned, never overwritten). */
+  bankDetails: Record<string, BankDetailsState>;
+  payments: PaymentAuthorisation[];
 }
 
 export function initialState(tenantId: string, matterId: string): MatterState {
@@ -548,7 +628,20 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     waits: [],
     clientUpdatesSent: 0,
     chasesSent: 0,
+    bankDetails: {},
+    payments: [],
   };
+}
+
+/** The record a payment may use: the newest for the payee, and only if verified. */
+export function currentBankDetails(state: MatterState, payeeKind: PayeeKind): BankDetailsState | null {
+  const all = Object.values(state.bankDetails).filter((b) => b.payeeKind === payeeKind).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt) || (b.id > a.id ? 1 : -1));
+  return all[0] ?? null;
+}
+
+/** A bank-details decision still open for this payee = a hard-stop on any payment to/for them. */
+export function pendingBankDetailsDecision(state: MatterState, payeeKind: PayeeKind): DecisionState | null {
+  return Object.values(state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending' && state.bankDetails[d.subject ?? '']?.payeeKind === payeeKind) ?? null;
 }
 
 /** Pending decisions, oldest first — the dashboard feed. */

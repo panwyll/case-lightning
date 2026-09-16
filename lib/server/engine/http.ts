@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { DECISION_OPTIONS, SEARCH_TYPES } from './types';
+import { DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, VERIFICATION_METHODS } from './types';
 import type { Command } from './machine';
 
 /** Read-only users can look but never move a matter. */
@@ -31,7 +31,18 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish() }),
   z.object({ type: z.literal('completion_statement_generated'), documentId: z.string().uuid().nullish() }),
-  z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client']), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client']), amountPennies: z.number().int().nonnegative().nullish(), bankDetailsId: z.string().min(1).max(60) }),
+  // Addendum 2 — payment verification
+  z.object({
+    type: z.literal('record_bank_details'),
+    payeeKind: z.enum(PAYEE_KINDS),
+    payeeRef: z.string().max(200).nullish(),
+    details: z.object({ sortCode: z.string().regex(/^\d{6}$/, '6 digits'), accountNumber: z.string().regex(/^\d{8}$/, '8 digits'), accountName: z.string().min(1).max(140), firmName: z.string().max(200).nullish() }),
+    sourceChannel: z.enum(SOURCE_CHANNELS),
+    sourceDocumentId: z.string().uuid().nullish(),
+    note: z.string().max(1000).nullish(),
+  }),
+  z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
   z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client']), amountPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('completion_confirmed'), completedAt: z.string().datetime().nullish() }),
   z.object({ type: z.literal('sdlt_submitted'), reference: z.string().max(100).nullish() }),
@@ -51,6 +62,7 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'request_id_check':
     case 'draft_report_on_title':
     case 'send_report_on_title':
+    case 'record_bank_details':
       return null; // handled by EngineService methods (they talk to a port first)
     default:
       return { ...input, actor: userId } as Command;
@@ -66,4 +78,10 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('id_check'), documentId: z.string().uuid() }),
 ]);
 
-export const resolveSchema = z.object({ option: z.enum(DECISION_OPTIONS), note: z.string().max(4000).nullish() });
+export const resolveSchema = z.object({
+  option: z.enum(DECISION_OPTIONS),
+  note: z.string().max(4000).nullish(),
+  /** Addendum 2: required for option 'verify' on a bank-details decision; the machine validates the method. */
+  verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),
+});
+export { VERIFICATION_METHODS };

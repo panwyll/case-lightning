@@ -100,12 +100,32 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   // ── pre_completion → completed ──
   r = await svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   assert.equal(r.state.stage, 'pre_completion');
-  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender' });
-  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client' });
+  // Addendum 2: bank details are versioned hard-stops — ours (what the client pays into) and the seller's solicitor's (what we pay).
+  const firm = await svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', payeeRef: 'Firm LLP client account', details: { sortCode: '401234', accountNumber: '12345678', accountName: 'Firm LLP Client Account', firmName: 'Firm LLP' }, sourceChannel: 'manual' });
+  const firmDecision = Object.values(firm.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
+  const firmId = firmDecision.subject!;
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId }), /HARD STOP/);
+  await svc.openDecisionSource(TENANT, MATTER, firmDecision.eventId, USER);
+  await assert.rejects(svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', null, { method: 'email_reply' }), /not verification/);
+  await svc.resolveDecision(TENANT, MATTER, firmDecision.eventId, USER, 'verify', 'Matches the firm bank mandate', { method: 'in_person' });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'system', fromRole: 'lender', bankDetailsId: firmId }), /by a person/);
+  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
+  await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /Funds have not been received/);
   await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   r = await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });
   assert.ok(r.state.completion.fundsReceivedAt);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No authorised completion payment/);
+  const seller = await svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: { sortCode: '201122', accountNumber: '87654321', accountName: 'Smith & Co Client Account', firmName: 'Smith & Co' }, sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'Completion statement email from Smith & Co with client account details' }) });
+  const sellerDecision = Object.values(seller.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sellerDecision.subject!, purpose: 'completion_monies' }), /HARD STOP/);
+  await svc.openDecisionSource(TENANT, MATTER, sellerDecision.eventId, USER);
+  await assert.rejects(svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'they confirmed by email'), /verification method is required/);
+  await assert.rejects(svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'approve'), /not an option/);
+  assert.equal((await svc.getState(TENANT, MATTER)).bankDetails[sellerDecision.subject!].status, 'unverified');
+  await svc.resolveDecision(TENANT, MATTER, sellerDecision.eventId, USER, 'verify', 'Called Smith & Co on the number on the Law Society register', { method: 'phone_callback_known_number' });
+  r = await svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: sellerDecision.subject!, amountPennies: 34_650_000, purpose: 'completion_monies' });
+  assert.equal(r.state.payments[0].authorisedBy, USER);
   r = await svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });
   assert.equal(r.state.stage, 'completed');
 
@@ -143,6 +163,10 @@ test('full lifecycle: instruction → post_completion, with every decision cited
     assert.ok(d.citations.length > 0);
     if (d.resolvedBy) assert.ok(d.openedBy.includes(d.resolvedBy), `${d.kind} ${d.subject} resolved by someone who opened the source`);
   }
+  // Addendum 2: every fraud-risk moment is queryable, and no payment used unverified details.
+  const audit = (await import('../../../lib/server/engine/audit')).buildAuditReport(TENANT, MATTER, log, null);
+  assert.deepEqual(audit.summary.bankDetailsHardStops, { flagged: 2, verified: 2, failed: 0, unresolved: 0 });
+  assert.equal(audit.summary.paymentsAuthorisedWithoutVerifiedDetails, 0);
   // Stage moves are themselves logged, in order.
   assert.deepEqual(
     log.filter((e) => e.type === 'stage_advanced').map((e) => (e as EngineEvent<'stage_advanced'>).payload.to),

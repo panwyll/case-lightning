@@ -16,7 +16,7 @@
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions } from './sla';
-import { EXTERNAL, SYSTEM, type DecisionOption, type EngineEvent, type EnquiryReplyFacts, type EventType, type MatterState, type SearchFacts, type SearchType } from './types';
+import { EXTERNAL, SYSTEM, type BankDetails, type DecisionOption, type EngineEvent, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
@@ -154,8 +154,28 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null): Promise<RunResult> {
-    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null });
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null });
+  }
+
+  /**
+   * Addendum 2: bank details arrive (email, portal, phone note, letter…). The source is the
+   * document they arrived on; a manually keyed set gets a generated note as its source so
+   * the decision still cites something. Always a hard-stop decision, first time included.
+   */
+  async recordBankDetails(tenantId: string, matterId: string, input: { actor: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId?: string | null; note?: string | null }): Promise<RunResult> {
+    let sourceDocumentId = input.sourceDocumentId ?? null;
+    if (!sourceDocumentId) {
+      const doc = await this.ports.documents.createGenerated({
+        tenantId,
+        matterId,
+        docType: 'BANK_DETAILS_NOTE',
+        fileName: `bank-details-${input.payeeKind}-${this.ports.now().toISOString().slice(0, 10)}.txt`,
+        content: [`Bank details recorded manually (${input.sourceChannel}) by ${input.actor} on ${this.ports.now().toISOString()}`, `Payee: ${input.payeeKind}${input.payeeRef ? ` — ${input.payeeRef}` : ''}`, `Account name: ${input.details.accountName}`, `Sort code: ${input.details.sortCode}  Account: ${input.details.accountNumber}`, input.details.firmName ? `Firm: ${input.details.firmName}` : '', input.note ? `Note: ${input.note}` : ''].filter(Boolean).join('\n'),
+      });
+      sourceDocumentId = doc.id;
+    }
+    return this.run(tenantId, matterId, { type: 'record_bank_details', actor: input.actor, bankDetailsId: `bd-${this.ports.newId()}`, payeeKind: input.payeeKind, payeeRef: input.payeeRef ?? null, details: input.details, sourceChannel: input.sourceChannel, sourceDocumentId });
   }
 
   // ───────────── report on title (AI-drafting-heavy; never auto-sent) ─────────────

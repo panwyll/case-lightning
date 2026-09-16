@@ -52,6 +52,8 @@ export interface EngineState {
   waits: WaitRow[];
   clientUpdatesSent: number;
   chasesSent: number;
+  bankDetails: Record<string, BankDetailsRow>;
+  payments: PaymentRow[];
 }
 
 export interface EngineView { state: EngineState; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[] }
@@ -68,7 +70,18 @@ export const KIND_LABEL: Record<string, string> = {
   id_check: 'ID / AML',
   report_on_title: 'Report on title — approve draft',
   escalation: 'Escalation',
+  bank_details: 'Bank details — verify out-of-band',
 };
+
+export const VERIFICATION_METHOD_LABEL: Record<string, string> = {
+  phone_callback_known_number: 'Phone call-back to a number already on file',
+  lawyer_checker_match: 'Lawyer Checker (or equivalent) match — reference required',
+  in_person: 'Confirmed in person',
+  video_call_known_contact: 'Video call with a known contact',
+};
+
+export interface BankDetailsRow { id: string; payeeKind: string; payeeRef: string | null; details: { sortCode: string; accountNumber: string; accountName: string; firmName: string | null }; sourceChannel: string; status: string; recordedAt: string; verifiedAt: string | null; verifiedBy: string | null; verificationMethod: string | null; verificationRef: string | null; supersedesId: string | null }
+export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId: string; amountPennies: number | null; purpose: string; authorisedBy: string; at: string }
 
 export const OPTION_LABEL: Record<string, string> = {
   approve: 'Approve — proceed as standard',
@@ -76,6 +89,7 @@ export const OPTION_LABEL: Record<string, string> = {
   request_further: 'Request further search / enquiry',
   escalate: 'Escalate to senior',
   reject: 'Reject',
+  verify: 'Verified out-of-band',
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');

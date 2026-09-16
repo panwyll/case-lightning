@@ -434,6 +434,61 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
     }
 
+    // ── Payment verification (addendum 2) ──
+    case 'bank_details_recorded': {
+      const p = e.payload as Payloads['bank_details_recorded'];
+      for (const b of Object.values(s.bankDetails)) if (b.payeeKind === p.payeeKind && b.status !== 'failed') b.status = 'superseded';
+      s.bankDetails[p.bankDetailsId] = {
+        id: p.bankDetailsId,
+        payeeKind: p.payeeKind,
+        payeeRef: p.payeeRef,
+        details: p.details,
+        sourceChannel: p.sourceChannel,
+        sourceDocumentId: e.sourceDocumentId ?? '',
+        supersedesId: p.supersedesId,
+        status: 'unverified',
+        recordedAt: e.createdAt,
+        recordedBy: e.actor,
+        decisionEventId: null,
+        verifiedAt: null,
+        verifiedBy: null,
+        verificationMethod: null,
+        verificationRef: null,
+      };
+      break;
+    }
+    case 'bank_details_change_flagged': {
+      const p = e.payload as Payloads['bank_details_change_flagged'];
+      const b = s.bankDetails[p.bankDetailsId];
+      if (b) b.decisionEventId = e.id;
+      break;
+    }
+    case 'bank_details_verified': {
+      const p = e.payload as Payloads['bank_details_verified'];
+      const b = s.bankDetails[p.bankDetailsId];
+      if (b && b.status === 'unverified') {
+        b.status = 'verified';
+        b.verifiedAt = e.createdAt;
+        b.verifiedBy = e.actor;
+        b.verificationMethod = p.verificationMethod;
+        b.verificationRef = p.verificationRef;
+      }
+      resolveDecision(s, p.decisionEventId, 'verify', p.note, e);
+      break;
+    }
+    case 'bank_details_verification_failed': {
+      const p = e.payload as Payloads['bank_details_verification_failed'];
+      const b = s.bankDetails[p.bankDetailsId];
+      if (b) b.status = 'failed';
+      resolveDecision(s, p.decisionEventId, 'reject', p.reason, e);
+      break;
+    }
+    case 'payment_authorised': {
+      const p = e.payload as Payloads['payment_authorised'];
+      s.payments.push({ eventId: e.id, payeeKind: p.payeeKind, bankDetailsId: p.bankDetailsId, amountPennies: p.amountPennies, purpose: p.purpose, authorisedBy: e.actor, at: e.createdAt });
+      break;
+    }
+
     // ── Decision audit ──
     case 'decision_source_opened': {
       const p = e.payload as Payloads['decision_source_opened'];
@@ -451,6 +506,7 @@ function subjectOf(e: EngineEvent): string | null {
   if (typeof p.searchType === 'string') return p.searchType;
   if (typeof p.enquiryId === 'string') return p.enquiryId;
   if (typeof p.draftId === 'string') return p.draftId;
+  if (typeof p.bankDetailsId === 'string') return p.bankDetailsId;
   if (e.type === 'escalation_raised') {
     const q = p as Payloads['escalation_raised'];
     return q.waitKey ? `${q.waitKey}:${q.subject}` : q.subject || null;

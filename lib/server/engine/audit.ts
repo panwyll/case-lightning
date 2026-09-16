@@ -108,6 +108,9 @@ export interface AuditReport {
     stageMoves: number;
     /** Addendum requirement 4: correspondence events that crossed to an internal counterparty. */
     internalCounterpartyEvents: number;
+    /** Addendum 2 §6: every fraud-risk moment and how it ended. */
+    bankDetailsHardStops: { flagged: number; verified: number; failed: number; unresolved: number };
+    paymentsAuthorisedWithoutVerifiedDetails: number;
   };
 }
 
@@ -145,6 +148,13 @@ export function buildAuditReport(tenantId: string, matterId: string, events: Eng
       aiSentWithoutApproval,
       stageMoves: events.filter((e) => e.type === 'stage_advanced').length,
       internalCounterpartyEvents: events.filter((e) => (e.payload as { counterpartyType?: string }).counterpartyType === 'internal').length,
+      bankDetailsHardStops: {
+        flagged: events.filter((e) => e.type === 'bank_details_change_flagged').length,
+        verified: events.filter((e) => e.type === 'bank_details_verified').length,
+        failed: events.filter((e) => e.type === 'bank_details_verification_failed').length,
+        unresolved: decisions.filter((d) => d.kind === 'bank_details' && d.status === 'pending').length,
+      },
+      paymentsAuthorisedWithoutVerifiedDetails: state.payments.filter((p) => state.bankDetails[p.bankDetailsId]?.verifiedAt == null).length,
     },
   };
 }

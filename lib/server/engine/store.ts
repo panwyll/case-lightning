@@ -326,6 +326,22 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
       [d.eventId, state.tenantId, state.matterId, d.kind, d.status, d.summary, d.sourceDocumentId, JSON.stringify(d.options), d.resolvedBy, d.resolvedAt, d.resolution, JSON.stringify(d), d.createdAt]
     );
   }
+  // Addendum 2: the versioned PayeeBankDetails read model. Insert-only; only status +
+  // verification columns may change (the table's trigger enforces that too).
+  for (const b of Object.values(state.bankDetails)) {
+    await client
+      .query(
+        `insert into payee_bank_details (id, tenant_id, matter_id, payee_kind, payee_ref, sort_code, account_number, account_name, firm_name, source_channel, source_document_id, supersedes_id, status, recorded_by, verified_at, verified_by, verification_method, verification_ref, created_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+         on conflict (id) do update set status = excluded.status,
+           verified_at = coalesce(payee_bank_details.verified_at, excluded.verified_at),
+           verified_by = coalesce(payee_bank_details.verified_by, excluded.verified_by),
+           verification_method = coalesce(payee_bank_details.verification_method, excluded.verification_method),
+           verification_ref = coalesce(payee_bank_details.verification_ref, excluded.verification_ref)`,
+        [b.id, state.tenantId, state.matterId, b.payeeKind, b.payeeRef, b.details.sortCode, b.details.accountNumber, b.details.accountName, b.details.firmName, b.sourceChannel, b.sourceDocumentId || null, b.supersedesId, b.status, b.recordedBy, b.verifiedAt, b.verifiedBy, b.verificationMethod, b.verificationRef, b.recordedAt]
+      )
+      .catch(() => {});
+  }
   // Mirror stage moves onto the legacy board (forward-only) + the drawer's Activity tab.
   for (const e of appended) {
     if (e.type !== 'stage_advanced' && e.type !== 'matter_created') continue;
