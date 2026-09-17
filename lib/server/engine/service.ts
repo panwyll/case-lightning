@@ -83,6 +83,10 @@ export class EngineService {
       return { events: appended, state: next };
     });
     await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
+    if (this.ports.onEvents && result.events.length) {
+      const latest = await this.getState(tenantId, matterId).catch(() => result.state);
+      await this.asAutomation(() => this.ports.onEvents!({ tenantId, matterId, events: result.events, state: latest })).catch((err) => this.ports.log('post-commit observer failed', err));
+    }
     return result;
   }
 

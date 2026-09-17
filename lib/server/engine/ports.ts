@@ -16,7 +16,7 @@
  *   #7 audit        → the event log itself
  *   #8 Outlook      → out of scope for this phase
  */
-import type { Citation, DecisionKind, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
+import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
 import type { SummaryOverride } from './machine';
 
 /** What the engine knows about a document (a row in `document`, or an in-memory stand-in). */
@@ -145,4 +145,10 @@ export interface EnginePorts {
    * from that block. Mocks run the block as-is.
    */
   asAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /**
+   * Post-commit observer: every command's committed events, after the effects. Used to
+   * project the log into an external system of record (LEAP write-back). Runs as
+   * automation; failures are logged, never thrown — the log is the truth, this is a view.
+   */
+  onEvents?: (input: { tenantId: string; matterId: string; events: EngineEvent[]; state: MatterState }) => Promise<void>;
 }

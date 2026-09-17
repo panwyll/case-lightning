@@ -45,6 +45,12 @@ Internally-linked counterparties (buyer and seller matters in the same firm, dif
 are walled off at the database layer — see the addendum section of the engine doc. The DB role the
 app connects with must not have BYPASSRLS; `GET /api/v1/health` reports `wallEnforced`.
 
+**LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,
+parties, documents, tasks and file notes; CONVEYi mirrors just enough to run the engine,
+feeds LEAP's documents through it, and writes decisions back as LEAP tasks and file notes.
+See **docs/leap-integration.md** — including the list of endpoint assumptions to confirm
+against LEAP's registration-gated API reference. `npm run leap:mock` runs a stand-in LEAP.
+
 ### Product setup
 
 1. **Database** — point `DATABASE_URL` at Supabase Postgres, then run migrations (enables `vector` + `pgcrypto`, creates all tables):

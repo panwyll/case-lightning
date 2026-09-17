@@ -197,12 +197,31 @@ export const config = {
   referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
 
+  // LEAP (leap.build) as the backend — phase 0/1. Hosts are configured, never derived:
+  // LEAP's reference is registration-gated, so the region hosts are set once it is open.
+  leapAuthBaseUrl: env('LEAP_AUTH_BASE_URL'),
+  leapApiBaseUrl: env('LEAP_API_BASE_URL'),
+  leapClientId: env('LEAP_CLIENT_ID'),
+  leapClientSecret: env('LEAP_CLIENT_SECRET'),
+  leapApiKey: env('LEAP_API_KEY'),
+  leapWebhookSecret: env('LEAP_WEBHOOK_SECRET'),
+  leapRegion: env('LEAP_REGION') ?? 'uk',
+  leapRedirectUri: env('LEAP_REDIRECT_URI') ?? `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/integrations/leap/callback`,
+  // Enrol LEAP matters in shadow mode first (addendum 3): observe before acting. Set to 'live' once a firm is promoted.
+  leapEnrolMode: (env('LEAP_ENROL_MODE') ?? 'shadow') as 'shadow' | 'live',
+  // Matter-type name patterns (regex, '|'-separated) that get enrolled. Default: purchases.
+  leapEnrolPatterns: env('LEAP_ENROL_PATTERNS'),
+  // Write engine conclusions back into LEAP as tasks + file notes (phase 1). 'auto' = on when connected.
+  leapWriteback: (env('LEAP_WRITEBACK') ?? 'auto') as 'auto' | 'on' | 'off',
+  // Upload engine-generated documents (report drafts, escalation dossiers) into the LEAP matter.
+  leapUploadGenerated: (env('LEAP_UPLOAD_GENERATED') ?? '1') !== '0',
+
   // Owner-only internal analytics dashboard. The /internal page and its metrics
   // API are gated by this shared key (independent of the Outlook/Entra session).
   internalDashboardKey: env('INTERNAL_DASHBOARD_KEY'),
 };
 
-export type FeatureKey = 'db' | 'auth' | 'graph' | 'ai' | 'billing';
+export type FeatureKey = 'db' | 'auth' | 'graph' | 'ai' | 'billing' | 'leap';
 
 const FEATURE_REQUIREMENTS: Record<FeatureKey, Array<[string, string | undefined]>> = {
   db: [['DATABASE_URL', config.databaseUrl]],
@@ -223,6 +242,14 @@ const FEATURE_REQUIREMENTS: Record<FeatureKey, Array<[string, string | undefined
     ['DATABASE_URL', config.databaseUrl],
     ['STRIPE_SECRET_KEY', config.stripeSecretKey],
     ['STRIPE_WEBHOOK_SECRET', config.stripeWebhookSecret],
+  ],
+  leap: [
+    ['DATABASE_URL', config.databaseUrl],
+    ['APP_ENCRYPTION_KEY', config.appEncryptionKey],
+    ['LEAP_AUTH_BASE_URL', config.leapAuthBaseUrl],
+    ['LEAP_API_BASE_URL', config.leapApiBaseUrl],
+    ['LEAP_CLIENT_ID', config.leapClientId],
+    ['LEAP_CLIENT_SECRET', config.leapClientSecret],
   ],
 };
 

@@ -43,8 +43,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     if (d.status !== 'pending') {
       const doc = await svc.getDocument(user.tenantId, d.matterId, d.sourceDocumentId);
       if (doc) {
-        const blob = await queryOne<{ ok: boolean }>(`select true as ok from document_blob where document_id = $1`, [doc.id]).catch(() => null);
-        source = { id: doc.id, fileName: doc.fileName, webUrl: doc.webUrl, docType: doc.docType, content: (doc.extractedFacts as { content?: string } | null)?.content ?? null, rawUrl: blob ? `/api/v1/documents/${doc.id}/raw` : null };
+        const blob = await queryOne<{ ok: boolean }>(`select (exists (select 1 from document_blob b where b.document_id = d.id) or d.leap_document_id is not null) as ok from document d where d.id = $1`, [doc.id]).catch(() => null);
+        source = { id: doc.id, fileName: doc.fileName, webUrl: doc.webUrl, docType: doc.docType, content: (doc.extractedFacts as { content?: string } | null)?.content ?? null, rawUrl: blob?.ok ? `/api/v1/documents/${doc.id}/raw` : null };
       }
     }
     return ok({

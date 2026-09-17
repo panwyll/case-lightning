@@ -11,7 +11,8 @@
     "test:unit": "node --import tsx --test tests/unit/*/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
-    "engine:demo": "tsx scripts/engine-demo.ts"
+    "engine:demo": "tsx scripts/engine-demo.ts",
+    "leap:mock": "tsx scripts/mock-leap-server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

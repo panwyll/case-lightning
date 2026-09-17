@@ -18,6 +18,7 @@ export async function GET() {
       graph: missingFor('graph').length === 0,
       ai: missingFor('ai').length === 0,
       billing: missingFor('billing').length === 0,
+      leap: missingFor('leap').length === 0,
     },
   });
 }

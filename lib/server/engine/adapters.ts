@@ -34,6 +34,7 @@ import { createTask } from '../tasks';
 import { emitMatterEvent } from '../events';
 import { resolveCounterparty } from './counterparty';
 import type { LinkedMatterNotifier } from './ports';
+import { leapBackendActive, LeapDocumentBytesLoader, LeapDocumentRepository, leapOnEvents } from '../integrations/leap/adapters';
 
 interface DocRow {
   id: string;
@@ -144,11 +145,16 @@ class ClaudeClassifier implements DocumentClassifier {
   }
 }
 
+/** Where document bytes come from: LEAP when it is the backend (mirrored documents), OneDrive/document_blob otherwise. */
+export function documentBytesLoader(): DocumentBytesLoader {
+  return leapBackendActive() ? new LeapDocumentBytesLoader(new PgDocumentBytesLoader()) : new PgDocumentBytesLoader();
+}
+
 /** Real pipeline when a Claude key is present (or forced), otherwise the fixture stub. */
 function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: DocumentClassifier | null } {
   const useClaude = config.engineExtractor === 'claude' || (config.engineExtractor === 'auto' && !!config.anthropicApiKey);
   if (!useClaude) return { extractor: new FixtureExtractor(), classifier: null };
-  const ex = new ClaudeExtractor(claudeLlm(), new PgDocumentBytesLoader(), new PgDocumentFactsWriter(), { model: config.engineExtractModel, effort: 'high' });
+  const ex = new ClaudeExtractor(claudeLlm(), documentBytesLoader(), new PgDocumentFactsWriter(), { model: config.engineExtractModel, effort: 'high' });
   return { extractor: ex, classifier: new ClaudeClassifier(ex) };
 }
 
@@ -158,7 +164,7 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
   if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter() };
   const llm = claudeLlm();
   return {
-    summariser: new ClaudeSummariser(llm, new PgDocumentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
+    summariser: new ClaudeSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
     reportDrafter: new ClaudeReportDrafter(llm, { model: config.engineDraftModel, effort: 'high', log }),
   };
 }
@@ -206,9 +212,13 @@ export function productionPorts(): EnginePorts {
     const { summariser, reportDrafter } = chooseAi(log);
     const { searchProvider, idCheckProvider } = chooseIntegrations();
     const { clientComms, chaser } = chooseComms();
+    // LEAP as the backend (phase 0/1): mirrored documents' bytes live in LEAP, generated
+    // documents are uploaded there, and the log is projected back as tasks and file notes.
+    const leap = leapBackendActive();
     _ports = {
       linked: new PgLinkedMatterNotifier(),
-      documents: new PgDocumentRepository(),
+      documents: leap ? new LeapDocumentRepository() : new PgDocumentRepository(),
+      onEvents: leap ? leapOnEvents : undefined,
       extractor,
       classifier,
       summariser,
