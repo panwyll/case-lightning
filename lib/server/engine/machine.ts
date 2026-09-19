@@ -17,6 +17,7 @@
  *   - every command is either automation (system/ai/external) or a human decision.
  */
 import { applyEvent } from './projection';
+import type { DeadlineKind } from './sla';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import {
   EngineError,
@@ -38,6 +39,8 @@ import {
   type SubFlow,
   type SubflowConfig,
   type SuppressedAction,
+  type AbandonReason,
+  ABANDON_REASONS,
   SUBFLOW_OF_KIND,
   type Engagement,
   DEFAULT_SUBFLOW_CONFIG,
@@ -87,6 +90,17 @@ export type Command =
   | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null }
   | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
+  // ── eventualities (docs/engine-eventualities.md) ──
+  | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
+  | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
+  | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
+  | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
+  | { type: 'mortgage_offer_withdrawn'; actor: Actor; reason: string; lender?: string | null }
+  | { type: 'withdraw_enquiry'; actor: Actor; enquiryId: string; reason: string }
+  | { type: 'hmlr_requisition_received'; actor: Actor; documentId: string; reference?: string | null; deadline?: string | null; summary?: SummaryOverride | null }
+  | { type: 'record_correction'; actor: Actor; aboutEventId: string; reason: string }
+  | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
+  | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
   // Addendum 2 — payment verification
   | { type: 'record_bank_details'; actor: Actor; bankDetailsId: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId: string }
   | { type: 'payment_authorised'; actor: Actor; payeeKind: PayeeKind; bankDetailsId: string; amountPennies?: number | null; purpose: 'completion_monies' | 'deposit' | 'other' }
@@ -130,6 +144,16 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_search_ordered',
   'search_returned',
   'mortgage_offer_received',
+  // Eventualities a conveyancer records as they happen.
+  'abandon_matter',
+  'set_target_dates',
+  'change_completion_date',
+  'notice_to_complete_served',
+  'mortgage_offer_withdrawn',
+  'withdraw_enquiry',
+  'hmlr_requisition_received',
+  'record_correction',
+  'record_handler_change',
 ];
 
 export interface DecideContext {
@@ -152,6 +176,11 @@ function reject(msg: string, status = 409): never {
 }
 
 const requireEnrolled = (s: MatterState): void => {
+  if (!s.enrolled) reject('Matter is not enrolled in the engine. Enrol it first.');
+  if (s.abandoned) reject(`Matter was abandoned on ${s.abandoned.at.slice(0, 10)} (${s.abandoned.reason.replace(/_/g, ' ')}); nothing further can be recorded except a correction.`, 409);
+};
+/** Commands that may still be recorded after abandonment (audit only). */
+const requireEnrolledEvenIfAbandoned = (s: MatterState): void => {
   if (!s.enrolled) reject('Matter is not enrolled in the engine. Enrol it first.');
 };
 
@@ -188,6 +217,7 @@ export function assertDecisionSpec(d: DecisionSpec): void {
 /** Why the matter cannot leave its current stage yet (empty = it can). Exported for the dashboard. */
 export function stageBlockers(s: MatterState): string[] {
   if (!s.enrolled) return ['not enrolled'];
+  if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
   if (s.manualHandling.required) return [`manual handling: ${s.manualHandling.reason ?? 'unspecified'}`];
   const b: string[] = [];
   switch (s.stage) {
@@ -195,21 +225,21 @@ export function stageBlockers(s: MatterState): string[] {
       if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
       break;
     case 'pre_contract':
-      for (const t of s.requiredSearches) {
-        const sr = s.searches[t];
-        if (!sr) b.push(`${t} search not ordered`);
-        else if (!isResolved(sr.status)) b.push(`${t} search ${sr.status}`);
-      }
+      b.push(...unresolvedSearches(s, true));
       for (const q of Object.values(s.enquiries)) if (!isResolved(q.status)) b.push(`enquiry ${q.enquiryId} ${q.status}`);
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status}`);
       break;
     case 'contract_review':
+      // A search re-ordered after pre_contract (re-issued result, lender freshness rule) gates again.
+      b.push(...unresolvedSearches(s, false));
       if (!isResolved(s.title.status)) b.push(`title ${s.title.status}`);
       if (s.reportOnTitle.status !== 'sent') b.push(`report on title ${s.reportOnTitle.status.replace('_', ' ')}`);
       // Anything raised during review (a further enquiry off a title flag) must come back too.
       for (const q of Object.values(s.enquiries)) if (!isResolved(q.status)) b.push(`enquiry ${q.enquiryId} ${q.status}`);
       break;
     case 'pre_exchange':
+      b.push(...unresolvedSearches(s, false));
+      if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
     case 'exchanged':
@@ -227,10 +257,23 @@ export function stageBlockers(s: MatterState): string[] {
       if (!s.postCompletion.sdltSubmittedAt && !s.postCompletion.ap1SubmittedAt) b.push('SDLT / AP1 not submitted');
       break;
     case 'post_completion':
+      if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
       b.push(s.postCompletion.ap1ConfirmedAt ? 'matter complete' : 'awaiting HMLR registration');
       break;
   }
   return b;
+}
+
+/** Required searches not yet resolved; `includeUnordered` also lists ones never ordered (pre_contract only). */
+function unresolvedSearches(s: MatterState, includeUnordered: boolean): string[] {
+  const out: string[] = [];
+  for (const t of s.requiredSearches) {
+    const sr = s.searches[t];
+    if (!sr) {
+      if (includeUnordered) out.push(`${t} search not ordered`);
+    } else if (!isResolved(sr.status)) out.push(`${t} search ${sr.status}${sr.cycle > 1 ? ' (re-ordered)' : ''}`);
+  }
+  return out;
 }
 
 const nextStage = (s: Stage): Stage | null => STAGES[stageIndex(s) + 1] ?? null;
@@ -244,7 +287,8 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
   let s = state;
   for (let guard = 0; guard < 16; guard++) {
     let ev: NewEvent | null = null;
-    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required) {
+    if (s.abandoned) break;
+    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status))) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase'] } };
     } else {
       const to = nextStage(s.stage);
@@ -296,7 +340,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
 
-const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase' };
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -364,8 +408,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_contract', 'Ordering a search');
       const existing = s.searches[cmd.searchType];
-      if (existing && existing.status !== 'reviewed') reject(`${cmd.searchType} search already ${existing.status}.`);
-      return [{ type: 'search_ordered', actor: cmd.actor, payload: { searchType: cmd.searchType, provider: cmd.provider, reference: cmd.reference ?? null } }];
+      // A resolved search may be ordered again (re-issued result, lender freshness rule, provider error); an open one may not.
+      if (existing && !isResolved(existing.status)) reject(`${cmd.searchType} search already ${existing.status}.`);
+      return [{ type: 'search_ordered', actor: cmd.actor, payload: { searchType: cmd.searchType, provider: cmd.provider, reference: cmd.reference ?? null, reissue: !!existing } }];
     }
     case 'search_returned': {
       requireEnrolled(s);
@@ -532,6 +577,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'contracts_exchanged': {
       requireEnrolled(s);
       requireStage(s, 'pre_exchange', 'Exchange');
+      if (s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
+      const open = unresolvedSearches(s, false);
+      if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
       if (s.exchange.exchangedAt) reject('Contracts already exchanged.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required to exchange.', 400);
@@ -591,6 +639,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!s.postCompletion.ap1SubmittedAt) reject('AP1 has not been submitted.');
       if (s.postCompletion.ap1ConfirmedAt) reject('Registration already confirmed.');
+      if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) reject('An HMLR requisition is still unanswered; registration cannot complete until it is.');
       return [{ type: 'ap1_confirmed', actor: cmd.actor, payload: { titleNumber: cmd.titleNumber ?? null } }];
     }
 
@@ -638,6 +687,105 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       assertPayableDetails(s, cmd.payeeKind, cmd.bankDetailsId);
       if (cmd.purpose === 'completion_monies' && s.payments.some((p) => p.payeeKind === cmd.payeeKind && p.purpose === 'completion_monies')) reject('Completion monies already authorised for this payee.');
       return [{ type: 'payment_authorised', actor: cmd.actor, payload: { payeeKind: cmd.payeeKind, bankDetailsId: cmd.bankDetailsId, amountPennies: cmd.amountPennies ?? null, purpose: cmd.purpose, approvedBy: cmd.actor } }];
+    }
+
+    // ── eventualities ──
+    case 'abandon_matter': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person can abandon a matter.', 403);
+      if (!ABANDON_REASONS.includes(cmd.reason)) reject(`Unknown abandonment reason "${cmd.reason}".`, 400);
+      if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned. Record a correction if the completion event was wrong.');
+      return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }];
+    }
+    case 'set_target_dates': {
+      requireEnrolled(s);
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged: the completion date is contractual now — use change_completion_date.');
+      const targetExchangeDate = cmd.targetExchangeDate === undefined ? s.targetExchangeDate : cmd.targetExchangeDate;
+      const targetCompletionDate = cmd.targetCompletionDate === undefined ? s.targetCompletionDate : cmd.targetCompletionDate;
+      for (const d of [targetExchangeDate, targetCompletionDate]) if (d && Number.isNaN(Date.parse(d))) reject('Dates must be YYYY-MM-DD.', 400);
+      if (targetExchangeDate === s.targetExchangeDate && targetCompletionDate === s.targetCompletionDate) reject('Target dates are unchanged.');
+      return [{ type: 'target_dates_changed', actor: cmd.actor, payload: { targetExchangeDate, targetCompletionDate, reason: cmd.reason ?? null, previous: { targetExchangeDate: s.targetExchangeDate, targetCompletionDate: s.targetCompletionDate } } }];
+    }
+    case 'change_completion_date': {
+      requireEnrolled(s);
+      if (!s.exchange.exchangedAt) reject('Contracts are not exchanged; set target dates instead.');
+      if (s.completion.confirmedAt) reject('Completion has already been confirmed.');
+      if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required.', 400);
+      if (cmd.completionDate === s.exchange.completionDate) reject('The completion date is unchanged.');
+      return [{ type: 'completion_date_changed', actor: cmd.actor, payload: { from: s.exchange.completionDate ?? '', to: cmd.completionDate, reason: cmd.reason ?? null } }];
+    }
+    case 'notice_to_complete_served': {
+      requireEnrolled(s);
+      if (!s.exchange.exchangedAt) reject('A notice to complete can only follow exchange.');
+      if (s.completion.confirmedAt) reject('Completion has already been confirmed.');
+      if (s.noticeToComplete) reject('A notice to complete is already on file.');
+      if (Number.isNaN(Date.parse(cmd.expiresAt))) reject('A valid expiry date is required.', 400);
+      const servedAt = cmd.servedAt ?? ctx.now.toISOString();
+      const decision: DecisionSpec = {
+        kind: 'escalation',
+        summary: `NOTICE TO COMPLETE served by the ${cmd.servedBy} on ${servedAt.slice(0, 10)}, expiring ${cmd.expiresAt.slice(0, 10)}. Completion must take place by then; the ${cmd.servedBy === 'seller' ? 'seller may then rescind and keep the deposit' : 'buyer may then rescind and recover the deposit'}. Decide today what has to happen (funds, undertakings, the other side) and who needs telling.`,
+        sourceDocumentId: cmd.documentId,
+        citations: [{ documentId: cmd.documentId, label: 'The notice to complete' }],
+        options: OPTIONS_FOR.escalation,
+        summarisedBy: 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'notice_to_complete_served', actor: cmd.actor, payload: { servedBy: cmd.servedBy, servedAt, expiresAt: cmd.expiresAt, decision }, sourceDocumentId: cmd.documentId }];
+    }
+    case 'mortgage_offer_withdrawn': {
+      requireEnrolled(s);
+      if (!s.hasLender) reject('Cash purchase — there is no mortgage offer to withdraw.');
+      if (s.mortgage.status === 'awaiting' || s.mortgage.status === 'not_required') reject('No mortgage offer is on file.');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged: a withdrawn offer after exchange is a manual-handling emergency, not a sub-flow reset.');
+      return [{ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: cmd.reason, lender: cmd.lender ?? s.mortgage.facts?.lender ?? null } }];
+    }
+    case 'withdraw_enquiry': {
+      requireEnrolled(s);
+      const q = s.enquiries[cmd.enquiryId];
+      if (!q) reject(`Enquiry ${cmd.enquiryId} was never raised.`);
+      if (isResolved(q.status)) reject(`Enquiry ${cmd.enquiryId} is already ${q.status}.`);
+      if (!cmd.reason.trim()) reject('Give a reason for withdrawing the enquiry.', 400);
+      return [{ type: 'enquiry_withdrawn', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, reason: cmd.reason } }];
+    }
+    case 'hmlr_requisition_received': {
+      requireEnrolled(s);
+      if (!s.postCompletion.ap1SubmittedAt) reject('No AP1 has been submitted; a requisition cannot relate to this matter yet.');
+      if (s.postCompletion.ap1ConfirmedAt) reject('Registration is already confirmed.');
+      const decision: DecisionSpec = {
+        kind: 'requisition',
+        summary: cmd.summary?.text ?? `HM Land Registry has raised a requisition on the AP1${cmd.reference ? ` (${cmd.reference})` : ''}${cmd.deadline ? `, to be answered by ${cmd.deadline.slice(0, 10)}` : ''}. Read the requisition and respond; an unanswered requisition cancels the application and loses priority.`,
+        sourceDocumentId: cmd.documentId,
+        citations: [{ documentId: cmd.documentId, label: 'HMLR requisition' }],
+        options: OPTIONS_FOR.requisition,
+        summarisedBy: cmd.summary?.by ?? 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'hmlr_requisition_received', actor: cmd.actor, payload: { reference: cmd.reference ?? null, deadline: cmd.deadline ?? null, decision }, sourceDocumentId: cmd.documentId }];
+    }
+    case 'record_correction': {
+      requireEnrolledEvenIfAbandoned(s);
+      if (!isUserActor(cmd.actor)) reject('Corrections are recorded by people.', 403);
+      if (!cmd.reason.trim()) reject('Say what was wrong and what is right.', 400);
+      return [{ type: 'correction_recorded', actor: cmd.actor, payload: { aboutEventId: cmd.aboutEventId, reason: cmd.reason }, causedByEventId: cmd.aboutEventId }];
+    }
+    case 'record_handler_change': {
+      requireEnrolledEvenIfAbandoned(s);
+      if (cmd.toUserId === s.handler) reject('That person is already the handler.');
+      return [{ type: 'handler_changed', actor: cmd.actor, payload: { fromUserId: cmd.fromUserId ?? s.handler, toUserId: cmd.toUserId, reason: cmd.reason ?? null } }];
+    }
+    case 'raise_deadline_escalation': {
+      requireEnrolled(s);
+      if (Object.values(s.decisions).some((d) => d.subject === cmd.subject)) reject('This deadline has already been raised.');
+      const decision: DecisionSpec = {
+        kind: 'escalation',
+        summary: cmd.summary,
+        sourceDocumentId: cmd.sourceDocumentId,
+        citations: [{ documentId: cmd.sourceDocumentId, label: `Deadline dossier: ${cmd.kind.replace(/_/g, ' ')} ${cmd.dueDate}` }],
+        options: OPTIONS_FOR.escalation,
+        summarisedBy: 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'escalation_raised', actor: AI, payload: { waitKey: null, subject: cmd.subject, reason: `${cmd.kind.replace(/_/g, ' ')} due ${cmd.dueDate}`, decision, origin: null }, sourceDocumentId: cmd.sourceDocumentId }];
     }
 
     case 'record_suppressed': {
@@ -738,8 +886,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     if (d.kind === 'auto_clear') {
       const [subFlow, ...rest] = subject.split(':');
       out.push({ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId });
-    } else if (d.kind === 'bank_details') {
-      // handled below via the generic escalation (the bank record stays unverified)
+    } else if (d.kind === 'bank_details' || d.kind === 'requisition') {
+      // handled via the generic escalation (the bank record stays unverified / the requisition stays open)
     } else {
       out.push(reviewedEvent(d, option, note, userId, subject, engagement));
     }
@@ -779,6 +927,10 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
         const od = s.decisions[origin.decisionEventId];
         if (od) out.push(reviewedEvent(od, option, note, userId, od.subject ?? ''));
       }
+      return out;
+    }
+    case 'requisition': {
+      out.push({ type: 'hmlr_requisition_responded', actor: userId, payload: { decisionEventId: d.eventId, option, note, engagement } });
       return out;
     }
     case 'report_on_title': {
@@ -821,6 +973,7 @@ function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | 
     case 'escalation':
     case 'bank_details':
     case 'auto_clear':
+    case 'requisition':
       return reject('Not a reviewable decision kind.', 500);
   }
 }

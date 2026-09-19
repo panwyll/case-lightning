@@ -46,16 +46,17 @@ export type Verdict = { outcome: 'clear'; reasons: string[] } | { outcome: 'flag
 /** The standard option set per decision kind (spec 2.4 step 5). */
 export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   id_check: ['approve', 'request_further', 'escalate', 'reject'],
-  search: ['approve', 'refer_to_client', 'request_further', 'escalate'],
+  search: ['approve', 'refer_to_client', 'request_further', 'indemnity', 'escalate'],
   enquiry: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   mortgage: ['approve', 'refer_to_client', 'request_further', 'escalate'],
-  title: ['approve', 'refer_to_client', 'request_further', 'escalate'],
+  title: ['approve', 'refer_to_client', 'request_further', 'indemnity', 'escalate'],
   report_on_title: ['approve', 'reject', 'escalate'],
   escalation: ['approve', 'refer_to_client', 'escalate'],
   // Addendum 2: never "approve" — only an out-of-band VERIFICATION (with its method) or a failure.
   bank_details: ['verify', 'reject', 'escalate'],
   // assist level: confirm the engine's auto-clear was right, or escalate it. Never blocks.
   auto_clear: ['approve', 'escalate'],
+  requisition: ['approve', 'escalate'],
 };
 
 const lowConfidenceFlag = (confidence: number, what: string): Flag => ({
@@ -262,6 +263,8 @@ export function optionLabel(o: DecisionOption): string {
       return 'reject';
     case 'verify':
       return 'verified out-of-band (method required)';
+    case 'indemnity':
+      return 'cover with an indemnity policy';
   }
 }
 

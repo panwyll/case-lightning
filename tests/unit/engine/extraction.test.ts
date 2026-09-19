@@ -90,7 +90,7 @@ test('routeClassification: deterministic routing against the matter state', () =
   s.enrolled = true;
   s.hasLender = true;
   assert.deepEqual(routeClassification(s, cls({ role: 'search', searchType: 'CON29' })), { kind: 'search', searchType: 'CON29', recordOrderFirst: true });
-  s.searches.CON29 = { searchType: 'CON29', status: 'ordered', orderedAt: 'x', returnedAt: null, documentId: null, facts: null, flags: [], decisionEventId: null, resolution: null };
+  s.searches.CON29 = { searchType: 'CON29', cycle: 1, status: 'ordered', orderedAt: 'x', returnedAt: null, documentId: null, facts: null, flags: [], decisionEventId: null, resolution: null };
   assert.deepEqual(routeClassification(s, cls({ role: 'search', searchType: 'CON29' })), { kind: 'search', searchType: 'CON29', recordOrderFirst: false });
   s.searches.CON29.status = 'cleared';
   assert.equal(routeClassification(s, cls({ role: 'search', searchType: 'CON29' })).kind, 'skip');

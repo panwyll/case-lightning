@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     await writeAudit({ tenantId: user.tenantId, matterId: null, actorUserId: user.userId, actionType: 'LEAP_CONNECTED', actionStatus: 'SUCCESS', payload: { firmId: firm?.id ?? null, webhookSubId } }).catch(() => {});
     // First sync in the background of this request (bounded); the cron carries on from the watermark.
     void leapApi(user.tenantId);
-    runAsAutomation(() => syncMatters(leapSyncDeps(user.tenantId), user.tenantId, { full: true })).catch((err) => console.warn('[leap] initial sync failed', (err as Error).message));
+    runAsAutomation(async () => syncMatters(await leapSyncDeps(user.tenantId), user.tenantId, { full: true })).catch((err) => console.warn('[leap] initial sync failed', (err as Error).message));
     const res = NextResponse.redirect(`${config.appUrl}/integrations/leap?connected=1`, 302);
     res.cookies.set('cl_leap_oauth', '', { maxAge: 0, path: '/api/v1/integrations/leap' });
     return res;

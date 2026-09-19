@@ -122,6 +122,7 @@ export const KIND_LABEL: Record<string, string> = {
   escalation: 'Escalation',
   bank_details: 'Bank details — verify out-of-band',
   auto_clear: 'Auto-clear review',
+  requisition: 'HMLR requisition',
 };
 
 export const VERIFICATION_METHOD_LABEL: Record<string, string> = {
@@ -141,6 +142,7 @@ export const OPTION_LABEL: Record<string, string> = {
   escalate: 'Escalate to senior',
   reject: 'Reject',
   verify: 'Verified out-of-band',
+  indemnity: 'Cover with an indemnity policy',
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');

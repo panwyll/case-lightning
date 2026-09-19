@@ -7,7 +7,9 @@ import crypto from 'node:crypto';
 import { config } from '../../config';
 import { query, queryOne, runAsAutomation, runAsSystem } from '../../db';
 import { decryptSecret, encryptSecret } from '../../crypto';
-import { engine, productionPorts, PgDocumentBytesLoader, PgDocumentRepository } from '../../engine/adapters';
+import { PgDocumentBytesLoader, PgDocumentRepository } from '../../engine/pg-documents';
+/** engine() / productionPorts() are imported lazily: engine/adapters imports this module's backend. */
+const engineModule = () => import('../../engine/adapters');
 import { ingestDocument } from '../../engine/ingest';
 import type { DocumentRef, DocumentRepository } from '../../engine/ports';
 import type { DocumentBytesLoader } from '../../engine/extraction';
@@ -126,7 +128,7 @@ export function leapApi(tenantId: string): LeapApi {
 export class PgLeapMirrorStore implements LeapMirrorStore {
   async upsertMatter(tenantId: string, m: LeapMatter, extras: { assignedTo: string | null; track: 'PURCHASE' | 'SALE'; createdBy: string | null }): Promise<{ matterId: string; created: boolean }> {
     return runAsSystem(async () => {
-      const existing = await queryOne<{ id: string }>(`select id from matter where tenant_id = $1 and leap_matter_id = $2`, [tenantId, m.id]);
+      const existing = await queryOne<{ id: string; assigned_to: string | null }>(`select id, assigned_to from matter where tenant_id = $1 and leap_matter_id = $2`, [tenantId, m.id]);
       const address = m.propertyAddress ?? m.description ?? m.number;
       if (existing) {
         await query(
@@ -134,7 +136,7 @@ export class PgLeapMirrorStore implements LeapMirrorStore {
             where id = $1 and tenant_id = $2`,
           [existing.id, tenantId, address, m.number, m.exchangeDate, m.completionDate, m.purchasePrice, extras.assignedTo]
         );
-        return { matterId: existing.id, created: false };
+        return { matterId: existing.id, created: false, previousAssignedTo: existing.assigned_to };
       }
       // created_by is NOT NULL: fall back to the firm's first admin when LEAP's responsible staff has no account here.
       const creator = extras.createdBy ?? (await queryOne<{ id: string }>(`select id from app_user where tenant_id = $1 order by (role = 'ADMIN') desc, created_at asc limit 1`, [tenantId]))?.id;
@@ -314,6 +316,7 @@ export async function leapDocumentBytes(tenantId: string, documentId: string): P
  * strong enough prior to route a search result, an offer, a title or an ID report.
  */
 export async function ingestLeapDocument(tenantId: string, matterId: string, documentId: string, hint: IngestHint): Promise<IngestResult> {
+  const { engine, productionPorts } = await engineModule();
   const ports = productionPorts();
   const svc = engine();
   const doc = await ports.documents.get(tenantId, documentId);
@@ -360,13 +363,15 @@ export async function leapOnEvents(input: { tenantId: string; matterId: string; 
   if (!leapWritebackEnabled()) return;
   const conn = await leapConnection(input.tenantId).catch(() => null);
   if (!apiFactory && conn?.status !== 'CONNECTED') return;
+  const { engine } = await engineModule();
   await writeBack({ leap: leapApi(input.tenantId), store: new PgLeapWritebackStore(), appUrl: config.appUrl, subflows: (t) => engine().subflows(t), log: (m, d) => console.warn(`[leap] ${m}`, d instanceof Error ? d.message : d ?? '') }, input.tenantId, input.matterId, input.events, input.state);
 }
 
 // ───────────────────────────── sync deps ─────────────────────────────
 
-export function leapSyncDeps(tenantId: string): SyncDeps {
+export async function leapSyncDeps(tenantId: string): Promise<SyncDeps> {
   const patterns = config.leapEnrolPatterns ? config.leapEnrolPatterns.split('|').map((p) => new RegExp(p.trim(), 'i')) : DEFAULT_ENROL_PATTERNS;
+  const { engine } = await engineModule();
   return {
     leap: leapApi(tenantId),
     store: new PgLeapMirrorStore(),

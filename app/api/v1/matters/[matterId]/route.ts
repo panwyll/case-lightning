@@ -161,6 +161,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         events.push(['STATUS_FLAG', `Marked ${String(body.statusFlag).toLowerCase().replace(/_/g, ' ')}`, null]);
       }
       if (body.assignedTo !== undefined && (body.assignedTo ?? null) !== (before?.assigned_to ?? null)) {
+        // The engine log records the handler change (audit; the queue follows assigned_to).
+        void (await import('@/lib/server/backends/native')).onNativeMatterReassigned(user.tenantId, matterId, before?.assigned_to ?? null, body.assignedTo ?? null, user.userId);
         let title = 'Unassigned';
         if (body.assignedTo) {
           const u = await queryOne<{ name: string }>(

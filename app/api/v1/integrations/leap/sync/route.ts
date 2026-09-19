@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     if (!leapBackendActive()) return fail(Object.assign(new Error('LEAP is not configured.'), { status: 503 }));
     const user = await requireRole(['ADMIN']);
     const q = z.object({ full: z.enum(['0', '1']).default('0') }).parse(Object.fromEntries(req.nextUrl.searchParams));
-    const summary = await runAsAutomation(() => syncMatters(leapSyncDeps(user.tenantId), user.tenantId, { full: q.full === '1' }));
+    const summary = await runAsAutomation(async () => syncMatters(await leapSyncDeps(user.tenantId), user.tenantId, { full: q.full === '1' }));
     return ok({ summary });
   } catch (error) {
     return fail(error);

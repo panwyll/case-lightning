@@ -95,3 +95,55 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
   for (const [k, v] of Object.entries(o)) if (v !== undefined) (out as Record<string, unknown>)[k] = v;
   return out;
 }
+
+// ───────────────────────────── deadlines (eventualities) ─────────────────────────────
+
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply';
+
+export interface DeadlineAction {
+  kind: DeadlineKind;
+  /** ISO date the deadline falls on. */
+  dueDate: string;
+  /** Working days until the deadline (negative = passed). */
+  workingDaysLeft: number;
+  summary: string;
+  subject: string;
+}
+
+/** How many working days before a deadline the engine raises it (one escalation per deadline, by subject). */
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5 };
+
+/**
+ * Hard dates a conveyancer must not sail past. Unlike waits (something is owed to us),
+ * a deadline is something we owe: nothing is chased, a person is told in time. Each is
+ * raised once — the escalation's subject is `deadline:<kind>:<date>`, and an existing
+ * decision with that subject (pending or resolved) means it has been raised.
+ */
+export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalendar = EW_CALENDAR): DeadlineAction[] {
+  if (!state.enrolled || state.abandoned || state.manualHandling.required) return [];
+  const out: DeadlineAction[] = [];
+  const raised = new Set(Object.values(state.decisions).map((d) => d.subject ?? ''));
+  const push = (kind: DeadlineKind, dueDate: string, summary: string) => {
+    const subject = `deadline:${kind}:${dueDate}`;
+    if (raised.has(subject)) return;
+    const left = workingDaysBetween(now, new Date(dueDate), cal) * (new Date(dueDate) < now ? -1 : 1);
+    if (left <= DEADLINE_LEAD[kind]) out.push({ kind, dueDate, workingDaysLeft: left, summary, subject });
+  };
+  const expiry = state.mortgage.facts?.expiryDate;
+  if (state.hasLender && expiry && !state.exchange.exchangedAt && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) {
+    push('mortgage_offer_expiry', expiry, `The mortgage offer expires on ${expiry} and contracts are not exchanged. Exchange before then, or ask the lender for an extension / re-issue now — a lapsed offer reopens the mortgage sub-flow and blocks exchange.`);
+  }
+  if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt) {
+    const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
+    push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.`);
+  }
+  if (state.noticeToComplete && !state.completion.confirmedAt) {
+    const n = state.noticeToComplete;
+    push('notice_to_complete', n.expiresAt.slice(0, 10), `A notice to complete served by the ${n.servedBy} on ${n.servedAt.slice(0, 10)} expires on ${n.expiresAt.slice(0, 10)}. Completion must happen by then or the ${n.servedBy === 'seller' ? 'seller may rescind and forfeit the deposit' : 'buyer may rescind and recover the deposit'}.`);
+  }
+  for (const r of state.postCompletion.requisitions) {
+    if (r.respondedAt || !r.deadline) continue;
+    push('requisition_reply', r.deadline.slice(0, 10), `HM Land Registry's requisition of ${r.receivedAt.slice(0, 10)} must be answered by ${r.deadline.slice(0, 10)} or the application is cancelled and priority is lost.`);
+  }
+  return out;
+}

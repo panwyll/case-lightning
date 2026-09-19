@@ -71,7 +71,7 @@ export const titleWithCharge = (): TitleFacts => ({ ...titleClear(), charges: [{
 export const titleLeasehold = (): TitleFacts => ({ ...titleClear(), tenure: 'leasehold' });
 
 /** Resolve a decision the honest way: open the source first, then choose. */
-export async function resolve(h: Harness, decisionEventId: string, option: 'approve' | 'refer_to_client' | 'request_further' | 'escalate' | 'reject', userId = USER, note?: string) {
+export async function resolve(h: Harness, decisionEventId: string, option: 'approve' | 'refer_to_client' | 'request_further' | 'escalate' | 'reject' | 'indemnity', userId = USER, note?: string) {
   await h.svc.openDecisionSource(TENANT, MATTER, decisionEventId, userId);
   return h.svc.resolveDecision(TENANT, MATTER, decisionEventId, userId, option, note);
 }

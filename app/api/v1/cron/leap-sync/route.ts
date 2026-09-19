@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const results: Record<string, unknown> = {};
     for (const tenantId of await connectedTenants()) {
       try {
-        results[tenantId] = await runAsAutomation(() => syncMatters(leapSyncDeps(tenantId), tenantId));
+        results[tenantId] = await runAsAutomation(async () => syncMatters(await leapSyncDeps(tenantId), tenantId));
       } catch (err) {
         results[tenantId] = { error: (err as Error).message };
       }

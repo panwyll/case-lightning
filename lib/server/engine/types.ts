@@ -129,6 +129,17 @@ export const EVENT_TYPES = [
   // addendum 3: shadow mode + assist-level review of auto-clears
   'action_suppressed',
   'shadow_mode_changed',
+  // eventualities (docs/engine-eventualities.md)
+  'matter_abandoned',
+  'target_dates_changed',
+  'completion_date_changed',
+  'notice_to_complete_served',
+  'mortgage_offer_withdrawn',
+  'enquiry_withdrawn',
+  'hmlr_requisition_received',
+  'hmlr_requisition_responded',
+  'correction_recorded',
+  'handler_changed',
   'auto_clear_review_raised',
   'auto_clear_confirmed',
 ] as const;
@@ -231,10 +242,10 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
-export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify'] as const;
+export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify', 'indemnity'] as const;
 export type DecisionOption = (typeof DECISION_OPTIONS)[number];
 
 export type DecisionStatus = 'pending' | 'actioned' | 'escalated';
@@ -401,7 +412,7 @@ export interface Payloads {
   id_check_flagged: { facts: IdCheckFacts; flags: Flag[]; decision: DecisionSpec };
   id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  search_ordered: { searchType: SearchType; provider: string; reference?: string | null };
+  search_ordered: { searchType: SearchType; provider: string; reference?: string | null; reissue?: boolean };
   search_returned: { searchType: SearchType; provider?: string | null };
   search_extracted: { searchType: SearchType; facts: SearchFacts; extractor: string };
   search_cleared: { searchType: SearchType; reasons: string[] };
@@ -475,6 +486,26 @@ export interface Payloads {
   action_suppressed: { action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> };
   /** A person switched shadow mode on or off for this matter (the flag is part of the log, like everything else). */
   shadow_mode_changed: { shadowMode: boolean; reason?: string | null };
+  // ── eventualities ──
+  /** The transaction is over without completing: the matter is closed to further commands, timers stop. */
+  matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
+  /** Target exchange / completion dates re-planned (offers expire, chains move). */
+  target_dates_changed: { targetExchangeDate: string | null; targetCompletionDate: string | null; reason?: string | null; previous: { targetExchangeDate: string | null; targetCompletionDate: string | null } };
+  /** After exchange: the contractual completion date moved (by agreement, or a notice to complete). */
+  completion_date_changed: { from: string; to: string; reason?: string | null };
+  /** A notice to complete was served (by either side): a hard deadline the timers watch. */
+  notice_to_complete_served: { servedBy: 'buyer' | 'seller'; servedAt: string; expiresAt: string; decision: DecisionSpec };
+  /** The lender withdrew or the offer lapsed before exchange: the mortgage sub-flow reopens and exchange is blocked. */
+  mortgage_offer_withdrawn: { reason: string; lender?: string | null };
+  /** An enquiry the handler no longer needs answered (superseded, covered by indemnity, out of scope). */
+  enquiry_withdrawn: { enquiryId: string; reason: string };
+  /** HM Land Registry raised a requisition on the AP1: a decision citing the requisition letter. */
+  hmlr_requisition_received: { reference?: string | null; deadline?: string | null; decision: DecisionSpec };
+  hmlr_requisition_responded: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
+  /** A person recorded that an earlier event was wrong. The log is never edited; this is the compensating record. */
+  correction_recorded: { aboutEventId: string; reason: string };
+  /** The responsible handler changed (reassignment, holiday cover, leaver). */
+  handler_changed: { fromUserId: string | null; toUserId: string; reason?: string | null };
   /** assist level: an auto-clear put in front of a person for confirmation — never blocks the stage. */
   auto_clear_review_raised: { subFlow: SubFlow; subject: string; clearedEventType: EventType; reasons: string[]; decision: DecisionSpec };
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
@@ -491,6 +522,8 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'escalation_raised',
   'bank_details_change_flagged',
   'auto_clear_review_raised',
+  'notice_to_complete_served',
+  'hmlr_requisition_received',
 ];
 
 // ───────────────────────────── Shadow mode / trust levels (addendum 3 §2) ─────────────────────────────
@@ -512,7 +545,7 @@ export type SubflowConfig = Record<SubFlow, SubflowStatus>;
 export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist' };
 
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
-export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null };
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null };
 
 export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror';
 
@@ -546,11 +579,16 @@ export type EngineEvent<T extends EventType = EventType> = NewEvent<T> & {
 // ───────────────────────────── Projected state ─────────────────────────────
 
 export type ReviewStatus = 'cleared' | 'flagged' | 'reviewed';
-/** cleared (auto) and reviewed (human) both count as resolved for stage gating. */
-export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed';
+/** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
+export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed' || s === 'withdrawn';
+
+export const ABANDON_REASONS = ['client_withdrew', 'seller_withdrew', 'chain_collapsed', 'gazumped', 'survey', 'finance_failed', 'conflict', 'other'] as const;
+export type AbandonReason = (typeof ABANDON_REASONS)[number];
 
 export interface SearchState {
   searchType: SearchType;
+  /** 1 for the first order; a re-issued / re-ordered search (lender freshness rule, provider error) starts a new cycle. */
+  cycle: number;
   status: 'ordered' | 'returned' | 'extracted' | ReviewStatus;
   orderedAt: string | null;
   returnedAt: string | null;
@@ -564,7 +602,7 @@ export interface SearchState {
 export interface EnquiryState {
   enquiryId: string;
   subject: string;
-  status: 'raised' | 'replied' | ReviewStatus;
+  status: 'raised' | 'replied' | 'withdrawn' | ReviewStatus;
   raisedAt: string;
   repliedAt: string | null;
   documentId: string | null;
@@ -626,7 +664,14 @@ export interface MatterState {
     fundsReceivedAt: string | null;
     confirmedAt: string | null;
   };
-  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null };
+  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; requisitions: Array<{ eventId: string; receivedAt: string; respondedAt: string | null; deadline: string | null }> };
+  /** Set once the transaction is over without completing. Nothing else moves after this. */
+  abandoned: { at: string; reason: AbandonReason; detail: string | null; stage: Stage } | null;
+  /** A served notice to complete (either side): the deadline the timers watch. */
+  noticeToComplete: { servedBy: 'buyer' | 'seller'; servedAt: string; expiresAt: string; eventId: string } | null;
+  /** The responsible handler as the log knows it (the matter row / LEAP is the live source; this is the audit trail). */
+  handler: string | null;
+  corrections: number;
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];
@@ -673,7 +718,11 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     deposit: { received: false, at: null },
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, confirmedAt: null },
-    postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null },
+    postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [] },
+    abandoned: null,
+    noticeToComplete: null,
+    handler: null,
+    corrections: 0,
     decisions: {},
     waits: [],
     clientUpdatesSent: 0,
@@ -683,6 +732,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     suppressed: 0,
   };
 }
+
+/** Nothing more will happen on this matter: registered, or abandoned. */
+export const isFinished = (s: MatterState): boolean => !!s.postCompletion.ap1ConfirmedAt || !!s.abandoned;
 
 /** The record a payment may use: the newest for the payee, and only if verified. */
 export function currentBankDetails(state: MatterState, payeeKind: PayeeKind): BankDetailsState | null {

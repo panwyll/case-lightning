@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     if (!(await claimLeapDelivery(event.id))) return ok({ received: true, duplicate: true });
     let outcome;
     try {
-      outcome = await runAsAutomation(() => handleLeapWebhook(leapSyncDeps(tenantId), tenantId, event));
+      outcome = await runAsAutomation(async () => handleLeapWebhook(await leapSyncDeps(tenantId), tenantId, event));
     } catch (err) {
       await finishLeapDelivery(event.id, 'FAILED', (err as Error).message);
       throw err;

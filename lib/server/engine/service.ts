@@ -27,7 +27,7 @@
  */
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
-import { dueActions } from './sla';
+import { dueActions, deadlineActions } from './sla';
 import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
@@ -279,11 +279,21 @@ export class EngineService {
 
   private async tickInner(tenantId: string, matterId: string, now: Date): Promise<{ chases: number; escalations: number }> {
     const state = await this.getState(tenantId, matterId);
-    if (!state.enrolled || state.manualHandling.required) return { chases: 0, escalations: 0 };
+    if (!state.enrolled || state.manualHandling.required || state.abandoned) return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
     const subflows = await this.subflows(tenantId);
     let chases = 0;
     let escalations = 0;
+    // Deadlines we owe (offer expiry, SDLT, notice to complete, requisitions): raised once, in time, with a dossier.
+    for (const d of deadlineActions(state, now)) {
+      try {
+        const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'DEADLINE_DOSSIER', fileName: `deadline-${d.kind}-${d.dueDate}.txt`, content: [`DEADLINE — ${d.kind.replace(/_/g, ' ').toUpperCase()}`, `Due: ${d.dueDate}`, `Working days left: ${d.workingDaysLeft}`, `Stage: ${state.stage}`, '', d.summary].join('\n') });
+        await this.run(tenantId, matterId, { type: 'raise_deadline_escalation', kind: d.kind, dueDate: d.dueDate, subject: d.subject, summary: d.summary, sourceDocumentId: doc.id });
+        escalations += 1;
+      } catch (err) {
+        this.ports.log(`deadline escalation failed (${d.kind} ${d.dueDate})`, err);
+      }
+    }
     for (const a of dueActions(state, now, sla)) {
       try {
         if (a.kind === 'chase') {

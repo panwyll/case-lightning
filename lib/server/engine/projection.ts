@@ -156,6 +156,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['search_ordered'];
       s.searches[p.searchType] = {
         searchType: p.searchType,
+        cycle: (s.searches[p.searchType]?.cycle ?? 0) + 1,
         status: 'ordered',
         orderedAt: e.createdAt,
         returnedAt: null,
@@ -491,6 +492,60 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
 
     // ── Shadow mode / assist (addendum 3) ──
+    // ── eventualities ──
+    case 'matter_abandoned': {
+      const p = e.payload as Payloads['matter_abandoned'];
+      s.abandoned = { at: e.createdAt, reason: p.reason, detail: p.detail ?? null, stage: p.stage };
+      for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
+      break;
+    }
+    case 'target_dates_changed': {
+      const p = e.payload as Payloads['target_dates_changed'];
+      s.targetExchangeDate = p.targetExchangeDate;
+      s.targetCompletionDate = p.targetCompletionDate;
+      break;
+    }
+    case 'completion_date_changed': {
+      s.exchange.completionDate = (e.payload as Payloads['completion_date_changed']).to;
+      break;
+    }
+    case 'notice_to_complete_served': {
+      const p = e.payload as Payloads['notice_to_complete_served'];
+      s.noticeToComplete = { servedBy: p.servedBy, servedAt: p.servedAt, expiresAt: p.expiresAt, eventId: e.id };
+      break;
+    }
+    case 'mortgage_offer_withdrawn': {
+      s.mortgage = { status: 'awaiting', documentId: null, facts: null, decisionEventId: null };
+      break;
+    }
+    case 'enquiry_withdrawn': {
+      const p = e.payload as Payloads['enquiry_withdrawn'];
+      const q = s.enquiries[p.enquiryId];
+      if (q) q.status = 'withdrawn';
+      const w = findOpenWait(s, 'enquiry', p.enquiryId);
+      if (w) w.closedAt = e.createdAt;
+      break;
+    }
+    case 'hmlr_requisition_received': {
+      const p = e.payload as Payloads['hmlr_requisition_received'];
+      s.postCompletion.requisitions.push({ eventId: e.id, receivedAt: e.createdAt, respondedAt: null, deadline: p.deadline ?? null });
+      break;
+    }
+    case 'hmlr_requisition_responded': {
+      const p = e.payload as Payloads['hmlr_requisition_responded'];
+      const r = s.postCompletion.requisitions.find((x) => x.eventId === p.decisionEventId);
+      if (r) r.respondedAt = e.createdAt;
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+    case 'correction_recorded': {
+      s.corrections += 1;
+      break;
+    }
+    case 'handler_changed': {
+      s.handler = (e.payload as Payloads['handler_changed']).toUserId;
+      break;
+    }
     case 'shadow_mode_changed': {
       s.shadowMode = (e.payload as Payloads['shadow_mode_changed']).shadowMode;
       break;
@@ -532,6 +587,8 @@ function subjectOf(e: EngineEvent): string | null {
   if (typeof p.enquiryId === 'string') return p.enquiryId;
   if (typeof p.draftId === 'string') return p.draftId;
   if (typeof p.bankDetailsId === 'string') return p.bankDetailsId;
+  if (e.type === 'hmlr_requisition_received') return (p as Payloads['hmlr_requisition_received']).reference ?? 'requisition';
+  if (e.type === 'notice_to_complete_served') return `notice:${(p as Payloads['notice_to_complete_served']).servedBy}`;
   if (e.type === 'auto_clear_review_raised') return `${(p as Payloads['auto_clear_review_raised']).subFlow}:${(p as Payloads['auto_clear_review_raised']).subject}`;
   if (e.type === 'escalation_raised') {
     const q = p as Payloads['escalation_raised'];

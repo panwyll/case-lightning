@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
+import { ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
 import type { Command } from './machine';
 
 /** Read-only users can look but never move a matter. */
@@ -55,6 +55,16 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   // Report on title lifecycle (the service does the I/O; these are the human-triggered steps).
   z.object({ type: z.literal('draft_report_on_title') }),
   z.object({ type: z.literal('send_report_on_title') }),
+  // Eventualities (docs/engine-eventualities.md).
+  z.object({ type: z.literal('abandon_matter'), reason: z.enum(ABANDON_REASONS), detail: z.string().max(2000).nullish() }),
+  z.object({ type: z.literal('set_target_dates'), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), reason: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('change_completion_date'), completionDate: isoDate, reason: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('notice_to_complete_served'), servedBy: z.enum(['buyer', 'seller']), servedAt: z.string().datetime().nullish(), expiresAt: isoDate, documentId: z.string().uuid() }),
+  z.object({ type: z.literal('mortgage_offer_withdrawn'), reason: z.string().min(1).max(500), lender: z.string().max(200).nullish() }),
+  z.object({ type: z.literal('withdraw_enquiry'), enquiryId: z.string().min(1).max(60), reason: z.string().min(1).max(500) }),
+  z.object({ type: z.literal('hmlr_requisition_received'), documentId: z.string().uuid(), reference: z.string().max(100).nullish(), deadline: isoDate.nullish() }),
+  z.object({ type: z.literal('record_correction'), aboutEventId: z.string().uuid(), reason: z.string().min(1).max(2000) }),
+  z.object({ type: z.literal('record_handler_change'), fromUserId: z.string().uuid().nullish(), toUserId: z.string().uuid(), reason: z.string().max(500).nullish() }),
 ]);
 export type UserCommandInput = z.infer<typeof userCommandSchema>;
 

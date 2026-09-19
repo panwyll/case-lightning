@@ -32,7 +32,7 @@ export interface MirrorMatterRef {
 
 export interface LeapMirrorStore {
   /** Upsert the matter row from LEAP's view of it. `assignedTo` is our user mapped from LEAP's responsible staff. */
-  upsertMatter(tenantId: string, m: LeapMatter, extras: { assignedTo: string | null; track: 'PURCHASE' | 'SALE'; createdBy: string | null }): Promise<{ matterId: string; created: boolean }>;
+  upsertMatter(tenantId: string, m: LeapMatter, extras: { assignedTo: string | null; track: 'PURCHASE' | 'SALE'; createdBy: string | null }): Promise<{ matterId: string; created: boolean; previousAssignedTo?: string | null }>;
   matterByLeapId(tenantId: string, leapMatterId: string): Promise<MirrorMatterRef | null>;
   closeMatter(tenantId: string, matterId: string): Promise<void>;
   upsertContacts(tenantId: string, matterId: string, parties: LeapMatterParty[]): Promise<void>;
@@ -127,8 +127,13 @@ export async function syncMatters(deps: SyncDeps, tenantId: string, opts: { full
 export async function syncOneMatter(deps: SyncDeps, tenantId: string, m: LeapMatter, summary: SyncSummary = emptySummary(deps.now())): Promise<{ matterId: string; enrolled: boolean }> {
   summary.matters.seen += 1;
   const assignedTo = await deps.store.staffToUser(tenantId, m.responsibleStaff);
-  const { matterId, created } = await deps.store.upsertMatter(tenantId, m, { assignedTo, track: trackOf(m.matterType), createdBy: assignedTo });
+  const { matterId, created, previousAssignedTo } = await deps.store.upsertMatter(tenantId, m, { assignedTo, track: trackOf(m.matterType), createdBy: assignedTo });
   if (created) summary.matters.created += 1;
+  // Responsible staff changed in LEAP → handler_changed on the log (enrolled matters only).
+  if (!created && assignedTo && previousAssignedTo !== undefined && previousAssignedTo !== assignedTo) {
+    const st = await deps.engine.getState(tenantId, matterId);
+    if (st.enrolled && st.handler !== assignedTo) await deps.engine.run(tenantId, matterId, { type: 'record_handler_change', actor: 'external', fromUserId: previousAssignedTo ?? null, toUserId: assignedTo, reason: 'responsible staff changed in LEAP' }).catch((err) => deps.log('handler change not recorded', err));
+  }
 
   if (m.status !== 'open') {
     await deps.store.closeMatter(tenantId, matterId);

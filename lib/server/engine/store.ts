@@ -218,7 +218,7 @@ export class MemoryEventStore implements EventStore {
     const out: EnrolledMatter[] = [];
     for (const [k, s] of this.states) {
       if (tenantId && !k.startsWith(`${tenantId}:`)) continue;
-      if (!s.enrolled || s.postCompletion.ap1ConfirmedAt) continue;
+      if (!s.enrolled || s.postCompletion.ap1ConfirmedAt || s.abandoned) continue;
       out.push({ tenantId: s.tenantId, matterId: s.matterId, stage: s.stage });
     }
     return out;
@@ -517,7 +517,7 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
     `insert into matter_engine_state (tenant_id, matter_id, stage, last_seq, state, finished_at, updated_at)
      values ($1,$2,$3,$4,$5::jsonb,$6,now())
      on conflict (matter_id) do update set stage = excluded.stage, last_seq = excluded.last_seq, state = excluded.state, finished_at = excluded.finished_at, updated_at = now()`,
-    [state.tenantId, state.matterId, state.stage, state.lastSeq, JSON.stringify(state), state.postCompletion.ap1ConfirmedAt]
+    [state.tenantId, state.matterId, state.stage, state.lastSeq, JSON.stringify(state), state.postCompletion.ap1ConfirmedAt ?? state.abandoned?.at ?? null]
   );
   for (const d of Object.values(state.decisions)) {
     await client.query(

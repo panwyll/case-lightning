@@ -45,6 +45,10 @@ Internally-linked counterparties (buyer and seller matters in the same firm, dif
 are walled off at the database layer — see the addendum section of the engine doc. The DB role the
 app connects with must not have BYPASSRLS; `GET /api/v1/health` reports `wallEnforced`.
 
+**The machine map**: `/engine/map` draws the state machine from code — stages, gates,
+sub-flows, commands, timers, triggers for both backends, and the eventualities matrix
+(`docs/engine-eventualities.md`) — checked against the machine by tests.
+
 **LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,
 parties, documents, tasks and file notes; CONVEYi mirrors just enough to run the engine,
 feeds LEAP's documents through it, and writes decisions back as LEAP tasks and file notes.

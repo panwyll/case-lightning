@@ -257,3 +257,59 @@ UI: the decision card for a bank-details change is red-striped and its **Verifie
   3. The action row, built from the decision's options. Anything other than approve/verify asks for a free-text reason, required, stored on the resolving event (`note`); the machine refuses a non-approve action without one (400).
   * **Engagement gate**: no action is enabled until the handler has scrolled the source section or dwelt on it while it is in view (8 s in the UI). The engagement (`scrolledSource`, `dwellMs`) is sent with the resolution, recorded on the resolving event, and checked again server-side — `POST /decisions/:id/resolve` returns 412 without it (`assertEngaged`, 5 s floor), so the gate holds even if the UI is bypassed.
   * Resolved decisions open read-only: the option, reason, who, when, verification method, engagement, who opened the source, and a link to the escalation it raised if any. Shadow decisions open with a "not actionable" notice and no actions.
+
+## The machine as data: `/engine/map`
+
+`lib/server/engine/spec.ts` describes the machine — stages and their gates, the sub-flow
+pattern per sub-flow, every command with its actor and accepted stages, every event
+type, decision kinds and options, wait and deadline timers, invariants, triggers and the
+eventualities matrix. It is built from the machine's own tables where they exist
+(`STAGES`, `EVENT_TYPES`, `DECISION_KINDS`, `OPTIONS_FOR`, `DEFAULT_SLA`, `DEADLINE_LEAD`,
+`USER_COMMANDS`, `TRIGGERS`) and declared next to the code where they do not; and
+`tests/unit/engine/spec.test.ts` checks the declared parts against the machine's
+behaviour (bare-state blockers per stage, the stage spine reached in order by running
+the machine, stage-bound commands refused elsewhere, options per kind, SLA numbers).
+`GET /api/v1/engine/spec` serves it; `/engine/map` draws it, read-only, with a version
+stamp (a hash of the spec) so a screenshot can be tied to a build. The page is the
+reference: if it disagrees with the code, a test is red.
+
+## Eventualities
+
+`docs/engine-eventualities.md` walks how a conveyancer really acts on a freehold
+purchase — by transaction shape, by stage and across stages — and records what the
+machine does about each (built / manual / outside / gap). The research added ten
+commands (`abandon_matter`, `set_target_dates`, `change_completion_date`,
+`notice_to_complete_served`, `mortgage_offer_withdrawn`, `withdraw_enquiry`,
+`hmlr_requisition_received`, `record_correction`, `record_handler_change`,
+`raise_deadline_escalation`), a `requisition` decision kind, an `indemnity` option for
+search and title decisions, gates for re-ordered searches and withdrawn offers, and the
+deadline timers (`sla.ts → deadlineActions`: offer expiry, SDLT, notice to complete,
+requisition reply). Tests: `tests/unit/engine/eventualities.test.ts`.
+
+## Backends: our own app or LEAP
+
+`lib/server/engine/backend.ts` is the seam between the engine and the practice system:
+
+| | NativeBackend (`lib/server/backends/native.ts`) | LeapBackend (`lib/server/backends/leap.ts`) |
+|---|---|---|
+| Matter rows | CaseLightning `matter` (created in the app, imported from CSV, or inferred from mail) | mirrored from LEAP, keyed by `leap_matter_id` |
+| Document bytes | OneDrive (Graph) or `document_blob` | fetched from LEAP on demand |
+| Generated documents (drafts, dossiers) | `document` row + `document_blob` | uploaded into a `CONVEYi` folder in the LEAP matter, labelled DRAFT |
+| Where conclusions show | `matter_task` (type DECISION, source ENGINE, assigned to the handler, with the panel link) + `matter_timeline_event` | LEAP tasks + file notes (`leap_writeback`) |
+| Assignment | `matter.assigned_to`; PATCH puts `handler_changed` on the log | LEAP responsible staff; the sync puts `handler_changed` on the log |
+| Triggers | email attachments, OneDrive, uploads, InfoTrack, WhatsApp, the panel, the taskpane, cron | LEAP webhooks + polling sync, InfoTrack, the panel, cron |
+
+`productionPorts()` composes the engine's ports from `backend()`: LEAP when configured
+(or injected for tests), otherwise native. Nothing in `machine.ts`, `projection.ts`,
+`rules.ts` or `sla.ts` knows which is in use; the decision panel, queue, timeline and
+audit are identical on both. `setBackend()` swaps it for tests.
+
+## Triggers
+
+`lib/server/engine/triggers.ts` is the registry of every way something reaches the
+engine — for both backends — with what it feeds (ingest, command, sync, comms), what it
+can reach, where it lands in the code, and whether it is built. A trigger never decides
+anything: it files a document, issues a command, or syncs the mirror; the engine's
+answer is the same whichever door it came through. The map's section 5 lists them;
+three LEAP triggers are marked planned (task completed in LEAP, key dates from the LEAP
+calendar, correspondence filed in LEAP) pending the API reference.
