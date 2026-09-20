@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../shared/engine/api';
 import { ENGINE_CSS } from '../../shared/engine/ui';
-import { STAGE_LABEL } from '../../shared/engine/types';
+import { STAGE_LABEL, type IssueCatalogue } from '../../shared/engine/types';
 
 /**
  * The state machine, drawn from code. Read-only. Everything on this page comes from
@@ -23,6 +23,7 @@ interface Spec {
   invariants: Array<{ id: string; title: string; rule: string; enforcedBy: string[] }>;
   triggers: Array<{ id: string; backend: string; source: string; feeds: string; label: string; description: string; entry: string; implemented: boolean; reaches: string[]; notes?: string }>;
   eventualities: Array<{ area: string; scenario: string; handling: string; mechanism: string }>;
+  issues: IssueCatalogue;
 }
 
 const CSS = `
@@ -50,6 +51,7 @@ export default function MapPage() {
   const [area, setArea] = useState('all');
   const [handling, setHandling] = useState('all');
   const [backend, setBackend] = useState('all');
+  const [issueGroup, setIssueGroup] = useState('all');
   useEffect(() => {
     api<Spec>('/engine/spec').then(setSpec).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the spec.'));
   }, []);
@@ -75,7 +77,7 @@ export default function MapPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">The machine, drawn from code</h1>
-          <p className="eg-sub">Residential freehold purchase, buyer side. Spec version <code>{spec.version}</code> · {spec.stages.length} stages · {spec.subflows.length} sub-flows · {spec.commands.length} commands · {spec.events.length} event types · {spec.decisions.length} decision kinds · {spec.triggers.length} triggers · {spec.eventualities.length} eventualities. Read-only; the tests keep it honest.</p>
+          <p className="eg-sub">Residential freehold purchase, buyer side. Spec version <code>{spec.version}</code> · {spec.stages.length} stages · {spec.subflows.length} sub-flows · {spec.commands.length} commands · {spec.events.length} event types · {spec.decisions.length} decision kinds · {spec.triggers.length} triggers · {spec.eventualities.length} eventualities · {spec.issues.kinds.length} issue kinds. Read-only; the tests keep it honest.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <a className="eg-btn" href="/decisions">Queue</a>
@@ -220,10 +222,34 @@ export default function MapPage() {
       </table>
       <p className="eg-sub" style={{ marginTop: 6 }}>built = modelled and tested · manual = automation stops, a person runs it · outside = the practice system's job · gap = design noted, not modelled. Full narrative: docs/engine-eventualities.md.</p>
 
-      <h2>7 · Invariants the machine enforces</h2>
+      <h2>7 · Issues: what goes wrong, what it holds, and the ways out</h2>
+      <p className="eg-sub" style={{ marginTop: 0 }}>A typed issue is raised by a person (or by the engine, for lender approval) when something the matter has to wait for comes up. An open issue holds its gate (exchange or completion) — everything else proceeds. It ends resolved with one of the kind's realistic outcomes, withdrawn, or fatal (the matter is abandoned). An issue nobody touches for {spec.issues.staleAfterWorkingDays} working days is raised to a person. Full research: docs/engine-issues.md.</p>
+      <div className="filters">
+        {['all', ...spec.issues.groups.map((g) => g.id)].map((g) => <button key={g} className={`eg-btn${issueGroup === g ? ' on' : ''}`} onClick={() => setIssueGroup(g)}>{g === 'all' ? 'All groups' : spec.issues.groups.find((x) => x.id === g)?.label}</button>)}
+      </div>
+      <table>
+        <thead><tr><th>Kind</th><th>Arises from</th><th>Holds</th><th>Realistic resolutions</th><th>What happens in practice</th></tr></thead>
+        <tbody>
+          {spec.issues.kinds.filter((k) => issueGroup === 'all' || k.group === issueGroup).map((k) => (
+            <tr key={k.kind}>
+              <td><b>{k.label}</b><div className="muted"><code>{k.kind}</code></div></td>
+              <td>{k.arisesFrom}{k.overlaps ? <div className="muted" style={{ marginTop: 3 }}>Already covered in part: {k.overlaps}</div> : null}</td>
+              <td><span className={`eg-chip ${k.gate === 'none' ? 'muted' : 'pending'}`}>{k.gate === 'none' ? 'nothing' : k.gate}</span></td>
+              <td>{k.resolutions.map((r) => spec.issues.resolutions.find((x) => x.id === r)?.label ?? r).join(' · ')}</td>
+              <td>{k.note}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table style={{ marginTop: 10 }}>
+        <thead><tr><th>Resolution</th><th>Effect on the rest of the machine</th></tr></thead>
+        <tbody>{spec.issues.resolutions.filter((r) => r.effects.length).map((r) => <tr key={r.id}><td><b>{r.label}</b> <code>{r.id}</code></td><td>{r.effects.join('; ')}</td></tr>)}</tbody>
+      </table>
+
+      <h2>8 · Invariants the machine enforces</h2>
       <div className="inv">{spec.invariants.map((v) => <div key={v.id}><b>{v.title}</b>{v.rule}<div className="muted" style={{ marginTop: 4 }}>{v.enforcedBy.join(' · ')}</div></div>)}</div>
 
-      <h2>8 · Decision kinds</h2>
+      <h2>9 · Decision kinds</h2>
       <table>
         <thead><tr><th>Kind</th><th>Options</th><th>Its source</th></tr></thead>
         <tbody>{spec.decisions.map((d) => <tr key={d.kind}><td><b>{d.label}</b></td><td>{d.options.join(' · ')}</td><td>{d.source}</td></tr>)}</tbody>

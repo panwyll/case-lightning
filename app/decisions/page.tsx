@@ -73,6 +73,7 @@ export default function QueuePage() {
               <div className="q-cell">
                 {r.pendingCount > 0 ? <span className={`eg-chip pending${r.oldestPendingAt && Date.now() - new Date(r.oldestPendingAt).getTime() > 86_400_000 ? ' hot' : ''}`}>{r.pendingCount} pending · {ago(r.oldestPendingAt)}</span> : <span className="eg-chip muted">nothing pending</span>}
                 {r.reviewCount > 0 && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{r.reviewCount} auto-clear review{r.reviewCount === 1 ? '' : 's'}</div>}
+                {r.openIssues > 0 && <div style={{ fontSize: 11, color: r.holdingIssues > 0 ? '#b45309' : '#94a3b8', marginTop: 3 }}>{r.openIssues} open issue{r.openIssues === 1 ? '' : 's'}{r.holdingIssues > 0 ? ` · ${r.holdingIssues} holding ${r.stage === 'pre_completion' || r.stage === 'exchanged' ? 'completion' : 'exchange'}` : ''}</div>}
               </div>
               <div className="q-cell hide">
                 <b>{r.targetCompletionDate ? fmtDay(r.targetCompletionDate) : '—'}</b>

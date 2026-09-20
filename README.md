@@ -46,8 +46,16 @@ are walled off at the database layer — see the addendum section of the engine 
 app connects with must not have BYPASSRLS; `GET /api/v1/health` reports `wallEnforced`.
 
 **The machine map**: `/engine/map` draws the state machine from code — stages, gates,
-sub-flows, commands, timers, triggers for both backends, and the eventualities matrix
-(`docs/engine-eventualities.md`) — checked against the machine by tests.
+sub-flows, commands, timers, triggers for both backends, the eventualities matrix
+(`docs/engine-eventualities.md`) and the issue catalogue — checked against the machine by tests.
+
+**Issues** (`docs/engine-issues.md`): the things that go wrong — survey defects,
+down-valuations, missing building regs, restrictions, chains, probate, gifted deposits,
+completion-day failures — are typed issues on the log with a lifecycle, a gate (an open
+issue holds exchange or completion; everything else proceeds), realistic resolutions per
+kind, and effects (a price reduction records the new price and tells the lender; a new
+lender reopens the mortgage sub-flow). Stale issues are raised to a person after ten
+working days.
 
 **LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,
 parties, documents, tasks and file notes; CONVEYi mirrors just enough to run the engine,

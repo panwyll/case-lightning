@@ -17,6 +17,8 @@
  * v1 scope: `freehold_purchase` only. Anything else is flagged for manual handling.
  */
 
+import type { IssueGate, IssueKind, IssueResolution, IssueStatus } from './issues';
+
 // ───────────────────────────── Stages (2.3) ─────────────────────────────
 
 export const STAGES = [
@@ -142,6 +144,15 @@ export const EVENT_TYPES = [
   'handler_changed',
   'auto_clear_review_raised',
   'auto_clear_confirmed',
+  // issues (docs/engine-issues.md): things that go wrong and change what the matter needs
+  'issue_raised',
+  'issue_updated',
+  'issue_resolved',
+  'issue_withdrawn',
+  'issue_fatal',
+  'price_changed',
+  'contract_approved',
+  'signed_contract_held',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -509,6 +520,23 @@ export interface Payloads {
   /** assist level: an auto-clear put in front of a person for confirmation — never blocks the stage. */
   auto_clear_review_raised: { subFlow: SubFlow; subject: string; clearedEventType: EventType; reasons: string[]; decision: DecisionSpec };
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
+  // ── issues (docs/engine-issues.md) ──
+  /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
+  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null };
+  /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion). */
+  issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null };
+  /** Resolved with one of the kind's realistic outcomes. Side-effects (price change, lender approval) are separate events that follow it. */
+  issue_resolved: { issueId: string; resolution: IssueResolution; note: string | null };
+  /** Raised in error / overtaken / the client dropped it. */
+  issue_withdrawn: { issueId: string; reason: string };
+  /** The issue killed the transaction (the matter is abandoned in the same command). */
+  issue_fatal: { issueId: string; reason: string };
+  /** The agreed purchase price changed (renegotiation after a survey / down-valuation; recorded before exchange only). */
+  price_changed: { fromPennies: number | null; toPennies: number; reason: string; issueId: string | null };
+  /** The draft contract is approved as to form (readiness milestone; advisory, not a gate). */
+  contract_approved: { note?: string | null };
+  /** The client's signed contract is held on file (readiness milestone; advisory, not a gate). */
+  signed_contract_held: { note?: string | null };
 }
 
 /** Event types whose payload carries a DecisionSpec (i.e. they create a DecisionEvent). */
@@ -610,6 +638,27 @@ export interface EnquiryState {
   resolution: DecisionOption | null;
 }
 
+export interface IssueState {
+  id: string;
+  kind: IssueKind;
+  title: string;
+  detail: string | null;
+  gate: IssueGate;
+  status: IssueStatus;
+  raisedAt: string;
+  raisedBy: Actor;
+  raisedAtStage: Stage;
+  /** Last time anyone touched it (the stale-issue timer watches this). */
+  updatedAt: string;
+  sourceDocumentId: string | null;
+  resolution: IssueResolution | null;
+  resolvedAt: string | null;
+  resolvedBy: Actor | null;
+  /** The issue this one was raised from (e.g. lender_approval raised off a price_reduced resolution). */
+  origin: { issueId: string; resolution: IssueResolution } | null;
+  history: Array<{ at: string; by: Actor; what: string }>;
+}
+
 export interface MatterState {
   tenantId: string;
   matterId: string;
@@ -672,6 +721,12 @@ export interface MatterState {
   /** The responsible handler as the log knows it (the matter row / LEAP is the live source; this is the audit trail). */
   handler: string | null;
   corrections: number;
+  /** Issues (docs/engine-issues.md): typed things that went wrong, with lifecycle and gate effect. */
+  issues: Record<string, IssueState>;
+  /** The agreed purchase price as the log knows it (null = never recorded). */
+  purchasePricePennies: number | null;
+  /** Readiness milestones (advisory; shown as "ready to exchange?" not enforced as gates). */
+  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];
@@ -723,6 +778,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     noticeToComplete: null,
     handler: null,
     corrections: 0,
+    issues: {},
+    purchasePricePennies: null,
+    readiness: { contractApprovedAt: null, signedContractHeldAt: null },
     decisions: {},
     waits: [],
     clientUpdatesSent: 0,
@@ -731,6 +789,15 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     payments: [],
     suppressed: 0,
   };
+}
+
+/**
+ * A persisted read-model snapshot may pre-date a field added to MatterState (it is rebuilt
+ * from the log on the next event, not on deploy). Fill the gaps from the initial state so
+ * readers never meet an undefined top-level field.
+ */
+export function withStateDefaults(s: MatterState): MatterState {
+  return { ...initialState(s.tenantId, s.matterId), ...s };
 }
 
 /** Nothing more will happen on this matter: registered, or abandoned. */
@@ -768,6 +835,17 @@ export function surfacedDecisions(state: MatterState, cfg: SubflowConfig): Decis
     const sf = SUBFLOW_OF_KIND[d.kind];
     return !sf || cfg[sf] !== 'shadow';
   });
+}
+
+/** Issues still holding the matter (open or negotiating), oldest first. */
+export function openIssues(state: MatterState): IssueState[] {
+  return Object.values(state.issues)
+    .filter((i) => i.status === 'open' || i.status === 'negotiating')
+    .sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
+}
+/** Open issues whose gate holds the given stage exit. */
+export function issuesGating(state: MatterState, gate: IssueGate): IssueState[] {
+  return openIssues(state).filter((i) => i.gate === gate);
 }
 
 export function openWaits(state: MatterState): WaitState[] {

@@ -19,7 +19,7 @@ import { query as dbQuery, transaction as dbTransaction } from '../db';
 import { project } from './projection';
 import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
-import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, pendingDecisions, surfacedDecisions, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type WaitKey } from './types';
+import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type WaitKey } from './types';
 
 export interface MatterTx {
   load(): Promise<EngineEvent[]>;
@@ -60,6 +60,10 @@ export interface QueueRow {
   /** Every pending decision in the log, surfaced or not (the rollout board counts shadow conclusions). */
   loggedCount: number;
   oldestPendingAt: string | null;
+  /** Open / negotiating issues (docs/engine-issues.md) — the things the matter is waiting on that are not decisions. */
+  openIssues: number;
+  /** Of those, the ones holding exchange or completion. */
+  holdingIssues: number;
   targetCompletionDate: string | null;
   targetExchangeDate: string | null;
   manualHandling: boolean;
@@ -130,6 +134,8 @@ function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddr
     reviewCount: surfaced.length - pending.length,
     loggedCount: pendingDecisions(s).length,
     oldestPendingAt: pending.length ? pending[0].createdAt : null,
+    openIssues: openIssues(s).length,
+    holdingIssues: openIssues(s).filter((i) => i.gate !== 'none').length,
     targetCompletionDate: s.targetCompletionDate,
     targetExchangeDate: s.targetExchangeDate,
     manualHandling: s.manualHandling.required,
@@ -463,7 +469,7 @@ export class PgEventStore implements EventStore {
       [tenantId, opts?.assignedTo ?? null, !!opts?.includeShadow, opts?.limit ?? 500]
     );
     return sortQueue(
-      rows.map((r) => queueRow(r.state, { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
+      rows.map((r) => queueRow(withStateDefaults(r.state), { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
       opts?.sort
     );
   }
@@ -490,7 +496,7 @@ export class PgEventStore implements EventStore {
 
   async cachedState(tenantId: string, matterId: string): Promise<MatterState | null> {
     const r = await dbQuery<{ state: MatterState }>(`select state from matter_engine_state where tenant_id = $1 and matter_id = $2`, [tenantId, matterId]);
-    return r[0]?.state ?? null;
+    return r[0] ? withStateDefaults(r[0].state) : null;
   }
 
   async loadSla(tenantId: string): Promise<SlaConfig> {

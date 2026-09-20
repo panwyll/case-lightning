@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
 import { ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
+import { ISSUE_KINDS, ISSUE_RESOLUTIONS } from './issues';
 import type { Command } from './machine';
 
 /** Read-only users can look but never move a matter. */
@@ -65,6 +66,15 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('hmlr_requisition_received'), documentId: z.string().uuid(), reference: z.string().max(100).nullish(), deadline: isoDate.nullish() }),
   z.object({ type: z.literal('record_correction'), aboutEventId: z.string().uuid(), reason: z.string().min(1).max(2000) }),
   z.object({ type: z.literal('record_handler_change'), fromUserId: z.string().uuid().nullish(), toUserId: z.string().uuid(), reason: z.string().max(500).nullish() }),
+  // issues
+  z.object({ type: z.literal('raise_issue'), issueId: z.string().min(1).max(60).optional(), kind: z.enum(ISSUE_KINDS), title: z.string().min(1).max(200), detail: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('update_issue'), issueId: z.string().min(1).max(60), status: z.enum(['open', 'negotiating']), note: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish() }),
+  z.object({ type: z.literal('resolve_issue'), issueId: z.string().min(1).max(60), resolution: z.enum(ISSUE_RESOLUTIONS), note: z.string().max(4000).nullish(), newPricePennies: z.number().int().positive().nullish() }),
+  z.object({ type: z.literal('withdraw_issue'), issueId: z.string().min(1).max(60), reason: z.string().min(1).max(1000) }),
+  z.object({ type: z.literal('mark_issue_fatal'), issueId: z.string().min(1).max(60), reason: z.string().min(1).max(2000), abandonReason: z.enum(ABANDON_REASONS).nullish() }),
+  z.object({ type: z.literal('record_price_change'), toPennies: z.number().int().positive(), reason: z.string().min(1).max(500) }),
+  z.object({ type: z.literal('contract_approved'), note: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('signed_contract_held'), note: z.string().max(500).nullish() }),
 ]);
 export type UserCommandInput = z.infer<typeof userCommandSchema>;
 

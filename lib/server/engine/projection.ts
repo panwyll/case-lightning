@@ -546,6 +546,86 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.handler = (e.payload as Payloads['handler_changed']).toUserId;
       break;
     }
+
+    // ── issues (docs/engine-issues.md) ──
+    case 'issue_raised': {
+      const p = e.payload as Payloads['issue_raised'];
+      s.issues[p.issueId] = {
+        id: p.issueId,
+        kind: p.kind,
+        title: p.title,
+        detail: p.detail,
+        gate: p.gate,
+        status: 'open',
+        raisedAt: e.createdAt,
+        raisedBy: e.actor,
+        raisedAtStage: p.stage,
+        updatedAt: e.createdAt,
+        sourceDocumentId: p.sourceDocumentId,
+        resolution: null,
+        resolvedAt: null,
+        resolvedBy: null,
+        origin: p.origin ?? null,
+        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, holds ${p.gate === 'none' ? 'nothing' : p.gate})` }],
+      };
+      break;
+    }
+    case 'issue_updated': {
+      const p = e.payload as Payloads['issue_updated'];
+      const i = s.issues[p.issueId];
+      if (!i) break;
+      i.status = p.status;
+      if (p.gate) i.gate = p.gate;
+      i.updatedAt = e.createdAt;
+      i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.note ? `: ${p.note}` : ''}` });
+      break;
+    }
+    case 'issue_resolved': {
+      const p = e.payload as Payloads['issue_resolved'];
+      const i = s.issues[p.issueId];
+      if (!i) break;
+      i.status = 'resolved';
+      i.resolution = p.resolution;
+      i.resolvedAt = e.createdAt;
+      i.resolvedBy = e.actor;
+      i.updatedAt = e.createdAt;
+      i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.note ? ` — ${p.note}` : ''}` });
+      break;
+    }
+    case 'issue_withdrawn': {
+      const p = e.payload as Payloads['issue_withdrawn'];
+      const i = s.issues[p.issueId];
+      if (!i) break;
+      i.status = 'withdrawn';
+      i.resolvedAt = e.createdAt;
+      i.resolvedBy = e.actor;
+      i.updatedAt = e.createdAt;
+      i.history.push({ at: e.createdAt, by: e.actor, what: `withdrawn: ${p.reason}` });
+      break;
+    }
+    case 'issue_fatal': {
+      const p = e.payload as Payloads['issue_fatal'];
+      const i = s.issues[p.issueId];
+      if (!i) break;
+      i.status = 'fatal';
+      i.resolvedAt = e.createdAt;
+      i.resolvedBy = e.actor;
+      i.updatedAt = e.createdAt;
+      i.history.push({ at: e.createdAt, by: e.actor, what: `fatal: ${p.reason}` });
+      break;
+    }
+    case 'price_changed': {
+      s.purchasePricePennies = (e.payload as Payloads['price_changed']).toPennies;
+      break;
+    }
+    case 'contract_approved': {
+      s.readiness.contractApprovedAt = e.createdAt;
+      break;
+    }
+    case 'signed_contract_held': {
+      s.readiness.signedContractHeldAt = e.createdAt;
+      break;
+    }
     case 'shadow_mode_changed': {
       s.shadowMode = (e.payload as Payloads['shadow_mode_changed']).shadowMode;
       break;

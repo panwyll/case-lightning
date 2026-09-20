@@ -12,6 +12,22 @@ const firstLine = (s: string) => (s.split('\n').find((l) => l.trim()) ?? '').tri
 const dayKey = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
+/** One line for an issue-layer event: which issue, and what happened to it. */
+function issueLabel(e: EngineEvent, state: EngineState): string | null {
+  const p = e.payload as Record<string, unknown>;
+  if (e.type === 'price_changed') return `£${(Number(p.toPennies) / 100).toLocaleString('en-GB')}${p.fromPennies != null ? ` (was £${(Number(p.fromPennies) / 100).toLocaleString('en-GB')})` : ''} · ${String(p.reason ?? '')}`;
+  if (!e.type.startsWith('issue_')) return null;
+  const id = String(p.issueId ?? '');
+  const i = state.issues?.[id];
+  const head = i ? `${id} ${pretty(i.kind)}: ${i.title}` : id;
+  if (e.type === 'issue_raised') return `${head} · holds ${p.gate === 'none' ? 'nothing' : String(p.gate)}`;
+  if (e.type === 'issue_updated') return `${head} · ${String(p.status)}${p.gate ? ` · now holds ${p.gate === 'none' ? 'nothing' : String(p.gate)}` : ''}${p.note ? ` · ${String(p.note)}` : ''}`;
+  if (e.type === 'issue_resolved') return `${head} · ${pretty(String(p.resolution ?? ''))}${p.note ? ` · ${String(p.note)}` : ''}`;
+  if (e.type === 'issue_withdrawn') return `${head} · ${String(p.reason ?? '')}`;
+  if (e.type === 'issue_fatal') return `${head} · ${String(p.reason ?? '')}`;
+  return head;
+}
+
 export function Timeline({ events, state, people = {} }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string> }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const ordered = useMemo(() => [...events].sort((a, b) => b.seq - a.seq), [events]);
@@ -52,11 +68,12 @@ export function Timeline({ events, state, people = {} }: { events: EngineEvent[]
               );
             }
             const sup = e.type === 'action_suppressed';
+            const issueLine = issueLabel(e, state);
             return (
               <div key={e.id}>
                 <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} title="Show the raw event">
                   <span className="t">{hhmm(e.createdAt)}</span>
-                  <span className="ty">{pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}</span>
+                  <span className="ty">{pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
                   <span className="ac">{who(e.actor)} · {actorKind(e.actor)}</span>
                   <span style={{ marginLeft: 'auto', fontSize: 11 }}>#{e.seq}</span>
                 </div>

@@ -43,6 +43,8 @@ export interface QueueRow {
   reviewCount: number;
   loggedCount: number;
   oldestPendingAt: string | null;
+  openIssues: number;
+  holdingIssues: number;
   targetCompletionDate: string | null;
   targetExchangeDate: string | null;
   manualHandling: boolean;
@@ -74,6 +76,33 @@ export interface SourceDoc { id: string; fileName: string | null; webUrl: string
 
 export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }
 
+export interface IssueRow {
+  id: string;
+  kind: string;
+  title: string;
+  detail: string | null;
+  gate: 'exchange' | 'completion' | 'none';
+  status: 'open' | 'negotiating' | 'resolved' | 'withdrawn' | 'fatal';
+  raisedAt: string;
+  raisedBy: string;
+  raisedAtStage: string;
+  updatedAt: string;
+  sourceDocumentId: string | null;
+  resolution: string | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  origin: { issueId: string; resolution: string } | null;
+  history: Array<{ at: string; by: string; what: string }>;
+}
+
+/** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
+export interface IssueCatalogue {
+  groups: Array<{ id: string; label: string }>;
+  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string }>;
+  resolutions: Array<{ id: string; label: string; effects: string[] }>;
+  staleAfterWorkingDays: number;
+}
+
 export interface EngineState {
   enrolled: boolean;
   transactionType: string | null;
@@ -94,6 +123,11 @@ export interface EngineState {
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   completion: { statementGeneratedAt: string | null; fundsRequestedAt: string | null; fundsReceivedAt: string | null; confirmedAt: string | null };
   postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null };
+  /** Issues layer (docs/engine-issues.md). */
+  issues: Record<string, IssueRow>;
+  purchasePricePennies: number | null;
+  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
+  abandoned?: { at: string; reason: string; detail: string | null; stage: string } | null;
   decisions: Record<string, DecisionRow>;
   waits: WaitRow[];
   clientUpdatesSent: number;

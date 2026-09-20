@@ -13,6 +13,10 @@ stops automation (`manual_handling_required`) and a person runs the matter from 
 **outside**: happens in the practice system (LEAP / CaseLightning) and does not need the
 engine; **gap**: not modelled — design note given.
 
+Several gaps recorded in the first edition (price renegotiation, survey findings,
+down-valuations, gifted deposits, chains, funding shortfalls, completion-day failures)
+have since been closed by the **issues layer** — see `docs/engine-issues.md`.
+
 ## 1 · Transaction shapes
 
 | Shape | How the conveyancer acts | Handling | Notes |
@@ -133,3 +137,10 @@ command plus `hmlr_requisition_responded`. New decision kind `requisition`; new 
 and `exchange_conditions_met`; an open requisition blocks `ap1_confirmed`. New timers:
 deadlines (`sla.ts → deadlineActions`) for offer expiry, SDLT, notice to complete and
 requisition replies — raised once each, in time, with a dossier document as the source.
+
+**Issues layer** (second edition, `docs/engine-issues.md`): commands `raise_issue`,
+`update_issue`, `resolve_issue`, `withdraw_issue`, `mark_issue_fatal`,
+`record_price_change`, `contract_approved`, `signed_contract_held`; events `issue_*`,
+`price_changed`, `contract_approved`, `signed_contract_held`; an open issue holds exchange
+or completion; resolutions with effects (price change, lender approval, offer reopened);
+the `stale_issue` timer.

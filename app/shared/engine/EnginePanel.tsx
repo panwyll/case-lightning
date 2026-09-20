@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { DecisionFeed } from './DecisionFeed';
+import { IssuesPanel } from './IssuesPanel';
 import { STAGES, fmtDay, fmtWhen, pretty, type Api, type EngineEvent, type EngineView } from './types';
 
 /**
@@ -198,6 +199,8 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         <div className="ep-tile"><b>Completion</b><Pill s={s.completion.confirmedAt ? 'sent' : s.completion.fundsReceivedAt ? 'approved' : s.completion.fundsRequestedAt ? 'requested' : 'awaiting'} /></div>
         <div className="ep-tile"><b>Post-completion</b><Pill s={s.postCompletion.ap1ConfirmedAt ? 'sent' : s.postCompletion.ap1SubmittedAt ? 'requested' : s.postCompletion.sdltSubmittedAt ? 'approved' : 'awaiting'} /></div>
       </div>
+
+      <IssuesPanel api={api} state={s} busy={busy} cmd={cmd} />
 
       <div className="ep-sec">Payee bank details (versioned · every change is a hard stop)</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>

@@ -11,7 +11,8 @@
  * wait's numbers via engine_sla_override (store.ts loads them into an SlaConfig).
  */
 import type { MatterState, WaitKey, WaitState } from './types';
-import { openWaits } from './types';
+import { openIssues, openWaits } from './types';
+import { ISSUE_KIND_SPEC } from './issues';
 import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR } from './working-days';
 
 export interface SlaRule {
@@ -98,7 +99,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -110,8 +111,11 @@ export interface DeadlineAction {
   subject: string;
 }
 
-/** How many working days before a deadline the engine raises it (one escalation per deadline, by subject). */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5 };
+/**
+ * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
+ * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
+ */
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10 };
 
 /**
  * Hard dates a conveyancer must not sail past. Unlike waits (something is owed to us),
@@ -144,6 +148,16 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   for (const r of state.postCompletion.requisitions) {
     if (r.respondedAt || !r.deadline) continue;
     push('requisition_reply', r.deadline.slice(0, 10), `HM Land Registry's requisition of ${r.receivedAt.slice(0, 10)} must be answered by ${r.deadline.slice(0, 10)} or the application is cancelled and priority is lost.`);
+  }
+  // Stale issues: the forum pattern is an issue that sits for weeks because both sides are waiting
+  // for the other. Raised once per period of silence (subject carries the last-touched date).
+  for (const i of openIssues(state)) {
+    const age = workingDaysBetween(new Date(i.updatedAt), now, cal);
+    if (age < DEADLINE_LEAD.stale_issue) continue;
+    const subject = `issue:${i.id}:stale:${i.updatedAt.slice(0, 10)}`;
+    if (raised.has(subject)) continue;
+    const label = ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind;
+    out.push({ kind: 'stale_issue', dueDate: i.updatedAt.slice(0, 10), workingDaysLeft: -age, summary: `Issue "${i.title}" (${label}, holds ${i.gate === 'none' ? 'nothing' : i.gate}) has had no movement for ${age} working days since ${i.updatedAt.slice(0, 10)}. Chase whoever owes the next step, record progress on the issue, or decide whether it is fatal.`, subject });
   }
   return out;
 }

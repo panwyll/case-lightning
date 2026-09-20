@@ -18,6 +18,7 @@
  */
 import { applyEvent } from './projection';
 import type { DeadlineKind } from './sla';
+import { FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import {
   EngineError,
@@ -42,6 +43,8 @@ import {
   type AbandonReason,
   ABANDON_REASONS,
   SUBFLOW_OF_KIND,
+  issuesGating,
+  type IssueState,
   type Engagement,
   DEFAULT_SUBFLOW_CONFIG,
   type Actor,
@@ -101,6 +104,15 @@ export type Command =
   | { type: 'record_correction'; actor: Actor; aboutEventId: string; reason: string }
   | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
   | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
+  // ── issues (docs/engine-issues.md) ──
+  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null }
+  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null }
+  | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null }
+  | { type: 'withdraw_issue'; actor: Actor; issueId: string; reason: string }
+  | { type: 'mark_issue_fatal'; actor: Actor; issueId: string; reason: string; abandonReason?: AbandonReason | null }
+  | { type: 'record_price_change'; actor: Actor; toPennies: number; reason: string }
+  | { type: 'contract_approved'; actor: Actor; note?: string | null }
+  | { type: 'signed_contract_held'; actor: Actor; note?: string | null }
   // Addendum 2 — payment verification
   | { type: 'record_bank_details'; actor: Actor; bankDetailsId: string; payeeKind: PayeeKind; payeeRef?: string | null; details: BankDetails; sourceChannel: SourceChannel; sourceDocumentId: string }
   | { type: 'payment_authorised'; actor: Actor; payeeKind: PayeeKind; bankDetailsId: string; amountPennies?: number | null; purpose: 'completion_monies' | 'deposit' | 'other' }
@@ -154,6 +166,15 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'hmlr_requisition_received',
   'record_correction',
   'record_handler_change',
+  // Issues: the things that go wrong, recorded by the person dealing with them.
+  'raise_issue',
+  'update_issue',
+  'resolve_issue',
+  'withdraw_issue',
+  'mark_issue_fatal',
+  'record_price_change',
+  'contract_approved',
+  'signed_contract_held',
 ];
 
 export interface DecideContext {
@@ -240,6 +261,7 @@ export function stageBlockers(s: MatterState): string[] {
     case 'pre_exchange':
       b.push(...unresolvedSearches(s, false));
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
+      b.push(...issueBlockers(s, 'exchange'));
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
     case 'exchanged':
@@ -247,6 +269,7 @@ export function stageBlockers(s: MatterState): string[] {
       break;
     case 'pre_completion':
       if (!s.completion.confirmedAt) {
+        b.push(...issueBlockers(s, 'completion'));
         if (!s.completion.fundsReceivedAt) b.push('funds not received');
         if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
         if (pendingBankDetailsDecision(s, 'seller_solicitor')) b.push('bank-details change awaiting out-of-band verification (hard stop)');
@@ -262,6 +285,11 @@ export function stageBlockers(s: MatterState): string[] {
       break;
   }
   return b;
+}
+
+/** Open issues holding a stage exit, as blocker lines. */
+function issueBlockers(s: MatterState, gate: IssueGate): string[] {
+  return issuesGating(s, gate).map((i) => `issue: ${ISSUE_KIND_SPEC[i.kind].label} — ${i.title} (${i.status})`);
 }
 
 /** Required searches not yet resolved; `includeUnordered` also lists ones never ordered (pre_contract only). */
@@ -288,8 +316,8 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
   for (let guard = 0; guard < 16; guard++) {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
-    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status))) {
-      ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase'] } };
+    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0) {
+      ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
     } else {
       const to = nextStage(s.stage);
       if (to && stageBlockers(s).length === 0) {
@@ -580,6 +608,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = unresolvedSearches(s, false);
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
+      const holding = issuesGating(s, 'exchange');
+      if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
       if (s.exchange.exchangedAt) reject('Contracts already exchanged.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required to exchange.', 400);
@@ -610,6 +640,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'completion_confirmed': {
       requireEnrolled(s);
       requireStage(s, 'pre_completion', 'Confirming completion');
+      const holdingCompletion = issuesGating(s, 'completion');
+      if (holdingCompletion.length) reject(`Cannot confirm completion while an issue holds it: ${holdingCompletion.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}.`);
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
       // Addendum 2: the completion transfer must have been authorised by a person against
       // verified seller's-solicitor details, and no bank-details change may be pending.
@@ -788,6 +820,98 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'escalation_raised', actor: AI, payload: { waitKey: null, subject: cmd.subject, reason: `${cmd.kind.replace(/_/g, ' ')} due ${cmd.dueDate}`, decision, origin: null }, sourceDocumentId: cmd.sourceDocumentId }];
     }
 
+    // ── issues (docs/engine-issues.md) ──
+    case 'raise_issue': {
+      requireEnrolled(s);
+      if (s.completion.confirmedAt) reject('The purchase has completed: post-completion problems are HMLR requisitions or corrections, not issues.');
+      const issueId = cmd.issueId?.trim() || nextIssueId(s);
+      if (s.issues[issueId]) reject(`Issue ${issueId} already exists.`);
+      const spec = ISSUE_KIND_SPEC[cmd.kind];
+      if (!spec) reject(`Unknown issue kind "${cmd.kind}".`, 400);
+      if (!cmd.title?.trim()) reject('An issue needs a title: what is wrong, in one line.', 400);
+      let gate: IssueGate = cmd.gate ?? spec.gate;
+      // After exchange the only thing left to hold is completion.
+      if (gate === 'exchange' && s.exchange.exchangedAt) gate = 'completion';
+      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'update_issue': {
+      requireEnrolled(s);
+      const i = openIssue(s, cmd.issueId);
+      if (cmd.gate === 'exchange' && s.exchange.exchangedAt) reject('Contracts are exchanged: an issue can only hold completion (or nothing) now.', 400);
+      const gate = cmd.gate && cmd.gate !== i.gate ? cmd.gate : null;
+      if (cmd.status === i.status && !gate && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status or a new gate.', 400);
+      if (gate === 'none' && !cmd.note?.trim()) reject('Releasing an issue\'s hold on the matter needs a note saying why (the client accepts the risk, the lender is content…).', 400);
+      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate } }];
+    }
+    case 'resolve_issue': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Issues are resolved by people.', 403);
+      const i = openIssue(s, cmd.issueId);
+      const spec = ISSUE_KIND_SPEC[i.kind];
+      if (!spec.resolutions.includes(cmd.resolution)) reject(`"${spec.label}" is not resolved by "${RESOLUTION_LABEL[cmd.resolution] ?? cmd.resolution}". Realistic outcomes: ${spec.resolutions.map((r) => RESOLUTION_LABEL[r]).join('; ')}.`, 400);
+      const note = cmd.note?.trim() || null;
+      if (cmd.resolution === 'other' && !note) reject('Say how it was resolved.', 400);
+      if (cmd.resolution === 'accepted_as_is' && !note) reject('Record the advice given: the client is accepting this as it stands.', 400);
+      const out: NewEvent[] = [{ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: cmd.resolution, note }, sourceDocumentId: i.sourceDocumentId }];
+      if (PRICE_RESOLUTIONS.has(cmd.resolution)) {
+        if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now and cannot be reduced by resolving an issue.');
+        const to = cmd.newPricePennies;
+        if (to == null || !Number.isInteger(to) || to <= 0) reject('A price reduction needs the new agreed price (pennies).', 400);
+        if (s.purchasePricePennies !== null && to >= s.purchasePricePennies) reject(`The new price must be below the current price (£${(s.purchasePricePennies / 100).toLocaleString('en-GB')}).`, 400);
+        out.push({ type: 'price_changed', actor: cmd.actor, payload: { fromPennies: s.purchasePricePennies, toPennies: to, reason: `${spec.label}: ${i.title}`, issueId: i.id } });
+      }
+      if (s.hasLender && !s.exchange.exchangedAt && LENDER_NOTIFY_RESOLUTIONS.has(cmd.resolution) && i.kind !== 'lender_approval') {
+        out.push(lenderApprovalIssue(s, `${i.id}:lender`, `Tell the lender: ${RESOLUTION_LABEL[cmd.resolution]} on "${i.title}"`, i.sourceDocumentId, { issueId: i.id, resolution: cmd.resolution }));
+      }
+      if (REOPENS_OFFER.has(cmd.resolution) && s.hasLender && !s.exchange.exchangedAt && s.mortgage.status !== 'awaiting' && s.mortgage.status !== 'not_required') {
+        out.push({ type: 'mortgage_offer_withdrawn', actor: cmd.actor, payload: { reason: `${spec.label} resolved by a new lender / fresh valuation: the current offer no longer applies`, lender: s.mortgage.facts?.lender ?? null } });
+      }
+      return out;
+    }
+    case 'withdraw_issue': {
+      requireEnrolled(s);
+      const i = openIssue(s, cmd.issueId);
+      if (!cmd.reason?.trim()) reject('Say why the issue is withdrawn (raised in error, overtaken, no longer relevant).', 400);
+      return [{ type: 'issue_withdrawn', actor: cmd.actor, payload: { issueId: i.id, reason: cmd.reason.trim() } }];
+    }
+    case 'mark_issue_fatal': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person can end a transaction over an issue.', 403);
+      const i = openIssue(s, cmd.issueId);
+      if (!cmd.reason?.trim()) reject('Say why the transaction cannot continue.', 400);
+      if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned.');
+      const abandonReason: AbandonReason = cmd.abandonReason ?? fatalAbandonReason(i.kind);
+      return [
+        { type: 'issue_fatal', actor: cmd.actor, payload: { issueId: i.id, reason: cmd.reason.trim() } },
+        { type: 'matter_abandoned', actor: cmd.actor, payload: { reason: abandonReason, detail: `${ISSUE_KIND_SPEC[i.kind].label}: ${i.title} — ${cmd.reason.trim()}`, stage: s.stage } },
+      ];
+    }
+    case 'record_price_change': {
+      requireEnrolled(s);
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now.');
+      if (!Number.isInteger(cmd.toPennies) || cmd.toPennies <= 0) reject('The price must be a positive whole number of pennies.', 400);
+      if (cmd.toPennies === s.purchasePricePennies) reject('The price is unchanged.');
+      if (!cmd.reason?.trim()) reject('Say why the price changed.', 400);
+      const out: NewEvent[] = [{ type: 'price_changed', actor: cmd.actor, payload: { fromPennies: s.purchasePricePennies, toPennies: cmd.toPennies, reason: cmd.reason.trim(), issueId: null } }];
+      // The first recorded price is the agreed price, not a change; a change on a lender-funded purchase must be reported to the lender.
+      if (s.hasLender && s.purchasePricePennies !== null) out.push(lenderApprovalIssue(s, `price:${s.lastSeq + 1}:lender`, `Tell the lender: price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')} (${cmd.reason.trim()})`, null, null));
+      return out;
+    }
+    case 'contract_approved': {
+      requireEnrolled(s);
+      requireStageAtLeast(s, 'contract_review', 'Approving the contract');
+      if (s.exchange.exchangedAt) reject('Contracts are already exchanged.');
+      if (s.readiness.contractApprovedAt) reject('The contract is already approved.');
+      return [{ type: 'contract_approved', actor: cmd.actor, payload: { note: cmd.note ?? null } }];
+    }
+    case 'signed_contract_held': {
+      requireEnrolled(s);
+      requireStageAtLeast(s, 'contract_review', 'Holding the signed contract');
+      if (s.exchange.exchangedAt) reject('Contracts are already exchanged.');
+      if (s.readiness.signedContractHeldAt) reject('The signed contract is already on file.');
+      return [{ type: 'signed_contract_held', actor: cmd.actor, payload: { note: cmd.note ?? null } }];
+    }
+
     case 'record_suppressed': {
       requireEnrolled(s);
       return [{ type: 'action_suppressed', actor: SYSTEM, payload: { action: cmd.action, reason: cmd.reason, subFlow: cmd.subFlow, detail: cmd.detail } }];
@@ -832,6 +956,43 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 }
 
 // ───────────────────────────── decision resolution ─────────────────────────────
+
+// ───────────────────────────── issues helpers ─────────────────────────────
+
+/** ISS-1, ISS-2… per matter (deterministic from the state, so a replay agrees). */
+function nextIssueId(s: MatterState): string {
+  let n = Object.keys(s.issues).length + 1;
+  while (s.issues[`ISS-${n}`]) n += 1;
+  return `ISS-${n}`;
+}
+
+function openIssue(s: MatterState, id: string): IssueState {
+  const i = s.issues[id];
+  if (!i) reject(`Issue ${id} not found.`, 404);
+  if (i.status !== 'open' && i.status !== 'negotiating') reject(`Issue ${id} is already ${i.status}.`);
+  return i;
+}
+
+/** The machine's own issue: the lender has to be told something and confirm the offer stands before exchange. */
+function lenderApprovalIssue(s: MatterState, issueId: string, title: string, sourceDocumentId: string | null, origin: { issueId: string; resolution: IssueResolution } | null): NewEvent {
+  let id = issueId;
+  let n = 2;
+  while (s.issues[id]) id = `${issueId}${n++}`;
+  return {
+    type: 'issue_raised',
+    actor: SYSTEM,
+    payload: { issueId: id, kind: 'lender_approval', title, detail: 'A price change, an indemnity policy, a retention or a material finding must be reported to the lender, who confirms the offer stands, re-issues it, or withdraws. Exchange is held until the lender has confirmed.', gate: 'exchange', stage: s.stage, sourceDocumentId, origin },
+    sourceDocumentId,
+  };
+}
+
+/** How the matter is abandoned when an issue proves fatal (a person may override). */
+const fatalAbandonReason = (kind: IssueKind): AbandonReason => {
+  if (kind === 'chain_dependency') return 'chain_collapsed';
+  if (kind === 'probate_issue' || kind === 'seller_delay' || kind === 'bankruptcy_insolvency') return 'seller_withdrew';
+  if (kind === 'buyer_delay' || kind === 'disclosure_concern') return 'client_withdrew';
+  return FATAL_ABANDON_REASON_BY_GROUP[ISSUE_KIND_SPEC[kind].group];
+};
 
 /**
  * Addendum 3 §2: a decision on a shadow-mode matter, or from a sub-flow still in shadow,
@@ -948,6 +1109,10 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   if (option === 'request_further' && (d.kind === 'search' || d.kind === 'enquiry' || d.kind === 'title' || d.kind === 'mortgage')) {
     const enquiryId = nextEnquiryId(s, d.kind === 'enquiry' ? subject : d.kind.toUpperCase());
     out.push({ type: 'enquiry_raised', actor: userId, payload: { enquiryId, subject: `Further enquiry following ${d.kind}${subject ? ` ${subject}` : ''} review${note ? `: ${note}` : ''}`, origin: { decisionEventId: d.eventId, followUpOf: d.kind === 'enquiry' ? subject : undefined }, counterpartyType: s.counterpartyType } });
+  }
+  // An indemnity policy on a lender-funded purchase needs the lender's approval before exchange (docs/engine-issues.md).
+  if (option === 'indemnity' && s.hasLender && !s.exchange.exchangedAt && (d.kind === 'search' || d.kind === 'title' || d.kind === 'enquiry')) {
+    out.push(lenderApprovalIssue(s, `${d.kind}:${subject || d.eventId}:indemnity:lender`, `Tell the lender: indemnity policy proposed for ${d.kind}${subject ? ` ${subject}` : ''}${note ? ` (${note})` : ''}`, d.sourceDocumentId, null));
   }
   // Rejecting an ID check is a hard stop: the matter cannot proceed without a human taking over.
   if (option === 'reject' && d.kind === 'id_check' && !s.manualHandling.required) {

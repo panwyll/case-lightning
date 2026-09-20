@@ -13,6 +13,7 @@ import { OPTIONS_FOR, MIN_EXTRACTION_CONFIDENCE } from './rules';
 import { USER_COMMANDS, type Command } from './machine';
 import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type WaitKey } from './types';
 import { TRIGGERS, type TriggerSpec } from './triggers';
+import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
 import { MIN_CLASSIFICATION_CONFIDENCE } from './ingest';
 
 export type CommandType = Command['type'];
@@ -56,6 +57,8 @@ export interface CommandSpec {
   description: string;
   /** From the eventualities research rather than the original spec. */
   eventuality?: boolean;
+  /** From the issues research (docs/engine-issues.md). */
+  issue?: boolean;
   /** Human-gated at the database (addendum 3 §1). */
   humanGated?: boolean;
   /** Hard stop when a bank-details decision is pending (addendum 2). */
@@ -93,6 +96,13 @@ export interface MachineSpec {
   invariants: Invariant[];
   triggers: TriggerSpec[];
   eventualities: EventualitySpec[];
+  /** The issues layer (docs/engine-issues.md): kinds by group, resolutions, and the effects the machine attaches. */
+  issues: {
+    groups: Array<{ id: IssueGroup; label: string }>;
+    kinds: IssueKindSpec[];
+    resolutions: Array<{ id: IssueResolution; label: string; effects: string[] }>;
+    staleAfterWorkingDays: number;
+  };
 }
 
 export const STAGE_SPECS: StageSpec[] = [
@@ -159,7 +169,16 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'hmlr_requisition_received', actor: 'either', stages: ['post_completion'], emits: ['hmlr_requisition_received'], description: 'HMLR requisition → decision citing the letter; blocks registration until answered.', eventuality: true },
   { type: 'record_correction', actor: 'person', stages: 'any', emits: ['correction_recorded'], description: 'The log is never edited: a compensating record against a wrong event (allowed after abandonment).', eventuality: true },
   { type: 'record_handler_change', actor: 'either', stages: 'any', emits: ['handler_changed'], description: 'Reassignment / holiday cover on the log.', eventuality: true },
-  { type: 'raise_deadline_escalation', actor: 'automation', stages: 'any', emits: ['escalation_raised'], description: 'Timer: a deadline we owe (offer expiry, SDLT, notice to complete, requisition reply) raised once, in time.', eventuality: true },
+  { type: 'raise_deadline_escalation', actor: 'automation', stages: 'any', emits: ['escalation_raised'], description: 'Timer: a deadline we owe (offer expiry, SDLT, notice to complete, requisition reply) or a stale issue, raised once, in time.', eventuality: true },
+  // issues (docs/engine-issues.md)
+  { type: 'raise_issue', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion'], emits: ['issue_raised'], description: 'Something is wrong (survey defect, down-valuation, missing building regs, chain, probate, gifted deposit…): a typed issue with a gate (holds exchange / completion / nothing).', issue: true },
+  { type: 'update_issue', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion'], emits: ['issue_updated'], description: 'Progress: negotiating, a note, or a gate change (releasing a hold needs a note).', issue: true },
+  { type: 'resolve_issue', actor: 'person', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion'], emits: ['issue_resolved', 'price_changed', 'issue_raised', 'mortgage_offer_withdrawn'], description: 'Resolved with one of the kind\'s realistic outcomes. A price reduction records price_changed; a price change / indemnity / retention on a lender-funded purchase raises a lender_approval issue; a new lender reopens the mortgage sub-flow.', issue: true },
+  { type: 'withdraw_issue', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion'], emits: ['issue_withdrawn'], description: 'Raised in error / overtaken.', issue: true },
+  { type: 'mark_issue_fatal', actor: 'person', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion'], emits: ['issue_fatal', 'matter_abandoned'], description: 'The issue ended the transaction: fatal + abandoned in one command, with the abandonment reason derived from the kind.', issue: true },
+  { type: 'record_price_change', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['price_changed', 'issue_raised'], description: 'The agreed price (first record) or a renegotiated price before exchange; a change on a lender-funded purchase raises a lender_approval issue.', issue: true },
+  { type: 'contract_approved', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['contract_approved'], description: 'Readiness milestone: the draft contract is approved as to form (advisory).', issue: true },
+  { type: 'signed_contract_held', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['signed_contract_held'], description: 'Readiness milestone: the client\'s signed contract is on file (advisory).', issue: true },
 ];
 
 const HUMAN_GATED_EVENTS: EventType[] = ['funds_requested', 'payment_authorised', 'report_on_title_sent'];
@@ -176,15 +195,17 @@ export const INVARIANTS: Invariant[] = [
   { id: 'shadow', title: 'Shadow before live', rule: 'A shadow matter or sub-flow is logged, never surfaced, never sent; conclusions are compared with the human record before promotion.', enforcedBy: ['service.ts suppressed()', 'store.ts surfacedDecisions'] },
   { id: 'truthful_log', title: 'The log only says what happened', rule: 'I/O is recorded after it succeeded; a result that arrives for a step nobody started records the start first (actor external); errors are corrections, never edits.', enforcedBy: ['service.ts', 'sync.ts routeByHint', 'record_correction'] },
   { id: 'abandoned_is_final', title: 'Abandoned is final', rule: 'After matter_abandoned nothing moves: waits close, timers stop, commands are refused, only corrections are accepted.', enforcedBy: ['machine.ts requireEnrolled'] },
+  { id: 'issues_hold', title: 'An open issue holds its gate', rule: 'An open or negotiating issue gated on exchange blocks exchange_conditions_met, contracts_exchanged and the pre_exchange exit; one gated on completion blocks completion_confirmed. Everything else proceeds ("everything but exchange can go on"). Releasing a hold needs a note.', enforcedBy: ['machine.ts issuesGating', 'stageBlockers'] },
+  { id: 'lender_told', title: 'The lender is told', rule: 'On a lender-funded purchase a price change, an indemnity policy or a retention automatically raises a lender_approval issue that holds exchange until the lender confirms.', enforcedBy: ['machine.ts lenderApprovalIssue'] },
 ];
 
 export const EVENTUALITIES: EventualitySpec[] = [
   { area: 'shape', scenario: 'Cash purchase', handling: 'built', mechanism: 'hasLender=false → no mortgage sub-flow, no lender funds' },
   { area: 'shape', scenario: 'Mortgage purchase', handling: 'built', mechanism: 'offer sub-flow; expiry deadline; withdrawal reopens and blocks exchange' },
-  { area: 'shape', scenario: 'Chain', handling: 'built', mechanism: 'set_target_dates; abandon_matter(chain_collapsed); the chain itself is coordination, not state' },
+  { area: 'shape', scenario: 'Chain', handling: 'built', mechanism: 'issue chain_not_ready holds exchange; set_target_dates; mark_issue_fatal → abandoned(chain_collapsed)' },
   { area: 'shape', scenario: 'Two or more buyers', handling: 'gap', mechanism: 'one ID sub-flow per matter today; design: idChecks keyed by party' },
   { area: 'shape', scenario: 'Company buyer / buy-to-let', handling: 'manual', mechanism: 'mark_manual_handling by policy' },
-  { area: 'shape', scenario: 'Gifted deposit', handling: 'gap', mechanism: 'design: gift_declared → donor ID sub-flow, lender note' },
+  { area: 'shape', scenario: 'Gifted deposit / source of funds', handling: 'built', mechanism: 'issue source_of_funds → evidence_provided; stale-issue timer' },
   { area: 'shape', scenario: 'Help to Buy / Lifetime ISA', handling: 'gap', mechanism: 'design: funds_requested fromRole isa_provider' },
   { area: 'shape', scenario: 'New build / auction', handling: 'manual', mechanism: 'out of v1 scope' },
   { area: 'shape', scenario: 'Leasehold', handling: 'manual', mechanism: 'title tenure ≠ freehold → manual_handling_required automatically' },
@@ -205,18 +226,27 @@ export const EVENTUALITIES: EventualitySpec[] = [
   { area: 'pre_contract', scenario: 'Offer expiry near exchange', handling: 'built', mechanism: 'flag at extraction + deadline timer 15 wd out' },
   { area: 'pre_contract', scenario: 'Offer withdrawn / lender change', handling: 'built', mechanism: 'mortgage_offer_withdrawn; new offer judged afresh' },
   { area: 'pre_contract', scenario: 'Cash ↔ mortgage change', handling: 'gap', mechanism: 'design: lender_status_changed' },
-  { area: 'pre_contract', scenario: 'Price renegotiated', handling: 'gap', mechanism: 'design: price_changed feeding the report and SDLT' },
-  { area: 'contract_review', scenario: 'Restriction / charge / covenant', handling: 'built', mechanism: 'title decision incl. indemnity' },
+  { area: 'pre_contract', scenario: 'Price renegotiated', handling: 'built', mechanism: 'resolve_issue(price_reduced) or record_price_change → price_changed; lender_approval issue on a lender-funded purchase' },
+  { area: 'pre_contract', scenario: 'Survey finds a defect', handling: 'built', mechanism: 'issue survey_defect → price reduced / works / retention / specialist report / accepted' },
+  { area: 'pre_contract', scenario: 'Down-valuation', handling: 'built', mechanism: 'issue valuation_shortfall → price reduced / buyer covers / new lender (reopens the offer) / challenge' },
+  { area: 'pre_contract', scenario: 'Missing building regs / FENSA / planning', handling: 'built', mechanism: 'issues missing_building_regs, planning_breach, document_missing → indemnity (lender told) / regularisation / retrospective consent' },
+  { area: 'pre_contract', scenario: 'Probate not granted / attorney / capacity', handling: 'built', mechanism: 'issue seller_capacity holds exchange; everything else proceeds' },
+  { area: 'pre_contract', scenario: 'Solar lease / septic tank / unadopted road', handling: 'built', mechanism: 'issues third_party_encumbrance, access_rights → evidence / lender confirmed / indemnity' },
+  { area: 'pre_contract', scenario: 'Issue goes quiet for weeks', handling: 'built', mechanism: 'stale_issue timer: escalation after 10 working days without movement' },
+  { area: 'contract_review', scenario: 'Restriction / charge / covenant', handling: 'built', mechanism: 'title decision incl. indemnity (lender_approval issue on a lender-funded purchase); issues covenant_consent, title_defect' },
+  { area: 'contract_review', scenario: 'Ready to exchange?', handling: 'built', mechanism: 'readiness milestones contract_approved, signed_contract_held (advisory) + stage blockers' },
   { area: 'contract_review', scenario: 'New information after the report went', handling: 'manual', mechanism: 'title re-extraction refused after send' },
   { area: 'contract_review', scenario: 'Draft rejected', handling: 'built', mechanism: 'report_on_title_rejected → redraft' },
   { area: 'exchange', scenario: 'Simultaneous exchange and completion', handling: 'built', mechanism: 'exchange with completionDate = today' },
   { area: 'exchange', scenario: 'Exchange deferred', handling: 'built', mechanism: 'set_target_dates' },
   { area: 'exchange', scenario: 'Gazumped / withdrawn / chain collapse', handling: 'built', mechanism: 'abandon_matter' },
-  { area: 'exchange', scenario: 'Deposit late', handling: 'gap', mechanism: 'design: deposit wait near target exchange' },
+  { area: 'exchange', scenario: 'Deposit late / short', handling: 'built', mechanism: 'issue funding_shortfall → funds_in_place' },
+  { area: 'exchange', scenario: 'Issue proves fatal', handling: 'built', mechanism: 'mark_issue_fatal → issue_fatal + matter_abandoned' },
   { area: 'completion', scenario: 'Completion date moved', handling: 'built', mechanism: 'change_completion_date' },
   { area: 'completion', scenario: 'Notice to complete', handling: 'built', mechanism: 'decision + deadline timer 2 wd out' },
   { area: 'completion', scenario: 'Lender funds late', handling: 'built', mechanism: 'funds wait timers' },
-  { area: 'completion', scenario: 'Client balance short', handling: 'gap', mechanism: 'design: expected balance on the statement' },
+  { area: 'completion', scenario: 'Client balance short', handling: 'built', mechanism: 'issue funding_shortfall (gate completion) → funds_in_place' },
+  { area: 'completion', scenario: 'Completion fails on the day', handling: 'built', mechanism: 'issue completion_failure holds completion_confirmed → completed_late / funds_in_place; notice to complete if it slips' },
   { area: 'completion', scenario: 'Bank details "change"', handling: 'built', mechanism: 'addendum 2 hard stop' },
   { area: 'post_completion', scenario: 'SDLT within 14 days', handling: 'built', mechanism: 'deadline timer 5 wd out' },
   { area: 'post_completion', scenario: 'HMLR requisition', handling: 'built', mechanism: 'requisition decision; blocks ap1_confirmed; deadline timer' },
@@ -240,6 +270,7 @@ const eventCategory = (t: EventType): string => {
   if (/chase|escalation|client_update/.test(t)) return 'timers & comms';
   if (/^decision_source|auto_clear/.test(t)) return 'decisions';
   if (/shadow|suppressed/.test(t)) return 'shadow';
+  if (/^issue|price_changed|contract_approved|signed_contract/.test(t)) return 'issues';
   if (/abandon|target_dates|completion_date|notice_to_complete|withdrawn|requisition|correction|handler/.test(t)) return 'eventualities';
   return 'lifecycle';
 };
@@ -259,12 +290,26 @@ export function machineSpec(): MachineSpec {
     decisions: DECISION_KINDS.map((kind) => ({ kind, label: kind.replace(/_/g, ' '), options: OPTIONS_FOR[kind], source: SUBFLOW_SPECS.find((s) => s.decisionKind === kind)?.label ?? (kind === 'bank_details' ? 'the document the details arrived on' : kind === 'requisition' ? 'the HMLR requisition letter' : kind === 'auto_clear' ? 'the auto-cleared document' : 'the chase / deadline dossier') })),
     timers: {
       waits: (Object.keys(DEFAULT_SLA) as WaitKey[]).map((k) => ({ waitKey: k, chaseAfter: DEFAULT_SLA[k].chaseAfter, chaseEvery: DEFAULT_SLA[k].chaseEvery, escalateAfter: DEFAULT_SLA[k].escalateAfter, reEscalateAfter: DEFAULT_SLA[k].reEscalateAfter, recipientRole: DEFAULT_SLA[k].recipientRole, template: DEFAULT_SLA[k].template })),
-      deadlines: (Object.keys(DEADLINE_LEAD) as DeadlineKind[]).map((kind) => ({ kind, leadWorkingDays: DEADLINE_LEAD[kind], description: { mortgage_offer_expiry: 'offer expiry before exchange', sdlt_filing: '14 days from completion', notice_to_complete: 'notice expiry', requisition_reply: 'HMLR reply-by date' }[kind] })),
+      deadlines: (Object.keys(DEADLINE_LEAD) as DeadlineKind[]).map((kind) => ({ kind, leadWorkingDays: DEADLINE_LEAD[kind], description: { mortgage_offer_expiry: 'offer expiry before exchange', sdlt_filing: '14 days from completion', notice_to_complete: 'notice expiry', requisition_reply: 'HMLR reply-by date', stale_issue: 'an open issue with no movement (working days since last touched)' }[kind] })),
     },
     thresholds: { extractionConfidence: MIN_EXTRACTION_CONFIDENCE, classificationConfidence: MIN_CLASSIFICATION_CONFIDENCE },
     invariants: INVARIANTS,
     triggers: TRIGGERS,
     eventualities: EVENTUALITIES,
+    issues: {
+      groups: ISSUE_GROUPS.map((id) => ({ id, label: ISSUE_GROUP_LABEL[id] })),
+      kinds: ISSUE_KIND_SPECS,
+      resolutions: ISSUE_RESOLUTIONS.map((id) => ({
+        id,
+        label: RESOLUTION_LABEL[id],
+        effects: [
+          ...(PRICE_RESOLUTIONS.has(id) ? ['records price_changed (new price required, before exchange only)'] : []),
+          ...(LENDER_NOTIFY_RESOLUTIONS.has(id) ? ['lender-funded purchase: raises a lender_approval issue holding exchange'] : []),
+          ...(REOPENS_OFFER.has(id) ? ['lender-funded purchase: records mortgage_offer_withdrawn (the sub-flow reopens)'] : []),
+        ],
+      })),
+      staleAfterWorkingDays: DEADLINE_LEAD.stale_issue,
+    },
   };
   const version = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
   return { version, ...body };
