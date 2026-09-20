@@ -92,6 +92,10 @@ export interface IssueRow {
   resolvedAt: string | null;
   resolvedBy: string | null;
   origin: { issueId: string; resolution: string } | null;
+  party: string | null;
+  costPennies: number | null;
+  paidBy: string | null;
+  enquiryIds: string[];
   history: Array<{ at: string; by: string; what: string }>;
 }
 
@@ -122,11 +126,13 @@ export interface EngineState {
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   completion: { statementGeneratedAt: string | null; fundsRequestedAt: string | null; fundsReceivedAt: string | null; confirmedAt: string | null };
-  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null };
+  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; noticeOfAssignmentAt?: string | null };
   /** Issues layer (docs/engine-issues.md). */
   issues: Record<string, IssueRow>;
   purchasePricePennies: number | null;
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
+  proofOfFunds?: { status: 'not_started' | 'requested' | 'submitted' | 'reviewed'; requestId: string | null; requestedAt: string | null; submittedAt: string | null; documentId: string | null; decisionEventId: string | null; resolution: string | null; formUrl: string | null; rounds: number; facts: { totalDeclaredPennies: number; requiredPennies: number | null; shortfallPennies: number | null; giftedPennies: number; sources: Array<{ kind: string; amountPennies: number }> } | null };
+  managementPack?: { status: string; requestedAt: string | null; documentId: string | null; decisionEventId: string | null };
   abandoned?: { at: string; reason: string; detail: string | null; stage: string } | null;
   decisions: Record<string, DecisionRow>;
   waits: WaitRow[];
@@ -157,6 +163,8 @@ export const KIND_LABEL: Record<string, string> = {
   bank_details: 'Bank details — verify out-of-band',
   auto_clear: 'Auto-clear review',
   requisition: 'HMLR requisition',
+  proof_of_funds: 'Proof of funds — sign off',
+  management_pack: 'Management pack (LPE1)',
 };
 
 export const VERIFICATION_METHOD_LABEL: Record<string, string> = {

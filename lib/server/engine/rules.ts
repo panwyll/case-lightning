@@ -57,6 +57,9 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   // assist level: confirm the engine's auto-clear was right, or escalate it. Never blocks.
   auto_clear: ['approve', 'escalate'],
   requisition: ['approve', 'escalate'],
+  // AML sign-off is a person's act: approve, send the form back for more, escalate, or reject (manual handling).
+  proof_of_funds: ['approve', 'request_further', 'escalate', 'reject'],
+  management_pack: ['approve', 'refer_to_client', 'request_further', 'escalate'],
 };
 
 const lowConfidenceFlag = (confidence: number, what: string): Flag => ({
@@ -150,18 +153,34 @@ export function evaluateMortgageOffer(facts: MortgageOfferFacts, targetExchangeD
 
 // ───────────────────────────── Title register ─────────────────────────────
 
-export function evaluateTitle(facts: TitleFacts): Verdict {
+/** Lender minimums vary (UK Finance Handbook part 2); below these the lease itself is a client-advice point. */
+export const SHORT_LEASE_YEARS = { flag: 85, serious: 80 };
+/** Ground rent above this (outside London) risks the lease being an assured tenancy; many lenders refuse. */
+export const GROUND_RENT_FLAG_PENNIES_PA = 25_000;
+
+export function evaluateTitle(facts: TitleFacts, transactionType: 'freehold_purchase' | 'leasehold_purchase' = 'freehold_purchase'): Verdict {
   const flags: Flag[] = [];
-  if (facts.tenure !== 'freehold') {
-    // v1 is freehold-only (spec 2.7). Leasehold → full manual handling, not half-automation.
-    flags.push({
-      code: facts.tenure === 'leasehold' ? 'LEASEHOLD_UNSUPPORTED' : 'TENURE_UNKNOWN',
-      severity: 'high',
-      description:
-        facts.tenure === 'leasehold'
-          ? 'The title is leasehold. Leasehold purchases are not automated in this version — handle the matter manually.'
-          : 'The tenure could not be determined from the register.',
-    });
+  if (facts.tenure === 'unknown') {
+    flags.push({ code: 'TENURE_UNKNOWN', severity: 'high', description: 'The tenure could not be determined from the register.' });
+  } else if (transactionType === 'freehold_purchase' && facts.tenure === 'leasehold') {
+    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is leasehold but the matter was enrolled as a freehold purchase. Re-enrol it as leasehold (management pack, lease review) — automation is paused until then.' });
+  } else if (transactionType === 'leasehold_purchase' && facts.tenure === 'freehold') {
+    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is freehold but the matter was enrolled as a leasehold purchase. Check the title number; a share of freehold has a lease as well.' });
+  }
+  if (facts.tenure === 'leasehold' && transactionType === 'leasehold_purchase') {
+    const l = facts.lease;
+    if (!l) flags.push({ code: 'LEASE_NOT_READ', severity: 'medium', description: 'The lease terms (unexpired term, ground rent, review clause) were not extracted. Read the lease before the report on title.' });
+    else {
+      if (l.unexpiredYears != null && l.unexpiredYears < SHORT_LEASE_YEARS.flag) {
+        flags.push({ code: 'SHORT_LEASE', severity: l.unexpiredYears < SHORT_LEASE_YEARS.serious ? 'high' : 'medium', description: `${l.unexpiredYears} years unexpired${l.unexpiredYears < SHORT_LEASE_YEARS.serious ? ' — below 80, marriage value applies to an extension and many lenders will not lend' : ' — near the point lenders and buyers start to discount'}.`, locator: l.locator });
+      }
+      if (l.groundRentPenniesPa != null && l.groundRentPenniesPa > GROUND_RENT_FLAG_PENNIES_PA) {
+        flags.push({ code: 'GROUND_RENT_HIGH', severity: 'medium', description: `Ground rent £${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year exceeds the assured-tenancy threshold; lender acceptability must be checked.`, locator: l.locator });
+      }
+      if (l.groundRentReview && /doubl|x\s?2|twice|compound/i.test(l.groundRentReview)) {
+        flags.push({ code: 'GROUND_RENT_DOUBLING', severity: 'high', description: `Ground rent review clause: "${l.groundRentReview}". Doubling rents are refused by many lenders; a deed of variation may be needed.`, locator: l.locator });
+      }
+    }
   }
   if (facts.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(facts.confidence, 'title register'));
   for (const r of facts.restrictions) {

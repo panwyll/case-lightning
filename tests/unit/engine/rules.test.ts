@@ -34,13 +34,13 @@ test('mortgage: standard conditions clear; special conditions and near expiry fl
   if (expired.outcome === 'flag') assert.equal(expired.flags[0].code, 'OFFER_EXPIRED');
 });
 
-test('title: clean freehold clears; charges flag; leasehold is out of scope', () => {
+test('title: clean freehold clears; charges flag; a leasehold title on a freehold matter is a tenure mismatch', () => {
   assert.equal(evaluateTitle(titleClear()).outcome, 'clear');
   const charge = evaluateTitle(titleWithCharge());
   assert.equal(charge.outcome, 'flag');
   if (charge.outcome === 'flag') assert.equal(charge.flags[0].code, 'CHARGE:C1');
   const lease = evaluateTitle(titleLeasehold());
-  if (lease.outcome === 'flag') assert.equal(lease.flags[0].code, 'LEASEHOLD_UNSUPPORTED');
+  if (lease.outcome === 'flag') assert.equal(lease.flags[0].code, 'TENURE_MISMATCH');
 });
 
 test('id check: clear vs refer', () => {

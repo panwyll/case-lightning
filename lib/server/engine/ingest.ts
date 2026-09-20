@@ -29,6 +29,7 @@ export type IngestAction =
   | { kind: 'mortgage_offer' }
   | { kind: 'title' }
   | { kind: 'id_check' }
+  | { kind: 'management_pack' }
   | { kind: 'skip'; reason: string };
 
 /** Pure: decide what to do with a classified document given the matter's projected state. */
@@ -108,6 +109,8 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.titleReceived(tenantId, matterId, documentId);
     case 'id_check':
       return svc.idCheckResultReceived(tenantId, matterId, documentId);
+    case 'management_pack':
+      return svc.managementPackReceived(tenantId, matterId, documentId);
     case 'skip':
       return null;
   }

@@ -66,6 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const svc = engine();
     let result;
     if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId);
+    else if (input.type === 'request_proof_of_funds') result = await svc.requestProofOfFunds(user.tenantId, matterId, user.userId, { noteToClient: input.noteToClient ?? null });
     else if (input.type === 'draft_report_on_title') result = await svc.draftReportOnTitle(user.tenantId, matterId);
     else if (input.type === 'send_report_on_title') {
       requireDecider(user);

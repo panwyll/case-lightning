@@ -18,6 +18,7 @@
  */
 import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
 import type { SummaryOverride } from './machine';
+import type { ProofOfFundsFacts } from './proof-of-funds';
 
 /** What the engine knows about a document (a row in `document`, or an in-memory stand-in). */
 export interface DocumentRef {
@@ -52,6 +53,18 @@ export interface DocumentExtractor {
 export interface DecisionSummariser {
   readonly name: string;
   summarise(input: { kind: DecisionKind; subjectLabel: string; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null>;
+}
+
+/** Proof of funds (docs/proof-of-funds.md): writes the briefing the conveyancer reads before signing off a client's declaration. Prose only; the flags stand. */
+export interface ProofOfFundsSummariser {
+  readonly name: string;
+  summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null>;
+}
+
+/** Proof of funds: issues the tokenised form link the client completes. Production stores a row and hashes the token; tests keep it in memory. */
+export interface ProofOfFundsForms {
+  readonly name: string;
+  create(input: { tenantId: string; matterId: string; requestedBy: string; followUpOf?: string | null; noteToClient?: string | null }): Promise<{ requestId: string; formUrl: string }>;
 }
 
 /** Component #3 (drafting). Assembles the client-facing report on title from cleared facts. Always goes through a human approval decision. */
@@ -127,6 +140,10 @@ export interface EnginePorts {
   /** Optional: without a classifier, documents must be ingested with an explicit role (the /ingest route). */
   classifier?: DocumentClassifier | null;
   summariser: DecisionSummariser;
+  /** Optional: without it the deterministic briefing (proof-of-funds.ts templateBriefing) is used. */
+  pofSummariser?: ProofOfFundsSummariser | null;
+  /** Optional: without it request_proof_of_funds cannot be issued by the service (the route refuses with 501). */
+  pofForms?: ProofOfFundsForms | null;
   reportDrafter: ReportDrafter;
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;

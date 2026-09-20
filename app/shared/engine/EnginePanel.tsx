@@ -65,9 +65,11 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const [busy, setBusy] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [hasLender, setHasLender] = useState(true);
+  const [leasehold, setLeasehold] = useState(false);
+  const [pofNote, setPofNote] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
   const [completionDate, setCompletionDate] = useState('');
-  const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check'>('auto');
+  const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack'>('auto');
   const [upSearch, setUpSearch] = useState('CON29');
   const [upEnquiry, setUpEnquiry] = useState('');
   const [upFile, setUpFile] = useState<File | null>(null);
@@ -143,7 +145,8 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         </div>
         <div style={{ marginTop: 10 }}>
           <label style={{ fontSize: 12.5, marginRight: 12 }}><input type="checkbox" checked={hasLender} onChange={(e) => setHasLender(e.target.checked)} /> Buyer has a mortgage lender</label>
-          <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'enrol', hasLender })}>Enrol matter (freehold purchase)</button>
+          <label style={{ fontSize: 12.5, marginRight: 12 }}><input type="checkbox" checked={leasehold} onChange={(e) => setLeasehold(e.target.checked)} /> Leasehold (management pack, lease review)</label>
+          <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'enrol', hasLender, transactionType: leasehold ? 'leasehold_purchase' : 'freehold_purchase' })}>Enrol matter ({leasehold ? 'leasehold' : 'freehold'} purchase)</button>
         </div>
         {err && <div className="ep-err">{err}</div>}
       </div>
@@ -193,6 +196,8 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
           <div key={q.enquiryId} className="ep-tile"><b>Enquiry {q.enquiryId}</b><Pill s={q.status} /><div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>{q.subject}</div></div>
         ))}
         <div className="ep-tile"><b>Mortgage offer{s.mortgage.facts?.lender ? ` · ${s.mortgage.facts.lender}` : ''}</b><Pill s={s.mortgage.status} /></div>
+        <div className="ep-tile"><b>Proof of funds{s.proofOfFunds?.rounds ? ` · round ${s.proofOfFunds.rounds}` : ''}</b><Pill s={s.proofOfFunds?.status === 'reviewed' ? (s.proofOfFunds.resolution === 'approve' ? 'reviewed' : s.proofOfFunds.resolution === 'reject' ? 'rejected' : 'reviewed') : s.proofOfFunds?.status === 'submitted' ? 'flagged' : s.proofOfFunds?.status === 'requested' ? 'requested' : 'not_started'} />{s.proofOfFunds?.facts ? <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>declared £{(s.proofOfFunds.facts.totalDeclaredPennies / 100).toLocaleString('en-GB')}{s.proofOfFunds.facts.requiredPennies != null ? ` of £${(s.proofOfFunds.facts.requiredPennies / 100).toLocaleString('en-GB')} needed` : ''}{s.proofOfFunds.facts.giftedPennies ? ' · includes a gift' : ''}</div> : s.proofOfFunds?.status === 'requested' ? <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>form with the client since {fmtDay(s.proofOfFunds.requestedAt)}</div> : null}</div>
+        {s.transactionType === 'leasehold_purchase' && <div className="ep-tile"><b>Management pack (LPE1)</b><Pill s={s.managementPack?.status ?? 'not_started'} /></div>}
         <div className="ep-tile"><b>Title{s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}</b><Pill s={s.title.status} /></div>
         <div className="ep-tile"><b>Report on title</b><Pill s={s.reportOnTitle.status} />{s.reportOnTitle.sentAt ? <div style={{ fontSize: 11.5, color: '#64748b' }}>sent {fmtDay(s.reportOnTitle.sentAt)}</div> : null}</div>
         <div className="ep-tile"><b>Exchange</b><Pill s={s.exchange.exchangedAt ? 'sent' : s.deposit.received ? 'approved' : 'awaiting'} />{s.exchange.completionDate ? <div style={{ fontSize: 11.5, color: '#64748b' }}>completion {s.exchange.completionDate}</div> : null}</div>
@@ -245,6 +250,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
             <option value="mortgage_offer">Mortgage offer</option>
             <option value="title">Official copy of the register</option>
             <option value="id_check">ID / AML report</option>
+            {s.transactionType === 'leasehold_purchase' && <option value="management_pack">Management pack (LPE1)</option>}
           </select>
           {upRole === 'search' && (
             <select className="ep-input" value={upSearch} onChange={(e) => setUpSearch(e.target.value)}>
@@ -261,6 +267,14 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
       <div className="ep-sec">Actions</div>
       <div>
         {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button>}
+        {!s.exchange.exchangedAt && (s.proofOfFunds?.status === 'not_started' || (s.proofOfFunds?.status === 'reviewed' && s.proofOfFunds.resolution !== 'approve')) && (
+          <span>
+            <input className="ep-input" placeholder="Note to the client (optional)" value={pofNote} onChange={(e) => setPofNote(e.target.value)} style={{ width: 260 }} />
+            <button className="ep-btn primary" disabled={busy} onClick={() => { void cmd({ type: 'request_proof_of_funds', noteToClient: pofNote.trim() || null }); setPofNote(''); }}>Send proof-of-funds form</button>
+          </span>
+        )}
+        {s.transactionType === 'leasehold_purchase' && ['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && s.managementPack?.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const from = window.prompt('Requested from (seller\'s solicitor / managing agent)?', 'Seller\'s solicitor'); if (from) void cmd({ type: 'management_pack_requested', from }); }}>Management pack requested</button>}
+        {s.transactionType === 'leasehold_purchase' && s.completion.confirmedAt && !s.postCompletion.noticeOfAssignmentAt && <button className="ep-btn" disabled={busy} onClick={() => { const on = window.prompt('Notice of assignment served on?', 'Landlord / managing agent'); if (on) void cmd({ type: 'notice_of_assignment_served', servedOn: on }); }}>Notice of assignment served</button>}
         {(s.stage === 'pre_contract' || s.stage === 'contract_review') && (
           <span>
             <input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} />

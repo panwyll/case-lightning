@@ -39,6 +39,10 @@ export const DEFAULT_SLA: SlaConfig = {
   id_check: { waitKey: 'id_check', chaseAfter: 3, chaseEvery: 2, escalateAfter: 7, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_id_documents' },
   funds: { waitKey: 'funds', chaseAfter: 2, chaseEvery: 1, escalateAfter: 4, reEscalateAfter: 2, recipientRole: 'lender', template: 'chase_completion_funds' },
   registration: { waitKey: 'registration', chaseAfter: 30, chaseEvery: 10, escalateAfter: 60, reEscalateAfter: 20, recipientRole: 'hmlr', template: 'chase_hmlr_registration' },
+  // The client owes us the proof-of-funds form: nudge early and often, escalate to the handler after two weeks.
+  proof_of_funds: { waitKey: 'proof_of_funds', chaseAfter: 3, chaseEvery: 3, escalateAfter: 10, reEscalateAfter: 5, recipientRole: 'client', template: 'chase_proof_of_funds' },
+  // Management packs take 2–8 weeks and the seller's side owes them: chase from day 10.
+  management_pack: { waitKey: 'management_pack', chaseAfter: 10, chaseEvery: 5, escalateAfter: 20, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_management_pack' },
 };
 
 export interface DueAction {

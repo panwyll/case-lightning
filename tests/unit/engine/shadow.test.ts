@@ -92,7 +92,7 @@ test('sub-flow shadow: only that sub-flow is suppressed/hidden; assist surfaces 
   const h = harness();
   await h.store.setSubflowStatus(TENANT, 'search', 'shadow', USER);
   await h.store.setSubflowStatus(TENANT, 'id_check', 'autonomous', USER);
-  assert.deepEqual(await h.store.loadSubflows(TENANT), { id_check: 'autonomous', search: 'shadow', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist' });
+  assert.deepEqual(await h.store.loadSubflows(TENANT), { id_check: 'autonomous', search: 'shadow', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist', proof_of_funds: 'assist', management_pack: 'assist' });
 
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);

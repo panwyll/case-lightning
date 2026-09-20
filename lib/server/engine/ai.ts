@@ -24,7 +24,8 @@
  */
 import { z } from 'zod/v4';
 import type { Citation, DecisionKind, Flag, MatterState } from './types';
-import type { DecisionSummariser, DocumentRef, ReportDrafter } from './ports';
+import type { DecisionSummariser, DocumentRef, ProofOfFundsSummariser, ReportDrafter } from './ports';
+import { FUND_SOURCE_LABEL, gbp, type ProofOfFundsFacts } from './proof-of-funds';
 import type { EngineDocumentInput, StructuredLlm } from './llm';
 import type { DocumentBytesLoader } from './extraction';
 import { OPTIONS_FOR, optionLabel } from './rules';
@@ -146,6 +147,104 @@ function factsFor(kind: DecisionKind, s: MatterState): unknown {
       return Object.values(s.searches).map((x) => x.facts).filter(Boolean);
     default:
       return null;
+  }
+}
+
+// ───────────────────────────── proof of funds briefing ─────────────────────────────
+
+const PofSchema = z.object({
+  headline: z.string().describe('One sentence: who declared what, whether it covers the balance, and the single most important point. No recommendation.'),
+  sources: z
+    .array(z.object({ index: z.number().int().describe('1-based index of the source as given.'), comment: z.string().describe('1–3 sentences: what was declared, what evidence is attached, what a conveyancer would normally want to see for this kind of source. Facts only.') }))
+    .describe('Exactly one entry per declared source, in order.'),
+  findings: z.array(z.object({ code: z.string().describe('The flag code — must be one of the codes given.'), explanation: z.string().describe('2–4 sentences: what the declaration says, why the AML regime cares, what is usually asked for. No advice on the outcome.') })).describe('Exactly one entry per flag, in the order given.'),
+  questionsForClient: z.array(z.string()).describe('Specific questions or documents to ask the client for, if any — phrased for the client. Empty if nothing is needed.'),
+  whatToCheckInSource: z.string().describe('Which attached documents to open and what to look for in them.'),
+});
+
+const POF_INSTRUCTIONS =
+  'You write the briefing a conveyancer reads before signing off a client\'s proof-of-funds (source of funds) declaration on a residential purchase in England & Wales. ' +
+  'You are given the declaration (data), the typed facts, and the deterministic flags (already decided by rules — do not add, remove or re-grade them). ' +
+  'Explain each source and each flag in plain English: what the client declared, what evidence is attached, what the anti-money-laundering regime expects for that kind of source, and what is usually asked for. ' +
+  'Never say whether to approve or reject, never invent figures, names, dates or documents that are not in the material, never speculate about the client\'s honesty. Facts only; the conveyancer decides.';
+
+export function validatePofBriefing(facts: ProofOfFundsFacts, flags: Flag[], allowedText: string, out: z.infer<typeof PofSchema>): SummaryValidation {
+  const problems: string[] = [];
+  const codes = new Set(flags.map((f) => f.code));
+  const seen = new Set(out.findings.map((f) => f.code.trim().toUpperCase()));
+  for (const c of codes) if (!seen.has(c)) problems.push(`flag ${c} not explained`);
+  for (const f of out.findings) if (!codes.has(f.code.trim().toUpperCase())) problems.push(`unknown flag ${f.code}`);
+  const idx = new Set(out.sources.map((s) => s.index));
+  for (let i = 1; i <= facts.sources.length; i++) if (!idx.has(i)) problems.push(`source ${i} not covered`);
+  for (const s of out.sources) if (s.index < 1 || s.index > facts.sources.length) problems.push(`unknown source ${s.index}`);
+  const text = [out.headline, out.whatToCheckInSource, ...out.sources.map((s) => s.comment), ...out.findings.map((f) => f.explanation), ...out.questionsForClient].join('\n');
+  if (/\b(you should|we recommend|i recommend|approve this|reject this|sign this off|do not sign|looks legitimate|looks suspicious|is lying|dishonest)\b/i.test(text)) problems.push('briefing gives a recommendation or a character judgement');
+  // The facts hold pennies; the prose says pounds. Every amount in the facts is allowed in either form.
+  const amounts = [facts.purchasePricePennies, facts.mortgageAdvancePennies, facts.requiredPennies, facts.totalDeclaredPennies, facts.shortfallPennies, facts.giftedPennies, ...facts.sources.map((x) => x.amountPennies)].filter((n): n is number => typeof n === 'number');
+  const allowed = figuresIn(`${allowedText}\n${amounts.map((n) => `${gbp(n)} ${n / 100} £${n / 100}`).join(' ')}`);
+  for (const fig of figuresIn(text)) if (!allowed.has(fig)) problems.push(`figure "${fig}" not in the declaration`);
+  return { ok: problems.length === 0, problems };
+}
+
+export function renderPofBriefing(facts: ProofOfFundsFacts, flags: Flag[], out: z.infer<typeof PofSchema>): string {
+  const lines = [out.headline.trim(), ''];
+  const byIdx = new Map(out.sources.map((s) => [s.index, s.comment.trim()]));
+  facts.sources.forEach((s, i) => {
+    lines.push(`${i + 1}. ${FUND_SOURCE_LABEL[s.kind]} ${gbp(s.amountPennies)}${s.evidenceCount ? ` (${s.evidenceCount} document${s.evidenceCount === 1 ? '' : 's'})` : ' (no documents)'}`);
+    lines.push(`   ${byIdx.get(i + 1) ?? ''}`);
+  });
+  if (flags.length) {
+    const byCode = new Map(out.findings.map((f) => [f.code.trim().toUpperCase(), f.explanation.trim()]));
+    lines.push('', 'Points for your attention:');
+    flags.forEach((f, i) => {
+      lines.push(`${i + 1}. [${f.severity.toUpperCase()}] ${f.description}${f.locator?.section ? ` (see ${f.locator.section})` : ''}`);
+      lines.push(`   ${byCode.get(f.code) ?? ''}`);
+    });
+  } else {
+    lines.push('', 'Nothing flagged by the rules.');
+  }
+  if (out.questionsForClient.length) lines.push('', 'To ask the client:', ...out.questionsForClient.map((q) => `- ${q.trim()}`));
+  lines.push('', `Check in the source: ${out.whatToCheckInSource.trim()}`);
+  lines.push(`Options: ${OPTIONS_FOR.proof_of_funds.map(optionLabel).join(' · ')}.`);
+  return lines.join('\n');
+}
+
+export class ClaudeProofOfFundsSummariser implements ProofOfFundsSummariser {
+  readonly name: string;
+  constructor(
+    private llm: StructuredLlm,
+    private loader: DocumentBytesLoader,
+    private opts: { model: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'; log?: (msg: string, detail?: unknown) => void } = { model: 'claude-opus-5' }
+  ) {
+    this.name = `claude-pof-summariser:${opts.model}`;
+  }
+
+  async summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null> {
+    const source = await this.loader.load(input.source).catch(() => null);
+    const documents: EngineDocumentInput[] = source ? [{ ...source, title: input.source.fileName ?? 'Proof of funds declaration' }] : [];
+    const flagText = input.flags.map((f, i) => `${i + 1}. code=${f.code} severity=${f.severity} — ${f.description}`).join('\n') || '(none)';
+    const factsJson = JSON.stringify(input.facts);
+    try {
+      const res = await this.llm.call({
+        schema: PofSchema,
+        instructions: POF_INSTRUCTIONS,
+        documents,
+        prompt: `Matter stage: ${input.state.stage}. Lender-funded: ${input.state.hasLender ? 'yes' : 'no'}.\n\nFLAGS (fixed — explain each, do not change them):\n${flagText}\n\nTYPED FACTS (DATA):\n${factsJson}\n\nWrite the briefing.`,
+        model: this.opts.model,
+        effort: this.opts.effort ?? 'high',
+        maxTokens: 4000,
+        meter: { tenantId: input.state.tenantId, matterId: input.state.matterId, feature: 'DECISION_SUMMARY' },
+      });
+      const v = validatePofBriefing(input.facts, input.flags, `${flagText}\n${factsJson}\n${source?.kind === 'text' ? source.data : ''}`, res.output);
+      if (!v.ok) {
+        this.opts.log?.(`proof-of-funds briefing rejected by validator — using template (${v.problems.join('; ')})`);
+        return null;
+      }
+      return { text: renderPofBriefing(input.facts, input.flags, res.output), by: res.model };
+    } catch (err) {
+      this.opts.log?.('proof-of-funds summariser call failed — using template', err);
+      return null;
+    }
   }
 }
 

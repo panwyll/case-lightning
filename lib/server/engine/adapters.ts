@@ -24,7 +24,8 @@ import { EngineService } from './service';
 import { PgEventStore } from './store';
 import { claudeLlm, type EngineDocumentInput } from './llm';
 import { ClaudeExtractor, type DocumentBytesLoader, type DocumentFactsWriter } from './extraction';
-import { ClaudeSummariser, ClaudeReportDrafter } from './ai';
+import { ClaudeSummariser, ClaudeReportDrafter, ClaudeProofOfFundsSummariser } from './ai';
+import { PgProofOfFundsForms } from './pof-store';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
 import { runAsSystem, runAsAutomation } from '../db';
@@ -92,13 +93,14 @@ function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: D
 }
 
 /** Real AI layer (#3) when a Claude key is present (or forced), otherwise the deterministic templates. */
-function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: EnginePorts['summariser']; reportDrafter: EnginePorts['reportDrafter'] } {
+function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: EnginePorts['summariser']; reportDrafter: EnginePorts['reportDrafter']; pofSummariser: EnginePorts['pofSummariser'] } {
   const useClaude = config.engineAi === 'claude' || (config.engineAi === 'auto' && !!config.anthropicApiKey);
-  if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter() };
+  if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter(), pofSummariser: null };
   const llm = claudeLlm();
   return {
     summariser: new ClaudeSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
     reportDrafter: new ClaudeReportDrafter(llm, { model: config.engineDraftModel, effort: 'high', log }),
+    pofSummariser: new ClaudeProofOfFundsSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
   };
 }
 
@@ -142,7 +144,7 @@ export function productionPorts(): EnginePorts {
   if (!_ports) {
     const log = (msg: string, detail?: unknown) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
     const { extractor, classifier } = chooseExtractor();
-    const { summariser, reportDrafter } = chooseAi(log);
+    const { summariser, reportDrafter, pofSummariser } = chooseAi(log);
     const { searchProvider, idCheckProvider } = chooseIntegrations();
     const { clientComms, chaser } = chooseComms();
     // The backend (CaseLightning's own tables, or LEAP) supplies the document store and
@@ -155,6 +157,8 @@ export function productionPorts(): EnginePorts {
       extractor,
       classifier,
       summariser,
+      pofSummariser,
+      pofForms: new PgProofOfFundsForms(),
       reportDrafter,
       searchProvider,
       idCheckProvider,

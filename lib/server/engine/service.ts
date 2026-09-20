@@ -32,6 +32,7 @@ import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type Decisi
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
+import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, type ProofOfFundsSubmission } from './proof-of-funds';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -144,6 +145,59 @@ export class EngineService {
     }
     const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId });
     return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference });
+  }
+
+  // ───────────── proof of funds (docs/proof-of-funds.md) ─────────────
+
+  /**
+   * Issue the form (tokenised link), send it to the client, record the request. In shadow
+   * the intent is logged and the wait still opens (so the SLA clock is observable), but no
+   * link is issued and nothing is sent.
+   */
+  async requestProofOfFunds(tenantId: string, matterId: string, actor: string, opts: { noteToClient?: string | null; followUpOf?: string | null } = {}): Promise<RunResult> {
+    if (!this.ports.pofForms) throw Object.assign(new Error('Proof-of-funds forms are not configured on this deployment.'), { status: 501 });
+    const state = await this.getState(tenantId, matterId);
+    const subflows = await this.subflows(tenantId);
+    if (await this.suppressed(tenantId, matterId, state, subflows, 'proof_of_funds_request', 'proof_of_funds', { actor, followUpOf: opts.followUpOf ?? null })) {
+      return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: `shadow:${this.ports.newId()}`, channel: 'suppressed', followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
+    }
+    const form = await this.ports.pofForms.create({ tenantId, matterId, requestedBy: actor, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
+    const template = opts.followUpOf ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
+    const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId } });
+    return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
+  }
+
+  /**
+   * The client submitted the form: facts → rules → the declaration document (what the
+   * decision cites) → the briefing (AI if configured and valid, else the template) → the
+   * decision for the conveyancer. `evidenceNames` labels the attached documents in the
+   * declaration so the reader sees file names, not ids.
+   */
+  async proofOfFundsSubmitted(tenantId: string, matterId: string, requestId: string, submission: ProofOfFundsSubmission, evidenceNames: Record<string, string> = {}): Promise<RunResult> {
+    const state = await this.getState(tenantId, matterId);
+    const facts = factsFromSubmission(requestId, submission, state.purchasePricePennies);
+    const declaration = renderDeclaration(facts, submission, evidenceNames);
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: `proof-of-funds-${requestId}.txt`, content: declaration });
+    const verdict = evaluateProofOfFunds(facts);
+    const flags = verdict.outcome === 'flag' ? verdict.flags : [];
+    let summary = null;
+    if (this.ports.pofSummariser) {
+      try {
+        summary = await this.ports.pofSummariser.summarise({ facts, flags, source: doc, state });
+      } catch (err) {
+        this.ports.log('proof-of-funds summariser failed — using the template briefing', err);
+      }
+    }
+    return this.run(tenantId, matterId, { type: 'proof_of_funds_submitted', actor: EXTERNAL, requestId, documentId: doc.id, facts, summary });
+  }
+
+  // ───────────── leasehold ─────────────
+
+  /** The management pack (LPE1) arrived: always a decision citing it (extraction is optional and best-effort). */
+  async managementPackReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = (doc.extractedFacts && typeof doc.extractedFacts === 'object' && 'flags' in (doc.extractedFacts as object) ? (doc.extractedFacts as import('./types').ManagementPackFacts) : null);
+    return this.run(tenantId, matterId, { type: 'management_pack_received', actor: EXTERNAL, documentId, facts });
   }
 
   /** ID/AML result landed (webhook / upload): extract → rule → cleared or flagged. */
@@ -376,6 +430,11 @@ export class EngineService {
           if (!(await this.suppressed(tenantId, matterId, state, subflows, 'linked_enquiry_delivery', 'enquiry', { enquiryId: p.enquiryId, subject: p.subject }))) {
             await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
           }
+        }
+        // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
+        if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
+          const p = e.payload as { requestId: string; note?: string | null };
+          await this.requestProofOfFunds(tenantId, matterId, e.actor, { followUpOf: p.requestId, noteToClient: p.note ?? null });
         }
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];

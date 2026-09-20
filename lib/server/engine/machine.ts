@@ -20,6 +20,7 @@ import { applyEvent } from './projection';
 import type { DeadlineKind } from './sla';
 import { FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
+import { evaluateProofOfFunds, gbp, templateBriefing, type ProofOfFundsFacts } from './proof-of-funds';
 import {
   EngineError,
   isResolved,
@@ -44,7 +45,12 @@ import {
   ABANDON_REASONS,
   SUBFLOW_OF_KIND,
   issuesGating,
+  isLeasehold,
+  ISSUE_PAID_BY,
+  type IssuePaidBy,
   type IssueState,
+  type ManagementPackFacts,
+  type TransactionType,
   type Engagement,
   DEFAULT_SUBFLOW_CONFIG,
   type Actor,
@@ -77,14 +83,14 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
-  | { type: 'raise_enquiry'; actor: Actor; enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string } | null }
+  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string } | null }
   | { type: 'enquiry_reply_received'; actor: Actor; enquiryId: string; documentId: string; facts?: EnquiryReplyFacts | null; summary?: SummaryOverride | null }
   | { type: 'mortgage_offer_received'; actor: Actor; documentId: string; lender?: string | null }
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
@@ -105,9 +111,16 @@ export type Command =
   | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
   | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
   // ── issues (docs/engine-issues.md) ──
-  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null }
-  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null }
-  | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null }
+  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null; party?: string | null }
+  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
+  | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
+  // ── proof of funds (docs/proof-of-funds.md) ──
+  | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null }
+  | { type: 'proof_of_funds_submitted'; actor: Actor; requestId: string; documentId: string; facts: ProofOfFundsFacts; summary?: SummaryOverride | null }
+  // ── leasehold ──
+  | { type: 'management_pack_requested'; actor: Actor; from: string; reference?: string | null }
+  | { type: 'management_pack_received'; actor: Actor; documentId: string; facts?: ManagementPackFacts | null; summary?: SummaryOverride | null }
+  | { type: 'notice_of_assignment_served'; actor: Actor; servedOn: string; reference?: string | null }
   | { type: 'withdraw_issue'; actor: Actor; issueId: string; reason: string }
   | { type: 'mark_issue_fatal'; actor: Actor; issueId: string; reason: string; abandonReason?: AbandonReason | null }
   | { type: 'record_price_change'; actor: Actor; toPennies: number; reason: string }
@@ -175,6 +188,11 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'record_price_change',
   'contract_approved',
   'signed_contract_held',
+  // Proof of funds (the send itself is a service step, like request_id_check) and leasehold steps.
+  'request_proof_of_funds',
+  'management_pack_requested',
+  'management_pack_received',
+  'notice_of_assignment_served',
 ];
 
 export interface DecideContext {
@@ -247,6 +265,7 @@ export function stageBlockers(s: MatterState): string[] {
       break;
     case 'pre_contract':
       b.push(...unresolvedSearches(s, true));
+      if (isLeasehold(s) && !isResolved(s.managementPack.status)) b.push(`management pack ${s.managementPack.status === 'not_started' ? 'not requested' : s.managementPack.status === 'requested' ? 'awaiting' : 'under review'}`);
       for (const q of Object.values(s.enquiries)) if (!isResolved(q.status)) b.push(`enquiry ${q.enquiryId} ${q.status}`);
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status}`);
       break;
@@ -262,6 +281,7 @@ export function stageBlockers(s: MatterState): string[] {
       b.push(...unresolvedSearches(s, false));
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
       b.push(...issueBlockers(s, 'exchange'));
+      if (proofOfFundsHolds(s)) b.push(`proof of funds ${s.proofOfFunds.status === 'submitted' ? 'awaiting sign-off' : 'requested from the client'}`);
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
     case 'exchanged':
@@ -286,6 +306,9 @@ export function stageBlockers(s: MatterState): string[] {
   }
   return b;
 }
+
+/** A proof-of-funds round in flight (sent, or submitted and not signed off) holds exchange: money cannot move on an unverified source. */
+const proofOfFundsHolds = (s: MatterState): boolean => s.proofOfFunds.status === 'requested' || s.proofOfFunds.status === 'submitted';
 
 /** Open issues holding a stage exit, as blocker lines. */
 function issueBlockers(s: MatterState, gate: IssueGate): string[] {
@@ -316,7 +339,7 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
   for (let guard = 0; guard < 16; guard++) {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
-    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0) {
+    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
     } else {
       const to = nextStage(s.stage);
@@ -368,7 +391,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
 
-const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase' };
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -389,7 +412,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           type: 'matter_created',
           actor: cmd.actor,
           payload: {
-            transactionType: 'freehold_purchase',
+            transactionType: cmd.transactionType ?? 'freehold_purchase',
             hasLender: cmd.hasLender,
             requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
             targetExchangeDate: cmd.targetExchangeDate ?? null,
@@ -475,10 +498,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'raise_enquiry': {
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_contract', 'Raising an enquiry');
-      if (s.enquiries[cmd.enquiryId]) reject(`Enquiry ${cmd.enquiryId} already exists.`);
+      if (cmd.origin?.issueId) openIssue(s, cmd.origin.issueId); // an enquiry raised from an issue must be from a live one
+      if (!cmd.subject?.trim()) reject('An enquiry needs a subject.', 400);
+      const enquiryId = cmd.enquiryId?.trim() || nextPlainEnquiryId(s, cmd.origin?.issueId ?? null);
+      if (s.enquiries[enquiryId]) reject(`Enquiry ${enquiryId} already exists.`);
       // Addendum: correspondence with the other side is stamped internal/external so a
       // compliance review can find every crossing of an ethical wall from the log alone.
-      return [{ type: 'enquiry_raised', actor: cmd.actor, payload: { enquiryId: cmd.enquiryId, subject: cmd.subject, origin: cmd.origin ?? null, counterpartyType: s.counterpartyType } }];
+      return [{ type: 'enquiry_raised', actor: cmd.actor, payload: { enquiryId, subject: cmd.subject.trim(), origin: cmd.origin ?? null, counterpartyType: s.counterpartyType } }];
     }
     case 'enquiry_reply_received': {
       requireEnrolled(s);
@@ -540,14 +566,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.title.status === 'flagged') reject('A title decision is pending; resolve it before re-extracting.');
       if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing title now needs manual handling.');
       const extracted: NewEvent = { type: 'title_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence };
-      const verdict = evaluateTitle(cmd.facts);
+      const txType = s.transactionType ?? 'freehold_purchase';
+      const verdict = evaluateTitle(cmd.facts, txType);
       const out = [
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).title, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
-      // Out-of-scope tenure: flag for the human AND halt automation (spec 2.7).
-      if (cmd.facts.tenure !== 'freehold' && !s.manualHandling.required) {
-        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: cmd.facts.tenure === 'leasehold' ? 'leasehold_unsupported' : 'tenure_unknown', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}.` } });
+      // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
+      const expected = txType === 'leasehold_purchase' ? 'leasehold' : 'freehold';
+      if (cmd.facts.tenure !== expected && !s.manualHandling.required) {
+        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: cmd.facts.tenure === 'unknown' ? 'tenure_unknown' : 'tenure_mismatch', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}; the matter is a ${txType.replace('_', ' ')}.` } });
       }
       return out;
     }
@@ -608,6 +636,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = unresolvedSearches(s, false);
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
+      if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds is ${s.proofOfFunds.status === 'submitted' ? 'awaiting the conveyancer\'s sign-off' : 'still with the client'}.`);
       const holding = issuesGating(s, 'exchange');
       if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
@@ -832,16 +861,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       let gate: IssueGate = cmd.gate ?? spec.gate;
       // After exchange the only thing left to hold is completion.
       if (gate === 'exchange' && s.exchange.exchangedAt) gate = 'completion';
-      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null }, sourceDocumentId: cmd.documentId ?? null }];
+      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'update_issue': {
       requireEnrolled(s);
       const i = openIssue(s, cmd.issueId);
       if (cmd.gate === 'exchange' && s.exchange.exchangedAt) reject('Contracts are exchanged: an issue can only hold completion (or nothing) now.', 400);
       const gate = cmd.gate && cmd.gate !== i.gate ? cmd.gate : null;
-      if (cmd.status === i.status && !gate && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status or a new gate.', 400);
+      const party = cmd.party !== undefined && (cmd.party?.trim() || null) !== i.party ? (cmd.party?.trim() || null) : undefined;
+      if (cmd.status === i.status && !gate && party === undefined && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate or the party.', 400);
       if (gate === 'none' && !cmd.note?.trim()) reject('Releasing an issue\'s hold on the matter needs a note saying why (the client accepts the risk, the lender is content…).', 400);
-      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate } }];
+      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}) } }];
     }
     case 'resolve_issue': {
       requireEnrolled(s);
@@ -852,7 +882,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const note = cmd.note?.trim() || null;
       if (cmd.resolution === 'other' && !note) reject('Say how it was resolved.', 400);
       if (cmd.resolution === 'accepted_as_is' && !note) reject('Record the advice given: the client is accepting this as it stands.', 400);
-      const out: NewEvent[] = [{ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: cmd.resolution, note }, sourceDocumentId: i.sourceDocumentId }];
+      if (cmd.costPennies != null && (!Number.isInteger(cmd.costPennies) || cmd.costPennies < 0)) reject('The cost must be a whole number of pennies.', 400);
+      if (cmd.paidBy && !ISSUE_PAID_BY.includes(cmd.paidBy)) reject(`Unknown payer "${cmd.paidBy}".`, 400);
+      if (cmd.costPennies != null && cmd.costPennies > 0 && !cmd.paidBy) reject('Say who paid the cost (buyer, seller, shared, lender, other).', 400);
+      const out: NewEvent[] = [{ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: cmd.resolution, note, costPennies: cmd.costPennies ?? null, paidBy: cmd.paidBy ?? null }, sourceDocumentId: i.sourceDocumentId }];
       if (PRICE_RESOLUTIONS.has(cmd.resolution)) {
         if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now and cannot be reduced by resolving an issue.');
         const to = cmd.newPricePennies;
@@ -910,6 +943,76 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.exchange.exchangedAt) reject('Contracts are already exchanged.');
       if (s.readiness.signedContractHeldAt) reject('The signed contract is already on file.');
       return [{ type: 'signed_contract_held', actor: cmd.actor, payload: { note: cmd.note ?? null } }];
+    }
+
+    // ── proof of funds (docs/proof-of-funds.md) ──
+    case 'request_proof_of_funds': {
+      requireEnrolled(s);
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; proof of funds is a pre-exchange check.');
+      if (s.proofOfFunds.status === 'requested') reject('A proof-of-funds form is already with the client. Chase it, or wait for the submission.');
+      if (s.proofOfFunds.status === 'submitted') reject('A proof-of-funds submission is awaiting sign-off; resolve that decision (request further re-opens the form).');
+      if (s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && !cmd.followUpOf) reject('Proof of funds is already approved on this matter. Send a follow-up round only from the decision (request further).');
+      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, formUrl: cmd.formUrl ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null } }];
+    }
+    case 'proof_of_funds_submitted': {
+      requireEnrolled(s);
+      if (s.proofOfFunds.status !== 'requested' || s.proofOfFunds.requestId !== cmd.requestId) reject(`No proof-of-funds request ${cmd.requestId} is awaiting a submission (status: ${s.proofOfFunds.status}).`);
+      const verdict = evaluateProofOfFunds(cmd.facts);
+      const flags = verdict.outcome === 'flag' ? verdict.flags : [];
+      // ALWAYS a decision: AML sign-off is a person's act even when nothing is flagged.
+      const decision: DecisionSpec = {
+        kind: 'proof_of_funds',
+        summary: cmd.summary?.text ?? templateBriefing(cmd.facts, flags),
+        sourceDocumentId: cmd.documentId,
+        citations: [{ documentId: cmd.documentId, label: `Proof of funds declaration (${cmd.facts.declarantName})` }],
+        options: OPTIONS_FOR.proof_of_funds,
+        summarisedBy: cmd.summary?.by ?? 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+    }
+
+    // ── leasehold ──
+    case 'management_pack_requested': {
+      requireEnrolled(s);
+      if (!isLeasehold(s)) reject('Management packs are a leasehold step; this matter is a freehold purchase.');
+      requireStageAtLeast(s, 'pre_contract', 'Requesting the management pack');
+      if (s.managementPack.status === 'requested') reject('The management pack has already been requested.');
+      if (isResolved(s.managementPack.status)) reject('The management pack has already been reviewed.');
+      return [{ type: 'management_pack_requested', actor: cmd.actor, payload: { from: cmd.from, reference: cmd.reference ?? null } }];
+    }
+    case 'management_pack_received': {
+      requireEnrolled(s);
+      if (!isLeasehold(s)) reject('Management packs are a leasehold step; this matter is a freehold purchase.');
+      if (s.managementPack.status === 'flagged') reject('A management-pack decision is pending; resolve it before filing another pack.');
+      const facts = cmd.facts ?? null;
+      const flagList = facts?.flags ?? [];
+      const lines = [
+        `The management pack (LPE1 / leasehold information) has arrived${s.managementPack.requestedAt ? ` (requested ${s.managementPack.requestedAt.slice(0, 10)})` : ' (not requested through the engine)'}. Every figure in it is a client-advice point; check it against the lease and the seller\'s replies.`,
+        '',
+        facts ? `Service charge: ${facts.serviceChargePenniesPa != null ? `${gbp(facts.serviceChargePenniesPa)} a year` : 'not read'} · Ground rent: ${facts.groundRentPenniesPa != null ? `${gbp(facts.groundRentPenniesPa)} a year` : 'not read'} · Arrears: ${facts.arrearsPennies != null ? gbp(facts.arrearsPennies) : 'not read'} · Major works planned: ${facts.majorWorksPlanned == null ? 'not read' : facts.majorWorksPlanned ? 'YES' : 'no'} · Buildings insurance: ${facts.buildingsInsuranceInPlace == null ? 'not read' : facts.buildingsInsuranceInPlace ? 'in place' : 'NOT confirmed'} · Reserve fund: ${facts.reserveFundPennies != null ? gbp(facts.reserveFundPennies) : 'not read'}` : 'The pack was not extracted: read it in full.',
+        ...(flagList.length ? ['', 'Points for your attention:', ...flagList.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.description}`)] : []),
+        '',
+        'Usual checks: arrears cleared before completion; planned major works and who pays (retention?); the insurance schedule names the block; the landlord\'s notice fees and consent requirements; the accounts for the last three years.',
+      ];
+      const decision: DecisionSpec = {
+        kind: 'management_pack',
+        summary: cmd.summary?.text ?? lines.join('\n'),
+        sourceDocumentId: cmd.documentId,
+        citations: [{ documentId: cmd.documentId, label: 'Management pack (LPE1)' }],
+        options: OPTIONS_FOR.management_pack,
+        summarisedBy: cmd.summary?.by ?? 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'management_pack_received', actor: cmd.actor, payload: { facts, decision }, sourceDocumentId: cmd.documentId, confidenceScore: facts?.confidence ?? null }];
+    }
+    case 'notice_of_assignment_served': {
+      requireEnrolled(s);
+      if (!isLeasehold(s)) reject('A notice of assignment is a leasehold step; this matter is a freehold purchase.');
+      if (!s.completion.confirmedAt) reject('Notice of assignment is served after completion.');
+      if (s.postCompletion.noticeOfAssignmentAt) reject('Notice of assignment already served.');
+      if (!cmd.servedOn?.trim()) reject('Say who the notice was served on (landlord / managing agent).', 400);
+      return [{ type: 'notice_of_assignment_served', actor: cmd.actor, payload: { servedOn: cmd.servedOn.trim(), reference: cmd.reference ?? null } }];
     }
 
     case 'record_suppressed': {
@@ -1118,6 +1221,23 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   if (option === 'reject' && d.kind === 'id_check' && !s.manualHandling.required) {
     out.push({ type: 'manual_handling_required', actor: userId, payload: { reason: 'id_check_rejected', detail: note ?? undefined } });
   }
+  // Proof of funds (docs/proof-of-funds.md): sign-off closes the source-of-funds issues it answers; a gift on a
+  // lender-funded purchase must be declared to the lender; rejection is a hard stop like a failed ID check.
+  if (d.kind === 'proof_of_funds') {
+    const facts = s.proofOfFunds.facts;
+    if (option === 'approve') {
+      for (const i of Object.values(s.issues)) {
+        if (i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating')) out.push({ type: 'issue_resolved', actor: userId, payload: { issueId: i.id, resolution: 'evidence_provided', note: `Proof of funds signed off${note ? `: ${note}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: d.sourceDocumentId });
+      }
+      if (facts && facts.giftedPennies > 0 && s.hasLender && !s.exchange.exchangedAt) {
+        const donors = facts.sources.filter((x) => x.kind === 'gift' && x.gift).map((x) => x.gift!.donorName).join(', ');
+        out.push(lenderApprovalIssue(s, `pof:${facts.requestId}:gift:lender`, `Tell the lender: gifted deposit ${gbp(facts.giftedPennies)}${donors ? ` from ${donors}` : ''}`, d.sourceDocumentId, null));
+      }
+    }
+    if (option === 'reject' && !s.manualHandling.required) {
+      out.push({ type: 'manual_handling_required', actor: userId, payload: { reason: 'proof_of_funds_rejected', detail: note ?? undefined } });
+    }
+  }
   return out;
 }
 
@@ -1134,6 +1254,10 @@ function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | 
       return { type: 'mortgage_condition_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
     case 'title':
       return { type: 'title_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
+    case 'proof_of_funds':
+      return { type: 'proof_of_funds_reviewed', actor: userId, payload: { ...base, requestId: subject }, sourceDocumentId: d.sourceDocumentId };
+    case 'management_pack':
+      return { type: 'management_pack_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
     case 'report_on_title':
     case 'escalation':
     case 'bank_details':
@@ -1153,6 +1277,14 @@ function assertPayableDetails(s: MatterState, payeeKind: PayeeKind, bankDetailsI
   const cur = currentBankDetails(s, payeeKind);
   if (!cur || cur.id !== b.id) reject('Those bank details have been superseded by a newer record; verify the newest record and use that.', 409);
   if (b.status !== 'verified') reject(`Bank details are ${b.status}; only out-of-band verified details can be paid.`, 412);
+}
+
+/** E1, E2… (or ISS-3-E1 when raised from an issue) — deterministic from the state. */
+function nextPlainEnquiryId(s: MatterState, issueId: string | null): string {
+  const stem = issueId ? `${issueId}-E` : 'E';
+  let n = 1;
+  while (s.enquiries[`${stem}${n}`]) n += 1;
+  return `${stem}${n}`;
 }
 
 function nextEnquiryId(s: MatterState, base: string): string {

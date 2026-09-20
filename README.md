@@ -57,6 +57,14 @@ kind, and effects (a price reduction records the new price and tells the lender;
 lender reopens the mortgage sub-flow). Stale issues are raised to a person after ten
 working days.
 
+**Proof of funds** (`docs/proof-of-funds.md`): the conveyancer fires a tokenised form at the
+client (no login); the client declares each source of money with evidence, gifts and
+overseas funds included; the rules flag shortfalls, unevidenced sources, gifts, repayable
+"gifts" and higher-risk sources; an AI briefing (validated, template fallback) lands as a
+sign-off decision. Approval closes the source-of-funds issue and tells the lender about a
+gift; "request further" re-opens the form with the conveyancer's note. Leasehold purchases
+are now a transaction type (management pack sub-flow, lease facts, notice of assignment).
+
 **LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,
 parties, documents, tasks and file notes; CONVEYi mirrors just enough to run the engine,
 feeds LEAP's documents through it, and writes decisions back as LEAP tasks and file notes.

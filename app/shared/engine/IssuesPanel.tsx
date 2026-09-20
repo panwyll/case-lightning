@@ -33,6 +33,9 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
   const [resolution, setResolution] = useState('');
   const [note, setNote] = useState('');
   const [newPrice, setNewPrice] = useState('');
+  const [cost, setCost] = useState('');
+  const [paidBy, setPaidBy] = useState('');
+  const [party, setParty] = useState('');
   const [showClosed, setShowClosed] = useState(false);
 
   useEffect(() => {
@@ -53,10 +56,16 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
     setResolution(byKind[i.kind]?.resolutions[0] ?? 'other');
     setNote('');
     setNewPrice('');
+    setCost('');
+    setPaidBy('');
   };
   const submitResolve = async (i: IssueRow) => {
     const body: Record<string, unknown> = { type: 'resolve_issue', issueId: i.id, resolution, note: note || null };
     if (resolution === 'price_reduced') body.newPricePennies = Math.round(Number(newPrice.replace(/[^0-9.]/g, '')) * 100);
+    if (cost.trim()) {
+      body.costPennies = Math.round(Number(cost.replace(/[^0-9.]/g, '')) * 100);
+      body.paidBy = paidBy || null;
+    }
     await cmd(body);
     setResolving(null);
   };
@@ -79,12 +88,12 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
           return (
             <div key={i.id} style={{ borderTop: '1px solid #f1f5f9', padding: '8px 0', fontSize: 12.5 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                <b>{i.id} · {k?.label ?? pretty(i.kind)}</b>
+                <b>{i.id} · {k?.label ?? pretty(i.kind)}{i.party ? <span style={{ fontWeight: 500, color: '#64748b' }}> · re {i.party}</span> : null}</b>
                 {chip(STATUS_CHIP[i.status], i.status)}
                 {chip(GATE_CHIP[i.gate], GATE_CHIP[i.gate].label)}
                 <span style={{ color: '#64748b' }}>raised {fmtDay(i.raisedAt)} at {pretty(i.raisedAtStage)}{i.raisedBy === 'system' ? ' by the engine' : ''} · last touched {fmtDay(i.updatedAt)}</span>
               </div>
-              <div style={{ marginTop: 2 }}>{i.title}{i.detail ? <span style={{ color: '#64748b' }}> — {i.detail}</span> : null}</div>
+              <div style={{ marginTop: 2 }}>{i.title}{i.detail ? <span style={{ color: '#64748b' }}> — {i.detail}</span> : null}{i.enquiryIds?.length ? <span style={{ color: '#64748b' }}> · enquiries {i.enquiryIds.join(', ')}</span> : null}</div>
               {last && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{last.what}</div>}
               {k?.note && i.status === 'open' && <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>{k.note}</div>}
               {resolving === i.id ? (
@@ -94,7 +103,14 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                   </select>
                   {resolution === 'price_reduced' && <input className="ep-input" placeholder="New price (£)" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} style={{ width: 130 }} />}
                   <input className="ep-input" placeholder={resolution === 'other' || resolution === 'accepted_as_is' ? 'Note (required)' : 'Note'} value={note} onChange={(e) => setNote(e.target.value)} style={{ width: 280 }} />
-                  <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || ((resolution === 'other' || resolution === 'accepted_as_is') && !note.trim()) || (resolution === 'price_reduced' && !newPrice)} onClick={() => void submitResolve(i)}>Resolve</button>
+                  <input className="ep-input" placeholder="Cost of the fix (£, optional)" value={cost} onChange={(e) => setCost(e.target.value)} style={{ width: 170 }} />
+                  {cost.trim() && (
+                    <select className="ep-input" value={paidBy} onChange={(e) => setPaidBy(e.target.value)}>
+                      <option value="">paid by…</option>
+                      {['buyer', 'seller', 'shared', 'lender', 'other'].map((p) => <option key={p} value={p}>paid by {p}</option>)}
+                    </select>
+                  )}
+                  <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || ((resolution === 'other' || resolution === 'accepted_as_is') && !note.trim()) || (resolution === 'price_reduced' && !newPrice) || (!!cost.trim() && !paidBy)} onClick={() => void submitResolve(i)}>Resolve</button>
                   <button className="ep-btn" style={{ margin: 0 }} onClick={() => setResolving(null)}>Cancel</button>
                   {cat?.resolutions.find((x) => x.id === resolution)?.effects.length ? <div style={{ width: '100%', fontSize: 11.5, color: '#64748b' }}>Effect: {cat.resolutions.find((x) => x.id === resolution)!.effects.join('; ')}</div> : null}
                 </div>
@@ -103,6 +119,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                   {i.status === 'open' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('What is happening? (e.g. "client asked for £10k off; agent relaying")'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: 'negotiating', note: n }); }}>Negotiating…</button>}
                   <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Progress note'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, note: n }); }}>Add note</button>
                   <button className="ep-btn primary" disabled={busy} onClick={() => startResolve(i)}>Resolve…</button>
+                  {!exchanged && <button className="ep-btn" disabled={busy} onClick={() => { const subj = window.prompt('Enquiry to the other side about this issue — what do you want to ask?'); if (subj) void cmd({ type: 'raise_enquiry', subject: subj, origin: { issueId: i.id } }); }}>Raise enquiry</button>}
                   {i.gate !== 'none' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt(`Release the hold on ${i.gate}? Say why (the client accepts the risk, the lender is content…). The issue stays open.`); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, gate: 'none', note: n }); }}>Release hold</button>}
                   {i.gate === 'none' && !exchanged && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Hold exchange again? Say why.'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, gate: 'exchange', note: n }); }}>Hold exchange</button>}
                   <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Withdraw the issue (raised in error / overtaken)? Say why.'); if (n) void cmd({ type: 'withdraw_issue', issueId: i.id, reason: n }); }}>Withdraw</button>
@@ -126,13 +143,14 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
             </select>
             <input className="ep-input" placeholder="What is wrong (one line)" value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
             <input className="ep-input" placeholder="Detail (optional)" value={detail} onChange={(e) => setDetail(e.target.value)} style={{ width: 220 }} />
+            <input className="ep-input" placeholder="Who it concerns (optional)" value={party} onChange={(e) => setParty(e.target.value)} style={{ width: 170 }} title="When a matter has more than one buyer or party" />
             <select className="ep-input" value={gate} onChange={(e) => setGate(e.target.value as typeof gate)}>
               <option value="default">{sel ? `holds ${exchanged && sel.gate === 'exchange' ? 'completion' : sel.gate === 'none' ? 'nothing' : sel.gate} (default)` : 'default hold'}</option>
               {!exchanged && <option value="exchange">holds exchange</option>}
               <option value="completion">holds completion</option>
               <option value="none">holds nothing (track only)</option>
             </select>
-            <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !title.trim()} onClick={() => { void cmd({ type: 'raise_issue', kind, title: title.trim(), detail: detail.trim() || null, gate: gate === 'default' ? null : gate }); setTitle(''); setDetail(''); }}>Raise issue</button>
+            <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !title.trim()} onClick={() => { void cmd({ type: 'raise_issue', kind, title: title.trim(), detail: detail.trim() || null, gate: gate === 'default' ? null : gate, party: party.trim() || null }); setTitle(''); setDetail(''); setParty(''); }}>Raise issue</button>
             {sel && <div style={{ width: '100%', fontSize: 11.5, color: '#64748b' }}>Arises from {sel.arisesFrom}.{sel.overlaps ? ` Already covered in part: ${sel.overlaps}.` : ''}</div>}
           </div>
         )}
@@ -142,7 +160,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
             <span style={{ cursor: 'pointer', color: '#64748b' }} onClick={() => setShowClosed((x) => !x)}>{showClosed ? '▾' : '▸'} {closed.length} closed issue{closed.length === 1 ? '' : 's'}</span>
             {showClosed && closed.map((i) => (
               <div key={i.id} style={{ borderTop: '1px solid #f1f5f9', padding: '5px 0', color: '#475569' }}>
-                <b>{i.id} · {byKind[i.kind]?.label ?? pretty(i.kind)}</b> {chip(STATUS_CHIP[i.status], i.status)} {i.title}{i.resolution ? ` — ${cat?.resolutions.find((x) => x.id === i.resolution)?.label ?? pretty(i.resolution)}` : ''} <span style={{ color: '#94a3b8' }}>{fmtDay(i.resolvedAt)}</span>
+                <b>{i.id} · {byKind[i.kind]?.label ?? pretty(i.kind)}</b> {chip(STATUS_CHIP[i.status], i.status)} {i.title}{i.resolution ? ` — ${cat?.resolutions.find((x) => x.id === i.resolution)?.label ?? pretty(i.resolution)}` : ''}{i.costPennies != null ? ` · £${(i.costPennies / 100).toLocaleString('en-GB')}${i.paidBy ? ` paid by ${i.paidBy}` : ''}` : ''} <span style={{ color: '#94a3b8' }}>{fmtDay(i.resolvedAt)}</span>
               </div>
             ))}
           </div>

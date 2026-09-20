@@ -11,7 +11,7 @@
  *   - Mock providers/comms record what they were asked to do and return fake ids.
  */
 import type { Citation, EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
-import type { ClientComms, DecisionSummariser, DocumentExtractor, DocumentRef, DocumentRepository, EnginePorts, IdCheckProvider, ReportDrafter, SearchProvider, ThirdPartyChaser } from './ports';
+import type { ClientComms, DecisionSummariser, DocumentExtractor, DocumentRef, DocumentRepository, EnginePorts, IdCheckProvider, ReportDrafter, SearchProvider, ThirdPartyChaser, ProofOfFundsForms } from './ports';
 
 export class MemoryDocumentRepository implements DocumentRepository {
   private docs = new Map<string, DocumentRef>();
@@ -157,6 +157,17 @@ export class MockClientComms implements ClientComms {
   }
 }
 
+/** In-memory proof-of-funds form issuer: sequential ids, a fake link. */
+export class MockProofOfFundsForms implements ProofOfFundsForms {
+  readonly name = 'mock-pof-forms';
+  issued: Array<{ requestId: string; matterId: string; followUpOf: string | null; noteToClient: string | null }> = [];
+  async create(input: { tenantId: string; matterId: string; requestedBy: string; followUpOf?: string | null; noteToClient?: string | null }) {
+    const requestId = `pof-${this.issued.length + 1}`;
+    this.issued.push({ requestId, matterId: input.matterId, followUpOf: input.followUpOf ?? null, noteToClient: input.noteToClient ?? null });
+    return { requestId, formUrl: `https://mock.local/pof/${requestId}` };
+  }
+}
+
 export class MockChaser implements ThirdPartyChaser {
   readonly name = 'mock-chaser (stub for template chase emails #5)';
   chases: Array<{ matterId: string; recipientRole: string; template: string }> = [];
@@ -172,6 +183,7 @@ export interface MockPorts extends EnginePorts {
   idCheckProvider: MockIdCheckProvider;
   clientComms: MockClientComms;
   chaser: MockChaser;
+  pofForms: MockProofOfFundsForms;
   /** Test helper: move the injected clock. */
   setNow(d: Date): void;
 }
@@ -190,6 +202,7 @@ export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
     idCheckProvider: new MockIdCheckProvider(),
     clientComms: new MockClientComms(),
     chaser: new MockChaser(),
+    pofForms: new MockProofOfFundsForms(),
     now: () => now,
     newId: () => `evt-${String(++n).padStart(4, '0')}`,
     log: (msg, detail) => logs.push([msg, detail]),

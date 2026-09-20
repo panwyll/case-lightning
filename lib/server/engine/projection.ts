@@ -98,6 +98,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
 
   switch (e.type) {
     case 'matter_created': {
+      if ((e.payload as Payloads['matter_created']).transactionType === 'leasehold_purchase') s.managementPack.status = 'not_started';
       const p = e.payload as Payloads['matter_created'];
       s.enrolled = true;
       s.transactionType = p.transactionType;
@@ -219,6 +220,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     // ── Enquiries ──
     case 'enquiry_raised': {
       const p = e.payload as Payloads['enquiry_raised'];
+      const fromIssue = p.origin?.issueId ? s.issues[p.origin.issueId] : null;
+      if (fromIssue) {
+        fromIssue.enquiryIds.push(p.enquiryId);
+        fromIssue.updatedAt = e.createdAt;
+        fromIssue.history.push({ at: e.createdAt, by: e.actor, what: `enquiry ${p.enquiryId} raised: ${p.subject}` });
+      }
       s.enquiries[p.enquiryId] = {
         enquiryId: p.enquiryId,
         subject: p.subject,
@@ -566,7 +573,11 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
         resolvedAt: null,
         resolvedBy: null,
         origin: p.origin ?? null,
-        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, holds ${p.gate === 'none' ? 'nothing' : p.gate})` }],
+        party: p.party ?? null,
+        costPennies: null,
+        paidBy: null,
+        enquiryIds: [],
+        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''})` }],
       };
       break;
     }
@@ -576,6 +587,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       if (!i) break;
       i.status = p.status;
       if (p.gate) i.gate = p.gate;
+      if (p.party !== undefined) i.party = p.party;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.note ? `: ${p.note}` : ''}` });
       break;
@@ -588,8 +600,10 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       i.resolution = p.resolution;
       i.resolvedAt = e.createdAt;
       i.resolvedBy = e.actor;
+      i.costPennies = p.costPennies ?? null;
+      i.paidBy = p.paidBy ?? null;
       i.updatedAt = e.createdAt;
-      i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.note ? ` — ${p.note}` : ''}` });
+      i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.costPennies != null ? ` (£${(p.costPennies / 100).toLocaleString('en-GB')}${p.paidBy ? `, paid by ${p.paidBy}` : ''})` : ''}${p.note ? ` — ${p.note}` : ''}` });
       break;
     }
     case 'issue_withdrawn': {
@@ -624,6 +638,48 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'signed_contract_held': {
       s.readiness.signedContractHeldAt = e.createdAt;
+      break;
+    }
+
+    // ── proof of funds ──
+    case 'proof_of_funds_requested': {
+      const p = e.payload as Payloads['proof_of_funds_requested'];
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'requested', requestId: p.requestId, requestedAt: e.createdAt, formUrl: p.formUrl ?? null, rounds: s.proofOfFunds.rounds + 1 };
+      openWait(s, 'proof_of_funds', p.requestId, e);
+      break;
+    }
+    case 'proof_of_funds_submitted': {
+      const p = e.payload as Payloads['proof_of_funds_submitted'];
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'submitted', requestId: p.requestId, submittedAt: e.createdAt, documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id, resolution: null };
+      closeWait(s, 'proof_of_funds', p.requestId, e);
+      break;
+    }
+    case 'proof_of_funds_reviewed': {
+      const p = e.payload as Payloads['proof_of_funds_reviewed'];
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'reviewed', resolution: p.option };
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+    // ── leasehold ──
+    case 'management_pack_requested': {
+      s.managementPack = { ...s.managementPack, status: 'requested', requestedAt: e.createdAt };
+      openWait(s, 'management_pack', '', e);
+      break;
+    }
+    case 'management_pack_received': {
+      const p = e.payload as Payloads['management_pack_received'];
+      s.managementPack = { ...s.managementPack, status: 'flagged', documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id };
+      closeWait(s, 'management_pack', null, e);
+      break;
+    }
+    case 'management_pack_reviewed': {
+      const p = e.payload as Payloads['management_pack_reviewed'];
+      s.managementPack.status = 'reviewed';
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+    case 'notice_of_assignment_served': {
+      s.postCompletion.noticeOfAssignmentAt = e.createdAt;
       break;
     }
     case 'shadow_mode_changed': {
@@ -666,6 +722,7 @@ function subjectOf(e: EngineEvent): string | null {
   if (typeof p.searchType === 'string') return p.searchType;
   if (typeof p.enquiryId === 'string') return p.enquiryId;
   if (typeof p.draftId === 'string') return p.draftId;
+  if (e.type === 'proof_of_funds_submitted') return (p as Payloads['proof_of_funds_submitted']).requestId;
   if (typeof p.bankDetailsId === 'string') return p.bankDetailsId;
   if (e.type === 'hmlr_requisition_received') return (p as Payloads['hmlr_requisition_received']).reference ?? 'requisition';
   if (e.type === 'notice_to_complete_served') return `notice:${(p as Payloads['notice_to_complete_served']).servedBy}`;

@@ -177,7 +177,7 @@ test('report on title: never sent without a human approval event; rejection allo
   assert.equal((sent.events[0] as EngineEvent<'report_on_title_sent'>).payload.approvedEventId, s.reportOnTitle.approvedEventId);
 });
 
-test('leasehold title halts automation for manual handling', () => {
+test('a leasehold title on a matter enrolled as freehold halts automation (tenure mismatch)', () => {
   const { state } = runPure([
     { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
@@ -185,8 +185,8 @@ test('leasehold title halts automation for manual handling', () => {
     { type: 'title_extracted', actor: 'system', documentId: 'd-title', facts: { ...titleClear(), tenure: 'leasehold' }, extractor: 'fixture' },
   ]);
   assert.equal(state.manualHandling.required, true);
-  assert.equal(state.manualHandling.reason, 'leasehold_unsupported');
-  assert.deepEqual(stageBlockers(state), ['manual handling: leasehold_unsupported']);
+  assert.equal(state.manualHandling.reason, 'tenure_mismatch');
+  assert.deepEqual(stageBlockers(state), ['manual handling: tenure_mismatch']);
 });
 
 test('exchange and completion ordering invariants', () => {

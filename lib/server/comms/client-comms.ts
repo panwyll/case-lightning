@@ -75,6 +75,8 @@ export class ProductionClientComms implements ClientComms {
       searchName: SEARCH_NAMES[searchType] ?? 'search',
       searchList: Array.isArray(payload.requiredSearches) ? (payload.requiredSearches as string[]).map((s) => SEARCH_NAMES[s] ?? s).join(', ') : 'local authority, drainage & water and environmental',
       completionDate: typeof payload.completionDate === 'string' ? payload.completionDate : info.completionDate ?? 'the agreed date',
+      formUrl: typeof context.formUrl === 'string' ? context.formUrl : '',
+      noteToClient: typeof context.noteToClient === 'string' ? context.noteToClient : '',
     };
   }
 

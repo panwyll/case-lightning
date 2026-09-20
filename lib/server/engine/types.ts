@@ -18,6 +18,7 @@
  */
 
 import type { IssueGate, IssueKind, IssueResolution, IssueStatus } from './issues';
+import type { ProofOfFundsFacts } from './proof-of-funds';
 
 // ───────────────────────────── Stages (2.3) ─────────────────────────────
 
@@ -51,7 +52,7 @@ export const LEGACY_STAGE: Record<Stage, string> = {
 /** Addendum: is the other side an external firm or another matter in this firm (walled off)? Stamped on correspondence events. */
 export type CounterpartyType = 'internal' | 'external';
 
-export const TRANSACTION_TYPES = ['freehold_purchase'] as const;
+export const TRANSACTION_TYPES = ['freehold_purchase', 'leasehold_purchase'] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
 // ───────────────────────────── Event types (2.5) ─────────────────────────────
@@ -153,6 +154,15 @@ export const EVENT_TYPES = [
   'price_changed',
   'contract_approved',
   'signed_contract_held',
+  // proof of funds (docs/proof-of-funds.md): form sent → client submitted → conveyancer signed off
+  'proof_of_funds_requested',
+  'proof_of_funds_submitted',
+  'proof_of_funds_reviewed',
+  // leasehold: the management pack (LPE1) sub-flow and the post-completion notice
+  'management_pack_requested',
+  'management_pack_received',
+  'management_pack_reviewed',
+  'notice_of_assignment_served',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -228,12 +238,38 @@ export interface TitleEntry {
   locator?: SourceLocator;
 }
 
+/** Extracted from the lease / register for a leasehold title (component #2). */
+export interface LeaseFacts {
+  /** Years left on the term at the date of extraction. */
+  unexpiredYears?: number | null;
+  groundRentPenniesPa?: number | null;
+  /** The review clause as written (the rule layer looks for doubling / RPI wording). */
+  groundRentReview?: string | null;
+  leaseDate?: string | null;
+  landlord?: string | null;
+  locator?: SourceLocator;
+}
+
 export interface TitleFacts {
   titleNumber: string;
   tenure: 'freehold' | 'leasehold' | 'unknown';
   restrictions: TitleEntry[];
   charges: TitleEntry[];
   covenants: TitleEntry[];
+  /** Present on leasehold titles once extracted. */
+  lease?: LeaseFacts | null;
+  confidence: number;
+}
+
+/** The LPE1 / management pack, as far as the pipeline reads it. Everything is checked by a person. */
+export interface ManagementPackFacts {
+  serviceChargePenniesPa?: number | null;
+  groundRentPenniesPa?: number | null;
+  arrearsPennies?: number | null;
+  majorWorksPlanned?: boolean | null;
+  buildingsInsuranceInPlace?: boolean | null;
+  reserveFundPennies?: number | null;
+  flags: Flag[];
   confidence: number;
 }
 
@@ -253,7 +289,7 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify', 'indemnity'] as const;
@@ -310,7 +346,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack'] as const;
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
 export interface WaitState {
@@ -430,7 +466,7 @@ export interface Payloads {
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
   search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string } | null; counterpartyType?: CounterpartyType | null };
+  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string } | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
@@ -522,11 +558,11 @@ export interface Payloads {
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
   // ── issues (docs/engine-issues.md) ──
   /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
-  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null };
-  /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion). */
-  issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null };
-  /** Resolved with one of the kind's realistic outcomes. Side-effects (price change, lender approval) are separate events that follow it. */
-  issue_resolved: { issueId: string; resolution: IssueResolution; note: string | null };
+  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null };
+  /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion), the party it concerns. */
+  issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null };
+  /** Resolved with one of the kind's realistic outcomes and, where money changed hands, what it cost and who paid. Side-effects (price change, lender approval) are separate events that follow it. */
+  issue_resolved: { issueId: string; resolution: IssueResolution; note: string | null; costPennies?: number | null; paidBy?: IssuePaidBy | null };
   /** Raised in error / overtaken / the client dropped it. */
   issue_withdrawn: { issueId: string; reason: string };
   /** The issue killed the transaction (the matter is abandoned in the same command). */
@@ -537,7 +573,23 @@ export interface Payloads {
   contract_approved: { note?: string | null };
   /** The client's signed contract is held on file (readiness milestone; advisory, not a gate). */
   signed_contract_held: { note?: string | null };
+  // ── proof of funds (docs/proof-of-funds.md) ──
+  /** The form link went to the client (recorded after the send). A follow-up carries the request it re-opens. */
+  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null };
+  /** The client submitted the form: typed facts, the rule flags, and ALWAYS a decision for the conveyancer citing the declaration document. */
+  proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; decision: DecisionSpec };
+  proof_of_funds_reviewed: { requestId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
+  // ── leasehold ──
+  management_pack_requested: { from: string; reference?: string | null };
+  /** The LPE1 / pack arrived: always a decision (every figure in it is a client-advice point). */
+  management_pack_received: { facts: ManagementPackFacts | null; decision: DecisionSpec };
+  management_pack_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
+  /** Notice of assignment (and of charge) served on the landlord / managing agent after completion. */
+  notice_of_assignment_served: { servedOn: string; reference?: string | null };
 }
+
+export const ISSUE_PAID_BY = ['buyer', 'seller', 'shared', 'lender', 'other'] as const;
+export type IssuePaidBy = (typeof ISSUE_PAID_BY)[number];
 
 /** Event types whose payload carries a DecisionSpec (i.e. they create a DecisionEvent). */
 export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
@@ -552,12 +604,14 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'auto_clear_review_raised',
   'notice_to_complete_served',
   'hmlr_requisition_received',
+  'proof_of_funds_submitted',
+  'management_pack_received',
 ];
 
 // ───────────────────────────── Shadow mode / trust levels (addendum 3 §2) ─────────────────────────────
 
 /** The engine's sub-flows, each promoted out of shadow independently. */
-export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
+export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase', 'proof_of_funds', 'management_pack'] as const;
 export type SubFlow = (typeof SUB_FLOWS)[number];
 
 /**
@@ -570,12 +624,12 @@ export type SubFlow = (typeof SUB_FLOWS)[number];
 export const SUBFLOW_STATUSES = ['shadow', 'assist', 'autonomous'] as const;
 export type SubflowStatus = (typeof SUBFLOW_STATUSES)[number];
 export type SubflowConfig = Record<SubFlow, SubflowStatus>;
-export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist' };
+export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist', proof_of_funds: 'assist', management_pack: 'assist' };
 
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
-export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null };
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack' };
 
-export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror';
+export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
 
 // ───────────────────────────── Events ─────────────────────────────
 
@@ -656,6 +710,13 @@ export interface IssueState {
   resolvedBy: Actor | null;
   /** The issue this one was raised from (e.g. lender_approval raised off a price_reduced resolution). */
   origin: { issueId: string; resolution: IssueResolution } | null;
+  /** Who it concerns when a matter has more than one buyer / party (free text; null = the matter as a whole). */
+  party: string | null;
+  /** What the fix cost and who paid, once resolved (an indemnity premium, a retention, a reduction). */
+  costPennies: number | null;
+  paidBy: IssuePaidBy | null;
+  /** Enquiries raised from this issue. */
+  enquiryIds: string[];
   history: Array<{ at: string; by: Actor; what: string }>;
 }
 
@@ -713,7 +774,29 @@ export interface MatterState {
     fundsReceivedAt: string | null;
     confirmedAt: string | null;
   };
-  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; requisitions: Array<{ eventId: string; receivedAt: string; respondedAt: string | null; deadline: string | null }> };
+  postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; requisitions: Array<{ eventId: string; receivedAt: string; respondedAt: string | null; deadline: string | null }>; noticeOfAssignmentAt: string | null };
+  /** Proof of funds (docs/proof-of-funds.md). */
+  proofOfFunds: {
+    status: 'not_started' | 'requested' | 'submitted' | 'reviewed';
+    requestId: string | null;
+    requestedAt: string | null;
+    submittedAt: string | null;
+    documentId: string | null;
+    facts: ProofOfFundsFacts | null;
+    decisionEventId: string | null;
+    resolution: DecisionOption | null;
+    formUrl: string | null;
+    /** How many times the form has gone out (1 = first request; more = "request further"). */
+    rounds: number;
+  };
+  /** Leasehold: the LPE1 / management pack. */
+  managementPack: {
+    status: 'not_required' | 'not_started' | 'requested' | ReviewStatus;
+    requestedAt: string | null;
+    documentId: string | null;
+    facts: ManagementPackFacts | null;
+    decisionEventId: string | null;
+  };
   /** Set once the transaction is over without completing. Nothing else moves after this. */
   abandoned: { at: string; reason: AbandonReason; detail: string | null; stage: Stage } | null;
   /** A served notice to complete (either side): the deadline the timers watch. */
@@ -773,7 +856,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     deposit: { received: false, at: null },
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, confirmedAt: null },
-    postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [] },
+    postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
+    proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, rounds: 0 },
+    managementPack: { status: 'not_required', requestedAt: null, documentId: null, facts: null, decisionEventId: null },
     abandoned: null,
     noticeToComplete: null,
     handler: null,
@@ -797,8 +882,11 @@ export function initialState(tenantId: string, matterId: string): MatterState {
  * readers never meet an undefined top-level field.
  */
 export function withStateDefaults(s: MatterState): MatterState {
-  return { ...initialState(s.tenantId, s.matterId), ...s };
+  const init = initialState(s.tenantId, s.matterId);
+  return { ...init, ...s, postCompletion: { ...init.postCompletion, ...(s.postCompletion ?? {}) } };
 }
+
+export const isLeasehold = (s: MatterState): boolean => s.transactionType === 'leasehold_purchase';
 
 /** Nothing more will happen on this matter: registered, or abandoned. */
 export const isFinished = (s: MatterState): boolean => !!s.postCompletion.ap1ConfirmedAt || !!s.abandoned;

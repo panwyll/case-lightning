@@ -271,16 +271,29 @@ because the leasehold flow is the obvious next transaction type.
 9. **Readiness and price.** Milestones never gate; a renegotiated price on a lender-funded
    matter raises `lender_approval`.
 
+## Second edition: what was added
+
+- **Party**: an issue can say who it concerns (`party`, free text) for matters with more
+  than one buyer or a named third party.
+- **Cost of the fix**: `resolve_issue` takes `costPennies` and `paidBy` (buyer / seller /
+  shared / lender / other), shown in the history and the closed list.
+- **Enquiry from an issue**: `raise_enquiry` accepts `origin.issueId`; the enquiry id is
+  derived (`ISS-3-E1`), the issue tracks its enquiries and its clock restarts.
+- **Leasehold as a transaction type** (`leasehold_purchase`): the management pack (LPE1)
+  sub-flow gates pre-contract (requested → chased from day 10 → received → always a
+  decision); lease facts on the title (unexpired term, ground rent, review clause) flag
+  short leases and doubling rents; a title whose tenure does not match the enrolment halts
+  automation; notice of assignment is recorded after completion.
+- **Proof of funds** (docs/proof-of-funds.md): sign-off resolves `source_of_funds` issues
+  and raises `lender_approval` for a gift.
+
 ## What is still not modelled
 
-- **Per-party issues** (two buyers, one with an AML problem): an issue is per matter; the
-  title says who.
-- **Issue → enquiry**: raising an issue does not raise the enquiry that usually follows
-  it; a handler raises the enquiry (or resolves the decision with "request further") as
-  today. A one-click "raise enquiry from this issue" is a UI job.
-- **Leasehold as a transaction type**: the kinds are here; the flow is not.
-- **Cost of the fix** (who pays for the indemnity, the retention amount) is in the note,
-  not a field.
+- **Issue → enquiry reply**: the enquiry's reply resolves the enquiry, not the issue; the
+  handler resolves the issue with what the reply established.
+- **Leasehold extras**: the landlord's licence to assign and the deed of covenant are
+  `third_party_consent` issues, not sub-flows; lease extension is an issue outcome, not a
+  flow.
 - **LEAP**: issues are engine state; they are written back to LEAP as file notes through
   the same `ConclusionSink` as everything else, and a LEAP task could raise one once the
   trigger is mapped (`triggers.ts`).
