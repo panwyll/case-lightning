@@ -112,6 +112,8 @@ export interface IssueRow {
   costPennies: number | null;
   paidBy: string | null;
   enquiryIds: string[];
+  severity?: 'info' | 'warning' | 'critical';
+  causedBy?: string | null;
   history: Array<{ at: string; by: string; what: string }>;
 }
 
@@ -148,6 +150,10 @@ export interface EngineState {
   purchasePricePennies: number | null;
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
   requireProofOfFunds?: boolean;
+  requireExchangeAuthority?: boolean;
+  survey?: { status: string; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null }> };
+  clientDecisions?: Partial<Record<string, { decision: string; at: string; by: string; note: string | null }>>;
+  closedAt?: string | null;
   proofOfFunds?: { status: 'not_started' | 'requested' | 'submitted' | 'reviewed'; requestId: string | null; requestedAt: string | null; submittedAt: string | null; documentId: string | null; decisionEventId: string | null; resolution: string | null; formUrl: string | null; rounds: number; facts: { totalDeclaredPennies: number; requiredPennies: number | null; shortfallPennies: number | null; giftedPennies: number; sources: Array<{ kind: string; amountPennies: number }> } | null; risk?: 'standard' | 'enhanced' | null; flags?: Array<{ code: string; severity: string; description: string }>; statements?: Array<{ documentId: string; fileName: string | null; holder: string | null; from: string | null; to: string | null; transactions: number; credits: number; readable: boolean }>; queries?: Record<string, PofQueryRow>; approvedAt?: string | null };
   managementPack?: { status: string; requestedAt: string | null; documentId: string | null; decisionEventId: string | null };
   abandoned?: { at: string; reason: string; detail: string | null; stage: string } | null;

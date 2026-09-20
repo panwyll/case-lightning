@@ -22,7 +22,7 @@
  */
 import crypto from 'node:crypto';
 import { z } from 'zod/v4';
-import type { EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts } from './types';
+import type { EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts } from './types';
 import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
@@ -48,7 +48,7 @@ const flagSchema = z.object({
 });
 
 export const ClassificationSchema = z.object({
-  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'other']),
+  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'other']),
   searchType: z.enum([...SEARCH_TYPES, 'NONE']).describe('Only when role = search.'),
   enquiryReferences: z.array(z.string()).describe('Enquiry numbers/identifiers the document replies to (e.g. "E1", "3", "Additional enquiry 2"), when role = enquiry_reply.'),
   titleNumber: z.string().describe('Land Registry title number if visible, else empty string.'),
@@ -137,6 +137,15 @@ export const StatementExtractionSchema = z.object({
   closingBalancePennies: z.number().int().nullable(),
   transactions: z.array(z.object({ date: z.string().describe('ISO date'), description: z.string().describe('The line as printed, including any reference'), amountPennies: z.number().int().describe('Signed pennies: credits positive, debits negative'), balancePennies: z.number().int().nullable(), counterparty: z.string().nullable().describe('The payer / payee name if the line shows one') })).describe('EVERY transaction in the period, in order. Do not summarise or skip lines.'),
   salaryCredits: z.array(z.object({ date: z.string(), amountPennies: z.number().int(), payer: z.string() })).describe('Credits that are clearly salary / wages / regular income (the employer as printed).'),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
+export const SurveyExtractionSchema = z.object({
+  surveyType: z.enum(['level1', 'level2', 'level3', 'valuation', 'specialist']),
+  surveyor: z.string().nullable(),
+  summary: z.string().nullable().describe('The report\'s own overall summary in one or two sentences, if it gives one.'),
+  recommendations: z.array(z.object({ code: z.string().describe('Short stable code, e.g. DAMP_REAR, ROOF_COVERING, ELECTRICS'), text: z.string(), furtherInvestigation: z.boolean(), specialist: z.string().nullable(), severity: z.enum(['info', 'low', 'medium', 'high']), page: z.number().int().nullable() })),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
 });
@@ -294,7 +303,8 @@ const SCAN_NOTE =
   'report what you can, set scanQuality accordingly and LOWER the confidence of anything you had to infer. Never fill a gap with a plausible value.';
 
 const PROMPTS = {
-  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, or other. ${SCAN_NOTE}`,
+  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), or other. ${SCAN_NOTE}`,
+  survey: `Read this survey, valuation or specialist report for a house buyer. Extract every recommendation the author makes, verbatim where possible, and for each say whether it recommends a FURTHER specialist investigation or report before purchase (as opposed to routine maintenance or a note). Name the specialist recommended if the report does. Grade severity as the report does (high for structural / safety / "urgent", medium for "should be investigated", low for advisory). Do not judge whether the buyer should proceed. ${SCAN_NOTE}`,
   search: `Extract the findings of this property search as typed facts. ${TAXONOMY} Include informational entries so the handler can see what was checked. ${SCAN_NOTE}`,
   enquiry: `Extract the seller's solicitor's replies to pre-contract enquiries. For each reply, decide whether it fully answers the question ("answered"), only partly ("partial"), declines ("refused" — e.g. "the buyer must rely on their own survey/searches" where a factual answer was asked), or is unclear. Record any issue the reply reveals as a flag. ${TAXONOMY} ${SCAN_NOTE}`,
   mortgage: `Extract the terms and conditions of this mortgage offer. Mark a condition as standard ONLY if it is boilerplate that appears in every offer from this lender (general conditions); anything specific to this borrower or property — retentions, repairs, occupier consents, evidence of deposit source, valuation conditions, lease requirements — is NOT standard. ${SCAN_NOTE}`,
@@ -409,6 +419,16 @@ export class ClaudeExtractor implements DocumentExtractor {
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
     await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash });
+    return facts;
+  }
+
+  async extractSurvey(doc: DocumentRef): Promise<SurveyFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<SurveyFacts>(doc, 'survey', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'survey', SurveyExtractionSchema, PROMPTS.survey, 'Extract the recommendations from this report.', 'DOC_EXTRACT');
+    const facts: SurveyFacts = { surveyType: out.surveyType, surveyor: out.surveyor, summary: out.summary, recommendations: out.recommendations.map((r) => ({ code: r.code, text: r.text, furtherInvestigation: r.furtherInvestigation, specialist: r.specialist, severity: r.severity, locator: r.page ? { page: r.page } : undefined })), confidence: out.scanQuality === 'unreadable' ? 0 : out.scanQuality === 'poor' ? Math.min(out.confidence, 0.6) : out.confidence };
+    await this.persist(doc, 'survey', facts, facts.confidence, { model, promptHash, contentHash });
     return facts;
   }
 

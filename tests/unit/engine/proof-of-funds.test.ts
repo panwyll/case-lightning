@@ -155,6 +155,11 @@ test('flow: fire the form → the client wait opens and is chased → submission
   assert.ok(!stageBlockers(s).some((b) => b.startsWith('proof of funds')));
   await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: lender.id, resolution: 'lender_confirmed' });
   s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.exchange.conditionsMet, false, 'firm policy: the client has not authorised exchange');
+  assert.ok(stageBlockers(s).includes('client has not yet authorised exchange'));
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: 'system', subject: 'exchange_authority', decision: 'authorised' }), /never inferred/);
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'exchange_authority', decision: 'authorised', note: 'Instructions by email 20 Sept' });
+  s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.exchange.conditionsMet, true);
   await assert.rejects(h.svc.requestProofOfFunds(TENANT, MATTER, USER), /already approved/);
 });
@@ -431,6 +436,7 @@ test('the query loop end to end: submission drafts queries → sign-off refused 
   assert.ok(s.proofOfFunds.approvedAt);
   assert.equal(s.proofOfFunds.approvedBy, USER);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'exchange_authority', decision: 'authorised' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(openIssues(s).length, 0, 'deposit after sign-off raises nothing');
   assert.equal(s.exchange.conditionsMet, true);

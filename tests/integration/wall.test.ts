@@ -57,7 +57,7 @@ test('ethical wall + handler-conflict rules hold at the database layer', { skip:
   ports.linked = { name: 'test', enquiryRaised: async (i) => { delivered.push(i.enquiryId); } };
   const svc = new EngineService(new PgEventStore(), ports);
   await runAsSystem(async () => {
-    await svc.run(t, MB, { type: 'enrol', actor: B, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
+    await svc.run(t, MB, { type: 'enrol', actor: B, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
     await query(`insert into document (tenant_id, matter_id, source_type, storage_path, file_name) values ($1,$2,'UPLOAD','x','seller-instructions.pdf')`, [t, MB]);
     await query(`insert into matter_summary (matter_id, tenant_id, facts) values ($1,$2,'{"secret":"seller will accept less"}'::jsonb)`, [MB, t]);
   });
@@ -90,7 +90,7 @@ test('ethical wall + handler-conflict rules hold at the database layer', { skip:
 
   // Requirements 3 + 4 through the real store: the enquiry is stamped internal, delivered via
   // the port, and leaves no engine state on Bob's matter.
-  await svc.run(t, MA, { type: 'enrol', actor: A, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
+  await svc.run(t, MA, { type: 'enrol', actor: A, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
   await svc.requestIdCheck(t, MA, A);
   const idDoc = (await queryOne<{ id: string }>(`insert into document (tenant_id, matter_id, source_type, storage_path, file_name, extracted_facts, extraction_confidence) values ($1,$2,'UPLOAD','x','id.pdf',$3::jsonb,0.99) returning id`, [t, MA, JSON.stringify({ provider: 'p', outcome: 'clear', flags: [], confidence: 0.99 })]))!.id;
   await svc.idCheckResultReceived(t, MA, idDoc);

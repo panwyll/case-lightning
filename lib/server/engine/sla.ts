@@ -12,7 +12,8 @@
  */
 import type { MatterState, WaitKey, WaitState } from './types';
 import { openIssues, openWaits } from './types';
-import { ISSUE_KIND_SPEC } from './issues';
+import { ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
+import { openIssues as openIssuesOf } from './types';
 import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR } from './working-days';
 
 export interface SlaRule {
@@ -156,12 +157,91 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   // Stale issues: the forum pattern is an issue that sits for weeks because both sides are waiting
   // for the other. Raised once per period of silence (subject carries the last-touched date).
   for (const i of openIssues(state)) {
+    // The timer's own informational issues (holding nothing) escalate through timedIssueActions, not here.
+    if (i.gate === 'none' && i.raisedBy === 'system') continue;
     const age = workingDaysBetween(new Date(i.updatedAt), now, cal);
     if (age < DEADLINE_LEAD.stale_issue) continue;
     const subject = `issue:${i.id}:stale:${i.updatedAt.slice(0, 10)}`;
     if (raised.has(subject)) continue;
     const label = ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind;
     out.push({ kind: 'stale_issue', dueDate: i.updatedAt.slice(0, 10), workingDaysLeft: -age, summary: `Issue "${i.title}" (${label}, holds ${i.gate === 'none' ? 'nothing' : i.gate}) has had no movement for ${age} working days since ${i.updatedAt.slice(0, 10)}. Chase whoever owes the next step, record progress on the issue, or decide whether it is fatal.`, subject });
+  }
+  return out;
+}
+
+// ───────────────────────────── time as a source of events (docs/case-model.md §6) ─────────────────────────────
+
+export type TimedIssueAction =
+  | { kind: 'raise'; issueKind: IssueKind; key: string; title: string; detail: string; severity: IssueSeverity }
+  | { kind: 'escalate'; issueId: string; severity: IssueSeverity; reason: string }
+  | { kind: 'offer_expired'; expiryDate: string }
+  | { kind: 'resolve'; issueId: string; resolution: 'received' | 'other'; note: string };
+
+/**
+ * State changes that happen because time passed, not because something arrived: the
+ * mortgage offer moves VALID → EXPIRING (30 days) → CRITICAL (14 days) → EXPIRED; a search or
+ * an enquiry that has aged past its escalation point becomes an issue in its own right; an
+ * issue nobody touches for its kind's escalation period goes up a severity. Deterministic in
+ * (state, now); the service turns each into a command. Idempotent: a `key` in the title marks
+ * an issue the timer raised, and an existing one (any status) means it was raised.
+ */
+export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCalendar = EW_CALENDAR): TimedIssueAction[] {
+  if (!state.enrolled || state.abandoned || state.closedAt || state.manualHandling.required) return [];
+  const out: TimedIssueAction[] = [];
+  const issues = Object.values(state.issues);
+  const has = (key: string) => issues.some((i) => i.title.includes(`[${key}]`));
+  const open = openIssuesOf(state);
+  const today = now.toISOString().slice(0, 10);
+
+  // Mortgage offer expiry: warning → critical → expired.
+  const expiry = state.mortgage.facts?.expiryDate;
+  if (state.hasLender && expiry && !state.exchange.exchangedAt && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) {
+    const daysLeft = Math.round((Date.parse(expiry) - Date.parse(today)) / 86_400_000);
+    const key = `offer-expiry:${expiry}`;
+    if (daysLeft < 0) {
+      out.push({ kind: 'offer_expired', expiryDate: expiry });
+      const expiring = open.find((i) => i.title.includes(`[${key}]`));
+      if (expiring) out.push({ kind: 'resolve', issueId: expiring.id, resolution: 'other', note: `The offer expired on ${expiry} (timer); superseded by the expired-offer issue` });
+      if (!has(`offer-expired:${expiry}`)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expired', key: `offer-expired:${expiry}`, title: `Mortgage offer expired on ${expiry} [offer-expired:${expiry}]`, detail: 'The offer lapsed before exchange. A fresh application, valuation and offer are needed; the chain must be told the timetable has moved.', severity: 'critical' });
+    } else if (daysLeft <= MORTGAGE_EXPIRY_WARNING_DAYS) {
+      const existing = open.find((i) => i.title.includes(`[${key}]`));
+      if (!existing && !has(key)) out.push({ kind: 'raise', issueKind: 'mortgage_offer_expiring', key, title: `Mortgage offer expires in ${daysLeft} days (${expiry}) [${key}]`, detail: 'Contact the broker / lender: what does an extension need and how long does it take? Plan exchange and completion inside the offer, or start a re-issue now.', severity: daysLeft <= MORTGAGE_EXPIRY_CRITICAL_DAYS ? 'critical' : 'warning' });
+      else if (existing && daysLeft <= MORTGAGE_EXPIRY_CRITICAL_DAYS && existing.severity !== 'critical') out.push({ kind: 'escalate', issueId: existing.id, severity: 'critical', reason: `${daysLeft} days to the offer expiry on ${expiry}` });
+    }
+  }
+  // Issues the timer raised close themselves when the thing they were about happened.
+  for (const i of open) {
+    const key = i.title.match(/\[([a-z-]+):([^\]]*)\]/);
+    if (!key) continue;
+    if (key[1] === 'search-delayed' || key[1] === 'enquiry-unanswered') {
+      const [subject, openedDay] = key[2].split(':');
+      const stillOpen = openWaits(state).some((w) => (w.key === (key[1] === 'search-delayed' ? 'search' : 'enquiry')) && w.subject === subject && w.openedAt.slice(0, 10) === openedDay);
+      if (!stillOpen) out.push({ kind: 'resolve', issueId: i.id, resolution: 'received', note: `${key[1] === 'search-delayed' ? 'Search' : 'Reply'} received (timer)` });
+    }
+    if (key[1] === 'offer-expiry' && (state.exchange.exchangedAt || !expiry || expiry !== key[2] || !(state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed'))) {
+      out.push({ kind: 'resolve', issueId: i.id, resolution: 'other', note: state.exchange.exchangedAt ? 'Contracts exchanged inside the offer (timer)' : 'A different offer is now on file (timer)' });
+    }
+  }
+  // Waits that have aged past their escalation point become issues (the chase / escalation already happened; the issue is the plan's record).
+  for (const w of openWaits(state)) {
+    const rule = DEFAULT_SLA[w.key];
+    if (!rule) continue;
+    const age = workingDaysBetween(new Date(w.openedAt), now, cal);
+    if (age < rule.escalateAfter) continue;
+    if (w.key === 'search') {
+      const key = `search-delayed:${w.subject}:${w.openedAt.slice(0, 10)}`;
+      if (!has(key)) out.push({ kind: 'raise', issueKind: 'search_delayed', key, title: `${w.subject} search outstanding for ${age} working days [${key}]`, detail: `Ordered ${w.openedAt.slice(0, 10)}; chased ${w.chasesSentAt.length}×. Consider search indemnity if the lender allows, and re-plan the target dates.`, severity: 'info' });
+    } else if (w.key === 'enquiry') {
+      const key = `enquiry-unanswered:${w.subject}:${w.openedAt.slice(0, 10)}`;
+      if (!has(key)) out.push({ kind: 'raise', issueKind: 'enquiry_unanswered', key, title: `Enquiry ${w.subject} unanswered for ${age} working days [${key}]`, detail: `Raised ${w.openedAt.slice(0, 10)}; chased ${w.chasesSentAt.length}×. Escalate via the agent; re-plan the target dates.`, severity: 'info' });
+    }
+  }
+  // Issues that sit: severity goes up one step after the kind's escalation period without movement (once per step).
+  for (const i of open) {
+    const after = ISSUE_KIND_SPEC[i.kind]?.escalateAfterWorkingDays;
+    if (!after || i.severity === 'critical') continue;
+    const age = workingDaysBetween(new Date(i.updatedAt), now, cal);
+    if (age >= after) out.push({ kind: 'escalate', issueId: i.id, severity: i.severity === 'info' ? 'warning' : 'critical', reason: `no movement for ${age} working days (escalates after ${after})` });
   }
   return out;
 }

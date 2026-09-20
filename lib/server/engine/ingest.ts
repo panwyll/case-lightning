@@ -30,6 +30,8 @@ export type IngestAction =
   | { kind: 'title' }
   | { kind: 'id_check' }
   | { kind: 'management_pack' }
+  | { kind: 'survey' }
+  | { kind: 'specialist_report'; forIssueId: string | null }
   | { kind: 'skip'; reason: string };
 
 /** Pure: decide what to do with a classified document given the matter's projected state. */
@@ -64,6 +66,19 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
     case 'id_check':
       if (state.idCheck.status !== 'requested') return { kind: 'skip', reason: `ID check is ${state.idCheck.status}, not awaiting a result` };
       return { kind: 'id_check' };
+    case 'survey':
+      if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts exchanged — a survey now is manual handling' };
+      return { kind: 'survey' };
+    case 'specialist_report': {
+      if (state.survey.status === 'not_started') return { kind: 'skip', reason: 'a specialist report arrived but no survey is on file' };
+      const open = Object.values(state.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
+      // One open further-investigation issue → the report is for it; several → a person links it (the route accepts forIssueId).
+      return { kind: 'specialist_report', forIssueId: open.length === 1 ? open[0].id : null };
+    }
+    case 'management_pack':
+      if (state.transactionType !== 'leasehold_purchase') return { kind: 'skip', reason: 'management pack on a freehold matter' };
+      if (state.managementPack.status === 'flagged') return { kind: 'skip', reason: 'a management-pack decision is pending' };
+      return { kind: 'management_pack' };
     default:
       return { kind: 'skip', reason: `document classified as ${c.role}` };
   }
@@ -111,6 +126,10 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.idCheckResultReceived(tenantId, matterId, documentId);
     case 'management_pack':
       return svc.managementPackReceived(tenantId, matterId, documentId);
+    case 'survey':
+      return svc.surveyReceived(tenantId, matterId, documentId);
+    case 'specialist_report':
+      return svc.specialistReportReceived(tenantId, matterId, documentId, action.forIssueId);
     case 'skip':
       return null;
   }

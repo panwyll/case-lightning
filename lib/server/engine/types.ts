@@ -17,7 +17,7 @@
  * v1 scope: `freehold_purchase` only. Anything else is flagged for manual handling.
  */
 
-import type { IssueGate, IssueKind, IssueResolution, IssueStatus } from './issues';
+import type { IssueGate, IssueKind, IssueResolution, IssueSeverity, IssueStatus } from './issues';
 import type { PofQuery, PofRiskRating, ProofOfFundsFacts, StatementTransaction, TransactionReview } from './proof-of-funds';
 
 // ───────────────────────────── Stages (2.3) ─────────────────────────────
@@ -166,6 +166,12 @@ export const EVENT_TYPES = [
   'management_pack_received',
   'management_pack_reviewed',
   'notice_of_assignment_served',
+  // case model (docs/case-model.md): survey workstream, client decisions, closure, issue severity
+  'survey_received',
+  'specialist_report_received',
+  'client_decision_recorded',
+  'issue_severity_changed',
+  'matter_closed',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -282,6 +288,37 @@ export interface EnquiryReplyFacts {
   issues: Flag[];
   confidence: number;
 }
+
+/** A survey or specialist report as the pipeline reads it (component #2): facts, never the client's view. */
+export interface SurveyRecommendation {
+  code: string;
+  text: string;
+  /** The surveyor / specialist recommends a further specialist investigation before exchange. */
+  furtherInvestigation: boolean;
+  specialist?: string | null;
+  severity: Severity;
+  locator?: SourceLocator;
+}
+export const SURVEY_TYPES = ['level1', 'level2', 'level3', 'valuation', 'specialist'] as const;
+export type SurveyType = (typeof SURVEY_TYPES)[number];
+export interface SurveyFacts {
+  surveyType: SurveyType;
+  surveyor?: string | null;
+  summary?: string | null;
+  recommendations: SurveyRecommendation[];
+  confidence: number;
+}
+
+/** What a client, and only a client, decides (docs/case-model.md §7–§8). */
+export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'exchange_authority', 'accept_risk', 'accept_terms', 'completion_date'] as const;
+export type ClientDecisionSubject = (typeof CLIENT_DECISION_SUBJECTS)[number];
+export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> = {
+  physical_condition: ['satisfied', 'renegotiate', 'further_investigation', 'withdraw'],
+  exchange_authority: ['authorised', 'not_yet', 'withdrawn'],
+  accept_risk: ['accepted', 'declined'],
+  accept_terms: ['accepted', 'declined'],
+  completion_date: ['agreed', 'declined'],
+};
 
 export interface IdCheckFacts {
   provider: string;
@@ -455,6 +492,8 @@ export interface Payloads {
     shadowMode?: boolean;
     /** Firm policy (docs/proof-of-funds.md): exchange is held until proof of funds is signed off. Undefined on old logs = false. */
     requireProofOfFunds?: boolean;
+    /** Firm policy (docs/case-model.md §8): exchange needs the client's recorded authority. Undefined on old logs = false. */
+    requireExchangeAuthority?: boolean;
   };
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
@@ -563,7 +602,7 @@ export interface Payloads {
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
   // ── issues (docs/engine-issues.md) ──
   /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
-  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null };
+  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null };
   /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion), the party it concerns. */
   issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null };
   /** Resolved with one of the kind's realistic outcomes and, where money changed hands, what it cost and who paid. Side-effects (price change, lender approval) are separate events that follow it. */
@@ -597,6 +636,17 @@ export interface Payloads {
   management_pack_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
   /** Notice of assignment (and of charge) served on the landlord / managing agent after completion. */
   notice_of_assignment_served: { servedOn: string; reference?: string | null };
+  // ── case model ──
+  /** The client's survey (or valuation) arrived and was read: recommendations are facts; each "further investigation" one raises an issue. */
+  survey_received: { surveyType: SurveyType; facts: SurveyFacts; extractor: string };
+  /** A specialist's report arrived for a further-investigation issue: read; "no further investigation" resolves that issue (a fact), a new recommendation chains a new one. */
+  specialist_report_received: { facts: SurveyFacts; forIssueId: string | null; extractor: string; furtherInvestigation: boolean };
+  /** The client's decision on something only the client decides — recorded by a person, never inferred. */
+  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null };
+  /** Severity moved (by a person, or by the timer as a deadline nears). */
+  issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
+  /** The file is closed: registered, everything served, nothing further. */
+  matter_closed: { reason?: string | null };
 }
 
 export const ISSUE_PAID_BY = ['buyer', 'seller', 'shared', 'lender', 'other'] as const;
@@ -730,6 +780,9 @@ export interface IssueState {
   paidBy: IssuePaidBy | null;
   /** Enquiries raised from this issue. */
   enquiryIds: string[];
+  severity: IssueSeverity;
+  /** The issue whose investigation discovered this one. */
+  causedBy: string | null;
   history: Array<{ at: string; by: Actor; what: string }>;
 }
 
@@ -743,6 +796,8 @@ export interface MatterState {
   shadowMode: boolean;
   /** Firm policy: exchange needs a signed-off proof of funds (docs/proof-of-funds.md). */
   requireProofOfFunds: boolean;
+  /** Firm policy: exchange needs the client's recorded authority (docs/case-model.md §8). */
+  requireExchangeAuthority: boolean;
   counterpartyType: CounterpartyType | null;
   targetExchangeDate: string | null;
   targetCompletionDate: string | null;
@@ -812,6 +867,15 @@ export interface MatterState {
     approvedAt: string | null;
     approvedBy: string | null;
   };
+  /** The survey workstream (docs/case-model.md §7): facts from the reports; the client's satisfaction is a client decision. */
+  survey: {
+    status: 'not_started' | 'received' | 'further_investigation' | 'awaiting_client' | 'client_satisfied' | 'client_renegotiating' | 'client_withdrawing';
+    reports: Array<{ eventId: string; documentId: string | null; surveyType: SurveyType; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null }>;
+  };
+  /** Client decisions on record, by subject (the latest wins; the log has them all). */
+  clientDecisions: Partial<Record<ClientDecisionSubject, { decision: string; at: string; by: Actor; note: string | null }>>;
+  /** Set when the file is closed. */
+  closedAt: string | null;
   /** Leasehold: the LPE1 / management pack. */
   managementPack: {
     status: 'not_required' | 'not_started' | 'requested' | ReviewStatus;
@@ -855,6 +919,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     requiredSearches: [],
     shadowMode: false,
     requireProofOfFunds: false,
+    requireExchangeAuthority: false,
     counterpartyType: null,
     targetExchangeDate: null,
     targetCompletionDate: null,
@@ -883,6 +948,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
     proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
     managementPack: { status: 'not_required', requestedAt: null, documentId: null, facts: null, decisionEventId: null },
+    survey: { status: 'not_started', reports: [] },
+    clientDecisions: {},
+    closedAt: null,
     abandoned: null,
     noticeToComplete: null,
     handler: null,
@@ -915,8 +983,10 @@ export const proofOfFundsApproved = (s: MatterState): boolean => s.proofOfFunds.
 /** Queries not yet answered or withdrawn (drafted, or sent and waiting). */
 export const openPofQueries = (s: MatterState): PofQuery[] => Object.values(s.proofOfFunds.queries).filter((q) => q.status === 'draft' || q.status === 'sent').sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
 
-/** Nothing more will happen on this matter: registered, or abandoned. */
-export const isFinished = (s: MatterState): boolean => !!s.postCompletion.ap1ConfirmedAt || !!s.abandoned;
+/** Nothing more will happen on this matter: registered (or closed), or abandoned. */
+export const isFinished = (s: MatterState): boolean => !!s.postCompletion.ap1ConfirmedAt || !!s.abandoned || !!s.closedAt;
+/** A survey has been received, so the client's satisfaction with the physical condition is a live requirement. */
+export const surveyApplies = (s: MatterState): boolean => s.survey.status !== 'not_started';
 
 /** The record a payment may use: the newest for the payee, and only if verified. */
 export function currentBankDetails(state: MatterState, payeeKind: PayeeKind): BankDetailsState | null {

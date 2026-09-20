@@ -6,8 +6,8 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
-import { ISSUE_KINDS, ISSUE_RESOLUTIONS } from './issues';
+import { CLIENT_DECISION_SUBJECTS, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
+import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
 import type { Command } from './machine';
 
 /** Read-only users can look but never move a matter. */
@@ -25,7 +25,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(['freehold_purchase', 'leasehold_purchase']).nullish(), requireProofOfFunds: z.boolean().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(['freehold_purchase', 'leasehold_purchase']).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
@@ -67,7 +67,10 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('record_correction'), aboutEventId: z.string().uuid(), reason: z.string().min(1).max(2000) }),
   z.object({ type: z.literal('record_handler_change'), fromUserId: z.string().uuid().nullish(), toUserId: z.string().uuid(), reason: z.string().max(500).nullish() }),
   // issues
-  z.object({ type: z.literal('raise_issue'), issueId: z.string().min(1).max(60).optional(), kind: z.enum(ISSUE_KINDS), title: z.string().min(1).max(200), detail: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), documentId: z.string().uuid().nullish(), party: z.string().max(120).nullish() }),
+  z.object({ type: z.literal('raise_issue'), issueId: z.string().min(1).max(60).optional(), kind: z.enum(ISSUE_KINDS), title: z.string().min(1).max(200), detail: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), documentId: z.string().uuid().nullish(), party: z.string().max(120).nullish(), severity: z.enum(ISSUE_SEVERITIES).nullish(), causedBy: z.string().max(60).nullish() }),
+  z.object({ type: z.literal('set_issue_severity'), issueId: z.string().min(1).max(60), severity: z.enum(ISSUE_SEVERITIES), reason: z.string().min(1).max(500) }),
+  z.object({ type: z.literal('client_decision_recorded'), subject: z.enum(CLIENT_DECISION_SUBJECTS), decision: z.string().min(1).max(40), note: z.string().max(2000).nullish(), evidenceDocumentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('close_matter'), reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('update_issue'), issueId: z.string().min(1).max(60), status: z.enum(['open', 'negotiating']), note: z.string().max(4000).nullish(), gate: z.enum(['exchange', 'completion', 'none']).nullish(), party: z.string().max(120).nullish() }),
   z.object({ type: z.literal('resolve_issue'), issueId: z.string().min(1).max(60), resolution: z.enum(ISSUE_RESOLUTIONS), note: z.string().max(4000).nullish(), newPricePennies: z.number().int().positive().nullish(), costPennies: z.number().int().nonnegative().nullish(), paidBy: z.enum(ISSUE_PAID_BY).nullish() }),
   // proof of funds (service-level: the route issues the form and sends it) and leasehold
@@ -106,6 +109,8 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('title'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('id_check'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('management_pack'), documentId: z.string().uuid() }),
+  z.object({ role: z.literal('survey'), documentId: z.string().uuid(), surveyType: z.enum(['level1', 'level2', 'level3', 'valuation']).nullish() }),
+  z.object({ role: z.literal('specialist_report'), documentId: z.string().uuid(), forIssueId: z.string().max(60).nullish() }),
 ]);
 
 /** Addendum 3 §3: how the handler engaged with the source section before acting — stored on the resolving event. */

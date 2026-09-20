@@ -90,6 +90,8 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
                 <b>{i.id} · {k?.label ?? pretty(i.kind)}{i.party ? <span style={{ fontWeight: 500, color: '#64748b' }}> · re {i.party}</span> : null}</b>
                 {chip(STATUS_CHIP[i.status], i.status)}
+                {i.severity && chip(i.severity === 'critical' ? { bg: '#fecaca', fg: '#7f1d1d' } : i.severity === 'warning' ? { bg: '#fef3c7', fg: '#78350f' } : { bg: '#f1f5f9', fg: '#475569' }, i.severity)}
+                {i.causedBy && <span style={{ fontSize: 11, color: '#7c3aed' }}>discovered via {i.causedBy}</span>}
                 {chip(GATE_CHIP[i.gate], GATE_CHIP[i.gate].label)}
                 <span style={{ color: '#64748b' }}>raised {fmtDay(i.raisedAt)} at {pretty(i.raisedAtStage)}{i.raisedBy === 'system' ? ' by the engine' : ''} · last touched {fmtDay(i.updatedAt)}</span>
               </div>
@@ -118,6 +120,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                 <div style={{ marginTop: 4 }}>
                   {i.status === 'open' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('What is happening? (e.g. "client asked for £10k off; agent relaying")'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: 'negotiating', note: n }); }}>Negotiating…</button>}
                   <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Progress note'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, note: n }); }}>Add note</button>
+                  {i.severity !== 'critical' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Raise to critical — why?'); if (n) void cmd({ type: 'set_issue_severity', issueId: i.id, severity: 'critical', reason: n }); }}>Critical</button>}
                   <button className="ep-btn primary" disabled={busy} onClick={() => startResolve(i)}>Resolve…</button>
                   {!exchanged && <button className="ep-btn" disabled={busy} onClick={() => { const subj = window.prompt('Enquiry to the other side about this issue — what do you want to ask?'); if (subj) void cmd({ type: 'raise_enquiry', subject: subj, origin: { issueId: i.id } }); }}>Raise enquiry</button>}
                   {i.gate !== 'none' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt(`Release the hold on ${i.gate}? Say why (the client accepts the risk, the lender is content…). The issue stays open.`); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, gate: 'none', note: n }); }}>Release hold</button>}

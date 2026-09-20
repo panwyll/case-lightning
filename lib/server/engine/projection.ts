@@ -103,6 +103,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.enrolled = true;
       s.transactionType = p.transactionType;
       s.requireProofOfFunds = !!p.requireProofOfFunds;
+      s.requireExchangeAuthority = !!p.requireExchangeAuthority;
       s.hasLender = p.hasLender;
       s.requiredSearches = [...p.requiredSearches];
       s.shadowMode = !!p.shadowMode;
@@ -578,7 +579,9 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
         costPennies: null,
         paidBy: null,
         enquiryIds: [],
-        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''})` }],
+        severity: p.severity ?? 'warning',
+        causedBy: p.causedBy ?? null,
+        history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, ${p.severity ?? 'warning'}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''}${p.causedBy ? `, discovered while dealing with ${p.causedBy}` : ''})` }],
       };
       break;
     }
@@ -605,6 +608,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       i.paidBy = p.paidBy ?? null;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.costPennies != null ? ` (£${(p.costPennies / 100).toLocaleString('en-GB')}${p.paidBy ? `, paid by ${p.paidBy}` : ''})` : ''}${p.note ? ` — ${p.note}` : ''}` });
+      settleSurvey(s);
       break;
     }
     case 'issue_withdrawn': {
@@ -616,6 +620,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       i.resolvedBy = e.actor;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `withdrawn: ${p.reason}` });
+      settleSurvey(s);
       break;
     }
     case 'issue_fatal': {
@@ -704,6 +709,41 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.postCompletion.noticeOfAssignmentAt = e.createdAt;
       break;
     }
+    case 'issue_severity_changed': {
+      const p = e.payload as Payloads['issue_severity_changed'];
+      const i = s.issues[p.issueId];
+      if (!i) break;
+      i.severity = p.severity;
+      // Not "movement": the stale clock measures people's and third parties' activity, not the timer's.
+      i.history.push({ at: e.createdAt, by: e.actor, what: `severity → ${p.severity}: ${p.reason}` });
+      break;
+    }
+    // ── case model ──
+    case 'survey_received': {
+      const p = e.payload as Payloads['survey_received'];
+      const further = p.facts.recommendations.some((r) => r.furtherInvestigation);
+      s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null });
+      s.survey.status = further ? 'further_investigation' : 'awaiting_client';
+      break;
+    }
+    case 'specialist_report_received': {
+      const p = e.payload as Payloads['specialist_report_received'];
+      s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.facts.surveyType, receivedAt: e.createdAt, recommendations: p.facts.recommendations.length, furtherInvestigation: p.furtherInvestigation, forIssueId: p.forIssueId });
+      // The status settles once the issues this event resolves / raises are applied (settleSurvey on issue_resolved / withdrawn).
+      if (p.furtherInvestigation) s.survey.status = 'further_investigation';
+      break;
+    }
+    case 'client_decision_recorded': {
+      const p = e.payload as Payloads['client_decision_recorded'];
+      s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
+      if (p.subject === 'physical_condition') s.survey.status = p.decision === 'satisfied' ? 'client_satisfied' : p.decision === 'renegotiate' ? 'client_renegotiating' : p.decision === 'withdraw' ? 'client_withdrawing' : 'further_investigation';
+      break;
+    }
+    case 'matter_closed': {
+      s.closedAt = e.createdAt;
+      for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
+      break;
+    }
     case 'shadow_mode_changed': {
       s.shadowMode = (e.payload as Payloads['shadow_mode_changed']).shadowMode;
       break;
@@ -736,6 +776,13 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
   }
   return s;
+}
+
+/** Once every further-investigation issue is closed, the survey waits on the client (unless they have already decided). */
+function settleSurvey(s: MatterState): void {
+  if (s.survey.status !== 'further_investigation') return;
+  const open = Object.values(s.issues).some((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
+  if (!open) s.survey.status = 'awaiting_client';
 }
 
 /** Human-readable subject for a decision-bearing event (what it is about). */

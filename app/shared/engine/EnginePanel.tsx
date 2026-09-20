@@ -70,7 +70,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const [pofQuestion, setPofQuestion] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
   const [completionDate, setCompletionDate] = useState('');
-  const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack'>('auto');
+  const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'survey' | 'specialist_report'>('auto');
   const [upSearch, setUpSearch] = useState('CON29');
   const [upEnquiry, setUpEnquiry] = useState('');
   const [upFile, setUpFile] = useState<File | null>(null);
@@ -293,6 +293,8 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
             <option value="title">Official copy of the register</option>
             <option value="id_check">ID / AML report</option>
             {s.transactionType === 'leasehold_purchase' && <option value="management_pack">Management pack (LPE1)</option>}
+            <option value="survey">Survey / valuation report</option>
+            <option value="specialist_report">Specialist report (damp, timber, structural…)</option>
           </select>
           {upRole === 'search' && (
             <select className="ep-input" value={upSearch} onChange={(e) => setUpSearch(e.target.value)}>
@@ -317,6 +319,14 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         )}
         {s.transactionType === 'leasehold_purchase' && ['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && s.managementPack?.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const from = window.prompt('Requested from (seller\'s solicitor / managing agent)?', 'Seller\'s solicitor'); if (from) void cmd({ type: 'management_pack_requested', from }); }}>Management pack requested</button>}
         {s.transactionType === 'leasehold_purchase' && s.completion.confirmedAt && !s.postCompletion.noticeOfAssignmentAt && <button className="ep-btn" disabled={busy} onClick={() => { const on = window.prompt('Notice of assignment served on?', 'Landlord / managing agent'); if (on) void cmd({ type: 'notice_of_assignment_served', servedOn: on }); }}>Notice of assignment served</button>}
+        {!s.exchange.exchangedAt && s.survey && s.survey.status !== 'not_started' && s.survey.status !== 'client_satisfied' && (
+          <span>
+            <button className="ep-btn primary" disabled={busy || s.survey.status === 'further_investigation'} title={s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : ''} onClick={() => { const n = window.prompt('The client confirms they are satisfied with the physical condition — record their instruction (date / channel):'); if (n !== null) void cmd({ type: 'client_decision_recorded', subject: 'physical_condition', decision: 'satisfied', note: n || null }); }}>Client satisfied with the property</button>
+            <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('The client wants to renegotiate — what did they say?'); if (n) void cmd({ type: 'client_decision_recorded', subject: 'physical_condition', decision: 'renegotiate', note: n }); }}>Client wants to renegotiate</button>
+          </span>
+        )}
+        {!s.exchange.exchangedAt && s.requireExchangeAuthority && s.clientDecisions?.exchange_authority?.decision !== 'authorised' && ['contract_review', 'pre_exchange'].includes(s.stage) && <button className="ep-btn primary" disabled={busy} onClick={() => { const n = window.prompt('Record the client\'s authority to exchange (how and when they instructed you):'); if (n !== null) void cmd({ type: 'client_decision_recorded', subject: 'exchange_authority', decision: 'authorised', note: n || null }); }}>Client authorises exchange</button>}
+        {s.stage === 'post_completion' && s.postCompletion.ap1ConfirmedAt && !s.closedAt && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close file</button>}
         {(s.stage === 'pre_contract' || s.stage === 'contract_review') && (
           <span>
             <input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} />

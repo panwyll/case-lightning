@@ -27,7 +27,7 @@
  */
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
-import { dueActions, deadlineActions } from './sla';
+import { dueActions, deadlineActions, timedIssueActions } from './sla';
 import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
@@ -219,6 +219,28 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'proof_of_funds_submitted', actor: EXTERNAL, requestId, documentId: doc.id, facts, review, answers: sub.answers ?? null, summary });
   }
 
+  // ───────────── the survey workstream (docs/case-model.md §7) ─────────────
+
+  /** The client's survey / valuation arrived: read for its recommendations; each "further investigation" becomes an issue. */
+  async surveyReceived(tenantId: string, matterId: string, documentId: string, surveyType: import('./types').SurveyType | null = null): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = await this.ports.extractor.extractSurvey(doc).catch((err) => {
+      this.ports.log('survey extraction failed — recorded with no recommendations read; a person must read it', err);
+      return { surveyType: surveyType ?? 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' as const }], confidence: 0 } satisfies import('./types').SurveyFacts;
+    });
+    return this.run(tenantId, matterId, { type: 'survey_received', actor: EXTERNAL, documentId, surveyType: surveyType ?? facts.surveyType, facts, extractor: this.ports.extractor.name });
+  }
+
+  /** A specialist's report arrived (for a further-investigation issue when it can be linked): read; the machine records the facts. */
+  async specialistReportReceived(tenantId: string, matterId: string, documentId: string, forIssueId: string | null = null): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = await this.ports.extractor.extractSurvey(doc).catch((err) => {
+      this.ports.log('specialist report extraction failed — recorded as recommending further investigation until a person reads it', err);
+      return { surveyType: 'specialist' as const, recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it.', furtherInvestigation: true, severity: 'medium' as const }], confidence: 0 } satisfies import('./types').SurveyFacts;
+    });
+    return this.run(tenantId, matterId, { type: 'specialist_report_received', actor: EXTERNAL, documentId, facts: { ...facts, surveyType: 'specialist' }, forIssueId, extractor: this.ports.extractor.name });
+  }
+
   // ───────────── leasehold ─────────────
 
   /** The management pack (LPE1) arrived: always a decision citing it (extraction is optional and best-effort). */
@@ -360,12 +382,26 @@ export class EngineService {
   }
 
   private async tickInner(tenantId: string, matterId: string, now: Date): Promise<{ chases: number; escalations: number }> {
-    const state = await this.getState(tenantId, matterId);
-    if (!state.enrolled || state.manualHandling.required || state.abandoned) return { chases: 0, escalations: 0 };
+    let state = await this.getState(tenantId, matterId);
+    if (!state.enrolled || state.manualHandling.required || state.abandoned || state.closedAt) return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
     const subflows = await this.subflows(tenantId);
     let chases = 0;
     let escalations = 0;
+    // Time as a source of events (docs/case-model.md §6): offer expiry, aged waits, sitting issues — first, so the deadlines below see the result.
+    let timed = 0;
+    for (const t of timedIssueActions(state, now)) {
+      try {
+        if (t.kind === 'raise') await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: t.issueKind, title: t.title, detail: t.detail, severity: t.severity });
+        else if (t.kind === 'escalate') await this.run(tenantId, matterId, { type: 'set_issue_severity', actor: SYSTEM, issueId: t.issueId, severity: t.severity, reason: t.reason });
+        else if (t.kind === 'resolve') await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: t.issueId, resolution: t.resolution, note: t.note });
+        else if (t.kind === 'offer_expired' && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) await this.run(tenantId, matterId, { type: 'mortgage_offer_withdrawn', actor: SYSTEM, reason: `Offer expired on ${t.expiryDate} (timer)` });
+        timed += 1;
+      } catch (err) {
+        this.ports.log(`timed issue failed (${t.kind})`, err);
+      }
+    }
+    if (timed) state = await this.getState(tenantId, matterId);
     // Deadlines we owe (offer expiry, SDLT, notice to complete, requisitions): raised once, in time, with a dossier.
     for (const d of deadlineActions(state, now)) {
       try {

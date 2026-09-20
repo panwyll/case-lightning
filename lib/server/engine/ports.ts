@@ -16,7 +16,7 @@
  *   #7 audit        → the event log itself
  *   #8 Outlook      → out of scope for this phase
  */
-import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
+import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, SurveyFacts, TitleFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
 
@@ -49,6 +49,8 @@ export interface DocumentExtractor {
   extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts>;
   /** Proof of funds: read a client-attached document as a bank statement, transaction by transaction. null = readable but not a statement (a gift letter, an ID). Throws when unreadable. */
   extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
+  /** Case model §7: a survey / valuation / specialist report read for its recommendations (facts, never the client's view). */
+  extractSurvey(doc: DocumentRef): Promise<SurveyFacts>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */
@@ -113,7 +115,7 @@ export interface DocumentClassifier {
 }
 
 export interface DocumentClassification {
-  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'other';
+  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'other';
   searchType: SearchType | null;
   enquiryReferences: string[];
   titleNumber: string | null;

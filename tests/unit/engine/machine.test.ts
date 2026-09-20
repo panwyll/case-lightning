@@ -21,17 +21,17 @@ function runPure(cmds: Parameters<typeof decide>[1][]) {
 }
 
 test('enrolment starts at instruction with the required searches', () => {
-  const { state, log } = runPure([{ type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true }]);
+  const { state, log } = runPure([{ type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true }]);
   assert.equal(state.stage, 'instruction');
   assert.deepEqual(state.requiredSearches, ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL']);
   assert.equal(log[0].type, 'matter_created');
   assert.deepEqual(stageBlockers(state), ['ID/AML check not started']);
-  assert.throws(() => decide(state, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true }, { now }), EngineError);
+  assert.throws(() => decide(state, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true }, { now }), EngineError);
 });
 
 test('every transition is automation or a decision — nothing else', () => {
   const { log } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
   ]);
@@ -43,7 +43,7 @@ test('search sub-flow: ordered → returned → extracted → cleared, and the s
   const base: NewEvent[] = [];
   void base;
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['LLC1', 'CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['LLC1', 'CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'record_search_ordered', actor: 'system', searchType: 'LLC1', provider: 'mock' },
@@ -60,7 +60,7 @@ test('search sub-flow: ordered → returned → extracted → cleared, and the s
 
 test('search cannot be returned before it is ordered, nor extracted twice', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
   ]);
@@ -70,7 +70,7 @@ test('search cannot be returned before it is ordered, nor extracted twice', () =
 
 test('flagged search creates a decision that cites the search PDF; resolving requires opening it; approve resolves the sub-flow', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'record_search_ordered', actor: 'system', searchType: 'CON29', provider: 'mock' },
@@ -100,7 +100,7 @@ test('flagged search creates a decision that cites the search PDF; resolving req
 
 test('request_further raises a tracked follow-up enquiry that gates the stage', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'record_search_ordered', actor: 'system', searchType: 'CON29', provider: 'mock' },
@@ -117,7 +117,7 @@ test('request_further raises a tracked follow-up enquiry that gates the stage', 
 
 test('escalate hands the same source to a senior; resolving the escalation resolves the original', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'record_search_ordered', actor: 'system', searchType: 'CON29', provider: 'mock' },
@@ -142,7 +142,7 @@ test('escalate hands the same source to a senior; resolving the escalation resol
 
 test('report on title: never sent without a human approval event; rejection allows a redraft', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'record_search_ordered', actor: 'system', searchType: 'CON29', provider: 'mock' },
@@ -179,7 +179,7 @@ test('report on title: never sent without a human approval event; rejection allo
 
 test('a leasehold title on a matter enrolled as freehold halts automation (tenure mismatch)', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
     { type: 'title_extracted', actor: 'system', documentId: 'd-title', facts: { ...titleClear(), tenure: 'leasehold' }, extractor: 'fixture' },
@@ -191,7 +191,7 @@ test('a leasehold title on a matter enrolled as freehold halts automation (tenur
 
 test('exchange and completion ordering invariants', () => {
   const { state } = runPure([
-    { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'] },
+    { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: ['CON29'] },
     { type: 'request_id_check', actor: USER, provider: 'p' },
     { type: 'id_check_result', actor: 'external', documentId: 'd1', facts: idClear() },
   ]);
@@ -203,7 +203,7 @@ test('exchange and completion ordering invariants', () => {
 
 test('in-memory service: concurrent commands on one matter serialise without losing events', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false });
   await Promise.all([
     h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'A', subject: 'a' }).catch(() => null),
     h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'B', subject: 'b' }).catch(() => null),
@@ -215,7 +215,7 @@ test('in-memory service: concurrent commands on one matter serialise without los
 
 test('resolve() helper enforces the open-source precondition end to end', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const con29 = h.doc(searchFlagged('CON29'));

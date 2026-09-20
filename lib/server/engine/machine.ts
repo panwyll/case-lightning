@@ -18,7 +18,7 @@
  */
 import { applyEvent } from './projection';
 import type { DeadlineKind } from './sla';
-import { FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import {
@@ -48,6 +48,11 @@ import {
   isLeasehold,
   proofOfFundsApproved,
   openPofQueries,
+  surveyApplies,
+  CLIENT_DECISION_OUTCOMES,
+  type ClientDecisionSubject,
+  type SurveyFacts,
+  type SurveyType,
   ISSUE_PAID_BY,
   type IssuePaidBy,
   type IssueState,
@@ -86,7 +91,7 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -114,7 +119,13 @@ export type Command =
   | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
   | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
   // ── issues (docs/engine-issues.md) ──
-  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null; party?: string | null }
+  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null; party?: string | null; severity?: IssueSeverity | null; causedBy?: string | null }
+  | { type: 'set_issue_severity'; actor: Actor; issueId: string; severity: IssueSeverity; reason: string }
+  // ── case model: survey workstream, client decisions, closure ──
+  | { type: 'survey_received'; actor: Actor; documentId: string; surveyType: SurveyType; facts: SurveyFacts; extractor: string }
+  | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
+  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null }
+  | { type: 'close_matter'; actor: Actor; reason?: string | null }
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
   // ── proof of funds (docs/proof-of-funds.md) ──
@@ -194,6 +205,9 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'contract_approved',
   'signed_contract_held',
   // Proof of funds (the send itself is a service step, like request_id_check) and leasehold steps.
+  'set_issue_severity',
+  'client_decision_recorded',
+  'close_matter',
   'request_proof_of_funds',
   'raise_proof_of_funds_query',
   'withdraw_proof_of_funds_query',
@@ -224,6 +238,7 @@ function reject(msg: string, status = 409): never {
 const requireEnrolled = (s: MatterState): void => {
   if (!s.enrolled) reject('Matter is not enrolled in the engine. Enrol it first.');
   if (s.abandoned) reject(`Matter was abandoned on ${s.abandoned.at.slice(0, 10)} (${s.abandoned.reason.replace(/_/g, ' ')}); nothing further can be recorded except a correction.`, 409);
+  if (s.closedAt) reject(`Matter was closed on ${s.closedAt.slice(0, 10)}; nothing further can be recorded except a correction.`, 409);
 };
 /** Commands that may still be recorded after abandonment (audit only). */
 const requireEnrolledEvenIfAbandoned = (s: MatterState): void => {
@@ -264,6 +279,7 @@ export function assertDecisionSpec(d: DecisionSpec): void {
 export function stageBlockers(s: MatterState): string[] {
   if (!s.enrolled) return ['not enrolled'];
   if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
+  if (s.closedAt) return ['matter closed'];
   if (s.manualHandling.required) return [`manual handling: ${s.manualHandling.reason ?? 'unspecified'}`];
   const b: string[] = [];
   switch (s.stage) {
@@ -289,6 +305,8 @@ export function stageBlockers(s: MatterState): string[] {
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
       b.push(...issueBlockers(s, 'exchange'));
       if (proofOfFundsHolds(s)) b.push(`proof of funds ${proofOfFundsHoldReason(s)}`);
+      if (surveyHolds(s)) b.push(`survey: client not yet ${s.survey.status === 'further_investigation' ? 'able to decide — further investigation outstanding' : s.survey.status === 'client_renegotiating' ? 'satisfied — renegotiating' : 'confirmed satisfied with the physical condition'}`);
+      if (exchangeAuthorityHolds(s)) b.push('client has not yet authorised exchange');
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
     case 'exchanged':
@@ -320,6 +338,10 @@ export function stageBlockers(s: MatterState): string[] {
  * (requireProofOfFunds), until it has been signed off at all.
  */
 const proofOfFundsHolds = (s: MatterState): boolean => s.proofOfFunds.status === 'requested' || s.proofOfFunds.status === 'submitted' || (s.requireProofOfFunds && !proofOfFundsApproved(s));
+/** A survey on file means the client must confirm they are satisfied with the physical condition before exchange (their decision, never inferred). */
+const surveyHolds = (s: MatterState): boolean => surveyApplies(s) && s.survey.status !== 'client_satisfied';
+/** Firm policy: the client's recorded authority to exchange. */
+const exchangeAuthorityHolds = (s: MatterState): boolean => s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised';
 const proofOfFundsHoldReason = (s: MatterState): string => (s.proofOfFunds.status === 'submitted' ? 'awaiting sign-off' : s.proofOfFunds.status === 'requested' ? 'requested from the client' : s.proofOfFunds.status === 'reviewed' ? `${s.proofOfFunds.resolution === 'reject' ? 'rejected' : 'not signed off'} — a new round is needed` : 'not yet requested (firm policy)');
 
 /** Open issues holding a stage exit, as blocker lines. */
@@ -351,7 +373,7 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
   for (let guard = 0; guard < 16; guard++) {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
-    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s)) {
+    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
     } else {
       const to = nextStage(s.stage);
@@ -426,6 +448,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           payload: {
             transactionType: cmd.transactionType ?? 'freehold_purchase',
             requireProofOfFunds: cmd.requireProofOfFunds ?? true,
+            requireExchangeAuthority: cmd.requireExchangeAuthority ?? true,
             hasLender: cmd.hasLender,
             requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
             targetExchangeDate: cmd.targetExchangeDate ?? null,
@@ -655,6 +678,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const open = unresolvedSearches(s, false);
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
+      if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
+      if (exchangeAuthorityHolds(s)) reject('Cannot exchange: the client has not authorised exchange. Record the client\'s decision (exchange_authority).');
       const holding = issuesGating(s, 'exchange');
       if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
@@ -879,7 +904,74 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       let gate: IssueGate = cmd.gate ?? spec.gate;
       // After exchange the only thing left to hold is completion.
       if (gate === 'exchange' && s.exchange.exchangedAt) gate = 'completion';
-      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null }, sourceDocumentId: cmd.documentId ?? null }];
+      if (cmd.causedBy && !s.issues[cmd.causedBy]) reject(`Issue ${cmd.causedBy} (causedBy) not found.`, 404);
+      if (cmd.severity && !ISSUE_SEVERITIES.includes(cmd.severity)) reject(`Unknown severity "${cmd.severity}".`, 400);
+      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null, severity: cmd.severity ?? spec.severity, causedBy: cmd.causedBy ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'set_issue_severity': {
+      requireEnrolled(s);
+      const i = openIssue(s, cmd.issueId);
+      if (!ISSUE_SEVERITIES.includes(cmd.severity)) reject(`Unknown severity "${cmd.severity}".`, 400);
+      if (i.severity === cmd.severity) reject(`Issue ${i.id} is already ${cmd.severity}.`);
+      if (!cmd.reason?.trim()) reject('Say why the severity changed.', 400);
+      return [{ type: 'issue_severity_changed', actor: cmd.actor, payload: { issueId: i.id, severity: cmd.severity, reason: cmd.reason.trim() } }];
+    }
+
+    // ── case model: the survey workstream (facts from reports; the client's satisfaction is theirs) ──
+    case 'survey_received': {
+      requireEnrolled(s);
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; a survey now is a post-exchange matter for manual handling.');
+      const out: NewEvent[] = [{ type: 'survey_received', actor: cmd.actor, payload: { surveyType: cmd.surveyType, facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+      // Objective fact: the surveyor recommends further investigation → one issue per recommendation (holds exchange).
+      let n = Object.keys(s.issues).length;
+      for (const r of cmd.facts.recommendations.filter((x) => x.furtherInvestigation)) {
+        n += 1;
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title: `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.severity === 'high' ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
+      }
+      return out;
+    }
+    case 'specialist_report_received': {
+      requireEnrolled(s);
+      if (s.survey.status === 'not_started') reject('No survey is on file for this matter; file the survey first (or file this as the survey).');
+      const further = cmd.facts.recommendations.filter((x) => x.furtherInvestigation);
+      const out: NewEvent[] = [{ type: 'specialist_report_received', actor: cmd.actor, payload: { facts: cmd.facts, forIssueId: cmd.forIssueId ?? null, extractor: cmd.extractor, furtherInvestigation: further.length > 0 }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+      const target = cmd.forIssueId ? s.issues[cmd.forIssueId] : null;
+      if (cmd.forIssueId && !target) reject(`Issue ${cmd.forIssueId} not found.`, 404);
+      if (target && (target.status === 'open' || target.status === 'negotiating')) {
+        // Fact: the specialist says no further investigation → the issue is resolved by the report. Fact: they recommend more → the chain continues.
+        out.push({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: target.id, resolution: 'specialist_report_clear', note: further.length ? `Specialist report received; recommends further investigation (${further.map((x) => x.text.slice(0, 60)).join('; ')}) — chained as a new issue` : `Specialist report received: no further investigation recommended${cmd.facts.summary ? ` — ${cmd.facts.summary.slice(0, 200)}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: cmd.documentId });
+      }
+      let n = Object.keys(s.issues).length;
+      for (const r of further) {
+        n += 1;
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title: `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.severity === 'high' ? 'critical' : 'warning', causedBy: target?.id ?? null }, sourceDocumentId: cmd.documentId });
+      }
+      return out;
+    }
+    case 'client_decision_recorded': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A client decision is recorded by a person who took the client\'s instruction; it is never inferred by automation.', 403);
+      const allowed = CLIENT_DECISION_OUTCOMES[cmd.subject];
+      if (!allowed) reject(`Unknown client decision subject "${cmd.subject}".`, 400);
+      if (!allowed.includes(cmd.decision)) reject(`"${cmd.decision}" is not an outcome for ${cmd.subject.replace(/_/g, ' ')}: ${allowed.join(' / ')}.`, 400);
+      if (cmd.subject === 'physical_condition' && !surveyApplies(s)) reject('No survey is on file; the client\'s view of the physical condition is recorded once a survey has been received.');
+      if (cmd.subject === 'physical_condition' && cmd.decision === 'satisfied' && s.survey.status === 'further_investigation') reject('Further investigation is still outstanding; the client can confirm satisfaction once the specialist reports are in (or the issues are withdrawn / accepted).');
+      if (cmd.subject === 'exchange_authority' && s.exchange.exchangedAt) reject('Contracts are already exchanged.');
+      if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed') reject('Record what the client said (note).', 400);
+      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      if (cmd.subject === 'physical_condition' && cmd.decision === 'renegotiate') {
+        out.push({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: nextIssueId(s), kind: 'survey_defect', title: `Client wants to renegotiate after the survey${cmd.note ? `: ${cmd.note.trim().slice(0, 120)}` : ''}`, detail: cmd.note?.trim() || null, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.evidenceDocumentId ?? null, origin: null, party: null, severity: 'warning', causedBy: null }, sourceDocumentId: cmd.evidenceDocumentId ?? null });
+      }
+      return out;
+    }
+    case 'close_matter': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person closes a file.', 403);
+      requireStage(s, 'post_completion', 'Closing the file');
+      if (!s.postCompletion.ap1ConfirmedAt) reject('Registration is not confirmed; the file cannot be closed yet.');
+      if (isLeasehold(s) && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
+      if (Object.values(s.issues).some((i) => i.status === 'open' || i.status === 'negotiating')) reject('Open issues remain; resolve or withdraw them before closing.');
+      return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null } }];
     }
     case 'update_issue': {
       requireEnrolled(s);
@@ -893,8 +985,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'resolve_issue': {
       requireEnrolled(s);
-      if (!isUserActor(cmd.actor)) reject('Issues are resolved by people.', 403);
       const i = openIssue(s, cmd.issueId);
+      // The timer may close the issues it raised itself (a search that arrived, an offer that was exchanged inside); everything else is a person's act.
+      if (!isUserActor(cmd.actor) && !(cmd.actor === SYSTEM && /\[[a-z-]+:[^\]]*\]/.test(i.title) && (cmd.resolution === 'received' || cmd.resolution === 'other'))) reject('Issues are resolved by people.', 403);
       const spec = ISSUE_KIND_SPEC[i.kind];
       if (!spec.resolutions.includes(cmd.resolution)) reject(`"${spec.label}" is not resolved by "${RESOLUTION_LABEL[cmd.resolution] ?? cmd.resolution}". Realistic outcomes: ${spec.resolutions.map((r) => RESOLUTION_LABEL[r]).join('; ')}.`, 400);
       const note = cmd.note?.trim() || null;

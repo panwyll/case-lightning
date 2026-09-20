@@ -41,7 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
               ? await svc.titleReceived(t, matterId, input.documentId)
               : input.role === 'management_pack'
                 ? await svc.managementPackReceived(t, matterId, input.documentId)
-                : await svc.idCheckResultReceived(t, matterId, input.documentId);
+                : input.role === 'survey'
+                  ? await svc.surveyReceived(t, matterId, input.documentId, input.surveyType ?? null)
+                  : input.role === 'specialist_report'
+                    ? await svc.specialistReportReceived(t, matterId, input.documentId, input.forIssueId ?? null)
+                    : await svc.idCheckResultReceived(t, matterId, input.documentId);
     await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_INGEST', actionStatus: 'SUCCESS', payload: { role: input.role, documentId: input.documentId, events: result.events.map((e) => e.type) } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {

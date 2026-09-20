@@ -2,6 +2,7 @@
 import { use, useCallback, useEffect, useState } from 'react';
 import { EnginePanel } from '../../shared/engine/EnginePanel';
 import { Timeline } from '../../shared/engine/Timeline';
+import { CaseView } from '../../shared/engine/CaseView';
 import { api } from '../../shared/engine/api';
 import { ENGINE_CSS } from '../../shared/engine/ui';
 import { STAGE_LABEL, type EngineEvent, type EngineView } from '../../shared/engine/types';
@@ -15,7 +16,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
   const { matterId } = use(params);
   const [view, setView] = useState<EngineView | null>(null);
   const [events, setEvents] = useState<EngineEvent[]>([]);
-  const [tab, setTab] = useState<'timeline' | 'controls'>('timeline');
+  const [tab, setTab] = useState<'readiness' | 'dependencies' | 'timeline' | 'controls'>('readiness');
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -64,9 +65,14 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
       </div>
       {err && <div className="eg-err">{err}</div>}
       <div className="eg-tabs">
+        <button className={`eg-tab${tab === 'readiness' ? ' on' : ''}`} onClick={() => setTab('readiness')}>Readiness</button>
+        <button className={`eg-tab${tab === 'dependencies' ? ' on' : ''}`} onClick={() => setTab('dependencies')}>Dependencies</button>
         <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')}>Timeline{events.length ? ` (${events.length})` : ''}</button>
         <button className={`eg-tab${tab === 'controls' ? ' on' : ''}`} onClick={() => setTab('controls')}>Controls</button>
       </div>
+      {tab === 'readiness' && view?.state.enrolled && <CaseView key={`r${events.length}`} matterId={matterId} api={api} view="readiness" />}
+      {tab === 'dependencies' && view?.state.enrolled && <CaseView key={`d${events.length}`} matterId={matterId} api={api} view="dependencies" />}
+      {(tab === 'readiness' || tab === 'dependencies') && view && !view.state.enrolled && <div className="eg-empty">Not enrolled in the engine yet — enrol it from Controls.</div>}
       {tab === 'timeline' && view && <Timeline events={events} state={view.state} />}
       {tab === 'controls' && <EnginePanel matterId={matterId} api={api} onChanged={() => void load()} />}
     </div>

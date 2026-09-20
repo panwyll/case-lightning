@@ -82,7 +82,7 @@ test('assembleReport: sections without a real citation are dropped and reported;
 test('ClaudeReportDrafter through the engine: the draft is a decision citing real documents; a draft with no citations falls back to the template', async () => {
   const h = harness();
   const { svc } = h;
-  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await svc.requestIdCheck(TENANT, MATTER, USER);
   await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const con29 = h.doc(searchClear('CON29'));

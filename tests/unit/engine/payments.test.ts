@@ -10,7 +10,7 @@ const details = (n: string, name = 'Smith & Co Client Account') => ({ sortCode, 
 
 async function toPreCompletion(h: ReturnType<typeof harness>) {
   const { svc } = h;
-  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await svc.requestIdCheck(TENANT, MATTER, USER);
   await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
@@ -27,7 +27,7 @@ async function toPreCompletion(h: ReturnType<typeof harness>) {
 
 test('§1/§4: first-time details and every change are recorded as new versions and each is a hard-stop decision', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false });
   const first = await h.svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: details('11111111'), sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'email 1' }) });
   assert.deepEqual(first.events.map((e) => e.type), ['bank_details_recorded', 'bank_details_change_flagged']);
   assert.equal((first.events[0].payload as { isChange: boolean }).isChange, false, 'first time is still flagged');
@@ -57,7 +57,7 @@ test('§1/§4: first-time details and every change are recorded as new versions 
 
 test('§3: only out-of-band methods verify; same-channel confirmation, "approve" and missing methods are rejected as validation errors', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false });
   const r = await h.svc.recordBankDetails(TENANT, MATTER, { actor: 'external', payeeKind: 'seller_solicitor', details: details('11111111'), sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'email' }) });
   const d = Object.values(r.state.decisions)[0];
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);

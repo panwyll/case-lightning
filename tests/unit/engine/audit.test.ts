@@ -10,7 +10,7 @@ test('canonicalJson is key-order independent and drops undefined', () => {
 
 test('hash chain: every append links to the previous hash; verification is deterministic', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));
@@ -25,7 +25,7 @@ test('hash chain: every append links to the previous hash; verification is deter
 
 test('tampering is detected: altered content, removed event, reordered events, spliced-in event', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const log = h.store.dump(TENANT, MATTER);
@@ -57,7 +57,7 @@ test('tampering is detected: altered content, removed event, reordered events, s
 
 test('audit report: replay vs read model, summary counts, CSV export', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));

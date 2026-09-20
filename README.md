@@ -45,6 +45,17 @@ Internally-linked counterparties (buyer and seller matters in the same firm, dif
 are walled off at the database layer — see the addendum section of the engine doc. The DB role the
 app connects with must not have BYPASSRLS; `GET /api/v1/health` reports `wallEnforced`.
 
+**The case model** (`docs/case-model.md`): a coarse lifecycle (instructed → pre-exchange →
+ready to exchange → exchanged → pre-completion → completed → post-completion → closed,
+or aborted) over fourteen concurrent workstreams, synchronised by gates whose requirements
+each name their completion authority (system / conveyancer / client / third party) and
+what they are waiting on; issues carry behaviour (severity, workstreams, milestones
+threatened, actions, owner, escalation) and chain; time raises and escalates issues; facts
+from documents are automated (a survey's recommendations, a specialist's finding) and the
+client's judgement is recorded, never inferred. Two read-only views on every matter:
+**Readiness** (case health, "not ready to exchange because…", what next and who) and
+**Dependencies** (the graph).
+
 **The machine map**: `/engine/map` draws the state machine from code — stages, gates,
 sub-flows, commands, timers, triggers for both backends, the eventualities matrix
 (`docs/engine-eventualities.md`) and the issue catalogue — checked against the machine by tests.

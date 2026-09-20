@@ -114,7 +114,7 @@ test('routeClassification: deterministic routing against the matter state', () =
 
 test('ingestDocument end to end: a classified search result flows into the engine and gets flagged', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const docId = h.doc({ searchType: 'CON29', flags: [{ code: 'PLANNING_ENFORCEMENT', severity: 'high', description: 'Notice', locator: { page: 4 } }], confidence: 0.93 });

@@ -64,7 +64,7 @@ test('spec: each stage\'s gates are what stageBlockers reports on a bare state a
 
 test('spec: the stage spine is reachable in order by running the machine end to end; command stage lists agree with the machine\'s refusals', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
