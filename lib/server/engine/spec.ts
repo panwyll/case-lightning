@@ -11,7 +11,8 @@ import crypto from 'node:crypto';
 import { DEFAULT_SLA, DEADLINE_LEAD, type DeadlineKind } from './sla';
 import { OPTIONS_FOR, MIN_EXTRACTION_CONFIDENCE } from './rules';
 import { USER_COMMANDS, type Command } from './machine';
-import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type WaitKey } from './types';
+import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, TRANSACTION_TYPES, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type TransactionType, type WaitKey } from './types';
+import { TRANSACTION_PROFILES, type TransactionProfile } from './transactions';
 import { TRIGGERS, type TriggerSpec } from './triggers';
 import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
 import { MIN_CLASSIFICATION_CONFIDENCE } from './ingest';
@@ -63,6 +64,8 @@ export interface CommandSpec {
   humanGated?: boolean;
   /** Hard stop when a bank-details decision is pending (addendum 2). */
   hardStop?: boolean;
+  /** Transaction types the command applies to (absent = all; docs/transaction-types.md). */
+  types?: TransactionType[];
 }
 
 export interface Invariant {
@@ -82,6 +85,8 @@ export interface EventualitySpec {
 export interface MachineSpec {
   version: string;
   generatedFrom: string;
+  /** One machine, parameterised by profile (docs/transaction-types.md). */
+  transactionTypes: TransactionProfile[];
   stages: StageSpec[];
   terminal: Array<{ id: string; label: string; how: string }>;
   subflows: SubflowSpec[];
@@ -193,6 +198,23 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'record_price_change', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['price_changed', 'issue_raised'], description: 'The agreed price (first record) or a renegotiated price before exchange; a change on a lender-funded purchase raises a lender_approval issue.', issue: true },
   { type: 'contract_approved', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['contract_approved'], description: 'Readiness milestone: the draft contract is approved as to form (advisory).', issue: true },
   { type: 'signed_contract_held', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['signed_contract_held'], description: 'Readiness milestone: the client\'s signed contract is on file (advisory).', issue: true },
+  // transaction types (docs/transaction-types.md)
+  { type: 'request_property_forms', actor: 'either', stages: 'any', emits: ['property_forms_requested'], description: 'Sale: ask the client for the TA6 / TA10 (and TA7 on a leasehold); a wait the timers chase.', types: ['freehold_sale', 'leasehold_sale'] },
+  { type: 'property_forms_received', actor: 'either', stages: 'any', emits: ['property_forms_received'], description: 'Sale: the completed forms are in (facts extracted where a document arrived).', types: ['freehold_sale', 'leasehold_sale'] },
+  { type: 'contract_pack_sent', actor: 'either', stages: ['pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'], emits: ['contract_pack_sent'], description: "Sale: draft contract, official copies, plan and forms out to the buyer's solicitor. Needs the forms and the title on file.", types: ['freehold_sale', 'leasehold_sale'] },
+  { type: 'buyer_enquiries_received', actor: 'either', stages: 'any', emits: ['buyer_enquiries_received'], description: "Sale: the buyer's enquiries on the pack, numbered BE1…; each is a reply we owe (gates contract_review).", types: ['freehold_sale', 'leasehold_sale'] },
+  { type: 'enquiry_replies_sent', actor: 'person', stages: 'any', emits: ['enquiry_replies_sent'], description: "Sale: replies went out under a person's name.", types: ['freehold_sale', 'leasehold_sale'] },
+  { type: 'request_redemption_statement', actor: 'either', stages: 'any', emits: ['redemption_statement_requested'], description: 'Sale / remortgage with an existing charge: ask the lender for the redemption figure; a wait the timers chase.', types: ['freehold_sale', 'leasehold_sale', 'remortgage'] },
+  { type: 'redemption_statement_received', actor: 'either', stages: 'any', emits: ['redemption_statement_received'], description: 'The redemption figure, its validity date and daily interest are on file.', types: ['freehold_sale', 'leasehold_sale', 'remortgage'] },
+  { type: 'mortgage_redeemed', actor: 'either', stages: 'any', emits: ['mortgage_redeemed'], description: 'On or after completion, and only after a person authorised the payment to the lender against verified details (hard stop).', types: ['freehold_sale', 'leasehold_sale', 'remortgage'], hardStop: true },
+  { type: 'discharge_confirmed', actor: 'either', stages: 'any', emits: ['discharge_confirmed'], description: "The lender's DS1 / e-DS1 is through and the charge is off the register.", types: ['freehold_sale', 'leasehold_sale', 'remortgage'] },
+  { type: 'mortgage_deed_executed', actor: 'either', stages: 'any', emits: ['mortgage_deed_executed'], description: 'Lender-funded purchase / remortgage: the client signed the mortgage deed, witnessed. An unwitnessed deed is refused (raise a document-execution issue).', types: ['freehold_purchase', 'leasehold_purchase', 'remortgage'] },
+  { type: 'certificate_of_title_sent', actor: 'person', stages: 'any', emits: ['certificate_of_title_sent'], description: "The solicitor's certificate to the lender requesting the advance; follows a resolved offer.", types: ['freehold_purchase', 'leasehold_purchase', 'remortgage'] },
+  { type: 'request_lender_consent', actor: 'either', stages: 'any', emits: ['lender_consent_requested'], description: "Transfer of equity on a charged property: the lender's consent to the transfer (or a deed of substituted security); a wait the timers chase.", types: ['transfer_of_equity'] },
+  { type: 'lender_consent_received', actor: 'either', stages: 'any', emits: ['lender_consent_received'], description: 'Consent and any conditions on file.', types: ['transfer_of_equity'] },
+  { type: 'transfer_deed_executed', actor: 'either', stages: 'any', emits: ['transfer_deed_executed'], description: 'The TR1 / TP1 signed by every party, witnessed.', types: ['freehold_purchase', 'leasehold_purchase', 'transfer_of_equity'] },
+  { type: 'deed_of_trust_executed', actor: 'either', stages: 'any', emits: ['deed_of_trust_executed'], description: 'Co-owners holding as tenants in common: the declaration of trust signed. Needs the ownership_basis client decision first; refused for joint tenants.', types: ['freehold_purchase', 'leasehold_purchase', 'transfer_of_equity'] },
+  { type: 'sdlt_not_required', actor: 'person', stages: ['completed', 'post_completion'], emits: ['sdlt_not_required'], description: 'A person determines no SDLT return is due (e.g. a transfer of equity for no chargeable consideration), with the reason; unblocks AP1.', types: ['freehold_purchase', 'leasehold_purchase', 'remortgage', 'transfer_of_equity'] },
 ];
 
 const HUMAN_GATED_EVENTS: EventType[] = ['funds_requested', 'payment_authorised', 'report_on_title_sent'];
@@ -279,6 +301,10 @@ export const EVENTUALITIES: EventualitySpec[] = [
 ];
 
 const eventCategory = (t: EventType): string => {
+  if (/^property_forms|^contract_pack|^buyer_enquiries|^enquiry_replies/.test(t)) return 'sale';
+  if (/^redemption|^mortgage_redeemed|^discharge/.test(t)) return 'redemption';
+  if (/^mortgage_deed|^certificate_of_title|^transfer_deed|^deed_of_trust/.test(t)) return 'deeds';
+  if (/^lender_consent/.test(t)) return 'transfer of equity';
   if (/^id_check/.test(t)) return 'id_check';
   if (/^search/.test(t)) return 'search';
   if (/^enquiry/.test(t)) return 'enquiry';
@@ -299,13 +325,14 @@ const eventCategory = (t: EventType): string => {
 
 export function machineSpec(): MachineSpec {
   const body: Omit<MachineSpec, 'version'> = {
-    generatedFrom: 'lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts by tests/unit/engine/spec.test.ts)',
+    generatedFrom: 'lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)',
+    transactionTypes: TRANSACTION_TYPES.map((t) => TRANSACTION_PROFILES[t]),
     stages: STAGE_SPECS,
     terminal: [
-      { id: 'registered', label: 'Registered', how: 'ap1_confirmed at post_completion' },
-      { id: 'closed', label: 'Closed', how: 'close_matter after registration with no open issues (leasehold: notice of assignment served)' },
+      { id: 'registered', label: 'Registered', how: 'ap1_confirmed at post_completion (purchase, remortgage, transfer of equity)' },
+      { id: 'closed', label: 'Closed', how: 'close_matter with no open issues: after registration (leasehold purchase: notice of assignment served), or on a sale after redemption is discharged and the balance accounted to the client' },
       { id: 'abandoned', label: 'Abandoned', how: 'abandon_matter from any stage before completion' },
-      { id: 'manual', label: 'Manual handling', how: 'mark_manual_handling, ID rejected, or non-freehold title — automation stops, the log continues' },
+      { id: 'manual', label: 'Manual handling', how: "mark_manual_handling, ID rejected, or a title whose tenure is not the profile's — automation stops, the log continues" },
     ],
     subflows: SUBFLOW_SPECS,
     commands: COMMAND_SPECS,

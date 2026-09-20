@@ -34,6 +34,7 @@ export interface Engagement { scrolledSource: boolean; dwellMs: number }
 /** Addendum 3 §3: one queue row per matter. */
 export interface QueueRow {
   matterId: string;
+  transactionType?: TransactionType | null;
   matterRef: string | null;
   propertyAddress: string | null;
   stage: string;
@@ -125,9 +126,43 @@ export interface IssueCatalogue {
   staleAfterWorkingDays: number;
 }
 
+export type TransactionType = 'freehold_purchase' | 'leasehold_purchase' | 'freehold_sale' | 'leasehold_sale' | 'remortgage' | 'transfer_of_equity';
+export const TRANSACTION_TYPES: TransactionType[] = ['freehold_purchase', 'leasehold_purchase', 'freehold_sale', 'leasehold_sale', 'remortgage', 'transfer_of_equity'];
+export const TRANSACTION_LABEL: Record<TransactionType, string> = { freehold_purchase: 'Freehold purchase', leasehold_purchase: 'Leasehold purchase', freehold_sale: 'Freehold sale', leasehold_sale: 'Leasehold sale', remortgage: 'Remortgage', transfer_of_equity: 'Transfer of equity' };
+
+/** The transaction profile as the engine route returns it (docs/transaction-types.md). */
+export interface ProfileView {
+  type: TransactionType;
+  label: string;
+  side: 'buyer' | 'seller' | 'owner';
+  tenure: 'freehold' | 'leasehold' | 'any';
+  hasExchange: boolean;
+  stages: string[];
+  stageLabels: Partial<Record<string, string>>;
+  workstreams: string[];
+  subflows: string[];
+  defaultSearches: string[];
+  counterparty: string;
+  fundsFrom: Array<'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'>;
+  registration: 'ap1' | 'discharge_only' | 'none';
+  note: string;
+  lifecycle: string[];
+  gates: string[];
+}
+
 export interface EngineState {
   enrolled: boolean;
-  transactionType: string | null;
+  transactionType: TransactionType | null;
+  parties?: number;
+  hasExistingMortgage?: boolean;
+  considerationPennies?: number | null;
+  propertyForms?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received'; forms: string[]; requestedAt: string | null; receivedAt: string | null; facts: Record<string, unknown> | null };
+  contractPack?: { sentAt: string | null };
+  inboundEnquiries?: Record<string, { id: string; question: string; round: number; receivedAt: string; repliedAt: string | null }>;
+  redemption?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; dailyInterestPennies: number | null; requestedAt: string | null; receivedAt: string | null; redeemedAt: string | null; dischargedAt: string | null };
+  lenderConsent?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received'; lender: string | null; conditions: string | null; requestedAt: string | null; receivedAt: string | null };
+  deeds?: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null };
+  sdltNotRequiredAt?: string | null;
   hasLender: boolean;
   requiredSearches: string[];
   stage: string;
@@ -169,7 +204,7 @@ export interface EngineState {
   targetExchangeDate: string | null;
 }
 
-export interface EngineView { state: EngineState; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; subflows?: Record<string, SubflowStatus>; matter?: MatterMeta | null }
+export interface EngineView { state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; subflows?: Record<string, SubflowStatus>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 
@@ -216,6 +251,9 @@ export const OPTION_LABEL: Record<string, string> = {
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');
+/** A stage's label for a given profile (the machine's phase names read differently on a sale or a remortgage). */
+export const stageLabel = (stage: string, profile?: ProfileView | null): string => profile?.stageLabels?.[stage] ?? STAGE_LABEL[stage] ?? stage;
+export const LIFECYCLE_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', investigating: 'Investigating', ready_to_complete: 'Ready to complete', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };
 export const STAGE_LABEL: Record<string, string> = { instruction: 'Instruction', pre_contract: 'Pre-contract', contract_review: 'Contract review', pre_exchange: 'Pre-exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', completed: 'Completed', post_completion: 'Post-completion' };
 export const ago = (iso: string | null | undefined) => {
   if (!iso) return '—';

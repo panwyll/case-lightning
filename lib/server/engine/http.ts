@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { CLIENT_DECISION_SUBJECTS, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
+import { CLIENT_DECISION_SUBJECTS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
 import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
 import type { Command } from './machine';
 
@@ -25,7 +25,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(['freehold_purchase', 'leasehold_purchase']).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
@@ -46,7 +46,24 @@ export const userCommandSchema = z.discriminatedUnion('type', [
     note: z.string().max(1000).nullish(),
   }),
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
-  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client']), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner']), amountPennies: z.number().int().nonnegative().nullish() }),
+  // transaction types (docs/transaction-types.md)
+  z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),
+  z.object({ type: z.literal('property_forms_received'), forms: z.array(z.string().max(10)).min(1).max(6), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('contract_pack_sent'), includes: z.array(z.string().max(60)).max(12).optional() }),
+  z.object({ type: z.literal('buyer_enquiries_received'), enquiries: z.array(z.object({ id: z.string().min(1).max(20).optional(), question: z.string().min(1).max(2000) })).min(1).max(100), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('enquiry_replies_sent'), enquiryIds: z.array(z.string().min(1).max(20)).min(1).max(100), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('request_redemption_statement'), lender: z.string().max(120).nullish() }),
+  z.object({ type: z.literal('redemption_statement_received'), lender: z.string().max(120).nullish(), redemptionPennies: z.number().int().nonnegative().nullish(), validUntil: isoDate.nullish(), dailyInterestPennies: z.number().int().nonnegative().nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('mortgage_redeemed'), lender: z.string().max(120).nullish(), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('discharge_confirmed'), lender: z.string().max(120).nullish(), reference: z.string().max(100).nullish() }),
+  z.object({ type: z.literal('mortgage_deed_executed'), lender: z.string().max(120).nullish(), witnessed: z.boolean().default(true) }),
+  z.object({ type: z.literal('certificate_of_title_sent'), lender: z.string().max(120).nullish(), completionDate: isoDate.nullish() }),
+  z.object({ type: z.literal('request_lender_consent'), lender: z.string().max(120).nullish() }),
+  z.object({ type: z.literal('lender_consent_received'), lender: z.string().max(120).nullish(), conditions: z.string().max(2000).nullish() }),
+  z.object({ type: z.literal('transfer_deed_executed'), parties: z.array(z.string().max(120)).min(1).max(6), witnessed: z.boolean().default(true) }),
+  z.object({ type: z.literal('deed_of_trust_executed'), parties: z.array(z.string().max(120)).min(2).max(6), shares: z.string().max(200).nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('sdlt_not_required'), reason: z.string().min(1).max(500) }),
   z.object({ type: z.literal('completion_confirmed'), completedAt: z.string().datetime().nullish() }),
   z.object({ type: z.literal('sdlt_submitted'), reference: z.string().max(100).nullish() }),
   z.object({ type: z.literal('ap1_submitted'), reference: z.string().max(100).nullish() }),

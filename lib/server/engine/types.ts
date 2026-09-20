@@ -52,7 +52,7 @@ export const LEGACY_STAGE: Record<Stage, string> = {
 /** Addendum: is the other side an external firm or another matter in this firm (walled off)? Stamped on correspondence events. */
 export type CounterpartyType = 'internal' | 'external';
 
-export const TRANSACTION_TYPES = ['freehold_purchase', 'leasehold_purchase'] as const;
+export const TRANSACTION_TYPES = ['freehold_purchase', 'leasehold_purchase', 'freehold_sale', 'leasehold_sale', 'remortgage', 'transfer_of_equity'] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
 
 // ───────────────────────────── Event types (2.5) ─────────────────────────────
@@ -172,6 +172,23 @@ export const EVENT_TYPES = [
   'client_decision_recorded',
   'issue_severity_changed',
   'matter_closed',
+  // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
+  'property_forms_requested',
+  'property_forms_received',
+  'contract_pack_sent',
+  'buyer_enquiries_received',
+  'enquiry_replies_sent',
+  'redemption_statement_requested',
+  'redemption_statement_received',
+  'mortgage_redeemed',
+  'discharge_confirmed',
+  'mortgage_deed_executed',
+  'certificate_of_title_sent',
+  'lender_consent_requested',
+  'lender_consent_received',
+  'transfer_deed_executed',
+  'deed_of_trust_executed',
+  'sdlt_not_required',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -310,7 +327,7 @@ export interface SurveyFacts {
 }
 
 /** What a client, and only a client, decides (docs/case-model.md §7–§8). */
-export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'exchange_authority', 'accept_risk', 'accept_terms', 'completion_date'] as const;
+export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'exchange_authority', 'accept_risk', 'accept_terms', 'completion_date', 'ownership_basis'] as const;
 export type ClientDecisionSubject = (typeof CLIENT_DECISION_SUBJECTS)[number];
 export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> = {
   physical_condition: ['satisfied', 'renegotiate', 'further_investigation', 'withdraw'],
@@ -318,7 +335,10 @@ export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> =
   accept_risk: ['accepted', 'declined'],
   accept_terms: ['accepted', 'declined'],
   completion_date: ['agreed', 'declined'],
+  /** Joint owners decide how they hold: joint tenants, or tenants in common (equal / unequal shares → a declaration of trust). */
+  ownership_basis: ['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'],
 };
+export const TENANTS_IN_COMMON = new Set(['tenants_in_common_equal', 'tenants_in_common_unequal']);
 
 export interface IdCheckFacts {
   provider: string;
@@ -386,7 +406,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge'] as const;
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
 export interface WaitState {
@@ -494,6 +514,12 @@ export interface Payloads {
     requireProofOfFunds?: boolean;
     /** Firm policy (docs/case-model.md §8): exchange needs the client's recorded authority. Undefined on old logs = false. */
     requireExchangeAuthority?: boolean;
+    /** Number of clients on our side (buyers / sellers / owners). More than one → co-ownership decisions apply on a purchase or a transfer. */
+    parties?: number;
+    /** Sale / remortgage / transfer: the property is charged today (redemption and discharge apply). */
+    hasExistingMortgage?: boolean;
+    /** Transfer of equity: money changing hands (SDLT may apply; funds come from the incoming owner). */
+    considerationPennies?: number | null;
   };
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
@@ -545,7 +571,7 @@ export interface Payloads {
     bankDetailsId: string;
     approvedBy: string;
   };
-  funds_received: { fromRole: 'lender' | 'client'; amountPennies?: number | null };
+  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'; amountPennies?: number | null };
   completion_confirmed: { completedAt?: string | null };
 
   sdlt_submitted: { reference?: string | null };
@@ -647,6 +673,43 @@ export interface Payloads {
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
   /** The file is closed: registered, everything served, nothing further. */
   matter_closed: { reason?: string | null };
+  // ── transaction types (docs/transaction-types.md) ──
+  /** Sale: the protocol forms (TA6 / TA10 / TA7) asked of the client; the wait opens. */
+  property_forms_requested: { forms: string[] };
+  property_forms_received: { forms: string[]; facts?: PropertyFormsFacts | null };
+  /** Sale: draft contract, title and forms sent to the buyer's solicitor. */
+  contract_pack_sent: { includes: string[]; channel?: string | null; messageId?: string | null };
+  /** Sale: the buyer's solicitor's enquiries arrived (each becomes an inbound enquiry awaiting our reply). */
+  buyer_enquiries_received: { enquiries: Array<{ id: string; question: string }>; round: number };
+  /** Sale: replies sent (a person sends; the client's answers are theirs). */
+  enquiry_replies_sent: { enquiryIds: string[]; channel?: string | null; messageId?: string | null };
+  /** Sale / remortgage / transfer: the redemption statement asked of the existing lender; the wait opens. */
+  redemption_statement_requested: { lender: string | null };
+  redemption_statement_received: { lender: string | null; redemptionPennies: number | null; validUntil: string | null; dailyInterestPennies?: number | null };
+  /** The existing charge was paid off (after payment_authorised to the lender against verified details). */
+  mortgage_redeemed: { lender: string | null; amountPennies: number | null };
+  /** The lender confirmed the discharge (DS1 / e-DS1 / ED). */
+  discharge_confirmed: { lender: string | null; reference?: string | null };
+  /** The client signed the mortgage deed (witnessed). */
+  mortgage_deed_executed: { lender: string | null; witnessed: boolean };
+  /** Certificate of title / report on title to the lender sent; the advance is requested against it. */
+  certificate_of_title_sent: { lender: string | null; completionDate: string | null };
+  /** Transfer of equity: the existing lender's consent to the transfer asked; the wait opens. */
+  lender_consent_requested: { lender: string | null };
+  lender_consent_received: { lender: string | null; conditions?: string | null };
+  /** TR1 / transfer deed signed by every party (witnessed). */
+  transfer_deed_executed: { parties: string[]; witnessed: boolean };
+  /** Declaration / deed of trust executed (tenants in common; unequal contributions). */
+  deed_of_trust_executed: { parties: string[]; shares?: string | null; documentId?: string | null };
+  /** No SDLT return is due (below the threshold / no chargeable consideration) — a person's determination, recorded. */
+  sdlt_not_required: { reason: string };
+}
+
+/** The seller's protocol forms as the pipeline reads them (facts for disclosure; every "yes" is a client-advice point). */
+export interface PropertyFormsFacts {
+  forms: string[];
+  disclosures: Flag[];
+  confidence: number;
 }
 
 export const ISSUE_PAID_BY = ['buyer', 'seller', 'shared', 'lender', 'other'] as const;
@@ -744,6 +807,15 @@ export interface SearchState {
   resolution: DecisionOption | null;
 }
 
+/** Sale: an enquiry the buyer's solicitor raised on us; replied when our reply went. */
+export interface InboundEnquiryState {
+  id: string;
+  question: string;
+  round: number;
+  receivedAt: string;
+  repliedAt: string | null;
+}
+
 export interface EnquiryState {
   enquiryId: string;
   subject: string;
@@ -798,6 +870,12 @@ export interface MatterState {
   requireProofOfFunds: boolean;
   /** Firm policy: exchange needs the client's recorded authority (docs/case-model.md §8). */
   requireExchangeAuthority: boolean;
+  /** Clients on our side; > 1 → co-ownership applies on a purchase / transfer. */
+  parties: number;
+  /** Sale / remortgage / transfer: a charge to redeem and discharge. */
+  hasExistingMortgage: boolean;
+  /** Transfer of equity: chargeable consideration, if any. */
+  considerationPennies: number | null;
   counterpartyType: CounterpartyType | null;
   targetExchangeDate: string | null;
   targetCompletionDate: string | null;
@@ -876,6 +954,15 @@ export interface MatterState {
   clientDecisions: Partial<Record<ClientDecisionSubject, { decision: string; at: string; by: Actor; note: string | null }>>;
   /** Set when the file is closed. */
   closedAt: string | null;
+  // ── transaction-type workstreams (docs/transaction-types.md) ──
+  propertyForms: { status: 'not_required' | 'not_started' | 'requested' | 'received'; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null };
+  contractPack: { sentAt: string | null };
+  /** Sale: the buyer's solicitor's enquiries on us. */
+  inboundEnquiries: Record<string, InboundEnquiryState>;
+  redemption: { status: 'not_required' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; documentId: string | null; redeemedAt: string | null; dischargedAt: string | null };
+  lenderConsent: { status: 'not_required' | 'not_started' | 'requested' | 'received'; lender: string | null; receivedAt: string | null; conditions: string | null };
+  deeds: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null };
+  sdltNotRequiredAt: string | null;
   /** Leasehold: the LPE1 / management pack. */
   managementPack: {
     status: 'not_required' | 'not_started' | 'requested' | ReviewStatus;
@@ -920,6 +1007,9 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     shadowMode: false,
     requireProofOfFunds: false,
     requireExchangeAuthority: false,
+    parties: 1,
+    hasExistingMortgage: false,
+    considerationPennies: null,
     counterpartyType: null,
     targetExchangeDate: null,
     targetCompletionDate: null,
@@ -951,6 +1041,13 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     survey: { status: 'not_started', reports: [] },
     clientDecisions: {},
     closedAt: null,
+    propertyForms: { status: 'not_required', forms: [], documentId: null, facts: null },
+    contractPack: { sentAt: null },
+    inboundEnquiries: {},
+    redemption: { status: 'not_required', lender: null, redemptionPennies: null, validUntil: null, documentId: null, redeemedAt: null, dischargedAt: null },
+    lenderConsent: { status: 'not_required', lender: null, receivedAt: null, conditions: null },
+    deeds: { mortgageDeedAt: null, certificateOfTitleAt: null, transferDeedAt: null, deedOfTrustAt: null },
+    sdltNotRequiredAt: null,
     abandoned: null,
     noticeToComplete: null,
     handler: null,
@@ -978,7 +1075,9 @@ export function withStateDefaults(s: MatterState): MatterState {
   return { ...init, ...s, postCompletion: { ...init.postCompletion, ...(s.postCompletion ?? {}) } };
 }
 
-export const isLeasehold = (s: MatterState): boolean => s.transactionType === 'leasehold_purchase';
+export const isLeasehold = (s: MatterState): boolean => s.transactionType === 'leasehold_purchase' || s.transactionType === 'leasehold_sale';
+/** Joint clients holding as tenants in common need a declaration of trust before completion (purchase / transfer). */
+export const deedOfTrustApplies = (s: MatterState): boolean => s.parties > 1 && TENANTS_IN_COMMON.has(s.clientDecisions.ownership_basis?.decision ?? '');
 export const proofOfFundsApproved = (s: MatterState): boolean => s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve';
 /** Queries not yet answered or withdrawn (drafted, or sent and waiting). */
 export const openPofQueries = (s: MatterState): PofQuery[] => Object.values(s.proofOfFunds.queries).filter((q) => q.status === 'draft' || q.status === 'sent').sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));

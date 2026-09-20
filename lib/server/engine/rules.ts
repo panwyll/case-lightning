@@ -158,16 +158,16 @@ export const SHORT_LEASE_YEARS = { flag: 85, serious: 80 };
 /** Ground rent above this (outside London) risks the lease being an assured tenancy; many lenders refuse. */
 export const GROUND_RENT_FLAG_PENNIES_PA = 25_000;
 
-export function evaluateTitle(facts: TitleFacts, transactionType: 'freehold_purchase' | 'leasehold_purchase' = 'freehold_purchase'): Verdict {
+export function evaluateTitle(facts: TitleFacts, expectedTenure: 'freehold' | 'leasehold' | 'any' = 'freehold'): Verdict {
   const flags: Flag[] = [];
   if (facts.tenure === 'unknown') {
     flags.push({ code: 'TENURE_UNKNOWN', severity: 'high', description: 'The tenure could not be determined from the register.' });
-  } else if (transactionType === 'freehold_purchase' && facts.tenure === 'leasehold') {
-    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is leasehold but the matter was enrolled as a freehold purchase. Re-enrol it as leasehold (management pack, lease review) — automation is paused until then.' });
-  } else if (transactionType === 'leasehold_purchase' && facts.tenure === 'freehold') {
-    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is freehold but the matter was enrolled as a leasehold purchase. Check the title number; a share of freehold has a lease as well.' });
+  } else if (expectedTenure === 'freehold' && facts.tenure === 'leasehold') {
+    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is leasehold but the matter was enrolled as freehold. Re-enrol it as leasehold (management pack, lease review) — automation is paused until then.' });
+  } else if (expectedTenure === 'leasehold' && facts.tenure === 'freehold') {
+    flags.push({ code: 'TENURE_MISMATCH', severity: 'high', description: 'The title is freehold but the matter was enrolled as leasehold. Check the title number; a share of freehold has a lease as well.' });
   }
-  if (facts.tenure === 'leasehold' && transactionType === 'leasehold_purchase') {
+  if (facts.tenure === 'leasehold' && expectedTenure !== 'freehold') {
     const l = facts.lease;
     if (!l) flags.push({ code: 'LEASE_NOT_READ', severity: 'medium', description: 'The lease terms (unexpired term, ground rent, review clause) were not extracted. Read the lease before the report on title.' });
     else {

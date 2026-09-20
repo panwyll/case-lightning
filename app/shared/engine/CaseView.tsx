@@ -11,6 +11,7 @@ import type { Api } from './types';
  *               client decisions attached where they block, and issue chains drawn.
  */
 export interface CaseModel {
+  profile?: { type: string; label: string; side: string; hasExchange: boolean; stages: string[]; stageLabels: Record<string, string>; lifecycle: string[]; gates: string[]; counterparty: string };
   lifecycle: { id: string; label: string; stage: string };
   workstreams: Array<{ id: string; label: string; status: string; detail: string; openIssues: string[]; pendingDecisions: string[]; waits: Array<{ key: string; subject: string; sinceDays: number; chases: number }> }>;
   requirements: Array<{ id: string; label: string; gate: string; workstream: string | null; authority: string; humanConfirmationRequired: boolean; applies: boolean; advisory?: boolean; satisfied: boolean; satisfiedAt: string | null; blockedBy: Array<{ type: string; id: string; label: string }>; detail: string }>;
@@ -21,7 +22,12 @@ export interface CaseModel {
 }
 
 const LIFECYCLE = ['instructed', 'pre_exchange', 'ready_to_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion', 'closed'];
-const LC_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };
+const LC_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', investigating: 'Investigating', ready_to_complete: 'Ready to complete', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };
+/** The gate the coarse lifecycle is working towards — the first gate of this type that is not yet ready, else the last. */
+const currentGate = (m: CaseModel): string => {
+  const gates = m.profile?.gates ?? ['exchange', 'completion', 'registration', 'close'];
+  return gates.find((g) => m.gates[g] && !m.gates[g].ready) ?? gates[gates.length - 1];
+};
 const WS_CHIP: Record<string, string> = { complete: 'ok', blocked: 'bad', at_risk: 'hot', under_review: 'pending', awaiting: 'info', in_progress: 'info', not_started: 'muted', not_applicable: 'muted' };
 const WS_TEXT: Record<string, string> = { complete: 'COMPLETE', blocked: 'BLOCKED', at_risk: 'AT RISK', under_review: 'UNDER REVIEW', awaiting: 'AWAITING', in_progress: 'IN PROGRESS', not_started: 'NOT STARTED', not_applicable: 'N/A' };
 const WHO: Record<string, string> = { system: 'system (objective)', conveyancer: 'conveyancer', client: 'client', third_party: 'third party', seller_side: "seller's side", lender: 'lender', mlro: 'MLRO' };
@@ -54,13 +60,15 @@ export function CaseView({ matterId, api, view }: { matterId: string; api: Api; 
   }, [api, matterId]);
   if (err) return <div className="eg-err">{err}</div>;
   if (!m) return <div style={{ color: '#94a3b8', fontSize: 13 }}>Building the case model…</div>;
-  const idx = LIFECYCLE.indexOf(m.lifecycle.id);
+  const spine = m.profile?.lifecycle ?? LIFECYCLE;
+  const idx = spine.indexOf(m.lifecycle.id);
   return (
     <div className="cv">
       <style>{CSS}</style>
       <div className="lc">
         {m.lifecycle.id === 'aborted' && <span className="abort">Aborted</span>}
-        {LIFECYCLE.map((l, i) => <span key={l} className={i < idx ? 'done' : i === idx ? 'now' : ''}>{LC_LABEL[l]}</span>)}
+        {spine.map((l, i) => <span key={l} className={i < idx ? 'done' : i === idx ? 'now' : ''}>{LC_LABEL[l] ?? l}</span>)}
+        {m.profile && <span style={{ border: 0, background: 'transparent', color: '#64748b', fontWeight: 500 }}>{m.profile.label}{m.profile.hasExchange ? '' : ' · no exchange'}</span>}
       </div>
       {view === 'readiness' ? <Readiness m={m} /> : <Dependencies m={m} />}
     </div>
@@ -68,7 +76,7 @@ export function CaseView({ matterId, api, view }: { matterId: string; api: Api; 
 }
 
 function Readiness({ m }: { m: CaseModel }) {
-  const gateId = m.lifecycle.id === 'instructed' || m.lifecycle.id === 'pre_exchange' || m.lifecycle.id === 'ready_to_exchange' ? 'exchange' : m.lifecycle.id === 'exchanged' || m.lifecycle.id === 'pre_completion' ? 'completion' : m.lifecycle.id === 'completed' || m.lifecycle.id === 'post_completion' ? 'registration' : 'close';
+  const gateId = currentGate(m);
   const g = m.gates[gateId];
   return (
     <>
@@ -133,7 +141,7 @@ function Readiness({ m }: { m: CaseModel }) {
 function Dependencies({ m }: { m: CaseModel }) {
   const layout = useMemo(() => {
     const nodes = m.graph.nodes;
-    const gateId = m.lifecycle.id === 'instructed' || m.lifecycle.id === 'pre_exchange' || m.lifecycle.id === 'ready_to_exchange' ? 'exchange' : m.lifecycle.id === 'exchanged' || m.lifecycle.id === 'pre_completion' ? 'completion' : m.lifecycle.id === 'completed' || m.lifecycle.id === 'post_completion' ? 'registration' : 'close';
+    const gateId = currentGate(m);
     const reqs = nodes.filter((n) => n.type === 'requirement' && m.graph.edges.some((e) => e.type === 'REQUIRES' && e.from === `gate:${gateId}` && e.to === n.id));
     const blockers = nodes.filter((n) => (n.type === 'issue' && (n.status === 'open' || n.status === 'negotiating')) || n.type === 'decision' || n.type === 'wait' || n.type === 'client_decision');
     const wsIds = Array.from(new Set(reqs.map((r) => r.workstream).filter(Boolean))) as string[];

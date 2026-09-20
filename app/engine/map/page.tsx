@@ -12,10 +12,11 @@ import { STAGE_LABEL, type IssueCatalogue } from '../../shared/engine/types';
 interface Spec {
   version: string;
   generatedFrom: string;
+  transactionTypes: Array<{ type: string; label: string; side: string; tenure: string; hasExchange: boolean; stages: string[]; stageLabels: Record<string, string>; stageGates: Record<string, string[]>; workstreams: string[]; subflows: string[]; defaultSearches: string[]; counterparty: string; fundsFrom: string[]; registration: string; note: string }>;
   stages: Array<{ id: string; label: string; purpose: string; gates: string[]; subflows: string[]; typical: string[] }>;
   terminal: Array<{ id: string; label: string; how: string }>;
   subflows: Array<{ id: string; label: string; stage: string; waitKey: string | null; start: string[]; extracted: string | null; cleared: string | null; flagged: string | null; reviewed: string | null; decisionKind: string | null; rule: string }>;
-  commands: Array<{ type: string; actor: string; stages: string[] | 'any' | 'not_enrolled'; emits: string[]; description: string; eventuality?: boolean; humanGated?: boolean; hardStop?: boolean }>;
+  commands: Array<{ type: string; actor: string; stages: string[] | 'any' | 'not_enrolled'; emits: string[]; description: string; eventuality?: boolean; humanGated?: boolean; hardStop?: boolean; types?: string[] }>;
   events: Array<{ type: string; category: string; decision: boolean; humanGated: boolean }>;
   decisions: Array<{ kind: string; label: string; options: string[]; source: string }>;
   timers: { waits: Array<{ waitKey: string; chaseAfter: number; chaseEvery: number | null; escalateAfter: number; reEscalateAfter: number; recipientRole: string; template: string }>; deadlines: Array<{ kind: string; leadWorkingDays: number; description: string }> };
@@ -52,10 +53,15 @@ export default function MapPage() {
   const [handling, setHandling] = useState('all');
   const [backend, setBackend] = useState('all');
   const [issueGroup, setIssueGroup] = useState('all');
+  const [txType, setTxType] = useState('all');
   useEffect(() => {
     api<Spec>('/engine/spec').then(setSpec).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the spec.'));
   }, []);
   const areas = useMemo(() => Array.from(new Set(spec?.eventualities.map((e) => e.area) ?? [])), [spec]);
+  const profile = useMemo(() => spec?.transactionTypes.find((t) => t.type === txType) ?? null, [spec, txType]);
+  /** The stage spine as this type passes through it (a remortgage / transfer has no exchange phases). */
+  const stagesShown = useMemo(() => (spec ? (profile ? spec.stages.filter((s) => profile.stages.includes(s.id)) : spec.stages) : []), [spec, profile]);
+  const commandsShown = useMemo(() => (spec ? spec.commands.filter((c) => !profile || !c.types || c.types.includes(profile.type)) : []), [spec, profile]);
 
   if (!spec) {
     return (
@@ -68,7 +74,10 @@ export default function MapPage() {
   // ── stage spine geometry ──
   const W = 150, GAP = 22, X0 = 20, Y = 40, H = 54;
   const stageX = (i: number) => X0 + i * (W + GAP);
-  const gateLines = spec.stages.map((s) => s.gates.length);
+  const gatesOf = (st: { id: string; gates: string[] }) => profile?.stageGates[st.id] ?? st.gates;
+  const subflowsOf = (st: { id: string; subflows: string[] }) => (profile ? st.subflows.filter((sf) => profile.subflows.includes(sf)) : st.subflows);
+  const gateLines = stagesShown.map((s) => gatesOf(s).length);
+  const label = (id: string) => profile?.stageLabels[id] ?? STAGE_LABEL[id] ?? id;
   const spineH = Y + H + 30 + Math.max(...gateLines) * 15 + 70;
 
   return (
@@ -77,7 +86,7 @@ export default function MapPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">The machine, drawn from code</h1>
-          <p className="eg-sub">Residential freehold purchase, buyer side. Spec version <code>{spec.version}</code> · {spec.stages.length} stages · {spec.subflows.length} sub-flows · {spec.commands.length} commands · {spec.events.length} event types · {spec.decisions.length} decision kinds · {spec.triggers.length} triggers · {spec.eventualities.length} eventualities · {spec.issues.kinds.length} issue kinds. Read-only; the tests keep it honest.</p>
+          <p className="eg-sub">One machine, {spec.transactionTypes.length} transaction types. Spec version <code>{spec.version}</code> · {spec.stages.length} stages · {spec.subflows.length} sub-flows · {spec.commands.length} commands · {spec.events.length} event types · {spec.decisions.length} decision kinds · {spec.triggers.length} triggers · {spec.eventualities.length} eventualities · {spec.issues.kinds.length} issue kinds. Read-only; the tests keep it honest.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <a className="eg-btn" href="/decisions">Queue</a>
@@ -85,18 +94,44 @@ export default function MapPage() {
         </div>
       </div>
 
-      <h2>1 · The stage spine and its gates</h2>
+      <h2>0 · Transaction types: one machine, parameterised by a profile</h2>
+      <div className="filters">
+        <button className={`eg-btn${txType === 'all' ? ' on' : ''}`} onClick={() => setTxType('all')}>All types</button>
+        {spec.transactionTypes.map((t) => <button key={t.type} className={`eg-btn${txType === t.type ? ' on' : ''}`} onClick={() => setTxType(t.type)}>{t.label}</button>)}
+      </div>
+      <table>
+        <thead><tr><th>Type</th><th>Side</th><th>Tenure</th><th>Exchange</th><th>Phases</th><th>Workstreams</th><th>Sub-flows</th><th>Money from</th><th>After completion</th><th>What is different</th></tr></thead>
+        <tbody>
+          {spec.transactionTypes.filter((t) => txType === 'all' || t.type === txType).map((t) => (
+            <tr key={t.type}>
+              <td><b>{t.label}</b></td>
+              <td>{t.side}</td>
+              <td>{t.tenure}</td>
+              <td>{t.hasExchange ? 'yes' : <span className="muted">none</span>}</td>
+              <td>{t.stages.map((st) => t.stageLabels[st] ?? STAGE_LABEL[st] ?? st).join(' → ')}</td>
+              <td>{t.workstreams.map((w) => w.replace(/_/g, ' ')).join(', ')}</td>
+              <td>{t.subflows.join(', ')}</td>
+              <td>{t.fundsFrom.map((f) => f.replace(/_/g, ' ')).join(', ')}</td>
+              <td>{t.registration === 'ap1' ? 'SDLT / AP1 → registered' : t.registration === 'discharge_only' ? 'redeem → account to client → discharge' : '—'}</td>
+              <td>{t.note}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="eg-sub" style={{ marginTop: 6 }}>Pick a type above and the spine, its gates and the command table below narrow to that type (each profile carries its own gate lines, checked against the machine's blockers by the per-type tests).</p>
+
+      <h2>1 · The stage spine and its gates{profile ? ` — ${profile.label}` : ''}</h2>
       <figure>
-        <svg viewBox={`0 0 ${X0 * 2 + spec.stages.length * (W + GAP)} ${spineH}`} role="img" aria-label="Eight stages left to right; under each, the gates that must be true to leave it; abandonment and manual handling can leave from any stage.">
+        <svg viewBox={`0 0 ${X0 * 2 + stagesShown.length * (W + GAP)} ${spineH}`} role="img" aria-label="Eight stages left to right; under each, the gates that must be true to leave it; abandonment and manual handling can leave from any stage.">
           <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0f172a" /></marker></defs>
-          {spec.stages.map((s, i) => (
+          {stagesShown.map((s, i) => (
             <g key={s.id}>
-              <rect x={stageX(i)} y={Y} width={W} height={H} rx="10" fill={i === spec.stages.length - 1 ? '#0f172a' : '#fff'} stroke="#0f172a" strokeWidth="1.5" />
-              <text x={stageX(i) + W / 2} y={Y + 23} textAnchor="middle" fontSize="13" fontWeight="700" fill={i === spec.stages.length - 1 ? '#fff' : '#0f172a'}>{STAGE_LABEL[s.id] ?? s.label}</text>
-              <text x={stageX(i) + W / 2} y={Y + 41} textAnchor="middle" fontSize="10" fill={i === spec.stages.length - 1 ? '#c7d2fe' : '#64748b'}>{s.subflows.length ? s.subflows.join(' · ') : 'milestones'}</text>
-              {i < spec.stages.length - 1 && <line x1={stageX(i) + W} y1={Y + H / 2} x2={stageX(i + 1) - 2} y2={Y + H / 2} stroke="#0f172a" strokeWidth="1.4" markerEnd="url(#arr)" />}
+              <rect x={stageX(i)} y={Y} width={W} height={H} rx="10" fill={i === stagesShown.length - 1 ? '#0f172a' : '#fff'} stroke="#0f172a" strokeWidth="1.5" />
+              <text x={stageX(i) + W / 2} y={Y + 23} textAnchor="middle" fontSize="12" fontWeight="700" fill={i === stagesShown.length - 1 ? '#fff' : '#0f172a'}>{label(s.id)}</text>
+              <text x={stageX(i) + W / 2} y={Y + 41} textAnchor="middle" fontSize="10" fill={i === spec.stages.length - 1 ? '#c7d2fe' : '#64748b'}>{subflowsOf(s).length ? subflowsOf(s).join(' · ') : 'milestones'}</text>
+              {i < stagesShown.length - 1 && <line x1={stageX(i) + W} y1={Y + H / 2} x2={stageX(i + 1) - 2} y2={Y + H / 2} stroke="#0f172a" strokeWidth="1.4" markerEnd="url(#arr)" />}
               <text x={stageX(i) + 6} y={Y + H + 22} fontSize="10" fontWeight="800" fill="#94a3b8" letterSpacing=".06em">GATES</text>
-              {s.gates.map((g, j) => (
+              {gatesOf(s).map((g, j) => (
                 <foreignObject key={j} x={stageX(i)} y={Y + H + 26 + j * 15} width={W} height={16}>
                   <div style={{ fontSize: 10, lineHeight: '15px', color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={g}>· {g}</div>
                 </foreignObject>
@@ -157,15 +192,15 @@ export default function MapPage() {
       </table>
       <p className="eg-sub" style={{ marginTop: 6 }}>Thresholds: extraction confidence ≥ {spec.thresholds.extractionConfidence} to be acted on (below → flagged for a person); classification confidence ≥ {spec.thresholds.classificationConfidence} to route a document automatically.</p>
 
-      <h2>3 · Commands: who may record what, and when</h2>
+      <h2>3 · Commands: who may record what, and when{profile ? ` — ${profile.label} (${commandsShown.length} of ${spec.commands.length})` : ''}</h2>
       <table>
         <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>What it means</th></tr></thead>
         <tbody>
-          {spec.commands.map((c) => (
+          {commandsShown.map((c) => (
             <tr key={c.type}>
               <td><code>{c.type}</code>{c.eventuality && <span className="eg-chip info" style={{ marginLeft: 6 }}>eventuality</span>}{c.humanGated && <span className="eg-chip bad" style={{ marginLeft: 6 }}>human gate</span>}{c.hardStop && <span className="eg-chip bad" style={{ marginLeft: 6 }}>hard stop</span>}</td>
               <td><span className={`eg-chip ${c.actor === 'person' ? 'pending' : c.actor === 'automation' ? 'muted' : 'info'}`}>{ACTOR[c.actor]}</span></td>
-              <td>{c.stages === 'any' ? <span className="muted">any (enrolled)</span> : c.stages === 'not_enrolled' ? <span className="muted">before enrolment</span> : c.stages.map((s) => STAGE_LABEL[s] ?? s).join(', ')}</td>
+              <td>{c.stages === 'any' ? <span className="muted">any (enrolled)</span> : c.stages === 'not_enrolled' ? <span className="muted">before enrolment</span> : c.stages.filter((st) => !profile || profile.stages.includes(st)).map((st) => label(st)).join(', ')}{c.types && !profile ? <div className="muted" style={{ fontSize: 11 }}>{c.types.map((t) => spec.transactionTypes.find((x) => x.type === t)?.label ?? t).join(', ')}</div> : null}</td>
               <td>{c.emits.map((e) => <code key={e} style={{ marginRight: 4 }}>{e}</code>)}</td>
               <td>{c.description}</td>
             </tr>

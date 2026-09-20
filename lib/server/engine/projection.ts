@@ -104,6 +104,14 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.transactionType = p.transactionType;
       s.requireProofOfFunds = !!p.requireProofOfFunds;
       s.requireExchangeAuthority = !!p.requireExchangeAuthority;
+      s.parties = p.parties ?? 1;
+      s.hasExistingMortgage = !!p.hasExistingMortgage;
+      s.considerationPennies = p.considerationPennies ?? null;
+      const side = p.transactionType === 'freehold_sale' || p.transactionType === 'leasehold_sale' ? 'seller' : p.transactionType === 'remortgage' || p.transactionType === 'transfer_of_equity' ? 'owner' : 'buyer';
+      if (side === 'seller') s.propertyForms.status = 'not_started';
+      if (p.hasExistingMortgage && (side === 'seller' || p.transactionType === 'remortgage')) s.redemption.status = 'not_started';
+      if (p.hasExistingMortgage && p.transactionType === 'transfer_of_equity') s.lenderConsent.status = 'not_started';
+      if (p.transactionType === 'leasehold_sale') s.managementPack.status = 'not_started';
       s.hasLender = p.hasLender;
       s.requiredSearches = [...p.requiredSearches];
       s.shadowMode = !!p.shadowMode;
@@ -742,6 +750,86 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'matter_closed': {
       s.closedAt = e.createdAt;
       for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
+      break;
+    }
+    // ── transaction types ──
+    case 'property_forms_requested': {
+      s.propertyForms = { ...s.propertyForms, status: 'requested', forms: (e.payload as Payloads['property_forms_requested']).forms };
+      openWait(s, 'property_forms', '', e);
+      break;
+    }
+    case 'property_forms_received': {
+      const p = e.payload as Payloads['property_forms_received'];
+      s.propertyForms = { status: 'received', forms: p.forms, documentId: e.sourceDocumentId ?? null, facts: p.facts ?? null };
+      closeWait(s, 'property_forms', null, e);
+      break;
+    }
+    case 'contract_pack_sent': {
+      s.contractPack.sentAt = e.createdAt;
+      break;
+    }
+    case 'buyer_enquiries_received': {
+      const p = e.payload as Payloads['buyer_enquiries_received'];
+      for (const q of p.enquiries) s.inboundEnquiries[q.id] = { id: q.id, question: q.question, round: p.round, receivedAt: e.createdAt, repliedAt: null };
+      // A reply is owed again: the derived exchange conditions no longer hold until it is sent.
+      if (!s.exchange.exchangedAt) s.exchange.conditionsMet = false;
+      break;
+    }
+    case 'enquiry_replies_sent': {
+      const p = e.payload as Payloads['enquiry_replies_sent'];
+      for (const id of p.enquiryIds) if (s.inboundEnquiries[id]) s.inboundEnquiries[id].repliedAt = e.createdAt;
+      break;
+    }
+    case 'redemption_statement_requested': {
+      s.redemption = { ...s.redemption, status: 'requested', lender: (e.payload as Payloads['redemption_statement_requested']).lender ?? s.redemption.lender };
+      openWait(s, 'redemption', '', e);
+      break;
+    }
+    case 'redemption_statement_received': {
+      const p = e.payload as Payloads['redemption_statement_received'];
+      s.redemption = { ...s.redemption, status: 'received', lender: p.lender ?? s.redemption.lender, redemptionPennies: p.redemptionPennies, validUntil: p.validUntil, documentId: e.sourceDocumentId ?? null };
+      closeWait(s, 'redemption', null, e);
+      break;
+    }
+    case 'mortgage_redeemed': {
+      s.redemption = { ...s.redemption, status: 'redeemed', redeemedAt: e.createdAt };
+      openWait(s, 'discharge', '', e);
+      break;
+    }
+    case 'discharge_confirmed': {
+      s.redemption = { ...s.redemption, status: 'discharged', dischargedAt: e.createdAt };
+      closeWait(s, 'discharge', null, e);
+      break;
+    }
+    case 'mortgage_deed_executed': {
+      s.deeds.mortgageDeedAt = e.createdAt;
+      break;
+    }
+    case 'certificate_of_title_sent': {
+      s.deeds.certificateOfTitleAt = e.createdAt;
+      break;
+    }
+    case 'lender_consent_requested': {
+      s.lenderConsent = { ...s.lenderConsent, status: 'requested', lender: (e.payload as Payloads['lender_consent_requested']).lender };
+      openWait(s, 'lender_consent', '', e);
+      break;
+    }
+    case 'lender_consent_received': {
+      const p = e.payload as Payloads['lender_consent_received'];
+      s.lenderConsent = { status: 'received', lender: p.lender, receivedAt: e.createdAt, conditions: p.conditions ?? null };
+      closeWait(s, 'lender_consent', null, e);
+      break;
+    }
+    case 'transfer_deed_executed': {
+      s.deeds.transferDeedAt = e.createdAt;
+      break;
+    }
+    case 'deed_of_trust_executed': {
+      s.deeds.deedOfTrustAt = e.createdAt;
+      break;
+    }
+    case 'sdlt_not_required': {
+      s.sdltNotRequiredAt = e.createdAt;
       break;
     }
     case 'shadow_mode_changed': {

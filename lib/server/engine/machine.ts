@@ -21,6 +21,7 @@ import type { DeadlineKind } from './sla';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
+import { profileOf, type TransactionProfile } from './transactions';
 import {
   EngineError,
   isResolved,
@@ -49,7 +50,10 @@ import {
   proofOfFundsApproved,
   openPofQueries,
   surveyApplies,
+  deedOfTrustApplies,
+  TENANTS_IN_COMMON,
   CLIENT_DECISION_OUTCOMES,
+  type PropertyFormsFacts,
   type ClientDecisionSubject,
   type SurveyFacts,
   type SurveyType,
@@ -91,7 +95,7 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -151,7 +155,24 @@ export type Command =
   | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
   | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null }
   | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null; bankDetailsId: string }
-  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null }
+  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'; amountPennies?: number | null }
+  // ── transaction types (docs/transaction-types.md) ──
+  | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
+  | { type: 'property_forms_received'; actor: Actor; forms: string[]; documentId?: string | null; facts?: PropertyFormsFacts | null }
+  | { type: 'contract_pack_sent'; actor: Actor; includes?: string[] | null; channel?: string | null; messageId?: string | null }
+  | { type: 'buyer_enquiries_received'; actor: Actor; enquiries: Array<{ id?: string | null; question: string }>; documentId?: string | null }
+  | { type: 'enquiry_replies_sent'; actor: Actor; enquiryIds: string[]; documentId?: string | null; channel?: string | null; messageId?: string | null }
+  | { type: 'request_redemption_statement'; actor: Actor; lender?: string | null }
+  | { type: 'redemption_statement_received'; actor: Actor; lender?: string | null; redemptionPennies?: number | null; validUntil?: string | null; dailyInterestPennies?: number | null; documentId?: string | null }
+  | { type: 'mortgage_redeemed'; actor: Actor; lender?: string | null; amountPennies?: number | null }
+  | { type: 'discharge_confirmed'; actor: Actor; lender?: string | null; reference?: string | null }
+  | { type: 'mortgage_deed_executed'; actor: Actor; lender?: string | null; witnessed?: boolean }
+  | { type: 'certificate_of_title_sent'; actor: Actor; lender?: string | null; completionDate?: string | null }
+  | { type: 'request_lender_consent'; actor: Actor; lender?: string | null }
+  | { type: 'lender_consent_received'; actor: Actor; lender?: string | null; conditions?: string | null }
+  | { type: 'transfer_deed_executed'; actor: Actor; parties: string[]; witnessed?: boolean }
+  | { type: 'deed_of_trust_executed'; actor: Actor; parties: string[]; shares?: string | null; documentId?: string | null }
+  | { type: 'sdlt_not_required'; actor: Actor; reason: string }
   | { type: 'completion_confirmed'; actor: Actor; completedAt?: string | null }
   | { type: 'sdlt_submitted'; actor: Actor; reference?: string | null }
   | { type: 'ap1_submitted'; actor: Actor; reference?: string | null }
@@ -208,6 +229,22 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'set_issue_severity',
   'client_decision_recorded',
   'close_matter',
+  'request_property_forms',
+  'property_forms_received',
+  'contract_pack_sent',
+  'buyer_enquiries_received',
+  'enquiry_replies_sent',
+  'request_redemption_statement',
+  'redemption_statement_received',
+  'mortgage_redeemed',
+  'discharge_confirmed',
+  'mortgage_deed_executed',
+  'certificate_of_title_sent',
+  'request_lender_consent',
+  'lender_consent_received',
+  'transfer_deed_executed',
+  'deed_of_trust_executed',
+  'sdlt_not_required',
   'request_proof_of_funds',
   'raise_proof_of_funds_query',
   'withdraw_proof_of_funds_query',
@@ -245,8 +282,24 @@ const requireEnrolledEvenIfAbandoned = (s: MatterState): void => {
   if (!s.enrolled) reject('Matter is not enrolled in the engine. Enrol it first.');
 };
 
+const profile = (s: MatterState): TransactionProfile => profileOf(s.transactionType);
+const requireSide = (s: MatterState, sides: Array<TransactionProfile['side']>, what: string): void => {
+  const p = profile(s);
+  if (!sides.includes(p.side)) reject(`${what} does not apply to a ${p.label.toLowerCase()}.`);
+};
+const requireType = (s: MatterState, types: TransactionType[], what: string): void => {
+  if (!types.includes(s.transactionType ?? 'freehold_purchase')) reject(`${what} does not apply to a ${profile(s).label.toLowerCase()}.`);
+};
+/** A stage this type passes through; "at least" is measured along the profile's own stage list. */
+const stageAtLeast = (s: MatterState, stage: Stage): boolean => {
+  const list = profile(s).stages;
+  const cur = list.indexOf(s.stage);
+  const want = list.indexOf(stage);
+  return want === -1 ? stageIndex(s.stage) >= stageIndex(stage) : cur >= want;
+};
+
 const requireStageAtLeast = (s: MatterState, stage: Stage, what: string): void => {
-  if (stageIndex(s.stage) < stageIndex(stage)) reject(`${what} is not valid before stage "${stage}" (matter is at "${s.stage}").`);
+  if (!stageAtLeast(s, stage)) reject(`${what} is not valid before stage "${stage}" (matter is at "${s.stage}").`);
 };
 
 const requireStage = (s: MatterState, stage: Stage, what: string): void => {
@@ -281,6 +334,9 @@ export function stageBlockers(s: MatterState): string[] {
   if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
   if (s.closedAt) return ['matter closed'];
   if (s.manualHandling.required) return [`manual handling: ${s.manualHandling.reason ?? 'unspecified'}`];
+  const p = profile(s);
+  if (p.side === 'seller') return saleBlockers(s);
+  if (p.side === 'owner') return ownerBlockers(s, p);
   const b: string[] = [];
   switch (s.stage) {
     case 'instruction':
@@ -338,6 +394,102 @@ export function stageBlockers(s: MatterState): string[] {
  * (requireProofOfFunds), until it has been signed off at all.
  */
 const proofOfFundsHolds = (s: MatterState): boolean => s.proofOfFunds.status === 'requested' || s.proofOfFunds.status === 'submitted' || (s.requireProofOfFunds && !proofOfFundsApproved(s));
+/** Sale side (docs/transaction-types.md): forms in, pack out, the buyer's enquiries answered, the mortgage redeemed and discharged. */
+function saleBlockers(s: MatterState): string[] {
+  const b: string[] = [];
+  switch (s.stage) {
+    case 'instruction':
+      if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
+      break;
+    case 'pre_contract':
+      if (s.propertyForms.status !== 'received') b.push(`property forms ${s.propertyForms.status === 'requested' ? 'awaited from the client' : 'not requested'}`);
+      if (!isResolved(s.title.status)) b.push(`title ${s.title.status}`);
+      if (isLeasehold(s) && !isResolved(s.managementPack.status)) b.push(`management pack ${s.managementPack.status === 'not_started' ? 'not requested' : s.managementPack.status === 'requested' ? 'awaiting' : 'under review'}`);
+      if (!s.contractPack.sentAt) b.push('contract pack not sent');
+      break;
+    case 'contract_review': {
+      const open = Object.values(s.inboundEnquiries).filter((q) => !q.repliedAt);
+      if (open.length) b.push(`${open.length} enquir${open.length === 1 ? 'y' : 'ies'} from the buyer awaiting our reply (${open.map((q) => q.id).join(', ')})`);
+      break;
+    }
+    case 'pre_exchange': {
+      const open = Object.values(s.inboundEnquiries).filter((q) => !q.repliedAt);
+      if (open.length) b.push(`${open.length} enquir${open.length === 1 ? 'y' : 'ies'} from the buyer awaiting our reply (${open.map((q) => q.id).join(', ')})`);
+      if (s.hasExistingMortgage && s.redemption.status === 'not_started') b.push('redemption statement not requested');
+      if (s.hasExistingMortgage && s.redemption.status === 'requested') b.push('redemption statement awaited');
+      b.push(...issueBlockers(s, 'exchange'));
+      if (exchangeAuthorityHolds(s)) b.push('client has not yet authorised exchange');
+      if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
+      break;
+    }
+    case 'exchanged':
+      if (!s.completion.statementGeneratedAt) b.push('completion statement not generated');
+      break;
+    case 'pre_completion':
+      if (!s.completion.confirmedAt) {
+        b.push(...issueBlockers(s, 'completion'));
+        if (!s.completion.fundsReceivedAt) b.push("completion monies not received from the buyer's solicitor");
+        if (s.hasExistingMortgage && !s.payments.some((x) => x.payeeKind === 'lender')) b.push('redemption payment not authorised against verified lender details');
+        if (pendingBankDetailsDecision(s, 'lender')) b.push('lender bank-details change awaiting out-of-band verification (hard stop)');
+        if (s.completion.fundsReceivedAt) b.push('completion not confirmed');
+      }
+      break;
+    case 'completed':
+      if (s.hasExistingMortgage && s.redemption.status !== 'redeemed' && s.redemption.status !== 'discharged') b.push('mortgage not yet recorded as redeemed');
+      if (!s.payments.some((x) => x.payeeKind === 'client')) b.push('balance to the client not authorised against verified client details');
+      break;
+    case 'post_completion':
+      if (s.hasExistingMortgage && s.redemption.status !== 'discharged') b.push("awaiting the lender's discharge (DS1 / e-DS1)");
+      else b.push('matter complete');
+      break;
+  }
+  return b;
+}
+
+/** Remortgage and transfer of equity: no exchange — investigation, execution, completion, registration. */
+function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
+  const b: string[] = [];
+  const remo = p.type === 'remortgage';
+  switch (s.stage) {
+    case 'instruction':
+      if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
+      break;
+    case 'pre_contract':
+      if (!isResolved(s.title.status)) b.push(`title ${s.title.status}`);
+      b.push(...unresolvedSearches(s, true));
+      if (remo && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status}`);
+      if (s.hasExistingMortgage && remo && s.redemption.status !== 'received' && s.redemption.status !== 'redeemed' && s.redemption.status !== 'discharged') b.push(`redemption statement ${s.redemption.status === 'requested' ? 'awaited' : 'not requested'}`);
+      if (s.hasExistingMortgage && !remo && s.lenderConsent.status !== 'received') b.push(`lender's consent ${s.lenderConsent.status === 'requested' ? 'awaited' : 'not requested'}`);
+      if (!remo && s.parties > 1 && !s.clientDecisions.ownership_basis) b.push('basis of co-ownership not yet decided by the clients');
+      b.push(...issueBlockers(s, 'exchange'));
+      break;
+    case 'pre_completion':
+      if (!s.completion.confirmedAt) {
+        b.push(...issueBlockers(s, 'completion'));
+        if (remo && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
+        if (remo && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent to the lender');
+        if (remo && !s.completion.fundsReceivedAt) b.push('advance not received from the new lender');
+        if (remo && s.hasExistingMortgage && !s.payments.some((x) => x.payeeKind === 'lender')) b.push('redemption payment not authorised against verified lender details');
+        if (!remo && !s.deeds.transferDeedAt) b.push('transfer deed not executed by every party');
+        if (!remo && deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) b.push('declaration of trust not executed (tenants in common)');
+        if (!remo && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt) b.push('consideration not received from the incoming owner');
+        if (pendingBankDetailsDecision(s, 'lender')) b.push('lender bank-details change awaiting out-of-band verification (hard stop)');
+        if (!b.length) b.push('completion not confirmed');
+      }
+      break;
+    case 'completed':
+      if (!remo && (s.considerationPennies ?? 0) > 0 && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) b.push('SDLT return not filed (or recorded as not required)');
+      if (!s.postCompletion.ap1SubmittedAt) b.push('AP1 not submitted');
+      break;
+    case 'post_completion':
+      if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
+      if (remo && s.hasExistingMortgage && s.redemption.status !== 'discharged') b.push("awaiting the old lender's discharge");
+      b.push(s.postCompletion.ap1ConfirmedAt ? 'matter complete' : 'awaiting HMLR registration');
+      break;
+  }
+  return b;
+}
+
 /** A survey on file means the client must confirm they are satisfied with the physical condition before exchange (their decision, never inferred). */
 const surveyHolds = (s: MatterState): boolean => surveyApplies(s) && s.survey.status !== 'client_satisfied';
 /** Firm policy: the client's recorded authority to exchange. */
@@ -361,7 +513,11 @@ function unresolvedSearches(s: MatterState, includeUnordered: boolean): string[]
   return out;
 }
 
-const nextStage = (s: Stage): Stage | null => STAGES[stageIndex(s) + 1] ?? null;
+const nextStage = (s: MatterState): Stage | null => {
+  const list = profile(s).stages;
+  const i = list.indexOf(s.stage);
+  return i === -1 ? STAGES[stageIndex(s.stage) + 1] ?? null : list[i + 1] ?? null;
+};
 
 /**
  * Automatic follow-on events: stage advancement and derived milestones. Loops until
@@ -373,10 +529,13 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
   for (let guard = 0; guard < 16; guard++) {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
-    if (s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
+    const side = profile(s).side;
+    if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
+    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && issuesGating(s, 'exchange').length === 0 && !exchangeAuthorityHolds(s)) {
+      ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['contract pack sent', "buyer's enquiries answered", s.hasExistingMortgage ? 'redemption figure known' : 'unencumbered', 'no open issue holding exchange', s.requireExchangeAuthority ? 'client authorised exchange' : 'authority not required by policy'] } };
     } else {
-      const to = nextStage(s.stage);
+      const to = nextStage(s);
       if (to && stageBlockers(s).length === 0) {
         ev = { type: 'stage_advanced', actor: SYSTEM, payload: { from: s.stage, to, reason: `all ${s.stage.replace('_', ' ')} gates resolved` } };
       }
@@ -447,10 +606,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           actor: cmd.actor,
           payload: {
             transactionType: cmd.transactionType ?? 'freehold_purchase',
-            requireProofOfFunds: cmd.requireProofOfFunds ?? true,
-            requireExchangeAuthority: cmd.requireExchangeAuthority ?? true,
-            hasLender: cmd.hasLender,
-            requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
+            // Proof of funds and the client's exchange authority are purchase-side policies; a sale, remortgage or transfer has neither.
+            requireProofOfFunds: profileOf(cmd.transactionType).side === 'buyer' ? (cmd.requireProofOfFunds ?? true) : false,
+            requireExchangeAuthority: profileOf(cmd.transactionType).hasExchange ? (cmd.requireExchangeAuthority ?? true) : false,
+            parties: Math.max(1, cmd.parties ?? 1),
+            hasExistingMortgage: !!cmd.hasExistingMortgage,
+            considerationPennies: cmd.considerationPennies ?? null,
+            hasLender: profileOf(cmd.transactionType).side === 'seller' ? false : cmd.hasLender,
+            requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : profileOf(cmd.transactionType).defaultSearches,
             targetExchangeDate: cmd.targetExchangeDate ?? null,
             targetCompletionDate: cmd.targetCompletionDate ?? null,
             counterpartyType: cmd.counterpartyType ?? null,
@@ -603,14 +766,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing title now needs manual handling.');
       const extracted: NewEvent = { type: 'title_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence };
       const txType = s.transactionType ?? 'freehold_purchase';
-      const verdict = evaluateTitle(cmd.facts, txType);
+      const expectedTenure = profile(s).tenure;
+      const verdict = evaluateTitle(cmd.facts, expectedTenure);
       const out = [
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).title, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
       // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
-      const expected = txType === 'leasehold_purchase' ? 'leasehold' : 'freehold';
-      if (cmd.facts.tenure !== expected && !s.manualHandling.required) {
+      if (expectedTenure !== 'any' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
         out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: cmd.facts.tenure === 'unknown' ? 'tenure_unknown' : 'tenure_mismatch', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}; the matter is a ${txType.replace('_', ' ')}.` } });
       }
       return out;
@@ -638,6 +801,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── Report on title ──
     case 'draft_report_on_title': {
       requireEnrolled(s);
+      requireSide(s, ['buyer'], 'A report on title');
       requireStage(s, 'contract_review', 'Drafting the report on title');
       if (!isResolved(s.title.status)) reject(`Title is ${s.title.status}; resolve it before drafting the report.`);
       if (s.reportOnTitle.status === 'drafted') reject('A draft is already awaiting approval.');
@@ -674,8 +838,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'contracts_exchanged': {
       requireEnrolled(s);
       requireStage(s, 'pre_exchange', 'Exchange');
-      if (s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
-      const open = unresolvedSearches(s, false);
+      if (!profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} completes without an exchange of contracts.`);
+      if (profile(s).side === 'seller') {
+        const unreplied = Object.values(s.inboundEnquiries).filter((q) => !q.repliedAt);
+        if (unreplied.length) reject(`Cannot exchange: ${unreplied.length} of the buyer's enquiries await our reply (${unreplied.map((q) => q.id).join(', ')}).`);
+        if (s.hasExistingMortgage && s.redemption.status !== 'received') reject('Cannot exchange: the redemption figure is not known.');
+      }
+      if (profile(s).side === 'buyer' && s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
+      const open = profile(s).side === 'buyer' ? unresolvedSearches(s, false) : [];
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
       if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
@@ -697,7 +867,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'funds_requested': {
       requireEnrolled(s);
       requireStage(s, 'pre_completion', 'Requesting funds');
-      if (cmd.fromRole === 'lender' && !s.hasLender) reject('Cash purchase — no lender to request funds from.');
+      requireSide(s, ['buyer', 'owner'], 'Requesting completion funds');
+      if (cmd.fromRole === 'lender' && !s.hasLender) reject('No lender on this matter to request funds from.');
       if (s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`Funds already requested from ${cmd.fromRole}.`);
       // Addendum 2 §5: a person, and the account the payer is told to use must be our VERIFIED client account.
       if (!isUserActor(cmd.actor)) reject('A funds request must be made by a person, never by automation.', 403);
@@ -706,7 +877,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'funds_received': {
       requireEnrolled(s);
-      if (!s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);
+      const inbound = cmd.fromRole === 'buyer_solicitor' || cmd.fromRole === 'incoming_owner';
+      if (inbound) {
+        if (!profile(s).fundsFrom.includes(cmd.fromRole)) reject(`Money from the ${cmd.fromRole.replace(/_/g, ' ')} does not arise on a ${profile(s).label.toLowerCase()}.`);
+        if (!stageAtLeast(s, 'pre_completion')) reject('Completion monies arrive at pre-completion.');
+        if (s.completion.fundsReceivedAt) reject('Completion monies already recorded.');
+      } else if (!s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);
       return [{ type: 'funds_received', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null } }];
     }
     case 'completion_confirmed': {
@@ -714,6 +890,25 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStage(s, 'pre_completion', 'Confirming completion');
       const holdingCompletion = issuesGating(s, 'completion');
       if (holdingCompletion.length) reject(`Cannot confirm completion while an issue holds it: ${holdingCompletion.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}.`);
+      if (profile(s).side !== 'buyer') {
+        const p = profile(s);
+        const remo = p.type === 'remortgage';
+        if (p.side === 'seller' && !s.completion.fundsReceivedAt) reject("Completion monies have not been received from the buyer's solicitor.");
+        if (remo && !s.completion.fundsReceivedAt) reject('The advance has not been received from the lender.');
+        if (remo && (!s.deeds.mortgageDeedAt || !s.deeds.certificateOfTitleAt)) reject('The mortgage deed must be executed and the certificate of title sent before completion.');
+        if (p.type === 'transfer_of_equity' && !s.deeds.transferDeedAt) reject('The transfer deed has not been executed by every party.');
+        if (p.type === 'transfer_of_equity' && deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) reject('The clients hold as tenants in common: the declaration of trust must be executed before completion.');
+        if (p.type === 'transfer_of_equity' && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt) reject('The consideration has not been received from the incoming owner.');
+        if (s.hasExistingMortgage && (p.side === 'seller' || remo)) {
+          const pend = pendingBankDetailsDecision(s, 'lender');
+          if (pend) reject("HARD STOP: the lender's bank details changed and have not been verified out-of-band. The redemption cannot be paid until that decision is resolved.", 423);
+          const auth = s.payments.find((x) => x.payeeKind === 'lender');
+          if (!auth) reject('No authorised redemption payment: authorise the payment to the lender against verified details first.', 412);
+          const cur = currentBankDetails(s, 'lender');
+          if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject("HARD STOP: the lender's bank details the payment was authorised against are no longer the current verified record.", 423);
+        }
+        return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
+      }
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
       // Addendum 2: the completion transfer must have been authorised by a person against
       // verified seller's-solicitor details, and no bank-details change may be pending.
@@ -730,12 +925,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'sdlt_submitted': {
       requireEnrolled(s);
       requireStageAtLeast(s, 'completed', 'SDLT submission');
+      requireSide(s, ['buyer', 'owner'], 'An SDLT return');
       if (s.postCompletion.sdltSubmittedAt) reject('SDLT return already submitted.');
+      if (s.sdltNotRequiredAt) reject('SDLT was recorded as not required; record a correction if that was wrong.');
       return [{ type: 'sdlt_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
     }
     case 'ap1_submitted': {
       requireEnrolled(s);
       requireStageAtLeast(s, 'completed', 'AP1 submission');
+      if (profile(s).registration !== 'ap1') reject(`No application to register on a ${profile(s).label.toLowerCase()} — the buyer's solicitor registers; we discharge.`);
       if (s.postCompletion.ap1SubmittedAt) reject('AP1 already submitted.');
       return [{ type: 'ap1_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
     }
@@ -957,6 +1155,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'physical_condition' && !surveyApplies(s)) reject('No survey is on file; the client\'s view of the physical condition is recorded once a survey has been received.');
       if (cmd.subject === 'physical_condition' && cmd.decision === 'satisfied' && s.survey.status === 'further_investigation') reject('Further investigation is still outstanding; the client can confirm satisfaction once the specialist reports are in (or the issues are withdrawn / accepted).');
       if (cmd.subject === 'exchange_authority' && s.exchange.exchangedAt) reject('Contracts are already exchanged.');
+      if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
+      if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed') reject('Record what the client said (note).', 400);
       const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
       if (cmd.subject === 'physical_condition' && cmd.decision === 'renegotiate') {
@@ -968,8 +1168,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('Only a person closes a file.', 403);
       requireStage(s, 'post_completion', 'Closing the file');
-      if (!s.postCompletion.ap1ConfirmedAt) reject('Registration is not confirmed; the file cannot be closed yet.');
-      if (isLeasehold(s) && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
+      if (profile(s).registration === 'ap1' && !s.postCompletion.ap1ConfirmedAt) reject('Registration is not confirmed; the file cannot be closed yet.');
+      if (s.hasExistingMortgage && (profile(s).side === 'seller' || profile(s).type === 'remortgage') && s.redemption.status !== 'discharged') reject("The lender's discharge is not yet confirmed; the file cannot be closed.");
+      if (isLeasehold(s) && profile(s).side === 'buyer' && !s.postCompletion.noticeOfAssignmentAt) reject('Leasehold: serve the notice of assignment before closing the file.');
       if (Object.values(s.issues).some((i) => i.status === 'open' || i.status === 'negotiating')) reject('Open issues remain; resolve or withdraw them before closing.');
       return [{ type: 'matter_closed', actor: cmd.actor, payload: { reason: cmd.reason ?? null } }];
     }
@@ -1170,11 +1371,150 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'notice_of_assignment_served': {
       requireEnrolled(s);
-      if (!isLeasehold(s)) reject('A notice of assignment is a leasehold step; this matter is a freehold purchase.');
+      if (!isLeasehold(s) || profile(s).side !== 'buyer') reject('A notice of assignment is served by the buyer of a leasehold; it does not arise here.');
       if (!s.completion.confirmedAt) reject('Notice of assignment is served after completion.');
       if (s.postCompletion.noticeOfAssignmentAt) reject('Notice of assignment already served.');
       if (!cmd.servedOn?.trim()) reject('Say who the notice was served on (landlord / managing agent).', 400);
       return [{ type: 'notice_of_assignment_served', actor: cmd.actor, payload: { servedOn: cmd.servedOn.trim(), reference: cmd.reference ?? null } }];
+    }
+
+    // ── transaction types (docs/transaction-types.md) ──
+    case 'request_property_forms': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], 'Requesting the property forms');
+      if (s.propertyForms.status === 'requested') reject('The property forms have already been requested.');
+      if (s.propertyForms.status === 'received') reject('The property forms are already in.');
+      const forms = cmd.forms?.length ? cmd.forms : isLeasehold(s) ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'];
+      return [{ type: 'property_forms_requested', actor: cmd.actor, payload: { forms } }];
+    }
+    case 'property_forms_received': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], 'Property forms');
+      if (s.propertyForms.status === 'received') reject('The property forms are already in.');
+      return [{ type: 'property_forms_received', actor: cmd.actor, payload: { forms: cmd.forms, facts: cmd.facts ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'contract_pack_sent': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], 'The contract pack');
+      requireStageAtLeast(s, 'pre_contract', 'Sending the contract pack');
+      if (s.propertyForms.status !== 'received') reject('The property forms are not in; the pack goes out with them.');
+      if (s.title.status === 'awaiting') reject('Official copies of the title are not yet on file.');
+      if (s.contractPack.sentAt) reject('The contract pack has already been sent.');
+      return [{ type: 'contract_pack_sent', actor: cmd.actor, payload: { includes: cmd.includes?.length ? cmd.includes : ['draft contract', 'official copies', 'title plan', ...s.propertyForms.forms, ...(isLeasehold(s) ? ['lease', 'management pack'] : [])], channel: cmd.channel ?? null, messageId: cmd.messageId ?? null } }];
+    }
+    case 'buyer_enquiries_received': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], "The buyer's enquiries");
+      if (!s.contractPack.sentAt) reject('The contract pack has not gone out; enquiries on it cannot have arrived. Send the pack first (or record it).');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; further enquiries now are a completion matter.');
+      const round = Math.max(0, ...Object.values(s.inboundEnquiries).map((q) => q.round)) + 1;
+      let n = Object.keys(s.inboundEnquiries).length;
+      const enquiries = cmd.enquiries.map((q) => {
+        const id = q.id?.trim() || `BE${++n}`;
+        if (s.inboundEnquiries[id]) reject(`Enquiry ${id} already recorded.`);
+        return { id, question: q.question.trim() };
+      });
+      return [{ type: 'buyer_enquiries_received', actor: cmd.actor, payload: { enquiries, round }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'enquiry_replies_sent': {
+      requireEnrolled(s);
+      requireSide(s, ['seller'], 'Replies to enquiries');
+      if (!isUserActor(cmd.actor)) reject("Replies go to the buyer's solicitor under a person's name; automation records them only after a person sent them.", 403);
+      for (const id of cmd.enquiryIds) {
+        const q = s.inboundEnquiries[id];
+        if (!q) reject(`Enquiry ${id} not found.`, 404);
+        if (q.repliedAt) reject(`Enquiry ${id} was already replied to.`);
+      }
+      return [{ type: 'enquiry_replies_sent', actor: cmd.actor, payload: { enquiryIds: cmd.enquiryIds, channel: cmd.channel ?? null, messageId: cmd.messageId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'request_redemption_statement': {
+      requireEnrolled(s);
+      if (!s.hasExistingMortgage) reject('The property is not charged; there is nothing to redeem.');
+      requireType(s, ['freehold_sale', 'leasehold_sale', 'remortgage'], 'A redemption statement');
+      if (s.redemption.status === 'requested') reject('A redemption statement has already been requested.');
+      if (s.redemption.status === 'redeemed' || s.redemption.status === 'discharged') reject('The mortgage has been redeemed.');
+      return [{ type: 'redemption_statement_requested', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null } }];
+    }
+    case 'redemption_statement_received': {
+      requireEnrolled(s);
+      if (!s.hasExistingMortgage) reject('The property is not charged; there is nothing to redeem.');
+      requireType(s, ['freehold_sale', 'leasehold_sale', 'remortgage'], 'A redemption statement');
+      if (s.redemption.status === 'redeemed' || s.redemption.status === 'discharged') reject('The mortgage has been redeemed.');
+      if (cmd.validUntil && Number.isNaN(Date.parse(cmd.validUntil))) reject('validUntil must be YYYY-MM-DD.', 400);
+      return [{ type: 'redemption_statement_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, redemptionPennies: cmd.redemptionPennies ?? null, validUntil: cmd.validUntil ?? null, dailyInterestPennies: cmd.dailyInterestPennies ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'mortgage_redeemed': {
+      requireEnrolled(s);
+      if (!s.hasExistingMortgage) reject('The property is not charged; there is nothing to redeem.');
+      requireType(s, ['freehold_sale', 'leasehold_sale', 'remortgage'], 'Redemption');
+      if (!s.completion.confirmedAt) reject('Redemption is recorded on or after completion.');
+      if (s.redemption.status === 'redeemed' || s.redemption.status === 'discharged') reject('Already recorded as redeemed.');
+      if (!s.payments.some((x) => x.payeeKind === 'lender')) reject('No authorised payment to the lender on file; authorise the redemption against verified details first.', 412);
+      return [{ type: 'mortgage_redeemed', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, amountPennies: cmd.amountPennies ?? s.redemption.redemptionPennies ?? null } }];
+    }
+    case 'discharge_confirmed': {
+      requireEnrolled(s);
+      if (s.redemption.status !== 'redeemed') reject(`The mortgage is ${s.redemption.status.replace(/_/g, ' ')}; a discharge follows redemption.`);
+      return [{ type: 'discharge_confirmed', actor: cmd.actor, payload: { lender: cmd.lender ?? s.redemption.lender ?? null, reference: cmd.reference ?? null } }];
+    }
+    case 'mortgage_deed_executed': {
+      requireEnrolled(s);
+      if (!s.hasLender) reject('No lender on this matter; there is no mortgage deed.');
+      requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage'], 'A mortgage deed');
+      if (s.deeds.mortgageDeedAt) reject('The mortgage deed is already executed.');
+      if (cmd.witnessed === false) reject('A mortgage deed must be witnessed; an unwitnessed deed is a document-execution issue, not an execution.', 400);
+      return [{ type: 'mortgage_deed_executed', actor: cmd.actor, payload: { lender: cmd.lender ?? s.mortgage.facts?.lender ?? null, witnessed: true } }];
+    }
+    case 'certificate_of_title_sent': {
+      requireEnrolled(s);
+      if (!s.hasLender) reject('No lender on this matter.');
+      requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage'], 'A certificate of title');
+      if (!isUserActor(cmd.actor)) reject('The certificate of title is a solicitor\'s certificate; a person sends it.', 403);
+      if (!isResolved(s.mortgage.status)) reject(`The mortgage offer is ${s.mortgage.status}; the certificate follows a resolved offer.`);
+      if (s.deeds.certificateOfTitleAt) reject('The certificate of title has already been sent.');
+      return [{ type: 'certificate_of_title_sent', actor: cmd.actor, payload: { lender: cmd.lender ?? s.mortgage.facts?.lender ?? null, completionDate: cmd.completionDate ?? s.exchange.completionDate ?? s.targetCompletionDate ?? null } }];
+    }
+    case 'request_lender_consent': {
+      requireEnrolled(s);
+      requireType(s, ['transfer_of_equity'], "The lender's consent to a transfer");
+      if (!s.hasExistingMortgage) reject('The property is not charged; no consent is needed.');
+      if (s.lenderConsent.status === 'requested') reject('Consent has already been requested.');
+      if (s.lenderConsent.status === 'received') reject('Consent is already on file.');
+      return [{ type: 'lender_consent_requested', actor: cmd.actor, payload: { lender: cmd.lender ?? null } }];
+    }
+    case 'lender_consent_received': {
+      requireEnrolled(s);
+      requireType(s, ['transfer_of_equity'], "The lender's consent to a transfer");
+      if (!s.hasExistingMortgage) reject('The property is not charged; no consent is needed.');
+      if (s.lenderConsent.status === 'received') reject('Consent is already on file.');
+      return [{ type: 'lender_consent_received', actor: cmd.actor, payload: { lender: cmd.lender ?? s.lenderConsent.lender ?? null, conditions: cmd.conditions ?? null } }];
+    }
+    case 'transfer_deed_executed': {
+      requireEnrolled(s);
+      requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase'], 'A transfer deed');
+      if (s.deeds.transferDeedAt) reject('The transfer deed is already executed.');
+      if (cmd.witnessed === false) reject('A transfer deed must be witnessed.', 400);
+      if (!cmd.parties.length) reject('Name the parties who signed.', 400);
+      return [{ type: 'transfer_deed_executed', actor: cmd.actor, payload: { parties: cmd.parties, witnessed: true } }];
+    }
+    case 'deed_of_trust_executed': {
+      requireEnrolled(s);
+      requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase'], 'A declaration of trust');
+      if (s.parties < 2) reject('Only one client on this matter; a declaration of trust needs co-owners.');
+      if (!s.clientDecisions.ownership_basis) reject('The clients have not decided how they hold; record the ownership_basis decision first.');
+      if (!TENANTS_IN_COMMON.has(s.clientDecisions.ownership_basis.decision)) reject('The clients hold as joint tenants; a declaration of trust is for tenants in common (record a different decision if that has changed).');
+      if (s.deeds.deedOfTrustAt) reject('The declaration of trust is already executed.');
+      return [{ type: 'deed_of_trust_executed', actor: cmd.actor, payload: { parties: cmd.parties, shares: cmd.shares ?? null, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'sdlt_not_required': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer', 'owner'], 'An SDLT determination');
+      requireStageAtLeast(s, 'completed', 'The SDLT determination');
+      if (!isUserActor(cmd.actor)) reject('Whether SDLT is due is a person\'s determination.', 403);
+      if (s.postCompletion.sdltSubmittedAt) reject('An SDLT return has already been filed.');
+      if (s.sdltNotRequiredAt) reject('Already recorded.');
+      if (!cmd.reason?.trim()) reject('Say why no return is due.', 400);
+      return [{ type: 'sdlt_not_required', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
     }
 
     case 'record_suppressed': {

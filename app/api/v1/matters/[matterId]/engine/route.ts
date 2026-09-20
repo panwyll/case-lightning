@@ -11,6 +11,8 @@ import { queryOne } from '@/lib/server/db';
 import { requireWriter, requireDecider, toCommand, userCommandSchema } from '@/lib/server/engine/http';
 import { writeAudit } from '@/lib/server/audit';
 import { counterpartyTypeOf } from '@/lib/server/engine/counterparty';
+import { profileOf } from '@/lib/server/engine/transactions';
+import { lifecycle, lifecycleFor, gatesFor, LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +38,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
         [matterId, user.tenantId]
       ).catch(() => null),
     ]);
+    const profile = profileOf(state.transactionType);
     return ok({
       state,
+      // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
+      profile: { ...profile, lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
+      lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
       blockers: stageBlockers(state),
       waits: openWaits(state),
       // Everything the log holds (the panel shows the engine's conclusions) …

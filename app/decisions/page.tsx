@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../shared/engine/api';
 import { ENGINE_CSS } from '../shared/engine/ui';
-import { STAGE_LABEL, ago, fmtDay, type QueueRow } from '../shared/engine/types';
+import { STAGE_LABEL, TRANSACTION_LABEL, ago, fmtDay, type QueueRow } from '../shared/engine/types';
 
 /**
  * Addendum 3 §3 — the queue. One row per matter assigned to the handler: address,
@@ -66,14 +66,14 @@ export default function QueuePage() {
               <div style={{ minWidth: 0 }}>
                 <div className="q-addr">{r.propertyAddress ?? r.matterRef ?? r.matterId}</div>
                 <div className="q-ref">
-                  {r.matterRef ?? ''}{r.manualHandling ? ' · manual handling' : ''}{r.shadowMode ? ' · shadow' : ''}
+                  {r.matterRef ?? ''}{r.transactionType ? ` · ${TRANSACTION_LABEL[r.transactionType] ?? r.transactionType}` : ''}{r.manualHandling ? ' · manual handling' : ''}{r.shadowMode ? ' · shadow' : ''}
                 </div>
               </div>
               <span className="eg-chip stage">{STAGE_LABEL[r.stage] ?? r.stage}</span>
               <div className="q-cell">
                 {r.pendingCount > 0 ? <span className={`eg-chip pending${r.oldestPendingAt && Date.now() - new Date(r.oldestPendingAt).getTime() > 86_400_000 ? ' hot' : ''}`}>{r.pendingCount} pending · {ago(r.oldestPendingAt)}</span> : <span className="eg-chip muted">nothing pending</span>}
                 {r.reviewCount > 0 && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>{r.reviewCount} auto-clear review{r.reviewCount === 1 ? '' : 's'}</div>}
-                {r.openIssues > 0 && <div style={{ fontSize: 11, color: r.holdingIssues > 0 ? '#b45309' : '#94a3b8', marginTop: 3 }}>{r.openIssues} open issue{r.openIssues === 1 ? '' : 's'}{r.holdingIssues > 0 ? ` · ${r.holdingIssues} holding ${r.stage === 'pre_completion' || r.stage === 'exchanged' ? 'completion' : 'exchange'}` : ''}</div>}
+                {r.openIssues > 0 && <div style={{ fontSize: 11, color: r.holdingIssues > 0 ? '#b45309' : '#94a3b8', marginTop: 3 }}>{r.openIssues} open issue{r.openIssues === 1 ? '' : 's'}{r.holdingIssues > 0 ? ` · ${r.holdingIssues} holding ${r.stage === 'pre_completion' || r.stage === 'exchanged' || r.transactionType === 'remortgage' || r.transactionType === 'transfer_of_equity' ? 'completion' : 'exchange'}` : ''}</div>}
               </div>
               <div className="q-cell hide">
                 <b>{r.targetCompletionDate ? fmtDay(r.targetCompletionDate) : '—'}</b>

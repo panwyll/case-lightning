@@ -11,6 +11,9 @@ import { DEFAULT_SLA, DEADLINE_LEAD } from '../../../lib/server/engine/sla';
 import { OPTIONS_FOR } from '../../../lib/server/engine/rules';
 import { EVENT_TYPES, STAGES, SUB_FLOWS, DECISION_KINDS, initialState, type Stage } from '../../../lib/server/engine/types';
 import { TRIGGERS } from '../../../lib/server/engine/triggers';
+import { TRANSACTION_PROFILES } from '../../../lib/server/engine/transactions';
+import { TRANSACTION_TYPES } from '../../../lib/server/engine/types';
+import { WORKSTREAMS } from '../../../lib/server/engine/issues';
 import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, titleClear } from './helpers';
 
 const spec = machineSpec();
@@ -43,6 +46,34 @@ test('spec: every user command has a spec entry with the right actor; every emit
   // Human-gated events are the three the database trigger guards.
   assert.deepEqual(spec.events.filter((e) => e.humanGated).map((e) => e.type).sort(), ['funds_requested', 'payment_authorised', 'report_on_title_sent']);
   assert.deepEqual(COMMAND_SPECS.filter((c) => c.humanGated).map((c) => c.type).sort(), ['funds_requested', 'payment_authorised', 'record_report_on_title_sent']);
+});
+
+test('spec: transaction profiles cover every type; their stages, workstreams and sub-flows are real; command type lists name real types', () => {
+  assert.deepEqual(spec.transactionTypes.map((p) => p.type), [...TRANSACTION_TYPES]);
+  for (const t of TRANSACTION_TYPES) {
+    const p = TRANSACTION_PROFILES[t];
+    assert.equal(p.type, t);
+    assert.deepEqual(p.stages, STAGES.filter((st) => p.stages.includes(st)), `${t}: stages are a subsequence of STAGES`);
+    assert.equal(p.stages[0], 'instruction');
+    assert.equal(p.stages[p.stages.length - 1], 'post_completion');
+    assert.equal(p.stages.includes('pre_exchange') && p.stages.includes('exchanged'), p.hasExchange, `${t}: exchange phases iff hasExchange`);
+    for (const w of p.workstreams) assert.ok(WORKSTREAMS.includes(w), `${t}: workstream ${w}`);
+    for (const sf of p.subflows) assert.ok(SUB_FLOWS.includes(sf), `${t}: sub-flow ${sf}`);
+    if (p.side === 'seller') assert.ok(p.workstreams.includes('redemption') && p.workstreams.includes('property_forms'), `${t}: seller lanes`);
+    if (p.side === 'buyer') assert.ok(p.subflows.includes('proof_of_funds') && p.subflows.includes('search'), `${t}: buyer sub-flows`);
+  }
+  for (const c of COMMAND_SPECS) if (c.types) for (const t of c.types) assert.ok(TRANSACTION_TYPES.includes(t), `${c.type} applies to ${t}`);
+  // Each profile explains its own phases: a gate line per phase, and the machine really does hold a bare matter of that type at each phase.
+  for (const t of TRANSACTION_TYPES) {
+    const p = TRANSACTION_PROFILES[t];
+    for (const st of p.stages) {
+      assert.ok((p.stageGates[st] ?? []).length > 0, `${t}: gates for ${st}`);
+      const s = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: t, hasLender: p.side !== 'seller', hasExistingMortgage: true, parties: 2, considerationPennies: 100, requiredSearches: [], stage: st as Stage };
+      // A sale's "enquiries & replies" phase holds only while a reply is owed: with none outstanding it passes straight through (docs/transaction-types.md).
+      if (!(p.side === 'seller' && st === 'contract_review')) assert.ok(stageBlockers(s).length > 0, `${t}: a bare matter is held at ${st}`);
+    }
+    for (const st of Object.keys(p.stageGates)) assert.ok(p.stages.includes(st as Stage), `${t}: gate lines only for phases it passes through (${st})`);
+  }
 });
 
 test('spec: timers mirror DEFAULT_SLA and DEADLINE_LEAD exactly', () => {

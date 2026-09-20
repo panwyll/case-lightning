@@ -19,8 +19,9 @@ The product features are **feature-gated**: if their env vars aren't set, the ma
 
 ### Conveyancing engine (state machine)
 
-`lib/server/engine/` is the event-sourced state machine that runs a residential freehold
-purchase (buyer-side): an immutable per-matter event log, a pure projection, a deterministic
+`lib/server/engine/` is the event-sourced state machine that runs residential conveyancing —
+freehold and leasehold purchases and sales, remortgages and transfers of equity, one machine
+parameterised by a transaction profile (**docs/transaction-types.md**): an immutable per-matter event log, a pure projection, a deterministic
 rule layer that auto-clears or flags each search / enquiry reply / mortgage condition / title
 entry, a working-day SLA timer that chases and escalates, and a decision feed that forces the
 handler to open the source before resolving. Components around it (extraction, AI drafting,
@@ -79,8 +80,17 @@ while any query is open. By firm policy exchange is held until sign-off; money a
 before sign-off and a price rise beyond the verified funds raise issues; a risk rating
 marks enhanced-due-diligence cases. An AI briefing (validated, template fallback) lands as
 the sign-off decision. Approval closes the source-of-funds issue and tells the lender about a
-gift. Leasehold purchases
-are now a transaction type (management pack sub-flow, lease facts, notice of assignment).
+gift.
+
+**Transaction types** (`docs/transaction-types.md`): freehold / leasehold purchase, freehold /
+leasehold sale, remortgage and transfer of equity run through the same machine. A profile per
+type decides the phases (a remortgage or transfer has no exchange), the workstreams (property
+forms, the buyer's enquiries, redemption and discharge on a sale; the lender's consent,
+co-ownership and the transfer deed on a transfer; the mortgage deed and certificate of title
+on a remortgage), who pays us, and what follows completion. The seller's redemption and the
+remortgage's are paid only against verified lender details (the same hard stop as completion
+monies). Each type is run end to end in `tests/unit/engine/transaction-types.test.ts`; the UI
+groups the work by workstream and shows only the lanes and commands that apply.
 
 **LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,
 parties, documents, tasks and file notes; CONVEYi mirrors just enough to run the engine,

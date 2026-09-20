@@ -107,7 +107,7 @@ export const ISSUE_SEVERITIES = ['info', 'warning', 'critical'] as const;
 export type IssueSeverity = (typeof ISSUE_SEVERITIES)[number];
 
 /** The workstreams an issue can affect (the case model's concurrent lanes, docs/case-model.md). */
-export const WORKSTREAMS = ['id_aml', 'source_of_funds', 'title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'contract', 'deposit', 'chain', 'report_on_title', 'completion', 'registration'] as const;
+export const WORKSTREAMS = ['id_aml', 'source_of_funds', 'title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'contract', 'deposit', 'chain', 'report_on_title', 'co_ownership', 'property_forms', 'redemption', 'lender_consent', 'completion', 'registration', 'discharge'] as const;
 export type Workstream = (typeof WORKSTREAMS)[number];
 
 export const RESPONSIBLE_PARTIES = ['conveyancer', 'client', 'seller_side', 'lender', 'third_party', 'mlro'] as const;

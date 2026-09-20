@@ -19,7 +19,7 @@ import { query as dbQuery, transaction as dbTransaction } from '../db';
 import { project } from './projection';
 import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
-import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type WaitKey } from './types';
+import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type TransactionType, type WaitKey } from './types';
 
 export interface MatterTx {
   load(): Promise<EngineEvent[]>;
@@ -46,6 +46,7 @@ export interface PendingDecisionRow extends DecisionState {
 
 /** Addendum 3 §3: one queue row per matter. */
 export interface QueueRow {
+  transactionType: TransactionType | null;
   tenantId: string;
   matterId: string;
   matterRef: string | null;
@@ -127,6 +128,7 @@ function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddr
     matterId: s.matterId,
     matterRef: meta?.matterRef ?? null,
     propertyAddress: meta?.propertyAddress ?? null,
+    transactionType: s.transactionType,
     stage: s.stage,
     shadowMode: s.shadowMode,
     assignedTo: meta?.assignedTo ?? null,
