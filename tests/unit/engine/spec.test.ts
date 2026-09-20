@@ -93,3 +93,10 @@ test('spec: triggers reference real sub-flows / commands; the spec version chang
   assert.match(spec.version, /^[0-9a-f]{12}$/);
   assert.equal(machineSpec().version, spec.version, 'deterministic');
 });
+
+test('docs/engine-map.md is the current machine (regenerate with `npm run engine:map` when the spec changes)', () => {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const md = fs.readFileSync('docs/engine-map.md', 'utf8');
+  const v = machineSpec().version;
+  assert.ok(md.includes(`Spec version \`${v}\``), `docs/engine-map.md was generated from spec ${(md.match(/Spec version `([0-9a-f]+)`/) ?? [])[1]} but the machine is ${v} — run: npm run engine:map`);
+});

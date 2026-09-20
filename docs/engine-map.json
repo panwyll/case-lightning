@@ -1,0 +1,4459 @@
+{
+  "version": "8b0b11e0c1c6",
+  "generatedFrom": "lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts by tests/unit/engine/spec.test.ts)",
+  "stages": [
+    {
+      "id": "instruction",
+      "label": "Instruction",
+      "purpose": "Client instructed; identity and AML established before anything is ordered.",
+      "gates": [
+        "ID / AML check resolved (cleared by the rule layer, or reviewed by a person)"
+      ],
+      "gateKeywords": [
+        "ID/AML"
+      ],
+      "subflows": [
+        "id_check"
+      ],
+      "typical": [
+        "enrol",
+        "request_id_check",
+        "mark_manual_handling"
+      ]
+    },
+    {
+      "id": "pre_contract",
+      "label": "Pre-contract",
+      "purpose": "Searches ordered automatically on entry; enquiries raised; the mortgage offer checked; on a leasehold purchase, the management pack reviewed.",
+      "gates": [
+        "every required search ordered and resolved",
+        "every enquiry replied and resolved (or withdrawn)",
+        "mortgage offer resolved (lender-funded purchases)",
+        "management pack reviewed (leasehold)"
+      ],
+      "gateKeywords": [
+        "search"
+      ],
+      "subflows": [
+        "search",
+        "enquiry",
+        "mortgage"
+      ],
+      "typical": [
+        "raise_enquiry",
+        "record_search_ordered",
+        "search_returned",
+        "mortgage_offer_received",
+        "withdraw_enquiry",
+        "set_target_dates"
+      ]
+    },
+    {
+      "id": "contract_review",
+      "label": "Contract review",
+      "purpose": "Title reviewed; the report on title drafted by AI, approved by a person, sent.",
+      "gates": [
+        "title resolved",
+        "report on title sent (drafted → approved by a person → sent)",
+        "enquiries raised during review resolved",
+        "a re-ordered search resolved"
+      ],
+      "gateKeywords": [
+        "title"
+      ],
+      "subflows": [
+        "title",
+        "report_on_title"
+      ],
+      "typical": [
+        "draft_report_on_title",
+        "record_report_on_title_sent",
+        "deposit_received"
+      ]
+    },
+    {
+      "id": "pre_exchange",
+      "label": "Pre-exchange",
+      "purpose": "Deposit in; exchange conditions derived; contracts exchanged with a completion date.",
+      "gates": [
+        "mortgage offer still current (not withdrawn)",
+        "no open issue holding exchange",
+        "proof of funds signed off (firm policy)",
+        "client satisfied with the physical condition where a survey is on file",
+        "client's authority to exchange (firm policy)",
+        "exchange conditions met (deposit received)",
+        "contracts exchanged"
+      ],
+      "gateKeywords": [
+        "exchange"
+      ],
+      "subflows": [],
+      "typical": [
+        "deposit_received",
+        "contracts_exchanged",
+        "mortgage_offer_withdrawn",
+        "record_bank_details"
+      ]
+    },
+    {
+      "id": "exchanged",
+      "label": "Exchanged",
+      "purpose": "Bound. Completion statement generated.",
+      "gates": [
+        "completion statement generated"
+      ],
+      "gateKeywords": [
+        "completion statement"
+      ],
+      "subflows": [],
+      "typical": [
+        "completion_statement_generated",
+        "change_completion_date",
+        "notice_to_complete_served"
+      ]
+    },
+    {
+      "id": "pre_completion",
+      "label": "Pre-completion",
+      "purpose": "Funds requested and received; the completion payment authorised by a person against verified bank details; completion confirmed.",
+      "gates": [
+        "funds received",
+        "completion payment authorised against verified seller's-solicitor details",
+        "no bank-details change pending (hard stop)",
+        "completion confirmed"
+      ],
+      "gateKeywords": [
+        "funds"
+      ],
+      "subflows": [],
+      "typical": [
+        "funds_requested",
+        "funds_received",
+        "payment_authorised",
+        "completion_confirmed"
+      ]
+    },
+    {
+      "id": "completed",
+      "label": "Completed",
+      "purpose": "SDLT within 14 days; AP1 lodged.",
+      "gates": [
+        "SDLT or AP1 submitted"
+      ],
+      "gateKeywords": [
+        "SDLT"
+      ],
+      "subflows": [],
+      "typical": [
+        "sdlt_submitted",
+        "ap1_submitted"
+      ]
+    },
+    {
+      "id": "post_completion",
+      "label": "Post-completion",
+      "purpose": "Registration at HM Land Registry; requisitions answered.",
+      "gates": [
+        "HMLR requisitions answered",
+        "registration confirmed (terminal)"
+      ],
+      "gateKeywords": [
+        "registration"
+      ],
+      "subflows": [],
+      "typical": [
+        "hmlr_requisition_received",
+        "ap1_confirmed"
+      ]
+    }
+  ],
+  "terminal": [
+    {
+      "id": "registered",
+      "label": "Registered",
+      "how": "ap1_confirmed at post_completion"
+    },
+    {
+      "id": "closed",
+      "label": "Closed",
+      "how": "close_matter after registration with no open issues (leasehold: notice of assignment served)"
+    },
+    {
+      "id": "abandoned",
+      "label": "Abandoned",
+      "how": "abandon_matter from any stage before completion"
+    },
+    {
+      "id": "manual",
+      "label": "Manual handling",
+      "how": "mark_manual_handling, ID rejected, or non-freehold title — automation stops, the log continues"
+    }
+  ],
+  "subflows": [
+    {
+      "id": "id_check",
+      "label": "ID / AML",
+      "stage": "instruction",
+      "waitKey": "id_check",
+      "start": [
+        "id_check_requested"
+      ],
+      "extracted": null,
+      "cleared": "id_check_cleared",
+      "flagged": "id_check_flagged",
+      "reviewed": "id_check_reviewed",
+      "decisionKind": "id_check",
+      "rule": "Provider outcome \"clear\" with no flags → clear; \"refer\"/\"fail\", any flag, or low extraction confidence → flag. Reject halts automation."
+    },
+    {
+      "id": "search",
+      "label": "Searches",
+      "stage": "pre_contract",
+      "waitKey": "search",
+      "start": [
+        "search_ordered",
+        "search_returned"
+      ],
+      "extracted": "search_extracted",
+      "cleared": "search_cleared",
+      "flagged": "search_flagged",
+      "reviewed": "search_reviewed",
+      "decisionKind": "search",
+      "rule": "Only info-severity entries → clear; any low/medium/high flag, or confidence below the threshold → flag. A resolved search may be re-ordered (new cycle)."
+    },
+    {
+      "id": "enquiry",
+      "label": "Enquiries",
+      "stage": "pre_contract",
+      "waitKey": "enquiry",
+      "start": [
+        "enquiry_raised",
+        "enquiry_reply_received"
+      ],
+      "extracted": null,
+      "cleared": "enquiry_reply_cleared",
+      "flagged": "enquiry_reply_flagged",
+      "reviewed": "enquiry_reply_reviewed",
+      "decisionKind": "enquiry",
+      "rule": "Reply \"answered\" with no issues → clear; partial/refused/issues → flag. \"Request further\" raises a tracked follow-up; a person may withdraw one."
+    },
+    {
+      "id": "mortgage",
+      "label": "Mortgage offer",
+      "stage": "pre_contract",
+      "waitKey": null,
+      "start": [
+        "mortgage_offer_received"
+      ],
+      "extracted": "mortgage_offer_extracted",
+      "cleared": "mortgage_offer_cleared",
+      "flagged": "mortgage_condition_flagged",
+      "reviewed": "mortgage_condition_reviewed",
+      "decisionKind": "mortgage",
+      "rule": "Standard conditions only and expiry comfortably after the target exchange → clear; any special condition, near expiry, or low confidence → flag. Withdrawal reopens the sub-flow and blocks exchange."
+    },
+    {
+      "id": "title",
+      "label": "Title",
+      "stage": "contract_review",
+      "waitKey": null,
+      "start": [
+        "title_extracted"
+      ],
+      "extracted": "title_extracted",
+      "cleared": "title_cleared",
+      "flagged": "title_flagged",
+      "reviewed": "title_reviewed",
+      "decisionKind": "title",
+      "rule": "Freehold with no restrictions, charges or covenants → clear; any entry → flag with the register section cited; non-freehold tenure → manual handling."
+    },
+    {
+      "id": "report_on_title",
+      "label": "Report on title",
+      "stage": "contract_review",
+      "waitKey": null,
+      "start": [
+        "report_on_title_drafted"
+      ],
+      "extracted": null,
+      "cleared": null,
+      "flagged": "report_on_title_drafted",
+      "reviewed": "report_on_title_approved",
+      "decisionKind": "report_on_title",
+      "rule": "Always a decision: the AI draft is approved or rejected by a person; it is sent only after the approval event, and the database refuses a send without one."
+    },
+    {
+      "id": "proof_of_funds",
+      "label": "Proof of funds",
+      "stage": "any",
+      "waitKey": "proof_of_funds",
+      "start": [
+        "proof_of_funds_requested"
+      ],
+      "extracted": null,
+      "cleared": null,
+      "flagged": "proof_of_funds_submitted",
+      "reviewed": "proof_of_funds_reviewed",
+      "decisionKind": "proof_of_funds",
+      "rule": "Always a decision: the client's declaration is rule-checked (shortfall, unevidenced source, gift, repayable gift, higher-risk source, incomplete declarations) and briefed; the conveyancer signs off, asks for more (re-opens the form), escalates or rejects (manual handling). A round in flight holds exchange."
+    },
+    {
+      "id": "management_pack",
+      "label": "Management pack (leasehold)",
+      "stage": "pre_contract",
+      "waitKey": "management_pack",
+      "start": [
+        "management_pack_requested"
+      ],
+      "extracted": null,
+      "cleared": null,
+      "flagged": "management_pack_received",
+      "reviewed": "management_pack_reviewed",
+      "decisionKind": "management_pack",
+      "rule": "Leasehold only. Always a decision: the LPE1 is a set of client-advice points (service charge, ground rent, arrears, major works, insurance). Gates pre_contract on a leasehold purchase."
+    },
+    {
+      "id": "chase",
+      "label": "Chasing & escalation",
+      "stage": "any",
+      "waitKey": null,
+      "start": [
+        "chase_sent"
+      ],
+      "extracted": null,
+      "cleared": null,
+      "flagged": "escalation_raised",
+      "reviewed": "escalation_resolved",
+      "decisionKind": "escalation",
+      "rule": "Working-day timers chase the party that owes us and escalate to a person with a dossier; deadlines we owe are raised once, in time."
+    }
+  ],
+  "commands": [
+    {
+      "type": "enrol",
+      "actor": "either",
+      "stages": "not_enrolled",
+      "emits": [
+        "matter_created"
+      ],
+      "description": "Put a matter under the engine (lender?, required searches, target dates, counterparty type, shadow mode)."
+    },
+    {
+      "type": "mark_manual_handling",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "manual_handling_required"
+      ],
+      "description": "Stop automation; a person runs the matter from here."
+    },
+    {
+      "type": "request_id_check",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "id_check_requested"
+      ],
+      "description": "Ask the ID provider (or record that the firm did)."
+    },
+    {
+      "type": "id_check_result",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "id_check_cleared",
+        "id_check_flagged",
+        "auto_clear_review_raised"
+      ],
+      "description": "The provider's report, extracted and rule-checked."
+    },
+    {
+      "type": "record_search_ordered",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "search_ordered"
+      ],
+      "description": "A search placed (automatically on pre_contract entry, or by hand; a resolved search may be re-ordered)."
+    },
+    {
+      "type": "search_returned",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "search_returned"
+      ],
+      "description": "The result document is back."
+    },
+    {
+      "type": "search_extracted",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "search_extracted",
+        "search_cleared",
+        "search_flagged",
+        "auto_clear_review_raised"
+      ],
+      "description": "Facts extracted from the result, rule-checked."
+    },
+    {
+      "type": "raise_enquiry",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "enquiry_raised"
+      ],
+      "description": "An enquiry to the other side (external, or internal across the wall); may be raised from an open issue, which then tracks it."
+    },
+    {
+      "type": "enquiry_reply_received",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "enquiry_reply_received",
+        "enquiry_reply_cleared",
+        "enquiry_reply_flagged",
+        "auto_clear_review_raised"
+      ],
+      "description": "A reply document, extracted and rule-checked."
+    },
+    {
+      "type": "mortgage_offer_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "mortgage_offer_received"
+      ],
+      "description": "The offer document is on file."
+    },
+    {
+      "type": "mortgage_offer_extracted",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "mortgage_offer_extracted",
+        "mortgage_offer_cleared",
+        "mortgage_condition_flagged",
+        "auto_clear_review_raised"
+      ],
+      "description": "Conditions and expiry extracted, rule-checked."
+    },
+    {
+      "type": "title_extracted",
+      "actor": "automation",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "title_extracted",
+        "title_cleared",
+        "title_flagged",
+        "auto_clear_review_raised",
+        "manual_handling_required"
+      ],
+      "description": "Register entries extracted, rule-checked; non-freehold halts automation."
+    },
+    {
+      "type": "open_decision_source",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "decision_source_opened"
+      ],
+      "description": "The handler opened the cited source (precondition of resolving)."
+    },
+    {
+      "type": "resolve_decision",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "id_check_reviewed",
+        "search_reviewed",
+        "enquiry_reply_reviewed",
+        "mortgage_condition_reviewed",
+        "title_reviewed",
+        "report_on_title_approved",
+        "report_on_title_rejected",
+        "escalation_raised",
+        "escalation_resolved",
+        "bank_details_verified",
+        "bank_details_verification_failed",
+        "auto_clear_confirmed",
+        "hmlr_requisition_responded",
+        "enquiry_raised",
+        "manual_handling_required",
+        "proof_of_funds_reviewed",
+        "management_pack_reviewed",
+        "issue_resolved",
+        "issue_raised"
+      ],
+      "description": "Choose an option (with a reason unless approving); may raise a follow-up enquiry, an escalation, or halt automation. Signing off proof of funds closes the source-of-funds issues it answers and tells the lender about a gift."
+    },
+    {
+      "type": "draft_report_on_title",
+      "actor": "automation",
+      "stages": [
+        "contract_review"
+      ],
+      "emits": [
+        "report_on_title_drafted"
+      ],
+      "description": "The AI drafts; the draft is a decision."
+    },
+    {
+      "type": "set_issue_severity",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "issue_severity_changed"
+      ],
+      "description": "Severity moved by a person, or by the timer as a deadline nears / an issue sits.",
+      "issue": true
+    },
+    {
+      "type": "survey_received",
+      "actor": "automation",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "survey_received",
+        "issue_raised"
+      ],
+      "description": "The client's survey read for its recommendations (facts); each \"further investigation\" raises an issue holding exchange."
+    },
+    {
+      "type": "specialist_report_received",
+      "actor": "automation",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "specialist_report_received",
+        "issue_resolved",
+        "issue_raised"
+      ],
+      "description": "A specialist report read: \"no further investigation\" resolves the issue (a fact); a further recommendation chains a new issue (causedBy)."
+    },
+    {
+      "type": "client_decision_recorded",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "client_decision_recorded",
+        "issue_raised"
+      ],
+      "description": "What only the client decides — satisfied with the physical condition, authority to exchange, accept a risk, accept terms — recorded by a person, never inferred. \"Renegotiate\" raises a survey_defect issue."
+    },
+    {
+      "type": "close_matter",
+      "actor": "person",
+      "stages": [
+        "post_completion"
+      ],
+      "emits": [
+        "matter_closed"
+      ],
+      "description": "File closed after registration (and, leasehold, the notice of assignment) with no open issues."
+    },
+    {
+      "type": "request_proof_of_funds",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "proof_of_funds_requested"
+      ],
+      "description": "Issue the tokenised proof-of-funds form and send it to the client (recorded after the send; the client wait opens)."
+    },
+    {
+      "type": "raise_proof_of_funds_query",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "proof_of_funds_query_raised"
+      ],
+      "description": "A person adds a query to the client about a transaction or a gap (the rules draft theirs at submission)."
+    },
+    {
+      "type": "withdraw_proof_of_funds_query",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "proof_of_funds_query_withdrawn"
+      ],
+      "description": "A drafted query is not put, with the reason on the log (\"considered and discounted\")."
+    },
+    {
+      "type": "proof_of_funds_submitted",
+      "actor": "automation",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "proof_of_funds_query_answered",
+        "proof_of_funds_query_raised",
+        "proof_of_funds_submitted"
+      ],
+      "description": "The client submitted: answers to the queries sent, statements read transaction by transaction, rule flags (declaration and transaction level) each drafting a query, the declaration document, the risk rating, and a decision for the conveyancer."
+    },
+    {
+      "type": "management_pack_requested",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "management_pack_requested"
+      ],
+      "description": "Leasehold: the LPE1 requested from the seller's side / managing agent; the wait opens."
+    },
+    {
+      "type": "management_pack_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "management_pack_received"
+      ],
+      "description": "Leasehold: the pack arrived; always a decision citing it."
+    },
+    {
+      "type": "notice_of_assignment_served",
+      "actor": "either",
+      "stages": [
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "notice_of_assignment_served"
+      ],
+      "description": "Leasehold: notice of assignment / charge served on the landlord after completion."
+    },
+    {
+      "type": "record_report_on_title_sent",
+      "actor": "person",
+      "stages": [
+        "contract_review"
+      ],
+      "emits": [
+        "report_on_title_sent"
+      ],
+      "description": "Sent — only after the approval event, and the database checks that too.",
+      "humanGated": true
+    },
+    {
+      "type": "deposit_received",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "deposit_received",
+        "exchange_conditions_met"
+      ],
+      "description": "Deposit in; at pre_exchange this derives exchange_conditions_met."
+    },
+    {
+      "type": "contracts_exchanged",
+      "actor": "either",
+      "stages": [
+        "pre_exchange"
+      ],
+      "emits": [
+        "contracts_exchanged",
+        "stage_advanced"
+      ],
+      "description": "Exchange with a completion date; refused if the offer is withdrawn or a search is re-ordered."
+    },
+    {
+      "type": "completion_statement_generated",
+      "actor": "either",
+      "stages": [
+        "exchanged"
+      ],
+      "emits": [
+        "completion_statement_generated",
+        "stage_advanced"
+      ],
+      "description": "Statement produced (can be regenerated)."
+    },
+    {
+      "type": "record_bank_details",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "bank_details_recorded",
+        "bank_details_change_flagged"
+      ],
+      "description": "Bank details arrive (any channel, first time or change) → always a hard-stop decision."
+    },
+    {
+      "type": "payment_authorised",
+      "actor": "person",
+      "stages": [
+        "pre_exchange",
+        "exchanged",
+        "pre_completion",
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "payment_authorised"
+      ],
+      "description": "A person authorises a payment against the newest verified record.",
+      "humanGated": true,
+      "hardStop": true
+    },
+    {
+      "type": "funds_requested",
+      "actor": "person",
+      "stages": [
+        "pre_completion"
+      ],
+      "emits": [
+        "funds_requested"
+      ],
+      "description": "Ask the lender / client for completion funds into our verified client account.",
+      "humanGated": true,
+      "hardStop": true
+    },
+    {
+      "type": "funds_received",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "funds_received"
+      ],
+      "description": "Funds landed."
+    },
+    {
+      "type": "completion_confirmed",
+      "actor": "either",
+      "stages": [
+        "pre_completion"
+      ],
+      "emits": [
+        "completion_confirmed",
+        "stage_advanced"
+      ],
+      "description": "Completed — refused while a bank-details change is pending or the payment was not authorised.",
+      "hardStop": true
+    },
+    {
+      "type": "sdlt_submitted",
+      "actor": "either",
+      "stages": [
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "sdlt_submitted",
+        "stage_advanced"
+      ],
+      "description": "SDLT return filed."
+    },
+    {
+      "type": "ap1_submitted",
+      "actor": "either",
+      "stages": [
+        "completed",
+        "post_completion"
+      ],
+      "emits": [
+        "ap1_submitted",
+        "stage_advanced"
+      ],
+      "description": "AP1 lodged; opens the registration wait."
+    },
+    {
+      "type": "ap1_confirmed",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "ap1_confirmed"
+      ],
+      "description": "Registered (terminal). Refused while a requisition is unanswered."
+    },
+    {
+      "type": "record_chase",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "chase_sent"
+      ],
+      "description": "Timer: a template chase was sent (recorded only after the send)."
+    },
+    {
+      "type": "raise_escalation",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "escalation_raised"
+      ],
+      "description": "Timer: a wait aged past its SLA → decision with the chase dossier."
+    },
+    {
+      "type": "record_client_update",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "client_update_sent"
+      ],
+      "description": "A templated status update was sent to the client."
+    },
+    {
+      "type": "record_suppressed",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "action_suppressed"
+      ],
+      "description": "Shadow mode: the intent, not the action."
+    },
+    {
+      "type": "set_shadow_mode",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "shadow_mode_changed"
+      ],
+      "description": "Admin switches shadow mode."
+    },
+    {
+      "type": "abandon_matter",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "matter_abandoned"
+      ],
+      "description": "Abortive: client withdrew, chain collapsed, gazumped… Waits close, timers stop, only corrections may follow.",
+      "eventuality": true
+    },
+    {
+      "type": "set_target_dates",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "target_dates_changed"
+      ],
+      "description": "Re-plan target exchange / completion before exchange.",
+      "eventuality": true
+    },
+    {
+      "type": "change_completion_date",
+      "actor": "either",
+      "stages": [
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "completion_date_changed"
+      ],
+      "description": "Move the contractual completion date after exchange.",
+      "eventuality": true
+    },
+    {
+      "type": "notice_to_complete_served",
+      "actor": "either",
+      "stages": [
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "notice_to_complete_served"
+      ],
+      "description": "Either side served notice: a decision citing the notice; the timer raises the deadline.",
+      "eventuality": true
+    },
+    {
+      "type": "mortgage_offer_withdrawn",
+      "actor": "either",
+      "stages": [
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "mortgage_offer_withdrawn"
+      ],
+      "description": "Offer withdrawn / lapsed before exchange: sub-flow reopens, exchange blocked.",
+      "eventuality": true
+    },
+    {
+      "type": "withdraw_enquiry",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "enquiry_withdrawn"
+      ],
+      "description": "An enquiry no longer needed (indemnity, superseded).",
+      "eventuality": true
+    },
+    {
+      "type": "hmlr_requisition_received",
+      "actor": "either",
+      "stages": [
+        "post_completion"
+      ],
+      "emits": [
+        "hmlr_requisition_received"
+      ],
+      "description": "HMLR requisition → decision citing the letter; blocks registration until answered.",
+      "eventuality": true
+    },
+    {
+      "type": "record_correction",
+      "actor": "person",
+      "stages": "any",
+      "emits": [
+        "correction_recorded"
+      ],
+      "description": "The log is never edited: a compensating record against a wrong event (allowed after abandonment).",
+      "eventuality": true
+    },
+    {
+      "type": "record_handler_change",
+      "actor": "either",
+      "stages": "any",
+      "emits": [
+        "handler_changed"
+      ],
+      "description": "Reassignment / holiday cover on the log.",
+      "eventuality": true
+    },
+    {
+      "type": "raise_deadline_escalation",
+      "actor": "automation",
+      "stages": "any",
+      "emits": [
+        "escalation_raised"
+      ],
+      "description": "Timer: a deadline we owe (offer expiry, SDLT, notice to complete, requisition reply) or a stale issue, raised once, in time.",
+      "eventuality": true
+    },
+    {
+      "type": "raise_issue",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "issue_raised"
+      ],
+      "description": "Something is wrong (survey defect, down-valuation, missing building regs, chain, probate, gifted deposit…): a typed issue with a gate (holds exchange / completion / nothing).",
+      "issue": true
+    },
+    {
+      "type": "update_issue",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "issue_updated"
+      ],
+      "description": "Progress: negotiating, a note, or a gate change (releasing a hold needs a note).",
+      "issue": true
+    },
+    {
+      "type": "resolve_issue",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "issue_resolved",
+        "price_changed",
+        "issue_raised",
+        "mortgage_offer_withdrawn"
+      ],
+      "description": "Resolved with one of the kind's realistic outcomes. A price reduction records price_changed; a price change / indemnity / retention on a lender-funded purchase raises a lender_approval issue; a new lender reopens the mortgage sub-flow.",
+      "issue": true
+    },
+    {
+      "type": "withdraw_issue",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "issue_withdrawn"
+      ],
+      "description": "Raised in error / overtaken.",
+      "issue": true
+    },
+    {
+      "type": "mark_issue_fatal",
+      "actor": "person",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange",
+        "exchanged",
+        "pre_completion"
+      ],
+      "emits": [
+        "issue_fatal",
+        "matter_abandoned"
+      ],
+      "description": "The issue ended the transaction: fatal + abandoned in one command, with the abandonment reason derived from the kind.",
+      "issue": true
+    },
+    {
+      "type": "record_price_change",
+      "actor": "either",
+      "stages": [
+        "instruction",
+        "pre_contract",
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "price_changed",
+        "issue_raised"
+      ],
+      "description": "The agreed price (first record) or a renegotiated price before exchange; a change on a lender-funded purchase raises a lender_approval issue.",
+      "issue": true
+    },
+    {
+      "type": "contract_approved",
+      "actor": "either",
+      "stages": [
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "contract_approved"
+      ],
+      "description": "Readiness milestone: the draft contract is approved as to form (advisory).",
+      "issue": true
+    },
+    {
+      "type": "signed_contract_held",
+      "actor": "either",
+      "stages": [
+        "contract_review",
+        "pre_exchange"
+      ],
+      "emits": [
+        "signed_contract_held"
+      ],
+      "description": "Readiness milestone: the client's signed contract is on file (advisory).",
+      "issue": true
+    }
+  ],
+  "events": [
+    {
+      "type": "matter_created",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "stage_advanced",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "manual_handling_required",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "id_check_requested",
+      "category": "id_check",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "id_check_cleared",
+      "category": "id_check",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "id_check_flagged",
+      "category": "id_check",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "id_check_reviewed",
+      "category": "id_check",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "search_ordered",
+      "category": "search",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "search_returned",
+      "category": "search",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "search_extracted",
+      "category": "search",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "search_cleared",
+      "category": "search",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "search_flagged",
+      "category": "search",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "search_reviewed",
+      "category": "search",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_raised",
+      "category": "enquiry",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_reply_received",
+      "category": "enquiry",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_reply_cleared",
+      "category": "enquiry",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_reply_flagged",
+      "category": "enquiry",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_reply_reviewed",
+      "category": "enquiry",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_offer_received",
+      "category": "mortgage",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_offer_extracted",
+      "category": "mortgage",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_offer_cleared",
+      "category": "mortgage",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_condition_flagged",
+      "category": "mortgage",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_condition_reviewed",
+      "category": "mortgage",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "title_extracted",
+      "category": "title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "title_cleared",
+      "category": "title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "title_flagged",
+      "category": "title",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "title_reviewed",
+      "category": "title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "report_on_title_drafted",
+      "category": "report_on_title",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "report_on_title_approved",
+      "category": "report_on_title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "report_on_title_rejected",
+      "category": "report_on_title",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "report_on_title_sent",
+      "category": "report_on_title",
+      "decision": false,
+      "humanGated": true
+    },
+    {
+      "type": "deposit_received",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "exchange_conditions_met",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contracts_exchanged",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "completion_statement_generated",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "funds_requested",
+      "category": "payments",
+      "decision": false,
+      "humanGated": true
+    },
+    {
+      "type": "funds_received",
+      "category": "payments",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "completion_confirmed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "sdlt_submitted",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "ap1_submitted",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "ap1_confirmed",
+      "category": "lifecycle",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "client_update_sent",
+      "category": "timers & comms",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "chase_sent",
+      "category": "timers & comms",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "escalation_raised",
+      "category": "timers & comms",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "escalation_resolved",
+      "category": "timers & comms",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "decision_source_opened",
+      "category": "decisions",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "bank_details_recorded",
+      "category": "payments",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "bank_details_change_flagged",
+      "category": "payments",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "bank_details_verified",
+      "category": "payments",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "bank_details_verification_failed",
+      "category": "payments",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "payment_authorised",
+      "category": "payments",
+      "decision": false,
+      "humanGated": true
+    },
+    {
+      "type": "action_suppressed",
+      "category": "shadow",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "shadow_mode_changed",
+      "category": "shadow",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "matter_abandoned",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "target_dates_changed",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "completion_date_changed",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "notice_to_complete_served",
+      "category": "eventualities",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "mortgage_offer_withdrawn",
+      "category": "mortgage",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "enquiry_withdrawn",
+      "category": "enquiry",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "hmlr_requisition_received",
+      "category": "eventualities",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "hmlr_requisition_responded",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "correction_recorded",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "handler_changed",
+      "category": "eventualities",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "auto_clear_review_raised",
+      "category": "decisions",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "auto_clear_confirmed",
+      "category": "decisions",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_raised",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_updated",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_resolved",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_withdrawn",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_fatal",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "price_changed",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "contract_approved",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "signed_contract_held",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_requested",
+      "category": "proof_of_funds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_submitted",
+      "category": "proof_of_funds",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_reviewed",
+      "category": "proof_of_funds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_query_raised",
+      "category": "proof_of_funds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_query_withdrawn",
+      "category": "proof_of_funds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "proof_of_funds_query_answered",
+      "category": "proof_of_funds",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "management_pack_requested",
+      "category": "leasehold",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "management_pack_received",
+      "category": "leasehold",
+      "decision": true,
+      "humanGated": false
+    },
+    {
+      "type": "management_pack_reviewed",
+      "category": "leasehold",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "notice_of_assignment_served",
+      "category": "leasehold",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "survey_received",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "specialist_report_received",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "client_decision_recorded",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "issue_severity_changed",
+      "category": "issues",
+      "decision": false,
+      "humanGated": false
+    },
+    {
+      "type": "matter_closed",
+      "category": "case model",
+      "decision": false,
+      "humanGated": false
+    }
+  ],
+  "decisions": [
+    {
+      "kind": "id_check",
+      "label": "id check",
+      "options": [
+        "approve",
+        "request_further",
+        "escalate",
+        "reject"
+      ],
+      "source": "ID / AML"
+    },
+    {
+      "kind": "search",
+      "label": "search",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "request_further",
+        "indemnity",
+        "escalate"
+      ],
+      "source": "Searches"
+    },
+    {
+      "kind": "enquiry",
+      "label": "enquiry",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "request_further",
+        "escalate"
+      ],
+      "source": "Enquiries"
+    },
+    {
+      "kind": "mortgage",
+      "label": "mortgage",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "request_further",
+        "escalate"
+      ],
+      "source": "Mortgage offer"
+    },
+    {
+      "kind": "title",
+      "label": "title",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "request_further",
+        "indemnity",
+        "escalate"
+      ],
+      "source": "Title"
+    },
+    {
+      "kind": "report_on_title",
+      "label": "report on title",
+      "options": [
+        "approve",
+        "reject",
+        "escalate"
+      ],
+      "source": "Report on title"
+    },
+    {
+      "kind": "escalation",
+      "label": "escalation",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "escalate"
+      ],
+      "source": "Chasing & escalation"
+    },
+    {
+      "kind": "bank_details",
+      "label": "bank details",
+      "options": [
+        "verify",
+        "reject",
+        "escalate"
+      ],
+      "source": "the document the details arrived on"
+    },
+    {
+      "kind": "auto_clear",
+      "label": "auto clear",
+      "options": [
+        "approve",
+        "escalate"
+      ],
+      "source": "the auto-cleared document"
+    },
+    {
+      "kind": "requisition",
+      "label": "requisition",
+      "options": [
+        "approve",
+        "escalate"
+      ],
+      "source": "the HMLR requisition letter"
+    },
+    {
+      "kind": "proof_of_funds",
+      "label": "proof of funds",
+      "options": [
+        "approve",
+        "request_further",
+        "escalate",
+        "reject"
+      ],
+      "source": "Proof of funds"
+    },
+    {
+      "kind": "management_pack",
+      "label": "management pack",
+      "options": [
+        "approve",
+        "refer_to_client",
+        "request_further",
+        "escalate"
+      ],
+      "source": "Management pack (leasehold)"
+    }
+  ],
+  "timers": {
+    "waits": [
+      {
+        "waitKey": "search",
+        "chaseAfter": 10,
+        "chaseEvery": 3,
+        "escalateAfter": 18,
+        "reEscalateAfter": 5,
+        "recipientRole": "search_provider",
+        "template": "chase_search_provider"
+      },
+      {
+        "waitKey": "enquiry",
+        "chaseAfter": 5,
+        "chaseEvery": 3,
+        "escalateAfter": 15,
+        "reEscalateAfter": 5,
+        "recipientRole": "seller_solicitor",
+        "template": "chase_enquiry_reply"
+      },
+      {
+        "waitKey": "id_check",
+        "chaseAfter": 3,
+        "chaseEvery": 2,
+        "escalateAfter": 7,
+        "reEscalateAfter": 3,
+        "recipientRole": "client",
+        "template": "chase_id_documents"
+      },
+      {
+        "waitKey": "funds",
+        "chaseAfter": 2,
+        "chaseEvery": 1,
+        "escalateAfter": 4,
+        "reEscalateAfter": 2,
+        "recipientRole": "lender",
+        "template": "chase_completion_funds"
+      },
+      {
+        "waitKey": "registration",
+        "chaseAfter": 30,
+        "chaseEvery": 10,
+        "escalateAfter": 60,
+        "reEscalateAfter": 20,
+        "recipientRole": "hmlr",
+        "template": "chase_hmlr_registration"
+      },
+      {
+        "waitKey": "proof_of_funds",
+        "chaseAfter": 3,
+        "chaseEvery": 3,
+        "escalateAfter": 10,
+        "reEscalateAfter": 5,
+        "recipientRole": "client",
+        "template": "chase_proof_of_funds"
+      },
+      {
+        "waitKey": "management_pack",
+        "chaseAfter": 10,
+        "chaseEvery": 5,
+        "escalateAfter": 20,
+        "reEscalateAfter": 5,
+        "recipientRole": "seller_solicitor",
+        "template": "chase_management_pack"
+      }
+    ],
+    "deadlines": [
+      {
+        "kind": "mortgage_offer_expiry",
+        "leadWorkingDays": 15,
+        "description": "offer expiry before exchange"
+      },
+      {
+        "kind": "sdlt_filing",
+        "leadWorkingDays": 5,
+        "description": "14 days from completion"
+      },
+      {
+        "kind": "notice_to_complete",
+        "leadWorkingDays": 2,
+        "description": "notice expiry"
+      },
+      {
+        "kind": "requisition_reply",
+        "leadWorkingDays": 5,
+        "description": "HMLR reply-by date"
+      },
+      {
+        "kind": "stale_issue",
+        "leadWorkingDays": 10,
+        "description": "an open issue with no movement (working days since last touched)"
+      }
+    ]
+  },
+  "thresholds": {
+    "extractionConfidence": 0.85,
+    "classificationConfidence": 0.8
+  },
+  "invariants": [
+    {
+      "id": "replayable",
+      "title": "Replayable",
+      "rule": "project(log) reproduces the live state exactly; the audit verifies the hash chain and the replay.",
+      "enforcedBy": [
+        "projection.ts",
+        "audit.ts",
+        "engine-audit CLI"
+      ]
+    },
+    {
+      "id": "cites_source",
+      "title": "Every decision cites a source",
+      "rule": "A decision event without a document, a summary, a citation or an option is refused before it is written.",
+      "enforcedBy": [
+        "machine.ts assertDecisionSpec"
+      ]
+    },
+    {
+      "id": "source_before_verdict",
+      "title": "Source before verdict",
+      "rule": "Resolving needs decision_source_opened by the same person and scroll/dwell engagement; the server refuses (412) without both.",
+      "enforcedBy": [
+        "machine.ts",
+        "decisions/[eventId]/resolve"
+      ]
+    },
+    {
+      "id": "reason_required",
+      "title": "A reason for anything but approve",
+      "rule": "Non-approve options need a written reason stored on the resolving event.",
+      "enforcedBy": [
+        "machine.ts"
+      ]
+    },
+    {
+      "id": "human_gate",
+      "title": "No payment or send by automation",
+      "rule": "funds_requested, payment_authorised and report_on_title_sent need a human approver; the database trigger refuses otherwise, and the automation role cannot write them at all.",
+      "enforcedBy": [
+        "migration 071 trigger + policy",
+        "runAsAutomation"
+      ]
+    },
+    {
+      "id": "bank_details_hard_stop",
+      "title": "Bank details are a hard stop",
+      "rule": "Every set or change is a decision resolved only by out-of-band verification; payments are refused (423) while one is pending or against a superseded record.",
+      "enforcedBy": [
+        "machine.ts assertPayableDetails",
+        "migration 070 trigger"
+      ]
+    },
+    {
+      "id": "two_transition_kinds",
+      "title": "Two kinds of transition only",
+      "rule": "Actor is system, ai, external or a user id; anything ambiguous becomes a decision.",
+      "enforcedBy": [
+        "types.ts Actor",
+        "machine.ts"
+      ]
+    },
+    {
+      "id": "walled",
+      "title": "Walled counterparties",
+      "rule": "Internally-linked matters are separated by row-level security; the same enquiry event pair is used across the wall.",
+      "enforcedBy": [
+        "migrations 068–069",
+        "counterparty.ts"
+      ]
+    },
+    {
+      "id": "shadow",
+      "title": "Shadow before live",
+      "rule": "A shadow matter or sub-flow is logged, never surfaced, never sent; conclusions are compared with the human record before promotion.",
+      "enforcedBy": [
+        "service.ts suppressed()",
+        "store.ts surfacedDecisions"
+      ]
+    },
+    {
+      "id": "truthful_log",
+      "title": "The log only says what happened",
+      "rule": "I/O is recorded after it succeeded; a result that arrives for a step nobody started records the start first (actor external); errors are corrections, never edits.",
+      "enforcedBy": [
+        "service.ts",
+        "sync.ts routeByHint",
+        "record_correction"
+      ]
+    },
+    {
+      "id": "abandoned_is_final",
+      "title": "Abandoned is final",
+      "rule": "After matter_abandoned nothing moves: waits close, timers stop, commands are refused, only corrections are accepted.",
+      "enforcedBy": [
+        "machine.ts requireEnrolled"
+      ]
+    },
+    {
+      "id": "issues_hold",
+      "title": "An open issue holds its gate",
+      "rule": "An open or negotiating issue gated on exchange blocks exchange_conditions_met, contracts_exchanged and the pre_exchange exit; one gated on completion blocks completion_confirmed. Everything else proceeds (\"everything but exchange can go on\"). Releasing a hold needs a note.",
+      "enforcedBy": [
+        "machine.ts issuesGating",
+        "stageBlockers"
+      ]
+    },
+    {
+      "id": "facts_not_judgements",
+      "title": "Facts are automated, judgements are routed",
+      "rule": "The machine records objective facts from documents (a report arrived, it recommends further investigation, a specialist finds nothing) and never infers a judgement: title / enquiries / AML satisfactory are a conveyancer's decision; satisfied with the property, accept a risk, authority to exchange are the client's, recorded by a person from their instruction.",
+      "enforcedBy": [
+        "machine.ts client_decision_recorded (person only)",
+        "verdictEvents (decisions always human)",
+        "graph.ts requirement authority"
+      ]
+    },
+    {
+      "id": "sof_scrutinised",
+      "title": "Source of funds is scrutinised, not filed",
+      "rule": "Every attached statement is read transaction by transaction; every unusual credit drafts a query; sign-off is refused while a query is open (send it, or withdraw it with a reason); a round in flight — and, by firm policy, an unsigned-off check — holds exchange; money accepted before sign-off raises an issue; a price rise beyond the verified funds re-opens the question.",
+      "enforcedBy": [
+        "proof-of-funds.ts reviewTransactions",
+        "machine.ts proofOfFundsHolds",
+        "resolveEvents"
+      ]
+    },
+    {
+      "id": "lender_told",
+      "title": "The lender is told",
+      "rule": "On a lender-funded purchase a price change, an indemnity policy or a retention automatically raises a lender_approval issue that holds exchange until the lender confirms.",
+      "enforcedBy": [
+        "machine.ts lenderApprovalIssue"
+      ]
+    }
+  ],
+  "triggers": [
+    {
+      "id": "native.email_attachment",
+      "backend": "native",
+      "source": "email",
+      "feeds": "ingest",
+      "label": "Email attachment filed to the matter",
+      "description": "An attachment on a matched thread is saved into the matter (Graph) and handed to the engine: classified, routed to a sub-flow or reported for a person to file.",
+      "entry": "lib/server/files.ts → ingestFiledDocument",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "native.onedrive_upload",
+      "backend": "native",
+      "source": "file",
+      "feeds": "ingest",
+      "label": "File dropped in the matter folder (OneDrive)",
+      "description": "The matter folder is scanned (files/live, files/process); new documents go through the same ingest.",
+      "entry": "app/api/v1/matters/[matterId]/files/process",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "native.manual_upload",
+      "backend": "native",
+      "source": "user",
+      "feeds": "ingest",
+      "label": "Upload from the engine panel",
+      "description": "A person uploads a PDF and (optionally) says what it is; an explicit role bypasses the classifier.",
+      "entry": "app/api/v1/matters/[matterId]/engine/upload",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "native.ingest_route",
+      "backend": "native",
+      "source": "user",
+      "feeds": "ingest",
+      "label": "File an existing document with an explicit role",
+      "description": "For the reply the classifier could not match, or a search of an unusual type.",
+      "entry": "app/api/v1/matters/[matterId]/engine/ingest",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "both.infotrack_webhook",
+      "backend": "both",
+      "source": "provider",
+      "feeds": "ingest",
+      "label": "InfoTrack result returned",
+      "description": "Signed webhook; the order record (ours) says which matter and sub-flow; the result is downloaded, filed and routed.",
+      "entry": "app/api/v1/integrations/infotrack/webhook",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "native.whatsapp_inbound",
+      "backend": "native",
+      "source": "messaging",
+      "feeds": "comms",
+      "label": "Client message (WhatsApp)",
+      "description": "Guarded Q&A: an FAQ answer goes back automatically; anything else is routed to the handler. Never a command.",
+      "entry": "app/api/v1/comms/whatsapp/webhook",
+      "implemented": true,
+      "reaches": []
+    },
+    {
+      "id": "both.user_command",
+      "backend": "both",
+      "source": "user",
+      "feeds": "command",
+      "label": "A person records what happened",
+      "description": "Enrol, raise an enquiry, deposit received, exchange, completion, SDLT/AP1, bank details, abandonment, date changes, notices, requisitions, corrections — from the engine panel, the decision panel or the Outlook taskpane.",
+      "entry": "app/api/v1/matters/[matterId]/engine (POST)",
+      "implemented": true,
+      "reaches": [
+        "USER_COMMANDS"
+      ]
+    },
+    {
+      "id": "both.pof_form_submitted",
+      "backend": "both",
+      "source": "user",
+      "feeds": "command",
+      "label": "Client submits the proof-of-funds form",
+      "description": "Public, tokenised form (no login): the client declares each source, attaches evidence and signs the declarations. The submission becomes typed facts, rule flags, a declaration document and a sign-off decision for the conveyancer.",
+      "entry": "app/api/v1/pof/[token] (POST)",
+      "implemented": true,
+      "reaches": [
+        "proof_of_funds_submitted"
+      ]
+    },
+    {
+      "id": "both.decision_panel",
+      "backend": "both",
+      "source": "user",
+      "feeds": "command",
+      "label": "Decision resolved in the panel",
+      "description": "Open the source, engage with it, choose an option with a reason. Resolves the sub-flow and may raise a follow-up enquiry or an escalation.",
+      "entry": "app/api/v1/decisions/[eventId]/resolve",
+      "implemented": true,
+      "reaches": [
+        "resolve_decision"
+      ]
+    },
+    {
+      "id": "both.cron_engine_tick",
+      "backend": "both",
+      "source": "timer",
+      "feeds": "command",
+      "label": "Working-day timer sweep",
+      "description": "Chases and escalations for open waits (searches, enquiries, ID, funds, registration) and deadlines we owe (offer expiry, SDLT, notice to complete, requisition reply).",
+      "entry": "app/api/v1/cron/engine-tick",
+      "implemented": true,
+      "reaches": [
+        "record_chase",
+        "raise_escalation",
+        "raise_deadline_escalation"
+      ]
+    },
+    {
+      "id": "native.outlook_addin",
+      "backend": "native",
+      "source": "user",
+      "feeds": "command",
+      "label": "Outlook add-in taskpane",
+      "description": "The decision feed inside Outlook; the same routes as the panel.",
+      "entry": "app/addin/taskpane",
+      "implemented": true,
+      "reaches": [
+        "resolve_decision"
+      ]
+    },
+    {
+      "id": "native.matter_reassigned",
+      "backend": "native",
+      "source": "user",
+      "feeds": "command",
+      "label": "Matter reassigned in the app",
+      "description": "Assignment lives on the matter row; the change is put on the engine log as handler_changed.",
+      "entry": "lib/server/backends/native.ts",
+      "implemented": true,
+      "reaches": [
+        "record_handler_change"
+      ]
+    },
+    {
+      "id": "leap.webhook_document",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "ingest",
+      "label": "Document filed in LEAP",
+      "description": "LEAP posts a pointer; we re-read the document from LEAP, mirror it (bytes stay in LEAP) and hand it to the engine — with LEAP's folder and file name as a routing prior. Out-of-order documents wait as PENDING.",
+      "entry": "app/api/v1/integrations/leap/webhook",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ],
+      "notes": "Event names and signature scheme to confirm against the LEAP reference."
+    },
+    {
+      "id": "leap.webhook_matter",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "sync",
+      "label": "Matter created / updated / closed in LEAP",
+      "description": "Mirror the matter, its parties and key dates; enrol a new freehold purchase (shadow first); a closed matter closes the mirror.",
+      "entry": "app/api/v1/integrations/leap/webhook",
+      "implemented": true,
+      "reaches": [
+        "enrol",
+        "record_handler_change",
+        "set_target_dates"
+      ]
+    },
+    {
+      "id": "leap.webhook_card",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "sync",
+      "label": "Card (party) updated in LEAP",
+      "description": "Refresh the matter's parties: client contact for comms, lender presence, the other side's solicitor for the counterparty resolver.",
+      "entry": "app/api/v1/integrations/leap/webhook",
+      "implemented": true,
+      "reaches": []
+    },
+    {
+      "id": "leap.poll_matters",
+      "backend": "leap",
+      "source": "poll",
+      "feeds": "sync",
+      "label": "Polling sync — matters",
+      "description": "Matters changed since the watermark; the safety net under webhooks.",
+      "entry": "app/api/v1/cron/leap-sync",
+      "implemented": true,
+      "reaches": [
+        "enrol"
+      ]
+    },
+    {
+      "id": "leap.poll_documents",
+      "backend": "leap",
+      "source": "poll",
+      "feeds": "ingest",
+      "label": "Polling sync — documents on every enrolled matter",
+      "description": "Every enrolled matter's documents from its own watermark (a new document does not necessarily change the matter's modified date), plus retries of PENDING ones.",
+      "entry": "app/api/v1/cron/leap-sync",
+      "implemented": true,
+      "reaches": [
+        "search",
+        "enquiry",
+        "mortgage",
+        "title",
+        "id_check"
+      ]
+    },
+    {
+      "id": "leap.task_completed",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "command",
+      "label": "CONVEYi task ticked off in LEAP",
+      "description": "Phase 2 candidate: a handler completing our task in LEAP could open the decision panel link, never resolve the decision (the source-and-engagement gate lives in the panel).",
+      "entry": "—",
+      "implemented": false,
+      "reaches": [],
+      "notes": "Deliberately not a resolution path."
+    },
+    {
+      "id": "leap.calendar_key_date",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "command",
+      "label": "Key date changed in LEAP (exchange / completion)",
+      "description": "Phase 2: LEAP calendar / matter key dates → set_target_dates or change_completion_date on the log.",
+      "entry": "—",
+      "implemented": false,
+      "reaches": [
+        "set_target_dates",
+        "change_completion_date"
+      ],
+      "notes": "Today the sync updates the mirror's dates; the engine command is not yet issued automatically."
+    },
+    {
+      "id": "leap.correspondence_filed",
+      "backend": "leap",
+      "source": "webhook",
+      "feeds": "ingest",
+      "label": "Email / letter filed to the LEAP matter",
+      "description": "Phase 2: LEAP correspondence records (inbound emails filed to the matter) as an ingest source for enquiry replies and bank-details changes.",
+      "entry": "—",
+      "implemented": false,
+      "reaches": [
+        "enquiry",
+        "record_bank_details"
+      ],
+      "notes": "Needs LEAP's correspondence resource from the reference."
+    }
+  ],
+  "eventualities": [
+    {
+      "area": "shape",
+      "scenario": "Cash purchase",
+      "handling": "built",
+      "mechanism": "hasLender=false → no mortgage sub-flow, no lender funds"
+    },
+    {
+      "area": "shape",
+      "scenario": "Mortgage purchase",
+      "handling": "built",
+      "mechanism": "offer sub-flow; expiry deadline; withdrawal reopens and blocks exchange"
+    },
+    {
+      "area": "shape",
+      "scenario": "Chain",
+      "handling": "built",
+      "mechanism": "issue chain_not_ready holds exchange; set_target_dates; mark_issue_fatal → abandoned(chain_collapsed)"
+    },
+    {
+      "area": "shape",
+      "scenario": "Two or more buyers",
+      "handling": "built",
+      "mechanism": "issues carry the party they concern; one ID sub-flow per matter still (design: idChecks keyed by party)"
+    },
+    {
+      "area": "shape",
+      "scenario": "Company buyer / buy-to-let",
+      "handling": "manual",
+      "mechanism": "mark_manual_handling by policy"
+    },
+    {
+      "area": "shape",
+      "scenario": "Gifted deposit / source of funds",
+      "handling": "built",
+      "mechanism": "proof-of-funds form → statements read line by line → flags draft queries → client answers → sign-off decision; sign-off closes source_of_funds issues and tells the lender of a gift"
+    },
+    {
+      "area": "shape",
+      "scenario": "Unusual transactions on a statement (cash, third party, crypto, gambling, overseas, in-and-out)",
+      "handling": "built",
+      "mechanism": "reviewTransactions flags each line and drafts the query; QUERY_UNANSWERED keeps it open; risk rating enhanced"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Deposit received before source of funds signed off",
+      "handling": "built",
+      "mechanism": "issue aml_kyc_problem raised automatically, holds exchange"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Price rises beyond the verified funds",
+      "handling": "built",
+      "mechanism": "issue source_of_funds raised automatically on price_changed"
+    },
+    {
+      "area": "shape",
+      "scenario": "Help to Buy / Lifetime ISA",
+      "handling": "gap",
+      "mechanism": "design: funds_requested fromRole isa_provider"
+    },
+    {
+      "area": "shape",
+      "scenario": "New build / auction",
+      "handling": "manual",
+      "mechanism": "out of v1 scope"
+    },
+    {
+      "area": "shape",
+      "scenario": "Leasehold",
+      "handling": "built",
+      "mechanism": "leasehold_purchase: management-pack sub-flow gates pre_contract; lease facts (short lease, ground rent, doubling) flagged on title; notice of assignment after completion; a tenure that does not match the enrolment halts automation"
+    },
+    {
+      "area": "shape",
+      "scenario": "Internal counterparty",
+      "handling": "built",
+      "mechanism": "ethical wall; same event pair"
+    },
+    {
+      "area": "instruction",
+      "scenario": "ID check refer / fail",
+      "handling": "built",
+      "mechanism": "id_check decision; reject halts automation"
+    },
+    {
+      "area": "instruction",
+      "scenario": "ID result ordered outside the engine",
+      "handling": "built",
+      "mechanism": "request recorded first, actor external"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Conflict",
+      "handling": "built",
+      "mechanism": "abandon_matter(conflict); same-handler links refused at the DB"
+    },
+    {
+      "area": "instruction",
+      "scenario": "Handler change",
+      "handling": "built",
+      "mechanism": "record_handler_change"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Search flags something",
+      "handling": "built",
+      "mechanism": "approve / refer / request further / indemnity / escalate"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Search unreadable",
+      "handling": "built",
+      "mechanism": "confidence < threshold → flagged, never guessed"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Search re-issued / lender freshness rule",
+      "handling": "built",
+      "mechanism": "re-order a resolved search → new cycle; gates exchange again"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Search never returns / provider down",
+      "handling": "built",
+      "mechanism": "search wait timers; manual order fallback"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Extra search types",
+      "handling": "gap",
+      "mechanism": "design: tenant-extensible requiredSearches"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Partial / evasive replies",
+      "handling": "built",
+      "mechanism": "request further → tracked follow-up"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Seller refuses to answer",
+      "handling": "built",
+      "mechanism": "withdraw_enquiry or abandon"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Reply cannot be matched to one enquiry",
+      "handling": "built",
+      "mechanism": "not guessed; reported to a person to file"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Special conditions / retention",
+      "handling": "built",
+      "mechanism": "mortgage decision"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Offer expiry near exchange",
+      "handling": "built",
+      "mechanism": "flag at extraction + deadline timer 15 wd out"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Offer withdrawn / lender change",
+      "handling": "built",
+      "mechanism": "mortgage_offer_withdrawn; new offer judged afresh"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Cash ↔ mortgage change",
+      "handling": "gap",
+      "mechanism": "design: lender_status_changed"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Price renegotiated",
+      "handling": "built",
+      "mechanism": "resolve_issue(price_reduced) or record_price_change → price_changed; lender_approval issue on a lender-funded purchase"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Survey finds a defect",
+      "handling": "built",
+      "mechanism": "issue survey_defect → price reduced / works / retention / specialist report / accepted"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Down-valuation",
+      "handling": "built",
+      "mechanism": "issue valuation_shortfall → price reduced / buyer covers / new lender (reopens the offer) / challenge"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Missing building regs / FENSA / planning",
+      "handling": "built",
+      "mechanism": "issues missing_building_regs, planning_breach, document_missing → indemnity (lender told) / regularisation / retrospective consent"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Probate not granted / attorney / capacity",
+      "handling": "built",
+      "mechanism": "issue seller_capacity holds exchange; everything else proceeds"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Solar lease / septic tank / unadopted road",
+      "handling": "built",
+      "mechanism": "issues third_party_encumbrance, access_rights → evidence / lender confirmed / indemnity"
+    },
+    {
+      "area": "pre_contract",
+      "scenario": "Issue goes quiet for weeks",
+      "handling": "built",
+      "mechanism": "stale_issue timer: escalation after 10 working days without movement"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "Restriction / charge / covenant",
+      "handling": "built",
+      "mechanism": "title decision incl. indemnity (lender_approval issue on a lender-funded purchase); issues covenant_consent, title_defect"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "Ready to exchange?",
+      "handling": "built",
+      "mechanism": "readiness milestones contract_approved, signed_contract_held (advisory) + stage blockers"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "New information after the report went",
+      "handling": "manual",
+      "mechanism": "title re-extraction refused after send"
+    },
+    {
+      "area": "contract_review",
+      "scenario": "Draft rejected",
+      "handling": "built",
+      "mechanism": "report_on_title_rejected → redraft"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Simultaneous exchange and completion",
+      "handling": "built",
+      "mechanism": "exchange with completionDate = today"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Exchange deferred",
+      "handling": "built",
+      "mechanism": "set_target_dates"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Gazumped / withdrawn / chain collapse",
+      "handling": "built",
+      "mechanism": "abandon_matter"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Deposit late / short",
+      "handling": "built",
+      "mechanism": "issue funding_shortfall → funds_in_place"
+    },
+    {
+      "area": "exchange",
+      "scenario": "Issue proves fatal",
+      "handling": "built",
+      "mechanism": "mark_issue_fatal → issue_fatal + matter_abandoned"
+    },
+    {
+      "area": "completion",
+      "scenario": "Completion date moved",
+      "handling": "built",
+      "mechanism": "change_completion_date"
+    },
+    {
+      "area": "completion",
+      "scenario": "Notice to complete",
+      "handling": "built",
+      "mechanism": "decision + deadline timer 2 wd out"
+    },
+    {
+      "area": "completion",
+      "scenario": "Lender funds late",
+      "handling": "built",
+      "mechanism": "funds wait timers"
+    },
+    {
+      "area": "completion",
+      "scenario": "Client balance short",
+      "handling": "built",
+      "mechanism": "issue funding_shortfall (gate completion) → funds_in_place"
+    },
+    {
+      "area": "completion",
+      "scenario": "Completion fails on the day",
+      "handling": "built",
+      "mechanism": "issue completion_failure holds completion_confirmed → completed_late / funds_in_place; notice to complete if it slips"
+    },
+    {
+      "area": "completion",
+      "scenario": "Bank details \"change\"",
+      "handling": "built",
+      "mechanism": "addendum 2 hard stop"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "SDLT within 14 days",
+      "handling": "built",
+      "mechanism": "deadline timer 5 wd out"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "HMLR requisition",
+      "handling": "built",
+      "mechanism": "requisition decision; blocks ap1_confirmed; deadline timer"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "Registration slow",
+      "handling": "built",
+      "mechanism": "registration wait timers"
+    },
+    {
+      "area": "post_completion",
+      "scenario": "OS1 priority expiring",
+      "handling": "gap",
+      "mechanism": "design: priority_search_made(expiresAt)"
+    },
+    {
+      "area": "cross",
+      "scenario": "Documents in any order",
+      "handling": "built",
+      "mechanism": "PENDING ingest retry"
+    },
+    {
+      "area": "cross",
+      "scenario": "Duplicate / re-issued document",
+      "handling": "built",
+      "mechanism": "idempotent on provider id; re-issue = new cycle"
+    },
+    {
+      "area": "cross",
+      "scenario": "Something recorded in error",
+      "handling": "built",
+      "mechanism": "record_correction (compensating, never an edit)"
+    },
+    {
+      "area": "cross",
+      "scenario": "Bank holidays",
+      "handling": "built",
+      "mechanism": "E&W working-day calendar"
+    },
+    {
+      "area": "cross",
+      "scenario": "Two backends (LEAP / own app)",
+      "handling": "built",
+      "mechanism": "CaseBackend abstraction"
+    }
+  ],
+  "issues": {
+    "groups": [
+      {
+        "id": "title",
+        "label": "Title"
+      },
+      {
+        "id": "leasehold",
+        "label": "Leasehold"
+      },
+      {
+        "id": "planning_regs",
+        "label": "Planning & building regs"
+      },
+      {
+        "id": "searches",
+        "label": "Searches"
+      },
+      {
+        "id": "enquiries",
+        "label": "Enquiries"
+      },
+      {
+        "id": "funds_aml",
+        "label": "Source of funds & AML"
+      },
+      {
+        "id": "mortgage",
+        "label": "Mortgage"
+      },
+      {
+        "id": "money",
+        "label": "Deposit & completion money"
+      },
+      {
+        "id": "parties_chain",
+        "label": "Parties & chain"
+      },
+      {
+        "id": "property",
+        "label": "The property itself"
+      },
+      {
+        "id": "completion",
+        "label": "Completion"
+      },
+      {
+        "id": "other",
+        "label": "Other"
+      }
+    ],
+    "kinds": [
+      {
+        "kind": "title_defect",
+        "group": "title",
+        "label": "Title defect / discrepancy",
+        "arisesFrom": "the register: possessory or qualified title, a missing deed, an unregistered part, an undated or unsigned deed, a name that does not match",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "indemnity_policy",
+          "deed_or_declaration",
+          "evidence_provided",
+          "document_reexecuted",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Rectified by indemnity, a statutory declaration, a deed of grant or first registration; these are the gaps HM Land Registry later requisitions on.",
+        "severity": "warning",
+        "workstreams": [
+          "title"
+        ],
+        "threatens": [
+          "exchange",
+          "registration"
+        ],
+        "actions": [
+          "Identify the defect precisely against the register",
+          "Decide the route: indemnity, rectification, statutory declaration, first registration",
+          "Raise the enquiry / request the deed",
+          "Report to the lender if the title is unacceptable"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "title_restriction",
+        "group": "title",
+        "label": "Restriction on title",
+        "arisesFrom": "a Form A / B / L restriction in the proprietorship register (co-owners, a management company, a lender, a s.106 or overage restriction) whose terms must be complied with before the transfer registers",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "restriction_complied",
+          "consent_obtained",
+          "deed_or_declaration",
+          "indemnity_policy",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The certificate or consent the restriction demands is often in a third party's hands (management company, chargee) — a classic slow item; HMLR rejects the AP1 without it.",
+        "overlaps": "the title sub-flow flags the entry as a decision; the issue tracks getting what the restriction demands",
+        "severity": "warning",
+        "workstreams": [
+          "title"
+        ],
+        "threatens": [
+          "exchange",
+          "registration"
+        ],
+        "actions": [
+          "Read the restriction's terms",
+          "Request the certificate / consent the restriction demands",
+          "Chase the third party",
+          "Check the AP1 will not be rejected"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "missing_easement",
+        "group": "title",
+        "label": "Missing easement / right",
+        "arisesFrom": "no right of way over a private road or shared drive, no right for services (drains, pipes) across a neighbour's land, a CON29 2.1 \"not adopted\" answer",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "deed_or_declaration",
+          "indemnity_policy",
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "A lender may find the title unacceptable without a legal right of access; a deed of grant from the neighbour or a 20-year statutory declaration fixes it, an indemnity insures it.",
+        "severity": "warning",
+        "workstreams": [
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Establish who owns the servient land",
+          "Request a deed of grant or a statutory declaration",
+          "Quote an indemnity policy",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "restrictive_covenant",
+        "group": "title",
+        "label": "Restrictive covenant",
+        "arisesFrom": "the charges register (no alterations without consent, use restrictions, a covenant already breached by the extension)",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "indemnity_policy",
+          "retrospective_consent",
+          "deed_of_variation",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The trap: once the covenantee is asked for retrospective consent, an indemnity policy is no longer available because they know. Decide the route before anyone writes to them.",
+        "severity": "warning",
+        "workstreams": [
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Decide indemnity versus consent BEFORE anyone approaches the covenantee",
+          "Quote the indemnity",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "boundary_discrepancy",
+        "group": "title",
+        "label": "Boundary discrepancy",
+        "arisesFrom": "the title plan against the survey / the fence line / the estate agent's particulars; a strip of land in a neighbour's title",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "deed_or_declaration",
+          "evidence_provided",
+          "indemnity_policy",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Usually resolved by a statutory declaration or a determined-boundary application later; a lender will want the land the house sits on to be in the title.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Compare the title plan with the survey and the particulars",
+          "Raise the enquiry",
+          "Consider a statutory declaration or a determined-boundary application",
+          "Advise the client"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "missing_consent",
+        "group": "title",
+        "label": "Missing consent",
+        "arisesFrom": "works or a use that needed a third party's consent under the title (landlord, management company, covenantee, estate rentcharge owner) and got none",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "consent_obtained",
+          "retrospective_consent",
+          "indemnity_policy",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Same indemnity-versus-approach choice as a covenant breach.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "leasehold"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Identify whose consent was needed",
+          "Decide indemnity versus retrospective consent",
+          "Request / quote"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "lease_defect",
+        "group": "leasehold",
+        "label": "Lease defect",
+        "arisesFrom": "a defective lease: no forfeiture-on-insolvency protection, missing repairing or insurance provisions, no rights over common parts",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "deed_of_variation",
+          "indemnity_policy",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Lenders (UK Finance Handbook) list what a lease must contain; a deed of variation needs the landlord and every lender to sign.",
+        "overlaps": "leasehold tenure puts the matter into manual handling in v1; the issue records the defect",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Check the lease against the UK Finance Handbook requirements",
+          "Request a deed of variation or quote an indemnity",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "short_lease",
+        "group": "leasehold",
+        "label": "Short lease",
+        "arisesFrom": "an unexpired term below the lender's minimum (typically 70–85 years at completion) or approaching 80 years (marriage value)",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "lease_extended",
+          "price_reduced",
+          "new_lender",
+          "lender_confirmed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "A statutory extension takes months; the common route is the seller serving the s.42 notice and assigning the benefit on completion.",
+        "severity": "critical",
+        "workstreams": [
+          "leasehold",
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Confirm the unexpired term",
+          "Check the lender's minimum",
+          "Advise on a s.42 notice served by the seller and assigned on completion",
+          "Renegotiate if needed"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "service_charge_issue",
+        "group": "leasehold",
+        "label": "Service charge issue",
+        "arisesFrom": "arrears, a disputed demand, a large planned major works bill, an unclear reserve fund in the management pack",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "retention_agreed",
+          "price_reduced",
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Retention from the price for the next demand is the usual fix; arrears must be cleared before the landlord will register the assignment.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Get the demands and accounts",
+          "Agree a retention for planned works",
+          "Confirm arrears are cleared before completion"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "ground_rent_issue",
+        "group": "leasehold",
+        "label": "Ground rent issue",
+        "arisesFrom": "escalating (doubling) ground rent, rent above £250 / £1,000 in London (assured tenancy risk), arrears",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "deed_of_variation",
+          "indemnity_policy",
+          "lender_confirmed",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Many lenders refuse doubling rents; a deed of variation from the freeholder or a lender-approved indemnity is the route.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold",
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Read the review clause",
+          "Check lender acceptability",
+          "Request a deed of variation or quote an indemnity"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "freeholder_info_outstanding",
+        "group": "leasehold",
+        "label": "Freeholder / managing-agent information outstanding",
+        "arisesFrom": "the LPE1 / management pack not yet supplied (fees unpaid, agent slow), missing accounts, insurance or fire-risk assessment",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The single most-cited leasehold delay: packs take 2–8 weeks and the seller must pay for them; chase early, in writing.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Chase the seller's solicitor for the pack",
+          "Confirm the fee has been paid",
+          "Ask for the managing agent's expected date"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "planning_permission_missing",
+        "group": "planning_regs",
+        "label": "Planning permission missing",
+        "arisesFrom": "works with no decision notice (extension, conversion, change of use), a CON29 3.7 enforcement entry, a TA6 answer that contradicts the survey",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "indemnity_policy",
+          "retrospective_consent",
+          "evidence_provided",
+          "works_before_exchange",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Enforcement is time-limited (4 years / 10 years, now 10 for most breaches) — an indemnity is available only if the authority has not been approached.",
+        "severity": "warning",
+        "workstreams": [
+          "searches",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Check the planning register",
+          "Establish the date of the works and the enforcement window",
+          "Decide indemnity versus retrospective consent BEFORE approaching the authority",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "building_regs_missing",
+        "group": "planning_regs",
+        "label": "Building-regs approval missing",
+        "arisesFrom": "an extension, loft, knocked-through wall, new boiler or windows with no completion certificate / FENSA / Gas Safe",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "indemnity_policy",
+          "regularisation_certificate",
+          "evidence_provided",
+          "retention_agreed",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "One of the most common hold-ups. Lenders accept an indemnity or a regularisation certificate, but some insist on regularisation for structural or recent work; an indemnity needs lender approval (days to weeks).",
+        "severity": "warning",
+        "workstreams": [
+          "searches",
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Ask for the completion certificate / FENSA / Gas Safe",
+          "Quote an indemnity or a regularisation certificate",
+          "Report to the lender; some insist on regularisation"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "search_adverse_entry",
+        "group": "searches",
+        "label": "Search adverse entry",
+        "arisesFrom": "a search result the client or lender needs to act on: flood risk, contaminated land, a road scheme, a chancel liability, a mining report, no public sewer connection",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "specialist_report_clear",
+          "indemnity_policy",
+          "lender_confirmed",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Flood risk must be reported to the lender, who may withdraw; insurability is the practical test.",
+        "overlaps": "the search sub-flow raises the flag as a decision; the issue tracks what the decision started (a further report, the lender's view)",
+        "severity": "warning",
+        "workstreams": [
+          "searches"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Read the entry against the property",
+          "Obtain a specialist report or an indemnity",
+          "Report to the lender where required (flood)",
+          "Advise the client"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "search_delayed",
+        "group": "searches",
+        "label": "Search delayed",
+        "arisesFrom": "a local authority running weeks behind, a provider outage, a search that has to be re-ordered for freshness",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "indemnity_policy",
+          "dates_replanned",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Search indemnity insurance is the usual workaround when a council is slow and the lender allows it.",
+        "overlaps": "the search wait timer chases at day 10 and escalates at day 18; raise the issue when the delay changes the plan (indemnity, new target dates)",
+        "severity": "info",
+        "workstreams": [
+          "searches"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Chase the provider / council",
+          "Consider search indemnity if the lender allows",
+          "Re-plan target dates"
+        ],
+        "responsible": "third_party",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "enquiry_unanswered",
+        "group": "enquiries",
+        "label": "Enquiry unanswered",
+        "arisesFrom": "the other side has gone quiet: the seller's solicitor has not replied, or has replied to everything but the one that matters",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The \"enquiry stalemate\" is the forum staple: weeks of \"we are waiting for our client\".",
+        "overlaps": "the enquiry wait timer chases at day 5 and escalates at day 15",
+        "severity": "info",
+        "workstreams": [
+          "enquiries"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Chase the seller's solicitor in writing",
+          "Escalate to the agent",
+          "Re-plan target dates"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "enquiry_unsatisfactory",
+        "group": "enquiries",
+        "label": "Unsatisfactory enquiry response",
+        "arisesFrom": "\"the buyer must rely on their own survey / searches\", a refusal to give a statement of truth, an executor who will not answer",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "evidence_provided",
+          "indemnity_policy",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Executors and attorneys legitimately cannot answer TA6 questions; the client is advised and decides.",
+        "overlaps": "the enquiry sub-flow flags partial / refused replies as a decision; \"request further\" raises a tracked follow-up",
+        "severity": "warning",
+        "workstreams": [
+          "enquiries"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Raise the further enquiry",
+          "Obtain the evidence another way (search, indemnity)",
+          "Advise the client and record their decision"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "source_of_funds",
+        "group": "funds_aml",
+        "label": "Source-of-funds evidence outstanding",
+        "arisesFrom": "a gifted deposit not declared early, an inheritance, crypto or overseas funds, savings with no paper trail",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "other"
+        ],
+        "note": "The single most common self-inflicted delay: the gift is mentioned late and the donor is elderly or abroad; the lender must be told of a gift too.",
+        "severity": "warning",
+        "workstreams": [
+          "source_of_funds"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Send / re-send the proof-of-funds form",
+          "Query the unusual transactions",
+          "Record the MLRO's view for EDD cases"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "aml_kyc_problem",
+        "group": "funds_aml",
+        "label": "AML / KYC problem",
+        "arisesFrom": "a referred or failed electronic check, a PEP or sanctions hit, an ID that will not verify, a client abroad who cannot be met",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Enhanced due diligence is a compliance decision; the matter cannot progress to money moving without it.",
+        "overlaps": "the ID/AML sub-flow flags the provider result as a decision; rejecting it halts automation",
+        "severity": "critical",
+        "workstreams": [
+          "id_aml"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Obtain the further identity evidence",
+          "Enhanced due diligence where required",
+          "MLRO decision; consider reporting obligations"
+        ],
+        "responsible": "mlro",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "mortgage_offer_outstanding",
+        "group": "mortgage",
+        "label": "Mortgage offer outstanding",
+        "arisesFrom": "the application is stuck: underwriting queries, a valuation not yet booked, a broker waiting on documents",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "new_lender",
+          "dates_replanned",
+          "other"
+        ],
+        "note": "Nothing exchanges without the offer; the chain waits.",
+        "overlaps": "mortgage.status = awaiting already blocks pre_contract; the issue is where the handler records why",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Chase the broker / lender",
+          "Establish what the underwriter is waiting for",
+          "Re-plan target dates"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "mortgage_condition_outstanding",
+        "group": "mortgage",
+        "label": "Mortgage condition outstanding",
+        "arisesFrom": "a special condition on the offer: a retention, works, an occupier's consent, an indemnity approval, insurance, proof of deposit",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "condition_satisfied",
+          "retention_agreed",
+          "lender_confirmed",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Exchange with an unsatisfied condition risks funds not being released on the day.",
+        "overlaps": "the mortgage sub-flow flags each special condition as a decision",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Satisfy the condition and report to the lender",
+          "Confirm the lender is content before exchange"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "mortgage_offer_expiring",
+        "group": "mortgage",
+        "label": "Mortgage offer expiring",
+        "arisesFrom": "the offer's expiry date closing in on a matter that is not ready to exchange",
+        "gate": "none",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "offer_extended",
+          "received",
+          "dates_replanned",
+          "new_lender",
+          "other"
+        ],
+        "note": "Lenders extend once, sometimes twice, for a few weeks; a re-issue means re-underwriting on today's rates.",
+        "overlaps": "the deadline timer raises this 15 working days out; the issue tracks the extension request",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Contact the broker / lender",
+          "Determine the extension requirements and timing",
+          "Plan exchange and completion inside the offer, or start a re-issue"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "mortgage_offer_expired",
+        "group": "mortgage",
+        "label": "Mortgage offer expired",
+        "arisesFrom": "the offer lapsed before exchange",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "new_lender",
+          "other"
+        ],
+        "note": "A fresh application, valuation and offer; rates may have moved.",
+        "overlaps": "record mortgage_offer_withdrawn (the sub-flow reopens and blocks exchange); the issue tracks the re-application",
+        "severity": "critical",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Fresh application, valuation and offer",
+          "Tell the chain the timetable has moved"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "valuation_issue",
+        "group": "mortgage",
+        "label": "Valuation issue",
+        "arisesFrom": "a down-valuation below the agreed price, a valuer's retention or \"further reports required\" (roof, damp, timber), a nil valuation (spray foam, cladding, knotweed)",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "price_reduced",
+          "buyer_covers_shortfall",
+          "new_lender",
+          "revaluation_upheld",
+          "specialist_report_clear",
+          "retention_agreed",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Options are renegotiate, make up the shortfall, a fresh valuation with another lender, or a challenge; a price change must be reported to the lender and can change the offer.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage",
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Get the valuation figure and the reason",
+          "Renegotiate, top up, challenge, or move lender",
+          "Report a price change to the lender"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "lender_approval",
+        "group": "mortgage",
+        "label": "Lender approval needed",
+        "arisesFrom": "anything the lender must be told: a price change, an indemnity policy, a retention, flood risk, a change of circumstances",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "lender_confirmed",
+          "new_lender",
+          "other"
+        ],
+        "note": "Raised automatically by the machine when a price change or an indemnity resolution needs the lender's confirmation; days to weeks in practice.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Report to the lender through the panel portal",
+          "Chase for confirmation the offer stands"
+        ],
+        "responsible": "lender",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "deposit_issue",
+        "group": "money",
+        "label": "Deposit issue",
+        "arisesFrom": "a deposit below 10%, a deposit funded by the sale in a chain, a deposit not yet in cleared funds, a gifted deposit not yet evidenced",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "deposit_agreed",
+          "funds_in_place",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "A reduced deposit needs the seller's agreement in the contract; a deposit \"up the chain\" is normal but must be agreed.",
+        "severity": "warning",
+        "workstreams": [
+          "deposit"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Agree a reduced deposit or a deposit up the chain in the contract",
+          "Confirm cleared funds before exchange"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "completion_funds_shortfall",
+        "group": "money",
+        "label": "Completion funds shortfall",
+        "arisesFrom": "the client balance is short of the completion statement: SDLT underestimated, a bonus or ISA not yet released, a sale proceeds shortfall in the chain",
+        "gate": "completion",
+        "stages": [
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "funds_in_place",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Before exchange it is a plan; after exchange it is a completion failure in waiting.",
+        "severity": "critical",
+        "workstreams": [
+          "completion",
+          "deposit"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Recalculate the completion statement",
+          "Establish where the shortfall is coming from and evidence it",
+          "Warn the chain if completion may move"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 2
+      },
+      {
+        "kind": "lender_funds_delayed",
+        "group": "money",
+        "label": "Lender funds delayed",
+        "arisesFrom": "the advance not released: the certificate of title sent late, a condition unsatisfied, the lender's cut-off missed",
+        "gate": "completion",
+        "stages": [
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "received",
+          "completed_late",
+          "other"
+        ],
+        "note": "Most lenders need the COT 5 working days before completion; a late advance means late completion interest.",
+        "overlaps": "the funds wait timer chases the lender from day 2",
+        "severity": "critical",
+        "workstreams": [
+          "completion",
+          "mortgage"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Chase the lender's completions team",
+          "Check the certificate of title and the conditions",
+          "Warn the seller's solicitor"
+        ],
+        "responsible": "lender",
+        "escalateAfterWorkingDays": 1
+      },
+      {
+        "kind": "chain_dependency",
+        "group": "parties_chain",
+        "label": "Chain dependency",
+        "arisesFrom": "the top or bottom of the chain is not ready: their management pack, their enquiries, their buyer pulled out, their mortgage",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "chain_ready",
+          "dates_replanned",
+          "other"
+        ],
+        "note": "Agents say \"ready\" a week before solicitors are; a link dropping out costs ~10 weeks; the collapse is often discovered on exchange day.",
+        "severity": "warning",
+        "workstreams": [
+          "chain"
+        ],
+        "threatens": [
+          "exchange",
+          "completion"
+        ],
+        "actions": [
+          "Get the chain position from the agents",
+          "Confirm with the solicitors, not the agents",
+          "Re-plan target dates"
+        ],
+        "responsible": "third_party",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "seller_delay",
+        "group": "parties_chain",
+        "label": "Seller delay",
+        "arisesFrom": "the seller has not returned the protocol forms, signed the contract, provided documents, or instructed their solicitor on a point",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "dates_replanned",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "The commonest reason a matter sits: nothing is technically wrong, someone is just not doing it.",
+        "severity": "info",
+        "workstreams": [
+          "chain",
+          "enquiries"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Chase the seller's solicitor",
+          "Escalate via the agent"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "buyer_delay",
+        "group": "parties_chain",
+        "label": "Buyer delay",
+        "arisesFrom": "our own client: survey not booked, documents not returned, the deposit not sent, the mortgage application not made",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "dates_replanned",
+          "other"
+        ],
+        "note": "Record it so the file shows who was waiting for whom.",
+        "severity": "info",
+        "workstreams": [
+          "chain"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Tell the client what is waiting on them and by when"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "third_party_consent",
+        "group": "parties_chain",
+        "label": "Third-party consent required",
+        "arisesFrom": "a landlord's licence to assign, a management company's consent, a chargee's consent to a transfer, a Help to Buy redemption / consent, a shared-ownership provider",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "consent_obtained",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Third parties work to their own clock and fee; a Help to Buy redemption needs a RICS valuation and 4–6 weeks.",
+        "severity": "warning",
+        "workstreams": [
+          "leasehold",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Apply for the consent with the fee",
+          "Chase the third party",
+          "Re-plan target dates"
+        ],
+        "responsible": "third_party",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "document_execution_problem",
+        "group": "parties_chain",
+        "label": "Document execution problem",
+        "arisesFrom": "a deed signed but not witnessed, a witness who is a party, a wrong name, an electronic signature the other side or HMLR will not accept, a signatory abroad",
+        "gate": "exchange",
+        "stages": [
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "document_reexecuted",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Re-execution is the only fix and takes as long as the post takes.",
+        "severity": "warning",
+        "workstreams": [
+          "contract"
+        ],
+        "threatens": [
+          "exchange",
+          "completion",
+          "registration"
+        ],
+        "actions": [
+          "Re-execute with a proper witness",
+          "Allow for the post"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 3
+      },
+      {
+        "kind": "occupier_consent",
+        "group": "parties_chain",
+        "label": "Occupier consent required",
+        "arisesFrom": "an adult occupier (partner, adult child, lodger) who must sign a consent / deed of postponement for the lender",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "consent_obtained",
+          "condition_satisfied",
+          "other"
+        ],
+        "note": "A standard mortgage condition; the occupier is advised separately.",
+        "severity": "warning",
+        "workstreams": [
+          "mortgage"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Identify every adult occupier",
+          "Have the consent signed with separate advice"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "probate_issue",
+        "group": "parties_chain",
+        "label": "Probate issue",
+        "arisesFrom": "the grant not yet issued, executors not all signing, an intestacy, a sale by a personal representative before the grant",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "grant_obtained",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "Everything but exchange can proceed before the grant; the grant itself can take 12 weeks to many months.",
+        "severity": "warning",
+        "workstreams": [
+          "chain",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Confirm the grant has been applied for and the expected date",
+          "Progress everything else",
+          "Re-plan target dates"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 15
+      },
+      {
+        "kind": "power_of_attorney_issue",
+        "group": "parties_chain",
+        "label": "Power-of-attorney issue",
+        "arisesFrom": "an LPA not registered, a donor whose capacity is in doubt, an attorney signing beyond their authority, an unregistered general power",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "attorney_verified",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "HMLR and lenders want the registered LPA (or certified copy) and evidence it is still valid.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "id_aml"
+        ],
+        "threatens": [
+          "exchange",
+          "registration"
+        ],
+        "actions": [
+          "Obtain the registered LPA / certified copy",
+          "Verify the attorney",
+          "Confirm the lender accepts"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "bankruptcy_insolvency",
+        "group": "parties_chain",
+        "label": "Bankruptcy / insolvency issue",
+        "arisesFrom": "a K16 bankruptcy search hit against the buyer, a seller with a bankruptcy restriction on the title, a company seller in liquidation",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "insolvency_cleared",
+          "evidence_provided",
+          "other"
+        ],
+        "note": "A hit against a borrower stops the lender; a trustee in bankruptcy must sign for an insolvent seller.",
+        "severity": "critical",
+        "workstreams": [
+          "id_aml",
+          "title"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Establish whether the hit is our client",
+          "Trustee's signature / discharge evidence",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "survey_defect",
+        "group": "property",
+        "label": "Survey defect",
+        "arisesFrom": "the client's survey (damp, roof, subsidence, electrics, asbestos, timber, knotweed, spray foam)",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "price_reduced",
+          "works_before_exchange",
+          "retention_agreed",
+          "specialist_report_clear",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Most renegotiations settle at 1–5% off; lenders may impose a retention (knotweed, spray foam); the seller may refuse and the buyer walks.",
+        "severity": "warning",
+        "workstreams": [
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Get the surveyor's estimate",
+          "Renegotiate or agree works / retention",
+          "Record the client's decision"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "environmental_risk",
+        "group": "property",
+        "label": "Environmental risk",
+        "arisesFrom": "environmental / flood / mining / radon reports the client and lender must accept",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "lender_confirmed",
+          "specialist_report_clear",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Flood risk must be reported to the lender, who may withdraw; insurability is the practical test.",
+        "severity": "warning",
+        "workstreams": [
+          "searches"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Obtain the further report",
+          "Check insurability",
+          "Report to the lender"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "third_party_encumbrance",
+        "group": "property",
+        "label": "Third-party arrangement",
+        "arisesFrom": "a solar-panel roof lease, a septic tank (general binding rules), overage, a s.106, a rentcharge, a guarantee that must be assigned",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "lender_confirmed",
+          "works_before_exchange",
+          "indemnity_policy",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "A solar lease must be assignable and lender-acceptable; a non-compliant septic tank must be replaced or the price reflect it.",
+        "severity": "warning",
+        "workstreams": [
+          "title",
+          "searches"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Get the agreement / lease",
+          "Check assignability and lender acceptability",
+          "Advise the client"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "document_missing",
+        "group": "property",
+        "label": "Document missing",
+        "arisesFrom": "FENSA / gas / electrical certificates, guarantees, the EPC, planning decision notices the seller cannot find",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "received",
+          "evidence_provided",
+          "indemnity_policy",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Often ends in a cheap indemnity or acceptance; sometimes the first sign of a bigger regs problem.",
+        "severity": "info",
+        "workstreams": [
+          "enquiries"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Ask the seller",
+          "Quote an indemnity",
+          "Advise the client"
+        ],
+        "responsible": "seller_side",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "disclosure_concern",
+        "group": "property",
+        "label": "Disclosure concern",
+        "arisesFrom": "TA6 answers that contradict the survey or searches, an undisclosed neighbour dispute, a complaint history, a death at the property",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "evidence_provided",
+          "price_reduced",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "Misrepresentation exposure after completion; further enquiries first, then advice.",
+        "severity": "warning",
+        "workstreams": [
+          "enquiries"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Raise the specific further enquiry",
+          "Advise the client on misrepresentation",
+          "Record the client's decision"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 5
+      },
+      {
+        "kind": "completion_failure",
+        "group": "completion",
+        "label": "Completion failure",
+        "arisesFrom": "lender funds late, the CHAPS cut-off missed, chain money not through, keys not released, a removal van on the drive and no money",
+        "gate": "completion",
+        "stages": [
+          "pre_completion"
+        ],
+        "resolutions": [
+          "completed_late",
+          "funds_in_place",
+          "other"
+        ],
+        "note": "Late-completion interest under the standard conditions; a notice to complete if it slips further.",
+        "severity": "critical",
+        "workstreams": [
+          "completion"
+        ],
+        "threatens": [
+          "completion"
+        ],
+        "actions": [
+          "Establish where the money is",
+          "Agree the new time / date with the other side",
+          "Calculate late-completion interest",
+          "Consider a notice to complete"
+        ],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": 1
+      },
+      {
+        "kind": "survey_further_investigation",
+        "group": "property",
+        "label": "Further investigation recommended",
+        "arisesFrom": "the survey (or a specialist report) recommends a further specialist investigation before exchange: damp, timber, drainage, structural, electrical, roof",
+        "gate": "exchange",
+        "stages": [
+          "pre_contract",
+          "contract_review",
+          "pre_exchange"
+        ],
+        "resolutions": [
+          "specialist_report_clear",
+          "accepted_as_is",
+          "price_reduced",
+          "retention_agreed",
+          "works_before_exchange",
+          "other"
+        ],
+        "note": "Raised automatically from the survey facts, one per recommendation. A specialist report that finds nothing resolves it (a fact); the client's satisfaction with the property is a separate client decision.",
+        "severity": "warning",
+        "workstreams": [
+          "survey"
+        ],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [
+          "Instruct the specialist named by the surveyor",
+          "File the report when it arrives (it is read automatically)",
+          "Put the outcome to the client"
+        ],
+        "responsible": "client",
+        "escalateAfterWorkingDays": 10
+      },
+      {
+        "kind": "other",
+        "group": "other",
+        "label": "Other",
+        "arisesFrom": "anything else the handler needs the matter to wait for",
+        "gate": "exchange",
+        "stages": [
+          "instruction",
+          "pre_contract",
+          "contract_review",
+          "pre_exchange",
+          "exchanged",
+          "pre_completion"
+        ],
+        "resolutions": [
+          "price_reduced",
+          "buyer_covers_shortfall",
+          "retention_agreed",
+          "works_before_exchange",
+          "indemnity_policy",
+          "regularisation_certificate",
+          "retrospective_consent",
+          "consent_obtained",
+          "specialist_report_clear",
+          "evidence_provided",
+          "deed_or_declaration",
+          "deed_of_variation",
+          "lease_extended",
+          "restriction_complied",
+          "document_reexecuted",
+          "received",
+          "offer_extended",
+          "condition_satisfied",
+          "new_lender",
+          "revaluation_upheld",
+          "lender_confirmed",
+          "chain_ready",
+          "grant_obtained",
+          "attorney_verified",
+          "insolvency_cleared",
+          "deposit_agreed",
+          "funds_in_place",
+          "completed_late",
+          "dates_replanned",
+          "accepted_as_is",
+          "other"
+        ],
+        "note": "",
+        "severity": "warning",
+        "workstreams": [],
+        "threatens": [
+          "exchange"
+        ],
+        "actions": [],
+        "responsible": "conveyancer",
+        "escalateAfterWorkingDays": null
+      }
+    ],
+    "resolutions": [
+      {
+        "id": "price_reduced",
+        "label": "price reduced",
+        "effects": [
+          "records price_changed (new price required, before exchange only)",
+          "lender-funded purchase: raises a lender_approval issue holding exchange"
+        ]
+      },
+      {
+        "id": "buyer_covers_shortfall",
+        "label": "buyer makes up the shortfall",
+        "effects": []
+      },
+      {
+        "id": "retention_agreed",
+        "label": "retention agreed",
+        "effects": [
+          "lender-funded purchase: raises a lender_approval issue holding exchange"
+        ]
+      },
+      {
+        "id": "works_before_exchange",
+        "label": "works done by the seller before exchange",
+        "effects": []
+      },
+      {
+        "id": "indemnity_policy",
+        "label": "indemnity policy obtained",
+        "effects": [
+          "lender-funded purchase: raises a lender_approval issue holding exchange"
+        ]
+      },
+      {
+        "id": "regularisation_certificate",
+        "label": "regularisation certificate obtained",
+        "effects": []
+      },
+      {
+        "id": "retrospective_consent",
+        "label": "retrospective consent obtained",
+        "effects": []
+      },
+      {
+        "id": "consent_obtained",
+        "label": "consent obtained",
+        "effects": []
+      },
+      {
+        "id": "specialist_report_clear",
+        "label": "specialist report satisfactory",
+        "effects": []
+      },
+      {
+        "id": "evidence_provided",
+        "label": "evidence / documents provided",
+        "effects": []
+      },
+      {
+        "id": "deed_or_declaration",
+        "label": "deed or statutory declaration obtained",
+        "effects": []
+      },
+      {
+        "id": "deed_of_variation",
+        "label": "deed of variation completed",
+        "effects": []
+      },
+      {
+        "id": "lease_extended",
+        "label": "lease extended (or extension assigned)",
+        "effects": []
+      },
+      {
+        "id": "restriction_complied",
+        "label": "restriction complied with (certificate / consent)",
+        "effects": []
+      },
+      {
+        "id": "document_reexecuted",
+        "label": "document re-executed",
+        "effects": []
+      },
+      {
+        "id": "received",
+        "label": "received (the awaited thing arrived)",
+        "effects": []
+      },
+      {
+        "id": "offer_extended",
+        "label": "offer extended by the lender",
+        "effects": []
+      },
+      {
+        "id": "condition_satisfied",
+        "label": "condition satisfied",
+        "effects": []
+      },
+      {
+        "id": "new_lender",
+        "label": "new lender / fresh valuation",
+        "effects": [
+          "lender-funded purchase: records mortgage_offer_withdrawn (the sub-flow reopens)"
+        ]
+      },
+      {
+        "id": "revaluation_upheld",
+        "label": "valuation challenged and upheld",
+        "effects": []
+      },
+      {
+        "id": "lender_confirmed",
+        "label": "lender confirmed the offer stands",
+        "effects": []
+      },
+      {
+        "id": "chain_ready",
+        "label": "chain confirmed ready",
+        "effects": []
+      },
+      {
+        "id": "grant_obtained",
+        "label": "grant of probate obtained",
+        "effects": []
+      },
+      {
+        "id": "attorney_verified",
+        "label": "attorney's authority verified",
+        "effects": []
+      },
+      {
+        "id": "insolvency_cleared",
+        "label": "insolvency cleared (trustee / discharge / not our client)",
+        "effects": []
+      },
+      {
+        "id": "deposit_agreed",
+        "label": "deposit arrangement agreed in the contract",
+        "effects": []
+      },
+      {
+        "id": "funds_in_place",
+        "label": "funds in place",
+        "effects": []
+      },
+      {
+        "id": "completed_late",
+        "label": "completed late",
+        "effects": []
+      },
+      {
+        "id": "dates_replanned",
+        "label": "target dates re-planned",
+        "effects": []
+      },
+      {
+        "id": "accepted_as_is",
+        "label": "client accepts as is (advised in writing)",
+        "effects": []
+      },
+      {
+        "id": "other",
+        "label": "other (see note)",
+        "effects": []
+      }
+    ],
+    "staleAfterWorkingDays": 10
+  }
+}
