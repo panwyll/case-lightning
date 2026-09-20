@@ -24,7 +24,7 @@ test('requirements 3 + 4: an enquiry to an internal counterparty produces the SA
   const delivered: Array<{ fromMatterId: string; enquiryId: string }> = [];
   h.ports.linked = { name: 'fake-linked', enquiryRaised: async (i) => { delivered.push({ fromMatterId: i.fromMatterId, enquiryId: i.enquiryId }); } };
   // The "other side" is matter OTHER in the same store; it has its own (empty) log.
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const before = h.store.dump(TENANT, OTHER);
@@ -44,7 +44,7 @@ test('requirements 3 + 4: an enquiry to an internal counterparty produces the SA
   // External counterparty: identical event shapes, stamped external, port not called.
   const g = harness();
   g.ports.linked = { name: 'fake-linked', enquiryRaised: async () => { throw new Error('must not be called for external'); } };
-  await g.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'external' });
+  await g.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'external' });
   await g.svc.requestIdCheck(TENANT, MATTER, USER);
   await g.svc.idCheckResultReceived(TENANT, MATTER, g.doc(idClear()));
   const ext = await g.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'E1', subject: 'Boundary ownership' });
@@ -54,7 +54,7 @@ test('requirements 3 + 4: an enquiry to an internal counterparty produces the SA
 
 test('chases to the counterparty solicitor carry the counterparty type; other chases do not', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z'));
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], counterpartyType: 'internal' });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'E1', subject: 'x' });

@@ -102,6 +102,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['matter_created'];
       s.enrolled = true;
       s.transactionType = p.transactionType;
+      s.requireProofOfFunds = !!p.requireProofOfFunds;
       s.hasLender = p.hasLender;
       s.requiredSearches = [...p.requiredSearches];
       s.shadowMode = !!p.shadowMode;
@@ -645,19 +646,40 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'proof_of_funds_requested': {
       const p = e.payload as Payloads['proof_of_funds_requested'];
       s.proofOfFunds = { ...s.proofOfFunds, status: 'requested', requestId: p.requestId, requestedAt: e.createdAt, formUrl: p.formUrl ?? null, rounds: s.proofOfFunds.rounds + 1 };
+      for (const id of p.queryIds ?? []) {
+        const q = s.proofOfFunds.queries[id];
+        if (q && q.status === 'draft') s.proofOfFunds.queries[id] = { ...q, status: 'sent', sentAt: e.createdAt };
+      }
       openWait(s, 'proof_of_funds', p.requestId, e);
       break;
     }
     case 'proof_of_funds_submitted': {
       const p = e.payload as Payloads['proof_of_funds_submitted'];
-      s.proofOfFunds = { ...s.proofOfFunds, status: 'submitted', requestId: p.requestId, submittedAt: e.createdAt, documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id, resolution: null };
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'submitted', requestId: p.requestId, submittedAt: e.createdAt, documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id, resolution: null, flags: p.flags, statements: p.statements ?? [], risk: p.risk ?? null };
       closeWait(s, 'proof_of_funds', p.requestId, e);
       break;
     }
     case 'proof_of_funds_reviewed': {
       const p = e.payload as Payloads['proof_of_funds_reviewed'];
-      s.proofOfFunds = { ...s.proofOfFunds, status: 'reviewed', resolution: p.option };
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'reviewed', resolution: p.option, approvedAt: p.option === 'approve' ? e.createdAt : s.proofOfFunds.approvedAt, approvedBy: p.option === 'approve' ? e.actor : s.proofOfFunds.approvedBy };
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      break;
+    }
+    case 'proof_of_funds_query_raised': {
+      const p = e.payload as Payloads['proof_of_funds_query_raised'];
+      s.proofOfFunds.queries[p.query.id] = { ...p.query, raisedAt: e.createdAt, raisedBy: e.actor, status: 'draft', sentAt: null, answer: null, answerEvidenceDocumentIds: [], answeredAt: null };
+      break;
+    }
+    case 'proof_of_funds_query_withdrawn': {
+      const p = e.payload as Payloads['proof_of_funds_query_withdrawn'];
+      const q = s.proofOfFunds.queries[p.queryId];
+      if (q) s.proofOfFunds.queries[p.queryId] = { ...q, status: 'withdrawn' };
+      break;
+    }
+    case 'proof_of_funds_query_answered': {
+      const p = e.payload as Payloads['proof_of_funds_query_answered'];
+      const q = s.proofOfFunds.queries[p.queryId];
+      if (q) s.proofOfFunds.queries[p.queryId] = { ...q, status: 'answered', answer: p.answer || null, answerEvidenceDocumentIds: p.evidenceDocumentIds, answeredAt: e.createdAt };
       break;
     }
     // ── leasehold ──

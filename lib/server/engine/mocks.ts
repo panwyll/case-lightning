@@ -1,3 +1,4 @@
+import type { StatementFacts } from './proof-of-funds';
 /**
  * In-memory MOCK implementations of every port (see ports.ts). These are what the
  * engine runs against in unit tests and in a dev environment without InfoTrack,
@@ -72,6 +73,13 @@ export class FixtureExtractor implements DocumentExtractor {
   }
   async extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts> {
     return this.facts(doc, 'ID check');
+  }
+  /** A seeded document with `transactions` is a statement; `{ unreadable: true }` throws; anything else is "not a statement". */
+  async extractStatement(doc: DocumentRef): Promise<StatementFacts | null> {
+    const f = doc.extractedFacts as { transactions?: unknown; unreadable?: unknown } | null;
+    if (f?.unreadable) throw new Error('scan too poor to read');
+    if (Array.isArray(f?.transactions)) return f as unknown as StatementFacts;
+    return null;
   }
 }
 

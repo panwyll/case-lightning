@@ -18,7 +18,7 @@ const OTHER = '55555555-5555-4555-8555-555555555555';
 
 test('shadow matter: engine concludes, nothing surfaces, nothing is sent — every intent is logged as action_suppressed', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29', 'LLC1'], shadowMode: true });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29', 'LLC1'], shadowMode: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   assert.equal(h.ports.idCheckProvider.requests.length, 0, 'ID check not requested from the provider');
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
@@ -53,7 +53,7 @@ test('shadow matter: engine concludes, nothing surfaces, nothing is sent — eve
 
 test('shadow matter: timer chases are suppressed (intent logged, SLA clock still advances) and escalations stay in the log', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['LLC1'], shadowMode: true });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['LLC1'], shadowMode: true });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   // Record the search as ordered by hand (the automatic order was suppressed) so the wait opens.
@@ -74,7 +74,7 @@ test('shadow matter: timer chases are suppressed (intent logged, SLA clock still
 
 test('switching shadow mode off is a logged, people-only event; the matter then behaves normally', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], shadowMode: true });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], shadowMode: true });
   await assert.rejects(h.svc.setShadowMode(TENANT, MATTER, 'system', false), /person/);
   await assert.rejects(h.svc.setShadowMode(TENANT, MATTER, USER, true), /already on/);
   const r = await h.svc.setShadowMode(TENANT, MATTER, USER, false, 'Pilot complete for this handler');
@@ -94,7 +94,7 @@ test('sub-flow shadow: only that sub-flow is suppressed/hidden; assist surfaces 
   await h.store.setSubflowStatus(TENANT, 'id_check', 'autonomous', USER);
   assert.deepEqual(await h.store.loadSubflows(TENANT), { id_check: 'autonomous', search: 'shadow', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist', proof_of_funds: 'assist', management_pack: 'assist' });
 
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   assert.equal(h.ports.idCheckProvider.requests.length, 1, 'id_check is autonomous: really requested');
   const r1 = await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
@@ -124,7 +124,7 @@ test('sub-flow shadow: only that sub-flow is suppressed/hidden; assist surfaces 
 
 test('assist-level auto-clear review: advisory, non-blocking, confirm or escalate (escalation becomes a real decision)', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const r = await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
@@ -153,8 +153,8 @@ test('queue: one row per assigned matter, pending badge counts only surfaced blo
   const h = harness();
   h.store.matterMeta.set(`${TENANT}:${MATTER}`, { matterRef: 'M-1', propertyAddress: '1 High St', assignedTo: USER });
   h.store.matterMeta.set(`${TENANT}:${OTHER}`, { matterRef: 'M-2', propertyAddress: '2 Low Rd', assignedTo: USER });
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], targetCompletionDate: '2026-12-18' });
-  await h.svc.run(TENANT, OTHER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], targetCompletionDate: '2026-11-06' });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], targetCompletionDate: '2026-12-18' });
+  await h.svc.run(TENANT, OTHER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'], targetCompletionDate: '2026-11-06' });
   for (const m of [MATTER, OTHER]) {
     await h.svc.requestIdCheck(TENANT, m, USER);
     await h.svc.idCheckResultReceived(TENANT, m, h.ports.documents.seed({ tenantId: TENANT, matterId: m, docType: 'PDF', extractedFacts: idClear() }).id);
@@ -191,7 +191,7 @@ test('§1: post-commit effects and the timer sweep run inside ports.asAutomation
     assert.ok(depth > 0, 'search order placed from inside the automation context');
     return orig(input);
   };
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   assert.equal(h.ports.searchProvider.orders.length, 1);

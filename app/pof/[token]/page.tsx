@@ -65,7 +65,9 @@ const CSS = `
 
 export default function ProofOfFundsPage() {
   const { token } = useParams<{ token: string }>();
-  const [ctx, setCtx] = useState<{ status: string; firmName?: string; propertyAddress?: string; firstName?: string | null; fullName?: string | null; purchasePricePennies?: number | null; hasLender?: boolean | null; noteToClient?: string | null; followUp?: boolean } | null>(null);
+  type Query = { id: string; question: string; transaction: { date: string; description: string; amountPennies: number } | null };
+  const [ctx, setCtx] = useState<{ status: string; firmName?: string; propertyAddress?: string; firstName?: string | null; fullName?: string | null; purchasePricePennies?: number | null; hasLender?: boolean | null; noteToClient?: string | null; followUp?: boolean; round?: number; queries?: Query[]; previous?: { purchasePricePennies: number | null; mortgageAdvancePennies: number | null; sources: Array<{ kind: string; amountPennies: number; description: string; gift: Source['gift'] extends infer G ? (G & { donorEvidenceDocumentIds?: string[] }) | null : never; overseas: { country: string; alreadyInUk: boolean } | null }> } | null } | null>(null);
+  const [answers, setAnswers] = useState<Record<string, { answer: string; files: Array<{ id: string; fileName: string }> }>>({});
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -86,6 +88,11 @@ export default function ProofOfFundsPage() {
         if (j.fullName) setFullName(j.fullName);
         if (j.purchasePricePennies) setPrice(String(j.purchasePricePennies / 100));
         if (j.hasLender) setSources([blank('mortgage'), blank('savings')]);
+        if (j.previous) {
+          if (j.previous.purchasePricePennies) setPrice(String(j.previous.purchasePricePennies / 100));
+          if (j.previous.mortgageAdvancePennies) setMortgage(String(j.previous.mortgageAdvancePennies / 100));
+          setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null }>).map((s) => ({ ...blank(s.kind), amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
+        }
       }
     }).catch(() => setCtx({ status: 'unknown' }));
   }, [token]);
@@ -100,6 +107,21 @@ export default function ProofOfFundsPage() {
     if (!r.ok) throw new Error(j.error ?? 'Upload failed');
     return { id: j.id as string, fileName: j.fileName as string };
   }, [token]);
+
+  const attachAnswer = async (qid: string, files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const added: Array<{ id: string; fileName: string }> = [];
+      for (const f of Array.from(files)) added.push(await upload(f));
+      setAnswers((a) => ({ ...a, [qid]: { answer: a[qid]?.answer ?? '', files: [...(a[qid]?.files ?? []), ...added] } }));
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const attach = async (i: number, files: FileList | null, donor = false) => {
     if (!files?.length) return;
@@ -141,6 +163,7 @@ export default function ProofOfFundsPage() {
         })),
         declarations: dec,
         clientNote: note.trim() || null,
+        answers: (ctx?.queries ?? []).map((q) => ({ queryId: q.id, answer: answers[q.id]?.answer?.trim() ?? '', evidenceDocumentIds: (answers[q.id]?.files ?? []).map((f) => f.id) })).filter((a) => a.answer || a.evidenceDocumentIds.length),
       };
       const r = await fetch(`/api/v1/pof/${token}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json();
@@ -172,6 +195,22 @@ export default function ProofOfFundsPage() {
       <h1>Proof of funds — {ctx.propertyAddress}</h1>
       <p className="sub">{ctx.firmName} must verify where the money for your purchase is coming from before contracts can be exchanged. This is a legal requirement on every purchase. It takes about ten minutes; you can attach photos or PDFs from your phone.</p>
       {ctx.followUp && ctx.noteToClient && <div className="card" style={{ borderColor: '#fde68a', background: '#fffbeb' }}><b>Your conveyancer asked for a little more:</b><div style={{ marginTop: 6, whiteSpace: 'pre-wrap', fontSize: 14 }}>{ctx.noteToClient}</div></div>}
+      {(ctx.queries?.length ?? 0) > 0 && (
+        <div className="card" style={{ borderColor: '#c7d2fe', background: '#f5f3ff' }}>
+          <b>Questions about your statements ({ctx.queries!.length})</b>
+          <div className="hint" style={{ marginBottom: 6 }}>These are routine: every purchase is checked this way. Answer in your own words and attach anything that shows it.</div>
+          {ctx.queries!.map((q, n) => (
+            <div key={q.id} style={{ padding: '10px 0', borderTop: '1px solid #e0e7ff' }}>
+              <div style={{ fontSize: 14 }}><b>{n + 1}.</b> {q.question}</div>
+              {q.transaction && <div className="hint">Line: {q.transaction.date} · {q.transaction.description} · {gbp(Math.abs(q.transaction.amountPennies))}</div>}
+              <label htmlFor={`pf-ans-${q.id}`}>Your answer</label>
+              <textarea id={`pf-ans-${q.id}`} value={answers[q.id]?.answer ?? ''} onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: { answer: e.target.value, files: a[q.id]?.files ?? [] } }))} />
+              <input type="file" multiple accept="application/pdf,image/*" onChange={(e) => void attachAnswer(q.id, e.target.files)} disabled={busy} style={{ marginTop: 6 }} />
+              {(answers[q.id]?.files?.length ?? 0) > 0 && <div className="files">Attached: {answers[q.id].files.map((f) => f.fileName).join(', ')}</div>}
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="card">
         <b>About you</b>

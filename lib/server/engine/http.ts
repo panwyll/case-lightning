@@ -25,7 +25,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(['freehold_purchase', 'leasehold_purchase']).nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(['freehold_purchase', 'leasehold_purchase']).nullish(), requireProofOfFunds: z.boolean().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
@@ -72,6 +72,8 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resolve_issue'), issueId: z.string().min(1).max(60), resolution: z.enum(ISSUE_RESOLUTIONS), note: z.string().max(4000).nullish(), newPricePennies: z.number().int().positive().nullish(), costPennies: z.number().int().nonnegative().nullish(), paidBy: z.enum(ISSUE_PAID_BY).nullish() }),
   // proof of funds (service-level: the route issues the form and sends it) and leasehold
   z.object({ type: z.literal('request_proof_of_funds'), noteToClient: z.string().max(1000).nullish() }),
+  z.object({ type: z.literal('raise_proof_of_funds_query'), question: z.string().min(5).max(1000), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('withdraw_proof_of_funds_query'), queryId: z.string().min(1).max(20), reason: z.string().min(1).max(1000) }),
   z.object({ type: z.literal('management_pack_requested'), from: z.string().min(1).max(200), reference: z.string().max(100).nullish() }),
   z.object({ type: z.literal('notice_of_assignment_served'), servedOn: z.string().min(1).max(200), reference: z.string().max(100).nullish() }),
   z.object({ type: z.literal('withdraw_issue'), issueId: z.string().min(1).max(60), reason: z.string().min(1).max(1000) }),

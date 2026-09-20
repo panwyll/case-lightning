@@ -18,7 +18,7 @@
  */
 import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from './types';
 import type { SummaryOverride } from './machine';
-import type { ProofOfFundsFacts } from './proof-of-funds';
+import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
 
 /** What the engine knows about a document (a row in `document`, or an in-memory stand-in). */
 export interface DocumentRef {
@@ -47,6 +47,8 @@ export interface DocumentExtractor {
   extractMortgageOffer(doc: DocumentRef): Promise<MortgageOfferFacts>;
   extractTitle(doc: DocumentRef): Promise<TitleFacts>;
   extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts>;
+  /** Proof of funds: read a client-attached document as a bank statement, transaction by transaction. null = readable but not a statement (a gift letter, an ID). Throws when unreadable. */
+  extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */
@@ -58,7 +60,7 @@ export interface DecisionSummariser {
 /** Proof of funds (docs/proof-of-funds.md): writes the briefing the conveyancer reads before signing off a client's declaration. Prose only; the flags stand. */
 export interface ProofOfFundsSummariser {
   readonly name: string;
-  summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null>;
+  summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> }): Promise<SummaryOverride | null>;
 }
 
 /** Proof of funds: issues the tokenised form link the client completes. Production stores a row and hashes the token; tests keep it in memory. */

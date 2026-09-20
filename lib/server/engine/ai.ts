@@ -25,7 +25,7 @@
 import { z } from 'zod/v4';
 import type { Citation, DecisionKind, Flag, MatterState } from './types';
 import type { DecisionSummariser, DocumentRef, ProofOfFundsSummariser, ReportDrafter } from './ports';
-import { FUND_SOURCE_LABEL, gbp, type ProofOfFundsFacts } from './proof-of-funds';
+import { FUND_SOURCE_LABEL, gbp, type ProofOfFundsFacts, type TransactionReview } from './proof-of-funds';
 import type { EngineDocumentInput, StructuredLlm } from './llm';
 import type { DocumentBytesLoader } from './extraction';
 import { OPTIONS_FOR, optionLabel } from './rules';
@@ -219,17 +219,18 @@ export class ClaudeProofOfFundsSummariser implements ProofOfFundsSummariser {
     this.name = `claude-pof-summariser:${opts.model}`;
   }
 
-  async summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null> {
+  async summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> }): Promise<SummaryOverride | null> {
     const source = await this.loader.load(input.source).catch(() => null);
     const documents: EngineDocumentInput[] = source ? [{ ...source, title: input.source.fileName ?? 'Proof of funds declaration' }] : [];
-    const flagText = input.flags.map((f, i) => `${i + 1}. code=${f.code} severity=${f.severity} — ${f.description}`).join('\n') || '(none)';
-    const factsJson = JSON.stringify(input.facts);
+    const flagText = input.flags.map((f, i) => `${i + 1}. code=${f.code} severity=${f.severity} — ${f.description}${f.locator?.quote ? ` [line: ${f.locator.quote}]` : ''}`).join('\n') || '(none)';
+    const reviewJson = JSON.stringify({ statements: input.review?.statements ?? [], draftedQueries: input.review?.queries.map((q) => q.question) ?? [], answers: input.answers ?? [] });
+    const factsJson = `${JSON.stringify(input.facts)}\n${reviewJson}`;
     try {
       const res = await this.llm.call({
         schema: PofSchema,
         instructions: POF_INSTRUCTIONS,
         documents,
-        prompt: `Matter stage: ${input.state.stage}. Lender-funded: ${input.state.hasLender ? 'yes' : 'no'}.\n\nFLAGS (fixed — explain each, do not change them):\n${flagText}\n\nTYPED FACTS (DATA):\n${factsJson}\n\nWrite the briefing.`,
+        prompt: `Matter stage: ${input.state.stage}. Lender-funded: ${input.state.hasLender ? 'yes' : 'no'}. Round: ${input.facts.round}.\n\nFLAGS (fixed — explain each, do not change them; transaction flags quote the statement line):\n${flagText}\n\nTYPED FACTS, STATEMENTS READ, QUERIES DRAFTED AND THE CLIENT'S ANSWERS (DATA):\n${factsJson}\n\nWrite the briefing. Where the client has answered a query, say what they said and whether the attached evidence is the kind normally expected; do not judge its truth.`,
         model: this.opts.model,
         effort: this.opts.effort ?? 'high',
         maxTokens: 4000,

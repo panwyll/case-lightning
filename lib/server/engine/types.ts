@@ -18,7 +18,7 @@
  */
 
 import type { IssueGate, IssueKind, IssueResolution, IssueStatus } from './issues';
-import type { ProofOfFundsFacts } from './proof-of-funds';
+import type { PofQuery, PofRiskRating, ProofOfFundsFacts, StatementTransaction, TransactionReview } from './proof-of-funds';
 
 // ───────────────────────────── Stages (2.3) ─────────────────────────────
 
@@ -158,6 +158,9 @@ export const EVENT_TYPES = [
   'proof_of_funds_requested',
   'proof_of_funds_submitted',
   'proof_of_funds_reviewed',
+  'proof_of_funds_query_raised',
+  'proof_of_funds_query_withdrawn',
+  'proof_of_funds_query_answered',
   // leasehold: the management pack (LPE1) sub-flow and the post-completion notice
   'management_pack_requested',
   'management_pack_received',
@@ -450,6 +453,8 @@ export interface Payloads {
     counterpartyType?: CounterpartyType | null;
     /** Addendum 3 §2: observe only. */
     shadowMode?: boolean;
+    /** Firm policy (docs/proof-of-funds.md): exchange is held until proof of funds is signed off. Undefined on old logs = false. */
+    requireProofOfFunds?: boolean;
   };
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
@@ -575,10 +580,16 @@ export interface Payloads {
   signed_contract_held: { note?: string | null };
   // ── proof of funds (docs/proof-of-funds.md) ──
   /** The form link went to the client (recorded after the send). A follow-up carries the request it re-opens. */
-  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null };
-  /** The client submitted the form: typed facts, the rule flags, and ALWAYS a decision for the conveyancer citing the declaration document. */
-  proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; decision: DecisionSpec };
+  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
+  /** The client submitted the form: typed facts, the rule flags (declaration AND transaction level), the statements read, the risk rating, and ALWAYS a decision for the conveyancer citing the declaration document. */
+  proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; statements: TransactionReview['statements']; risk: PofRiskRating; decision: DecisionSpec };
   proof_of_funds_reviewed: { requestId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
+  /** A query to the client about a transaction or a gap — drafted by the rules (actor system) or added by a person. */
+  proof_of_funds_query_raised: { requestId: string; query: { id: string; key: string; flagCode: string; documentId: string | null; transaction: StatementTransaction | null; question: string } };
+  /** A person decided the query need not be put (with the reason on the log — "considered and discounted"). */
+  proof_of_funds_query_withdrawn: { queryId: string; reason: string };
+  /** The client answered through the form (with any evidence attached). */
+  proof_of_funds_query_answered: { requestId: string; queryId: string; answer: string; evidenceDocumentIds: string[] };
   // ── leasehold ──
   management_pack_requested: { from: string; reference?: string | null };
   /** The LPE1 / pack arrived: always a decision (every figure in it is a client-advice point). */
@@ -607,6 +618,8 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'proof_of_funds_submitted',
   'management_pack_received',
 ];
+
+export type { PofQuery };
 
 // ───────────────────────────── Shadow mode / trust levels (addendum 3 §2) ─────────────────────────────
 
@@ -728,6 +741,8 @@ export interface MatterState {
   hasLender: boolean;
   requiredSearches: SearchType[];
   shadowMode: boolean;
+  /** Firm policy: exchange needs a signed-off proof of funds (docs/proof-of-funds.md). */
+  requireProofOfFunds: boolean;
   counterpartyType: CounterpartyType | null;
   targetExchangeDate: string | null;
   targetCompletionDate: string | null;
@@ -788,6 +803,14 @@ export interface MatterState {
     formUrl: string | null;
     /** How many times the form has gone out (1 = first request; more = "request further"). */
     rounds: number;
+    /** The latest submission's flags (declaration + transactions), statements read, and risk rating. */
+    flags: Flag[];
+    statements: TransactionReview['statements'];
+    risk: PofRiskRating | null;
+    /** Queries to the client: drafted by the rules or a person, sent with a round, answered through the form, or withdrawn with a reason. */
+    queries: Record<string, PofQuery>;
+    approvedAt: string | null;
+    approvedBy: string | null;
   };
   /** Leasehold: the LPE1 / management pack. */
   managementPack: {
@@ -831,6 +854,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     hasLender: false,
     requiredSearches: [],
     shadowMode: false,
+    requireProofOfFunds: false,
     counterpartyType: null,
     targetExchangeDate: null,
     targetCompletionDate: null,
@@ -857,7 +881,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, confirmedAt: null },
     postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
-    proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, rounds: 0 },
+    proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
     managementPack: { status: 'not_required', requestedAt: null, documentId: null, facts: null, decisionEventId: null },
     abandoned: null,
     noticeToComplete: null,
@@ -887,6 +911,9 @@ export function withStateDefaults(s: MatterState): MatterState {
 }
 
 export const isLeasehold = (s: MatterState): boolean => s.transactionType === 'leasehold_purchase';
+export const proofOfFundsApproved = (s: MatterState): boolean => s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve';
+/** Queries not yet answered or withdrawn (drafted, or sent and waiting). */
+export const openPofQueries = (s: MatterState): PofQuery[] => Object.values(s.proofOfFunds.queries).filter((q) => q.status === 'draft' || q.status === 'sent').sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
 
 /** Nothing more will happen on this matter: registered, or abandoned. */
 export const isFinished = (s: MatterState): boolean => !!s.postCompletion.ap1ConfirmedAt || !!s.abandoned;

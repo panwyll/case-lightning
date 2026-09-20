@@ -67,6 +67,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const [hasLender, setHasLender] = useState(true);
   const [leasehold, setLeasehold] = useState(false);
   const [pofNote, setPofNote] = useState('');
+  const [pofQuestion, setPofQuestion] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
   const [completionDate, setCompletionDate] = useState('');
   const [upRole, setUpRole] = useState<'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack'>('auto');
@@ -198,6 +199,47 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
         <div className="ep-tile"><b>Mortgage offer{s.mortgage.facts?.lender ? ` · ${s.mortgage.facts.lender}` : ''}</b><Pill s={s.mortgage.status} /></div>
         <div className="ep-tile"><b>Proof of funds{s.proofOfFunds?.rounds ? ` · round ${s.proofOfFunds.rounds}` : ''}</b><Pill s={s.proofOfFunds?.status === 'reviewed' ? (s.proofOfFunds.resolution === 'approve' ? 'reviewed' : s.proofOfFunds.resolution === 'reject' ? 'rejected' : 'reviewed') : s.proofOfFunds?.status === 'submitted' ? 'flagged' : s.proofOfFunds?.status === 'requested' ? 'requested' : 'not_started'} />{s.proofOfFunds?.facts ? <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>declared £{(s.proofOfFunds.facts.totalDeclaredPennies / 100).toLocaleString('en-GB')}{s.proofOfFunds.facts.requiredPennies != null ? ` of £${(s.proofOfFunds.facts.requiredPennies / 100).toLocaleString('en-GB')} needed` : ''}{s.proofOfFunds.facts.giftedPennies ? ' · includes a gift' : ''}</div> : s.proofOfFunds?.status === 'requested' ? <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 3 }}>form with the client since {fmtDay(s.proofOfFunds.requestedAt)}</div> : null}</div>
         {s.transactionType === 'leasehold_purchase' && <div className="ep-tile"><b>Management pack (LPE1)</b><Pill s={s.managementPack?.status ?? 'not_started'} /></div>}
+      </div>
+
+      {s.proofOfFunds && s.proofOfFunds.status !== 'not_started' && (() => {
+        const pof = s.proofOfFunds;
+        const qs = Object.values(pof.queries ?? {}).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
+        const open = qs.filter((q) => q.status === 'draft' || q.status === 'sent');
+        const QCHIP: Record<string, { bg: string; fg: string }> = { draft: { bg: '#fef3c7', fg: '#78350f' }, sent: { bg: '#e0e7ff', fg: '#3730a3' }, answered: { bg: '#dcfce7', fg: '#14532d' }, withdrawn: { bg: '#f1f5f9', fg: '#94a3b8' } };
+        return (
+          <>
+            <div className="ep-sec">Proof of funds — statements read, queries to the client{pof.risk ? ` · risk ${pof.risk}` : ''}{pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}</div>
+            <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+              {(pof.statements?.length ?? 0) > 0 && (
+                <div style={{ fontSize: 12.5, marginBottom: 6 }}>
+                  <b>Statements read:</b> {pof.statements!.map((st) => `${st.fileName ?? st.documentId}${st.readable ? ` (${st.holder ?? '?'}, ${st.from ?? '?'}–${st.to ?? '?'}, ${st.transactions} lines)` : ' (unreadable)'}`).join(' · ')}
+                </div>
+              )}
+              {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Flags:</b> {pof.flags!.map((f) => f.code).join(', ')}</div>}
+              {qs.length === 0 && <div style={{ fontSize: 12.5, color: '#64748b' }}>No queries. The rules draft one for every unusual credit when the client submits; you can add your own below.</div>}
+              {qs.map((q) => (
+                <div key={q.id} style={{ borderTop: '1px solid #f1f5f9', padding: '6px 0', fontSize: 12.5 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    <b>{q.id}</b><span className="ep-pill" style={{ background: QCHIP[q.status].bg, color: QCHIP[q.status].fg, marginTop: 0 }}>{q.status}</span><span style={{ color: '#64748b' }}>{pretty(q.flagCode.split(':')[0].toLowerCase())}{q.raisedBy === 'system' ? ' · drafted by the rules' : ' · added by a person'}</span>
+                    {(q.status === 'draft' || q.status === 'sent') && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={busy} onClick={() => { const r = window.prompt('Why is this query not needed? (recorded on the log)'); if (r) void cmd({ type: 'withdraw_proof_of_funds_query', queryId: q.id, reason: r }); }}>Withdraw</button>}
+                  </div>
+                  <div>{q.question}</div>
+                  {q.transaction && <div style={{ color: '#64748b', fontSize: 11.5 }}>Line: {q.transaction.date} · {q.transaction.description} · £{(Math.abs(q.transaction.amountPennies) / 100).toLocaleString('en-GB')}</div>}
+                  {q.answer != null && <div style={{ marginTop: 3, padding: '4px 8px', background: '#f0fdf4', borderRadius: 6 }}><b>Client:</b> {q.answer || '(evidence only)'}{q.answerEvidenceDocumentIds.length ? ` · ${q.answerEvidenceDocumentIds.length} document${q.answerEvidenceDocumentIds.length === 1 ? '' : 's'}` : ''}</div>}
+                </div>
+              ))}
+              {!pof.approvedAt && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input className="ep-input" placeholder="Add a query for the client…" value={pofQuestion} onChange={(e) => setPofQuestion(e.target.value)} style={{ width: 420 }} />
+                  <button className="ep-btn" style={{ margin: 0 }} disabled={busy || pofQuestion.trim().length < 5} onClick={() => { void cmd({ type: 'raise_proof_of_funds_query', question: pofQuestion.trim() }); setPofQuestion(''); }}>Add query</button>
+                  {open.length > 0 && <span style={{ fontSize: 11.5, color: '#64748b' }}>{open.length} open — sign-off is unavailable until each is sent (query from the decision) or withdrawn with a reason.</span>}
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+      <div className="ep-grid" style={{ display: 'none' }}>
         <div className="ep-tile"><b>Title{s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}</b><Pill s={s.title.status} /></div>
         <div className="ep-tile"><b>Report on title</b><Pill s={s.reportOnTitle.status} />{s.reportOnTitle.sentAt ? <div style={{ fontSize: 11.5, color: '#64748b' }}>sent {fmtDay(s.reportOnTitle.sentAt)}</div> : null}</div>
         <div className="ep-tile"><b>Exchange</b><Pill s={s.exchange.exchangedAt ? 'sent' : s.deposit.received ? 'approved' : 'awaiting'} />{s.exchange.completionDate ? <div style={{ fontSize: 11.5, color: '#64748b' }}>completion {s.exchange.completionDate}</div> : null}</div>

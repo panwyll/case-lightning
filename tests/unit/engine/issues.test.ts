@@ -15,7 +15,7 @@ import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchC
 /** Drive a matter to pre_exchange with everything cleared (lender-funded by default). */
 async function toPreExchange(h: ReturnType<typeof harness>, opts: { hasLender?: boolean } = {}) {
   const hasLender = opts.hasLender ?? true;
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender, requiredSearches: ['CON29'], targetExchangeDate: '2026-11-20', targetCompletionDate: '2026-12-11' });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender, requiredSearches: ['CON29'], targetExchangeDate: '2026-11-20', targetCompletionDate: '2026-12-11' });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
@@ -48,7 +48,7 @@ test('catalogue: every kind has a spec with realistic resolutions drawn from the
 
 test('survey defect → renegotiation: the issue holds exchange, a price reduction records price_changed and tells the lender; lender confirmation releases exchange', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'] });
   await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 32_500_000, reason: 'Agreed price per memorandum of sale' });
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.purchasePricePennies, 32_500_000);
@@ -148,7 +148,7 @@ test('missing building regs → indemnity: on a lender-funded purchase the lende
 
 test('indemnity as a decision option: choosing it on a flagged search on a lender-funded purchase raises the lender-approval issue automatically', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));
@@ -225,7 +225,7 @@ test('after exchange: an issue defaults to holding completion (exchange is histo
 
 test('stale issue timer: an issue nobody touches for 10 working days is raised once as an escalation; touching it restarts the clock', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'] });
   const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'source_of_funds', title: 'Gifted deposit from parents abroad: donor ID and statements outstanding' });
   const id = (r.events[0].payload as { issueId: string }).issueId;
   h.advanceDays(9);

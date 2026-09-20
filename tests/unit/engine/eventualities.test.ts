@@ -12,7 +12,7 @@ import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear,
 
 /** Drive a lender-funded matter to pre_exchange with everything cleared. */
 async function toPreExchange(h: ReturnType<typeof harness>, opts: { expiry?: string } = {}) {
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'], targetExchangeDate: '2026-11-20', targetCompletionDate: '2026-12-11' });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'], targetExchangeDate: '2026-11-20', targetCompletionDate: '2026-12-11' });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
@@ -32,7 +32,7 @@ async function toPreExchange(h: ReturnType<typeof harness>, opts: { expiry?: str
 
 test('abandonment: the client withdraws mid pre-contract — the matter closes to further commands, waits close, timers stop, corrections still allowed', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'E1', subject: 'Boundary' });
@@ -55,7 +55,7 @@ test('abandonment: the client withdraws mid pre-contract — the matter closes t
 
 test('search re-issue: a cleared search can be ordered again (lender freshness rule); the new cycle runs the full sub-flow', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
@@ -167,7 +167,7 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
 
 test('enquiries: one the handler no longer needs is withdrawn (wait closes, stage unblocks); an indemnity policy is a recorded way to resolve a flagged search or title', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'E1', subject: 'Building regs for the extension' });
@@ -202,7 +202,7 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
   const s0 = await h.svc.getState(TENANT, MATTER);
   void s0;
   const h2 = harness();
-  await h2.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h2.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['CON29'] });
   await h2.svc.requestIdCheck(TENANT, MATTER, USER);
   await h2.svc.idCheckResultReceived(TENANT, MATTER, h2.doc(idClear()));
   await h2.svc.searchReturned(TENANT, MATTER, 'CON29', h2.doc(searchClear('CON29')));
@@ -251,7 +251,7 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
 
 test('handler change is on the log (holiday cover, reassignment); a person can record a correction against any earlier event', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false });
   const r = await h.svc.run(TENANT, MATTER, { type: 'record_handler_change', actor: USER, fromUserId: USER, toUserId: SENIOR, reason: 'Annual leave cover' });
   assert.equal(r.state.handler, SENIOR);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'record_handler_change', actor: USER, fromUserId: null, toUserId: SENIOR }), /already/);

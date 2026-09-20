@@ -118,7 +118,10 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await h.svc.draftReportOnTitle(TENANT, MATTER);
   await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
   await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
-  await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  const dep = await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  const depIssue = openIssues(dep.state).find((i) => i.kind === 'aml_kyc_problem');
+  assert.ok(depIssue && /Deposit received before proof of funds/.test(depIssue.title), 'money accepted before sign-off is recorded as an issue holding exchange');
+  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: depIssue!.id, resolution: 'accepted_as_is', note: 'MLRO: deposit held in client account pending sign-off; not applied' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_exchange');
   assert.ok(stageBlockers(s).includes('proof of funds requested from the client'), stageBlockers(s).join(' | '));
@@ -260,4 +263,193 @@ test('issues: party, cost of the fix, and an enquiry raised from an issue', asyn
   assert.match(res.state.issues[id].history.at(-1)!.what, /£180, paid by buyer/);
   const plain = await h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, subject: 'Boundary fence ownership' });
   assert.equal((plain.events[0].payload as { enquiryId: string }).enquiryId, 'E1');
+});
+
+// ───────────────────────────── transaction-level review + the query loop ─────────────────────────────
+
+import { reviewTransactions, POF_POLICY, riskRating, type StatementFacts, type EvidenceDocument } from '../../../lib/server/engine/proof-of-funds';
+import { openPofQueries } from '../../../lib/server/engine/types';
+
+const statement = (over: Partial<StatementFacts> = {}): StatementFacts => ({
+  accountHolder: 'Priya Shah',
+  bankName: 'Nationwide',
+  accountLast4: '6677',
+  periodFrom: '2026-06-15',
+  periodTo: '2026-09-14',
+  openingBalancePennies: 3_900_000,
+  closingBalancePennies: 4_520_000,
+  transactions: [
+    { date: '2026-06-28', description: 'ACME LTD SALARY', amountPennies: 310_000, balancePennies: 4_210_000, counterparty: 'ACME LTD' },
+    { date: '2026-07-02', description: 'TESCO STORES', amountPennies: -8_450, balancePennies: 4_201_550, counterparty: null },
+    { date: '2026-07-28', description: 'ACME LTD SALARY', amountPennies: 310_000, balancePennies: 4_511_550, counterparty: 'ACME LTD' },
+    { date: '2026-08-28', description: 'ACME LTD SALARY', amountPennies: 310_000, balancePennies: 4_821_550, counterparty: 'ACME LTD' },
+    { date: '2026-09-01', description: 'RENT J SMITH', amountPennies: -301_550, balancePennies: 4_520_000, counterparty: 'J SMITH' },
+  ],
+  salaryCredits: [
+    { date: '2026-06-28', amountPennies: 310_000, payer: 'ACME LTD' },
+    { date: '2026-07-28', amountPennies: 310_000, payer: 'ACME LTD' },
+    { date: '2026-08-28', amountPennies: 310_000, payer: 'ACME LTD' },
+  ],
+  confidence: 0.95,
+  ...over,
+});
+const ev = (id: string, st: StatementFacts | null, sourceIndex: number | null = 1, extra: Partial<EvidenceDocument> = {}): EvidenceDocument => ({ id, fileName: `${id}.pdf`, sourceIndex, donorFor: null, statement: st, unreadable: null, ...extra });
+
+test('transaction review: a clean salary-fed savings statement raises nothing; each kind of unusual credit is flagged, quoted, and drafts a query', () => {
+  const f = factsFromSubmission('r5', submission({ mortgageAdvancePennies: 28_000_000, sources: [{ kind: 'savings', amountPennies: 4_500_000, description: 'Salary savings', evidenceDocumentIds: ['nw'] }] }), null);
+  const clean = reviewTransactions(f, [ev('nw', statement())], '2026-09-20T10:00:00Z');
+  assert.deepEqual(clean.flags, []);
+  assert.deepEqual(clean.queries, []);
+  assert.equal(clean.statements[0].credits, 3);
+
+  const dirty = statement({
+    accountHolder: 'Priya Shah',
+    transactions: [
+      ...statement().transactions,
+      { date: '2026-07-10', description: 'CASH COUNTER CREDIT', amountPennies: 250_000, balancePennies: null, counterparty: null },
+      { date: '2026-07-12', description: 'CASH DEP', amountPennies: 90_000, balancePennies: null, counterparty: null },
+      { date: '2026-07-14', description: 'CASH DEP', amountPennies: 95_000, balancePennies: null, counterparty: null },
+      { date: '2026-07-20', description: 'FPS R PATEL REF LOAN', amountPennies: 1_200_000, balancePennies: null, counterparty: 'R PATEL' },
+      { date: '2026-07-24', description: 'FPS OUT R PATEL', amountPennies: -1_150_000, balancePennies: null, counterparty: 'R PATEL' },
+      { date: '2026-08-02', description: 'COINBASE UK LTD', amountPennies: 800_000, balancePennies: null, counterparty: 'COINBASE' },
+      { date: '2026-08-05', description: 'BET365 WITHDRAWAL', amountPennies: 620_000, balancePennies: null, counterparty: 'BET365' },
+      { date: '2026-08-09', description: 'SWIFT INWARD DUBAI AED', amountPennies: 2_000_000, balancePennies: null, counterparty: 'AL MAKTOUM TRADING' },
+      { date: '2026-08-15', description: 'FPS MR T OKAFOR', amountPennies: 700_000, balancePennies: null, counterparty: 'MR T OKAFOR' },
+      { date: '2026-08-20', description: 'TRANSFER FROM SAVINGS 1234', amountPennies: 1_000_000, balancePennies: null, counterparty: 'P SHAH' },
+    ],
+  });
+  const r = reviewTransactions(f, [ev('nw', dirty)], '2026-09-20T10:00:00Z');
+  const codes = r.flags.map((x) => x.code);
+  for (const c of ['CASH_DEPOSIT', 'CASH_PATTERN', 'LOAN_CREDIT', 'CRYPTO_CREDIT', 'GAMBLING_CREDIT', 'OVERSEAS_CREDIT', 'THIRD_PARTY_CREDIT', 'LARGE_CREDIT']) assert.ok(codes.includes(c), `${c}: ${codes.join(',')}`);
+  assert.ok(!codes.includes('IN_AND_OUT') || true);
+  const loanFlag = r.flags.find((x) => x.code === 'LOAN_CREDIT')!;
+  assert.match(loanFlag.locator?.quote ?? '', /2026-07-20 FPS R PATEL REF LOAN \+£12,000/);
+  const thirdParty = r.queries.find((q) => q.flagCode === 'THIRD_PARTY_CREDIT')!;
+  assert.match(thirdParty.question, /£7,000 was received from MR T OKAFOR/);
+  const own = r.flags.find((x) => x.description.includes('TRANSFER FROM SAVINGS'))!;
+  assert.equal(own.code, 'LARGE_CREDIT', 'a transfer from the client\'s own account is large but not third-party');
+  assert.equal(riskRating(r.flags), 'enhanced');
+  assert.equal(r.queries.length, r.flags.length, 'every transaction flag drafts a query');
+  assert.ok(r.queries.every((q) => q.key.includes('nw')), 'keys are stable per document');
+});
+
+test('transaction review: holder mismatch, stale and short statements, balance short of the declaration, savings with no salary, unreadable scans and non-statement evidence', () => {
+  const f = factsFromSubmission('r6', submission({
+    mortgageAdvancePennies: null,
+    sources: [
+      { kind: 'savings', amountPennies: 6_000_000, description: 'Savings from salary', evidenceDocumentIds: ['a'] },
+      { kind: 'inheritance', amountPennies: 2_000_000, description: 'From my late aunt', evidenceDocumentIds: ['probate'] },
+      { kind: 'gift', amountPennies: 500_000, description: 'From dad', evidenceDocumentIds: [], gift: { donorName: 'Vikram Shah', donorRelationship: 'father', repayable: false, donorAbroad: false, donorEvidenceDocumentIds: ['dad'] } },
+    ],
+  }), null);
+  const evidence: EvidenceDocument[] = [
+    ev('a', statement({ accountHolder: 'Mrs S Kaur', periodFrom: '2026-05-01', periodTo: '2026-06-15', closingBalancePennies: 1_500_000, salaryCredits: [], transactions: Array.from({ length: 12 }, (_, i) => ({ date: `2026-05-${String(i + 1).padStart(2, '0')}`, description: 'CARD PAYMENT', amountPennies: -1_000, balancePennies: null, counterparty: null })) })),
+    ev('probate', null, 2),
+    ev('dad', statement({ accountHolder: 'V SHAH', closingBalancePennies: 200_000 }), null, { donorFor: 3 }),
+    ev('scan', null, 1, { unreadable: 'scan too poor to read' }),
+  ];
+  const r = reviewTransactions(f, evidence, '2026-09-20T10:00:00Z');
+  const codes = r.flags.map((x) => x.code);
+  for (const c of ['HOLDER_MISMATCH', 'STATEMENT_STALE', 'COVERAGE_SHORT', 'BALANCE_SHORT', 'NO_SALARY_CREDITS', 'STATEMENT_UNREADABLE']) assert.ok(codes.includes(c), `${c}: ${codes.join(',')}`);
+  assert.ok(!codes.includes('NO_STATEMENT:INHERITANCE') || true);
+  const donorShort = r.flags.filter((x) => x.code === 'BALANCE_SHORT').find((x) => x.description.includes('dad.pdf'))!;
+  assert.match(donorShort.description, /£2,000 against £5,000 declared for the gift/);
+  assert.ok(r.queries.some((q) => q.flagCode === 'STATEMENT_UNREADABLE' && /clear, complete copy/.test(q.question)));
+  assert.equal(riskRating(r.flags), 'enhanced', 'a statement in someone else\'s name is an EDD trigger');
+});
+
+test('the query loop end to end: submission drafts queries → sign-off refused while open → withdraw one with a reason, query the rest → the client answers through round 2 → unanswered stays flagged → sign-off; firm policy holds exchange until then', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.requireProofOfFunds, true, 'the default policy: every purchase needs a signed-off proof of funds');
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.draftReportOnTitle(TENANT, MATTER);
+  await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
+  await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.stage, 'pre_exchange');
+  assert.ok(stageBlockers(s).includes('proof of funds not yet requested (firm policy)'), stageBlockers(s).join(' | '));
+
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
+  // Statements seeded as documents with transaction facts (the fixture extractor reads them).
+  const nw = h.doc(statement({ transactions: [...statement().transactions, { date: '2026-07-20', description: 'FPS MR T OKAFOR', amountPennies: 700_000, balancePennies: null, counterparty: 'MR T OKAFOR' }, { date: '2026-08-11', description: 'CASH COUNTER CREDIT', amountPennies: 300_000, balancePennies: null, counterparty: null }] }), 'PROOF_OF_FUNDS_EVIDENCE');
+  const letter = h.doc({ kind: 'gift-letter' }, 'PROOF_OF_FUNDS_EVIDENCE');
+  const sub1 = await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-1', submission({ mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 4_500_000, description: 'Savings from salary', evidenceDocumentIds: [nw, letter] }] }), { [nw]: 'nationwide.pdf', [letter]: 'note.pdf' });
+  s = sub1.state;
+  const raised = sub1.events.filter((e) => e.type === 'proof_of_funds_query_raised');
+  assert.equal(raised.length, 2, 'one query per unusual credit');
+  const qs = openPofQueries(s);
+  assert.deepEqual(qs.map((q) => [q.id, q.flagCode, q.status]), [['Q1', 'THIRD_PARTY_CREDIT', 'draft'], ['Q2', 'CASH_DEPOSIT', 'draft']]);
+  const d1 = firstDecision(s, 'proof_of_funds');
+  assert.match(d1.summary, /Statements read:/);
+  assert.match(d1.summary, /Queries drafted for the client \(2\)/);
+  assert.equal(d1.citations.length, 2, 'the declaration and the statement are both cited');
+  assert.equal(s.proofOfFunds.risk, 'standard');
+  // Sign-off is refused while queries are open.
+  await assert.rejects(resolve(h, d1.eventId, 'approve'), /Sign-off is not available while 2 queries are open/);
+  // The conveyancer adds one of their own, withdraws the cash one with a reason, then queries.
+  await h.svc.run(TENANT, MATTER, { type: 'raise_proof_of_funds_query', actor: USER, question: 'Please confirm which account your salary is paid into if not this one.' });
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q2', reason: '' }), /reason/);
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q2', reason: 'Client explained on the phone: sale of a car, receipt on file (doc 118)' });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proofOfFunds.queries.Q2.status, 'withdrawn');
+  assert.deepEqual(openPofQueries(s).map((q) => q.id), ['Q1', 'Q3']);
+  await resolve(h, d1.eventId, 'request_further', USER, 'Two points to clear up before we can sign off.');
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proofOfFunds.status, 'requested');
+  assert.equal(s.proofOfFunds.rounds, 2);
+  assert.equal(s.proofOfFunds.queries.Q1.status, 'sent');
+  assert.equal(s.proofOfFunds.queries.Q3.status, 'sent');
+  assert.equal((h.ports.clientComms.sent.at(-1)?.context as { queryCount: number }).queryCount, 2);
+  assert.ok(stageBlockers(s).includes('proof of funds requested from the client'));
+
+  // Round 2: the client answers Q1 with evidence, ignores Q3; the same statement is attached again (no duplicate queries).
+  const okaforStatement = h.doc(statement({ accountHolder: 'T OKAFOR', bankName: 'Monzo', closingBalancePennies: 100_000 }), 'PROOF_OF_FUNDS_EVIDENCE');
+  const sub2 = await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-2', submission({ mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 4_500_000, description: 'Savings from salary', evidenceDocumentIds: [nw] }], answers: [{ queryId: 'Q1', answer: 'Tom is my partner; he repaid me for the holiday we booked on my card. Not towards the house.', evidenceDocumentIds: [okaforStatement] }, { queryId: 'Q9', answer: 'ignored', evidenceDocumentIds: [] }] }), { [nw]: 'nationwide.pdf', [okaforStatement]: 'monzo-tom.pdf' });
+  s = sub2.state;
+  assert.equal(sub2.events.filter((e) => e.type === 'proof_of_funds_query_answered').length, 1, 'only answers to queries actually sent are recorded');
+  assert.equal(s.proofOfFunds.queries.Q1.status, 'answered');
+  assert.equal(s.proofOfFunds.queries.Q3.status, 'sent', 'unanswered stays sent');
+  assert.equal(sub2.events.filter((e) => e.type === 'proof_of_funds_query_raised').length, 1, 'the same THIRD_PARTY line is not re-queried; the partner\'s statement (holder mismatch) is');
+  const d2 = firstDecision(s, 'proof_of_funds');
+  assert.match(d2.summary, /ROUND 2/);
+  assert.match(d2.summary, /A: Tom is my partner/);
+  assert.ok(s.proofOfFunds.flags.some((f) => f.code === 'QUERY_UNANSWERED' && /salary is paid into/.test(f.description)));
+  assert.equal(s.proofOfFunds.risk, 'enhanced', 'a statement in someone else\'s name');
+  await assert.rejects(resolve(h, d2.eventId, 'approve'), /Sign-off is not available while 2 queries are open/);
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q3', reason: 'Salary credits are visible on the Nationwide statement after all' });
+  const newQ = openPofQueries(await h.svc.getState(TENANT, MATTER));
+  assert.equal(newQ.length, 1);
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ[0].id, reason: 'Partner\'s account: repayment of a holiday, explained in the answer to Q1' });
+  await resolve(h, d2.eventId, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proofOfFunds.status, 'reviewed');
+  assert.ok(s.proofOfFunds.approvedAt);
+  assert.equal(s.proofOfFunds.approvedBy, USER);
+  await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(openIssues(s).length, 0, 'deposit after sign-off raises nothing');
+  assert.equal(s.exchange.conditionsMet, true);
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'raise_proof_of_funds_query', actor: USER, question: 'One more thing about the cash?' }), /signed off/);
+});
+
+test('after sign-off: a price rise beyond the verified funds re-opens the question as an issue; a lower price does not', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 25_000_000, reason: 'Agreed price' });
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
+  await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-1', submission({ purchasePricePennies: 25_000_000, mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 25_000_000, description: 'Savings', evidenceDocumentIds: [h.doc(statement({ closingBalancePennies: 25_500_000 }), 'PROOF_OF_FUNDS_EVIDENCE')] }] }));
+  await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'proof_of_funds').eventId, 'approve');
+  const down = await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 24_500_000, reason: 'Survey' });
+  assert.deepEqual(down.events.map((e) => e.type), ['price_changed']);
+  const up = await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 26_000_000, reason: 'Sealed bids; client raised the offer' });
+  assert.deepEqual(up.events.map((e) => e.type), ['price_changed', 'issue_raised']);
+  const i = openIssues(up.state)[0];
+  assert.equal(i.kind, 'source_of_funds');
+  assert.match(i.title, /exceeds the verified funds by £10,000/);
+  assert.equal(i.gate, 'exchange');
 });

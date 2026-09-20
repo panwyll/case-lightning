@@ -76,6 +76,22 @@ export interface SourceDoc { id: string; fileName: string | null; webUrl: string
 
 export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }
 
+export interface PofQueryRow {
+  id: string;
+  key: string;
+  flagCode: string;
+  documentId: string | null;
+  transaction: { date: string; description: string; amountPennies: number } | null;
+  question: string;
+  raisedAt: string;
+  raisedBy: string;
+  status: 'draft' | 'sent' | 'answered' | 'withdrawn';
+  sentAt: string | null;
+  answer: string | null;
+  answerEvidenceDocumentIds: string[];
+  answeredAt: string | null;
+}
+
 export interface IssueRow {
   id: string;
   kind: string;
@@ -131,7 +147,8 @@ export interface EngineState {
   issues: Record<string, IssueRow>;
   purchasePricePennies: number | null;
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
-  proofOfFunds?: { status: 'not_started' | 'requested' | 'submitted' | 'reviewed'; requestId: string | null; requestedAt: string | null; submittedAt: string | null; documentId: string | null; decisionEventId: string | null; resolution: string | null; formUrl: string | null; rounds: number; facts: { totalDeclaredPennies: number; requiredPennies: number | null; shortfallPennies: number | null; giftedPennies: number; sources: Array<{ kind: string; amountPennies: number }> } | null };
+  requireProofOfFunds?: boolean;
+  proofOfFunds?: { status: 'not_started' | 'requested' | 'submitted' | 'reviewed'; requestId: string | null; requestedAt: string | null; submittedAt: string | null; documentId: string | null; decisionEventId: string | null; resolution: string | null; formUrl: string | null; rounds: number; facts: { totalDeclaredPennies: number; requiredPennies: number | null; shortfallPennies: number | null; giftedPennies: number; sources: Array<{ kind: string; amountPennies: number }> } | null; risk?: 'standard' | 'enhanced' | null; flags?: Array<{ code: string; severity: string; description: string }>; statements?: Array<{ documentId: string; fileName: string | null; holder: string | null; from: string | null; to: string | null; transactions: number; credits: number; readable: boolean }>; queries?: Record<string, PofQueryRow>; approvedAt?: string | null };
   managementPack?: { status: string; requestedAt: string | null; documentId: string | null; decisionEventId: string | null };
   abandoned?: { at: string; reason: string; detail: string | null; stage: string } | null;
   decisions: Record<string, DecisionRow>;
@@ -177,6 +194,11 @@ export const VERIFICATION_METHOD_LABEL: Record<string, string> = {
 export interface BankDetailsRow { id: string; payeeKind: string; payeeRef: string | null; details: { sortCode: string; accountNumber: string; accountName: string; firmName: string | null }; sourceChannel: string; status: string; recordedAt: string; verifiedAt: string | null; verifiedBy: string | null; verificationMethod: string | null; verificationRef: string | null; supersedesId: string | null }
 export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId: string; amountPennies: number | null; purpose: string; authorisedBy: string; at: string }
 
+/** Kind-specific wording where the generic label would mislead. */
+export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
+  proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)', reject: 'Reject — stop automation (consider a report)' },
+  management_pack: { request_further: 'Request further information from the managing agent' },
+};
 export const OPTION_LABEL: Record<string, string> = {
   approve: 'Approve — proceed as standard',
   refer_to_client: 'Refer to client',

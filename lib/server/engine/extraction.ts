@@ -27,6 +27,7 @@ import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
 import { MIN_EXTRACTION_CONFIDENCE } from './rules';
+import type { StatementFacts } from './proof-of-funds';
 
 // ───────────────────────────── schemas (what the model must return) ─────────────────────────────
 
@@ -120,6 +121,22 @@ export const TitleExtractionSchema = z.object({
   restrictions: z.array(titleEntry),
   charges: z.array(titleEntry),
   covenants: z.array(titleEntry).describe('Restrictive or positive covenants, easements and rights that bind or benefit the land.'),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
+/** Proof of funds: a bank statement read line by line. The full account number is never extracted. */
+export const StatementExtractionSchema = z.object({
+  isBankStatement: z.boolean().describe('false if the document is not a bank / building society / e-money account statement (e.g. a gift letter, an ID, a payslip).'),
+  accountHolder: z.string().nullable().describe('The account holder\'s name as printed.'),
+  bankName: z.string().nullable(),
+  accountLast4: z.string().nullable().describe('Last four digits of the account number only.'),
+  periodFrom: z.string().nullable().describe('ISO date of the first day covered.'),
+  periodTo: z.string().nullable().describe('ISO date of the last day covered.'),
+  openingBalancePennies: z.number().int().nullable(),
+  closingBalancePennies: z.number().int().nullable(),
+  transactions: z.array(z.object({ date: z.string().describe('ISO date'), description: z.string().describe('The line as printed, including any reference'), amountPennies: z.number().int().describe('Signed pennies: credits positive, debits negative'), balancePennies: z.number().int().nullable(), counterparty: z.string().nullable().describe('The payer / payee name if the line shows one') })).describe('EVERY transaction in the period, in order. Do not summarise or skip lines.'),
+  salaryCredits: z.array(z.object({ date: z.string(), amountPennies: z.number().int(), payer: z.string() })).describe('Credits that are clearly salary / wages / regular income (the employer as printed).'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
 });
@@ -283,6 +300,7 @@ const PROMPTS = {
   mortgage: `Extract the terms and conditions of this mortgage offer. Mark a condition as standard ONLY if it is boilerplate that appears in every offer from this lender (general conditions); anything specific to this borrower or property — retentions, repairs, occupier consents, evidence of deposit source, valuation conditions, lease requirements — is NOT standard. ${SCAN_NOTE}`,
   title: `Extract the register of title. Capture every entry from the proprietorship (B) and charges (C) registers verbatim, and every covenant, easement or right from the property (A) register. Tenure must be read from the register heading. ${SCAN_NOTE}`,
   idCheck: `Extract the outcome of this identity / anti-money-laundering check report. Record any PEP, sanctions, adverse media, address or document flags. ${SCAN_NOTE}`,
+  statement: `This document was attached by a house buyer as evidence of where their money comes from. If it is a bank, building society or e-money account statement, extract EVERY transaction line in the period exactly as printed (date, description including references, signed amount in pennies, running balance if shown, the counterparty name if the line shows one) and identify credits that are clearly salary or regular income. Never extract the full account number — the last four digits only. If it is not a statement (a gift letter, an identity document, a payslip, a contract) say so and leave the transactions empty. ${SCAN_NOTE}`,
 };
 
 // ───────────────────────────── loading document bytes ─────────────────────────────
@@ -391,6 +409,32 @@ export class ClaudeExtractor implements DocumentExtractor {
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
     await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash });
+    return facts;
+  }
+
+  async extractStatement(doc: DocumentRef): Promise<StatementFacts | null> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<StatementFacts | { notStatement: true }>(doc, 'statement', contentHash);
+    if (hit) return 'notStatement' in hit ? null : hit;
+    const { out, model, promptHash } = await this.run(doc, 'statement', StatementExtractionSchema, PROMPTS.statement, 'Read this document as evidence of source of funds.', 'DOC_EXTRACT');
+    if (out.scanQuality === 'unreadable') throw new Error('scan unreadable');
+    if (!out.isBankStatement) {
+      await this.persist(doc, 'statement', { notStatement: true }, out.confidence, { model, promptHash, contentHash });
+      return null;
+    }
+    const facts: StatementFacts = {
+      accountHolder: out.accountHolder,
+      bankName: out.bankName,
+      accountLast4: out.accountLast4 ? out.accountLast4.slice(-4) : null,
+      periodFrom: out.periodFrom,
+      periodTo: out.periodTo,
+      openingBalancePennies: out.openingBalancePennies,
+      closingBalancePennies: out.closingBalancePennies,
+      transactions: out.transactions,
+      salaryCredits: out.salaryCredits,
+      confidence: out.scanQuality === 'poor' ? Math.min(out.confidence, 0.6) : out.confidence,
+    };
+    await this.persist(doc, 'statement', facts, facts.confidence, { model, promptHash, contentHash });
     return facts;
   }
 

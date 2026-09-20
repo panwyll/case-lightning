@@ -18,7 +18,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   const { svc, ports } = h;
 
   // ── instruction ──
-  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, targetExchangeDate: '2026-12-01' });
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: true, targetExchangeDate: '2026-12-01' });
   await svc.requestIdCheck(TENANT, MATTER, USER);
   assert.equal(ports.idCheckProvider.requests.length, 1);
   let r = await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear(), 'ID_REPORT'));
@@ -177,7 +177,7 @@ test('full lifecycle: instruction → post_completion, with every decision cited
 test('timers: an unanswered search is chased at day 10 and escalated at day 18 with a citable dossier', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z')); // Monday
   const { svc, ports } = h;
-  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['LLC1'] });
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['LLC1'] });
   await svc.requestIdCheck(TENANT, MATTER, USER);
   await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   assert.equal((await svc.getState(TENANT, MATTER)).searches.LLC1.status, 'ordered');
@@ -212,7 +212,7 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
 
 test('extraction failure never stalls the matter — it becomes a human decision', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['LLC1'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, hasLender: false, requiredSearches: ['LLC1'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const noFacts = h.doc(null); // pipeline #2 produced nothing

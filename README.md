@@ -57,12 +57,18 @@ kind, and effects (a price reduction records the new price and tells the lender;
 lender reopens the mortgage sub-flow). Stale issues are raised to a person after ten
 working days.
 
-**Proof of funds** (`docs/proof-of-funds.md`): the conveyancer fires a tokenised form at the
-client (no login); the client declares each source of money with evidence, gifts and
-overseas funds included; the rules flag shortfalls, unevidenced sources, gifts, repayable
-"gifts" and higher-risk sources; an AI briefing (validated, template fallback) lands as a
-sign-off decision. Approval closes the source-of-funds issue and tells the lender about a
-gift; "request further" re-opens the form with the conveyancer's note. Leasehold purchases
+**Proof of funds** (`docs/proof-of-funds.md`, with the regulatory requirements in §1–§4):
+the conveyancer fires a tokenised form at the client (no login); the client declares each
+source of money and attaches statements; the statements are **read transaction by
+transaction** and every unusual credit (cash, third party, in-and-out, crypto, gambling,
+overseas, loan, holder mismatch, stale or short coverage, balance short) drafts a **query**
+to the client; the conveyancer withdraws queries with a reason or sends them, the client
+answers through the same form, unanswered queries stay flagged, and sign-off is refused
+while any query is open. By firm policy exchange is held until sign-off; money accepted
+before sign-off and a price rise beyond the verified funds raise issues; a risk rating
+marks enhanced-due-diligence cases. An AI briefing (validated, template fallback) lands as
+the sign-off decision. Approval closes the source-of-funds issue and tells the lender about a
+gift. Leasehold purchases
 are now a transaction type (management pack sub-flow, lease facts, notice of assignment).
 
 **LEAP as the backend** (phase 0/1): LEAP (leap.build) is the system of record for matters,

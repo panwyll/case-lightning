@@ -32,7 +32,8 @@ import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type Decisi
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
-import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, type ProofOfFundsSubmission } from './proof-of-funds';
+import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
+import { openPofQueries } from './types';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -162,9 +163,11 @@ export class EngineService {
       return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: `shadow:${this.ports.newId()}`, channel: 'suppressed', followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
     }
     const form = await this.ports.pofForms.create({ tenantId, matterId, requestedBy: actor, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
+    // Drafted queries go out with this round; the client answers them in the form.
+    const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
     const template = opts.followUpOf ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
-    const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId } });
-    return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
+    const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId, queryCount: queryIds.length } });
+    return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
   }
 
   /**
@@ -175,20 +178,45 @@ export class EngineService {
    */
   async proofOfFundsSubmitted(tenantId: string, matterId: string, requestId: string, submission: ProofOfFundsSubmission, evidenceNames: Record<string, string> = {}): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
-    const facts = factsFromSubmission(requestId, submission, state.purchasePricePennies);
-    const declaration = renderDeclaration(facts, submission, evidenceNames);
-    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: `proof-of-funds-${requestId}.txt`, content: declaration });
+    const sub: ProofOfFundsSubmission = { ...submission, round: submission.round ?? state.proofOfFunds.rounds ?? 1 };
+    const facts = factsFromSubmission(requestId, sub, state.purchasePricePennies);
+    // Read every attached document: statements transaction by transaction (the regulations want the
+    // statements scrutinised, not filed). Answers' evidence counts too. Unreadable ones become a flag.
+    const evidence: EvidenceDocument[] = [];
+    const seen = new Set<string>();
+    const attach = async (id: string, sourceIndex: number | null, donorFor: number | null) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const ref = await this.ports.documents.get(tenantId, id).catch(() => null);
+      if (!ref || ref.matterId !== matterId) return;
+      const fileName = evidenceNames[id] ?? ref.fileName ?? null;
+      try {
+        const statement = await this.ports.extractor.extractStatement(ref);
+        evidence.push({ id, fileName, sourceIndex, donorFor, statement, unreadable: null });
+      } catch (err) {
+        this.ports.log(`statement extraction failed for ${id} — flagged for a person`, err);
+        evidence.push({ id, fileName, sourceIndex, donorFor, statement: null, unreadable: err instanceof Error ? err.message : 'unreadable' });
+      }
+    };
+    for (const [i, src] of sub.sources.entries()) {
+      for (const id of src.evidenceDocumentIds) await attach(id, i + 1, null);
+      for (const id of src.gift?.donorEvidenceDocumentIds ?? []) await attach(id, null, i + 1);
+    }
+    for (const a of sub.answers ?? []) for (const id of a.evidenceDocumentIds) await attach(id, null, null);
+    const review = reviewTransactions(facts, evidence, sub.submittedAt);
+    const declaration = renderDeclaration(facts, sub, evidenceNames);
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: `proof-of-funds-${requestId}-round-${facts.round}.txt`, content: declaration });
     const verdict = evaluateProofOfFunds(facts);
-    const flags = verdict.outcome === 'flag' ? verdict.flags : [];
+    const flags = [...(verdict.outcome === 'flag' ? verdict.flags : []), ...review.flags];
     let summary = null;
     if (this.ports.pofSummariser) {
       try {
-        summary = await this.ports.pofSummariser.summarise({ facts, flags, source: doc, state });
+        summary = await this.ports.pofSummariser.summarise({ facts, flags, source: doc, state, review, answers: sub.answers ?? [] });
       } catch (err) {
         this.ports.log('proof-of-funds summariser failed — using the template briefing', err);
       }
     }
-    return this.run(tenantId, matterId, { type: 'proof_of_funds_submitted', actor: EXTERNAL, requestId, documentId: doc.id, facts, summary });
+    return this.run(tenantId, matterId, { type: 'proof_of_funds_submitted', actor: EXTERNAL, requestId, documentId: doc.id, facts, review, answers: sub.answers ?? null, summary });
   }
 
   // ───────────── leasehold ─────────────

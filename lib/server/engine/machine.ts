@@ -20,7 +20,7 @@ import { applyEvent } from './projection';
 import type { DeadlineKind } from './sla';
 import { FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
-import { evaluateProofOfFunds, gbp, templateBriefing, type ProofOfFundsFacts } from './proof-of-funds';
+import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import {
   EngineError,
   isResolved,
@@ -46,6 +46,8 @@ import {
   SUBFLOW_OF_KIND,
   issuesGating,
   isLeasehold,
+  proofOfFundsApproved,
+  openPofQueries,
   ISSUE_PAID_BY,
   type IssuePaidBy,
   type IssueState,
@@ -64,6 +66,7 @@ import {
   type DecisionState,
   type EngineEvent,
   type EnquiryReplyFacts,
+  type Flag,
   type EventType,
   type IdCheckFacts,
   type MatterState,
@@ -83,7 +86,7 @@ export interface SummaryOverride {
 }
 
 export type Command =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -115,8 +118,10 @@ export type Command =
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
   // ── proof of funds (docs/proof-of-funds.md) ──
-  | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null }
-  | { type: 'proof_of_funds_submitted'; actor: Actor; requestId: string; documentId: string; facts: ProofOfFundsFacts; summary?: SummaryOverride | null }
+  | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null; queryIds?: string[] }
+  | { type: 'proof_of_funds_submitted'; actor: Actor; requestId: string; documentId: string; facts: ProofOfFundsFacts; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> | null; summary?: SummaryOverride | null }
+  | { type: 'raise_proof_of_funds_query'; actor: Actor; question: string; documentId?: string | null; transaction?: StatementTransaction | null }
+  | { type: 'withdraw_proof_of_funds_query'; actor: Actor; queryId: string; reason: string }
   // ── leasehold ──
   | { type: 'management_pack_requested'; actor: Actor; from: string; reference?: string | null }
   | { type: 'management_pack_received'; actor: Actor; documentId: string; facts?: ManagementPackFacts | null; summary?: SummaryOverride | null }
@@ -190,6 +195,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'signed_contract_held',
   // Proof of funds (the send itself is a service step, like request_id_check) and leasehold steps.
   'request_proof_of_funds',
+  'raise_proof_of_funds_query',
+  'withdraw_proof_of_funds_query',
   'management_pack_requested',
   'management_pack_received',
   'notice_of_assignment_served',
@@ -281,7 +288,7 @@ export function stageBlockers(s: MatterState): string[] {
       b.push(...unresolvedSearches(s, false));
       if (s.hasLender && !isResolved(s.mortgage.status)) b.push(`mortgage offer ${s.mortgage.status} (withdrawn or awaiting re-issue)`);
       b.push(...issueBlockers(s, 'exchange'));
-      if (proofOfFundsHolds(s)) b.push(`proof of funds ${s.proofOfFunds.status === 'submitted' ? 'awaiting sign-off' : 'requested from the client'}`);
+      if (proofOfFundsHolds(s)) b.push(`proof of funds ${proofOfFundsHoldReason(s)}`);
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
     case 'exchanged':
@@ -307,8 +314,13 @@ export function stageBlockers(s: MatterState): string[] {
   return b;
 }
 
-/** A proof-of-funds round in flight (sent, or submitted and not signed off) holds exchange: money cannot move on an unverified source. */
-const proofOfFundsHolds = (s: MatterState): boolean => s.proofOfFunds.status === 'requested' || s.proofOfFunds.status === 'submitted';
+/**
+ * Proof of funds holds exchange when a round is in flight (sent, or submitted and not signed
+ * off) — money cannot move on an unverified source — and, where the firm's policy requires it
+ * (requireProofOfFunds), until it has been signed off at all.
+ */
+const proofOfFundsHolds = (s: MatterState): boolean => s.proofOfFunds.status === 'requested' || s.proofOfFunds.status === 'submitted' || (s.requireProofOfFunds && !proofOfFundsApproved(s));
+const proofOfFundsHoldReason = (s: MatterState): string => (s.proofOfFunds.status === 'submitted' ? 'awaiting sign-off' : s.proofOfFunds.status === 'requested' ? 'requested from the client' : s.proofOfFunds.status === 'reviewed' ? `${s.proofOfFunds.resolution === 'reject' ? 'rejected' : 'not signed off'} — a new round is needed` : 'not yet requested (firm policy)');
 
 /** Open issues holding a stage exit, as blocker lines. */
 function issueBlockers(s: MatterState, gate: IssueGate): string[] {
@@ -413,6 +425,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           actor: cmd.actor,
           payload: {
             transactionType: cmd.transactionType ?? 'freehold_purchase',
+            requireProofOfFunds: cmd.requireProofOfFunds ?? true,
             hasLender: cmd.hasLender,
             requiredSearches: cmd.requiredSearches?.length ? cmd.requiredSearches : ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
             targetExchangeDate: cmd.targetExchangeDate ?? null,
@@ -628,7 +641,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireStageAtLeast(s, 'pre_contract', 'Recording the deposit');
       if (s.deposit.received) reject('Deposit already recorded.');
-      return [{ type: 'deposit_received', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null } }];
+      const out: NewEvent[] = [{ type: 'deposit_received', actor: cmd.actor, payload: { amountPennies: cmd.amountPennies ?? null } }];
+      // Money accepted before source of funds is signed off is the situation the guidance says must not happen silently: it is recorded as an issue holding exchange.
+      if (s.requireProofOfFunds && !proofOfFundsApproved(s) && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Deposit received before') && (i.status === 'open' || i.status === 'negotiating'))) {
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title: `Deposit received before proof of funds was signed off (proof of funds ${proofOfFundsHoldReason(s)})`, detail: 'Client money was accepted before the source-of-funds check was complete. Complete the check now; record the MLRO\'s view on the funds already held.', gate: 'exchange', stage: s.stage, sourceDocumentId: null, origin: null, party: null }, sourceDocumentId: null });
+      }
+      return out;
     }
     case 'contracts_exchanged': {
       requireEnrolled(s);
@@ -636,7 +654,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = unresolvedSearches(s, false);
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
-      if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds is ${s.proofOfFunds.status === 'submitted' ? 'awaiting the conveyancer\'s sign-off' : 'still with the client'}.`);
+      if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
       const holding = issuesGating(s, 'exchange');
       if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
@@ -928,6 +946,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const out: NewEvent[] = [{ type: 'price_changed', actor: cmd.actor, payload: { fromPennies: s.purchasePricePennies, toPennies: cmd.toPennies, reason: cmd.reason.trim(), issueId: null } }];
       // The first recorded price is the agreed price, not a change; a change on a lender-funded purchase must be reported to the lender.
       if (s.hasLender && s.purchasePricePennies !== null) out.push(lenderApprovalIssue(s, `price:${s.lastSeq + 1}:lender`, `Tell the lender: price changed to £${(cmd.toPennies / 100).toLocaleString('en-GB')} (${cmd.reason.trim()})`, null, null));
+      const short = pofShortfallIssue(s, cmd.toPennies);
+      if (short) out.push(short);
       return out;
     }
     case 'contract_approved': {
@@ -952,24 +972,73 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.proofOfFunds.status === 'requested') reject('A proof-of-funds form is already with the client. Chase it, or wait for the submission.');
       if (s.proofOfFunds.status === 'submitted') reject('A proof-of-funds submission is awaiting sign-off; resolve that decision (request further re-opens the form).');
       if (s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && !cmd.followUpOf) reject('Proof of funds is already approved on this matter. Send a follow-up round only from the decision (request further).');
-      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, formUrl: cmd.formUrl ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null } }];
+      const queryIds = (cmd.queryIds ?? []).filter((id) => s.proofOfFunds.queries[id]?.status === 'draft');
+      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, formUrl: cmd.formUrl ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null, queryIds } }];
     }
     case 'proof_of_funds_submitted': {
       requireEnrolled(s);
       if (s.proofOfFunds.status !== 'requested' || s.proofOfFunds.requestId !== cmd.requestId) reject(`No proof-of-funds request ${cmd.requestId} is awaiting a submission (status: ${s.proofOfFunds.status}).`);
+      const out: NewEvent[] = [];
+      const now = ctx.now.toISOString();
+      // 1. The client's answers to the queries sent with this round.
+      const queries: Record<string, PofQuery> = Object.fromEntries(Object.entries(s.proofOfFunds.queries).map(([k, q]) => [k, { ...q }]));
+      for (const a of cmd.answers ?? []) {
+        const q = queries[a.queryId];
+        if (!q || q.status !== 'sent') continue; // answers to queries never sent are ignored, not trusted
+        if (!a.answer?.trim() && a.evidenceDocumentIds.length === 0) continue;
+        queries[q.id] = { ...q, status: 'answered', answer: a.answer?.trim() || null, answerEvidenceDocumentIds: a.evidenceDocumentIds, answeredAt: now };
+        out.push({ type: 'proof_of_funds_query_answered', actor: cmd.actor, payload: { requestId: cmd.requestId, queryId: q.id, answer: a.answer?.trim() || '', evidenceDocumentIds: a.evidenceDocumentIds } });
+      }
+      // 2. Declaration-level rules, then the transaction-level review (each transaction flag drafts a query, deduplicated by key).
       const verdict = evaluateProofOfFunds(cmd.facts);
-      const flags = verdict.outcome === 'flag' ? verdict.flags : [];
-      // ALWAYS a decision: AML sign-off is a person's act even when nothing is flagged.
+      const flags: Flag[] = verdict.outcome === 'flag' ? [...verdict.flags] : [];
+      const review = cmd.review ?? null;
+      if (review) {
+        flags.push(...review.flags);
+        // A query already drafted, sent, answered — or withdrawn with a reason (considered and discounted) — is not drafted again for the same line.
+        const known = new Set(Object.values(queries).map((q) => q.key));
+        for (const dq of review.queries) {
+          if (known.has(dq.key)) continue;
+          known.add(dq.key);
+          const id = `Q${Object.keys(queries).length + 1}`;
+          const q: PofQuery = { id, key: dq.key, flagCode: dq.flagCode, documentId: dq.documentId || null, transaction: dq.transaction, question: dq.question, raisedAt: now, raisedBy: SYSTEM, status: 'draft', sentAt: null, answer: null, answerEvidenceDocumentIds: [], answeredAt: null };
+          queries[id] = q;
+          out.push({ type: 'proof_of_funds_query_raised', actor: SYSTEM, payload: { requestId: cmd.requestId, query: { id, key: q.key, flagCode: q.flagCode, documentId: q.documentId, transaction: q.transaction, question: q.question } } });
+        }
+      }
+      // 3. Queries sent and not answered stay open as a flag of their own.
+      for (const q of Object.values(queries)) if (q.status === 'sent') flags.push({ code: 'QUERY_UNANSWERED', severity: 'medium', description: `The client did not answer: "${q.question}"`, locator: { section: `Query ${q.id}` } });
+      const risk = riskRating(flags);
+      // 4. ALWAYS a decision: AML sign-off is a person's act even when nothing is flagged.
       const decision: DecisionSpec = {
         kind: 'proof_of_funds',
-        summary: cmd.summary?.text ?? templateBriefing(cmd.facts, flags),
+        summary: cmd.summary?.text ?? templateBriefing(cmd.facts, flags, review, Object.values(queries)),
         sourceDocumentId: cmd.documentId,
-        citations: [{ documentId: cmd.documentId, label: `Proof of funds declaration (${cmd.facts.declarantName})` }],
+        citations: [{ documentId: cmd.documentId, label: `Proof of funds declaration (${cmd.facts.declarantName}), round ${cmd.facts.round}` }, ...(review?.statements.filter((x) => x.readable).map((x) => ({ documentId: x.documentId, label: `Statement: ${x.fileName ?? x.documentId}` })) ?? [])],
         options: OPTIONS_FOR.proof_of_funds,
         summarisedBy: cmd.summary?.by ?? 'template',
       };
       assertDecisionSpec(decision);
-      return [{ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+      out.push({ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, statements: review?.statements ?? [], risk, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence });
+      return out;
+    }
+    case 'raise_proof_of_funds_query': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Queries are put by people (the rules draft theirs at submission).', 403);
+      if (s.proofOfFunds.status === 'not_started') reject('No proof-of-funds round exists yet; send the form first.');
+      if (proofOfFundsApproved(s)) reject('Proof of funds is signed off; a further query needs a new round (request further from a fresh decision, or raise an issue).');
+      if (!cmd.question?.trim()) reject('Write the question.', 400);
+      const id = `Q${Object.keys(s.proofOfFunds.queries).length + 1}`;
+      return [{ type: 'proof_of_funds_query_raised', actor: cmd.actor, payload: { requestId: s.proofOfFunds.requestId ?? '', query: { id, key: `MANUAL:${id}`, flagCode: 'MANUAL', documentId: cmd.documentId ?? null, transaction: cmd.transaction ?? null, question: cmd.question.trim() } } }];
+    }
+    case 'withdraw_proof_of_funds_query': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Only a person can withdraw a query.', 403);
+      const q = s.proofOfFunds.queries[cmd.queryId];
+      if (!q) reject(`Query ${cmd.queryId} not found.`, 404);
+      if (q.status === 'answered' || q.status === 'withdrawn') reject(`Query ${cmd.queryId} is already ${q.status}.`);
+      if (!cmd.reason?.trim()) reject('Say why the query is not needed — the reason is the record that the point was considered.', 400);
+      return [{ type: 'proof_of_funds_query_withdrawn', actor: cmd.actor, payload: { queryId: q.id, reason: cmd.reason.trim() } }];
     }
 
     // ── leasehold ──
@@ -1087,6 +1156,19 @@ function lenderApprovalIssue(s: MatterState, issueId: string, title: string, sou
     payload: { issueId: id, kind: 'lender_approval', title, detail: 'A price change, an indemnity policy, a retention or a material finding must be reported to the lender, who confirms the offer stands, re-issues it, or withdraws. Exchange is held until the lender has confirmed.', gate: 'exchange', stage: s.stage, sourceDocumentId, origin },
     sourceDocumentId,
   };
+}
+
+/**
+ * Proof of funds was signed off against a price; if the price rises beyond what was declared,
+ * the verified funds no longer cover the purchase and the check has to be revisited.
+ */
+function pofShortfallIssue(s: MatterState, newPricePennies: number): NewEvent | null {
+  const f = s.proofOfFunds.facts;
+  if (!proofOfFundsApproved(s) || !f) return null;
+  const required = Math.max(0, newPricePennies - (f.mortgageAdvancePennies ?? 0));
+  if (f.totalDeclaredPennies >= required) return null;
+  if (Object.values(s.issues).some((i) => i.kind === 'source_of_funds' && i.title.startsWith('Price now exceeds') && (i.status === 'open' || i.status === 'negotiating'))) return null;
+  return { type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'source_of_funds', title: `Price now exceeds the verified funds by ${gbp(required - f.totalDeclaredPennies)}`, detail: `Proof of funds was signed off on ${gbp(f.totalDeclaredPennies)} declared; the balance to find is now ${gbp(required)}. Ask where the extra is coming from and evidence it (a further proof-of-funds round if needed).`, gate: 'exchange', stage: s.stage, sourceDocumentId: s.proofOfFunds.documentId, origin: null, party: null }, sourceDocumentId: s.proofOfFunds.documentId };
 }
 
 /** How the matter is abandoned when an issue proves fatal (a person may override). */
@@ -1225,6 +1307,9 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   // lender-funded purchase must be declared to the lender; rejection is a hard stop like a failed ID check.
   if (d.kind === 'proof_of_funds') {
     const facts = s.proofOfFunds.facts;
+    const open = openPofQueries(s);
+    if (option === 'approve' && open.length) reject(`Sign-off is not available while ${open.length} quer${open.length === 1 ? 'y is' : 'ies are'} open (${open.map((q) => q.id).join(', ')}): send them to the client (query), or withdraw each with a reason.`, 409);
+    if (option === 'request_further' && open.length === 0 && !note?.trim()) reject('There is nothing to put to the client: add a query first, or write what you need in the reason.', 400);
     if (option === 'approve') {
       for (const i of Object.values(s.issues)) {
         if (i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating')) out.push({ type: 'issue_resolved', actor: userId, payload: { issueId: i.id, resolution: 'evidence_provided', note: `Proof of funds signed off${note ? `: ${note}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: d.sourceDocumentId });

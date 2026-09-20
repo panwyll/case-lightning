@@ -45,7 +45,7 @@ test('no code path can write a payment or send event without a human approver', 
 
   const ports = { ...mockPorts(), documents: new PgDocumentRepository(), now: () => new Date(), newId: () => crypto.randomUUID(), asAutomation: runAsAutomation };
   const svc = new EngineService(new PgEventStore(), ports);
-  await runAsSystem(() => svc.run(t, M, { type: 'enrol', actor: HUMAN, hasLender: true, requiredSearches: ['CON29'] }));
+  await runAsSystem(() => svc.run(t, M, { type: 'enrol', actor: HUMAN, requireProofOfFunds: false, hasLender: true, requiredSearches: ['CON29'] }));
 
   // ── 1. through the machine, as automation actors ──
   for (const actor of ['system', 'ai'] as const) {
