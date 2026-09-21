@@ -251,6 +251,59 @@ export const OPTION_LABEL: Record<string, string> = {
 };
 
 export const pretty = (s: string) => s.replace(/_/g, ' ');
+// ── Caseload map + work list (docs/caseload-ux.md) ──────────────────────────
+export type HealthBand = 'normal' | 'attention' | 'delayed' | 'blocked' | 'critical';
+export const HEALTH_BANDS: HealthBand[] = ['normal', 'attention', 'delayed', 'blocked', 'critical'];
+export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'Moving normally', attention: 'Needs attention', delayed: 'Delayed', blocked: 'Blocked', critical: 'Critical' };
+
+export interface HealthReason {
+  code: string;
+  band: HealthBand;
+  headline: string;
+  why: string[];
+  suggested: string | null;
+  workstream: string | null;
+  ref: { type: string; id: string };
+  ageWorkingDays?: number;
+  dueInWorkingDays?: number;
+}
+export interface CasePace { stage: string; inStage: number; expected: number; overrun: number }
+export interface HealthCounts { waiting: number; chasesDue: number; blockingIssues: number; openIssues: number; decisions: number; deadlines: number }
+export interface HealthSummary { band: HealthBand; headline: string | null; why: string[]; suggested: string | null; reasonCount: number; counts: HealthCounts; pace: CasePace }
+export interface CaseHealth { band: HealthBand; reasons: HealthReason[]; pace: CasePace; counts: HealthCounts }
+
+/** One matter on the caseload map. */
+export interface CaseToken extends QueueRow {
+  lifecycle: string;
+  health: HealthSummary;
+  dayOfCase: number;
+}
+export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number }
+
+export type WorkBucket = 'do' | 'waiting' | 'chase';
+export interface WorkItem {
+  id: string;
+  bucket: WorkBucket;
+  matterId: string;
+  matterRef: string | null;
+  propertyAddress: string | null;
+  what: string;
+  unblocks: string | null;
+  actionOwner: string;
+  responsibilityOwner: string | null;
+  urgency: HealthBand;
+  workstream: string | null;
+  since: string | null;
+  sinceWorkingDays: number | null;
+  slaWorkingDays: number | null;
+  chaseInWorkingDays: number | null;
+  chasesSent: number;
+  mode: 'automatic' | 'needs_approval' | null;
+  escalatesInWorkingDays: number | null;
+  escalated: boolean;
+  ref: { type: string; id: string };
+}
+
 /** A stage's label for a given profile (the machine's phase names read differently on a sale or a remortgage). */
 export const stageLabel = (stage: string, profile?: ProfileView | null): string => profile?.stageLabels?.[stage] ?? STAGE_LABEL[stage] ?? stage;
 export const LIFECYCLE_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', investigating: 'Investigating', ready_to_complete: 'Ready to complete', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };

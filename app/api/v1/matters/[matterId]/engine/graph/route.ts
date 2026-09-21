@@ -7,6 +7,9 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { caseGraph, gate, gatesFor, lifecycle, lifecycleFor, nextActions, requirements, whyNot, workstreams, LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 import { profileOf } from '@/lib/server/engine/transactions';
+import { caseHealth } from '@/lib/server/engine/health';
+import { matterWork } from '@/lib/server/engine/work';
+import { openWaits } from '@/lib/server/engine/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,6 +38,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       requirements: requirements(state),
       gates: Object.fromEntries(gates.map((g) => [g, gate(state, g)])),
       whyNotExchange: whyNot(state, gates[0]),
+      // Case intelligence (docs/caseload-ux.md §3): what needs attention and why, what we
+      // are waiting for with its clock, and this matter's slice of the work list.
+      health: caseHealth(state, now),
+      waits: openWaits(state),
+      work: matterWork(state, now, { matterRef: null, propertyAddress: null }).items,
       nextActions: nextActions(state, now),
       graph: caseGraph(state, now),
     });

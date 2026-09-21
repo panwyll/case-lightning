@@ -23,6 +23,13 @@ export interface TransactionProfile {
   stageLabels: Partial<Record<Stage, string>>;
   /** What must be true to leave each phase, in this type's own words (mirrors the machine's blockers; checked by tests). */
   stageGates: Partial<Record<Stage, string[]>>;
+  /**
+   * What each phase should take, in E&W working days, for a matter that is moving normally.
+   * Case health measures progress against THIS, not against the matter's total age
+   * (health.ts) — a long case waiting on nothing is healthy; a young one whose phase has
+   * overrun is not. Practitioner norms, deliberately generous.
+   */
+  expectedWorkingDays: Partial<Record<Stage, number>>;
   workstreams: Workstream[];
   subflows: SubFlow[];
   defaultSearches: SearchType[];
@@ -57,6 +64,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['SDLT or AP1 submitted'],
       post_completion: ['HMLR requisitions answered', 'registration confirmed'],
     },
+    expectedWorkingDays: { instruction: 5, pre_contract: 20, contract_review: 10, pre_exchange: 10, exchanged: 5, pre_completion: 5, completed: 5, post_completion: 30 },
     workstreams: ['id_aml', 'source_of_funds', 'title', 'searches', 'enquiries', 'mortgage', 'survey', 'contract', 'deposit', 'chain', 'report_on_title', 'co_ownership', 'completion', 'registration'],
     subflows: ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase', 'proof_of_funds'],
     defaultSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
@@ -83,6 +91,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['SDLT or AP1 submitted'],
       post_completion: ['HMLR requisitions answered', 'registration confirmed', 'notice of assignment served before close'],
     },
+    expectedWorkingDays: { instruction: 5, pre_contract: 30, contract_review: 12, pre_exchange: 10, exchanged: 5, pre_completion: 5, completed: 5, post_completion: 30 },
     workstreams: ['id_aml', 'source_of_funds', 'title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'contract', 'deposit', 'chain', 'report_on_title', 'co_ownership', 'completion', 'registration'],
     subflows: ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase', 'proof_of_funds', 'management_pack'],
     defaultSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'],
@@ -109,6 +118,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['mortgage recorded as redeemed', 'balance to the client authorised against verified client details'],
       post_completion: ["lender's discharge confirmed (DS1 / e-DS1)", 'file closed'],
     },
+    expectedWorkingDays: { instruction: 5, pre_contract: 12, contract_review: 15, pre_exchange: 10, exchanged: 5, pre_completion: 5, completed: 5, post_completion: 25 },
     workstreams: ['id_aml', 'property_forms', 'title', 'enquiries', 'redemption', 'contract', 'chain', 'completion', 'discharge'],
     subflows: ['id_check', 'title', 'chase'],
     defaultSearches: [],
@@ -135,6 +145,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['mortgage recorded as redeemed', 'balance to the client authorised against verified client details'],
       post_completion: ["lender's discharge confirmed (DS1 / e-DS1)", 'file closed'],
     },
+    expectedWorkingDays: { instruction: 5, pre_contract: 25, contract_review: 15, pre_exchange: 10, exchanged: 5, pre_completion: 5, completed: 5, post_completion: 25 },
     workstreams: ['id_aml', 'property_forms', 'title', 'leasehold', 'enquiries', 'redemption', 'contract', 'chain', 'completion', 'discharge'],
     subflows: ['id_check', 'title', 'chase', 'management_pack'],
     defaultSearches: [],
@@ -158,6 +169,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['AP1 submitted'],
       post_completion: ['HMLR requisitions answered', "old lender's discharge confirmed", 'registration confirmed'],
     },
+    expectedWorkingDays: { instruction: 3, pre_contract: 15, pre_completion: 8, completed: 5, post_completion: 25 },
     workstreams: ['id_aml', 'title', 'searches', 'mortgage', 'redemption', 'completion', 'registration', 'discharge'],
     subflows: ['id_check', 'search', 'mortgage', 'title', 'chase'],
     defaultSearches: [],
@@ -181,6 +193,7 @@ export const TRANSACTION_PROFILES: Record<TransactionType, TransactionProfile> =
       completed: ['SDLT return filed, or recorded as not required (chargeable consideration)', 'AP1 submitted'],
       post_completion: ['HMLR requisitions answered', 'registration confirmed'],
     },
+    expectedWorkingDays: { instruction: 3, pre_contract: 15, pre_completion: 8, completed: 5, post_completion: 25 },
     workstreams: ['id_aml', 'title', 'lender_consent', 'co_ownership', 'completion', 'registration'],
     subflows: ['id_check', 'title', 'chase'],
     defaultSearches: [],

@@ -19,6 +19,8 @@ import { query as dbQuery, transaction as dbTransaction } from '../db';
 import { project } from './projection';
 import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
+import { caseHealth, summariseHealth, type HealthSummary } from './health';
+import { lifecycle, type Lifecycle } from './graph';
 import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type TransactionType, type WaitKey } from './types';
 
 export interface MatterTx {
@@ -44,7 +46,7 @@ export interface PendingDecisionRow extends DecisionState {
   shadowMode: boolean;
 }
 
-/** Addendum 3 §3: one queue row per matter. */
+/** Addendum 3 §3: one queue row per matter; also the caseload map's token (docs/caseload-ux.md). */
 export interface QueueRow {
   transactionType: TransactionType | null;
   tenantId: string;
@@ -69,11 +71,19 @@ export interface QueueRow {
   targetExchangeDate: string | null;
   manualHandling: boolean;
   updatedAt: string;
+  /** The coarse band the caseload map groups by. */
+  lifecycle: Lifecycle;
+  /** Health, with the one line that explains it (health.ts). Not case age. */
+  health: HealthSummary;
+  /** Days since the matter was instructed — shown as "day 43", never used to judge health. */
+  dayOfCase: number;
 }
 
 export interface QueueOptions {
   /** Only matters assigned to this handler (the default view); null → every enrolled matter. */
   assignedTo?: string | null;
+  /** Include matters that have finished (closed / abandoned) — off by default. */
+  includeFinished?: boolean;
   sort?: 'oldest_pending' | 'target_completion';
   includeShadow?: boolean;
   limit?: number;
@@ -113,6 +123,8 @@ export interface EventStore {
   setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, userId: string | null): Promise<SubflowConfig>;
   /** Addendum 3 §3: the handler's queue — one row per matter. */
   listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]>;
+  /** Full state per matter, for anything that has to reason over the whole caseload (the work list). */
+  listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>>;
   /** Addendum 3 §2: the comparison record. */
   listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]>;
   recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview>;
@@ -120,7 +132,7 @@ export interface EventStore {
 
 const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, stage: s.stage, shadowMode: s.shadowMode });
 
-function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, cfg: SubflowConfig): QueueRow {
+function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, cfg: SubflowConfig, now: Date = new Date()): QueueRow {
   const surfaced = surfacedDecisions(s, cfg);
   const pending = surfaced.filter((d) => d.kind !== 'auto_clear');
   return {
@@ -142,6 +154,9 @@ function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddr
     targetExchangeDate: s.targetExchangeDate,
     manualHandling: s.manualHandling.required,
     updatedAt: meta?.updatedAt ?? s.lastEventAt ?? '',
+    lifecycle: lifecycle(s),
+    health: summariseHealth(caseHealth(s, now)),
+    dayOfCase: s.stageHistory.length ? Math.max(0, Math.floor((now.getTime() - new Date(s.stageHistory[0].at).getTime()) / 86_400_000)) : 0,
   };
 }
 
@@ -264,18 +279,30 @@ export class MemoryEventStore implements EventStore {
     return this.loadSubflows(tenantId);
   }
 
-  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
-    const rows: QueueRow[] = [];
+  /** Every enrolled matter this view should consider, with its meta. */
+  private matching(tenantId: string, opts?: QueueOptions): Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }> {
+    const out: Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }> = [];
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId || !s.enrolled) continue;
       if (s.shadowMode && !opts?.includeShadow) continue;
+      if (!opts?.includeFinished && (s.closedAt || s.abandoned)) continue;
       const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
       if (opts?.assignedTo && meta?.assignedTo !== opts.assignedTo) continue;
-      rows.push(queueRow(s, meta, cfg));
+      out.push({ state: s, meta: { matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, assignedTo: meta?.assignedTo ?? null } });
     }
+    return out;
+  }
+
+  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
+    const rows = this.matching(tenantId, opts).map(({ state, meta }) => queueRow(state, meta, cfg));
     const sorted = sortQueue(rows, opts?.sort);
     return opts?.limit ? sorted.slice(0, opts.limit) : sorted;
+  }
+
+  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>> {
+    const all = this.matching(tenantId, opts);
+    return opts?.limit ? all.slice(0, opts.limit) : all;
   }
 
   async listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]> {
@@ -458,18 +485,27 @@ export class PgEventStore implements EventStore {
     return this.loadSubflows(tenantId);
   }
 
-  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
-    const rows = await dbQuery<{ state: MatterState; matter_ref: string | null; property_address: string | null; assigned_to: string | null; updated_at: Date | string }>(
+  private async queueRows(tenantId: string, opts?: QueueOptions) {
+    return dbQuery<{ state: MatterState; matter_ref: string | null; property_address: string | null; assigned_to: string | null; updated_at: Date | string }>(
       `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at
          from matter_engine_state s
          join matter m on m.id = s.matter_id
-        where s.tenant_id = $1 and s.finished_at is null
+        where s.tenant_id = $1 and ($5::boolean or s.finished_at is null)
           and ($2::uuid is null or m.assigned_to = $2::uuid)
           and ($3::boolean or coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) = false)
         order by s.updated_at desc limit $4`,
-      [tenantId, opts?.assignedTo ?? null, !!opts?.includeShadow, opts?.limit ?? 500]
+      [tenantId, opts?.assignedTo ?? null, !!opts?.includeShadow, opts?.limit ?? 500, !!opts?.includeFinished]
     );
+  }
+
+  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>> {
+    const rows = await this.queueRows(tenantId, opts);
+    return rows.map((r) => ({ state: withStateDefaults(r.state), meta: { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to } }));
+  }
+
+  async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
+    const cfg = await this.loadSubflows(tenantId);
+    const rows = await this.queueRows(tenantId, opts);
     return sortQueue(
       rows.map((r) => queueRow(withStateDefaults(r.state), { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
       opts?.sort

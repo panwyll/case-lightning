@@ -82,6 +82,16 @@ marks enhanced-due-diligence cases. An AI briefing (validated, template fallback
 the sign-off decision. Approval closes the source-of-funds issue and tells the lender about a
 gift.
 
+**The interface** (`docs/caseload-ux.md`): the model is a state machine; the surface is
+four ideas — cases, things to do, things we're waiting for, things going wrong. `/cases`
+is the whole book of work as houses on a sheet of paper, grouped into five phases and
+coloured (and badged) by health, where health means progress against what each phase
+should take, not the age of the case. Every exception explains itself: the chain of facts
+and a suggested next action. `/my-work` is DO · WAITING · CHASE, where a waiting item
+carries who owes it, their SLA and a countdown, and moves itself to CHASE when the clock
+runs out. A matter opens on what needs attention and why; the dependency graph is a
+read-only diagnostic behind it. No workflow builder, no board to configure.
+
 **Transaction types** (`docs/transaction-types.md`): freehold / leasehold purchase, freehold /
 leasehold sale, remortgage and transfer of equity run through the same machine. A profile per
 type decides the phases (a remortgage or transfer has no exchange), the workstreams (property

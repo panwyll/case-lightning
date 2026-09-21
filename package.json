@@ -13,7 +13,8 @@
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "engine:demo": "tsx scripts/engine-demo.ts",
     "leap:mock": "tsx scripts/mock-leap-server.ts",
-    "engine:map": "tsx scripts/engine-map.ts"
+    "engine:map": "tsx scripts/engine-map.ts",
+    "caseload:demo": "tsx scripts/caseload-demo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

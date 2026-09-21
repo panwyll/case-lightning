@@ -1,0 +1,235 @@
+/**
+ * The personal work list: DO · WAITING · CHASE (docs/caseload-ux.md §4).
+ *
+ * Three buckets, no new concepts to learn:
+ *   DO       — this person has to act now.
+ *   WAITING  — someone else has to act, but we still own it. Every item carries who we
+ *              are waiting for, when we asked, their normal turnaround, and the countdown
+ *              to the next chase, so "in their court" never means "out of sight".
+ *   CHASE    — a WAITING item whose timer has expired. Nobody has to remember: the clock
+ *              moves it here, and the engine's tick sends the chase (or asks first, in
+ *              shadow mode).
+ *
+ * The cycle is DO → sent → WAITING → countdown → CHASE → sent → WAITING → … → ESCALATE,
+ * which is exactly what sla.ts already computes; this module presents it per person.
+ *
+ * Two owners, deliberately distinct:
+ *   actionOwner         — who is expected to do the thing (may be outside the firm).
+ *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
+ */
+import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
+import { ISSUE_KIND_SPEC } from './issues';
+import { nextActions } from './graph';
+import { caseHealth, type HealthBand } from './health';
+import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type SubflowConfig } from './types';
+import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
+
+export type Bucket = 'do' | 'waiting' | 'chase';
+export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider';
+
+export interface WorkItem {
+  id: string;
+  bucket: Bucket;
+  matterId: string;
+  matterRef: string | null;
+  propertyAddress: string | null;
+  /** What has to happen, in a conveyancer's words. */
+  what: string;
+  /** Why it matters — what it unblocks, or what it holds up. */
+  unblocks: string | null;
+  actionOwner: ActionOwner;
+  /** The fee-earner accountable. Falls back to the matter's handler. */
+  responsibilityOwner: string | null;
+  urgency: HealthBand;
+  workstream: string | null;
+  /** WAITING / CHASE: when we asked. */
+  since: string | null;
+  sinceWorkingDays: number | null;
+  /** WAITING: their normal turnaround, in working days. */
+  slaWorkingDays: number | null;
+  /** WAITING: working days until the next chase goes out. Negative = due now (CHASE). */
+  chaseInWorkingDays: number | null;
+  /** How many chases have already gone. */
+  chasesSent: number;
+  /** CHASE: automatic (the tick sends it) or waiting on a person (shadow mode). */
+  mode: 'automatic' | 'needs_approval' | null;
+  /** CHASE: working days until this escalates to a person. */
+  escalatesInWorkingDays: number | null;
+  escalated: boolean;
+  /** Where to go: the decision, the issue, the wait or just the case. */
+  ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'client' | 'case'; id: string };
+}
+
+export interface MatterWork {
+  matterId: string;
+  band: HealthBand;
+  items: WorkItem[];
+}
+
+const PARTY: Record<string, ActionOwner> = {
+  seller_solicitor: 'seller_side', search_provider: 'search_provider', lender: 'lender',
+  client: 'client', id_provider: 'id_provider', hmlr: 'hmlr',
+};
+export const OWNER_LABEL: Record<ActionOwner, string> = {
+  conveyancer: 'Us', client: 'The client', seller_side: "The other side's solicitor", lender: 'The lender',
+  third_party: 'A third party', mlro: 'The MLRO', hmlr: 'HM Land Registry', search_provider: 'The search provider', id_provider: 'The ID provider',
+};
+const DECISION_LABEL: Record<string, string> = {
+  id_check: 'the ID / AML result', search: 'the search result', enquiry: 'the reply to our enquiry', mortgage: 'the mortgage offer',
+  title: 'the title', report_on_title: 'the report on title', escalation: 'the escalation', requisition: "HM Land Registry's requisition",
+  proof_of_funds: 'the source of funds', management_pack: 'the management pack',
+};
+const WAIT_WHAT: Record<string, string> = {
+  search: 'Search result', enquiry: 'Reply to enquiry', id_check: 'ID / AML result', funds: 'Completion funds',
+  registration: 'HMLR registration', proof_of_funds: 'Proof of funds from the client', management_pack: 'Management pack',
+  property_forms: 'Property forms from the client', redemption: 'Redemption statement', lender_consent: "Lender's consent", discharge: 'Discharge (DS1 / e-DS1)',
+};
+
+export interface WorkContext {
+  matterRef?: string | null;
+  propertyAddress?: string | null;
+  /** The fee-earner the matter is assigned to. */
+  assignedTo?: string | null;
+  subflows?: SubflowConfig | null;
+}
+
+const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(new Date(iso), now, cal);
+
+/**
+ * One matter's work, split into the three buckets. Pure in (state, now, ctx).
+ * A closed or abandoned matter produces nothing — there is nothing left to do on it.
+ */
+export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkContext = {}, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): MatterWork {
+  const health = caseHealth(s, now, sla, cal);
+  const out: WorkItem[] = [];
+  if (!s.enrolled || s.abandoned || s.closedAt) return { matterId: s.matterId, band: health.band, items: out };
+  const owner = ctx.assignedTo ?? null;
+  const base = { matterId: s.matterId, matterRef: ctx.matterRef ?? null, propertyAddress: ctx.propertyAddress ?? null, responsibilityOwner: owner };
+  const bandOf = (code: string): HealthBand => health.reasons.find((r) => r.ref.id === code)?.band ?? 'normal';
+
+  // ── DO: decisions a person must resolve ──
+  // Only what a person may act on (shadow-mode matters surface nothing).
+  const surfaced = ctx.subflows ? surfacedDecisions(s, ctx.subflows) : pendingDecisions(s);
+  for (const d of surfaced.filter((x) => x.kind !== 'auto_clear')) {
+    const age = wd(d.createdAt, now, cal);
+    // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
+    // it is described by the first line of what the timer actually said.
+    // One sentence, not the whole dossier — the detail is on the case.
+    const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
+    const what =
+      d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
+      : d.kind === 'escalation' ? (firstLine || 'Deal with an escalation')
+      : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') ? ` — ${d.subject}` : ''}`;
+    out.push({
+      ...base,
+      id: `do:decision:${d.eventId}`,
+      bucket: 'do',
+      what,
+      unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : d.kind === 'escalation' ? 'Whatever the timer has been chasing' : 'The sub-flow it came from',
+      actionOwner: 'conveyancer',
+      // An escalation exists because a clock already ran out — it is never "normal".
+      urgency: d.kind === 'bank_details' ? 'critical' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
+      workstream: null,
+      since: d.createdAt, sinceWorkingDays: age, slaWorkingDays: null, chaseInWorkingDays: null,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      ref: { type: 'decision', id: d.eventId },
+    });
+  }
+
+  // ── DO: issues whose next step is ours ──
+  for (const i of openIssues(s)) {
+    const spec = ISSUE_KIND_SPEC[i.kind];
+    if (spec.responsible !== 'conveyancer' && spec.responsible !== 'mlro') continue;
+    if (i.enquiryIds.some((q) => s.enquiries[q] && s.enquiries[q].status !== 'cleared' && s.enquiries[q].status !== 'reviewed')) continue; // tracked by a live enquiry → it is a WAITING, not a DO
+    out.push({
+      ...base,
+      id: `do:issue:${i.id}`,
+      bucket: 'do',
+      what: `${spec.actions[0] ?? 'Deal with'}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}`,
+      unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
+      actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
+      urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',
+      workstream: spec.workstreams[0] ?? null,
+      since: i.raisedAt, sinceWorkingDays: wd(i.updatedAt, now, cal), slaWorkingDays: spec.escalateAfterWorkingDays ?? null,
+      chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      ref: { type: 'issue', id: i.id },
+    });
+  }
+
+  // ── DO: the next step on the gate when it is ours and nothing is outstanding ──
+  for (const a of nextActions(s, now).filter((x) => x.who === 'conveyancer' && x.ref.type === 'requirement')) {
+    out.push({
+      ...base,
+      id: `do:req:${a.ref.id}`,
+      bucket: 'do',
+      what: a.what,
+      unblocks: a.unblocks,
+      actionOwner: 'conveyancer',
+      urgency: a.urgency === 'critical' ? 'critical' : a.urgency === 'warning' ? 'attention' : 'normal',
+      workstream: null,
+      since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      ref: { type: 'requirement', id: a.ref.id },
+    });
+  }
+
+  // ── WAITING / CHASE: every open wait, with its clock ──
+  const chaseDue = new Set(dueActions(s, now, sla, cal).filter((d) => d.kind === 'chase').map((d) => `${d.wait.key}:${d.wait.subject}`));
+  for (const w of openWaits(s)) {
+    const rule = sla[w.key];
+    if (!rule) continue;
+    const key = `${w.key}:${w.subject}`;
+    const age = wd(w.openedAt, now, cal);
+    const chases = w.chasesSentAt.length;
+    const last = chases ? w.chasesSentAt[chases - 1] : null;
+    // Next chase: the first at chaseAfter, then every chaseEvery working days after the last one.
+    const nextChaseIn = !last ? rule.chaseAfter - age : rule.chaseEvery === null ? null : rule.chaseEvery - wd(last, now, cal);
+    const escalated = w.escalations.some((e) => !e.resolvedAt);
+    const isChase = chaseDue.has(key);
+    out.push({
+      ...base,
+      id: `${isChase ? 'chase' : 'waiting'}:${key}`,
+      bucket: isChase ? 'chase' : 'waiting',
+      what: `${WAIT_WHAT[w.key] ?? w.key.replace(/_/g, ' ')}${w.subject ? ` — ${w.subject}` : ''}`,
+      unblocks: null,
+      actionOwner: PARTY[rule.recipientRole] ?? 'third_party',
+      urgency: escalated ? 'critical' : age >= rule.escalateAfter ? 'delayed' : isChase ? 'attention' : 'normal',
+      workstream: null,
+      since: w.openedAt, sinceWorkingDays: age,
+      slaWorkingDays: rule.chaseAfter,
+      chaseInWorkingDays: nextChaseIn,
+      chasesSent: chases,
+      mode: s.shadowMode ? 'needs_approval' : 'automatic',
+      escalatesInWorkingDays: escalated ? 0 : rule.escalateAfter - age,
+      escalated,
+      ref: { type: 'wait', id: key },
+    });
+  }
+
+  // ── WAITING: the client owes us a decision only they can make ──
+  for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client')) {
+    out.push({
+      ...base,
+      id: `waiting:client:${a.ref.id}`,
+      bucket: 'waiting',
+      what: a.what,
+      unblocks: a.unblocks,
+      actionOwner: 'client',
+      urgency: a.urgency === 'critical' ? 'critical' : 'normal',
+      workstream: null,
+      since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      ref: { type: 'client', id: a.ref.id },
+    });
+  }
+
+  const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
+  out.sort((a, b) => rank[a.urgency] - rank[b.urgency] || (b.sinceWorkingDays ?? 0) - (a.sinceWorkingDays ?? 0));
+  void bandOf;
+  return { matterId: s.matterId, band: health.band, items: out };
+}
+
+/** Group a person's items across their whole caseload into the three buckets, worst first. */
+export function buckets(items: WorkItem[]): { do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[] } {
+  return { do: items.filter((i) => i.bucket === 'do'), waiting: items.filter((i) => i.bucket === 'waiting'), chase: items.filter((i) => i.bucket === 'chase') };
+}

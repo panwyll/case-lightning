@@ -1070,9 +1070,38 @@ export function initialState(tenantId: string, matterId: string): MatterState {
  * from the log on the next event, not on deploy). Fill the gaps from the initial state so
  * readers never meet an undefined top-level field.
  */
+/**
+ * A snapshot written by an older build is missing whatever the machine has grown since.
+ * Fill it from a fresh initial state — including the nested records, because a projection
+ * that reads `state.proofOfFunds.queries` on a pre-proof-of-funds snapshot would throw.
+ * A replay would produce the same thing; this just keeps cached reads honest.
+ */
 export function withStateDefaults(s: MatterState): MatterState {
   const init = initialState(s.tenantId, s.matterId);
-  return { ...init, ...s, postCompletion: { ...init.postCompletion, ...(s.postCompletion ?? {}) } };
+  const merge = <K extends keyof MatterState>(k: K): MatterState[K] =>
+    (s[k] && typeof s[k] === 'object' && !Array.isArray(s[k]) ? { ...(init[k] as object), ...(s[k] as object) } : s[k] ?? init[k]) as MatterState[K];
+  return {
+    ...init,
+    ...s,
+    postCompletion: merge('postCompletion'),
+    proofOfFunds: merge('proofOfFunds'),
+    survey: merge('survey'),
+    manualHandling: merge('manualHandling'),
+    idCheck: merge('idCheck'),
+    mortgage: merge('mortgage'),
+    title: merge('title'),
+    reportOnTitle: merge('reportOnTitle'),
+    deposit: merge('deposit'),
+    exchange: merge('exchange'),
+    completion: merge('completion'),
+    readiness: merge('readiness'),
+    managementPack: merge('managementPack'),
+    propertyForms: merge('propertyForms'),
+    contractPack: merge('contractPack'),
+    redemption: merge('redemption'),
+    lenderConsent: merge('lenderConsent'),
+    deeds: merge('deeds'),
+  };
 }
 
 export const isLeasehold = (s: MatterState): boolean => s.transactionType === 'leasehold_purchase' || s.transactionType === 'leasehold_sale';

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import type { Api } from './types';
+import type { Api, CaseHealth, WorkItem } from './types';
 
 /**
  * Two read-only projections of the case model (docs/case-model.md §13), drawn from
@@ -18,6 +18,10 @@ export interface CaseModel {
   gates: Record<string, { id: string; label: string; ready: boolean; unsatisfied: CaseModel['requirements']; satisfied: CaseModel['requirements']; machineBlockers: string[] }>;
   whyNotExchange: string[];
   nextActions: Array<{ what: string; who: string; unblocks: string; ref: { type: string; id: string }; urgency: string }>;
+  /** Case intelligence (docs/caseload-ux.md §3). */
+  health?: CaseHealth;
+  waits?: Array<{ key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }>;
+  work?: WorkItem[];
   graph: { lifecycle: string; nodes: Array<{ id: string; type: string; label: string; status: string; severity?: string; authority?: string; workstream?: string | null; detail?: string }>; edges: Array<{ from: string; to: string; type: string; label?: string }> };
 }
 
@@ -52,12 +56,14 @@ const CSS = `
 .cv figcaption{font-size:12px;color:#64748b;margin-top:8px}
 `;
 
-export function CaseView({ matterId, api, view }: { matterId: string; api: Api; view: 'readiness' | 'dependencies' }) {
-  const [m, setM] = useState<CaseModel | null>(null);
+export function CaseView({ matterId, api, view, model }: { matterId: string; api: Api; view: 'readiness' | 'dependencies'; model?: CaseModel | null }) {
+  const [fetched, setFetched] = useState<CaseModel | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
-    api<CaseModel>(`/matters/${matterId}/engine/graph`).then(setM).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the case model.'));
-  }, [api, matterId]);
+    if (model) return; // the page already has it — don't fetch the same projection twice
+    api<CaseModel>(`/matters/${matterId}/engine/graph`).then(setFetched).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the case model.'));
+  }, [api, matterId, model]);
+  const m = model ?? fetched;
   if (err) return <div className="eg-err">{err}</div>;
   if (!m) return <div style={{ color: '#94a3b8', fontSize: 13 }}>Building the case model…</div>;
   const spine = m.profile?.lifecycle ?? LIFECYCLE;
