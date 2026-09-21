@@ -35,7 +35,6 @@ const STEP_LABEL: Record<string, string> = {
   DELEGATE: 'Delegate (assign + forward)',
   NOTIFY: 'Notify someone',
   TAG: 'Tag in Outlook',
-  APPEND_TRACKER: 'Add a tracker row',
   ASSIGN: 'Assign the matter',
 };
 const STEP_TYPES = Object.keys(STEP_LABEL);
@@ -330,7 +329,6 @@ export default function Automations() {
                       )}
                       {s.type === 'CREATE_MATTER' && <div style={hint}>Provisions a matter from the email (no setup needed).</div>}
                       {s.type === 'ARCHIVE_MATTER' && <div style={hint}>Closes the matter so it drops off the live board.</div>}
-                      {s.type === 'APPEND_TRACKER' && <div style={hint}>Adds a row to the matter’s Excel tracker.</div>}
                       {s.type === 'DELEGATE' && <div style={hint}>Assigns the matter and forwards the email. {a.trigger === 'AUTO' ? 'Set a recipient in the note if unattended.' : 'You pick the person when you run it.'}</div>}
                       {s.type === 'NOTIFY' && <div style={hint}>Drafts an update email. {a.trigger === 'AUTO' ? '' : 'You choose the recipient when you run it.'}</div>}
                     </div>

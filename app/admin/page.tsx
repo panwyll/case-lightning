@@ -1158,7 +1158,7 @@ export default function AdminPage() {
                   ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
                   ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
                   ['How is billing handled?', 'Plans and seats are shown here; the card, invoices, plan changes and cancellation are handled securely by Stripe via “Manage subscription”.'],
-                  ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive/Excel) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
+                  ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
                 ].map(([q, a]) => (
                   <details key={q} style={{ borderTop: '1px solid #f1f5f9', padding: '10px 0' }}>
                     <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>{q}</summary>
@@ -2286,7 +2286,7 @@ export default function AdminPage() {
           onClose={() => setShowNewMatter(false)}
           onCreated={async (id) => {
             setShowNewMatter(false);
-            setStatus('Matter created — OneDrive folder + tracker provisioned.');
+            setStatus('Matter created — OneDrive folder provisioned.');
             await Promise.all([
               loadMywork(mywork?.assignedTo),
               api<{ matters: any[]; doneTotal?: number }>('/admin/board').then((b) => { setBoard(b.matters); setDoneTotal(b.doneTotal ?? 0); }).catch(() => {}),

@@ -10,7 +10,7 @@
  *
  * Steps reuse existing capabilities, so an automation is just orchestration:
  *   CREATE_MATTER · GENERATE_DOCS · CREATE_TASK · DRAFT_REPLY · ARCHIVE_MATTER
- *   DELEGATE · NOTIFY · TAG (categorise in Outlook) · APPEND_TRACKER · ASSIGN
+ *   DELEGATE · NOTIFY · TAG (categorise in Outlook) · ASSIGN
  *
  * Run-all-then-review for MANUAL: nothing sends, drafts land in Outlook. For AUTO a
  * DRAFT_REPLY step may carry `send: true`, which — behind the risk ack, kill-switch
@@ -21,7 +21,7 @@ import { threadToText } from './text';
 import { isMeaningfulRef } from '../ref-name';
 import {
   listThreadMessages, createReplyDraft, uploadToMatterFolder, createForwardDraft, createDraftMessage,
-  ensureMasterCategory, addMessageCategories, appendTrackerRow,
+  ensureMasterCategory, addMessageCategories,
 } from './graph';
 import { proposeMatter, draftReply, draftUpdate, retrieveMatterContext, upsertChunks } from './ai';
 import { createMatter } from './matter';
@@ -40,7 +40,7 @@ import type { TriageResult } from './triage';
 export type AutomationStepType =
   | 'CREATE_MATTER' | 'GENERATE_DOCS' | 'CREATE_TASK' | 'DRAFT_REPLY'
   | 'ARCHIVE_MATTER' | 'DELEGATE' | 'NOTIFY'
-  | 'TAG' | 'APPEND_TRACKER' | 'ASSIGN';
+  | 'TAG' | 'ASSIGN';
 
 export interface AutomationStep {
   type: AutomationStepType;
@@ -88,8 +88,8 @@ export interface StepResult {
 
 /**
  * Extra context an AUTO run supplies to the step executor: the auto-send safety
- * posture, the matched matter's ref/tracker, and the triage classification (for the
- * TAG / tracker steps). Absent for a MANUAL run — those steps then use step config.
+ * posture, the matched matter's ref, and the triage classification (for the
+ * TAG step). Absent for a MANUAL run — those steps then use step config.
  */
 export interface AutoExecOpts {
   auto?: boolean;
@@ -97,7 +97,6 @@ export interface AutoExecOpts {
   policy?: { auto_send_enabled: boolean; allowed_external_domains: string[] };
   recipients?: string[];
   matterRef?: string | null;
-  trackerItemId?: string | null;
   classification?: { intent: string; reason: string; needsAttention: boolean };
   automationId?: string;
   tenantId?: string;
@@ -201,7 +200,7 @@ export async function runAutomation(user: SessionUser, automationId: string, ctx
 /**
  * Run a list of steps. Steps that fail are recorded but don't abort the rest (each is
  * best-effort + reported). `matterId` flows: a CREATE_MATTER step sets it for later
- * steps. `opts.auto` switches on the AUTO behaviours (sending, tracker/tag defaults).
+ * steps. `opts.auto` switches on the AUTO behaviours (sending, tag defaults).
  */
 export async function executeSteps(
   user: SessionUser,
@@ -364,21 +363,9 @@ export async function executeSteps(
         await ensureMasterCategory(user.userId, label, matterColor(label));
         await addMessageCategories(user.userId, ctx.messageId, [label]).catch(() => {});
         results.push({ type: step.type, ok: true, detail: `Tagged in Outlook: ${label}` });
-      } else if (step.type === 'APPEND_TRACKER') {
-        if (!opts.trackerItemId) throw new Error('no Excel tracker for this matter');
-        // The tracker sits inside the matter folder, so write it as that folder's owner.
-        await appendTrackerRow(
-          matterId ? await driveUserFor(user.tenantId, matterId, user.userId) : user.userId,
-          opts.trackerItemId,
-          {
-          date: new Date().toISOString().slice(0, 10),
-          type: opts.classification?.intent ?? 'NOTE',
-          detail: `${opts.classification?.reason ?? ctx.subject ?? ''}`.slice(0, 250),
-          owner: '',
-          due: '',
-          status: opts.classification?.needsAttention ? 'OPEN' : 'NOTED',
-        });
-        results.push({ type: step.type, ok: true, detail: 'Row added to the Excel tracker' });
+      } else if ((step.type as string) === 'APPEND_TRACKER') {
+        // Retired: the Excel tracker was removed. Old recipes that still carry the step skip it.
+        results.push({ type: step.type, ok: true, detail: 'Skipped — the Excel tracker step has been retired' });
       } else if (step.type === 'ASSIGN') {
         if (!matterId) throw new Error('no matter to assign');
         const uid = step.config.assigneeUserId;
@@ -452,8 +439,8 @@ export async function runAutoAutomations(user: SessionUser, message: any, triage
   const match = triage.top;
   const cls = triage.classification;
 
-  const matter = await queryOne<{ stage: string | null; tracker_item_id: string | null; matter_ref: string | null }>(
-    `select stage, tracker_item_id, matter_ref from matter where id = $1 and tenant_id = $2`,
+  const matter = await queryOne<{ stage: string | null; matter_ref: string | null }>(
+    `select stage, matter_ref from matter where id = $1 and tenant_id = $2`,
     [match.matterId, user.tenantId]
   );
 
@@ -491,7 +478,6 @@ export async function runAutoAutomations(user: SessionUser, message: any, triage
       policy: { auto_send_enabled: policy.auto_send_enabled, allowed_external_domains: policy.allowed_external_domains ?? [] },
       recipients,
       matterRef: match.matterRef,
-      trackerItemId: matter?.tracker_item_id ?? null,
       classification: { intent: cls.intent, reason: cls.reason, needsAttention: cls.needsAttention },
       automationId: chosen.id,
       matterIdForAudit: match.matterId,

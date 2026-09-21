@@ -130,7 +130,7 @@ DPA in place and an entry in your **Record of Processing Activities**:
 ## 7. Pre-launch smoke test (prod)
 
 - [ ] Sign in via Entra end-to-end; `/me` returns the user.
-- [ ] Create a matter → OneDrive folder + tracker provisioned.
+- [ ] Create a matter → OneDrive folder provisioned.
 - [ ] Receive a test client email → matched, tagged; a marketing email → **not** matched.
 - [ ] Generate a doc-pack template into Case files.
 - [ ] Complete a live Stripe checkout → plan/gating correct.

@@ -70,7 +70,7 @@ const PROPOSE_SLICE_MS = 20000;  // wall-clock budget per propose slice — kept
 const PROVISION_FETCH = 6;       // approved cases shelled per slice (drained under the time budget)
 const PROVISION_ENRICH_FETCH = 3; // shelled cases enriched (AI) per slice — heavier, so fewer
 const PROVISION_SLICE_MS = 20000; // wall-clock budget per provision slice — each matter is heavy
-                                  // (OneDrive folder + Excel tracker + thread fetch + LLM extract),
+                                  // (OneDrive folder + thread fetch + LLM extract),
                                   // so we do them one at a time until this deadline (well under the
                                   // 50s backstop) and let the client loop for the rest.
 const MIN_CONFIDENCE = 0.4;      // below this the AI proposal is treated as noise
@@ -459,7 +459,7 @@ async function linkThreads(user: SessionUser, matterId: string, c: CaseRow): Pro
 
 // Phase B helper — the AI-heavy enrichment: pull the thread messages, run ONE extract, then
 // write the summary, seed tasks and timeline. Runs in its own slice so it never stacks on top
-// of the shell's Graph provisioning (folder + Excel), which is what blew past the 50s cap.
+// of the shell's Graph provisioning (folder), which is what blew past the 50s cap.
 async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Promise<string> {
   const convs = (c.conversation_ids ?? []).filter(Boolean).slice(0, THREADS_PER_CASE);
   const allMessages: any[] = [];
@@ -513,14 +513,12 @@ async function enrichMatter(user: SessionUser, matterId: string, c: CaseRow): Pr
     );
   }
   await timed('upsertChunks', () => upsertChunks({ tenantId: user.tenantId, matterId, sourceKind: 'EMAIL', text, metadata: { source: 'onboarding' } }));
-  // NB: no eager Excel-tracker back-fill here — a row per timeline/outstanding item was ~16
-  // sequential Graph Excel calls per matter. That data lives in matter_summary, the timeline
-  // and the seeded tasks; the tracker populates via the normal sync, not an import-time back-fill.
+  // The extracted data lives in matter_summary, the timeline and the seeded tasks.
   return `${extracted.outstanding.length} outstanding → ${seeded} task(s) · ${extracted.timeline.length} timeline · ${allMessages.length} msg(s)`;
 }
 
 // Provision APPROVED cases in TWO bounded phases so no single slice does too much:
-//   A) shell   — create the matter (OneDrive folder + Excel tracker) + thread links. Graph only.
+//   A) shell   — create the matter (OneDrive folder) + thread links. Graph only.
 //   B) enrich  — fetch the threads + one AI extract → summary/tasks/timeline. AI only.
 // A case is "shelled" once it has a matter_id; enrichment then flips it to ONBOARDED. Splitting
 // the heavy Graph work from the heavy AI work is what keeps every slice under Vercel's 60s cap.

@@ -36,7 +36,7 @@ The add-in is **multi-tenant** — you may also install and sign in from your ow
     send permission; the add-in is draft-only by design).
   - `MailboxSettings.ReadWrite` — create and colour the triage categories
     (Reply / Action / Delegate) on the mailbox.
-  - `Files.ReadWrite` — the user's **own** OneDrive matter folder and tracker.
+  - `Files.ReadWrite` — the user's **own** OneDrive matter folder.
   - We deliberately do **not** request `Files.ReadWrite.All`, `Sites.ReadWrite.All`, or
     any access to other users' mailboxes or SharePoint.
 - All AI processing runs on the content of the signed-in user's own mailbox and matters;

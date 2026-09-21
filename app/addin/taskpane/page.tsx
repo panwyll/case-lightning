@@ -244,7 +244,7 @@ export default function Taskpane() {
     { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder.', before: () => { setHomeView(false); setTab('paperclip'); } },
     { target: '[data-tour="tab-log"]', title: 'Log', body: 'Everything that’s happened.', before: () => { setHomeView(false); setTab('log'); } },
     { target: '[data-tour="callnotes"]', title: 'Call notes', body: 'Record a call — transcribed and filed.' },
-    { target: '[data-tour="newmatter"]', title: 'New matter', body: 'Matter, folder and tracker in one go.' },
+    { target: '[data-tour="newmatter"]', title: 'New matter', body: 'Matter and OneDrive folder in one go.' },
     { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app.' },
     { target: '[data-tour="account"]', title: 'Account', body: 'Plan, usage and firm setup.' },
   ];
@@ -348,7 +348,7 @@ export default function Taskpane() {
   // queue was unreachable while any email was open. This toggle surfaces it on demand.
   const [homeView, setHomeView] = useState(false);
 
-  // Assistant ("here's the situation") + the matter task board ("Jira in Excel").
+  // Assistant ("here's the situation") + the matter task board.
   // assist / assistError / runAssist now come from the shared useAssist hook below.
   // True when /me failed for a reason *other* than being signed out (a 5xx or a
   // network error). We're still "not connected", but telling the user to connect
@@ -385,8 +385,6 @@ export default function Taskpane() {
   const [refCopied, setRefCopied] = useState(false);
   // Cache the master board's URL so the button can open it synchronously (no
   // popup block, no blank tab) and sync in the background.
-  const [boardUrl, setBoardUrl] = useState<string | null>(null);
-  const [boardLoading, setBoardLoading] = useState(false);
 
   // Documents & sharing
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -1117,7 +1115,7 @@ export default function Taskpane() {
         exchangeTargetDate: form.exchangeTargetDate || undefined,
         completionTargetDate: form.completionTargetDate || undefined,
       };
-      const created = await api<{ id: string; folderWebUrl: string | null; trackerWebUrl: string | null }>('/matters', {
+      const created = await api<{ id: string; folderWebUrl: string | null }>('/matters', {
         method: 'POST',
         body: JSON.stringify(body),
       });
@@ -1130,7 +1128,7 @@ export default function Taskpane() {
           body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, messageId: messageId || undefined, subject }),
         });
       }
-      setStatus('Matter created — OneDrive folder + Tracker.xlsx provisioned.');
+      setStatus('Matter created — OneDrive folder provisioned.');
       await loadMatter(created.id);
     });
   }
@@ -1150,43 +1148,6 @@ export default function Taskpane() {
       await loadMatter();
       return true;
     });
-  }
-
-  // Open the firm-wide master Excel — syncs Excel edits in, builds it if missing,
-  // and opens it. If it's already open in Excel (locked) we just open it.
-  // Look up the board's URL up front (no sync) so the button can open instantly.
-  const loadBoardUrl = useCallback(async () => {
-    try {
-      const r = await api<{ webUrl: string | null }>('/matters/board');
-      setBoardUrl(r.webUrl);
-    } catch {
-      /* not built yet — buildBoard will create it */
-    }
-  }, []);
-  useEffect(() => {
-    if (me) loadBoardUrl();
-  }, [me, loadBoardUrl]);
-
-  async function buildBoard() {
-    // If we already know the file's URL, open it now (synchronous → no popup block,
-    // no blank tab) and sync in the background; the open sheet updates live as the
-    // rows upsert. Otherwise build it first (spinner), then open.
-    if (boardUrl) window.open(boardUrl, '_blank');
-    setBoardLoading(true);
-    try {
-      const r = await api<{ webUrl: string | null; matters: number; needsClose: boolean }>('/matters/board', { method: 'POST' });
-      if (r.needsClose) {
-        setStatus('Close the tracker in Excel, then click again — upgrading it to the live-updating version.');
-        return;
-      }
-      if (r.webUrl) setBoardUrl(r.webUrl);
-      if (r.webUrl && !boardUrl) window.open(r.webUrl, '_blank'); // first build: open once we have it
-      setStatus(`Team tracker synced — ${r.matters} open matter(s).`);
-    } catch (e) {
-      setStatus((e as Error).message);
-    } finally {
-      setBoardLoading(false);
-    }
   }
 
   async function useCandidate(c: any) {
@@ -1288,8 +1249,8 @@ export default function Taskpane() {
     if (!r) return;
     setStatus(
       r.drafted
-        ? `Uploaded — tracker updated and a draft created in Outlook: “${r.draftSubject}”.`
-        : `Uploaded and logged to the tracker.${r.reason ? ' ' + r.reason : ''}`
+        ? `Uploaded and filed — a draft was created in Outlook: “${r.draftSubject}”.`
+        : `Uploaded and filed.${r.reason ? ' ' + r.reason : ''}`
     );
     loadFiles();
   }
@@ -1604,7 +1565,7 @@ export default function Taskpane() {
       setTasks(r.tasks ?? []);
       setAssignees(r.assignees ?? []);
     } catch {
-      /* board is best-effort; a tracker read hiccup shouldn't break the pane */
+      /* task list is best-effort; a read hiccup shouldn't break the pane */
     }
   }, [matterId]);
 
@@ -1633,7 +1594,7 @@ export default function Taskpane() {
     } catch { /* best-effort */ } finally { setTaskBusy(''); }
   }
 
-  // Delegate to a colleague: assign it on the Excel tracker AND draft a forward of
+  // Delegate to a colleague: assign the task AND draft a forward of
   // the email to them with instructions (draft only, never sent). Both effects are
   // best-effort independent so a Graph hiccup on the forward still books the task.
   // The setup state: shown automatically until the firm has imported (or skipped),
@@ -1958,7 +1919,7 @@ export default function Taskpane() {
                 matter, and prepares a reply for you to approve — without leaving Outlook.
               </p>
               <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748b', margin: '0 0 12px' }}>
-                It files documents to your firm’s own OneDrive and keeps a tracker per matter.
+                It files documents to your firm’s own OneDrive and keeps every matter’s tasks and status in one place.
                 Built for UK conveyancing teams — sign in with your work Microsoft account.
               </p>
               <button style={S.primary} onClick={() => connect()}>
@@ -2889,7 +2850,7 @@ export default function Taskpane() {
           )}
 
 
-          {/* ── Status — pulled from the matter's tracker, + links to the boards ── */}
+          {/* ── Status — stage, assignee and flag, edited in place ── */}
           {tab === 'email' && matterId && (() => {
             const rawFlag = matterInfo?.matter?.status_flag || 'ON_TRACK';
             const flag = humanize(rawFlag);
@@ -2905,7 +2866,7 @@ export default function Taskpane() {
             const ctrl: React.CSSProperties = { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#fff', color: '#0f172a', marginBottom: 7, fontFamily: 'inherit', cursor: 'pointer' };
             return (
               <Card>
-                {/* Header row: status badge + refresh, with history + Tracker pinned right. */}
+                {/* Header row: status badge + refresh. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '2px 10px', borderRadius: 999, background: fc.bg, color: fc.fg, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap' }}>
                     <span style={{ width: 7, height: 7, borderRadius: 999, background: fc.dot, flex: 'none' }} />
@@ -2920,11 +2881,6 @@ export default function Taskpane() {
                   >
                     <Icon name="refresh" size={13} />
                   </button>
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <button style={S.boardBtn} onClick={buildBoard} disabled={boardLoading} title="Open the team tracker in a new tab">
-                      {boardLoading ? 'Syncing…' : 'Tracker'} <Icon name="external" size={11} />
-                    </button>
-                  </div>
                 </div>
 
                     {/* Stage + assignee side by side — unlabeled, edit in place */}
@@ -3180,9 +3136,9 @@ export default function Taskpane() {
                     <button style={S.iconAction} onClick={() => loadFiles()} title="Refresh" aria-label="Refresh">
                       <Icon name="refresh" size={15} />
                     </button>
-                    {/* Cross-check — rightmost. Greyed with a why until there's a real document beyond the Tracker. */}
+                    {/* Cross-check — rightmost. Greyed with a why until there's a document to check. */}
                     {(() => {
-                      const docs = files.filter((f) => !(f.id === matterInfo?.matter?.tracker_item_id || /^Tracker\.xlsx$/i.test(f.name))).length;
+                      const docs = files.length;
                       const canX = filesLoaded && docs > 0 && !reconBusy;
                       return (
                         <button
@@ -3211,8 +3167,6 @@ export default function Taskpane() {
                     {files.map((f) => {
                       const when = f.lastModified ? new Date(f.lastModified).toLocaleDateString('en-GB') : '';
                       const size = fmtSize(f.size);
-                      // The matter's own case log (Tracker.xlsx) isn't an attachable document.
-                      const isTracker = f.id === matterInfo?.matter?.tracker_item_id || /^Tracker\.xlsx$/i.test(f.name);
                       const attaching = attachingId === f.id;
                       return (
                         <div key={f.id} style={S.fileRow} title={f.name}>
@@ -3227,7 +3181,7 @@ export default function Taskpane() {
                             {size && <span style={S.fileMeta}>{size}</span>}
                             {when && <span style={S.fileMeta}>{when}</span>}
                           </a>
-                          {!isTracker && (
+                          {(
                             <button
                               style={{ ...S.ghostIcon, flex: 'none', color: attaching ? '#5A27E0' : '#94a3b8', opacity: conversationId ? 1 : 0.4 }}
                               onClick={() => attachToReply(f)}

@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
       await snoozeChase(user.tenantId, body.id, body.action === 'dismiss' ? far : until);
     } else if (body.kind === 'TASK') {
       // Completing a matter task from the queue — route through updateTask so it mirrors
-      // out to Excel / To Do like any other completion.
+      // out to To Do like any other completion.
       const t = await queryOne<{ matter_id: string }>(`select matter_id from matter_task where id = $1 and tenant_id = $2`, [body.id, user.tenantId]);
       if (t) await updateTask(user, t.matter_id, body.id, { status: 'DONE' });
     } else if (body.action === 'dismiss') {

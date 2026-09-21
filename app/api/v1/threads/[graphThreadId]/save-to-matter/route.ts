@@ -8,7 +8,6 @@ import {
   getMessage,
   listMessageAttachments,
   uploadToMatterFolder,
-  appendTrackerRow,
 } from '@/lib/server/graph';
 import { upsertChunks } from '@/lib/server/ai';
 import { stripHtml } from '@/lib/server/text';
@@ -30,8 +29,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       .parse(await req.json());
 
     await assertMatterAccess(user, body.matterId);
-    const matter = await queryOne<{ folder_path: string | null; tracker_item_id: string | null }>(
-      `select folder_path, tracker_item_id from matter where id = $1 and tenant_id = $2`,
+    const matter = await queryOne<{ folder_path: string | null }>(
+      `select folder_path from matter where id = $1 and tenant_id = $2`,
       [body.matterId, user.tenantId]
     );
     if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned'));
@@ -118,17 +117,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         metadata: { fileName: attachment.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT', graphThreadId },
       });
       savedDocs.push({ fileName: attachment.name, webUrl: uploaded.webUrl ?? null, itemId: uploaded.id });
-    }
-
-    if (matter.tracker_item_id) {
-      await appendTrackerRow(driveUser, matter.tracker_item_id, {
-        date: new Date().toISOString().slice(0, 10),
-        type: 'DOC_SAVED',
-        detail: `Saved ${savedDocs.length} file(s) from email: ${message.subject ?? ''}`.slice(0, 250),
-        owner: user.displayName ?? user.email,
-        due: '',
-        status: 'DONE',
-      }).catch(() => {});
     }
 
     await writeAudit({

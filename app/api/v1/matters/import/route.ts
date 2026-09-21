@@ -14,8 +14,7 @@ export const dynamic = 'force-dynamic';
 // upload can't push a huge body through the JSON parser.
 const MAX_CSV_BYTES = 2_000_000;
 
-// Matters are provisioned one at a time (each creates a OneDrive folder and an Excel
-// tracker), so a big import is drained across several calls rather than risking the
+// Matters are provisioned one at a time (each creates a OneDrive folder), so a big import is drained across several calls rather than risking the
 // serverless timeout. The client loops until `remaining` is 0.
 const CREATE_PER_CALL = 15;
 

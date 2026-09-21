@@ -1,24 +1,15 @@
 /**
- * Matter tasks — the "Jira in Excel" core.
+ * Matter tasks.
  *
- * Postgres is the source of truth (fast, queryable, drives the board). Every
- * write also mirrors to the matter's Tracker.xlsx keyed by a stable `ref`, and
- * reads first reconcile hand edits made directly in Excel back into Postgres —
- * so the conveyancer can work in either surface.
+ * Postgres is the source of truth (fast, queryable, drives the board and the worklist).
+ * A task may also be pushed to the assignee's Microsoft To Do (todo.ts) — best-effort.
  *
- * Concurrency: Microsoft Graph offers no per-row optimistic concurrency, so two
- * overlapping read-modify-writes could PATCH a stale Excel row index and clobber
- * the wrong task. All tracker read-modify-write for a matter is therefore
- * serialised behind a Postgres transaction-scoped advisory lock, and every DB
- * statement inside the lock runs on that SAME transaction client — so each op
- * holds exactly one pooled connection and can't deadlock the pool while it waits
- * on Graph. The Graph calls (Excel) carry no DB connection.
- *
- * NOTE: the Excel side (graph.ts upsert/list) still needs live verification —
- * the Graph workbook API shapes can't be exercised offline.
+ * Concurrency: ref allocation and bulk seeding run behind a Postgres transaction-scoped
+ * advisory lock per matter, and every DB statement inside the lock runs on that SAME
+ * transaction client — so each op holds exactly one pooled connection.
  */
 import { query, queryOne, transaction } from './db';
-import { listTrackerRows, upsertTrackerRowByRef, createDraftMessage } from './graph';
+import { createDraftMessage } from './graph';
 import { addDraftReady, isWaitingOnOthers } from './worklist';
 import { mirrorTaskToTodo, syncFromTodo } from './todo';
 import { instantiateStageTemplates, unblockDependents } from './workflow';
@@ -29,7 +20,7 @@ import type { SessionUser } from './types';
 // transaction client (and the pool). Avoids importing pg's types here.
 type DB = { query: <R = any>(text: string, params?: unknown[]) => Promise<{ rows: R[] }> };
 
-async function withTrackerLock<T>(matterId: string, fn: (db: DB) => Promise<T>): Promise<T> {
+async function withMatterLock<T>(matterId: string, fn: (db: DB) => Promise<T>): Promise<T> {
   return transaction(async (client) => {
     await client.query('select pg_advisory_xact_lock(hashtextextended($1, 0))', [matterId]);
     return fn(client as unknown as DB);
@@ -49,60 +40,11 @@ export interface MatterTask {
   source: string;
   created_at: string;
   updated_at: string;
-  excel_synced_at: string | null;
 }
 
 export type TaskStatus = 'OPEN' | 'IN_PROGRESS' | 'DONE' | 'NOTED' | 'BLOCKED';
 
-const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, status_label, source, created_at, updated_at, excel_synced_at';
-
-/** Map free-text Excel status (a human may type anything) onto our enum. */
-function normaliseStatus(s: string): TaskStatus {
-  const t = (s || '').trim().toLowerCase();
-  if (/done|complete|closed|resolved/.test(t)) return 'DONE';
-  if (/progress|wip|started|doing/.test(t)) return 'IN_PROGRESS';
-  if (/noted|fyi/.test(t)) return 'NOTED';
-  return 'OPEN';
-}
-
-/** Human-friendly status for the Excel cell. */
-function statusDisplay(s: string): string {
-  return s === 'IN_PROGRESS' ? 'In progress' : s.charAt(0) + s.slice(1).toLowerCase();
-}
-
-function dateStr(v: string | null | undefined): string {
-  if (!v) return '';
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? String(v) : d.toISOString().slice(0, 10);
-}
-
-async function trackerItemId(db: DB, tenantId: string, matterId: string): Promise<string | null> {
-  const r = await db.query<{ tracker_item_id: string | null }>(
-    `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
-    [matterId, tenantId]
-  );
-  return r.rows[0]?.tracker_item_id ?? null;
-}
-
-/** Best-effort push of a task into the Excel tracker — never blocks the DB write. */
-async function mirrorToExcel(db: DB, user: SessionUser, matterId: string, task: MatterTask): Promise<void> {
-  const itemId = await trackerItemId(db, user.tenantId, matterId);
-  if (!itemId) return;
-  try {
-    await upsertTrackerRowByRef(user.userId, itemId, {
-      ref: task.ref,
-      date: dateStr(task.created_at),
-      type: task.type,
-      detail: task.detail,
-      owner: task.assignee ?? '',
-      due: dateStr(task.due),
-      status: statusDisplay(task.status),
-    });
-    await db.query(`update matter_task set excel_synced_at = now() where id = $1`, [task.id]);
-  } catch {
-    /* a Graph hiccup must not lose the task — it's safe in Postgres, resync later */
-  }
-}
+const COLS = 'id, ref, type, detail, assignee, assignee_user_id, due, status, status_label, source, created_at, updated_at';
 
 export async function listAssignees(tenantId: string): Promise<Array<{ id: string; email: string; display_name: string | null }>> {
   return query(
@@ -111,59 +53,10 @@ export async function listAssignees(tenantId: string): Promise<Array<{ id: strin
   );
 }
 
-/**
- * Pull hand edits from Excel back into Postgres. Conflict policy: an app change
- * wins until we've confirmed it into Excel (updated_at <= excel_synced_at);
- * after that, a differing Excel cell is a human edit and wins. This both lets
- * the lawyer edit live in Excel AND stops a failed mirror from reverting a fresh
- * app change on the next read. Serialised per matter so it can't race a write.
- */
-export async function syncFromTracker(user: SessionUser, matterId: string): Promise<void> {
-  await withTrackerLock(matterId, async (db) => {
-    const itemId = await trackerItemId(db, user.tenantId, matterId);
-    if (!itemId) return;
-    let rows: Awaited<ReturnType<typeof listTrackerRows>>;
-    try {
-      rows = await listTrackerRows(user.userId, itemId);
-    } catch {
-      return; // tracker unreadable (e.g. legacy without a Ref column yet) — skip silently
-    }
-    const tasks = (await db.query<MatterTask>(`select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2`, [matterId, user.tenantId])).rows;
-    const byRef = new Map(tasks.map((t) => [t.ref, t]));
-    for (const r of rows) {
-      if (!r.ref) continue; // hand-added row with no ref — left for a future "adopt" pass
-      const t = byRef.get(r.ref);
-      if (!t) continue; // unknown ref — don't import header/noise rows
-
-      // App change not yet confirmed in Excel: don't let stale Excel clobber it —
-      // re-push it forward instead (idempotent), then move on.
-      const synced = t.excel_synced_at ? new Date(t.excel_synced_at).getTime() : 0;
-      if (new Date(t.updated_at).getTime() > synced) {
-        await mirrorToExcel(db, user, matterId, t);
-        continue;
-      }
-
-      const status = r.status ? normaliseStatus(r.status) : t.status;
-      const detail = r.detail || t.detail;
-      const assignee = r.owner || t.assignee;
-      const due = r.due ? dateStr(r.due) : dateStr(t.due);
-      const changed =
-        status !== t.status || detail !== t.detail || (assignee || '') !== (t.assignee || '') || due !== dateStr(t.due);
-      if (changed) {
-        await db.query(
-          `update matter_task set status = $1, detail = $2, assignee = $3, due = nullif($4,'')::date, source = 'EXCEL', updated_at = now(), excel_synced_at = now() where id = $5`,
-          [status, detail, assignee || null, due, t.id]
-        );
-      }
-    }
-  });
-}
-
 export async function listTasks(user: SessionUser, matterId: string): Promise<MatterTask[]> {
-  // Reconcile external surfaces first, but NEVER let a flaky Excel/To Do sync blank the task
-  // list — the DB is the source of truth, so a sync hiccup must not hide real tasks.
-  await syncFromTracker(user, matterId).catch(() => {}); // reconcile live Excel edits
-  await syncFromTodo(user.userId).catch(() => {}); // then pull this user's To Do edits (no-op without the scope)
+  // Pull this user's To Do edits first (no-op without the scope) — but NEVER let a flaky
+  // sync blank the task list: the DB is the source of truth.
+  await syncFromTodo(user.userId).catch(() => {});
   return query<MatterTask>(
     `select ${COLS} from matter_task where matter_id = $1 and tenant_id = $2
      order by case status when 'OPEN' then 0 when 'IN_PROGRESS' then 1 when 'NOTED' then 2 else 3 end,
@@ -185,7 +78,7 @@ export async function createTask(
     source?: string;
   }
 ): Promise<MatterTask> {
-  return withTrackerLock(matterId, async (db) => {
+  return withMatterLock(matterId, async (db) => {
     // Safe under the per-matter lock: no other create can interleave, so the ref
     // can't collide. Derive from max(ref) (not count) so a deletion can't make us
     // re-issue an existing T-NNNN.
@@ -217,7 +110,6 @@ export async function createTask(
         ]
       )
     ).rows[0];
-    await mirrorToExcel(db, user, matterId, task);
     return task;
   }).then(async (task) => {
     // Push to the assignee's To Do outside the per-matter lock (a Graph call
@@ -233,7 +125,7 @@ export async function updateTask(
   taskId: string,
   patch: { type?: string; detail?: string; assignee?: string | null; assigneeUserId?: string | null; due?: string | null; status?: TaskStatus; statusLabel?: string | null }
 ): Promise<MatterTask | null> {
-  return withTrackerLock(matterId, async (db) => {
+  return withMatterLock(matterId, async (db) => {
     const task =
       (
         await db.query<MatterTask>(
@@ -252,7 +144,6 @@ export async function updateTask(
           [taskId, matterId, patch.type ?? null, patch.detail ?? null, patch.assignee ?? null, patch.assigneeUserId ?? null, patch.due ?? null, patch.status ?? null, user.tenantId, patch.statusLabel ?? null]
         )
       ).rows[0] ?? null;
-    if (task) await mirrorToExcel(db, user, matterId, task);
     return task;
   }).then(async (task) => {
     if (task) void mirrorTaskToTodo(user, matterId, task).catch(() => {});
@@ -295,9 +186,9 @@ export async function autoActionTask(
  * Bulk-seed a matter's task list from AI-extracted "outstanding items" — used at import time so
  * a freshly-provisioned matter already carries its open to-dos. PERFORMANT BY DESIGN:
  *   • reuses the extraction the importer already ran (no new LLM call),
- *   • one batched INSERT per matter under a single tracker lock (not N createTask round-trips),
- *   • NO per-task Excel mirror or To Do push — those Graph calls would turn a bulk import into a
- *     call storm. Seeded tasks are app-first; they sync outward the next time one is edited.
+ *   • one batched INSERT per matter under a single matter lock (not N createTask round-trips),
+ *   • NO per-task To Do push — those Graph calls would turn a bulk import into a call storm.
+ *     Seeded tasks are app-first; they sync outward the next time one is edited.
  * Idempotent: skips items already open on the matter, so re-running an import won't duplicate.
  * Returns how many tasks it created.
  */
@@ -322,7 +213,7 @@ export async function seedTasksFromOutstanding(
     .slice(0, max);
   if (!items.length) return 0;
   try {
-    return await withTrackerLock(matterId, async (db) => {
+    return await withMatterLock(matterId, async (db) => {
       const existing = new Set(
         (
           await db.query<{ detail: string }>(

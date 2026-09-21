@@ -46,7 +46,7 @@ const products = [
     status: 'Live',
     live: true,
     href: ROUTES.conveyi,
-    body: 'AI for conveyancers, inside Outlook. Thread summaries, case-aware draft replies, a OneDrive knowledge base and a live Excel tracker per matter.',
+    body: 'AI for conveyancers, inside Outlook. Thread summaries, case-aware draft replies, a OneDrive knowledge base and a live case board per matter.',
   },
   {
     name: 'Finance',

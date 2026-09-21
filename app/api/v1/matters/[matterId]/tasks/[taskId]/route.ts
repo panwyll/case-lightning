@@ -9,7 +9,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Update a task (status / assignee / due / detail) — mirrors to Tracker.xlsx. */
+/** Update a task (status / assignee / due / detail). */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ matterId: string; taskId: string }> }) {
   try {
     assertFeature('auth');

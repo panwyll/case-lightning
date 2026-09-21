@@ -1,6 +1,6 @@
 import { query, queryOne } from './db';
 import { config } from './config';
-import { ensureMatterFolder, ensureExcelTracker, hardenTracker, ensureInboxSubfolder, moveMessageToFolder } from './graph';
+import { ensureMatterFolder, ensureInboxSubfolder, moveMessageToFolder } from './graph';
 import { matterSelfIdentifiers, upsertIdentifiers, domainOf } from './matching';
 import { writeAudit } from './audit';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
@@ -66,12 +66,11 @@ export interface CreateMatterResult {
   matterRef: string;
   folderPath: string;
   folderWebUrl: string | null;
-  trackerWebUrl: string | null;
 }
 
 /**
- * Create a matter and provision its user-facing M365 surfaces: a OneDrive folder
- * + a live Excel tracker, plus the matching identifiers and an empty summary.
+ * Create a matter and provision its user-facing M365 surface: a OneDrive folder,
+ * plus the matching identifiers and an empty summary.
  *
  * The single source of truth for matter creation — both the interactive
  * `POST /matters` route and the onboarding importer call this so provisioning
@@ -141,12 +140,8 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     ...(domainOf(input.counterpartySolicitor) ? [{ kind: 'DOMAIN' as const, value: domainOf(input.counterpartySolicitor)! }] : []),
   ]);
 
-  // Provision the user-facing M365 surfaces: a OneDrive folder + a live Excel tracker.
+  // Provision the user-facing M365 surface: the matter's OneDrive folder.
   const folder = await timed('ensureMatterFolder', () => ensureMatterFolder(user.userId, folderPath));
-  const tracker = await timed('ensureExcelTracker', () => ensureExcelTracker(user.userId, folderPath));
-  // Harden the tracker: freeze the header, forbid column add/remove, Status dropdown —
-  // so a human can't rename the columns the two-way sync keys off. Best-effort.
-  if (tracker?.id) void hardenTracker(user.userId, tracker.id).catch(() => {});
 
   // Give the matter its own Inbox subfolder so processed mail can be filed there —
   // but only when the firm has opted in (off by default; toggled in Admin → Policy).
@@ -161,7 +156,7 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     }
   }
 
-  // Record whose OneDrive the folder and tracker physically landed in. Every later
+  // Record whose OneDrive the folder physically landed in. Every later
   // drive operation for this matter runs as that user, so a colleague filing a
   // document adds to the same folder instead of creating a copy in their own drive.
   // Separate statement, and swallowed, so a pre-060 deploy still provisions.
@@ -173,14 +168,12 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
 
   await query(
     `update matter set drive_id = $1, folder_item_id = $2, folder_web_url = $3,
-       tracker_item_id = $4, tracker_web_url = $5, mail_folder_id = $6, mail_folder_name = $7
-     where id = $8 and tenant_id = $9`,
+       mail_folder_id = $4, mail_folder_name = $5
+     where id = $6 and tenant_id = $7`,
     [
       folder.parentReference?.driveId ?? null,
       folder.id ?? null,
       folder.webUrl ?? null,
-      tracker.id ?? null,
-      tracker.webUrl ?? null,
       mailFolderId,
       mailFolderId ? folderDisplayName : null,
       matterId,
@@ -209,7 +202,6 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     matterRef,
     folderPath,
     folderWebUrl: folder.webUrl ?? null,
-    trackerWebUrl: tracker.webUrl ?? null,
   };
 }
 

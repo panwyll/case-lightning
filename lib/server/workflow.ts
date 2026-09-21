@@ -282,7 +282,7 @@ async function resolveAssignee(
   return { assignee: null, assigneeUserId: null };
 }
 
-/** Insert one matter_task from a template. Own ref-lock; app-first (no Excel/To Do fan-out). */
+/** Insert one matter_task from a template. Own ref-lock; app-first (no To Do fan-out). */
 async function createTemplateTask(
   tenantId: string,
   matterId: string,

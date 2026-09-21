@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 // Creates a DRAFT forward of the open email to a colleague, with the delegator's
 // instructions as the lead comment. Draft-only — never sent. Backs the Delegate
-// move (alongside the tracker assignment, which the tasks endpoint handles).
+// move (alongside the task assignment, which the tasks endpoint handles).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ graphThreadId: string }> }) {
   try {
     assertFeature('auth');

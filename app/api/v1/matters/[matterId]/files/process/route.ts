@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ matterId: string }> };
 
-/** Logs an existing OneDrive file to the tracker + drafts a gated notification. */
+/** Files an existing OneDrive file into the matter + drafts a gated notification. */
 export async function POST(req: NextRequest, { params }: Ctx) {
   try {
     assertFeature('auth');

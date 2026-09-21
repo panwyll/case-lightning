@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { getMessageAttachment, downloadDriveItem, appendTrackerRow } from '@/lib/server/graph';
+import { getMessageAttachment, downloadDriveItem } from '@/lib/server/graph';
 import { reviewDocument, retrieveMatterContext, upsertChunks } from '@/lib/server/ai';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
@@ -91,10 +91,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       chain_position: string | null;
       exchange_target_date: string | null;
       completion_target_date: string | null;
-      tracker_item_id: string | null;
     }>(
       `select matter_ref, property_address, buyer_names, seller_names, counterparty_solicitor, counterparty_agent,
-              lender, chain_position, exchange_target_date, completion_target_date, tracker_item_id
+              lender, chain_position, exchange_target_date, completion_target_date
        from matter where id = $1 and tenant_id = $2`,
       [matterId, user.tenantId]
     );
@@ -172,17 +171,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         JSON.stringify({ reviewId: inserted!.id, fileName }),
       ]
     );
-
-    if (matter?.tracker_item_id) {
-      await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
-        date: new Date().toISOString().slice(0, 10),
-        type: 'DOC_REVIEW',
-        detail: `${review.documentType}: ${review.summary}`.slice(0, 250),
-        owner: user.displayName ?? user.email,
-        due: '',
-        status: mismatches || highRisks ? 'OPEN' : 'NOTED',
-      }).catch(() => {});
-    }
 
     await upsertChunks({
       tenantId: user.tenantId,

@@ -23,7 +23,7 @@ const subProcessors: Array<[string, string, string, string]> = [
   ['Anthropic (Claude)', 'Drafting, summarising, triage classification', 'Email content and matter facts for the message being worked on', 'USA'],
   ['Groq', 'Call-note transcription; AI failover if Anthropic is unavailable', 'Call audio you record; email content only when failover is active', 'USA'],
   ['Voyage AI or OpenAI', 'Embeddings for case-file search', 'Chunks of matter documents and emails', 'USA'],
-  ['Microsoft', 'Outlook, OneDrive and Excel via Microsoft Graph', 'Stays inside your own Microsoft 365 tenant', 'Your tenant’s region'],
+  ['Microsoft', 'Outlook and OneDrive via Microsoft Graph', 'Stays inside your own Microsoft 365 tenant', 'Your tenant’s region'],
   ['Supabase', 'Application database (Postgres)', 'Matter records, extracted facts, audit log', DB_REGION],
   ['Vercel', 'Application hosting', 'Request data in transit', 'EU/US edge'],
   ['Stripe', 'Subscription billing', 'Billing contact and payment details — we never see card numbers', 'USA / EU'],
@@ -34,7 +34,7 @@ const permissions: Array<[string, string]> = [
   ['Mail.ReadWrite', 'Read the thread you have open and create a draft reply. There is no permission that lets CONVEYi send on its own.'],
   ['Mail.Send', 'Only used when a human clicks Send in the pane, or for a rule your firm has explicitly switched on.'],
   ['MailboxSettings.ReadWrite', 'Create and colour the triage categories (Reply / Action / Delegate) in your mailbox.'],
-  ['Files.ReadWrite', 'Your own OneDrive — the matter folder and Excel tracker. Scoped to /me only.'],
+  ['Files.ReadWrite', 'Your own OneDrive — the matter folder. Scoped to /me only.'],
   ['User.Read', 'Your name and email, to sign you in.'],
   ['Team.ReadBasic.All, ChannelMessage.Send', 'Optional: post a matter summary to a Teams channel. Unused unless you turn it on.'],
 ];
@@ -92,7 +92,7 @@ export default function SecurityPage() {
       <div className="mx-auto max-w-3xl px-6 pb-12">
         <Section id="where" title="Where your data lives">
           <p>
-            CONVEYi is an Outlook add-in, not a portal. Your emails, documents and the Excel tracker stay
+            CONVEYi is an Outlook add-in, not a portal. Your emails and documents stay
             in <strong className="font-semibold text-ink">your own Microsoft 365 tenant</strong> — the mailbox
             and OneDrive you already pay Microsoft for. We do not copy your document library onto our
             servers, and we do not need you to migrate anything to start.
@@ -185,8 +185,8 @@ export default function SecurityPage() {
         <Section id="exit" title="Leaving, and getting your data out">
           <p>
             The awkward question first: if you stop paying, what happens to your files? Very little,
-            because the files were never ours. Your matter folders, saved emails, drafts and Excel
-            trackers are already in your OneDrive and stay exactly where they are.
+            because the files were never ours. Your matter folders, saved emails and drafts are already in your OneDrive and
+            stay exactly where they are.
           </p>
           <p>
             Ask us to delete your account and we remove your firm’s records from our database —

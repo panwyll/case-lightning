@@ -1,15 +1,14 @@
 /**
  * Microsoft Graph access for the signed-in user (delegated). Everything the
  * product touches on the user side lives here: reading the current Outlook
- * thread, creating draft-only replies, and the per-case OneDrive folder + the
- * live Excel tracker. No send endpoint exists by design.
+ * thread, creating draft-only replies, and the per-case OneDrive folder. No send
+ * endpoint exists by design.
  */
 import { Client, GraphError } from '@microsoft/microsoft-graph-client';
 import { queryOne, query } from './db';
 import { tenantSelfAddresses } from './matching';
 import { refreshAccessToken } from './oauth';
 import { config } from './config';
-import { TRACKER_XLSX_BASE64, TRACKER_TABLE } from './tracker-template';
 
 interface UserTokenRow {
   id: string;
@@ -69,11 +68,11 @@ export function describeGraphError(error: unknown): string {
     if (error.statusCode === 401) {
       return `Microsoft Graph denied access to the mailbox${status}. This account has no Graph-readable Outlook/Exchange mailbox — onboarding needs a licensed mailbox it can read.`;
     }
-    // OneDrive/SharePoint provisioning (matter folder + Excel tracker) fails when
+    // OneDrive/SharePoint provisioning (the matter folder) fails when
     // the tenant has no SharePoint Online licence — Graph returns a 400 whose body
     // says "Tenant does not have a SPO license." Give the same actionable hint.
     if (/SPO license|SharePoint/i.test(detail)) {
-      return `Couldn't provision the matter's OneDrive folder / Excel tracker${status}. This account's tenant has no SharePoint Online / OneDrive licence, which CaseLightning needs to store matter files.`;
+      return `Couldn't provision the matter's OneDrive folder${status}. This account's tenant has no SharePoint Online / OneDrive licence, which CaseLightning needs to store matter files.`;
     }
     return `Microsoft Graph request failed${status}${detail ? `: ${detail}` : '.'}`;
   }
@@ -665,7 +664,7 @@ export async function uploadToMatterFolder(
 }
 
 /** Documents the app files for a matter live in a "Case Knowledge Base" subfolder so the
- *  matter root stays tidy (correspondence, the tracker, etc. sit at the top). */
+ *  matter root stays tidy (correspondence etc. sit at the top). */
 export const CASE_KB_FOLDER = 'Case Knowledge Base';
 export function matterKbPath(folderPath: string): string {
   return `${folderPath}/${CASE_KB_FOLDER}`;
@@ -689,16 +688,7 @@ export async function listMatterFiles(userId: string, folderPath: string): Promi
   return result.value ?? [];
 }
 
-// ── Excel case tracker ──────────────────────────────────────────────────────
-
-export interface TrackerRow {
-  date: string;
-  type: string;
-  detail: string;
-  owner: string;
-  due: string;
-  status: string;
-}
+// ── OneDrive files ──────────────────────────────────────────────────────────
 
 /** Uploads (creates or overwrites) a file at a OneDrive path; returns the driveItem. */
 export async function putDriveFile(userId: string, path: string, content: Buffer): Promise<any> {
@@ -741,259 +731,6 @@ export async function getDriveFileByPath(userId: string, path: string): Promise<
   } catch {
     return null; // not found yet (first build) or unreadable — caller treats as "no edits"
   }
-}
-
-/**
- * Ensures Tracker.xlsx exists in the matter folder, seeded from a template that
- * already contains the "TrackerTable" table. Returns the driveItem (id + webUrl).
- */
-export async function ensureExcelTracker(userId: string, folderPath: string): Promise<any> {
-  const client = await graphClientForUser(userId);
-  const path = `${folderPath}/Tracker.xlsx`;
-  try {
-    return await client.api(`/me/drive/root:/${encodePath(path)}`).get();
-  } catch {
-    const buffer = Buffer.from(TRACKER_XLSX_BASE64, 'base64');
-    return client.api(`/me/drive/root:/${encodePath(path)}:/content`).put(buffer);
-  }
-}
-
-/** Appends a row to the tracker's table. itemId is the workbook's driveItem id. */
-export async function appendTrackerRow(userId: string, itemId: string, row: TrackerRow): Promise<void> {
-  await withTrackerWritable(userId, itemId, async () => {
-    const client = await graphClientForUser(userId);
-    await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows`).post({
-      values: [[row.date, row.type, row.detail, row.owner, row.due, row.status]],
-    });
-  });
-}
-
-// ── Two-way task sync ("Jira in Excel") ─────────────────────────────────────
-// The tracker is a live, hand-editable surface, so we address rows by a stable
-// "Ref" cell rather than by position, and map values by HEADER NAME (not column
-// order) — that way a legacy 6-column tracker and an upgraded 7-column one both
-// work, and a column reordered by the user doesn't corrupt writes.
-
-export interface TrackerTaskRow {
-  ref: string;
-  date?: string;
-  type?: string;
-  detail?: string;
-  owner?: string;
-  due?: string;
-  status?: string;
-}
-
-const norm = (s: string) => s.trim().toLowerCase();
-
-async function trackerColumnNames(client: Client, itemId: string): Promise<string[]> {
-  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/columns`).get();
-  return ((res.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
-}
-
-function valuesForColumns(cols: string[], r: TrackerTaskRow): string[] {
-  const byField: Record<string, string> = {
-    ref: r.ref ?? '',
-    date: r.date ?? '',
-    type: r.type ?? '',
-    detail: r.detail ?? '',
-    owner: r.owner ?? '',
-    due: r.due ?? '',
-    status: r.status ?? '',
-  };
-  return cols.map((c) => byField[norm(c)] ?? '');
-}
-
-/** Adds the "Ref" key column to the tracker table if it isn't there yet. */
-export async function ensureTrackerRefColumn(userId: string, itemId: string): Promise<void> {
-  await withTrackerWritable(userId, itemId, async () => {
-    const client = await graphClientForUser(userId);
-    const cols = await trackerColumnNames(client, itemId);
-    if (!cols.some((c) => norm(c) === 'ref')) {
-      await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/columns`).post({ name: 'Ref' });
-    }
-  });
-}
-
-// ── Tracker hardening ───────────────────────────────────────────────────────
-// The tracker is a live, hand-editable surface, but a human renaming/deleting the
-// columns our sync keys off (esp. "Ref"/"Status") would break the two-way link.
-// So we protect the sheet: header row frozen, no column add/remove, Status is a
-// dropdown — while data cells stay editable. Our own writes keep working because
-// every write runs inside withTrackerWritable, which UNPROTECTS → writes → restores
-// the prior protection state. All best-effort: a firm's tenant may disallow sheet
-// protection, and it must never block a write or provisioning.
-const TRACKER_PROTECT_OPTIONS = {
-  allowInsertRows: true,
-  allowDeleteRows: true,
-  allowInsertColumns: false,
-  allowDeleteColumns: false,
-  allowFormatCells: true,
-  allowFormatColumns: true,
-  allowFormatRows: true,
-  allowSort: true,
-  allowAutoFilter: true,
-};
-
-async function trackerWorksheetId(client: Client, itemId: string): Promise<string | null> {
-  try {
-    const ws = await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/worksheet`).get();
-    return (ws?.id as string) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Run a tracker write with the sheet temporarily unprotected, then restore whatever
- * protection it had. This is what lets protection and our API writes coexist — the
- * write always lands on an unprotected sheet, so it can't be blocked. A sheet that
- * wasn't protected (legacy trackers) is left unprotected: we only manage state we set.
- */
-async function withTrackerWritable<T>(userId: string, itemId: string, fn: () => Promise<T>): Promise<T> {
-  const client = await graphClientForUser(userId);
-  const wsId = await trackerWorksheetId(client, itemId);
-  let wasProtected = false;
-  if (wsId) {
-    try {
-      const prot = await client.api(`/me/drive/items/${itemId}/workbook/worksheets/${wsId}/protection`).get();
-      wasProtected = !!prot?.protected;
-      if (wasProtected) await client.api(`/me/drive/items/${itemId}/workbook/worksheets/${wsId}/protection/unprotect`).post({});
-    } catch {
-      wasProtected = false; // couldn't read/unprotect → treat as unprotected, just write
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    if (wsId && wasProtected) {
-      await client
-        .api(`/me/drive/items/${itemId}/workbook/worksheets/${wsId}/protection/protect`)
-        .post({ options: TRACKER_PROTECT_OPTIONS })
-        .catch(() => {});
-    }
-  }
-}
-
-/**
- * Harden a matter's tracker (called once at provisioning): freeze the header row so the
- * keyed columns can't be renamed, forbid adding/removing columns, and constrain Status
- * to a dropdown of the exact labels we write. Data cells stay editable. Idempotent and
- * best-effort — if the tenant disallows protection the tracker still works, unhardened.
- */
-export async function hardenTracker(userId: string, itemId: string): Promise<void> {
-  const client = await graphClientForUser(userId);
-  try {
-    await ensureTrackerRefColumn(userId, itemId).catch(() => {}); // Ref must exist before we forbid column adds
-    const wsId = await trackerWorksheetId(client, itemId);
-    if (!wsId) return;
-    const t = `/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}`;
-    const ws = `/me/drive/items/${itemId}/workbook/worksheets/${wsId}`;
-    await client.api(`${ws}/protection/unprotect`).post({}).catch(() => {});
-    await client.api(`${t}/dataBodyRange/format/protection`).patch({ locked: false }).catch(() => {}); // data editable
-    await client.api(`${t}/headerRowRange/format/protection`).patch({ locked: true }).catch(() => {}); // header frozen
-    const cols = await trackerColumnNames(client, itemId).catch(() => [] as string[]);
-    const statusCol = cols.find((c) => norm(c) === 'status');
-    if (statusCol) {
-      await client
-        .api(`${t}/columns/${encodeURIComponent(statusCol)}/dataBodyRange/dataValidation`)
-        .patch({ rule: { list: { inCellDropDown: true, source: '"Open,In progress,Done,Noted"' } } })
-        .catch(() => {});
-    }
-    await client.api(`${ws}/protection/protect`).post({ options: TRACKER_PROTECT_OPTIONS });
-  } catch {
-    /* protection unsupported / disallowed by the tenant — the tracker still works */
-  }
-}
-
-/** Reads every tracker row, mapped by header — used to reconcile hand edits back. */
-export async function listTrackerRows(userId: string, itemId: string): Promise<Array<TrackerTaskRow & { rowIndex: number }>> {
-  const client = await graphClientForUser(userId);
-  const cols = (await trackerColumnNames(client, itemId)).map(norm);
-  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${TRACKER_TABLE}/rows`).get();
-  const at = (vals: any[], name: string) => {
-    const i = cols.indexOf(name);
-    return i >= 0 ? String(vals[i] ?? '') : '';
-  };
-  return ((res.value ?? []) as any[]).map((row) => {
-    const vals = (row.values?.[0] ?? []) as any[];
-    return {
-      rowIndex: row.index as number,
-      ref: at(vals, 'ref'),
-      date: at(vals, 'date'),
-      type: at(vals, 'type'),
-      detail: at(vals, 'detail'),
-      owner: at(vals, 'owner'),
-      due: at(vals, 'due'),
-      status: at(vals, 'status'),
-    };
-  });
-}
-
-/**
- * Upserts a tracker row keyed by `ref`: patches the matching row, else appends.
- *
- * The whole ensure-column → list → patch/append runs inside ONE workbook session
- * so the row index we read is the index we write — without the session, a row
- * inserted/deleted (by another writer or a human editing the sheet) between the
- * list and the patch would shift indices and we'd overwrite the wrong row. The
- * caller also serialises these per matter (see tasks.ts), so app writers can't
- * collide; the session closes the remaining window against live human edits.
- */
-export async function upsertTrackerRowByRef(userId: string, itemId: string, r: TrackerTaskRow): Promise<void> {
-  await withTrackerWritable(userId, itemId, async () => {
-    const client = await graphClientForUser(userId);
-    const wb = `/me/drive/items/${itemId}/workbook`;
-    const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
-    const sid = session.id as string;
-    try {
-      const colsRes = await client.api(`${wb}/tables/${TRACKER_TABLE}/columns`).header('workbook-session-id', sid).get();
-      let names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
-      if (!names.some((n) => norm(n) === 'ref')) {
-        await client.api(`${wb}/tables/${TRACKER_TABLE}/columns`).header('workbook-session-id', sid).post({ name: 'Ref' });
-        names = [...names, 'Ref'];
-      }
-      const values = valuesForColumns(names, r);
-      const refIdx = names.map(norm).indexOf('ref');
-      const rowsRes = await client.api(`${wb}/tables/${TRACKER_TABLE}/rows`).header('workbook-session-id', sid).get();
-      const match = ((rowsRes.value ?? []) as any[]).find((row) => String((row.values?.[0] ?? [])[refIdx] ?? '') === r.ref);
-      if (match) {
-        await client.api(`${wb}/tables/${TRACKER_TABLE}/rows/itemAt(index=${match.index})`).header('workbook-session-id', sid).patch({ values: [values] });
-      } else {
-        await client.api(`${wb}/tables/${TRACKER_TABLE}/rows`).header('workbook-session-id', sid).post({ values: [values] });
-      }
-    } finally {
-      await client.api(`${wb}/closeSession`).header('workbook-session-id', sid).post({}).catch(() => {});
-    }
-  });
-}
-
-// ── Generic workbook table (the master board updates rows in place, live) ────
-
-/** Reads every row of a named table, mapped by header — works while the file is open. */
-/** The table's column names, in order — used to detect a stale board schema. */
-export async function getTableColumns(userId: string, itemId: string, table: string): Promise<string[]> {
-  const client = await graphClientForUser(userId);
-  const res = await client.api(`/me/drive/items/${itemId}/workbook/tables/${table}/columns`).get();
-  return ((res.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
-}
-
-export async function listTableRows(
-  userId: string,
-  itemId: string,
-  table: string
-): Promise<Array<{ rowIndex: number; cells: Record<string, string> }>> {
-  const client = await graphClientForUser(userId);
-  const wb = `/me/drive/items/${itemId}/workbook`;
-  const colsRes = await client.api(`${wb}/tables/${table}/columns`).get();
-  const names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
-  const rowsRes = await client.api(`${wb}/tables/${table}/rows`).get();
-  return ((rowsRes.value ?? []) as any[]).map((row) => {
-    const vals = (row.values?.[0] ?? []) as any[];
-    const cells: Record<string, string> = {};
-    names.forEach((n, i) => (cells[n] = String(vals[i] ?? '')));
-    return { rowIndex: row.index as number, cells };
-  });
 }
 
 // ── Microsoft To Do (the native-task sync spoke) ────────────────────────────
@@ -1060,70 +797,6 @@ export async function todoListDelta(
     return { tasks, deltaLink: null };
   } catch {
     return { tasks, deltaLink: null };
-  }
-}
-
-/**
- * Upserts many rows into a named table in ONE workbook session, keyed by a
- * column. Updating table rows via the workbook API co-authors with an open file
- * (no 423), so the board updates live while someone has it open.
- */
-export async function upsertTableRowsByKey(
-  userId: string,
-  itemId: string,
-  table: string,
-  keyColumn: string,
-  items: Array<{ key: string; values: Record<string, string | number> }>
-): Promise<void> {
-  if (!items.length) return;
-  const client = await graphClientForUser(userId);
-  const wb = `/me/drive/items/${itemId}/workbook`;
-  const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
-  const sid = session.id as string;
-  const h = (req: any) => req.header('workbook-session-id', sid);
-  try {
-    const colsRes = await h(client.api(`${wb}/tables/${table}/columns`)).get();
-    const names = ((colsRes.value ?? []) as any[]).sort((a, b) => a.index - b.index).map((c) => c.name as string);
-    const keyIdx = names.findIndex((n) => norm(n) === norm(keyColumn));
-    const rowsRes = await h(client.api(`${wb}/tables/${table}/rows`)).get();
-    const indexByKey = new Map<string, number>();
-    for (const row of (rowsRes.value ?? []) as any[]) {
-      indexByKey.set(String((row.values?.[0] ?? [])[keyIdx] ?? ''), row.index as number);
-    }
-    for (const it of items) {
-      const valuesArr = names.map((n) => (it.values[n] === undefined ? '' : it.values[n]));
-      const idx = indexByKey.get(it.key);
-      if (idx !== undefined) {
-        await h(client.api(`${wb}/tables/${table}/rows/itemAt(index=${idx})`)).patch({ values: [valuesArr] });
-      } else {
-        await h(client.api(`${wb}/tables/${table}/rows`)).post({ values: [valuesArr] });
-      }
-    }
-  } finally {
-    await h(client.api(`${wb}/closeSession`)).post({}).catch(() => {});
-  }
-}
-
-/** Sets the fill colour of individual cells, in one session (co-authors live). */
-export async function setRangeFills(
-  userId: string,
-  sheet: string,
-  itemId: string,
-  fills: Array<{ address: string; argb: string }>
-): Promise<void> {
-  if (!fills.length) return;
-  const client = await graphClientForUser(userId);
-  const wb = `/me/drive/items/${itemId}/workbook`;
-  const session = await client.api(`${wb}/createSession`).post({ persistChanges: true });
-  const sid = session.id as string;
-  const h = (req: any) => req.header('workbook-session-id', sid);
-  try {
-    for (const f of fills) {
-      const hex = `#${f.argb.slice(-6)}`; // 'FFD7F0E1' → '#D7F0E1'
-      await h(client.api(`${wb}/worksheets('${sheet}')/range(address='${f.address}')/format/fill`)).patch({ color: hex });
-    }
-  } finally {
-    await h(client.api(`${wb}/closeSession`)).post({}).catch(() => {});
   }
 }
 

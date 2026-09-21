@@ -7,7 +7,7 @@ import { EnginePanel } from '../shared/engine/EnginePanel';
 /**
  * Slide-over matter detail for the board — click a card to open it. Reuses the existing
  * matter endpoints: GET /matters/[id] (facts, outstanding, risks, timeline, parties),
- * /files (the OneDrive filestore) and /tasks (the to-do list, mirrored to Tracker.xlsx).
+ * /files (the OneDrive filestore) and /tasks (the to-do list).
  * Stage / status / owner stay editable here via the same onPatch the board uses, so an
  * edit in the drawer updates the card underneath.
  */

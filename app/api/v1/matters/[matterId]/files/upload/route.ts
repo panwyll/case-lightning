@@ -18,7 +18,7 @@ type Ctx = { params: Promise<{ matterId: string }> };
 const MAX_B64 = 14_000_000;
 
 /**
- * Uploads a file into the matter's OneDrive folder, then logs it to the tracker
+ * Uploads a file into the matter's OneDrive folder, then files it
  * and drafts a gated notification (same pipeline as a file that arrived another
  * way). The upload is the natural "the file system changed" trigger.
  */

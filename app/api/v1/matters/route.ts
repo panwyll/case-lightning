@@ -62,7 +62,6 @@ export async function POST(req: NextRequest) {
       id: created.id,
       folderPath: created.folderPath,
       folderWebUrl: created.folderWebUrl,
-      trackerWebUrl: created.trackerWebUrl,
     });
   } catch (error) {
     return fail(error);

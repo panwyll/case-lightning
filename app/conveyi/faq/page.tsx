@@ -16,7 +16,7 @@ const faqs = [
   },
   {
     q: 'Do we have to move our files or learn a new system?',
-    a: 'No. That’s the whole point. CONVEYi works inside Outlook, files into your existing OneDrive, and keeps a tracker in Excel. There’s no migration, no new login, and no “portal” to learn — if your team can use Outlook, they can use CONVEYi today.',
+    a: 'No. That’s the whole point. CONVEYi works inside Outlook, files into your existing OneDrive, and keeps every case on a live board. There’s no migration, no new login, and no “portal” to learn — if your team can use Outlook, they can use CONVEYi today.',
   },
   {
     q: 'How long does setup take?',
@@ -24,7 +24,7 @@ const faqs = [
   },
   {
     q: 'Where do the case files actually live?',
-    a: 'Each matter gets its own folder in your OneDrive, with a live Excel tracker for parties, key dates and outstanding tasks. You can open and edit them like any other file — CONVEYi just keeps them current for you.',
+    a: 'Each matter gets its own folder in your OneDrive for its documents, and a live case record in CONVEYi for parties, key dates and outstanding tasks. You can open and edit the files like any other — CONVEYi just keeps the record current for you.',
   },
   {
     q: 'Will it send emails to clients on its own?',
@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'What’s the difference between the Go, Pro and Firm plans?',
-    a: 'Every plan has the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, the OneDrive knowledge base and the Excel tracker. What changes is headroom and seats. Go (£200/month) meters you: a monthly email allowance and a small AI document allowance, enough to see what it does to your week. Pro (£500/month) takes the limits off — unlimited email volume and a far larger document allowance, for one fee earner running a full caseload. Firm (£1,000/month, three seats included then £59 a seat) is the only plan with more than one seat, and adds the team layer: a matter board, a workload dashboard, matter assignment and admin oversight.',
+    a: 'Every plan has the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, the OneDrive knowledge base and the case board. What changes is headroom and seats. Go (£200/month) meters you: a monthly email allowance and a small AI document allowance, enough to see what it does to your week. Pro (£500/month) takes the limits off — unlimited email volume and a far larger document allowance, for one fee earner running a full caseload. Firm (£1,000/month, three seats included then £59 a seat) is the only plan with more than one seat, and adds the team layer: a matter board, a workload dashboard, matter assignment and admin oversight.',
   },
   {
     q: 'What if it doesn’t work for us?',

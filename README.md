@@ -1,6 +1,6 @@
 # CaseLightning
 
-Case-aware AI email drafting and AI case management for UK conveyancers — **inside Outlook**. Zero install, no new portal: the work happens in Outlook, the per-case knowledge base is a OneDrive folder, and the live tracker is an Excel file. The user never leaves Microsoft 365.
+Case-aware AI email drafting and AI case management for UK conveyancers — **inside Outlook**. Zero install, no new portal: the work happens in Outlook, the per-case knowledge base is a OneDrive folder, and the live case record is in the app (board, worklist, engine). file. The user never leaves Microsoft 365.
 
 This single Next.js app serves three things:
 
@@ -11,7 +11,7 @@ This single Next.js app serves three things:
 ### Architecture at a glance
 
 - **Backend (invisible to users):** Supabase Postgres + `pgvector` holds matter metadata, RAG vectors and an audit log. Accessed via `lib/server/*`.
-- **User-facing storage:** each matter gets a OneDrive folder + `Tracker.xlsx`, written through Microsoft Graph.
+- **User-facing storage:** each matter gets a OneDrive folder, written through Microsoft Graph; tasks, stage and status live in Postgres and the app.
 - **Identity:** Microsoft Entra OAuth; JWT cookie session (`jose`). Strict tenant + matter isolation; every action is audited; replies are **draft-only — there is no send endpoint**.
 - **AI:** Claude (`@anthropic-ai/sdk`, default `claude-opus-4-8`) for summarise / extract / draft via forced tool-use structured outputs. Embeddings are pluggable (Voyage default, OpenAI optional); RAG degrades gracefully when no embeddings key is set.
 
@@ -114,7 +114,7 @@ against LEAP's registration-gated API reference. `npm run leap:mock` runs a stan
 
 ### End-to-end flow (UAT)
 
-Open a thread → **New matter** (a OneDrive folder + `Tracker.xlsx` appear in your OneDrive) → **Summarise** → **Extract facts** (tracker updates) → **Draft reply** (Claude) → **Create Outlook draft** (lands in Drafts, never sent) → **Save to matter** (email saved to the OneDrive folder).
+Open a thread → **New matter** (a OneDrive folder appears in your OneDrive) → **Summarise** → **Extract facts** (timeline and tasks update) → **Draft reply** (Claude) → **Create Outlook draft** (lands in Drafts, never sent) → **Save to matter** (email saved to the OneDrive folder).
 
 ## Deploying to Vercel
 

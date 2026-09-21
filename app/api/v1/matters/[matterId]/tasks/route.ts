@@ -9,7 +9,7 @@ import { ok, fail } from '@/lib/server/http';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** A matter's task board — reconciles live Excel edits, then returns the tasks. */
+/** A matter's task board — reconciles To Do edits, then returns the tasks. */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
     assertFeature('auth');
@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
   }
 }
 
-/** Create a task; it's written to Postgres and mirrored into Tracker.xlsx. */
+/** Create a task (Postgres; pushed to the assignee's To Do where consented). */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
     assertFeature('auth');

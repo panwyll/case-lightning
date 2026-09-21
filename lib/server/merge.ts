@@ -6,11 +6,10 @@
  * have uniqueness constraints (identifiers, contacts). The merged-away matter is
  * NOT deleted — it's marked status='MERGED' with merged_into pointing at the
  * survivor, so audit history and its OneDrive folder stay reachable. Files are
- * left in place (v1); a timeline event + tracker note on the survivor record the
+ * left in place (v1); a timeline event on the survivor records the
  * merge and link to the old folder.
  */
 import { transaction, queryOne } from './db';
-import { appendTrackerRow } from './graph';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import type { SessionUser } from './types';
@@ -31,7 +30,6 @@ interface MatterLite {
   id: string;
   matter_ref: string;
   folder_web_url: string | null;
-  tracker_item_id: string | null;
 }
 
 export interface MergeResult {
@@ -45,12 +43,12 @@ export async function mergeMatters(user: SessionUser, keepId: string, mergeId: s
 
   const tenantId = user.tenantId;
   const keep = await queryOne<MatterLite>(
-    `select id, matter_ref, folder_web_url, tracker_item_id from matter
+    `select id, matter_ref, folder_web_url from matter
      where id = $1 and tenant_id = $2 and status <> 'MERGED'`,
     [keepId, tenantId]
   );
   const merge = await queryOne<MatterLite>(
-    `select id, matter_ref, folder_web_url, tracker_item_id from matter
+    `select id, matter_ref, folder_web_url from matter
      where id = $1 and tenant_id = $2 and status <> 'MERGED'`,
     [mergeId, tenantId]
   );
@@ -110,17 +108,7 @@ export async function mergeMatters(user: SessionUser, keepId: string, mergeId: s
     await c.query(`update matter set status = 'MERGED', merged_into = $1, updated_at = now() where id = $2`, [keepId, mergeId]);
   });
 
-  // Best-effort: note the merge on the survivor's Excel case log, and audit it.
-  if (keep.tracker_item_id) {
-    await appendTrackerRow(await driveUserFor(user.tenantId, keep.id, user.userId), keep.tracker_item_id, {
-      date: new Date().toISOString().slice(0, 10),
-      type: 'Merge',
-      detail: `Merged in ${merge.matter_ref}${merge.folder_web_url ? ` — old folder: ${merge.folder_web_url}` : ''}`,
-      owner: user.displayName ?? user.email ?? '',
-      due: '',
-      status: 'Done',
-    }).catch(() => {});
-  }
+  // Audit it.
   await writeAudit({
     tenantId,
     matterId: keepId,

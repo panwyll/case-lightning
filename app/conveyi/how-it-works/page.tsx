@@ -4,7 +4,7 @@ import { ctaHref, ROUTES, Cta, NavHeader, SiteFooter } from '../../_components/s
 export const metadata: Metadata = {
   title: 'How it works — CONVEYi',
   description:
-    'CONVEYi works inside Outlook. Point it at a case thread and it summarises, drafts the reply, files to OneDrive and updates your Excel tracker — no new portal, no onboarding.',
+    'CONVEYi works inside Outlook. Point it at a case thread and it summarises, drafts the reply, files to OneDrive and keeps the case board current — no new portal, no onboarding.',
 };
 
 const PAGE_SOURCE = 'how_it_works';
@@ -28,7 +28,7 @@ const steps = [
   {
     n: '04',
     title: 'Everything filed, automatically',
-    body: 'The email and its attachments are saved to the case’s OneDrive folder, and the live Excel tracker is updated — so nothing gets lost and nobody re-keys anything.',
+    body: 'The email and its attachments are saved to the case’s OneDrive folder, and the case board is updated — so nothing gets lost and nobody re-keys anything.',
   },
 ];
 

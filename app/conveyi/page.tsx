@@ -12,7 +12,7 @@ import { PanelCarousel } from '../_components/PanelCarousel';
 export const metadata: Metadata = {
   title: 'CONVEYi — AI for conveyancers. Inside Outlook. | Case Lightning',
   description:
-    '99% of conveyancing is email, updates and chasing. CONVEYi handles it — inside Outlook, on your OneDrive, in your Excel tracker. GDPR-compliant. Zero onboarding. A Case Lightning product.',
+    '99% of conveyancing is email, updates and chasing. CONVEYi handles it — inside Outlook, on your OneDrive. GDPR-compliant. Zero onboarding. A Case Lightning product.',
 };
 
 const PAGE_SOURCE = 'landing';
@@ -41,7 +41,7 @@ const panels: Array<{ src: string; alt: string }> = [
   },
   {
     src: '/product/pane-5.png',
-    alt: 'The matter’s files in the firm’s own OneDrive — a live Excel tracker plus the draft contract, EPC and TA10 form filed from email, and a generated client care letter.',
+    alt: 'The matter’s files in the firm’s own OneDrive — the draft contract, EPC and TA10 form filed from email, and a generated client care letter.',
   },
 ];
 

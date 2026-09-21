@@ -92,7 +92,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
     let failed = 0;
     try {
       // The server creates a slice per call (each matter provisions a OneDrive
-      // folder and tracker), so loop until it reports nothing remaining.
+      // folder), so loop until it reports nothing remaining.
       for (let offset = 0, guard = 0; guard < 100; guard++) {
         const r = await api<{ created: number; failed: any[]; done: number; total: number; remaining: number }>(
           '/matters/import',
@@ -208,7 +208,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
               : `Import ${preview.importable} matter${preview.importable === 1 ? '' : 's'}`}
           </button>
           <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 6 }}>
-            Each one gets its own OneDrive folder and tracker, so this takes a moment.
+            Each one gets its own OneDrive folder, so this takes a moment.
           </div>
         </div>
       )}

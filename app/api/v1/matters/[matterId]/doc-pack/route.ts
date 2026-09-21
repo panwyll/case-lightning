@@ -17,7 +17,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { isPremiumTenant, canUseHeavyLlm, assertEntitled } from '@/lib/server/plan';
 import { queryOne } from '@/lib/server/db';
-import { listMatterFiles, uploadToMatterFolder, appendTrackerRow } from '@/lib/server/graph';
+import { listMatterFiles, uploadToMatterFolder } from '@/lib/server/graph';
 import {
   listTenantTemplates,
   generateTemplateForMatter,
@@ -60,8 +60,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
 
-    const matter = await queryOne<{ folder_path: string | null; tracker_item_id: string | null }>(
-      `select folder_path, tracker_item_id from matter where id = $1 and tenant_id = $2`,
+    const matter = await queryOne<{ folder_path: string | null }>(
+      `select folder_path from matter where id = $1 and tenant_id = $2`,
       [matterId, user.tenantId]
     );
     if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned.'));
@@ -99,18 +99,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     const { buffer } = await generateTemplateForMatter(user, matterId, body.templateId, useAi);
 
     const uploaded = await uploadToMatterFolder(await driveUserFor(user.tenantId, matterId, user.userId), matter.folder_path, fileName, buffer);
-
-    // Log to the tracker as a generated document — not an arrival, so no review/draft.
-    if (matter.tracker_item_id) {
-      await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
-        date: new Date().toISOString().slice(0, 10),
-        type: 'Document',
-        detail: `Generated from template: ${tplRow.name}`,
-        owner: user.displayName ?? user.email ?? '',
-        due: '',
-        status: 'Done',
-      }).catch(() => {});
-    }
 
     return ok({ file: { id: uploaded.id, name: fileName, webUrl: uploaded.webUrl ?? null }, capped });
   } catch (error) {

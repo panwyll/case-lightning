@@ -22,7 +22,7 @@ const tiers = [
       'Auto-triage incoming mail, matched to the right case',
       'Auto-rules: file, tag & draft on routine updates',
       'AI document packs — a taste, not a workhorse',
-      'Per-case OneDrive knowledge base & live Excel tracker',
+      'Per-case OneDrive knowledge base & live case board',
       'Monthly limits on email volume and AI documents',
     ],
     cta: 'pricing_go',

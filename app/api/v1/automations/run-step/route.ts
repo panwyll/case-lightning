@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         step: z.object({
           type: z.enum([
             'CREATE_MATTER', 'GENERATE_DOCS', 'CREATE_TASK', 'DRAFT_REPLY',
-            'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY', 'TAG', 'APPEND_TRACKER', 'ASSIGN',
+            'ARCHIVE_MATTER', 'DELEGATE', 'NOTIFY', 'TAG', 'ASSIGN',
           ]),
           config: z.record(z.any()).default({}),
         }),

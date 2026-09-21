@@ -33,7 +33,7 @@ const permissionAsks: Array<[string, string]> = [
   ['Read and write your mail', 'To read the thread you have open and put a draft reply in your Drafts folder.'],
   ['Send mail as you', 'Only when you click Send. Nothing is sent without a person deciding to send it.'],
   ['Read and write your mailbox settings', 'To create the Reply / Action / Delegate categories in your mailbox.'],
-  ['Read and write your files', 'Your own OneDrive only — the matter folder and the Excel tracker.'],
+  ['Read and write your files', 'Your own OneDrive only — the matter folder.'],
 ];
 
 export default function GetStartedPage() {

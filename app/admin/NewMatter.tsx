@@ -74,7 +74,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
       onCreated(created.id);
     } catch (e: any) {
       setErr(e?.message?.includes('graph') || e?.message?.toLowerCase?.().includes('token')
-        ? 'Creating a matter provisions its OneDrive folder + Excel tracker, so you need Outlook connected first (open the CONVEYi add-in once to connect).'
+        ? 'Creating a matter provisions its OneDrive folder, so you need Outlook connected first (open the CONVEYi add-in once to connect).'
         : (e?.message || 'Could not create the matter.'));
     } finally { setBusy(false); }
   };

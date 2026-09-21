@@ -346,8 +346,6 @@ export const S: Record<string, React.CSSProperties> = {
   trkH: { textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: '#64748b', padding: '6px 8px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' },
   trkC: { fontSize: 12, color: '#0f172a', padding: '6px 8px', borderBottom: '1px solid #f1f5f9', verticalAlign: 'top' },
   pillBtn: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none' },
-  // Light, tidy board links (Team tracker / Case log) — equal width when stacked.
-  boardBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, padding: '5px 12px', background: '#f5f3ff', color: '#5A27E0', border: '1px solid #ddd6fe', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'none', whiteSpace: 'nowrap' },
   // Quick-action buttons (Delegate / Notify) — white on purple.
   quickAct: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px 10px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer' },
   // Borderless icon button (e.g. the status refresh) — no boxy outline.

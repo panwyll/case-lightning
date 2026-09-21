@@ -9,7 +9,7 @@
 import { query } from './db';
 import { emitMatterEvent } from './events';
 
-export type FigureSource = 'MANUAL' | 'AI_EMAIL' | 'AI_DOC' | 'IMPORT' | 'TRACKER';
+export type FigureSource = 'MANUAL' | 'AI_EMAIL' | 'AI_DOC' | 'IMPORT';
 
 export interface FigureChange {
   field: string;
@@ -97,8 +97,7 @@ export async function recordFigureChanges(input: {
     input.source === 'MANUAL' ? 'edited by hand'
     : input.source === 'AI_EMAIL' ? 'read from an email'
     : input.source === 'AI_DOC' ? 'read from a document'
-    : input.source === 'IMPORT' ? 'from import'
-    : 'from the tracker';
+    : 'from import';
   const lines = real.map((c) => `${c.label}: ${c.oldValue || '—'} → ${c.newValue || '—'}`).join('\n');
   await emitMatterEvent({
     tenantId: input.tenantId,

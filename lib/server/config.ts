@@ -47,7 +47,7 @@ export const config = {
   //    (create/colour the Reply/Action/Delegate tags). Without it Outlook still
   //    lets us stamp category names onto a message via Mail.ReadWrite, but it
   //    auto-creates them colourless — so triage tags would show up with no colour.
-  //  - Files.ReadWrite is the user's own OneDrive (matter folder + Excel tracker).
+  //  - Files.ReadWrite is the user's own OneDrive (the matter folder).
   //    We deliberately do NOT request Files.ReadWrite.All / Sites.ReadWrite.All —
   //    nothing touches other users' files or SharePoint sites (all /me/drive).
   //  - Team.ReadBasic.All + ChannelMessage.Send back the optional "post summary

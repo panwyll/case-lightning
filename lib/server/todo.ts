@@ -2,8 +2,8 @@
  * Microsoft To Do spoke of the task sync (docs/two-way-sync-design.md).
  *
  * Postgres `matter_task` is the hub. Here we PUSH a task into the assignee's To Do
- * (their personal mailbox) and PULL their To Do edits back — the third surface next
- * to our views and the Excel tracker. Everything is best-effort and gated on the
+ * (their personal mailbox) and PULL their To Do edits back — the second surface next
+ * to our views. Everything is best-effort and gated on the
  * Tasks.ReadWrite scope: with no consent every call is a silent no-op, so this is
  * dormant (and safe) until the firm re-consents.
  */
@@ -102,7 +102,7 @@ export async function flushUnsyncedTasksToTodo(user: SessionUser, opts: { max?: 
 /**
  * Pull a user's To Do edits back into matter_task, keyed by todo_task_id. Applies a
  * status change only if the To Do task changed AFTER our last confirmed push
- * (last-write-wins, the same guard the Excel spoke uses), so our own echoes are
+ * (last-write-wins), so our own echoes are
  * ignored. Stores the delta cursor for next time. Best-effort.
  */
 export async function syncFromTodo(userId: string): Promise<void> {

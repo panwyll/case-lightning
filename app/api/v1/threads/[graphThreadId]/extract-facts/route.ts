@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { listThreadMessages, appendTrackerRow } from '@/lib/server/graph';
+import { listThreadMessages } from '@/lib/server/graph';
 import { extractFacts, upsertChunks } from '@/lib/server/ai';
 import { threadToText } from '@/lib/server/text';
 import { writeAudit } from '@/lib/server/audit';
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
     const body = z.object({ matterId: z.string().uuid().optional(), conversationId: z.string().optional() }).parse(await req.json());
 
     // A matter is optional. With one linked we persist the extraction into the
-    // matter summary, timeline, RAG chunks and Excel tracker; without one we
+    // matter summary, timeline and RAG chunks; without one we
     // still run the extraction and return it for display, but persist nothing
     // (there is nowhere to put it).
     if (body.matterId) await assertMatterAccess(user, body.matterId);
@@ -106,34 +106,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         metadata: { graphThreadId, conversationId },
       });
 
-      // Reflect the freshly-extracted state into the user's Excel tracker.
-      const matter = await queryOne<{ tracker_item_id: string | null }>(
-        `select tracker_item_id from matter where id = $1 and tenant_id = $2`,
-        [body.matterId, user.tenantId]
-      );
-      if (matter?.tracker_item_id) {
-        const today = new Date().toISOString().slice(0, 10);
-        for (const item of extracted.timeline) {
-          await appendTrackerRow(await driveUserFor(user.tenantId, body.matterId, user.userId), matter.tracker_item_id, {
-            date: today,
-            type: 'UPDATE',
-            detail: `${item.title}: ${item.details}`.slice(0, 250),
-            owner: '',
-            due: '',
-            status: 'NOTED',
-          }).catch(() => {});
-        }
-        for (const o of extracted.outstanding) {
-          await appendTrackerRow(await driveUserFor(user.tenantId, body.matterId, user.userId), matter.tracker_item_id, {
-            date: today,
-            type: 'OUTSTANDING',
-            detail: String(o).slice(0, 250),
-            owner: '',
-            due: '',
-            status: 'OPEN',
-          }).catch(() => {});
-        }
-      }
     }
 
     await writeAudit({

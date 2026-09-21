@@ -1,8 +1,8 @@
 /**
- * Logging a matter file to the tracker, with a rationally-gated "we now hold X"
- * draft notification. Shared by the process-existing-file and upload paths.
+ * Logging a matter file (document record, RAG index, timeline), with a rationally-gated
+ * "we now hold X" draft notification. Shared by the process-existing-file and upload paths.
  *
- * Gating: the tracker is ALWAYS updated (a real file landed), but the draft is
+ * Gating: the file is ALWAYS recorded (a real file landed), but the draft is
  * only created for files we can actually read and confirm carry substantive
  * content (PDFs, via Claude). Unreadable types (e.g. .docx) and empty/placeholder
  * files are logged and flagged for a human — so an empty contract.docx never
@@ -11,7 +11,7 @@
 import crypto from 'node:crypto';
 import PizZip from 'pizzip';
 import { query, queryOne } from './db';
-import { downloadDriveItem, appendTrackerRow, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
+import { downloadDriveItem, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
 import { stripHtml } from './text';
@@ -23,7 +23,6 @@ import { ingestFiledDocument } from './engine/ingest-hook';
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
 export interface ProcessFileResult {
-  trackerUpdated: boolean;
   documentType: string | null;
   substantive: boolean;
   drafted: boolean;
@@ -38,11 +37,10 @@ export async function processMatterFile(
 ): Promise<ProcessFileResult> {
   const matter = await queryOne<{
     folder_path: string | null;
-    tracker_item_id: string | null;
     matter_ref: string;
     property_address: string | null;
   }>(
-    `select folder_path, tracker_item_id, matter_ref, property_address from matter where id = $1 and tenant_id = $2`,
+    `select folder_path, matter_ref, property_address from matter where id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
   if (!matter) throw new Error('Matter not found');
@@ -122,21 +120,6 @@ export async function processMatterFile(
     if (doc?.id) await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => {});
   }
 
-  // Always reflect the arrival in the Excel tracker. Written as the matter's drive
-  // owner, since the tracker is a file inside the matter folder.
-  let trackerUpdated = false;
-  if (matter.tracker_item_id) {
-    await appendTrackerRow(await driveUserFor(user.tenantId, matterId, user.userId), matter.tracker_item_id, {
-      date: new Date().toISOString().slice(0, 10),
-      type: documentType || 'Document',
-      detail: `Received file: ${opts.fileName}${substantive ? '' : readable ? ' (appears empty/uninformative)' : ''}`,
-      owner: '',
-      due: '',
-      status: 'NOTED',
-    }).catch(() => {});
-    trackerUpdated = true;
-  }
-
   // Gate the notification: only draft for files we read and confirmed substantive.
   let drafted = false;
   let draftSubject: string | null = null;
@@ -174,11 +157,10 @@ export async function processMatterFile(
     actorUserId: user.userId,
     actionType: 'FILE_PROCESSED',
     actionStatus: 'SUCCESS',
-    payload: { fileName: opts.fileName, documentType, readable, substantive, trackerUpdated, drafted },
+    payload: { fileName: opts.fileName, documentType, readable, substantive, drafted },
   });
 
   return {
-    trackerUpdated,
     documentType: documentType || null,
     substantive,
     drafted,
@@ -186,8 +168,8 @@ export async function processMatterFile(
     reason: substantive
       ? null
       : readable
-      ? 'File looks empty or uninformative — logged to the tracker, no notification drafted.'
-      : 'This file type can’t be auto-read — logged to the tracker; draft an update manually if needed.',
+      ? 'File looks empty or uninformative — filed, no notification drafted.'
+      : 'This file type can’t be auto-read — filed; draft an update manually if needed.',
   };
 }
 
@@ -372,7 +354,7 @@ export async function attachmentGroundTruth(
 
 /**
  * Auto-saves a matched email's attachments into the matter's OneDrive folder
- * (records each as a document + RAG chunk, and notes the save on the tracker).
+ * (records each as a document + RAG chunk).
  * Called from the triage webhook when an incoming email matches a matter — so
  * "docs received by email on matched cases" always land in the folder without a
  * manual step. Idempotent on (matter, file name); best-effort. Returns the count.
@@ -383,8 +365,8 @@ export async function saveEmailAttachmentsToMatter(
   messageId: string,
   subject?: string
 ): Promise<number> {
-  const matter = await queryOne<{ folder_path: string | null; tracker_item_id: string | null }>(
-    `select folder_path, tracker_item_id from matter where id = $1 and tenant_id = $2`,
+  const matter = await queryOne<{ folder_path: string | null }>(
+    `select folder_path from matter where id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
   if (!matter?.folder_path) return 0;
@@ -441,18 +423,6 @@ export async function saveEmailAttachmentsToMatter(
     }).catch(() => {});
     saved += 1;
     savedNames.push(att.name);
-  }
-
-  if (saved > 0 && matter.tracker_item_id) {
-    // Same drive as the folder — the tracker is a file inside it.
-    await appendTrackerRow(driveUser, matter.tracker_item_id, {
-      date: new Date().toISOString().slice(0, 10),
-      type: 'DOC_SAVED',
-      detail: `Auto-saved ${saved} attachment(s) from email: ${subject ?? ''}`.slice(0, 250),
-      owner: '',
-      due: '',
-      status: 'DONE',
-    }).catch(() => {});
   }
 
   if (saved > 0) {

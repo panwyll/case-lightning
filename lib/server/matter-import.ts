@@ -199,7 +199,7 @@ export interface ImportOutcome {
 
 /**
  * Create the importable rows. Each becomes a normal matter — same OneDrive folder
- * and tracker as any other — with firm_ref set to the firm's own reference so
+ * as any other — with firm_ref set to the firm's own reference so
  * matching and the audit trail speak their language from the first email.
  *
  * One at a time on purpose: each createMatter provisions M365 surfaces, and firing
