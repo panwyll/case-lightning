@@ -19,7 +19,8 @@ import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
 import { CHASES, CLIENT_UPDATES, SEARCH_NAMES, render } from './templates';
-import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry } from './guard';
+import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry, isStatusQuestion } from './guard';
+import { clientStatusAnswer, type CaseBrief } from '../engine/brief';
 
 // ───────────────────────────── dependencies ─────────────────────────────
 
@@ -52,6 +53,8 @@ export interface CommsDeps {
   /** Tenant for an inbound address when the webhook is shared across firms. */
   tenantForAddress(address: string): Promise<string | null>;
   chaseMode: 'draft' | 'send';
+  /** The engine's account of a matter, for answering "any update?" from the case itself. */
+  briefFor?(tenantId: string, matterId: string): Promise<CaseBrief | null>;
   onChaseDrafted?(input: { tenantId: string; matterId: string; messageId: string | null; title: string; detail: string }): Promise<void>;
 }
 
@@ -75,6 +78,9 @@ export class ProductionClientComms implements ClientComms {
       searchName: SEARCH_NAMES[searchType] ?? 'search',
       searchList: Array.isArray(payload.requiredSearches) ? (payload.requiredSearches as string[]).map((s) => SEARCH_NAMES[s] ?? s).join(', ') : 'local authority, drainage & water and environmental',
       completionDate: typeof payload.completionDate === 'string' ? payload.completionDate : info.completionDate ?? 'the agreed date',
+      transaction: typeof context.transaction === 'string' ? context.transaction : 'purchase',
+      waitingOn: typeof context.waitingOn === 'string' ? context.waitingOn : '',
+      waitingFor: typeof context.waitingFor === 'string' ? context.waitingFor : '',
       formUrl: typeof context.formUrl === 'string' ? context.formUrl : '',
       noteToClient: typeof context.noteToClient === 'string' ? context.noteToClient : '',
     };
@@ -194,6 +200,8 @@ export interface QaOutcome {
   reply: string;
   faqId: string | null;
   reasons: string[];
+  /** Where the answer came from: the static FAQ, or this matter's own state. */
+  source?: 'faq' | 'case_status';
 }
 
 export class ClientQaService {
@@ -208,6 +216,29 @@ export class ClientQaService {
     const verdict = classifyClientQuestion(input.text);
     const guardLog = { verdict: verdict.verdict, reasons: 'reasons' in verdict ? verdict.reasons : [], faqId: 'faqId' in verdict ? verdict.faqId : null };
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'IN', channel: input.channel, address: input.fromAddress, template: null, body: input.text, providerRef: null, status: verdict.verdict === 'ALLOW' ? 'ANSWERED' : 'ROUTED_TO_HUMAN', guard: guardLog });
+
+    // "Any update?" deserves this matter's actual state, not a leaflet — but only when the
+    // engine says a machine may answer at all. Anything with a live legal problem on it
+    // goes to a person, because a cheerful automated summary would be the wrong reply.
+    if (verdict.verdict !== 'BLOCK' && isStatusQuestion(input.text) && input.matterId && this.deps.briefFor) {
+      const brief = await this.deps.briefFor(input.tenantId, input.matterId).catch(() => null);
+      const status = brief ? clientStatusAnswer(brief) : null;
+      if (status?.canAnswer) {
+        return { verdict: 'ANSWERED', reply: status.text, faqId: 'case_status', reasons: [], source: 'case_status' };
+      }
+      if (brief) {
+        const info = await this.deps.contactInfo(input.tenantId, input.matterId).catch(() => null);
+        const holding = render(CLIENT_UPDATES.qa_routed_to_human, { feeEarner: info?.feeEarnerName ?? 'your conveyancer' }).body;
+        await this.deps.routeToHuman({
+          tenantId: input.tenantId,
+          matterId: input.matterId,
+          title: 'Client asked for an update — needs a person',
+          detail: `The client asked: "${input.text.slice(0, 300)}". The engine would not answer automatically because ${status?.canAnswer === false ? status.reason : 'the case brief was unavailable'}.`,
+          fromAddress: input.fromAddress,
+        });
+        return { verdict: 'ROUTED_TO_HUMAN', reply: holding, faqId: null, reasons: [status?.canAnswer === false ? status.reason : 'no brief'] };
+      }
+    }
 
     if (verdict.verdict !== 'ALLOW') {
       const info = input.matterId ? await this.deps.contactInfo(input.tenantId, input.matterId).catch(() => null) : null;
@@ -237,7 +268,7 @@ export class ClientQaService {
         /* the verbatim FAQ answer is always acceptable */
       }
     }
-    return { verdict: 'ANSWERED', reply, faqId: faq.id, reasons: [] };
+    return { verdict: 'ANSWERED', reply, faqId: faq.id, reasons: [], source: 'faq' };
   }
 
   /** Inbound message → answer/route → send the reply back down the same channel. */

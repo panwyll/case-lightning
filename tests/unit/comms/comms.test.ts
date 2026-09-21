@@ -6,6 +6,8 @@ import { guardClientQuestion, matchFaq, classifyClientQuestion, validateFaqReply
 import { WhatsAppClient, parseInbound, normaliseE164 } from '../../../lib/server/comms/whatsapp';
 import { ClientQaService, ProductionChaser, ProductionClientComms, type CommsDeps, type MatterContactInfo } from '../../../lib/server/comms/client-comms';
 import { FakeLlm } from '../../../lib/server/engine/llm';
+import { caseBrief } from '../../../lib/server/engine/brief';
+import { initialState } from '../../../lib/server/engine/types';
 
 test('templates render deterministically and report missing required vars', () => {
   const r = render(CLIENT_UPDATES.search_back_all_clear, { firstName: 'Ann', property: '1 Test St', searchName: 'local authority search (CON29)', firmName: 'Firm LLP' });
@@ -77,7 +79,7 @@ test('WhatsApp sendText posts the Cloud API shape', async () => {
   assert.match(calls[0].body, /"to":"447700900123"/);
 });
 
-function fakeDeps(info: Partial<MatterContactInfo> = {}, opts: { whatsapp?: boolean; email?: boolean; mailbox?: boolean; chaseMode?: 'draft' | 'send' } = {}) {
+function fakeDeps(info: Partial<MatterContactInfo> = {}, opts: { whatsapp?: boolean; email?: boolean; mailbox?: boolean; chaseMode?: 'draft' | 'send'; brief?: CommsDeps['briefFor'] } = {}) {
   const sentWa: string[] = [];
   const sentEmail: Array<{ to: string; subject: string }> = [];
   const drafts: Array<{ to: string; subject: string }> = [];
@@ -96,6 +98,7 @@ function fakeDeps(info: Partial<MatterContactInfo> = {}, opts: { whatsapp?: bool
     matterForAddress: async () => ({ matterId: 'm1' }),
     tenantForAddress: async (addr) => (addr === '447700900123' ? 't1' : null),
     chaseMode: opts.chaseMode ?? 'draft',
+    briefFor: opts.brief,
   };
   return { deps, sentWa, sentEmail, drafts, logs, routed };
 }
@@ -154,4 +157,36 @@ test('client Q&A: FAQ questions are answered (validated rephrase or verbatim); e
   assert.ok(f.logs.some((l) => l.direction === 'IN' && l.status === 'ROUTED_TO_HUMAN'));
 
   assert.equal(await qa.handleInbound({ fromAddress: '440000000000', channel: 'whatsapp', text: 'hi' }), null, 'unknown numbers are ignored');
+});
+
+
+/**
+ * "Any update?" is the commonest message a client sends, and the one a leaflet answers
+ * worst. It is answered from the matter's own state — but only when the engine says a
+ * machine may answer at all.
+ */
+test('client Q&A: a status question is answered from the case, and routed to a person when the case is not one a machine should describe', async () => {
+  const base = { ...initialState('t1', 'm1'), enrolled: true, requiredSearches: ['CON29' as const], stage: 'pre_contract' as const };
+  base.stageHistory = [{ stage: 'instruction', at: new Date(Date.now() - 20 * 86_400_000).toISOString(), seq: 1 }, { stage: 'pre_contract', at: new Date(Date.now() - 14 * 86_400_000).toISOString(), seq: 2 }];
+  base.idCheck = { ...base.idCheck, status: 'cleared' };
+  base.waits = [{ key: 'search', subject: 'CON29', openedAt: new Date(Date.now() - 18 * 86_400_000).toISOString(), openedBySeq: 3, closedAt: null, chasesSentAt: [new Date(Date.now() - 86_400_000).toISOString()], escalations: [] }];
+
+  const healthy = fakeDeps({}, { brief: async () => caseBrief(base) });
+  const qa = new ClientQaService(healthy.deps, null, { model: 'fake' });
+  const a = await qa.handle({ tenantId: 't1', matterId: 'm1', fromAddress: '447700900123', channel: 'whatsapp', text: 'Any update?' });
+  assert.equal(a.verdict, 'ANSWERED');
+  assert.equal(a.source, 'case_status', 'from the case, not the FAQ');
+  assert.match(a.reply, /waiting for the local authority and search providers/);
+  assert.match(a.reply, /We chased yesterday/);
+  assert.match(a.reply, /nothing you need to do/);
+  assert.deepEqual(healthy.routed, []);
+
+  // The same question on a matter with a legal problem on it fetches a person instead.
+  const blocked = { ...base, issues: { 'ISS-1': { id: 'ISS-1', kind: 'title_defect' as const, title: 'Restriction in the register', detail: null, gate: 'exchange' as const, status: 'open' as const, raisedAt: new Date().toISOString(), raisedBy: 'u1', raisedAtStage: 'pre_contract' as const, updatedAt: new Date().toISOString(), sourceDocumentId: null, resolution: null, resolvedAt: null, resolvedBy: null, origin: null, party: null, costPennies: null, paidBy: null, enquiryIds: [], severity: 'warning' as const, history: [], causedBy: null } } };
+  const held = fakeDeps({}, { brief: async () => caseBrief(blocked) });
+  const qa2 = new ClientQaService(held.deps, null, { model: 'fake' });
+  const b = await qa2.handle({ tenantId: 't1', matterId: 'm1', fromAddress: '447700900123', channel: 'whatsapp', text: 'any news?' });
+  assert.equal(b.verdict, 'ROUTED_TO_HUMAN');
+  assert.match(held.routed[0], /asked for an update/);
+  assert.doesNotMatch(b.reply, /Restriction/, 'the holding reply never mentions the problem');
 });

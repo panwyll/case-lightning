@@ -8,6 +8,8 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { listThreadMessages } from '@/lib/server/graph';
 import { draftReply, retrieveMatterContext, actingForPhrase } from '@/lib/server/ai';
 import { getStatusSnapshot, renderStatusSnapshot } from '@/lib/server/status-snapshot';
+import { engine } from '@/lib/server/engine/adapters';
+import { caseBrief, renderForDrafting } from '@/lib/server/engine/brief';
 import { getVoiceGuide } from '@/lib/server/voice';
 import { reviewAttachmentsContext, attachmentGroundTruth } from '@/lib/server/files';
 import { threadToText } from '@/lib/server/text';
@@ -86,6 +88,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
         })
       : [];
     let retrievedContext = retrieved.map((r) => `${r.source_kind}: ${r.chunk_text}`).join('\n---\n');
+
+    // The engine's own account of the matter, where it runs one. Retrieved chunks are
+    // what was *said*; this is what is *true* — which workstream is where, what is
+    // outstanding with whom and for how long, what has been chased, what the client has
+    // already decided. It goes first so the model leans on facts, not recollection.
+    let engineBrief = '';
+    if (body.matterId) {
+      try {
+        const state = await engine().getState(user.tenantId, body.matterId);
+        if (state.enrolled) engineBrief = renderForDrafting(caseBrief(state));
+      } catch {
+        /* the matter is not run by the engine — the rest of the context still stands */
+      }
+    }
+    if (engineBrief) retrievedContext = retrievedContext ? `${engineBrief}\n---\n${retrievedContext}` : engineBrief;
     // Review any attachments on this email against the matter and fold the findings
     // into the draft (e.g. replying to a document sent for review).
     if (body.matterId) {

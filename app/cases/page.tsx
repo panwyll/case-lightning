@@ -46,6 +46,7 @@ export default function CasesPage() {
           <button className={`eg-btn${scope === 'mine' ? ' on' : ''}`} onClick={() => setScope(scope === 'mine' ? 'all' : 'mine')}>
             {scope === 'mine' ? 'My matters' : 'Whole team'}
           </button>
+          <a className="eg-btn" href="/today">Today</a>
           <a className="eg-btn" href="/my-work">My work</a>
           <a className="eg-btn" href="/decisions">Decisions</a>
         </div>

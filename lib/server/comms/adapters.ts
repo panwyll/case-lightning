@@ -127,10 +127,26 @@ export function productionCommsDeps(): CommsDeps {
       return r?.tenant_id ?? null;
     },
     chaseMode: config.chaseMode,
+    briefFor,
     onChaseDrafted: async (i) => {
       await addDraftReady({ tenantId: i.tenantId, matterId: i.matterId, dedupKey: `chase:${i.messageId ?? i.title}`, title: i.title, detail: i.detail, graphMessageId: i.messageId ?? undefined }).catch(() => {});
     },
   };
+}
+
+/**
+ * The engine's account of a matter, for answering a client's "any update?" from the case
+ * itself rather than from a leaflet. Imported at call time because engine/adapters.ts
+ * already imports this module for its comms ports.
+ */
+async function briefFor(tenantId: string, matterId: string) {
+  try {
+    const [{ engine }, { caseBrief }] = await Promise.all([import('../engine/adapters'), import('../engine/brief')]);
+    const state = await engine().getState(tenantId, matterId);
+    return state.enrolled ? caseBrief(state) : null;
+  } catch {
+    return null; // not enrolled, or the engine is unavailable — fall back to the FAQ path
+  }
 }
 
 export function commsConfigured(): boolean {

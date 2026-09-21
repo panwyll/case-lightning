@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions } from './sla';
@@ -499,6 +500,30 @@ export class EngineService {
         if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
           const p = e.payload as { requestId: string; note?: string | null };
           await this.requestProofOfFunds(tenantId, matterId, e.actor, { followUpOf: p.requestId, noteToClient: p.note ?? null });
+        }
+        // A chase to a third party is also news for the client (docs/architecture-review.md
+        // §9): they hear that we are on it without having to ask. Once per day per matter,
+        // never when the person being chased IS the client, and never while an issue is
+        // holding the matter — that is a conversation, not a status line.
+        if (e.type === 'chase_sent') {
+          const chase = e.payload as { recipientRole: string; waitKey: string; subject?: string };
+          const fresh = await this.getState(tenantId, matterId);
+          const brief = caseBrief(fresh, this.ports.now());
+          const already = fresh.clientUpdateLastSentAt['chase_update'];
+          const sameDay = already ? already.slice(0, 10) === this.ports.now().toISOString().slice(0, 10) : false;
+          const holding = brief.issues.some((i) => i.gate !== 'none') || brief.health.band === 'critical' || brief.health.band === 'blocked';
+          const w = brief.waiting.find((x) => x.key === chase.waitKey && x.subject === (chase.subject ?? ''));
+          if (chase.recipientRole !== 'client' && !sameDay && !holding && w) {
+            if (!(await this.suppressed(tenantId, matterId, fresh, subflows, 'client_update', 'chase', { template: 'chase_update', triggeredByEventId: e.id, eventType: e.type }))) {
+              const sent = await this.ports.clientComms.sendStatusUpdate({
+                tenantId,
+                matterId,
+                template: 'chase_update',
+                context: { eventType: e.type, payload: e.payload, waitingOn: w.who, waitingFor: w.what, transaction: brief.side === 'seller' ? 'sale' : 'purchase' },
+              });
+              await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
+            }
+          }
         }
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];

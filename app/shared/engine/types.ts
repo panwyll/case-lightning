@@ -280,7 +280,7 @@ export interface CaseToken extends QueueRow {
 }
 export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number }
 
-export type WorkBucket = 'do' | 'waiting' | 'chase';
+export type WorkBucket = 'do' | 'waiting' | 'chase' | 'escalate';
 export interface WorkItem {
   id: string;
   bucket: WorkBucket;

@@ -90,6 +90,24 @@ export function classifyClientQuestion(text: string): GuardVerdict {
   return { verdict: 'ALLOW', faqId: m.entry.id, score: m.score };
 }
 
+/**
+ * "Any update?" and its cousins. A status question is not an FAQ question: the honest
+ * answer is this matter's own state, not a leaflet about conveyancing. Recognised here so
+ * the Q&A service can answer it from the case brief — still only after the BLOCK patterns
+ * above have had their say, and still only when the engine says it is safe to answer
+ * (see clientStatusAnswer in lib/server/engine/brief.ts).
+ */
+const STATUS_PATTERNS: RegExp[] = [
+  /\bany (update|news|progress|movement)\b/i,
+  /\bhow('| i)?s it (going|progressing|looking)\b/i,
+  /\bwhere (are we|do we stand|is it)\b/i,
+  /\bwhat'?s (happening|going on|the latest|the status)\b/i,
+  /\b(status|update) (please|pls)?\??$/i,
+  /\bheard (anything|back)\b/i,
+  /\bhow (long|much longer)\b.*\?/i,
+];
+export const isStatusQuestion = (text: string): boolean => STATUS_PATTERNS.some((re) => re.test(text.trim()));
+
 /** Outbound check on a model rephrasing: no figures, no advice, no new facts beyond the FAQ answer. */
 export function validateFaqReply(faq: FaqEntry, reply: string): { ok: boolean; problems: string[] } {
   const problems: string[] = [];

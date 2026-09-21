@@ -6,14 +6,14 @@ import { House } from '../shared/engine/CaseloadMap';
 import { pretty, type WorkItem } from '../shared/engine/types';
 
 /**
- * My work (docs/caseload-ux.md §4–5): DO · WAITING · CHASE.
+ * My work (docs/caseload-ux.md §4–5): DO · WAITING · CHASE · ESCALATE.
  *
  * Nothing here is a list someone grooms — it is derived from the cases themselves, so it
  * cannot drift. An item leaves DO when the thing is done, appears in WAITING with the
  * clock running, and moves itself to CHASE when that clock expires.
  */
 const WORK_CSS = `
-.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start}
+.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;align-items:start}
 .wk-col{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
 .wk-head{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:baseline;gap:8px}
 .wk-head b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
@@ -70,6 +70,11 @@ function Item({ i }: { i: WorkItem }) {
           <span>{i.mode === 'automatic' ? 'The engine sends this chase on the next sweep' : 'Shadow mode — nothing is sent; approve it to chase'}</span>
         </div>
       )}
+      {i.bucket === 'escalate' && (
+        <div className="wk-clock">
+          <span className="over">{i.chasesSent ? `${i.chasesSent} written chase${i.chasesSent === 1 ? ' has' : 's have'} not worked — call them` : i.escalatesInWorkingDays != null && i.escalatesInWorkingDays <= 0 ? 'The date has passed' : 'A date we owe is close'}</span>
+        </div>
+      )}
     </a>
   );
 }
@@ -84,7 +89,7 @@ function Column({ title, sub, items }: { title: string; sub: string; items: Work
 }
 
 export default function MyWorkPage() {
-  const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[]; matters: number } | null>(null);
+  const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[]; escalate: WorkItem[]; matters: number } | null>(null);
   const [all, setAll] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -108,11 +113,12 @@ export default function MyWorkPage() {
         <div>
           <h1 className="eg-h1">My work</h1>
           <p className="eg-sub">
-            {data ? `${data.do.length} to do · ${data.waiting.length} waiting · ${data.chase.length} to chase across ${data.matters} matter${data.matters === 1 ? '' : 's'}` : 'Loading…'}
+            {data ? `${data.do.length} to do · ${data.waiting.length} waiting · ${data.chase.length} to chase · ${data.escalate.length} to escalate across ${data.matters} matter${data.matters === 1 ? '' : 's'}` : 'Loading…'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`eg-btn${all ? ' on' : ''}`} onClick={() => setAll(!all)}>{all ? 'Whole team' : 'Mine only'}</button>
+          <a className="eg-btn" href="/today">Today</a>
           <a className="eg-btn" href="/cases">Caseload</a>
         </div>
       </div>
@@ -122,6 +128,7 @@ export default function MyWorkPage() {
           <Column title="Do" sub="yours now" items={data.do} />
           <Column title="Waiting" sub="someone else, still ours" items={data.waiting} />
           <Column title="Chase" sub="the clock ran out" items={data.chase} />
+          <Column title="Escalate" sub="writing again won't fix it" items={data.escalate} />
         </div>
       )}
     </div>

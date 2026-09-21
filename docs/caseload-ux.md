@@ -111,7 +111,7 @@ RECENT ACTIVITY
 
 ## 4 · The personal work list
 
-`/my-work`. Three columns, no new vocabulary.
+`/my-work`. Four columns, no new vocabulary.
 
 - **DO** — this person acts now: a decision to resolve, an issue whose next step is ours,
   the next thing the gate needs.
@@ -119,6 +119,9 @@ RECENT ACTIVITY
   waiting for, when we asked, their normal turnaround, the countdown to the next chase,
   how many chases have gone, and the fee-earner accountable.
 - **CHASE** — a WAITING item whose clock expired. Nobody moves it: the clock does.
+- **ESCALATE** — chasing has failed, or a date we owe is close enough to threaten the
+  transaction. Writing again is not the answer: someone picks up the phone, or takes the
+  client's instructions.
 
 Two owners, deliberately distinct, so "in their court" never means "out of sight":
 
@@ -145,7 +148,38 @@ The case's health worsens as those thresholds pass — attention at the chase po
 delayed past escalation, critical while an escalation sits unanswered. In shadow mode
 nothing is sent and the chase is listed as needing a person instead.
 
-## 6 · Conveyancer oversight
+## 6 · The day (`/today`)
+
+The operating model the whole product is for. Overnight every active matter is evaluated
+against its events, timers, deadlines, blockers and outstanding decisions, and the morning
+screen is three numbers and a list:
+
+```
+200 active · 23 need you today · 7 at risk · 170 progressing or waiting properly
+```
+
+The three groups are disjoint, so they add up to the caseload: a matter that needs you is
+not also counted as at risk. You work the 23, not the 200. `End of day` turns the same
+data round: what is still open, what the timers will chase tomorrow, which dates land this
+week.
+
+## 7 · What the client hears
+
+Two things happen without anyone asking for them.
+
+**A chase is also news.** When a third party is chased, the client is told — "we are still
+waiting for the seller's solicitor… we chased them again today… there is nothing you need
+to do". Once per matter per day, never when the person being chased is the client, and
+never while an issue holds the matter.
+
+**"Any update?" is answered from the case**, not from a leaflet: what is complete, who we
+are waiting on, when we last chased, when we chase next, and whether anything is needed
+from them. That answer is composed deterministically — no model writes it — and the
+channel refuses to answer at all when the matter holds a gate-blocking issue, a critical
+issue or a payment hard stop. Then it fetches a person. A reassuring automated summary is
+the wrong thing to send on a case with a live legal problem.
+
+## 8 · Conveyancer oversight
 
 The rollup strip and the exception list are the team-lead view: 59 cases, 15 that need
 someone, each explaining *why* the system thinks so — the chain of facts, not a colour.

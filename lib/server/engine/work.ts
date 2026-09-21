@@ -1,7 +1,7 @@
 /**
- * The personal work list: DO · WAITING · CHASE (docs/caseload-ux.md §4).
+ * The personal work list: DO · WAITING · CHASE · ESCALATE (docs/caseload-ux.md §4).
  *
- * Three buckets, no new concepts to learn:
+ * Four buckets, no new concepts to learn:
  *   DO       — this person has to act now.
  *   WAITING  — someone else has to act, but we still own it. Every item carries who we
  *              are waiting for, when we asked, their normal turnaround, and the countdown
@@ -9,6 +9,9 @@
  *   CHASE    — a WAITING item whose timer has expired. Nobody has to remember: the clock
  *              moves it here, and the engine's tick sends the chase (or asks first, in
  *              shadow mode).
+ *   ESCALATE — chasing has failed, or a date we owe is close enough to threaten the
+ *              transaction. Writing again is no longer the answer: a person picks up the
+ *              phone, or takes the client's instructions.
  *
  * The cycle is DO → sent → WAITING → countdown → CHASE → sent → WAITING → … → ESCALATE,
  * which is exactly what sla.ts already computes; this module presents it per person.
@@ -20,11 +23,11 @@
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
-import { caseHealth, type HealthBand } from './health';
+import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
 import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type SubflowConfig } from './types';
 import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
 
-export type Bucket = 'do' | 'waiting' | 'chase';
+export type Bucket = 'do' | 'waiting' | 'chase' | 'escalate';
 export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider';
 
 export interface WorkItem {
@@ -63,6 +66,8 @@ export interface WorkItem {
 export interface MatterWork {
   matterId: string;
   band: HealthBand;
+  /** The health line, so a caller can say WHY a matter is on the list without recomputing. */
+  health: HealthSummary;
   items: WorkItem[];
 }
 
@@ -102,7 +107,7 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
 export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkContext = {}, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): MatterWork {
   const health = caseHealth(s, now, sla, cal);
   const out: WorkItem[] = [];
-  if (!s.enrolled || s.abandoned || s.closedAt) return { matterId: s.matterId, band: health.band, items: out };
+  if (!s.enrolled || s.abandoned || s.closedAt) return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
   const owner = ctx.assignedTo ?? null;
   const base = { matterId: s.matterId, matterRef: ctx.matterRef ?? null, propertyAddress: ctx.propertyAddress ?? null, responsibilityOwner: owner };
   const bandOf = (code: string): HealthBand => health.reasons.find((r) => r.ref.id === code)?.band ?? 'normal';
@@ -122,8 +127,10 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') ? ` — ${d.subject}` : ''}`;
     out.push({
       ...base,
-      id: `do:decision:${d.eventId}`,
-      bucket: 'do',
+      id: `${d.kind === 'escalation' ? 'escalate' : 'do'}:decision:${d.eventId}`,
+      // An escalation decision IS the escalation: the timer gave up on writing and asked
+      // for a person. It does not belong in the same column as an ordinary decision.
+      bucket: d.kind === 'escalation' ? 'escalate' : 'do',
       what,
       unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : d.kind === 'escalation' ? 'Whatever the timer has been chasing' : 'The sub-flow it came from',
       actionOwner: 'conveyancer',
@@ -175,6 +182,9 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
 
   // ── WAITING / CHASE: every open wait, with its clock ──
   const chaseDue = new Set(dueActions(s, now, sla, cal).filter((d) => d.kind === 'chase').map((d) => `${d.wait.key}:${d.wait.subject}`));
+  // A wait the timer has already escalated is on the list once, as the escalation a person
+  // can actually resolve — not twice, as the wait and its escalation.
+  const escalatedAsDecision = new Set(surfaced.filter((d) => d.kind === 'escalation' && d.subject).map((d) => d.subject as string));
   for (const w of openWaits(s)) {
     const rule = sla[w.key];
     if (!rule) continue;
@@ -186,10 +196,12 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     const nextChaseIn = !last ? rule.chaseAfter - age : rule.chaseEvery === null ? null : rule.chaseEvery - wd(last, now, cal);
     const escalated = w.escalations.some((e) => !e.resolvedAt);
     const isChase = chaseDue.has(key);
+    const bucket: Bucket = escalated ? 'escalate' : isChase ? 'chase' : 'waiting';
+    if (escalated && escalatedAsDecision.has(key)) continue;
     out.push({
       ...base,
-      id: `${isChase ? 'chase' : 'waiting'}:${key}`,
-      bucket: isChase ? 'chase' : 'waiting',
+      id: `${bucket}:${key}`,
+      bucket,
       what: `${WAIT_WHAT[w.key] ?? w.key.replace(/_/g, ' ')}${w.subject ? ` — ${w.subject}` : ''}`,
       unblocks: null,
       actionOwner: PARTY[rule.recipientRole] ?? 'third_party',
@@ -203,6 +215,29 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       escalatesInWorkingDays: escalated ? 0 : rule.escalateAfter - age,
       escalated,
       ref: { type: 'wait', id: key },
+    });
+  }
+
+  // ── ESCALATE: a date WE owe is close (or passed). Nothing to chase — it is on us. ──
+  for (const r of health.reasons.filter((x) => x.code === 'deadline_near' || x.code === 'deadline_passed')) {
+    out.push({
+      ...base,
+      id: `escalate:${r.ref.id}`,
+      bucket: 'escalate',
+      what: r.headline,
+      unblocks: null,
+      actionOwner: 'conveyancer',
+      urgency: r.band,
+      workstream: r.workstream,
+      since: null,
+      sinceWorkingDays: null,
+      slaWorkingDays: null,
+      chaseInWorkingDays: null,
+      chasesSent: 0,
+      mode: null,
+      escalatesInWorkingDays: r.dueInWorkingDays ?? null,
+      escalated: true,
+      ref: { type: 'case', id: r.ref.id },
     });
   }
 
@@ -226,10 +261,18 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
   out.sort((a, b) => rank[a.urgency] - rank[b.urgency] || (b.sinceWorkingDays ?? 0) - (a.sinceWorkingDays ?? 0));
   void bandOf;
-  return { matterId: s.matterId, band: health.band, items: out };
+  return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
 }
 
-/** Group a person's items across their whole caseload into the three buckets, worst first. */
-export function buckets(items: WorkItem[]): { do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[] } {
-  return { do: items.filter((i) => i.bucket === 'do'), waiting: items.filter((i) => i.bucket === 'waiting'), chase: items.filter((i) => i.bucket === 'chase') };
+/** Group a person's items across their whole caseload into the four buckets, worst first. */
+export function buckets(items: WorkItem[]): { do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[]; escalate: WorkItem[] } {
+  return {
+    do: items.filter((i) => i.bucket === 'do'),
+    waiting: items.filter((i) => i.bucket === 'waiting'),
+    chase: items.filter((i) => i.bucket === 'chase'),
+    escalate: items.filter((i) => i.bucket === 'escalate'),
+  };
 }
+
+/** Everything a person has to pick up: the three buckets that are not "someone else's move". */
+export const actionable = (items: WorkItem[]): WorkItem[] => items.filter((i) => i.bucket !== 'waiting');

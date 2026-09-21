@@ -425,9 +425,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
 
     // ── Comms / chasing / escalation ──
-    case 'client_update_sent':
+    case 'client_update_sent': {
       s.clientUpdatesSent += 1;
+      const p = e.payload as Payloads['client_update_sent'];
+      if (p.template) s.clientUpdateLastSentAt[p.template] = e.createdAt;
       break;
+    }
     case 'chase_sent': {
       const p = e.payload as Payloads['chase_sent'];
       s.chasesSent += 1;

@@ -988,6 +988,8 @@ export interface MatterState {
   decisions: Record<string, DecisionState>;
   waits: WaitState[];
   clientUpdatesSent: number;
+  /** When each client-update template last went out — so the same news is not sent twice in a day. */
+  clientUpdateLastSentAt: Record<string, string>;
   chasesSent: number;
   /** Addendum 2: every bank-details record ever put on file for this matter (versioned, never overwritten). */
   bankDetails: Record<string, BankDetailsState>;
@@ -1058,6 +1060,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     decisions: {},
     waits: [],
     clientUpdatesSent: 0,
+    clientUpdateLastSentAt: {},
     chasesSent: 0,
     bankDetails: {},
     payments: [],
@@ -1083,6 +1086,7 @@ export function withStateDefaults(s: MatterState): MatterState {
   return {
     ...init,
     ...s,
+    clientUpdateLastSentAt: { ...(s.clientUpdateLastSentAt ?? {}) },
     postCompletion: merge('postCompletion'),
     proofOfFunds: merge('proofOfFunds'),
     survey: merge('survey'),
