@@ -71,7 +71,7 @@ export function Timeline({ events, state, people = {} }: { events: EngineEvent[]
               const cls = d.kind === 'bank_details' ? ' bank' : d.kind === 'auto_clear' ? ' review' : '';
               const hidden = state.shadowMode;
               return (
-                <a key={e.id} className={`eg-card tl-card ${d.status}${cls}${hidden ? ' hidden' : ''}`} href={`/decisions/${e.id}`}>
+                <a key={e.id} className={`eg-card tl-card ${d.status}${cls}${hidden ? ' hidden' : ''}`} href={`/conveyi/decisions/${e.id}`}>
                   <div className="tl-card-top">
                     <span className="tl-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</span>
                     <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

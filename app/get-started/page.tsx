@@ -149,7 +149,7 @@ export default function GetStartedPage() {
         <section className="border-t border-line py-10">
           <p className="text-base text-ink-soft">
             Already using CONVEYi?{' '}
-            <a href="/admin" className="underline decoration-violet/40 underline-offset-4 hover:text-ink">
+            <a href="/conveyi/admin" className="underline decoration-violet/40 underline-offset-4 hover:text-ink">
               Open the app
             </a>
             . Rather talk to someone first?{' '}

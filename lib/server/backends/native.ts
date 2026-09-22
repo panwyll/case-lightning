@@ -16,6 +16,7 @@ import { DECISION_EVENT_TYPES, SUBFLOW_OF_KIND, surfacedDecisions, type Decision
 import { optionLabel } from '../engine/rules';
 import { TRIGGERS_BY_BACKEND } from '../engine/triggers';
 import { config } from '../config';
+import { paths } from '../../paths';
 
 const RESOLVING = new Set(['id_check_reviewed', 'search_reviewed', 'enquiry_reply_reviewed', 'mortgage_condition_reviewed', 'title_reviewed', 'report_on_title_approved', 'report_on_title_rejected', 'bank_details_verified', 'bank_details_verification_failed', 'escalation_resolved', 'hmlr_requisition_responded']);
 const LINES: Record<string, (p: Record<string, unknown>) => string> = {
@@ -62,7 +63,7 @@ export class NativeConclusionSink implements ConclusionSink {
           const dup = await runAsSystem(() => queryOne<{ id: string }>(`select id from matter_task where matter_id = $1 and detail like $2 limit 1`, [matterId, `%${tag}`]));
           if (dup) continue;
           const sf = SUBFLOW_OF_KIND[d.kind as DecisionKind];
-          const detail = `Decision needed — ${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}: ${firstLine(d.summary)} → ${config.appUrl}/decisions/${e.id}${sf ? ` (${sf})` : ''} ${tag}`;
+          const detail = `Decision needed — ${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}: ${firstLine(d.summary)} → ${config.appUrl}${paths.decision(e.id)}${sf ? ` (${sf})` : ''} ${tag}`;
           await runAsSystem(() => createTask(actorUser, matterId, { type: 'DECISION', detail, assigneeUserId: handler, source: 'ENGINE', status: 'OPEN' }));
           continue;
         }
@@ -74,7 +75,7 @@ export class NativeConclusionSink implements ConclusionSink {
           if (task && task.status !== 'DONE') await runAsSystem(() => updateTask(actorUser, matterId, task.id, { status: 'DONE', statusLabel: `Resolved in CONVEYi: ${p.option ? optionLabel(String(p.option) as DecisionOption) : e.type}` }));
           const who = /^[0-9a-f-]{36}$/i.test(e.actor) ? (await runAsSystem(() => queryOne<{ name: string }>(`select coalesce(display_name, email) as name from app_user where id = $1`, [e.actor])))?.name ?? e.actor : e.actor;
           const option = p.option ? optionLabel(String(p.option) as DecisionOption) : p.method ? `verified out-of-band (${String(p.method).replace(/_/g, ' ')})` : e.type.replace(/_/g, ' ');
-          await this.timeline(tenantId, matterId, e, 'ENGINE_DECISION_RESOLVED', `Engine: ${d ? `${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''} — ` : ''}${option} by ${who}`, [p.note ? `Reason: ${p.note}` : null, d?.citations?.length ? `Sources: ${d.citations.map((c) => c.label).join('; ')}` : null, `${config.appUrl}/decisions/${decisionEventId || e.id}`].filter(Boolean).join('\n'));
+          await this.timeline(tenantId, matterId, e, 'ENGINE_DECISION_RESOLVED', `Engine: ${d ? `${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''} — ` : ''}${option} by ${who}`, [p.note ? `Reason: ${p.note}` : null, d?.citations?.length ? `Sources: ${d.citations.map((c) => c.label).join('; ')}` : null, `${config.appUrl}${paths.decision(decisionEventId || e.id)}`].filter(Boolean).join('\n'));
           continue;
         }
         const line = LINES[e.type];

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertFeature } from '@/lib/server/config';
 import { getAuthUrl } from '@/lib/server/oauth';
-import { OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE } from '@/lib/server/session';
+import { OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE, OAUTH_NEXT_COOKIE } from '@/lib/server/session';
 import { fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -38,6 +38,12 @@ export async function GET(req: NextRequest) {
         secure: true,
         maxAge: 600,
       });
+    }
+    // ?next carries the page the sign-in wall interrupted. Only ever a path on this
+    // site — an absolute URL here would be an open redirect.
+    const next = req.nextUrl.searchParams.get('next');
+    if (next && next.startsWith('/') && !next.startsWith('//')) {
+      res.cookies.set(OAUTH_NEXT_COOKIE, next, { path: '/', httpOnly: true, sameSite: 'lax', secure: true, maxAge: 600 });
     }
     return res;
   } catch (error) {

@@ -40,6 +40,9 @@ export const OAUTH_STATE_COOKIE = 'cl_oauth_state';
 // dialog and needs the /addin/auth-complete bridge to hand the token back to the task
 // pane; a web signup has no dialog and should land straight in the app.
 export const OAUTH_FLOW_COOKIE = 'cl_oauth_flow';
+// Where the person was headed when the sign-in wall stopped them, so the round trip
+// through Microsoft lands them there rather than on a generic screen.
+export const OAUTH_NEXT_COOKIE = 'cl_oauth_next';
 
 function secret(): Uint8Array {
   if (!config.sessionJwtSecret) throw new Error('SESSION_JWT_SECRET is not set');

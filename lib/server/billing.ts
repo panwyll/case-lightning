@@ -18,6 +18,7 @@ import { stripe } from './stripe';
 import { accountForUser } from './referrals';
 import { getTenantBilling, emailQuotaStatus, trialDaysRemaining, type Plan } from './plan';
 import type { SessionUser } from './types';
+import { paths } from '../paths';
 
 /** The Firm (enterprise) base price bundles this many seats; extras bill per-seat. */
 export const FIRM_INCLUDED_SEATS = 3;
@@ -290,8 +291,8 @@ export async function changePlan(
     customer: account.stripe_customer_id ?? undefined,
     customer_email: account.stripe_customer_id ? undefined : user.email,
     client_reference_id: clientReferenceId,
-    success_url: `${appUrl}/account?upgraded=1`,
-    cancel_url: `${appUrl}/account`,
+    success_url: `${appUrl}${paths.account}?upgraded=1`,
+    cancel_url: `${appUrl}${paths.account}`,
     allow_promotion_codes: true,
     // Stripe owns the trial clock from here — it emits customer.subscription.updated as
     // the trial converts (trialing → active) or lapses, and the webhook writes that

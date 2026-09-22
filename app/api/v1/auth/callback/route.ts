@@ -3,11 +3,12 @@ import { z } from 'zod';
 import { assertFeature, config } from '@/lib/server/config';
 import { exchangeCodeForToken } from '@/lib/server/oauth';
 import { transaction } from '@/lib/server/db';
-import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE } from '@/lib/server/session';
+import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE, OAUTH_NEXT_COOKIE } from '@/lib/server/session';
 import { hasTeamAccess } from '@/lib/server/plan';
 import { syncFirmSeats } from '@/lib/server/billing';
 import { ensureSubscription } from '@/lib/server/subscriptions';
 import { applyInviteOnJoin } from '@/lib/server/invites';
+import { paths } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -158,11 +159,16 @@ export async function GET(req: NextRequest) {
     // the taskpane via postMessage, which desktop Outlook needs because it isolates the
     // dialog's cookies. First run of a new firm opens on Get started (?tab=getstarted).
     const webFlow = req.cookies.get(OAUTH_FLOW_COOKIE)?.value === 'web';
+    // Somebody sent here by the sign-in wall goes back to the page they asked for; a
+    // brand-new firm still opens on Get started.
+    const wanted = req.cookies.get(OAUTH_NEXT_COOKIE)?.value;
+    const next = wanted && wanted.startsWith('/') && !wanted.startsWith('//') ? wanted : null;
     const dest = webFlow
-      ? `${config.appUrl}/admin?tab=getstarted`
+      ? `${config.appUrl}${next ?? `${paths.admin}?tab=getstarted`}`
       : `${config.appUrl}/addin/auth-complete#s=${session}`;
     const res = NextResponse.redirect(dest);
     if (webFlow) res.cookies.delete(OAUTH_FLOW_COOKIE);
+    if (wanted) res.cookies.delete(OAUTH_NEXT_COOKIE);
     res.cookies.set(SESSION_COOKIE, session, {
       path: '/',
       httpOnly: true,

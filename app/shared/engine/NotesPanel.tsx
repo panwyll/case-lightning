@@ -86,7 +86,7 @@ function Note({ n, open, onToggle, who }: { n: NoteRow; open: boolean; onToggle:
         <span style={{ color: '#64748b', fontSize: 12 }}>{fmtWhen(n.at)} · {who(n.author)}</span>
         <span className="ep-pill" style={{ background: s.bg, color: s.fg }}>{s.label}</span>
         {n.status === 'proposed' && n.decisionEventId && (
-          <a className="ep-btn" style={{ margin: 0, padding: '3px 8px' }} href={`/decisions/${n.decisionEventId}`}>Read it back →</a>
+          <a className="ep-btn" style={{ margin: 0, padding: '3px 8px' }} href={`/conveyi/decisions/${n.decisionEventId}`}>Read it back →</a>
         )}
         <button className="ep-btn" style={{ margin: 0, marginLeft: 'auto', padding: '3px 8px' }} onClick={onToggle}>{open ? 'Hide' : 'Show'} the note</button>
       </div>

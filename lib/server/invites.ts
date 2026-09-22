@@ -10,6 +10,7 @@ import { query, queryOne } from './db';
 import { sendMail } from './graph';
 import { config } from './config';
 import type { SessionUser } from './types';
+import { paths } from '../paths';
 
 export interface TeamInvite {
   id: string;
@@ -53,7 +54,7 @@ export async function createInvite(user: SessionUser, emailRaw: string, roleRaw:
   if (!row) throw new Error('Could not create the invite.');
 
   // Email the link — best-effort so a mail hiccup never loses the invite row.
-  const link = `${config.appUrl}/admin?invite=${token}`;
+  const link = `${config.appUrl}${paths.admin}?invite=${token}`;
   const inviter = user.displayName || user.email || 'A colleague';
   const html = `
     <p>${escapeHtml(inviter)} has invited you to join <strong>${escapeHtml(firmName)}</strong> on Case Lightning as ${roleLabel(role)}.</p>

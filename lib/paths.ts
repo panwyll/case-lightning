@@ -1,0 +1,54 @@
+/**
+ * Every in-app URL, in one place.
+ *
+ * The conveyancer's app lives under /conveyi, alongside the product's own marketing
+ * pages — CONVEYi is the product, so its screens carry its name. These used to sit at
+ * the root (/cases, /decisions/…); next.config.ts permanently redirects the old paths,
+ * and nothing should hardcode either shape again. Import from here instead — it is a
+ * plain module with no server dependencies, so middleware, server code and client
+ * components can all use it.
+ */
+export const APP_BASE = '/conveyi';
+
+export const paths = {
+  // ── the conveyancer's app (behind sign-in) ──
+  cases: `${APP_BASE}/cases`,
+  today: `${APP_BASE}/today`,
+  myWork: `${APP_BASE}/my-work`,
+  decisions: `${APP_BASE}/decisions`,
+  decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
+  matter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
+  matterShadow: (matterId: string) => `${APP_BASE}/engine/${matterId}/shadow`,
+  machineMap: `${APP_BASE}/engine/map`,
+  shadowQueue: `${APP_BASE}/engine/shadow`,
+  account: `${APP_BASE}/account`,
+  admin: `${APP_BASE}/admin`,
+  leap: `${APP_BASE}/integrations/leap`,
+
+  // ── getting in ──
+  signIn: `${APP_BASE}/sign-in`,
+  /** Where an unauthenticated visitor is sent, remembering where they were headed. */
+  signInTo: (next?: string | null) => (next && next.startsWith('/') ? `${APP_BASE}/sign-in?next=${encodeURIComponent(next)}` : `${APP_BASE}/sign-in`),
+  /** Where a person lands once signed in: the day's work, not a settings screen. */
+  afterSignIn: `${APP_BASE}/today`,
+
+  // ── public: marketing, signup, and the client-facing form ──
+  home: '/',
+  product: APP_BASE,
+  getStarted: '/get-started',
+  support: `${APP_BASE}/support`,
+  proofOfFunds: (token: string) => `/pof/${token}`,
+} as const;
+
+/**
+ * The paths middleware guards. Everything under /conveyi is public marketing EXCEPT
+ * these — so the list is explicit rather than a prefix match, and a new marketing page
+ * can never accidentally end up behind the sign-in wall.
+ */
+export const PROTECTED_SEGMENTS = ['cases', 'today', 'my-work', 'decisions', 'engine', 'account', 'admin', 'integrations'] as const;
+
+export function isProtectedPath(pathname: string): boolean {
+  if (!pathname.startsWith(`${APP_BASE}/`)) return false;
+  const seg = pathname.slice(APP_BASE.length + 1).split('/')[0];
+  return (PROTECTED_SEGMENTS as readonly string[]).includes(seg);
+}

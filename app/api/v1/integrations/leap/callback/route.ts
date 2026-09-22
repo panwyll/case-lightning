@@ -8,6 +8,7 @@ import { LeapHttpClient } from '@/lib/server/integrations/leap/client';
 import { leapClientConfig, PgLeapTokenStore, setLeapConnectionMeta, leapApi, leapSyncDeps, syncMatters } from '@/lib/server/integrations/leap/adapters';
 import { runAsAutomation } from '@/lib/server/db';
 import { writeAudit } from '@/lib/server/audit';
+import { paths } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     // First sync in the background of this request (bounded); the cron carries on from the watermark.
     void leapApi(user.tenantId);
     runAsAutomation(async () => syncMatters(await leapSyncDeps(user.tenantId), user.tenantId, { full: true })).catch((err) => console.warn('[leap] initial sync failed', (err as Error).message));
-    const res = NextResponse.redirect(`${config.appUrl}/integrations/leap?connected=1`, 302);
+    const res = NextResponse.redirect(`${config.appUrl}${paths.leap}?connected=1`, 302);
     res.cookies.set('cl_leap_oauth', '', { maxAge: 0, path: '/api/v1/integrations/leap' });
     return res;
   } catch (error) {

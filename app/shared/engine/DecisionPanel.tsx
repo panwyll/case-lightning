@@ -256,7 +256,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             <div className="dp-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</div>
             <h1 className="dp-title">{detail.matter?.propertyAddress ?? d.propertyAddress ?? d.matterRef}</h1>
             <div className="eg-sub">
-              <a href={`/engine/${d.matterId}`}>{detail.matter?.matterRef ?? d.matterRef} · {STAGE_LABEL[d.stage] ?? d.stage} · timeline</a> · raised {fmtWhen(d.createdAt)} by {who(detail.raised?.actor)} · summary by {d.summarisedBy}
+              <a href={`/conveyi/engine/${d.matterId}`}>{detail.matter?.matterRef ?? d.matterRef} · {STAGE_LABEL[d.stage] ?? d.stage} · timeline</a> · raised {fmtWhen(d.createdAt)} by {who(detail.raised?.actor)} · summary by {d.summarisedBy}
               {detail.raised?.confidenceScore != null ? ` · extraction confidence ${Math.round(detail.raised.confidenceScore * 100)}%` : ''}
             </div>
           </div>
@@ -321,7 +321,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
       {/* ── 3. Actions ── */}
       <section className="dp-part actions" aria-label="Actions">
         {err && <div className="eg-err" style={{ marginTop: 0 }}>{err}</div>}
-        {detail.shadowed && <div className="dp-shadow">Shadow mode ({detail.shadowed === 'matter' ? 'this matter' : 'this sub-flow'}): the engine's conclusion is logged for comparison only. Nothing to action here. <a href={`/engine/${d.matterId}/shadow`} style={{ color: '#c7d2fe' }}>Comparison view →</a></div>}
+        {detail.shadowed && <div className="dp-shadow">Shadow mode ({detail.shadowed === 'matter' ? 'this matter' : 'this sub-flow'}): the engine's conclusion is logged for comparison only. Nothing to action here. <a href={`/conveyi/engine/${d.matterId}/shadow`} style={{ color: '#c7d2fe' }}>Comparison view →</a></div>}
         {!detail.shadowed && !pending && (
           <div className="dp-out">
             {res ? (
@@ -346,7 +346,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                     })}
                   </div>
                 )}
-                {detail.escalation && <div style={{ marginTop: 4 }}><a href={`/decisions/${detail.escalation.eventId}`}>Escalation raised {fmtWhen(detail.escalation.at)} →</a></div>}
+                {detail.escalation && <div style={{ marginTop: 4 }}><a href={`/conveyi/decisions/${detail.escalation.eventId}`}>Escalation raised {fmtWhen(detail.escalation.at)} →</a></div>}
                 <div style={{ marginTop: 6, fontSize: 11.5, color: '#64748b' }}>
                   Source opened by {detail.opens.length ? Array.from(new Set(detail.opens.map((o) => who(o.by)))).join(', ') : 'nobody'}
                   {res.engagement ? ` · engagement: ${res.engagement.scrolledSource ? 'scrolled' : 'did not scroll'}, ${Math.round(res.engagement.dwellMs / 1000)}s on the source` : ''} · read-only
@@ -428,7 +428,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             </div>
           </>
         )}
-        {done && <div className="dp-out" style={{ marginTop: 8 }}>Recorded. <a href={`/engine/${d.matterId}`}>Back to the timeline →</a> · <a href="/decisions">Queue →</a></div>}
+        {done && <div className="dp-out" style={{ marginTop: 8 }}>Recorded. <a href={`/conveyi/engine/${d.matterId}`}>Back to the timeline →</a> · <a href="/conveyi/decisions">Queue →</a></div>}
       </section>
     </div>
   );

@@ -19,6 +19,7 @@ import { handleLeapWebhook, routeByHint, syncMatters, type LeapMirrorStore, type
 import { writeBack, type LeapWritebackStore, type WritebackKind } from '../../../lib/server/integrations/leap/writeback';
 import type { LeapDocument, LeapMatter, LeapMatterParty, LeapTokens } from '../../../lib/server/integrations/leap/types';
 import { LEAP_ENDPOINTS, LEAP_WEBHOOK_SIGNATURE_HEADER } from '../../../lib/server/integrations/leap/endpoints';
+import { paths } from '../../../lib/paths';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const ALICE = '33333333-3333-4333-8333-333333333333';
@@ -329,7 +330,8 @@ test('write-back: a surfaced decision becomes a LEAP task; its resolution comple
   const task = dump.tasks.find((t) => t.externalRef === `decision:${d.eventId}`)!;
   assert.ok(task, 'a LEAP task for the flagged search');
   assert.match(task.title, /decision needed — search · CON29/);
-  assert.match(task.description!, /https:\/\/conveyi\.test\/decisions\//);
+  // The link a LEAP task carries must be the real one, wherever the app lives.
+  assert.ok(task.description!.includes(`https://conveyi.test${paths.decision('')}`), task.description!);
   assert.equal(task.assigneeStaffId, 'staff-1', 'assigned to LEAP\'s responsible staff');
   assert.equal(task.completed, false);
   assert.ok(!dump.tasks.some((t) => /auto-clear/i.test(t.title)), 'advisory auto-clear reviews are not tasks');

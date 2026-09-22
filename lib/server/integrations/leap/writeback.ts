@@ -23,6 +23,7 @@ import type { LeapApi } from './client';
 import { tagExternalRef } from './mapping';
 import { DECISION_EVENT_TYPES, SUBFLOW_OF_KIND, surfacedDecisions, type DecisionKind, type DecisionOption, type EngineEvent, type MatterState, type SubflowConfig } from '../../engine/types';
 import { optionLabel } from '../../engine/rules';
+import { paths } from '../../../paths';
 
 export interface LeapWritebackStore {
   find(eventId: string, kind: WritebackKind): Promise<{ leapId: string | null; status: string } | null>;
@@ -89,7 +90,7 @@ export async function writeBack(deps: WritebackDeps, tenantId: string, matterId:
           continue;
         }
         if (await deps.store.find(e.id, 'task')) continue;
-        const url = `${deps.appUrl}/decisions/${e.id}`;
+        const url = `${deps.appUrl}${paths.decision(e.id)}`;
         const sf = SUBFLOW_OF_KIND[d.kind as DecisionKind];
         const title = `${PREFIX}: decision needed — ${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}`;
         const description = tagExternalRef(`${firstLine(d.summary)}\n\nOpen the source and decide in CONVEYi: ${url}\nOptions: ${d.options.map(optionLabel).join(' · ')}${sf ? `\nSub-flow: ${sf}` : ''}`, `decision:${e.id}`);
@@ -117,7 +118,7 @@ export async function writeBack(deps: WritebackDeps, tenantId: string, matterId:
         const who = /^[0-9a-f-]{36}$/i.test(e.actor) ? (await deps.store.userName(tenantId, e.actor)) ?? e.actor : e.actor;
         const option = p.option ? optionLabel(String(p.option) as DecisionOption) : p.method ? `verified out-of-band (${String(p.method).replace(/_/g, ' ')})` : e.type.replace(/_/g, ' ');
         const cites = d?.citations?.length ? `\nSources: ${d.citations.map((c) => c.label).join('; ')}` : '';
-        const body = `${PREFIX}: ${d ? `${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''} — ` : ''}${option} by ${who}${p.note ? `\nReason: ${p.note}` : ''}${p.reference ? `\nVerification ref: ${p.reference}` : ''}${cites}\n${deps.appUrl}/decisions/${decisionEventId || e.id}`;
+        const body = `${PREFIX}: ${d ? `${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''} — ` : ''}${option} by ${who}${p.note ? `\nReason: ${p.note}` : ''}${p.reference ? `\nVerification ref: ${p.reference}` : ''}${cites}\n${deps.appUrl}${paths.decision(decisionEventId || e.id)}`;
         const n = await deps.leap.addNote(leapMatterId, body);
         await deps.store.record({ tenantId, matterId, eventId: e.id, kind: 'note', leapId: n.id, status: 'WRITTEN' });
         out.notes += 1;
