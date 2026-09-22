@@ -120,6 +120,7 @@ export default function MyWorkPage() {
           <button className={`eg-btn${all ? ' on' : ''}`} onClick={() => setAll(!all)}>{all ? 'Whole team' : 'Mine only'}</button>
           <a className="eg-btn" href="/conveyi/today">Today</a>
           <a className="eg-btn" href="/conveyi/cases">Caseload</a>
+          <a className="eg-btn" href="/conveyi/email">Email to file</a>
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}

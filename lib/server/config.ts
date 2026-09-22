@@ -216,6 +216,23 @@ export const config = {
   // Upload engine-generated documents (report drafts, escalation dossiers) into the LEAP matter.
   leapUploadGenerated: (env('LEAP_UPLOAD_GENERATED') ?? '1') !== '0',
 
+  // InTouch (docs/intouch-integration.md) — the client-facing half: onboarding, identity
+  // checks, the forms the client completes, and the portal they watch. Hosts are
+  // configured, never derived: the reference is registration-gated.
+  intouchApiBaseUrl: env('INTOUCH_API_BASE_URL'),
+  intouchAuthBaseUrl: env('INTOUCH_AUTH_BASE_URL'),
+  intouchClientId: env('INTOUCH_CLIENT_ID'),
+  intouchClientSecret: env('INTOUCH_CLIENT_SECRET'),
+  intouchApiKey: env('INTOUCH_API_KEY'),
+  intouchWebhookSecret: env('INTOUCH_WEBHOOK_SECRET'),
+  // A firm's connection is server-to-server by default; switch to authorization_code if
+  // InTouch requires a person to consent.
+  intouchGrant: (env('INTOUCH_GRANT') ?? 'client_credentials') as 'client_credentials' | 'authorization_code',
+  intouchRedirectUri: env('INTOUCH_REDIRECT_URI') ?? `${env('APP_URL') ?? 'https://localhost:3000'}/api/v1/integrations/intouch/callback`,
+  // Pushing a milestone writes to something the CLIENT sees, so it is off until the firm
+  // turns it on per connection; this is the kill switch for the whole estate.
+  intouchMilestones: (env('INTOUCH_MILESTONES') ?? 'auto') as 'auto' | 'off',
+
   // Owner-only internal analytics dashboard. The /internal page and its metrics
   // API are gated by this shared key (independent of the Outlook/Entra session).
   internalDashboardKey: env('INTERNAL_DASHBOARD_KEY'),

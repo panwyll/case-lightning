@@ -17,6 +17,10 @@
     {
       "path": "/api/v1/cron/engine-tick",
       "schedule": "30 6 * * 1-5"
+    },
+    {
+      "path": "/api/v1/cron/intouch-sync",
+      "schedule": "*/15 * * * *"
     }
   ]
 }

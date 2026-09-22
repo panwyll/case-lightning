@@ -49,6 +49,7 @@ export default function CasesPage() {
           <a className="eg-btn" href="/conveyi/today">Today</a>
           <a className="eg-btn" href="/conveyi/my-work">My work</a>
           <a className="eg-btn" href="/conveyi/decisions">Decisions</a>
+          <a className="eg-btn" href="/conveyi/email">Email to file</a>
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}
