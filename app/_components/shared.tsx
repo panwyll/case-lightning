@@ -40,6 +40,7 @@ export const ROUTES = {
   pricing: '/conveyi/pricing',
   howItWorks: '/conveyi/how-it-works',
   faq: '/conveyi/faq',
+  support: '/conveyi/support',
 } as const;
 
 // The live Microsoft Marketplace (AppSource) listing — product id assigned at publish.
@@ -88,6 +89,7 @@ export function SiteFooter() {
           <a href={ROUTES.howItWorks} className="hover:text-ink">How it works</a>
           <a href={ROUTES.pricing} className="hover:text-ink">Pricing</a>
           <a href={ROUTES.faq} className="hover:text-ink">FAQ</a>
+          <a href={ROUTES.support} className="hover:text-ink">Support</a>
           <a href="/conveyi/security" className="hover:text-ink">Security</a>
           <a href="/conveyi/privacy" className="hover:text-ink">Privacy</a>
           <a href="/conveyi/terms" className="hover:text-ink">Terms</a>

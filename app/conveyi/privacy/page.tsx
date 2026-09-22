@@ -19,6 +19,7 @@ const EFFECTIVE = '[Effective date]';
 
 const SUBPROCESSORS: Array<[string, string, string]> = [
   ['Microsoft (Microsoft 365 / Graph / OneDrive)', 'Hosts your mailbox, files and the data the add-in reads and writes. Your emails and documents stay in your own organisation’s Microsoft 365 tenant.', 'EU/UK or tenant region'],
+  ['LEAP (leap.build)', 'Where a LEAP firm’s matters, parties, documents, tasks and file notes live. We read from and write to your firm’s own LEAP account under a connection your firm authorises and can revoke. LEAP is your provider, not ours.', 'Your LEAP region (UK)'],
   ['Anthropic (Claude)', 'Generates email drafts, summaries, classifications and document text from the matter content sent for each request.', 'USA'],
   ['Groq (failover only)', 'Used only if no Anthropic key is configured, to generate the same outputs. Avoid in production by configuring Anthropic.', 'USA'],
   ['Voyage AI / OpenAI (embeddings)', 'Converts matter text into vector embeddings for retrieval. Only the configured provider is used.', 'USA'],
@@ -51,9 +52,10 @@ export default function PrivacyPage() {
 
         <P>
           This policy explains how {LEGAL_ENTITY} (“we”, “us”) processes personal data through
-          CaseLightning / CONVEYi (the “Service”), an Outlook add-in that helps UK conveyancing firms
-          triage email, draft replies and manage matters. It is written to meet UK GDPR and the Data
-          Protection Act 2018.
+          CaseLightning / CONVEYi (the “Service”), which helps UK conveyancing firms triage email,
+          draft replies and run their matters — inside Outlook, and alongside the firm’s practice
+          management system where it uses one. It is written to meet UK GDPR and the Data Protection
+          Act 2018.
         </P>
 
         <H2>Who is the controller</H2>
@@ -69,6 +71,8 @@ export default function PrivacyPage() {
         <ul className="mt-3 space-y-2 text-ink/75">
           <li>• <strong>Mailbox content</strong> you act on: email subject, body, participants and attachments of the messages you open or that auto-triage processes.</li>
           <li>• <strong>Matter data</strong>: property addresses, party names, dates, counterparties, documents and the records you create.</li>
+          <li>• <strong>Practice management data</strong>, where your firm connects LEAP: the conveyancing matters, the cards (parties) on them, and the documents filed to them — read from your firm’s own LEAP account.</li>
+          <li>• <strong>Notes and call transcripts</strong> you file on a matter, and what a reader takes from them for a conveyancer to approve.</li>
           <li>• <strong>Account data</strong>: your name, work email, Microsoft tenant/user identifiers, role.</li>
           <li>• <strong>Billing data</strong>: firm billing contact and subscription status (card details are handled by Stripe, not us).</li>
           <li>• <strong>Operational data</strong>: audit logs, and per-request AI usage metering (token counts and cost — <em>not</em> message content).</li>
@@ -87,9 +91,35 @@ export default function PrivacyPage() {
         <P>
           Your emails and documents remain in your firm’s own Microsoft 365 tenant — we read and write
           via Microsoft Graph using least-privilege permissions scoped to the signed-in user’s mailbox
-          and OneDrive. Matter records, identifiers, embeddings and audit logs are stored in our
+          and OneDrive — and, where your firm uses LEAP, in its own LEAP account. Matter records,
+          identifiers, embeddings and audit logs are stored in our
           database. Data is logically isolated per firm (tenant): one firm can never access another’s
           matters or content.
+        </P>
+
+        <H2>If your firm connects LEAP</H2>
+        <P>
+          Where your firm uses LEAP as its practice management system, LEAP remains the system of
+          record and your firm’s relationship with LEAP is its own. A partner or administrator
+          authorises the connection on LEAP’s consent screen, and it can be revoked there or by asking
+          us at any time; revoking stops all reading and all write-back immediately.
+        </P>
+        <P>We request only the access the product needs, and each scope maps to one thing:</P>
+        <ul className="mt-3 space-y-2 text-ink/75">
+          <li>• <strong>matters:read</strong> — the conveyancing matters we track, their type, key dates and responsible staff.</li>
+          <li>• <strong>cards:read</strong> — the parties on a matter, so documents and decisions are attributed to the right side.</li>
+          <li>• <strong>documents:read</strong> — documents filed on the matter, and their contents on demand, so the conveyancer sees the source beside the decision.</li>
+          <li>• <strong>documents:write</strong> — uploading our own clearly-labelled DRAFT documents into a CONVEYi folder on the matter. Documents your firm created are never modified or deleted.</li>
+          <li>• <strong>tasks:write</strong> — raising a task for each decision that needs a conveyancer, and completing it when it is resolved.</li>
+          <li>• <strong>notes:write</strong> — recording each resolution and each material step as a file note, so the audit trail is in your own file.</li>
+          <li>• <strong>offline_access</strong> — keeping the matter in step while nobody is signed in; documents arrive when they arrive.</li>
+        </ul>
+        <P>
+          We hold a <strong>mirror, not a copy</strong>: matters, parties and a register of documents,
+          keyed to their LEAP identifiers. Document contents are fetched from LEAP when they are
+          needed and are not stored by us. We do not have, and do not ask for, access to your
+          accounting, trust or client-money records. New matters start in shadow mode, where nothing
+          is written back into LEAP at all until your firm promotes them.
         </P>
 
         <H2>AI processing</H2>
@@ -134,7 +164,10 @@ export default function PrivacyPage() {
           We retain matter and account data for as long as your firm has an active account, then delete
           or return it per your data processing agreement. Deleting a matter removes its records
           (identifiers, documents register, embeddings, triage) from our database; files in your own
-          OneDrive remain under your control. Audit logs are kept for [retention period].
+          OneDrive or LEAP account remain under your control. Disconnecting LEAP stops all further
+          reading and write-back at once; anything already written into your LEAP file — tasks, file
+          notes, draft documents — stays in your file, because it is your record. Audit logs are kept
+          for [retention period].
         </P>
 
         <H2>Your rights</H2>
