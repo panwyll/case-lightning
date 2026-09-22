@@ -29,7 +29,7 @@ import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions } from './sla';
-import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction, type NoteKind } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
@@ -309,6 +309,54 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'title_extracted', actor: SYSTEM, documentId, facts, extractor: this.ports.extractor.name, summary });
   }
 
+  /**
+   * File a note or a call transcript on the matter, then read it (docs/intake.md).
+   *
+   * Two steps on purpose: the note is on the log as evidence the moment it is filed, even
+   * if the reading fails or there is no extractor configured. Nothing it proposes touches
+   * the case until a person approves the decision this raises.
+   */
+  async recordNote(
+    tenantId: string,
+    matterId: string,
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null }
+  ): Promise<RunResult> {
+    // A decision has to cite something a person can open. A note filed without a document
+    // behind it (typed straight into the matter) becomes one — the note IS the evidence.
+    let documentId = input.documentId ?? null;
+    if (!documentId) {
+      const stamp = this.ports.now().toISOString().slice(0, 16).replace('T', ' ');
+      documentId = await this.ports.documents
+        .createGenerated({ tenantId, matterId, docType: 'FILE_NOTE', fileName: `${input.kind === 'call' ? 'Call note' : 'File note'} — ${stamp}.txt`, content: input.text, createdBy: input.actor })
+        .then((d) => d.id)
+        .catch((err) => {
+          this.ports.log('the note could not be filed as a document — it is still on the log', err);
+          return null;
+        });
+    }
+    const recorded = await this.run(tenantId, matterId, {
+      type: 'record_note',
+      actor: input.actor,
+      kind: input.kind,
+      text: input.text,
+      noteId: input.noteId ?? null,
+      documentId,
+      durationSeconds: input.durationSeconds ?? null,
+    });
+    const noteId = (recorded.events[0]?.payload as { noteId?: string } | undefined)?.noteId;
+    const reader = this.ports.noteExtractor;
+    if (!noteId || !reader) return recorded;
+    const brief = caseBrief(recorded.state, this.ports.now());
+    const drafts = await reader
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .catch((err) => {
+        this.ports.log('note extraction failed — the note is still on the file', err);
+        return [];
+      });
+    if (!drafts.length) return recorded;
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts, extractor: reader.name });
+  }
+
   // ───────────── decisions (dashboard #6) ─────────────
 
   /** The handler opened the source. Logged, and a precondition of resolving. Returns the document so the UI can show it. */
@@ -322,8 +370,8 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null): Promise<RunResult> {
-    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null });
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null });
   }
 
   /**
@@ -500,6 +548,31 @@ export class EngineService {
         if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
           const p = e.payload as { requestId: string; note?: string | null };
           await this.requestProofOfFunds(tenantId, matterId, e.actor, { followUpOf: p.requestId, noteToClient: p.note ?? null });
+        }
+        // An approved note: run each chosen proposal through the machine's ordinary front
+        // door, under the name of the person who approved it. Nothing bypasses validation —
+        // a client decision the machine would refuse by hand is refused here too, and is
+        // logged rather than silently dropped.
+        if (e.type === 'note_actions_applied') {
+          const p = e.payload as { noteId: string; applied: string[] };
+          const fresh = await this.getState(tenantId, matterId);
+          const note = fresh.notes[p.noteId];
+          for (const id of p.applied) {
+            const action = note?.actions.find((a) => a.id === id);
+            if (!action?.command) continue;
+            try {
+              const c = action.command;
+              if (c.type === 'client_decision_recorded') {
+                await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId });
+              } else {
+                await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
+              }
+            } catch (err) {
+              const reason = err instanceof Error ? err.message : String(err);
+              this.ports.log(`note ${p.noteId} action ${id} could not be applied`, err);
+              await this.run(tenantId, matterId, { type: 'note_action_refused', noteId: p.noteId, actionId: id, reason }).catch(() => {});
+            }
+          }
         }
         // A chase to a third party is also news for the client (docs/architecture-review.md
         // §9): they hear that we are on it without having to ask. Once per day per matter,

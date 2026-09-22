@@ -198,6 +198,10 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'record_price_change', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['price_changed', 'issue_raised'], description: 'The agreed price (first record) or a renegotiated price before exchange; a change on a lender-funded purchase raises a lender_approval issue.', issue: true },
   { type: 'contract_approved', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['contract_approved'], description: 'Readiness milestone: the draft contract is approved as to form (advisory).', issue: true },
   { type: 'signed_contract_held', actor: 'either', stages: ['contract_review', 'pre_exchange'], emits: ['signed_contract_held'], description: 'Readiness milestone: the client\'s signed contract is on file (advisory).', issue: true },
+  // notes and call transcripts (docs/intake.md)
+  { type: 'record_note', actor: 'person', stages: 'any', emits: ['note_recorded'], description: 'File a note, a dictated note or a call transcript on the matter. It is evidence from the moment it lands, whatever the reading makes of it.' },
+  { type: 'note_action_refused', actor: 'automation', stages: 'any', emits: ['note_action_refused'], description: 'A line a person approved that the machine then refused (a precondition was never there). Recorded so the note never claims something landed that did not.' },
+  { type: 'note_extracted', actor: 'automation', stages: 'any', emits: ['note_extracted'], description: "What the note appears to say, as proposals. Each must quote the note verbatim and map to a command the machine already accepts, or it is dropped. Raises one decision for a person; nothing is applied until they approve." },
   // transaction types (docs/transaction-types.md)
   { type: 'request_property_forms', actor: 'either', stages: 'any', emits: ['property_forms_requested'], description: 'Sale: ask the client for the TA6 / TA10 (and TA7 on a leasehold); a wait the timers chase.', types: ['freehold_sale', 'leasehold_sale'] },
   { type: 'property_forms_received', actor: 'either', stages: 'any', emits: ['property_forms_received'], description: 'Sale: the completed forms are in (facts extracted where a document arrived).', types: ['freehold_sale', 'leasehold_sale'] },
@@ -301,6 +305,7 @@ export const EVENTUALITIES: EventualitySpec[] = [
 ];
 
 const eventCategory = (t: EventType): string => {
+  if (/^note_/.test(t)) return 'notes & calls';
   if (/^property_forms|^contract_pack|^buyer_enquiries|^enquiry_replies/.test(t)) return 'sale';
   if (/^redemption|^mortgage_redeemed|^discharge/.test(t)) return 'redemption';
   if (/^mortgage_deed|^certificate_of_title|^transfer_deed|^deed_of_trust/.test(t)) return 'deeds';
@@ -337,7 +342,7 @@ export function machineSpec(): MachineSpec {
     subflows: SUBFLOW_SPECS,
     commands: COMMAND_SPECS,
     events: EVENT_TYPES.map((t) => ({ type: t, category: eventCategory(t), decision: DECISION_EVENT_TYPES.includes(t), humanGated: HUMAN_GATED_EVENTS.includes(t) })),
-    decisions: DECISION_KINDS.map((kind) => ({ kind, label: kind.replace(/_/g, ' '), options: OPTIONS_FOR[kind], source: SUBFLOW_SPECS.find((s) => s.decisionKind === kind)?.label ?? (kind === 'bank_details' ? 'the document the details arrived on' : kind === 'requisition' ? 'the HMLR requisition letter' : kind === 'auto_clear' ? 'the auto-cleared document' : kind === 'proof_of_funds' ? 'the client\'s declaration and its attachments' : kind === 'management_pack' ? 'the LPE1 / management pack' : 'the chase / deadline dossier') })),
+    decisions: DECISION_KINDS.map((kind) => ({ kind, label: kind.replace(/_/g, ' '), options: OPTIONS_FOR[kind], source: SUBFLOW_SPECS.find((s) => s.decisionKind === kind)?.label ?? (kind === 'bank_details' ? 'the document the details arrived on' : kind === 'requisition' ? 'the HMLR requisition letter' : kind === 'auto_clear' ? 'the auto-cleared document' : kind === 'proof_of_funds' ? 'the client\'s declaration and its attachments' : kind === 'management_pack' ? 'the LPE1 / management pack' : kind === 'note_actions' ? 'the note or call transcript it was read from' : 'the chase / deadline dossier') })),
     timers: {
       waits: (Object.keys(DEFAULT_SLA) as WaitKey[]).map((k) => ({ waitKey: k, chaseAfter: DEFAULT_SLA[k].chaseAfter, chaseEvery: DEFAULT_SLA[k].chaseEvery, escalateAfter: DEFAULT_SLA[k].escalateAfter, reEscalateAfter: DEFAULT_SLA[k].reEscalateAfter, recipientRole: DEFAULT_SLA[k].recipientRole, template: DEFAULT_SLA[k].template })),
       deadlines: (Object.keys(DEADLINE_LEAD) as DeadlineKind[]).map((kind) => ({ kind, leadWorkingDays: DEADLINE_LEAD[kind], description: { mortgage_offer_expiry: 'offer expiry before exchange', sdlt_filing: '14 days from completion', notice_to_complete: 'notice expiry', requisition_reply: 'HMLR reply-by date', stale_issue: 'an open issue with no movement (working days since last touched)' }[kind] })),

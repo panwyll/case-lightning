@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { CLIENT_DECISION_SUBJECTS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
+import { CLIENT_DECISION_SUBJECTS, NOTE_KINDS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, SUBFLOW_STATUSES, VERIFICATION_METHODS, type Engagement } from './types';
 import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
 import type { Command } from './machine';
 
@@ -100,6 +100,8 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mark_issue_fatal'), issueId: z.string().min(1).max(60), reason: z.string().min(1).max(2000), abandonReason: z.enum(ABANDON_REASONS).nullish() }),
   z.object({ type: z.literal('record_price_change'), toPennies: z.number().int().positive(), reason: z.string().min(1).max(500) }),
   z.object({ type: z.literal('contract_approved'), note: z.string().max(500).nullish() }),
+  // notes and call transcripts (docs/intake.md) — the service reads the note before it lands
+  z.object({ type: z.literal('record_note'), text: z.string().min(1).max(20_000), kind: z.enum(NOTE_KINDS).default('typed'), documentId: z.string().uuid().nullish(), durationSeconds: z.number().int().nonnegative().max(86_400).nullish() }),
   z.object({ type: z.literal('signed_contract_held'), note: z.string().max(500).nullish() }),
 ]);
 export type UserCommandInput = z.infer<typeof userCommandSchema>;
@@ -112,6 +114,7 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'draft_report_on_title':
     case 'send_report_on_title':
     case 'record_bank_details':
+    case 'record_note':
       return null; // handled by EngineService methods (they talk to a port first)
     default:
       return { ...input, actor: userId } as Command;
@@ -154,6 +157,8 @@ export const resolveSchema = z.object({
   verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),
   /** Addendum 3 §3: required — see assertEngaged. */
   engagement: engagementSchema.nullish(),
+  /** note_actions: which of the note's proposals the conveyancer is applying. Omitted means all of them. */
+  selection: z.array(z.string().min(1).max(60)).max(40).nullish(),
 });
 
 export const subflowStatusSchema = z.object({ subFlow: z.enum(SUB_FLOWS), status: z.enum(SUBFLOW_STATUSES) });

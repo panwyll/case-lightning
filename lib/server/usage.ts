@@ -32,6 +32,7 @@ export type UsageFeature =
   | 'DECISION_SUMMARY'
   | 'REPORT_DRAFT'
   | 'CLIENT_QA'
+  | 'NOTE_READ'
   | 'EMBED';
 
 export interface UsageContext {

@@ -79,6 +79,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       result = await svc.sendReportOnTitle(user.tenantId, matterId, user.userId);
     } else if (input.type === 'record_bank_details') {
       result = await svc.recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind: input.payeeKind, payeeRef: input.payeeRef ?? null, details: { ...input.details, firmName: input.details.firmName ?? null }, sourceChannel: input.sourceChannel, sourceDocumentId: input.sourceDocumentId ?? null, note: input.note ?? null });
+    } else if (input.type === 'record_note') {
+      result = await svc.recordNote(user.tenantId, matterId, { text: input.text, kind: input.kind, actor: user.userId, documentId: input.documentId ?? null, durationSeconds: input.durationSeconds ?? null });
     } else if (input.type === 'set_shadow_mode') {
       if (user.role !== 'ADMIN') throw Object.assign(new Error('Only an admin switches shadow mode.'), { status: 403 });
       result = await svc.setShadowMode(user.tenantId, matterId, user.userId, input.shadowMode, input.reason ?? null);

@@ -47,6 +47,14 @@ const CSS = `
 .dp-out b{font-weight:800}
 .dp-lock{background:#fffbeb;border:1px solid #fde68a;color:#78350f;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .dp-shadow{background:#312e81;color:#fff;border-radius:8px;padding:8px 10px;font-size:12.5px}
+.dp-lines{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.dp-line{display:flex;gap:10px;align-items:flex-start;border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
+.dp-line.on{border-color:#c4b5fd;background:#faf8ff}
+.dp-line.info{background:#f8fafc;color:#64748b}
+.dp-line.refused{border-color:#fecaca;background:#fef2f2}
+.dp-line input{margin-top:3px}
+.dp-line q{display:block;font-style:italic;color:#475569;margin-top:3px;font-size:12.5px}
+.dp-line .eff{display:block;font-size:12px;color:#334155;margin-top:3px}
 `;
 
 const UI_DWELL_MS = 8000;
@@ -77,6 +85,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
   const [activeCite, setActiveCite] = useState<number | null>(null);
+  /** note_actions: which lines the person is applying. null until the decision loads. */
+  const [picked, setPicked] = useState<Set<string> | null>(null);
   const [page, setPage] = useState<number | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // engagement
@@ -107,6 +117,13 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
     void load();
   }, [load]);
 
+  // Every line that would record something starts ticked; the person unticks what the
+  // note does not actually say. Information-only lines are not selectable at all.
+  useEffect(() => {
+    if (picked || !detail?.noteActions) return;
+    setPicked(new Set(detail.noteActions.actions.filter((a) => a.effect).map((a) => a.id)));
+  }, [detail, picked]);
+
   // Dwell: count time while the source section is at least half in view and the tab is visible.
   useEffect(() => {
     const el = srcRef.current;
@@ -126,6 +143,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const pending = d?.status === 'pending' && !detail?.shadowed && !done;
   const engaged = scrolled || dwell >= UI_DWELL_MS;
   const isBank = d?.kind === 'bank_details';
+  const noteLines = detail?.noteActions ?? null;
   const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
   const lines = useMemo(() => (d ? attachCitations(d.summary, d.citations) : []), [d]);
   const unplaced = useMemo(() => (d ? d.citations.map((_, i) => i).filter((i) => !lines.some((l) => l.marks.includes(i))) : []), [d, lines]);
@@ -205,7 +223,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
     setErr(null);
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement }) });
+      const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection }) });
       setDone(option);
       await load();
     } catch (e: unknown) {
@@ -310,6 +329,23 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                 <b>{OPTION_LABEL[res.option ?? ''] ?? pretty(res.option ?? d.resolution ?? d.status)}</b> · by {who(res.by)} · {fmtWhen(res.at)}
                 {res.note && <div style={{ marginTop: 6, whiteSpace: 'pre-wrap' }}>Reason: {res.note}</div>}
                 {res.verification && <div style={{ marginTop: 4 }}>Verified via {VERIFICATION_METHOD_LABEL[res.verification.method] ?? res.verification.method}{res.verification.reference ? ` (${res.verification.reference})` : ''}</div>}
+                {noteLines && (
+                  <div className="dp-lines" style={{ marginTop: 8 }}>
+                    {noteLines.actions.map((a) => {
+                      const refused = noteLines.refused.find((r) => r.id === a.id);
+                      const landed = !refused && (noteLines.applied ?? []).includes(a.id);
+                      return (
+                        <div key={a.id} className={`dp-line${refused ? ' refused' : landed ? ' on' : ' info'}`}>
+                          <span style={{ minWidth: 0 }}>
+                            <b>{landed ? 'Recorded' : refused ? 'Refused' : 'Not recorded'} — {a.summary}</b>
+                            <q>{a.quote}</q>
+                            {refused && <span className="eff">The machine would not take it: {refused.reason}</span>}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {detail.escalation && <div style={{ marginTop: 4 }}><a href={`/decisions/${detail.escalation.eventId}`}>Escalation raised {fmtWhen(detail.escalation.at)} →</a></div>}
                 <div style={{ marginTop: 6, fontSize: 11.5, color: '#64748b' }}>
                   Source opened by {detail.opens.length ? Array.from(new Set(detail.opens.map((o) => who(o.by)))).join(', ') : 'nobody'}
@@ -337,6 +373,29 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                 </div>
               </div>
             )}
+            {noteLines && (
+              <div className="dp-lines">
+                <div style={{ fontSize: 12.5, fontWeight: 700 }}>Tick what the {noteLines.noteKind === 'call' ? 'call' : 'note'} actually says. Only ticked lines are recorded.</div>
+                {noteLines.actions.map((a) => {
+                  const on = !!picked?.has(a.id);
+                  return (
+                    <label key={a.id} className={`dp-line${a.effect ? (on ? ' on' : '') : ' info'}`}>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        disabled={!a.effect || busy}
+                        onChange={(e) => setPicked((prev) => { const next = new Set(prev ?? []); if (e.target.checked) next.add(a.id); else next.delete(a.id); return next; })}
+                      />
+                      <span style={{ minWidth: 0 }}>
+                        <b>{a.summary}</b>
+                        <q>{a.quote}</q>
+                        <span className="eff">{a.effect ?? 'For information only — nothing would be recorded.'}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
             {choice && needsReason(choice) && (
               <div style={{ marginBottom: 8 }}>
                 <label style={{ fontSize: 12.5, fontWeight: 700 }}>Reason for “{OPTION_LABEL[choice] ?? pretty(choice)}” (required — recorded on the decision)</label>
@@ -353,8 +412,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                 <button
                   key={o}
                   className={`eg-btn${choice === o ? ' on' : o === 'approve' || o === 'verify' ? ' primary' : ''}`}
-                  disabled={busy || !engaged || (isBank && o === 'verify' && !method)}
-                  title={!engaged ? 'Read the source section first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : ''}
+                  disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size)}
+                  title={!engaged ? 'Read the source section first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size ? 'Tick at least one line, or reject the reading with a reason' : ''}
                   onClick={() => setChoice(o)}
                 >
                   {OPTION_LABEL[o] ?? pretty(o)}

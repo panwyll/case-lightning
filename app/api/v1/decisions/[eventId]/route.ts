@@ -6,7 +6,8 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { query, queryOne } from '@/lib/server/db';
-import { SUBFLOW_OF_KIND, type DecisionKind } from '@/lib/server/engine/types';
+import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
+import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -47,7 +48,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
         source = { id: doc.id, fileName: doc.fileName, webUrl: doc.webUrl, docType: doc.docType, content: (doc.extractedFacts as { content?: string } | null)?.content ?? null, rawUrl: blob?.ok ? `/api/v1/documents/${doc.id}/raw` : null };
       }
     }
+    // A note's decision is a list of lines, not one verdict: the panel needs each
+    // proposal, the words it came from, and what it would do (docs/intake.md).
+    let noteActions = null as null | Record<string, unknown>;
+    if (d.kind === 'note_actions' && raised?.type === 'note_extracted') {
+      const p = raised.payload as Payloads['note_extracted'];
+      const state = await svc.getState(user.tenantId, d.matterId);
+      const note = state.notes[p.noteId] ?? null;
+      const applied = resolving?.type === 'note_actions_applied' ? (resolving.payload as Payloads['note_actions_applied']) : null;
+      noteActions = {
+        noteId: p.noteId,
+        noteKind: note?.kind ?? 'typed',
+        actions: p.actions.map((a: NoteAction) => ({
+          id: a.id,
+          kind: a.kind,
+          summary: a.summary,
+          quote: a.quote,
+          confidence: a.confidence,
+          effect: !a.command
+            ? null
+            : a.command.type === 'client_decision_recorded'
+            ? `Record the client's decision: ${a.command.subject.replace(/_/g, ' ')} — ${a.command.decision.replace(/_/g, ' ')}`
+            : `Raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? ' (holding nothing)' : `, holding ${a.command.gate}`}`,
+        })),
+        applied: applied?.applied ?? null,
+        skipped: applied?.skipped ?? null,
+        refused: note?.refusedActions ?? [],
+      };
+    }
     return ok({
+      noteActions,
       decision: { ...d, sourceOpenedByMe: d.openedBy.includes(user.userId) },
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, shadowMode: !!matter.shadow_mode } : null,
       raised: raised ? { seq: raised.seq, type: raised.type, actor: raised.actor, createdAt: raised.createdAt, confidenceScore: raised.confidenceScore } : null,

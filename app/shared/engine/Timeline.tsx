@@ -28,6 +28,23 @@ function issueLabel(e: EngineEvent, state: EngineState): string | null {
   return head;
 }
 
+/** One line for a note event: whose words, and what came of them. */
+function noteLabel(e: EngineEvent, state: EngineState): string | null {
+  const p = e.payload as Record<string, unknown>;
+  const n = state.notes?.[String(p.noteId ?? '')];
+  if (e.type === 'note_recorded') return `${firstLine(String(p.text ?? '')).slice(0, 110)}…`;
+  if (e.type === 'note_extracted') {
+    const count = Array.isArray(p.actions) ? p.actions.filter((a) => (a as { command?: unknown }).command).length : 0;
+    return count ? `${count} thing${count === 1 ? '' : 's'} to confirm` : 'nothing on the file in it';
+  }
+  if (e.type === 'note_actions_applied') {
+    const applied = Array.isArray(p.applied) ? p.applied.length : 0;
+    return applied ? `${applied} line${applied === 1 ? '' : 's'} recorded` : 'nothing recorded';
+  }
+  if (e.type === 'note_action_refused') return `${String(p.actionId ?? '')} — ${String(p.reason ?? '')}`;
+  return n ? n.id : null;
+}
+
 export function Timeline({ events, state, people = {} }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string> }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const ordered = useMemo(() => [...events].sort((a, b) => b.seq - a.seq), [events]);
@@ -68,7 +85,7 @@ export function Timeline({ events, state, people = {} }: { events: EngineEvent[]
               );
             }
             const sup = e.type === 'action_suppressed';
-            const issueLine = issueLabel(e, state);
+            const issueLine = issueLabel(e, state) ?? (e.type.startsWith('note_') ? noteLabel(e, state) : null);
             return (
               <div key={e.id}>
                 <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} title="Show the raw event">

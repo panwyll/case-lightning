@@ -1,3 +1,4 @@
+import { DeterministicNoteReader } from './notes';
 import type { StatementFacts } from './proof-of-funds';
 /**
  * In-memory MOCK implementations of every port (see ports.ts). These are what the
@@ -200,6 +201,8 @@ export interface MockPorts extends EnginePorts {
 }
 
 /** A complete mock port set with a controllable clock and sequential ids. */
+export { DeterministicNoteReader };
+
 export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
   let now = start;
   let n = 0;
@@ -214,6 +217,7 @@ export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
     clientComms: new MockClientComms(),
     chaser: new MockChaser(),
     pofForms: new MockProofOfFundsForms(),
+    noteExtractor: new DeterministicNoteReader(),
     now: () => now,
     newId: () => `evt-${String(++n).padStart(4, '0')}`,
     log: (msg, detail) => logs.push([msg, detail]),

@@ -64,6 +64,28 @@ export interface DecisionDetail {
   people: Record<string, string>;
   shadowed: 'matter' | 'subflow' | null;
   source: SourceDoc | null;
+  /** note_actions only: what the note appears to say, line by line, for the person to pick from. */
+  noteActions: NoteActionsDetail | null;
+}
+
+export interface NoteActionView {
+  id: string;
+  kind: string;
+  summary: string;
+  quote: string;
+  confidence: number;
+  /** null = for information only; nothing would be recorded. */
+  effect: string | null;
+}
+
+export interface NoteActionsDetail {
+  noteId: string;
+  noteKind: string;
+  actions: NoteActionView[];
+  /** Set once resolved: what actually landed, and anything the machine then refused. */
+  applied: string[] | null;
+  skipped: string[] | null;
+  refused: Array<{ id: string; reason: string }>;
 }
 
 export type SubflowStatus = 'shadow' | 'assist' | 'autonomous';
@@ -71,7 +93,7 @@ export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 
 export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', search: 'Searches', enquiry: 'Enquiries', mortgage: 'Mortgage offer', title: 'Title', report_on_title: 'Report on title', chase: 'Chasing & escalation' };
 
 /** Event types that carry a DecisionSpec (mirrors the server's DECISION_EVENT_TYPES). */
-export const DECISION_EVENT_TYPES = new Set(['id_check_flagged', 'search_flagged', 'enquiry_reply_flagged', 'mortgage_condition_flagged', 'title_flagged', 'report_on_title_drafted', 'escalation_raised', 'bank_details_change_flagged', 'auto_clear_review_raised']);
+export const DECISION_EVENT_TYPES = new Set(['id_check_flagged', 'search_flagged', 'enquiry_reply_flagged', 'mortgage_condition_flagged', 'title_flagged', 'report_on_title_drafted', 'escalation_raised', 'bank_details_change_flagged', 'auto_clear_review_raised', 'note_extracted']);
 
 export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl?: string | null }
 
@@ -188,6 +210,8 @@ export interface EngineState {
   requireExchangeAuthority?: boolean;
   survey?: { status: string; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null }> };
   clientDecisions?: Partial<Record<string, { decision: string; at: string; by: string; note: string | null }>>;
+  /** Notes and call transcripts (docs/intake.md). */
+  notes?: Record<string, NoteRow>;
   closedAt?: string | null;
   proofOfFunds?: { status: 'not_started' | 'requested' | 'submitted' | 'reviewed'; requestId: string | null; requestedAt: string | null; submittedAt: string | null; documentId: string | null; decisionEventId: string | null; resolution: string | null; formUrl: string | null; rounds: number; facts: { totalDeclaredPennies: number; requiredPennies: number | null; shortfallPennies: number | null; giftedPennies: number; sources: Array<{ kind: string; amountPennies: number }> } | null; risk?: 'standard' | 'enhanced' | null; flags?: Array<{ code: string; severity: string; description: string }>; statements?: Array<{ documentId: string; fileName: string | null; holder: string | null; from: string | null; to: string | null; transactions: number; credits: number; readable: boolean }>; queries?: Record<string, PofQueryRow>; approvedAt?: string | null };
   managementPack?: { status: string; requestedAt: string | null; documentId: string | null; decisionEventId: string | null };
@@ -202,6 +226,22 @@ export interface EngineState {
   suppressed: number;
   targetCompletionDate: string | null;
   targetExchangeDate: string | null;
+}
+
+export interface NoteRow {
+  id: string;
+  kind: string;
+  text: string;
+  author: string;
+  at: string;
+  documentId: string | null;
+  durationSeconds: number | null;
+  actions: Array<{ id: string; kind: string; summary: string; quote: string; confidence: number; command: { type: string } | null }>;
+  extractor: string | null;
+  decisionEventId: string | null;
+  status: 'proposed' | 'applied' | 'discarded' | 'no_actions';
+  appliedActionIds: string[];
+  refusedActions: Array<{ id: string; reason: string }>;
 }
 
 export interface EngineView { state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; subflows?: Record<string, SubflowStatus>; matter?: MatterMeta | null }
@@ -223,6 +263,7 @@ export const KIND_LABEL: Record<string, string> = {
   requisition: 'HMLR requisition',
   proof_of_funds: 'Proof of funds — sign off',
   management_pack: 'Management pack (LPE1)',
+  note_actions: 'Note or call — what to record',
 };
 
 export const VERIFICATION_METHOD_LABEL: Record<string, string> = {

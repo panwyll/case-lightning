@@ -4,6 +4,7 @@ import { WorkPanel, WORK_CSS } from '../../shared/engine/WorkPanel';
 import { CaseIntelligence } from '../../shared/engine/CaseIntelligence';
 import type { CaseModel } from '../../shared/engine/CaseView';
 import { IssuesPanel } from '../../shared/engine/IssuesPanel';
+import { NotesPanel } from '../../shared/engine/NotesPanel';
 import { DocumentsPanel } from '../../shared/engine/DocumentsPanel';
 import { Timeline } from '../../shared/engine/Timeline';
 import { CaseView } from '../../shared/engine/CaseView';
@@ -21,13 +22,14 @@ import { HEALTH_LABEL, TRANSACTION_LABEL, stageLabel } from '../../shared/engine
 export default function EngineMatterPage({ params }: { params: Promise<{ matterId: string }> }) {
   const { matterId } = use(params);
   const eng = useEngine(matterId, api);
-  const [tab, setTab] = useState<'case' | 'work' | 'issues' | 'documents' | 'timeline' | 'diagnostics'>('case');
+  const [tab, setTab] = useState<'case' | 'work' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics'>('case');
   const [model, setModel] = useState<CaseModel | null>(null);
   const view = eng.view;
   const m = view?.matter ?? null;
   const shadow = !!view?.state.shadowMode;
   const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
   const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => i.status === 'open' || i.status === 'negotiating').length;
+  const unreadNotes = Object.values(view?.state.notes ?? {}).filter((n) => n.status === 'proposed').length;
   const enrolled = !!view?.state.enrolled;
   // The case model (health, workstreams, requirements, gates, next actions, graph) —
   // one fetch, shared by the case view and the diagnostics view.
@@ -82,6 +84,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
             <button className={`eg-tab${tab === 'case' ? ' on' : ''}`} onClick={() => setTab('case')}>Case</button>
             <button className={`eg-tab${tab === 'work' ? ' on' : ''}`} onClick={() => setTab('work')}>Work{pending ? ` (${pending})` : ''}</button>
             <button className={`eg-tab${tab === 'issues' ? ' on' : ''}`} onClick={() => setTab('issues')}>Issues{openIssues ? ` (${openIssues})` : ''}</button>
+            <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')}>Documents</button>
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
             <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')}>Diagnostics</button>
@@ -89,6 +92,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
           {tab === 'case' && (model ? <CaseIntelligence m={model} events={eng.events} onDiagnostics={() => setTab('diagnostics')} /> : <div className="eg-sub">Reading the case…</div>)}
           {tab === 'work' && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} />}
           {tab === 'issues' && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
+          {tab === 'notes' && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={m?.assignedTo && m.handler ? { [m.assignedTo]: m.handler } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
           {tab === 'documents' && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
           {tab === 'diagnostics' && (
             <>

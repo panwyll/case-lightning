@@ -10,6 +10,7 @@ import { driveUserFor } from '@/lib/server/matter-drive';
 import { emitMatterEvent } from '@/lib/server/events';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
+import { engine } from '@/lib/server/engine/adapters';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -63,6 +64,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // move can clean them up. Each step is best-effort.
     if (body.matterId && changingMatter) {
       const title = body.title ?? existing.title;
+      let documentId: string | null = null;
       try {
         const matter = await queryOne<{ folder_path: string | null }>(
           `select folder_path from matter where id = $1 and tenant_id = $2`,
@@ -80,6 +82,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
              values ($1,$2,'CALL_NOTE',$3,$4,$5,$6,$7,'text/plain','CALL_NOTE',$8) returning id`,
             [user.tenantId, body.matterId, uploaded.parentReference?.driveId ?? null, uploaded.id, `${matterKbPath(matter.folder_path)}/${fileName}`, uploaded.webUrl ?? null, fileName, user.userId]
           ).catch(() => null);
+          documentId = doc?.id ?? null;
           await query(`update call_note set document_id = $1, drive_item_id = $2 where id = $3 and tenant_id = $4`, [doc?.id ?? null, uploaded.id ?? null, existing.id, user.tenantId]).catch(() => {});
         }
       } catch { /* OneDrive write is best-effort — the KB index + timeline still land */ }
@@ -99,6 +102,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         title: `Call note added: ${title}`,
         details: existing.summary || null,
       }).catch(() => {});
+      // docs/intake.md: the transcript is not just filed, it is READ. Anything it plainly
+      // records becomes a proposal on one decision the conveyancer approves; nothing is
+      // applied here. Best-effort — a matter not enrolled in the engine just files the note.
+      const transcript = (existing.transcript || existing.summary || '').trim();
+      if (transcript.length >= 10) {
+        await engine()
+          .recordNote(user.tenantId, body.matterId, { text: transcript.slice(0, 20_000), kind: 'call', actor: user.userId, documentId, durationSeconds: null })
+          .catch(() => {});
+      }
     }
 
     return ok({ note });

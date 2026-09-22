@@ -425,6 +425,56 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
 
     // ── Comms / chasing / escalation ──
+    // ── notes and call transcripts ──
+    case 'note_recorded': {
+      const p = e.payload as Payloads['note_recorded'];
+      s.notes[p.noteId] = {
+        id: p.noteId,
+        kind: p.kind,
+        text: p.text,
+        author: e.actor,
+        at: e.createdAt,
+        documentId: p.documentId,
+        durationSeconds: p.durationSeconds,
+        actions: [],
+        extractor: null,
+        decisionEventId: null,
+        status: 'no_actions',
+        appliedActionIds: [],
+        refusedActions: [],
+      };
+      break;
+    }
+    case 'note_extracted': {
+      const p = e.payload as Payloads['note_extracted'];
+      const n = s.notes[p.noteId];
+      if (n) {
+        n.actions = p.actions;
+        n.extractor = p.extractor;
+        n.status = p.actions.some((a) => a.command) && p.decision ? 'proposed' : 'no_actions';
+        if (p.decision) n.decisionEventId = e.id;
+      }
+      break;
+    }
+    case 'note_action_refused': {
+      const p = e.payload as Payloads['note_action_refused'];
+      const n = s.notes[p.noteId];
+      if (n) {
+        n.refusedActions.push({ id: p.actionId, reason: p.reason });
+        n.appliedActionIds = n.appliedActionIds.filter((id) => id !== p.actionId);
+        if (!n.appliedActionIds.length) n.status = 'discarded';
+      }
+      break;
+    }
+    case 'note_actions_applied': {
+      const p = e.payload as Payloads['note_actions_applied'];
+      const n = s.notes[p.noteId];
+      if (n) {
+        n.appliedActionIds = p.applied;
+        n.status = p.applied.length ? 'applied' : 'discarded';
+      }
+      break;
+    }
     case 'client_update_sent': {
       s.clientUpdatesSent += 1;
       const p = e.payload as Payloads['client_update_sent'];
@@ -882,6 +932,7 @@ function subjectOf(e: EngineEvent): string | null {
   if (typeof p.searchType === 'string') return p.searchType;
   if (typeof p.enquiryId === 'string') return p.enquiryId;
   if (typeof p.draftId === 'string') return p.draftId;
+  if (e.type === 'note_extracted') return (p as Payloads['note_extracted']).noteId;
   if (e.type === 'proof_of_funds_submitted') return (p as Payloads['proof_of_funds_submitted']).requestId;
   if (typeof p.bankDetailsId === 'string') return p.bankDetailsId;
   if (e.type === 'hmlr_requisition_received') return (p as Payloads['hmlr_requisition_received']).reference ?? 'requisition';

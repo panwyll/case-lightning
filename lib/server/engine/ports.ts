@@ -16,7 +16,8 @@
  *   #7 audit        → the event log itself
  *   #8 Outlook      → out of scope for this phase
  */
-import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, SearchFacts, SearchType, SurveyFacts, TitleFacts } from './types';
+import type { NoteActionDraft } from './notes';
+import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
 
@@ -51,6 +52,16 @@ export interface DocumentExtractor {
   extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
   /** Case model §7: a survey / valuation / specialist report read for its recommendations (facts, never the client's view). */
   extractSurvey(doc: DocumentRef): Promise<SurveyFacts>;
+}
+
+/**
+ * Notes and call transcripts (docs/intake.md). Reads what a note appears to say and
+ * proposes case actions. Everything it returns is validated against the note's own words
+ * and the machine's command set before anyone sees it, and applied only on approval.
+ */
+export interface NoteExtractor {
+  readonly name: string;
+  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string }): Promise<NoteActionDraft[]>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */
@@ -149,6 +160,8 @@ export interface EnginePorts {
   /** Optional: without it request_proof_of_funds cannot be issued by the service (the route refuses with 501). */
   pofForms?: ProofOfFundsForms | null;
   reportDrafter: ReportDrafter;
+  /** Optional: without it a note is filed as evidence and nothing is proposed from it. */
+  noteExtractor?: NoteExtractor | null;
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;

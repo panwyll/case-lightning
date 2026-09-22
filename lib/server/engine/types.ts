@@ -119,6 +119,11 @@ export const EVENT_TYPES = [
   // comms / chasing / escalation
   'client_update_sent',
   'chase_sent',
+  // notes and call transcripts (docs/intake.md)
+  'note_recorded',
+  'note_extracted',
+  'note_actions_applied',
+  'note_action_refused',
   'escalation_raised',
   'escalation_resolved',
   // decision audit
@@ -340,6 +345,55 @@ export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> =
 };
 export const TENANTS_IN_COMMON = new Set(['tenants_in_common_equal', 'tenants_in_common_unequal']);
 
+// ───────────────────────────── Notes and transcripts (docs/intake.md) ──────────────────
+
+/** Where the words came from. A call transcript and a typed note run the same pipeline. */
+export const NOTE_KINDS = ['typed', 'dictated', 'call', 'meeting'] as const;
+export type NoteKind = (typeof NOTE_KINDS)[number];
+
+/** What an extractor may propose from a note. Anything else is information only. */
+export const NOTE_ACTION_KINDS = ['client_decision', 'issue', 'expectation', 'information'] as const;
+export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
+
+/** The command a proposal would run. Deliberately a small, safe set — see notes.ts. */
+export type NoteCommand =
+  | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string }
+  | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
+
+/**
+ * One thing a note appears to say. `quote` must be a verbatim span of the note — the
+ * machine refuses a proposal that cannot point at the words it came from, which is what
+ * stops a model from inventing an instruction nobody gave.
+ */
+export interface NoteAction {
+  id: string;
+  kind: NoteActionKind;
+  summary: string;
+  quote: string;
+  confidence: number;
+  command: NoteCommand | null;
+}
+
+export type NoteStatus = 'proposed' | 'applied' | 'discarded' | 'no_actions';
+
+export interface NoteState {
+  id: string;
+  kind: NoteKind;
+  text: string;
+  author: Actor;
+  at: string;
+  documentId: string | null;
+  /** Minutes of a call, where it was one. */
+  durationSeconds: number | null;
+  actions: NoteAction[];
+  extractor: string | null;
+  decisionEventId: string | null;
+  status: NoteStatus;
+  appliedActionIds: string[];
+  /** Approved, then refused by the machine when it ran — the note's record stays honest. */
+  refusedActions: Array<{ id: string; reason: string }>;
+}
+
 export interface IdCheckFacts {
   provider: string;
   outcome: 'clear' | 'refer' | 'fail';
@@ -349,7 +403,7 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack', 'note_actions'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify', 'indemnity'] as const;
@@ -580,6 +634,10 @@ export interface Payloads {
 
   client_update_sent: ClientUpdateSpec;
   chase_sent: ChaseSpec;
+  note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null };
+  note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec };
+  note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null };
+  note_action_refused: { noteId: string; actionId: string; reason: string };
   escalation_raised: {
     /** null when a human escalated a decision rather than a timer firing on a wait. */
     waitKey: WaitKey | null;
@@ -730,6 +788,7 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'hmlr_requisition_received',
   'proof_of_funds_submitted',
   'management_pack_received',
+  'note_extracted',
 ];
 
 export type { PofQuery };
@@ -753,7 +812,7 @@ export type SubflowConfig = Record<SubFlow, SubflowStatus>;
 export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist', proof_of_funds: 'assist', management_pack: 'assist' };
 
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
-export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack' };
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null };
 
 export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
 
@@ -987,6 +1046,8 @@ export interface MatterState {
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];
+  /** Notes and call transcripts on this matter, with what the engine read in them. */
+  notes: Record<string, NoteState>;
   clientUpdatesSent: number;
   /** When each client-update template last went out — so the same news is not sent twice in a day. */
   clientUpdateLastSentAt: Record<string, string>;
@@ -1059,6 +1120,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     readiness: { contractApprovedAt: null, signedContractHeldAt: null },
     decisions: {},
     waits: [],
+    notes: {},
     clientUpdatesSent: 0,
     clientUpdateLastSentAt: {},
     chasesSent: 0,
@@ -1087,6 +1149,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     ...init,
     ...s,
     clientUpdateLastSentAt: { ...(s.clientUpdateLastSentAt ?? {}) },
+    notes: { ...(s.notes ?? {}) },
     postCompletion: merge('postCompletion'),
     proofOfFunds: merge('proofOfFunds'),
     survey: merge('survey'),

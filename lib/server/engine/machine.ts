@@ -18,6 +18,7 @@
  */
 import { applyEvent } from './projection';
 import type { DeadlineKind } from './sla';
+import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
@@ -86,6 +87,8 @@ import {
   type Stage,
   type TitleFacts,
   type WaitKey,
+  NOTE_KINDS,
+  type NoteKind,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -108,7 +111,10 @@ export type Command =
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null }
+  | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null }
+  | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string }
+  | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
   | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
   // ── eventualities (docs/engine-eventualities.md) ──
@@ -191,6 +197,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'raise_enquiry',
   'open_decision_source',
   'resolve_decision',
+  'record_note',
   'deposit_received',
   'contracts_exchanged',
   'completion_statement_generated',
@@ -584,7 +591,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
 
-const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack' };
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -795,7 +802,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
       if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
-      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null);
+      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null);
     }
 
     // ── Report on title ──
@@ -1517,6 +1524,60 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'sdlt_not_required', actor: cmd.actor, payload: { reason: cmd.reason.trim() } }];
     }
 
+    // ── Notes and call transcripts (docs/intake.md) ──
+    case 'record_note': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A note is filed under the name of the person who took it.', 403);
+      const text = (cmd.text ?? '').trim();
+      if (text.length < 10) reject('A note needs something in it.', 400);
+      if (text.length > 20_000) reject('That is too long for a single note — file it as a document instead.', 400);
+      if (!NOTE_KINDS.includes(cmd.kind)) reject(`Unknown note kind "${cmd.kind}".`, 400);
+      const noteId = cmd.noteId?.trim() || `N-${String(Object.keys(s.notes).length + 1).padStart(3, '0')}`;
+      if (s.notes[noteId]) reject(`Note ${noteId} is already on the file.`, 409);
+      return [{
+        type: 'note_recorded',
+        actor: cmd.actor,
+        payload: { noteId, kind: cmd.kind, text, durationSeconds: cmd.durationSeconds ?? null, documentId: cmd.documentId ?? null },
+        sourceDocumentId: cmd.documentId ?? null,
+      }];
+    }
+    case 'note_extracted': {
+      requireEnrolled(s);
+      const note = s.notes[cmd.noteId];
+      if (!note) reject(`Note ${cmd.noteId} not found.`, 404);
+      if (note.status !== 'no_actions' || note.actions.length) reject('That note has already been read.', 409);
+      // Only what the note actually says, and only commands the machine would accept.
+      const { actions } = validateNoteActions(note.text, cmd.drafts);
+      const actionable = actions.filter((a) => a.command);
+      const events: NewEvent[] = [];
+      // A decision needs a source to cite. A note filed without a document is read and
+      // logged, but nothing is proposed for approval — there would be nothing to open.
+      if (actionable.length && note.documentId) {
+        const decision: DecisionSpec = {
+          kind: 'note_actions',
+          summary: summariseNoteActions({ kind: note.kind, text: note.text, actions }),
+          sourceDocumentId: note.documentId,
+          citations: [{ documentId: note.documentId, label: `${note.kind === 'call' ? 'Call note' : 'Note'} ${note.id}` }],
+          options: OPTIONS_FOR.note_actions,
+          summarisedBy: cmd.extractor,
+        };
+        assertDecisionSpec(decision);
+        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor, decision }, sourceDocumentId: note.documentId });
+      } else {
+        events.push({ type: 'note_extracted', actor: AI, payload: { noteId: note.id, actions, extractor: cmd.extractor }, sourceDocumentId: note.documentId });
+      }
+      return events;
+    }
+
+    // An approved line the machine then refused (a precondition moved, or was never
+    // there). Recorded so the note does not claim something landed that did not.
+    case 'note_action_refused': {
+      requireEnrolledEvenIfAbandoned(s);
+      const n = s.notes[cmd.noteId];
+      if (!n) reject(`Note ${cmd.noteId} not found.`, 404);
+      return [{ type: 'note_action_refused', actor: SYSTEM, payload: { noteId: n.id, actionId: cmd.actionId, reason: cmd.reason }, sourceDocumentId: n.documentId }];
+    }
+
     case 'record_suppressed': {
       requireEnrolled(s);
       return [{ type: 'action_suppressed', actor: SYSTEM, payload: { action: cmd.action, reason: cmd.reason, subFlow: cmd.subFlow, detail: cmd.detail } }];
@@ -1630,7 +1691,7 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
@@ -1656,6 +1717,19 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       return [{ type: 'bank_details_verification_failed', actor: userId, payload: { bankDetailsId: b.id, decisionEventId: d.eventId, reason: note }, sourceDocumentId: d.sourceDocumentId }];
     }
     reject(`"${option}" is not an option for a bank-details change (verify, reject or escalate).`, 400);
+  }
+
+  // A note's proposals. Approving is a person saying "yes, that is what was said" — the
+  // service then runs each chosen command through the machine's ordinary front door, so a
+  // note can never put something into the case that a person could not have typed.
+  if (d.kind === 'note_actions' && option !== 'escalate') {
+    const n = s.notes[subject];
+    if (!n) reject('Note not found for this decision.', 500);
+    const chosen = new Set(selection && selection.length ? selection : n.actions.filter((a) => a.command).map((a) => a.id));
+    const applied = option === 'approve' ? n.actions.filter((a) => a.command && chosen.has(a.id)).map((a) => a.id) : [];
+    const skipped = n.actions.filter((a) => !applied.includes(a.id)).map((a) => a.id);
+    if (option === 'approve' && !applied.length) reject('Nothing was selected to apply. Reject the note\'s reading instead, with a reason.', 400);
+    return [{ type: 'note_actions_applied', actor: userId, payload: { noteId: n.id, decisionEventId: d.eventId, applied, skipped, option, note }, sourceDocumentId: d.sourceDocumentId }];
   }
 
   // "Escalate to senior": the original decision is marked escalated and a NEW decision
@@ -1761,6 +1835,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
 
 function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string, engagement: Engagement | null = null): NewEvent {
   const base = { decisionEventId: d.eventId, option, note, engagement };
+  // note_actions never reaches here: it is resolved into note_actions_applied above.
+  if (d.kind === 'note_actions') reject('A note\'s proposals are applied, not reviewed.', 500);
   switch (d.kind) {
     case 'id_check':
       return { type: 'id_check_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
