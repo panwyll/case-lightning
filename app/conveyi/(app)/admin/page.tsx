@@ -297,69 +297,8 @@ function AdminPageInner() {
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
   // so the web app is operable day-to-day without the add-in.
-  const [mywork, setMywork] = useState<{ items: any[]; team: boolean; isAdmin: boolean; assignedTo: string } | null>(null);
-  const [myworkBusy, setMyworkBusy] = useState<string | null>(null);
-  const loadMywork = useCallback((assignee?: string) => {
-    api<{ items: any[]; team: boolean; isAdmin: boolean; assignedTo: string }>(
-      `/worklist${assignee !== undefined ? `?assignedTo=${encodeURIComponent(assignee || 'any')}` : ''}`
-    )
-      .then(setMywork)
-      .catch(() => setMywork({ items: [], team: false, isAdmin: false, assignedTo: '' }));
-  }, []);
-  // The primary action on a chase is the EMAIL: one click drafts the chaser server-
-  // side, the draft appears inline for review, and Send fires it — all without
-  // leaving the web app. (It also sits in Outlook Drafts, so either surface works.)
-  type ChaserDraft = 'busy' | { id: string; webLink: string | null; subject: string; bodyHtml: string };
-  const [chaserDrafts, setChaserDrafts] = useState<Record<string, ChaserDraft>>({});
-  const [sendingId, setSendingId] = useState<string | null>(null);
-  async function draftChaser(item: any) {
-    const key = item.id;
-    setChaserDrafts((s) => ({ ...s, [key]: 'busy' }));
-    try {
-      const r = await api<{ id: string; webLink: string | null; subject: string; bodyHtml: string }>('/worklist/draft-chaser', {
-        method: 'POST',
-        body: JSON.stringify({ threadId: item.threadId ?? item.id }),
-      });
-      setChaserDrafts((s) => ({ ...s, [key]: r }));
-    } catch (e: any) {
-      setChaserDrafts((s) => {
-        const { [key]: _drop, ...rest } = s;
-        return rest;
-      });
-      setStatus(e?.message || 'Could not draft the chaser.');
-    }
-  }
-  async function sendFromWeb(item: any, messageId: string) {
-    setSendingId(item.id);
-    try {
-      await api('/worklist/send', { method: 'POST', body: JSON.stringify({ messageId, itemId: item.id }) });
-      setMywork((s) => (s ? { ...s, items: s.items.filter((x) => x.id !== item.id) } : s));
-      setChaserDrafts((s) => {
-        const { [item.id]: _drop, ...rest } = s;
-        return rest;
-      });
-    } catch (e: any) {
-      setStatus(e?.message || 'Could not send — the draft may have changed. Try from Outlook Drafts.');
-    } finally {
-      setSendingId(null);
-    }
-  }
-  async function myworkAction(item: any, action: 'snooze' | 'dismiss' | 'done') {
-    setMyworkBusy(item.id);
-    try {
-      await api('/worklist', {
-        method: 'POST',
-        body: JSON.stringify({ kind: item.kind, id: item.kind === 'CHASE' ? item.threadId ?? item.id : item.id, action, days: 7 }),
-      });
-      setMywork((s) => (s ? { ...s, items: s.items.filter((x) => x.id !== item.id) } : s));
-    } catch {
-      loadMywork(mywork?.assignedTo);
-    } finally {
-      setMyworkBusy(null);
-    }
-  }
-  // My work presentation state — mirrors the taskpane worklist: sort, per-matter collapse,
-  // and a lazily-fetched "key details & history" panel cache.
+  /** Whose tasks the tray shows: '' is everyone's. */
+  const [assignee, setAssignee] = useState('');
   const [myworkSort, setMyworkSort] = useState<'smart' | 'due' | 'matter'>('smart');
   const [myworkFolded, setMyworkFolded] = useState<Set<string>>(new Set());
   const [myworkOpen, setMyworkOpen] = useState<string>('');
@@ -388,28 +327,11 @@ function AdminPageInner() {
       .then(setMe)
       .catch(() => {})
       .finally(() => setMeLoading(false));
-    api('/billing/account').then(setBilling).catch(() => {});
   }, []);
   // Never leave a non-admin parked on an admin-only tab.
   useEffect(() => {
     if (me && !isAdmin && ADMIN_ONLY.includes(tab)) setTab('mywork');
   }, [me, isAdmin, tab]);
-  // Load onboarding progress for admins; open "Get started" first for a firm that hasn't finished.
-  useEffect(() => {
-    if (!isAdmin) return;
-    let cancelled = false;
-    api<{ completed: number; total: number; onboarded: boolean }>('/admin/onboarding')
-      .then((s) => {
-        if (cancelled) return;
-        setOnb({ completed: s.completed, total: s.total, onboarded: s.onboarded });
-        // A firm that has not finished setting up lands on Get started — by URL, so the
-        // sidebar, the page and the address bar all agree on where we are.
-        const hasTabParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab');
-        void hasTabParam;
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [isAdmin, router]);
   function go(t: TabKey) {
     setTab(t);
     router.push(`${paths.admin}?tab=${t}`);
@@ -576,7 +498,6 @@ function AdminPageInner() {
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
       if (tab === 'mywork') {
-        loadMywork();
         if (isAdmin) api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
@@ -1039,213 +960,24 @@ function AdminPageInner() {
           </>
         )}
 
-        {tab === 'mywork' && (() => {
-          if (!mywork) {
-            return (
-              <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, color: '#64748b' }}>
-                <span style={spinnerStyle} /> Loading…
-              </div>
-            );
-          }
-          const stageName = (key: string | null | undefined) =>
-            !key ? '' : stages.find((s) => s.key === key)?.name ?? String(key).toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-          const deadlineMs = (w: any) => {
-            const d = w.due ? new Date(w.due).getTime() : w.keyDate ? new Date(w.keyDate).getTime() : NaN;
-            return Number.isNaN(d) ? Infinity : d;
-          };
-          const items =
-            myworkSort === 'smart'
-              ? mywork.items
-              : [...mywork.items].sort((a, b) =>
-                  myworkSort === 'due'
-                    ? deadlineMs(a) - deadlineMs(b)
-                    : (a.matterRef || '').localeCompare(b.matterRef || '') || (a.ageDays ?? 0) - (b.ageDays ?? 0)
-                );
-          const G = ({ children }: { children: React.ReactNode }) => (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-          );
-          const iSend = <G><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></G>;
-          const iPencil = <G><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" /></G>;
-          const iCheck = <G><path d="M20 6L9 17l-5-5" /></G>;
-          const iOpen = <G><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></G>;
-          const iZzz = (
-            <span style={{ display: 'inline-flex', alignItems: 'flex-end', lineHeight: 1, fontWeight: 800, fontStyle: 'italic', letterSpacing: -0.5 }}>
-              <span style={{ fontSize: 7 }}>z</span><span style={{ fontSize: 10, marginBottom: 3 }}>z</span><span style={{ fontSize: 13, marginBottom: 6 }}>z</span>
-            </span>
-          );
-          const iconBtn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
-            flex: 'none', width: 30, height: 30, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            border: variant === 'ghost' ? '1px solid #D9D2EC' : 'none', borderRadius: 8,
-            background: variant === 'primary' ? '#5A27E0' : '#fff', color: variant === 'primary' ? '#fff' : '#7A7388', cursor: 'pointer', padding: 0,
-          });
-          const draftsLink = 'https://outlook.office.com/mail/drafts';
-          // One work item, matter-first style: urgency dot, wrapped action text, key date, icon actions.
-          const row = (w: any) => {
-            const busy = myworkBusy === w.id || sendingId === w.id;
-            const drafted = chaserDrafts[w.id];
-            const dotColor = w.urgent || w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#16a34a';
-            const decision = w.kind === 'TASK' ? decisionTask(w.title) : null;
-            const primaryText =
-              decision ? decision.text
-              : w.kind === 'TASK' ? w.title
-              : w.kind === 'CHASE' ? `${w.title || 'Chase for a reply'}${w.detail ? ` — ${w.detail}` : ''}`
-              : w.title || w.detail || 'Reply ready to send';
-            return (
-              <div key={w.id} style={{ border: '1px solid ' + (w.urgent ? '#fecaca' : '#ECE7F8'), borderRadius: 10, background: w.urgent ? '#fff7f7' : '#FBFAFF' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', opacity: busy ? 0.6 : 1 }}>
-                  <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
-                  <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>
-                      {primaryText}
-                      {decision && <>{' '}<a href={paths.decision(decision.id)} style={{ color: '#5A27E0', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>Decide</a></>}
-                    </span>
-                    {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10.5 }}>
-                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}><Target size={12} /> {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}><Calendar size={12} /> {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                      </span>
-                    )}
-                  </span>
-                  <span style={{ flex: 'none', display: 'flex', gap: 5 }}>
-                    {w.kind === 'TASK' && (
-                      <button title="Mark done" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'done')}>{iCheck}</button>
-                    )}
-                    {w.kind === 'DRAFT_READY' && (
-                      <>
-                        <a title="Open in Outlook Drafts to read/edit" href={draftsLink} target="_blank" rel="noopener noreferrer" style={iconBtn('ghost')}>{iOpen}</a>
-                        <button title="Mark done (handled another way)" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'dismiss')}>{iCheck}</button>
-                        {w.graphMessageId && <button title="Send now" style={iconBtn('primary')} disabled={busy} onClick={() => { if (window.confirm(`Send “${w.title}”? Review it in Outlook Drafts first if unsure.`)) sendFromWeb(w, w.graphMessageId); }}>{iSend}</button>}
-                      </>
-                    )}
-                    {w.kind === 'CHASE' && (typeof drafted === 'object' ? (
-                      <>
-                        <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'snooze')}>{iZzz}</button>
-                        <button title="Send the chaser" style={iconBtn('primary')} disabled={busy} onClick={() => sendFromWeb(w, drafted.id)}>{iSend}</button>
-                      </>
-                    ) : drafted === 'busy' ? (
-                      <span style={{ ...iconBtn('ghost'), cursor: 'default' }}><span style={spinnerStyle} /></span>
-                    ) : (
-                      <>
-                        <button title="Snooze a week" style={iconBtn('ghost')} disabled={busy} onClick={() => myworkAction(w, 'snooze')}>{iZzz}</button>
-                        <button title="Draft a chaser" style={iconBtn('primary')} onClick={() => draftChaser(w)}>{iPencil}</button>
-                      </>
-                    ))}
-                  </span>
-                </div>
-                {/* Inline review-and-send for a drafted chaser — no detour to Outlook. */}
-                {typeof drafted === 'object' && (
-                  <div style={{ margin: '0 10px 10px', border: '1px solid #ddd2f7', background: '#faf8ff', borderRadius: 10, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{drafted.subject}</div>
-                    <div style={{ fontSize: 12.5, color: '#334155', lineHeight: 1.55, maxHeight: 220, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }} dangerouslySetInnerHTML={{ __html: drafted.bodyHtml }} />
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
-                      <button onClick={() => sendFromWeb(w, drafted.id)} disabled={sendingId === w.id} style={{ ...clearBtn, background: '#16a34a', color: '#fff', border: 'none', fontWeight: 700, opacity: sendingId === w.id ? 0.6 : 1 }}>
-                        {sendingId === w.id ? 'Sending…' : 'Send ▸'}
-                      </button>
-                      {drafted.webLink && <a href={drafted.webLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Edit in Outlook ↗</a>}
-                      <button onClick={() => setChaserDrafts((s) => { const { [w.id]: _x, ...rest } = s; return rest; })} style={{ ...clearBtn, border: 'none', background: 'transparent' }}>Discard preview</button>
-                      <span style={{ fontSize: 11.5, color: '#94a3b8' }}>Also saved in your Outlook Drafts.</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          };
-          // The expandable "key info + history" panel for a matter card (lazy-loaded).
-          const matterDetail = (matterId: string, nextActionText: string | null) => {
-            const tl = myworkTl[matterId];
-            if (!tl || tl.loading) return <div style={{ fontSize: 11, color: '#94a3b8' }}>Loading…</div>;
-            const m = tl.matter ?? {};
-            const dt = (v: any) => (v ? new Date(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : null);
-            const price = m.purchase_price ? (/^\d+$/.test(String(m.purchase_price)) ? `£${Number(m.purchase_price).toLocaleString('en-GB')}` : `£${m.purchase_price}`) : null;
-            const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
-            const events = tl.timeline ?? [];
-            const bits: string[] = [];
-            bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
-            if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
-            if (price) bits.push(`at ${price}`);
-            let execSummary = bits.join(' ').trim();
-            if (execSummary) execSummary += '.';
-            if (m.stage) execSummary += ` Currently ${stageName(m.stage).toLowerCase()}.`;
-            if (nextActionText) execSummary += ` Next: ${nextActionText.charAt(0).toLowerCase() + nextActionText.slice(1)}.`;
-            const details = ([
-              ['Status', m.status && m.status !== 'OPEN' ? m.status : null],
-              ['Type', m.track ? String(m.track).toLowerCase() : null],
-              ['Price', price],
-              ['Buyer', (m.buyer_names ?? []).join(', ') || null],
-              ['Seller', (m.seller_names ?? []).join(', ') || null],
-              ['Other solicitor', m.counterparty_solicitor || null],
-              ['Estate agent', m.counterparty_agent || null],
-              ['Lender', m.lender || null],
-              ['Chain', m.chain_position || null],
-              ['Exchange', dt(m.exchange_target_date)],
-              ['Completion', dt(m.completion_target_date)],
-            ] as Array<[string, string | null]>).filter(([, v]) => v);
-            const Hdr = ({ children }: { children: React.ReactNode }) => (
-              <div style={{ fontSize: 10, fontWeight: 800, color: '#5A27E0', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 6 }}>{children}</div>
-            );
-            return (
-              <div>
-                <div style={{ fontSize: 12.5, color: '#1C1530', lineHeight: 1.5, marginBottom: 12 }}>{execSummary}</div>
-                {details.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    <Hdr>Key details</Hdr>
-                    {details.map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', gap: 8, fontSize: 11.5, marginBottom: 2 }}>
-                        <span style={{ color: '#94a3b8', fontWeight: 600, minWidth: 92, flex: 'none' }}>{k}</span>
-                        <span style={{ color: '#1C1530', textTransform: k === 'Type' ? 'capitalize' : 'none' }}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {events.length > 0 && (
-                  <>
-                    <Hdr>Full history · {events.length}</Hdr>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto', border: '1px solid #ECE7F8', borderRadius: 8, padding: '8px 9px' }}>
-                      {events.slice(0, 30).map((ev: any) => (
-                        <div key={ev.id} style={{ fontSize: 11.5, borderLeft: '2px solid #D9D2EC', paddingLeft: 8 }}>
-                          <div style={{ color: '#1C1530', fontWeight: 600 }}>{ev.title}</div>
-                          {ev.details && <div style={{ color: '#7A7388', marginTop: 1, lineHeight: 1.4 }}>{ev.details}</div>}
-                          <div style={{ color: '#B0A9C0', fontSize: 10, marginTop: 2 }}>{new Date(ev.event_at || ev.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {details.length === 0 && events.length === 0 && <div style={{ fontSize: 11, color: '#94a3b8' }}>No further details recorded yet.</div>}
-              </div>
-            );
-          };
-          // Matter-first grouping, preserving the server's most-urgent-first order.
-          const groups: Array<{ key: string; matterId: string | null; ref: string; sub: string | null; stage: string | null; urgent: boolean; items: any[] }> = [];
-          const byKey: Record<string, number> = {};
-          for (const w of items.slice(0, 200)) {
-            const key = w.matterId || w.matterRef;
-            if (byKey[key] === undefined) { byKey[key] = groups.length; groups.push({ key, matterId: w.matterId ?? null, ref: w.matterRef, sub: w.propertyAddress, stage: w.stage ?? null, urgent: false, items: [] }); }
-            const g = groups[byKey[key]];
-            g.items.push(w);
-            if (w.urgent) g.urgent = true;
-          }
-          if (myworkSort === 'matter') groups.sort((a, b) => (a.ref || '').localeCompare(b.ref || ''));
-          return (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-                {isAdmin && (
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
-                    <select value={mywork.assignedTo} onChange={(e) => loadMywork(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }} title="Filter the worklist by who owns the matter">
-                      <option value="">Anyone</option>
-                      {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
-                    </select>
-                  </label>
-                )}
-                <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
-              </div>
-
-              <DecisionTray userId={me?.userId ?? ''} all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
-              <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
-            </>
-          );
-        })()}
+        {tab === 'mywork' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+              {isAdmin && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
+                  <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
+                    <option value="">Anyone</option>
+                    {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
+                  </select>
+                </label>
+              )}
+              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
+            </div>
+            <DecisionTray userId={assignee || me?.userId || ''} all={assignee === ''} />
+            <EngineWork all={assignee === ''} />
+          </>
+        )}
 
         {tab === 'workload' && (
           <div style={card}>
@@ -1690,10 +1422,7 @@ function AdminPageInner() {
           onCreated={async (id) => {
             setShowNewMatter(false);
             setStatus('Matter created — OneDrive folder provisioned.');
-            await Promise.all([
-              loadMywork(mywork?.assignedTo),
-              api<{ matters: any[]; doneTotal?: number }>('/admin/board').then((b) => { setBoard(b.matters); setDoneTotal(b.doneTotal ?? 0); }).catch(() => {}),
-            ]);
+            router.push(paths.matter(id));
           }}
         />
       )}
