@@ -9,8 +9,7 @@ import { Paperclip, Check, X, Mail } from '@/app/shared/icons';
  *
  * Not an inbox. No read/unread, no folders, no reply. One question per email — which
  * case is this? — and the row leaves the moment it is answered. The list is meant to
- * reach zero. `embedded` is the same list inside Tasks, for a conveyancer with nobody
- * else to file it.
+ * reach zero.
  */
 const CSS = `
 .ef-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
@@ -40,9 +39,6 @@ const CSS = `
 .ef-hit b{color:#5A27E0}
 .ef-done{text-align:center;padding:48px 16px;color:#64748b;background:#fff;border:1px solid #e6e8ee;border-radius:14px}
 .ef-done b{display:block;font-size:19px;color:#0f172a;margin-bottom:6px}
-.ef-sec{display:flex;align-items:baseline;gap:10px;margin:18px 0 10px}
-.ef-sec h2{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#64748b;margin:0}
-.ef-sec .n{font-size:12px;color:#94a3b8}
 `;
 
 const BAND: Record<string, string> = { high: 'almost certain', medium: 'likely', low: 'possible' };
@@ -75,7 +71,7 @@ const initials = (name: string | null, address: string | null) => {
 };
 const hue = (s: string) => HUES[[...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % HUES.length];
 
-export default function EmailToFile({ embedded = false }: { embedded?: boolean }) {
+export default function EmailToFile() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [noMailbox, setNoMailbox] = useState(false);
@@ -118,24 +114,17 @@ export default function EmailToFile({ embedded = false }: { embedded?: boolean }
   };
 
   const left = (items ?? []).filter((i) => !going.has(i.id)).length;
-  // Inside Tasks the list only appears when there is email to file; a missing mailbox or a
-  // failed read is not the conveyancer's job to sort out from here.
-  if (embedded && (noMailbox || err || (items !== null && items.length === 0))) return null;
 
   return (
     <div>
       <style>{CSS}</style>
-      {embedded ? (
-        <div className="ef-sec"><h2>Email to file</h2><span className="n">{items === null ? '' : left}</span></div>
-      ) : (
-        <div className="ef-head">
-          <h1 className="eg-h1">Email</h1>
-          <div style={{ textAlign: 'right' }}><div className="ef-count">{items === null ? '—' : left}</div><div className="eg-sub">to file</div></div>
-        </div>
-      )}
+      <div className="ef-head">
+        <h1 className="eg-h1">Email</h1>
+        <div style={{ textAlign: 'right' }}><div className="ef-count">{items === null ? '—' : left}</div><div className="eg-sub">to file</div></div>
+      </div>
       {err && <div className="eg-err">{err}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
-      {noMailbox && !embedded && (
+      {noMailbox && (
         <div className="ef-done">
           <b>Mailbox not connected.</b>
           <div style={{ marginTop: 14 }}>
@@ -144,7 +133,7 @@ export default function EmailToFile({ embedded = false }: { embedded?: boolean }
           </div>
         </div>
       )}
-      {!noMailbox && !embedded && items !== null && left === 0 && (
+      {!noMailbox && items !== null && left === 0 && (
         <div className="ef-done">
           <b>Nothing to file.</b>
           <div style={{ marginTop: 14 }}><a className="eg-btn" href={paths.tasks}>Tasks</a>{' '}<a className="eg-btn" href={paths.cases}>Caseload</a></div>

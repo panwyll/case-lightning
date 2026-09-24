@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { paths } from '@/lib/paths';
 import type { ComponentType } from 'react';
 import { Mail, ClipboardList, Building, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
@@ -26,14 +26,16 @@ interface NavItem {
   adminTab?: AdminTab;
   adminOnly?: boolean;
   match?: (path: string) => boolean;
+  /** Which count sits on the item as a badge. */
+  count?: 'tasks' | 'email';
 }
 
 const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Work',
     items: [
-      { key: 'mywork', label: 'Tasks', icon: ClipboardList, href: paths.tasks, adminTab: 'mywork', match: (p) => p.startsWith(`${paths.product}/decisions/`) },
-      { key: 'email', label: 'Email', icon: Mail, href: paths.email, match: (p) => p.startsWith(paths.email) },
+      { key: 'mywork', label: 'Tasks', icon: ClipboardList, href: paths.tasks, adminTab: 'mywork', match: (p) => p.startsWith(`${paths.product}/decisions/`), count: 'tasks' },
+      { key: 'email', label: 'Email', icon: Mail, href: paths.email, match: (p) => p.startsWith(paths.email), count: 'email' },
     ],
   },
   {
@@ -87,12 +89,15 @@ export const SHELL_CSS = `
 .sh-body{display:flex;align-items:stretch;min-height:calc(100vh - ${TOP}px)}
 .sh-side{width:${SIDE}px;flex:0 0 ${SIDE}px;background:#fff;border-right:1px solid #e8eaf0;position:sticky;top:${TOP}px;height:calc(100vh - ${TOP}px);overflow-y:auto;padding:14px 12px 24px;box-sizing:border-box}
 .sh-main{flex:1;min-width:0;padding:22px 24px 56px;box-sizing:border-box}
-.sh-grp{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0f172a;padding:0 10px 2px;margin:22px 0 4px}
-.sh-grp:first-child{margin-top:0}
-.sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#475569;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
+.sh-grp{font-size:10.5px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:#64748b;padding:18px 10px 6px;margin:6px 0 0;border-top:1px solid #eef1f5}
+.sh-side > div:first-child .sh-grp{border-top:0;padding-top:2px;margin-top:0}
+.sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#334155;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
 .sh-item.on{background:#ede9fe;box-shadow:inset 3px 0 0 #5A27E0;color:#5A27E0;font-weight:700}
 .sh-ico{width:20px;display:flex;align-items:center;justify-content:center;color:#64748b;flex-shrink:0}
 .sh-item.on .sh-ico{color:#5A27E0}
+.sh-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#5A27E0;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.sh-badge.soft{background:#e2e8f0;color:#334155}
+.sh-item.on .sh-badge.soft{background:#ddd6fe;color:#4c1d95}
 .sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
 .sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
@@ -100,8 +105,22 @@ export const SHELL_CSS = `
 @media (max-width:820px){.sh-side{display:none}.sh-main{padding:16px}}
 `;
 
+/** What needs the person: decisions on Tasks, email to file. Read once the shell is up; never holds the nav. */
+function useCounts(): { tasks: number; email: number } {
+  const [c, setC] = useState({ tasks: 0, email: 0 });
+  useEffect(() => {
+    let live = true;
+    const read = () => fetch('/api/v1/nav/counts', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j) setC({ tasks: j.tasks ?? 0, email: j.email ?? 0 }); }).catch(() => {});
+    read();
+    const t = setInterval(read, 120_000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  return c;
+}
+
 function Items({ isAdmin }: { isAdmin: boolean }) {
   const path = usePathname() ?? '';
+  const counts = useCounts();
   const tab = useSearchParams()?.get('tab') ?? null;
   const onAdmin = path.startsWith(paths.admin);
   const active = (i: NavItem) => (onAdmin ? !!i.adminTab && i.adminTab === (tab ?? 'mywork') : !!i.match && i.match(path));
@@ -118,6 +137,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
               <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined}>
                 <span className="sh-ico"><i.icon size={16} /></span>
                 <span>{i.label}</span>
+                {i.count && counts[i.count] > 0 && <span className={`sh-badge${i.count === 'email' ? ' soft' : ''}`} aria-label={`${counts[i.count]} ${i.count === 'email' ? 'to file' : 'need you'}`}>{counts[i.count] > 99 ? '99+' : counts[i.count]}</span>}
               </Link>
             ))}
           </div>

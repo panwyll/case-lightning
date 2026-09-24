@@ -15,9 +15,7 @@ export async function GET() {
       `select name, onboarded_at from tenant where id = $1`,
       [user.tenantId]
     ).catch(() => null);
-    // A firm with no assistant has nobody else to file the email: the conveyancer sees it in Tasks.
-    const assistants = await queryOne<{ n: number }>(`select count(*)::int as n from app_user where tenant_id = $1 and role = 'ASSISTANT'`, [user.tenantId]).catch(() => null);
-    return ok({ ...user, tenantName: t?.name ?? null, onboarded: !!t?.onboarded_at, hasAssistants: (assistants?.n ?? 0) > 0 });
+    return ok({ ...user, tenantName: t?.name ?? null, onboarded: !!t?.onboarded_at });
   } catch (error) {
     return fail(error);
   }

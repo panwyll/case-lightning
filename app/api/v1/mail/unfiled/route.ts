@@ -3,8 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
-import { query } from '@/lib/server/db';
-import { listInboxMessages } from '@/lib/server/graph';
+import { unfiledInbox } from '@/lib/server/mail/unfiled';
 import { matchMessage } from '@/lib/server/matching';
 import { ok, fail } from '@/lib/server/http';
 
@@ -37,28 +36,7 @@ export async function GET(req: NextRequest) {
       .object({ nextLink: z.string().nullish(), search: z.string().max(200).nullish(), top: z.coerce.number().int().min(5).max(100).optional() })
       .parse({ nextLink: req.nextUrl.searchParams.get('nextLink'), search: req.nextUrl.searchParams.get('search'), top: req.nextUrl.searchParams.get('top') ?? undefined });
 
-    const { messages, nextLink } = await listInboxMessages(user.userId, { top: q.top ?? 25, nextLink: q.nextLink, search: q.search });
-    const conversationIds = Array.from(new Set(messages.map((m: { conversationId?: string }) => m.conversationId).filter(Boolean))) as string[];
-
-    // Two lookups, batched: what is already filed, and what has been set aside.
-    const [filed, dismissed] = conversationIds.length
-      ? await Promise.all([
-          query<{ graph_conversation_id: string; matter_id: string; matter_ref: string }>(
-            `select t.graph_conversation_id, t.matter_id, m.matter_ref
-               from email_thread t join matter m on m.id = t.matter_id
-              where t.tenant_id = $1 and t.graph_conversation_id = any($2::text[])`,
-            [user.tenantId, conversationIds]
-          ).catch(() => []),
-          query<{ graph_conversation_id: string }>(`select graph_conversation_id from email_not_filed where tenant_id = $1 and graph_conversation_id = any($2::text[])`, [user.tenantId, conversationIds]).catch(() => []),
-        ])
-      : [[], []];
-    const filedBy = new Map(filed.map((f) => [f.graph_conversation_id, f]));
-    const setAside = new Set(dismissed.map((d) => d.graph_conversation_id));
-
-    const unfiled = messages.filter((m: { conversationId?: string }) => {
-      const id = m.conversationId;
-      return !id || (!filedBy.has(id) && !setAside.has(id));
-    });
+    const { unfiled, nextLink, filedBy, setAside } = await unfiledInbox(user, { top: q.top ?? 25, nextLink: q.nextLink, search: q.search });
 
     // Suggest a case for each. One thread can appear as several messages in a page; match
     // once per conversation so the work is proportional to threads, not to replies.

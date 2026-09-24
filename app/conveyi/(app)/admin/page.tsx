@@ -12,7 +12,6 @@ import { paths } from '@/lib/paths';
 import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
 import EngineWork, { decisionTask } from './EngineWork';
 import DecisionTray from './DecisionTray';
-import EmailToFile from '@/app/shared/email/EmailToFile';
 
 interface MatterHit {
   id: string;
@@ -276,7 +275,7 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
 }
 
 function AdminPageInner() {
-  const [me, setMe] = useState<{ userId?: string; role: string; email: string; displayName: string | null; tenantName?: string; hasAssistants?: boolean } | null>(null);
+  const [me, setMe] = useState<{ userId?: string; role: string; email: string; displayName: string | null; tenantName?: string } | null>(null);
   const [meLoading, setMeLoading] = useState(true);
   const isAdmin = me?.role === 'ADMIN';
   // Show the full nav immediately (static) — only collapse it once we've CONFIRMED a
@@ -385,7 +384,7 @@ function AdminPageInner() {
       window.localStorage.setItem(TOKEN_KEY, decodeURIComponent(m[1]));
       history.replaceState(null, '', window.location.pathname + window.location.search);
     }
-    api<{ userId?: string; role: string; email: string; displayName: string | null; tenantName?: string; hasAssistants?: boolean }>('/me')
+    api<{ userId?: string; role: string; email: string; displayName: string | null; tenantName?: string }>('/me')
       .then(setMe)
       .catch(() => {})
       .finally(() => setMeLoading(false));
@@ -1244,7 +1243,6 @@ function AdminPageInner() {
 
               <DecisionTray userId={me?.userId ?? ''} all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
               <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
-              {me && !me.hasAssistants && <EmailToFile embedded />}
             </>
           );
         })()}
