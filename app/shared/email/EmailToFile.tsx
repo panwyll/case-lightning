@@ -133,12 +133,6 @@ export default function EmailToFile() {
           </div>
         </div>
       )}
-      {!noMailbox && items !== null && left === 0 && (
-        <div className="ef-done">
-          <b>Nothing to file.</b>
-          <div style={{ marginTop: 14 }}><a className="eg-btn" href={paths.tasks}>Tasks</a>{' '}<a className="eg-btn" href={paths.cases}>Caseload</a></div>
-        </div>
-      )}
       {(items ?? []).map((item) => (
         <Row key={item.id} item={item} going={going.has(item.id)} busy={busy === item.id} onFile={(m) => fileTo(item, m)} onNotACase={() => notACase(item)} />
       ))}

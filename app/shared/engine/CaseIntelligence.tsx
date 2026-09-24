@@ -126,7 +126,9 @@ function Reason({ r }: { r: HealthReason }) {
   );
 }
 
-export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; events: EngineEvent[]; onDiagnostics?: () => void }) {
+const OWNER: Record<string, string> = { conveyancer: 'us', client: 'the client', seller_side: "the other side's solicitor", lender: 'the lender', third_party: 'a third party', mlro: 'the MLRO', hmlr: 'HM Land Registry', search_provider: 'the search provider', id_provider: 'the ID provider' };
+
+export function CaseIntelligence({ m, events, onDiagnostics, compact = false }: { m: CaseModel; events: EngineEvent[]; onDiagnostics?: () => void; /** The matter page: status only; its own cards carry the activity. */ compact?: boolean }) {
   const health = m.health;
   const gateId = (m.profile?.gates ?? ['exchange']).find((g) => m.gates[g] && !m.gates[g].ready) ?? (m.profile?.gates ?? ['close']).slice(-1)[0];
   const g = m.gates[gateId];
@@ -161,53 +163,54 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       </div>
 
       {/* What needs attention, and why. */}
-      <h3>{health && health.reasons.length ? `Needs attention (${health.reasons.length})` : 'Needs attention'}</h3>
-      {!health || health.reasons.length === 0 ? (
-        <div className="ci-ok">Nothing needs attention.</div>
-      ) : (
-        <div className="ci-card">{health.reasons.map((r, i) => <Reason key={`${r.code}:${r.ref.id}:${i}`} r={r} />)}</div>
+      {health && health.reasons.length > 0 && (
+        <>
+          <h3>Needs attention ({health.reasons.length})</h3>
+          <div className="ci-card">{health.reasons.map((r, i) => <Reason key={`${r.code}:${r.ref.id}:${i}`} r={r} />)}</div>
+        </>
       )}
 
       {/* What are we waiting for. */}
-      <h3>Waiting for ({waiting.length})</h3>
-      {waiting.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>Nothing outstanding.</div>
-      ) : (
-        <div className="ci-card">
-          {waiting.map((w) => (
-            <div key={w.id} className="ci-wait">
-              <span className="w">{w.what}</span>
-              <span className="c">{w.sinceWorkingDays != null ? `${w.sinceWorkingDays}d elapsed` : ''}{w.slaWorkingDays != null ? ` · SLA ${w.slaWorkingDays}d` : ''}{w.chasesSent ? ` · ${w.chasesSent} chased` : ''}</span>
-              <span className={w.chaseInWorkingDays != null && w.chaseInWorkingDays <= 0 ? 'due' : 'c'}>
-                {w.escalated ? 'escalated' : w.chaseInWorkingDays == null ? '' : w.chaseInWorkingDays <= 0 ? 'chase due now' : `chase in ${w.chaseInWorkingDays}d`}
-              </span>
-            </div>
-          ))}
-        </div>
+      {waiting.length > 0 && (
+        <>
+          <h3>Waiting for ({waiting.length})</h3>
+          <div className="ci-card">
+            {waiting.map((w) => (
+              <div key={w.id} className="ci-wait">
+                <span className="w">Waiting on {OWNER[w.actionOwner] ?? pretty(w.actionOwner)} to {w.what}</span>
+                <span className="c">{w.sinceWorkingDays != null ? `${w.sinceWorkingDays}d elapsed` : ''}{w.slaWorkingDays != null ? ` · SLA ${w.slaWorkingDays}d` : ''}{w.chasesSent ? ` · ${w.chasesSent} chased` : ''}</span>
+                <span className={w.chaseInWorkingDays != null && w.chaseInWorkingDays <= 0 ? 'due' : 'c'}>
+                  {w.escalated ? 'escalated' : w.chaseInWorkingDays == null ? '' : w.chaseInWorkingDays <= 0 ? 'chase due now' : `chase in ${w.chaseInWorkingDays}d`}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* What happens next. */}
-      <h3>Next</h3>
-      {g?.ready ? (
-        <div className="ci-ok"><b>{g.label}.</b> Every requirement for this milestone is satisfied.</div>
-      ) : m.nextActions.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>Nothing outstanding.</div>
-      ) : (
-        <div className="ci-card">
-          {m.nextActions.slice(0, 8).map((a, i) => (
-            <div key={i} className="ci-act">
-              <span className="who">{WHO[a.who] ?? pretty(a.who)}</span>
-              <span style={{ flex: 1 }}>{a.what}<div className="m" style={{ color: '#94a3b8', fontSize: 11.5 }}>unblocks {a.unblocks.toLowerCase()}</div></span>
-            </div>
-          ))}
-        </div>
+      {compact ? null : g?.ready ? (
+        <>
+          <h3>Next</h3>
+          <div className="ci-ok"><b>{g.label}</b></div>
+        </>
+      ) : m.nextActions.length > 0 && (
+        <>
+          <h3>Next</h3>
+          <div className="ci-card">
+            {m.nextActions.slice(0, 8).map((a, i) => (
+              <div key={i} className="ci-act">
+                <span className="who">{WHO[a.who] ?? pretty(a.who)}</span>
+                <span style={{ flex: 1 }}>{a.what}<div className="m" style={{ color: '#94a3b8', fontSize: 11.5 }}>unblocks {a.unblocks.toLowerCase()}</div></span>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {/* What happened lately. */}
-      <h3>Recent activity</h3>
-      {activity.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>No activity yet.</div>
-      ) : (
+      {!compact && activity.length > 0 && <h3>Recent activity</h3>}
+      {!compact && activity.length > 0 && (
         <div className="ci-card ci-feed">
           {activity.map(({ e, line, times }) => (
             <div key={e.id}><span className="d">{fmtDay(e.createdAt)}</span><span>{line}{times > 1 ? ` ×${times}` : ''}</span></div>
@@ -215,7 +218,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
         </div>
       )}
 
-      {onDiagnostics && (
+      {!compact && onDiagnostics && (
         <p style={{ marginTop: 18 }}>
           <button className="eg-btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={onDiagnostics}>Diagnostics</button>
         </p>

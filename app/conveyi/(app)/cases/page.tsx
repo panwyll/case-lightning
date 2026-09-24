@@ -1,23 +1,18 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CaseloadMap } from '@/app/shared/engine/CaseloadMap';
+import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import type { CaseToken, CaseloadRollup } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
-import { useRouter } from 'next/navigation';
 
-/**
- * The caseload (docs/caseload-ux.md §1–2). The firm's whole book of work on one sheet:
- * a house per matter, standing in the phase it has reached, coloured and badged by health.
- * Everything deeper — the case, its workstreams, the evidence — is one click further in.
- *
- * A house opens the matter's own page: its stages and steps, then the case data.
- */
+/** The caseload: a house per matter, in the phase it has reached, coloured by health. A house opens the matter. */
 export default function CasesPage() {
   const [rows, setRows] = useState<CaseToken[] | null>(null);
   const [rollup, setRollup] = useState<CaseloadRollup | null>(null);
-  const [scope, setScope] = useState<'all' | 'mine'>('all');
+  const [scope, setScope] = useState<Scope>('all');
   const [err, setErr] = useState<string | null>(null);
   const router = useRouter();
 
@@ -42,22 +37,14 @@ export default function CasesPage() {
   }, [load]);
 
   return (
-    <div className="eg" style={{ maxWidth: 1040, margin: '0 auto', padding: '16px 16px 60px' }}>
+    <div className="eg">
       <style>{ENGINE_CSS}</style>
-      <div className="eg-top">
-        <div>
-          <h1 className="eg-h1">Caseload</h1>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className={`eg-btn${scope === 'mine' ? ' on' : ''}`} onClick={() => setScope(scope === 'mine' ? 'all' : 'mine')}>
-            {scope === 'mine' ? 'My matters' : 'Whole team'}
-          </button>
-        </div>
-      </div>
       {err && <div className="eg-err">{err}</div>}
-      {!rows && !err && <div className="eg-sub">Loading…</div>}
-      {rows && rows.length === 0 && <div className="eg-empty">No open matters{scope === 'mine' ? ' assigned to you' : ''} yet.</div>}
-      {rows && rows.length > 0 && rollup && <CaseloadMap rows={rows} rollup={rollup} onOpen={(id) => router.push(paths.matter(id))} />}
+      {rows && rollup ? (
+        <CaseloadMap title="Caseload" actions={<ScopeSelect value={scope} onChange={setScope} />} rows={rows} rollup={rollup} onOpen={(id) => router.push(paths.matter(id))} />
+      ) : (
+        <div className="eg-top"><h1 className="eg-h1">Caseload</h1></div>
+      )}
     </div>
   );
 }

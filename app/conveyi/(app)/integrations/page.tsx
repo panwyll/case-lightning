@@ -34,11 +34,11 @@ export default function IntegrationsPage() {
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
   }, []);
   const cards = [
-    { name: 'LEAP', what: 'Practice management. Matters, documents and contacts come from LEAP.', href: paths.leap, s: leap },
-    { name: 'InTouch', what: 'Client onboarding and portal. Cases, ID checks and forms come in; milestones go out.', href: `${paths.integrations}/intouch`, s: intouch },
+    { name: 'LEAP', href: paths.leap, s: leap },
+    { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch },
   ];
   return (
-    <div className="eg" style={{ maxWidth: 1000, margin: '0 auto' }}>
+    <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top"><h1 className="eg-h1">Integrations</h1></div>
       <div className="ig-grid">
@@ -47,7 +47,6 @@ export default function IntegrationsPage() {
           return (
             <a key={c.name} className="ig-card" href={c.href}>
               <h2 className="ig-name">{c.name}</h2>
-              <p className="ig-what">{c.what}</p>
               <span className="ig-state" style={{ background: st.bg, color: st.fg }}><i style={{ background: st.dot }} />{st.label}</span>
             </a>
           );

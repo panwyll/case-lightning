@@ -89,7 +89,7 @@ export const SHELL_CSS = `
 .sh-top{height:${TOP}px;background:#fff;border-bottom:1px solid #e8eaf0;position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding:0 18px;box-sizing:border-box}
 .sh-body{display:flex;align-items:stretch;min-height:calc(100vh - ${TOP}px)}
 .sh-side{width:${SIDE}px;flex:0 0 ${SIDE}px;background:#fff;border-right:1px solid #e8eaf0;position:sticky;top:${TOP}px;height:calc(100vh - ${TOP}px);overflow-y:auto;padding:14px 12px 24px;box-sizing:border-box}
-.sh-main{flex:1;min-width:0;padding:22px 24px 56px;box-sizing:border-box}
+.sh-main{flex:1;min-width:0;padding:18px 24px 14px;box-sizing:border-box}
 .sh-group{padding:10px 0;border-top:1px solid #eef1f5}
 .sh-side > .sh-group:first-child{border-top:0;padding-top:0}
 .sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#334155;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}

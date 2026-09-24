@@ -39,38 +39,27 @@ const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> =
 };
 
 export const CASELOAD_CSS = `
-.cm-paper{background:#fdfcf8;border:1px solid #e7e2d4;border-radius:4px;box-shadow:0 1px 2px rgba(60,50,20,.08),0 8px 24px -16px rgba(60,50,20,.25);padding:20px 22px 8px}
-.cm-band{padding:0 0 4px}
-.cm-band-label{font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#a8a294;text-transform:uppercase;display:flex;align-items:baseline;gap:8px}
-.cm-band-label .n{font-weight:600;letter-spacing:0;color:#c3bdae;font-variant-numeric:tabular-nums}
-.cm-houses{display:flex;flex-wrap:wrap;gap:7px;align-items:flex-end;min-height:40px;padding:8px 0 5px}
-.cm-rule{border:0;border-top:1px solid #ded8c8;margin:0 0 14px}
+.cm-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.cm-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cm-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:4px 12px 4px 6px;cursor:pointer;font-family:inherit;font-size:12.5px;color:#334155;line-height:1}
+.cm-chip b{font-weight:800;font-variant-numeric:tabular-nums;color:#0f172a}
+.cm-chip:hover{border-color:#cbd5e1;background:#f8fafc}
+.cm-chip.on{border-color:#0f172a;background:#0f172a;color:#fff}
+.cm-chip.on b{color:#fff}
+.cm-chip.all{padding-left:12px}
+.cm-board{background:#fdfcf8;border:1px solid #e7e2d4;border-radius:10px;box-shadow:0 1px 2px rgba(60,50,20,.06)}
+.cm-row{display:grid;grid-template-columns:156px 1fr;align-items:center;min-height:52px;border-top:1px solid #ece7da}
+.cm-row:first-child{border-top:0}
+.cm-lab{padding:0 14px;font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8f8878;text-transform:uppercase;display:flex;gap:6px;border-right:1px solid #ece7da;align-self:stretch;align-items:center;white-space:nowrap}
+.cm-lab .n{font-weight:600;letter-spacing:0;color:#b8b1a0;font-variant-numeric:tabular-nums}
+.cm-houses{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-end;padding:8px 12px}
 .cm-house{background:none;border:0;padding:0;cursor:pointer;line-height:0;border-radius:4px;transition:transform .08s ease}
 .cm-house:hover,.cm-house:focus-visible{transform:translateY(-3px);outline:none}
-.cm-house.dim{opacity:.22}
-.cm-house.sel svg{filter:drop-shadow(0 0 0 2px #0f172a)}
-.cm-empty{font-size:12px;color:#c3bdae;padding:10px 0 4px;font-style:italic}
-.cm-strip{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
-.cm-stat{border:1px solid #e6e8ee;background:#fff;border-radius:10px;padding:7px 12px;cursor:pointer;font-family:inherit;text-align:left;min-width:104px}
-.cm-stat.on{border-color:#0f172a;box-shadow:inset 0 0 0 1px #0f172a}
-.cm-stat b{display:block;font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
-.cm-stat span{font-size:11px;color:#64748b}
-.cm-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11.5px;color:#94a3b8;padding:2px 2px 14px}
-.cm-legend span{display:inline-flex;align-items:center;gap:5px}
-.cm-exc{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
-.cm-exc-row{display:flex;gap:10px;align-items:flex-start;padding:11px 14px;border-top:1px solid #f1f5f9;cursor:pointer;width:100%;background:none;border-left:0;border-right:0;border-bottom:0;font-family:inherit;text-align:left}
-.cm-exc-row:first-child{border-top:0}
-.cm-exc-row:hover{background:#fafafa}
-.cm-exc-addr{font-weight:700;font-size:13.5px}
-.cm-exc-line{font-size:12.5px;color:#475569;margin-top:2px}
-.cm-exc-meta{font-size:11.5px;color:#94a3b8;margin-top:2px}
-.cm-why{padding:0 14px 14px 46px;font-size:12.5px;color:#334155;background:#fafafa;border-top:1px solid #f1f5f9}
-.cm-why ol{margin:8px 0 0;padding-left:18px}
-.cm-why li{margin:3px 0}
-.cm-why .sug{margin-top:10px;padding:8px 10px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;color:#4c1d95}
+.cm-house.dim{opacity:.18}
 .cm-tip{position:fixed;z-index:60;pointer-events:none;background:#0f172a;color:#fff;border-radius:8px;padding:8px 10px;font-size:12px;max-width:290px;box-shadow:0 8px 24px rgba(15,23,42,.25)}
 .cm-tip b{display:block;font-size:12.5px}
 .cm-tip .m{color:#cbd5e1;font-size:11.5px}
+@media (max-width:700px){.cm-row{grid-template-columns:1fr}.cm-lab{border-right:0;padding-top:8px}}
 `;
 
 /** One house. Colour groups; the badge's silhouette identifies, so it reads without colour. */
@@ -107,23 +96,18 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
 const isTracked = (t: CaseToken) => t.tracked !== false;
 
-export function CaseloadMap({ rows, rollup, onOpen }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions }: {
+  /** The page's title and controls share one row with the filter chips. */
+  title: string;
+  actions?: React.ReactNode;
   rows: CaseToken[];
   rollup: { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; untracked?: number };
   onOpen: (matterId: string) => void;
 }) {
-  const [filter, setFilter] = useState<HealthBand | 'all' | 'stuck' | 'untracked'>('all');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<HealthBand | 'all'>('all');
   const [tip, setTip] = useState<{ t: CaseToken; x: number; y: number } | null>(null);
 
-  // An untracked matter only ever matches "all" and "not tracked yet": it has no health, so
-  // it must never be counted as moving normally.
-  const shows = (t: CaseToken) =>
-    filter === 'all' ? true
-    : filter === 'untracked' ? !isTracked(t)
-    : !isTracked(t) ? false
-    : filter === 'stuck' ? t.health.band === 'delayed' || t.health.band === 'blocked'
-    : t.health.band === filter;
+  const shows = (t: CaseToken) => filter === 'all' || (isTracked(t) && t.health.band === filter);
 
   const byBand = useMemo(() => {
     const m = new Map<Band, CaseToken[]>(BANDS.map((b) => [b, [] as CaseToken[]]));
@@ -134,61 +118,53 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
     return m;
   }, [rows]);
 
-  const stat = (key: HealthBand | 'all' | 'stuck' | 'untracked', n: number, label: string, colour: string) => (
-    <button key={key} type="button" className={`cm-stat${filter === key ? ' on' : ''}`} onClick={() => setFilter(filter === key ? 'all' : key)} aria-pressed={filter === key}>
-      <b style={{ color: n ? colour : '#cbd5e1' }}>{n}</b>
-      <span>{label}</span>
+  const chip = (key: HealthBand | 'all', n: number, label: string) => (
+    <button key={key} type="button" className={`cm-chip${filter === key ? ' on' : ''}${key === 'all' ? ' all' : ''}`} onClick={() => setFilter(filter === key ? 'all' : key)} aria-pressed={filter === key}>
+      {key !== 'all' && <House band={key} size={20} />}
+      <b>{n}</b> {label}
     </button>
   );
 
   return (
     <div onMouseLeave={() => setTip(null)}>
       <style>{CASELOAD_CSS}</style>
-
-      {/* Oversight strip — the counts double as filters. */}
-      <div className="cm-strip">
-        {stat('all', rows.length, 'open cases', '#0f172a')}
-        {stat('normal', rollup.normal, 'on track', '#16a34a')}
-        {stat('attention', rollup.attention, 'need attention', '#b45309')}
-        {stat('stuck', rollup.stuck, 'stuck', '#9a3412')}
-        {stat('critical', rollup.critical, 'critical', '#b91c1c')}
+      <div className="cm-head">
+        <h1 className="eg-h1">{title}</h1>
+        <div className="cm-chips">
+          {chip('all', rows.length, 'All')}
+          {chip('normal', rollup.normal, 'On track')}
+          {chip('attention', rollup.attention, 'Needs attention')}
+          {chip('delayed', rollup.delayed, 'Delayed')}
+          {chip('blocked', rollup.blocked, 'Blocked')}
+          {chip('critical', rollup.critical, 'Critical')}
+        </div>
+        {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
       </div>
-
-      <div className="cm-paper">
+      <div className="cm-board">
         {BANDS.map((b) => {
           const list = byBand.get(b) ?? [];
-          const visible = list.filter(shows);
           return (
-            <div key={b} className="cm-band">
-              <div className="cm-band-label">{b}<span className="n">{list.length}</span></div>
+            <div key={b} className="cm-row">
+              <div className="cm-lab">{b}<span className="n">{list.length}</span></div>
               <div className="cm-houses">
-                {list.length === 0 && <span className="cm-empty">nothing here</span>}
                 {list.map((t) => (
                   <button
                     key={t.matterId}
                     type="button"
-                    className={`cm-house${shows(t) ? '' : ' dim'}${openId === t.matterId ? ' sel' : ''}`}
+                    className={`cm-house${shows(t) ? '' : ' dim'}`}
                     onClick={() => onOpen(t.matterId)}
                     onMouseEnter={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
                     onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
                     onMouseLeave={() => setTip(null)}
-                    onFocus={() => setOpenId(t.matterId)}
-                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Matter'} — ${isTracked(t) ? HEALTH_LABEL[t.health.band] : 'not tracked yet'}`}
+                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Matter'} — ${HEALTH_LABEL[t.health.band]}`}
                   >
-                    <House band={t.health.band} untracked={!isTracked(t)} title={t.propertyAddress ?? t.matterRef ?? undefined} />
+                    <House band={t.health.band} size={28} title={t.propertyAddress ?? t.matterRef ?? undefined} />
                   </button>
                 ))}
-                {list.length > 0 && visible.length === 0 && <span className="cm-empty">none in this filter</span>}
               </div>
-              <hr className="cm-rule" />
             </div>
           );
         })}
-        <div className="cm-legend">
-          {(['normal', 'attention', 'delayed', 'blocked', 'critical'] as HealthBand[]).map((b) => (
-            <span key={b}><House band={b} size={20} /> {HEALTH_LABEL[b]}</span>
-          ))}
-        </div>
       </div>
 
       {tip && (

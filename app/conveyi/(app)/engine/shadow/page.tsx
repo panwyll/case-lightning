@@ -50,7 +50,7 @@ export default function RolloutPage() {
     }
   };
   return (
-    <div className="eg" style={{ maxWidth: 980, margin: '0 auto', padding: '24px 16px 40px' }}>
+    <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS}</style>
       <div className="eg-top">
         <div>

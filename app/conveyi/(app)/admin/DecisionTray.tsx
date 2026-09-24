@@ -48,29 +48,29 @@ const REVIEW_ONLY = new Set(['bank_details', 'note_actions']);
 const DWELL_MS = 6000;
 
 const CSS = `
-.dt{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.dt{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
 .dt-head{display:flex;align-items:baseline;gap:10px}
 .dt-head h2{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#64748b;margin:0}
 .dt-head .n{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
-.dt-card{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(16,24,40,.05);transition:opacity .18s,transform .18s}
+.dt-card{display:grid;grid-template-columns:1fr auto;gap:8px 16px;align-items:center;background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:12px 16px;transition:opacity .18s,transform .18s}
 .dt-card.going{opacity:0;transform:translateX(24px)}
-.dt-addr{font-size:16px;font-weight:800;letter-spacing:-.01em;margin:0}
-.dt-ref{font-size:12px;color:#94a3b8;margin-top:2px}
-.dt-kind{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#5A27E0;background:#ede9fe;border-radius:999px;padding:2px 9px;margin:10px 0 8px}
-.dt-sum{font-size:14px;line-height:1.5;color:#0f172a;margin:0;max-width:78ch;white-space:pre-line}
-.dt-prop{margin:12px 0 0;padding:10px 12px;background:#f8fafc;border-radius:10px}
-.dt-prop b{display:block;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin-bottom:6px}
-.dt-prop div{display:flex;gap:8px;align-items:center;font-size:13px;color:#0f172a;padding:2px 0}
-.dt-prop div span{color:#16a34a;display:inline-flex}
-.dt-acts{display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap}
-.dt-btn{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#0f172a;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.dt-main{min-width:0}
+.dt-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dt-addr{font-size:14px;font-weight:800;color:#0f172a}
+.dt-kind{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#5A27E0;background:#ede9fe;border-radius:999px;padding:2px 8px}
+.dt-sum{font-size:13px;color:#334155;margin:4px 0 0;line-height:1.45}
+.dt-prop{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#475569}
+.dt-prop span{display:inline-flex;align-items:center;gap:4px}
+.dt-prop svg{color:#16a34a}
+.dt-acts{display:flex;gap:8px;align-items:center}
+.dt-btn{border:1px solid #cbd5e1;background:#fff;border-radius:9px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#0f172a;text-decoration:none;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .dt-btn.go{background:#5A27E0;color:#fff;border-color:#5A27E0}
 .dt-btn:disabled{opacity:.45;cursor:not-allowed}
-.dt-src{margin-top:12px;border:1px solid #e6e8ee;border-radius:10px;background:#fafafa;max-height:320px;overflow:auto;padding:12px 14px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;color:#334155}
-.dt-src iframe{width:100%;height:300px;border:0;background:#fff}
-.dt-gate{font-size:12px;color:#94a3b8;margin-left:auto}
-.dt-err{color:#b91c1c;font-size:12.5px;margin-top:8px}
-.dt-done{background:#fff;border:1px solid #e6e8ee;border-radius:14px;padding:36px;text-align:center}
+.dt-src{grid-column:1 / -1;position:relative;border:1px solid #e6e8ee;border-radius:10px;background:#fafafa;max-height:300px;overflow:auto;padding:12px 14px;font-size:12.5px;line-height:1.5;white-space:pre-wrap;color:#334155}
+.dt-src iframe{width:100%;height:280px;border:0;background:#fff}
+.dt-x{position:sticky;top:0;float:right;border:1px solid #e2e8f0;background:#fff;border-radius:7px;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#64748b}
+.dt-err{color:#b91c1c;font-size:12.5px;margin-top:6px}
+@media (max-width:760px){.dt-card{grid-template-columns:1fr}}
 `;
 
 function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
@@ -120,31 +120,44 @@ function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
 
   return (
     <div className={`dt-card${going ? ' going' : ''}`}>
-      <p className="dt-addr">{d.propertyAddress ?? d.matterRef ?? 'Matter'}</p>
-      <div className="dt-ref">{d.matterRef}{d.assignedTo === null ? ' · unassigned' : ''}</div>
-      <span className="dt-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</span>
-      <p className="dt-sum">{d.summary}</p>
-      {quick && PROPOSED[d.kind] && (
-        <div className="dt-prop">
-          <b>Proposed</b>
-          {PROPOSED[d.kind].map((line) => <div key={line}><span><Check size={13} /></span>{line}</div>)}
+      <div className="dt-main">
+        <div className="dt-top">
+          <span className="dt-addr">{d.propertyAddress ?? d.matterRef ?? 'Matter'}</span>
+          <span className="dt-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</span>
         </div>
-      )}
-      {source && (
-        <div className="dt-src" onScroll={() => setScrolled(true)}>
-          {source.rawUrl ? <iframe title={source.fileName ?? 'Source'} src={source.rawUrl} /> : source.content ? source.content : source.webUrl ? <a href={source.webUrl} target="_blank" rel="noopener noreferrer">{source.fileName ?? 'Open the source'}</a> : 'No readable source.'}
-        </div>
-      )}
-      {err && <div className="dt-err">{err}</div>}
+        <p className="dt-sum">{headline(d.summary)}</p>
+        {quick && PROPOSED[d.kind] && (
+          <div className="dt-prop">{PROPOSED[d.kind].map((line) => <span key={line}><Check size={12} />{line}</span>)}</div>
+        )}
+        {err && <div className="dt-err">{err}</div>}
+      </div>
       <div className="dt-acts">
         {quick && !source && <button className="dt-btn go" disabled={opening} onClick={openSource}>Approve</button>}
-        {quick && source && <button className="dt-btn go" disabled={!engaged || busy} onClick={approve}><Check size={14} /> Approve</button>}
+        {quick && source && <button className="dt-btn go" disabled={!engaged || busy} onClick={approve} title={engaged ? '' : 'Read the source first'}><Check size={14} /> Approve</button>}
         <a className="dt-btn" href={paths.decision(d.eventId)}>Review <ChevronRight size={14} /></a>
-        {source && !engaged && <span className="dt-gate">Read the source, then approve</span>}
-        {source && <button className="dt-btn" style={{ padding: '6px 8px' }} onClick={() => setSource(null)} aria-label="Hide source"><X size={13} /></button>}
       </div>
+      {source && (
+        <div className="dt-src" onScroll={() => setScrolled(true)}>
+          <button className="dt-x" onClick={() => setSource(null)} aria-label="Hide source"><X size={13} /></button>
+          {source.rawUrl ? <iframe title={source.fileName ?? 'Source'} src={source.rawUrl} /> : source.content ? source.content : source.webUrl ? <a href={source.webUrl} target="_blank" rel="noopener noreferrer">{source.fileName ?? 'Open the source'}</a> : null}
+        </div>
+      )}
     </div>
   );
+}
+
+/**
+ * The one line that says what is wrong. Engine summaries lead with a count ("1 item needs a
+ * decision"), number their points and tag severity; the first point, clean, is the news.
+ */
+function headline(summary: string): string {
+  const lines = summary.split('\n').map((l) => l.trim()).filter(Boolean);
+  const point = lines.find((l) => /^\d+\.\s/.test(l)) ?? lines[0] ?? '';
+  return point
+    .replace(/^\d+\.\s*/, '')
+    .replace(/\[(LOW|MEDIUM|HIGH|CRITICAL)\]\s*/gi, '')
+    .replace(/\s*\((see [^)]*)\)/gi, '')
+    .trim();
 }
 
 export default function DecisionTray({ userId, all }: { userId: string; all: boolean }) {
@@ -157,12 +170,11 @@ export default function DecisionTray({ userId, all }: { userId: string; all: boo
     } catch { setRows([]); }
   }, [all, userId]);
   useEffect(() => { void load(); }, [load]);
-  if (!rows) return null;
+  if (!rows || rows.length === 0) return null;
   return (
     <div className="dt">
       <style>{CSS}</style>
       <div className="dt-head"><h2>Needs you</h2><span className="n">{rows.length}</span></div>
-      {rows.length === 0 && <div className="dt-done"><div style={{ color: '#16a34a', marginBottom: 6 }}><Check size={28} /></div><b>Nothing needs you</b></div>}
       {rows.map((d) => <Card key={d.eventId} d={d} onDone={(id) => setRows((cur) => (cur ?? []).filter((x) => x.eventId !== id))} />)}
     </div>
   );

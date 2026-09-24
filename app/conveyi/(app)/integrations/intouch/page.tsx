@@ -61,7 +61,7 @@ export default function InTouchPage() {
   const d = c?.lastSyncDetail ?? null;
 
   return (
-    <div className="eg" style={{ maxWidth: 880, margin: '0 auto', padding: '16px 16px 48px' }}>
+    <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS}</style>
       <div className="eg-top">
         <div>

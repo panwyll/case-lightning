@@ -81,7 +81,7 @@ export default function MapPage() {
   const spineH = Y + H + 30 + Math.max(...gateLines) * 15 + 70;
 
   return (
-    <div className="eg mp" style={{ maxWidth: 1240, margin: '0 auto', padding: '20px 16px 60px' }}>
+    <div className="eg mp" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
         <div>

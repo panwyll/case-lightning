@@ -95,8 +95,13 @@ const CSS = `
 .mv-st{flex:1;font-size:14px;color:#0f172a}
 .mv-sw{font-size:12.5px;font-weight:700;white-space:nowrap}
 .mv-sm{font-size:12px;color:#94a3b8;white-space:nowrap}
-.mv-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media (max-width:900px){.mv-grid{grid-template-columns:1fr}}
+.mv-body{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:18px;align-items:start}
+.mv-body.solo{grid-template-columns:1fr}
+.mv-status h3:first-child{margin-top:0}
+.mv-grid{display:flex;flex-direction:column;gap:12px}
+.mv-grid > div{display:flex;flex-direction:column;gap:12px}
+.mv-grid .mv-sec{margin-top:0}
+@media (max-width:1000px){.mv-body{grid-template-columns:1fr}}
 .mv-card{background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:14px 16px}
 .mv-h{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin:0 0 10px}
 .mv-kv{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
@@ -242,7 +247,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
           {selected && (
             <div className="mv-steps" role="tabpanel">
-              {selected.steps.length === 0 && <p className="mv-none" style={{ padding: '10px 0' }}>No steps.</p>}
               {selected.steps.map((t, i) => {
                 const task = flow.byTemplate[t.id];
                 const st = selected.states[i];
@@ -272,8 +276,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
           )}
 
-          {enrolled && <EngineSection matterId={matterId} />}
-
+          <div className={`mv-body${enrolled ? '' : ' solo'}`}>
+          {enrolled && <div className="mv-status"><EngineSection matterId={matterId} /></div>}
           <div className="mv-grid">
             <div>
               <div className="mv-card">
@@ -292,9 +296,9 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                   <div><div className="mv-k">Type</div><div className="mv-v">{m.track ? (m.track === 'SALE' ? 'Sale' : 'Purchase') : '—'}</div></div>
                 </div>
               </div>
-              <div className="mv-card mv-sec">
-                <h2 className="mv-h">Outstanding</h2>
-                {outstanding.length === 0 ? <p className="mv-none">Nothing outstanding.</p> : (
+              {(outstanding.length > 0 || risks.length > 0) && <div className="mv-card mv-sec">
+                {outstanding.length > 0 && <h2 className="mv-h">Outstanding</h2>}
+                {outstanding.length > 0 && (
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: '#334155' }}>
                     {outstanding.map((o, i) => <li key={i} style={{ marginBottom: 4 }}>{typeof o === 'string' ? o : o.label || o.item || JSON.stringify(o)}</li>)}
                   </ul>
@@ -307,34 +311,35 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                     </ul>
                   </>
                 )}
-              </div>
-              <div className="mv-card mv-sec">
+              </div>}
+              {(detail?.contacts ?? []).length > 0 && <div className="mv-card mv-sec">
                 <h2 className="mv-h">Parties</h2>
-                {(detail?.contacts ?? []).length === 0 ? <p className="mv-none">None yet.</p> : (detail!.contacts.slice(0, 12).map((c) => (
+                {detail!.contacts.slice(0, 12).map((c) => (
                   <div key={c.id} className="mv-row"><span>{c.name || c.email}</span><span className="mv-muted">{String(c.role || '').toLowerCase().replace(/_/g, ' ')}</span></div>
-                )))}
-              </div>
+                ))}
+              </div>}
             </div>
             <div>
-              <div className="mv-card">
-                <h2 className="mv-h">Emails{emails ? ` · ${emails.length}` : ''}</h2>
-                {!emails ? <p className="mv-none">Loading…</p> : emails.length === 0 ? <p className="mv-none">None yet.</p> : emails.slice(0, 10).map((t) => (
+              {emails && emails.length > 0 && <div className="mv-card mv-sec">
+                <h2 className="mv-h">Emails · {emails.length}</h2>
+                {emails.slice(0, 10).map((t) => (
                   <div key={t.id} className="mv-row"><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</span><span className="mv-muted">{whenShort(t.lastMessageAt)}</span></div>
                 ))}
-              </div>
-              <div className="mv-card mv-sec">
-                <h2 className="mv-h">Files{files ? ` · ${files.files.length}` : ''}</h2>
-                {!files ? <p className="mv-none">Loading…</p> : files.files.length === 0 ? <p className="mv-none">{files.folderProvisioned ? 'None yet.' : 'No folder yet.'}</p> : files.files.slice(0, 12).map((f) => (
+              </div>}
+              {files && files.files.length > 0 && <div className="mv-card mv-sec">
+                <h2 className="mv-h">Files · {files.files.length}</h2>
+                {files.files.slice(0, 12).map((f) => (
                   <div key={f.id} className="mv-row">{f.webUrl ? <a href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</a> : <span>{f.name}</span>}</div>
                 ))}
-              </div>
-              <div className="mv-card mv-sec">
+              </div>}
+              {(detail?.timeline ?? []).length > 0 && <div className="mv-card mv-sec">
                 <h2 className="mv-h">Activity</h2>
-                {(detail?.timeline ?? []).length === 0 ? <p className="mv-none">None yet.</p> : detail!.timeline.slice(0, 12).map((e) => (
+                {detail!.timeline.slice(0, 12).map((e) => (
                   <div key={e.id} className="mv-tl"><time>{whenShort(e.event_at ?? e.created_at)}</time><span>{e.title}</span></div>
                 ))}
-              </div>
+              </div>}
             </div>
+          </div>
           </div>
         </>
       )}
@@ -351,8 +356,8 @@ function EngineSection({ matterId }: { matterId: string }) {
   }, [matterId, eng.events.length]);
   if (!model) return null;
   return (
-    <div style={{ marginBottom: 18 }}>
-      <CaseIntelligence m={model} events={eng.events} onDiagnostics={() => { window.location.href = paths.engineMatter(matterId); }} />
+    <div>
+      <CaseIntelligence compact m={model} events={eng.events} />
     </div>
   );
 }

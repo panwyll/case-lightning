@@ -133,7 +133,7 @@ function Readiness({ m }: { m: CaseModel }) {
       </table>
 
       <h3>Next</h3>
-      {m.nextActions.length === 0 ? <div className="ready">Nothing outstanding for this gate.</div> : (
+      {m.nextActions.length === 0 ? null : (
         <table>
           <thead><tr><th>Action</th><th>Who</th><th>Unblocks</th><th>Urgency</th></tr></thead>
           <tbody>{m.nextActions.map((a, i) => <tr key={i}><td>{a.what}</td><td>{WHO[a.who] ?? a.who}</td><td>{a.unblocks}</td><td><span className={`eg-chip ${a.urgency === 'critical' ? 'bad' : a.urgency === 'warning' ? 'pending' : 'muted'}`}>{a.urgency}</span></td></tr>)}</tbody>

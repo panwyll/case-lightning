@@ -5,12 +5,15 @@ import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { HEALTH_LABEL, LIFECYCLE_LABEL, type CaseToken } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
+import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 
 /** Every open case as a list: find one by reference, address or handler, open it. */
 const CSS = `
 .cv-search{width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px}
-.cv-row{display:grid;grid-template-columns:28px 1fr 150px 130px 130px;gap:12px;align-items:center;padding:11px 14px;background:#fff;border:1px solid #e6e8ee;border-radius:10px;margin-bottom:6px;text-decoration:none;color:inherit}
-.cv-row:hover{border-color:#c4b5fd;background:#fcfbff}
+.cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:calc(100vh - 212px)}
+.cv-row{display:grid;grid-template-columns:28px 1fr 150px 150px 130px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
+.cv-row:first-child{border-top:0}
+.cv-row:hover{background:#faf8ff}
 .cv-addr{font-size:14px;font-weight:700;color:#0f172a;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cv-ref{font-size:12px;color:#94a3b8;margin-top:1px}
 .cv-cell{font-size:12.5px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -22,7 +25,7 @@ const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, atte
 
 export default function CaseViewPage() {
   const [rows, setRows] = useState<CaseToken[] | null>(null);
-  const [scope, setScope] = useState<'all' | 'mine'>('all');
+  const [scope, setScope] = useState<Scope>('all');
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -44,17 +47,16 @@ export default function CaseViewPage() {
   }, [rows, q]);
 
   return (
-    <div className="eg" style={{ maxWidth: 1040, margin: '0 auto', padding: '16px 16px 60px' }}>
+    <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
         <h1 className="eg-h1">Case View</h1>
-        <button className={`eg-btn${scope === 'mine' ? ' on' : ''}`} onClick={() => setScope(scope === 'mine' ? 'all' : 'mine')}>{scope === 'mine' ? 'My matters' : 'Whole team'}</button>
+        <ScopeSelect value={scope} onChange={setScope} />
       </div>
       <input className="cv-search" placeholder="Reference, address or handler" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       {err && <div className="eg-err">{err}</div>}
       {!rows && !err && <div className="eg-sub">Loading…</div>}
-      {rows && list.length === 0 && <div className="eg-empty">No matching cases.</div>}
-      {list.map((r) => (
+      {list.length > 0 && <div className="cv-list">{list.map((r) => (
         <a key={r.matterId} className="cv-row" href={paths.matter(r.matterId)}>
           <House band={r.health?.band ?? 'normal'} size={24} />
           <span style={{ minWidth: 0 }}>
@@ -65,7 +67,7 @@ export default function CaseViewPage() {
           <span className="cv-cell">{r.assignedToName ?? 'Unassigned'}</span>
           <span className="cv-health" style={{ color: COLOUR[r.health?.band] ?? '#64748b' }}>{HEALTH_LABEL[r.health?.band] ?? ''}</span>
         </a>
-      ))}
+      ))}</div>}
     </div>
   );
 }

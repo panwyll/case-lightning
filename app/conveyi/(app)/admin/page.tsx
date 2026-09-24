@@ -781,8 +781,23 @@ function AdminPageInner() {
         ::-webkit-scrollbar-track{background:transparent}
       `}</style>
         <div>
-        <h1 style={{ fontSize: 20, margin: `0 0 ${TAB_META[tab].subtitle ? 4 : 18}px` }}>{TAB_META[tab].label}</h1>
-        {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+          <h1 style={{ fontSize: 20, margin: 0 }}>{TAB_META[tab].label}</h1>
+          {tab === 'mywork' && (
+            <>
+              {isAdmin && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
+                  <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
+                    <option value="">Anyone</option>
+                    {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
+                  </select>
+                </label>
+              )}
+              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: isAdmin ? 0 : 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
+            </>
+          )}
+        </div>
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
 
@@ -961,18 +976,6 @@ function AdminPageInner() {
 
         {tab === 'mywork' && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-              {isAdmin && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
-                  <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
-                    <option value="">Anyone</option>
-                    {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
-                  </select>
-                </label>
-              )}
-              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
-            </div>
             <DecisionTray userId={assignee || me?.userId || ''} all={assignee === ''} />
             <EngineWork all={assignee === ''} />
           </>

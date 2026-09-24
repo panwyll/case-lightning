@@ -13,19 +13,19 @@ import { CheckCircle, ChevronRight } from '@/app/shared/icons';
  * a notch more severity on the line. Nothing here is groomed by hand.
  */
 const CSS = `
-.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;align-items:start;margin-bottom:14px}
+.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px;align-items:start;margin-bottom:12px}
 .wk-col{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
 .wk-head{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:baseline;gap:8px}
 .wk-head b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
 .wk-head .n{margin-left:auto;font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
-.wk-item{display:block;padding:11px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
+.wk-item{display:block;padding:9px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
 .wk-item:first-of-type{border-top:0}
 .wk-item:hover{background:#fafafa}
 .wk-what{font-size:13px;font-weight:600;line-height:1.35}
 .wk-where{font-size:11.5px;color:#94a3b8;margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .wk-clock{font-size:11.5px;margin-top:5px;display:flex;gap:10px;flex-wrap:wrap;color:#64748b;font-variant-numeric:tabular-nums}
 .wk-clock .over{color:#b91c1c;font-weight:700}
-.wk-none{padding:16px 14px;font-size:12.5px;color:#94a3b8}
+.wk-more{display:block;width:100%;border:0;border-top:1px solid #f1f5f9;background:#fafafa;padding:8px 14px;font-size:12.5px;font-weight:700;color:#5A27E0;cursor:pointer;font-family:inherit;text-align:left}
 .wk-wait{background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:14px;overflow:hidden}
 .wk-wait-hd{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border:0;background:none;font-family:inherit;cursor:pointer;text-align:left;color:#0f172a}
 .wk-wait-hd b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
@@ -79,11 +79,15 @@ function Item({ i }: { i: WorkItem }) {
   );
 }
 
+/** Four at a time: the list is for acting on, not for reading end to end. */
 function Column({ title, items }: { title: string; items: WorkItem[] }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, 4);
   return (
     <div className="wk-col">
       <div className="wk-head"><b>{title}</b><span className="n">{items.length}</span></div>
-      {items.length === 0 ? <div className="wk-none">None.</div> : items.map((i) => <Item key={`${i.matterId}:${i.id}`} i={i} />)}
+      {shown.map((i) => <Item key={`${i.matterId}:${i.id}`} i={i} />)}
+      {items.length > 4 && <button className="wk-more" onClick={() => setAll((a) => !a)}>{all ? 'Fewer' : `${items.length - 4} more`}</button>}
     </div>
   );
 }
@@ -131,12 +135,7 @@ export default function EngineWork({ all, showEmpty = false }: { all: boolean; s
   // Decisions are the tray above; what is left of DO is issues and next steps.
   const doItems = data.do.filter((i) => i.ref?.type !== 'decision');
   if (!doItems.length && !data.waiting.length && !data.escalate.length) {
-    return showEmpty ? (
-      <div style={{ background: '#fff', border: '1px solid #e6e8ee', borderRadius: 12, padding: 40, textAlign: 'center' }}>
-        <div style={{ color: '#16a34a', marginBottom: 8 }}><CheckCircle size={30} /></div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Nothing to do</div>
-      </div>
-    ) : null;
+    return null;
   }
   return (
     <div>

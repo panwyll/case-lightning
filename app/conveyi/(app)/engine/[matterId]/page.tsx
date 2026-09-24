@@ -46,7 +46,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
   }, [loadModel, eng.events.length]);
   const refresh = () => { void eng.load(); void loadModel(); };
   return (
-    <div className="eg" style={{ maxWidth: 1040, margin: '0 auto', padding: '16px 16px 40px' }}>
+    <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + WORK_CSS}</style>
       {shadow && (
         <div className="eg-shadow-banner" role="status" aria-live="polite">

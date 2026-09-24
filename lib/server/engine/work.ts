@@ -104,6 +104,14 @@ export function clientAction(what: string): string {
   if (i) return `give their instruction — ${i[1].replace(/^the client's instruction to /i, '').trim()}`;
   return what.charAt(0).toLowerCase() + what.slice(1);
 }
+/** "Still waiting on enquiry E2 since 2026-08-24 — no response after 16 working days; chased 1× (last …)." → "Enquiry E2: no reply in 16 working days, chased once". */
+export function escalationLine(text: string): string {
+  const m = text.match(/^Still waiting on (.+?) since \S+ — no response after (\d+) working days(?:; chased (\d+)×)?/i);
+  if (!m) return text;
+  const what = m[1].replace(/_/g, ' ').replace(/\bid check\b/i, 'ID check');
+  const chased = m[3] ? (m[3] === '1' ? ', chased once' : `, chased ${m[3]} times`) : '';
+  return `${what.charAt(0).toUpperCase()}${what.slice(1)}: no reply in ${m[2]} working days${chased}`;
+}
 export const waitAction = (key: string, subject: string): string => (WAIT_ACTION[key] ? WAIT_ACTION[key](subject) : `${key.replace(/_/g, ' ')}${subject ? ` — ${subject}` : ''}`);
 const WAIT_WHAT: Record<string, string> = {
   search: 'Search result', enquiry: 'Reply to enquiry', id_check: 'ID / AML result', funds: 'Completion funds',
@@ -144,7 +152,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
     const what =
       d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
-      : d.kind === 'escalation' ? (firstLine || 'Deal with an escalation')
+      : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
       : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') ? ` — ${d.subject}` : ''}`;
     out.push({
       ...base,
@@ -153,7 +161,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // for a person. It does not belong in the same column as an ordinary decision.
       bucket: d.kind === 'escalation' ? 'escalate' : 'do',
       what,
-      unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : d.kind === 'escalation' ? 'Whatever the timer has been chasing' : 'The sub-flow it came from',
+      unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : null,
       actionOwner: 'conveyancer',
       // An escalation exists because a clock already ran out — it is never "normal".
       urgency: d.kind === 'bank_details' ? 'critical' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
