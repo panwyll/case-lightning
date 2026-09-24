@@ -6,6 +6,7 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { actionable, buckets, matterWork, type WorkItem } from '@/lib/server/engine/work';
 import { HEALTH_RANK, type HealthBand, type HealthSummary } from '@/lib/server/engine/health';
+import { untrackedCaseRows } from '@/lib/server/engine/untracked';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,6 +38,9 @@ export async function GET(req: NextRequest) {
       svc.eventStore.loadSubflows(user.tenantId),
     ]);
     const now = new Date();
+    // Matters the engine is not following: they have no work list, but the page has to
+    // say they exist rather than report a firm with a full board as "0 active".
+    const untracked = (await untrackedCaseRows(user.tenantId, { assignedTo: all ? null : user.userId, exclude: new Set(states.map((x) => x.state.matterId)) })).length;
 
     interface Row { matterId: string; matterRef: string | null; propertyAddress: string | null; band: HealthBand; health: HealthSummary; items: WorkItem[] }
     const rows: Row[] = states.map(({ state, meta }) => {
@@ -66,7 +70,7 @@ export async function GET(req: NextRequest) {
     };
 
     return ok({
-      counts: { active: rows.length, needsYouToday: needsYou.length, atRisk: atRisk.length, progressing },
+      counts: { active: rows.length, needsYouToday: needsYou.length, atRisk: atRisk.length, progressing, untracked },
       ...buckets(items),
       actions: items,
       risks: atRisk

@@ -66,7 +66,6 @@ export default function InTouchPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">InTouch</h1>
-          <p className="eg-sub">Onboarding, identity checks and the forms your clients fill in — read into the case. And, if you turn it on, the case's real progress pushed back to what your client and their agent see.</p>
         </div>
         <a className="eg-btn" href="/conveyi/cases">← Caseload</a>
       </div>

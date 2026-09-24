@@ -96,7 +96,6 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
           {tab === 'documents' && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
           {tab === 'diagnostics' && (
             <>
-              <p className="eg-sub" style={{ margin: '0 0 10px' }}>Read-only. Every requirement behind the current milestone, what blocks it, and the dependency graph — for working out why a case is where it is. Nothing here is edited by hand.</p>
               <CaseView matterId={matterId} api={api} view="readiness" model={model} />
               <CaseView matterId={matterId} api={api} view="dependencies" model={model} />
             </>

@@ -4,6 +4,7 @@ import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { HEALTH_LABEL, pretty, type HealthBand, type WorkItem } from '@/app/shared/engine/types';
+import { paths } from '@/lib/paths';
 
 /**
  * Today (docs/caseload-ux.md §9) — the screen the day starts and ends on.
@@ -53,7 +54,7 @@ function Row({ i }: { i: WorkItem }) {
 }
 
 interface Today {
-  counts: { active: number; needsYouToday: number; atRisk: number; progressing: number };
+  counts: { active: number; needsYouToday: number; atRisk: number; progressing: number; untracked?: number };
   actions: WorkItem[];
   risks: Array<{ matterId: string; matterRef: string | null; propertyAddress: string | null; band: HealthBand; headline: string | null; why: string[]; suggested: string | null }>;
   endOfDay: { stillOpen: number; chasingTomorrow: WorkItem[]; datesThisWeek: WorkItem[]; overdueWaiting: WorkItem[] };
@@ -83,9 +84,6 @@ export default function TodayPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">{evening ? 'End of day' : 'Today'}</h1>
-          <p className="eg-sub">
-            {d ? `${d.counts.active} active matters, already evaluated — you work the ${d.counts.needsYouToday}, not the ${d.counts.active}.` : 'Working through the caseload…'}
-          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`eg-btn${evening ? ' on' : ''}`} onClick={() => setEvening(!evening)}>{evening ? 'Morning' : 'End of day'}</button>
@@ -93,6 +91,11 @@ export default function TodayPage() {
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}
+      {d && d.counts.active === 0 && (d.counts.untracked ?? 0) > 0 && (
+        <div className="eg-empty" style={{ marginBottom: 12 }}>
+          CONVEYi isn’t following any of your {d.counts.untracked} open matters yet, so there is nothing to work through here. Open one from the <a href={paths.cases}>caseload</a> and enrol it.
+        </div>
+      )}
       {d && (
         <>
           <div className="td-stats">

@@ -59,10 +59,6 @@ export default function CasesPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">Caseload</h1>
-          <p className="eg-sub">
-            {rollup ? `${rollup.total + (rollup.untracked ?? 0)} open · ${rollup.total} followed by CONVEYi · ${rollup.needsSomeone} need someone` : 'Loading…'}
-            {' · '}health is measured against what each phase should take, not the age of the case
-          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`eg-btn${scope === 'mine' ? ' on' : ''}`} onClick={() => setScope(scope === 'mine' ? 'all' : 'mine')}>

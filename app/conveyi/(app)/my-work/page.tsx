@@ -112,9 +112,6 @@ export default function MyWorkPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">My work</h1>
-          <p className="eg-sub">
-            {data ? `${data.do.length} to do · ${data.waiting.length} waiting · ${data.chase.length} to chase · ${data.escalate.length} to escalate across ${data.matters} matter${data.matters === 1 ? '' : 's'}` : 'Loading…'}
-          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`eg-btn${all ? ' on' : ''}`} onClick={() => setAll(!all)}>{all ? 'Whole team' : 'Mine only'}</button>

@@ -9,7 +9,7 @@ import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
-import { AppNavLinks } from '@/app/shared/AppNav';
+import { SidebarNav, ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 
 interface MatterHit {
   id: string;
@@ -167,7 +167,7 @@ function describeAudit(row: any): string {
   }
 }
 
-type TabKey = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+type TabKey = AdminTab;
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
@@ -187,41 +187,8 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   help: { label: 'Help & Support', subtitle: '' },
 };
 
-// Grouped left-nav. Empty groups (after role filtering) are hidden.
-const NAV_GROUPS: { label: string; tabs: TabKey[] }[] = [
-  // 'getstarted' deliberately absent — it lives in the top bar while the firm is
-  // still onboarding, not in the left nav.
-  { label: 'Work', tabs: ['mywork'] },
-  // The case flow is the spine: the board is it live, Task workflow is the DAG that
-  // drives it.
-  // ARCHIVED, not deleted: 'workload' and 'automations' are off the nav pending a
-  // rethink — workload was filler. Their tabs and data-loading still work if you
-  // navigate to ?tab=workload / ?tab=automations directly.
-  { label: 'Case flow', tabs: ['board', 'workflow'] },
-  { label: 'Content', tabs: ['templates', 'docpacks'] },
-  { label: 'Firm', tabs: ['team', 'policy'] },
-  { label: 'Tools', tabs: ['actions', 'audit'] },
-  { label: 'Account', tabs: ['billing', 'help'] },
-];
-
-// Small icon per tab — the nav reads at a glance, Monday/Jira style.
-const TAB_ICON: Record<TabKey, string> = {
-  getstarted: '🚀',
-  mywork: '☑️',
-  board: '🗂️',
-  workload: '⚖️',
-  workflow: '🔀',
-  templates: '✉️',
-  docpacks: '📄',
-  automations: '🤖',
-  team: '👥',
-  policy: '🛡️',
-  actions: '🔧',
-  audit: '🕘',
-  billing: '💳',
-  help: '💬',
-};
-const TAB_KEYS = NAV_GROUPS.flatMap((g) => g.tabs);
+// The sidebar itself lives in app/shared/AppNav.tsx (shared with every app page).
+const TAB_KEYS: TabKey[] = [...ADMIN_TABS_IN_NAV];
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
 const ADMIN_ONLY: TabKey[] = ['getstarted', 'board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
@@ -949,7 +916,6 @@ export default function AdminPage() {
             <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
           </svg>
           <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
-          <AppNavLinks />
           {me && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               {showGetStarted && (
@@ -985,28 +951,21 @@ export default function AdminPage() {
       </div>
 
       <div style={{ ...box, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 14px 56px' }}>
-        {/* Grouped left nav — a proper sidebar panel, sticky under the brand bar */}
-        <nav style={{ width: 162, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '11px 9px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-          {NAV_GROUPS.map((grp) => {
-            // "Get started" only appears while the firm is still onboarding.
-            const items = grp.tabs.filter((k) => visibleTabs.includes(k) && (k !== 'getstarted' || showGetStarted));
-            if (!items.length) return null;
-            return (
-              <div key={grp.label} style={{ marginBottom: 8 }}>
-                <div style={navGroupLabel}>{grp.label}</div>
-                {items.map((k) => (
-                  <button key={k} data-tour={`nav-${k}`} className="adm-nav" style={navItem(tab === k)} onClick={() => go(k)}>
-                    <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center', filter: tab === k ? 'none' : 'grayscale(0.4)', opacity: tab === k ? 1 : 0.75 }}>{TAB_ICON[k]}</span>
-                    <span style={{ flex: 1 }}>{TAB_META[k].label}</span>
-                    {k === 'getstarted' && onb && (
-                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-        </nav>
+        {/* The shared sidebar (app/shared/AppNav.tsx). "Get started" rides at the top while the firm is still onboarding. */}
+        <SidebarNav
+          isAdmin={isAdmin}
+          activeTab={tab}
+          onTab={go}
+          extra={showGetStarted ? (
+            <div style={{ marginBottom: 8 }}>
+              <button data-tour="nav-getstarted" className="adm-nav" style={navItem(tab === 'getstarted')} onClick={() => go('getstarted')}>
+                <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center' }}>🚀</span>
+                <span style={{ flex: 1 }}>Get Started</span>
+                {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
+              </button>
+            </div>
+          ) : null}
+        />
 
         {/* Content — full width; every section uses the whole display. */}
         <div style={{ flex: 1, minWidth: 300, maxWidth: 'none' }}>

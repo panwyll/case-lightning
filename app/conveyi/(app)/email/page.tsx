@@ -135,10 +135,6 @@ export default function EmailFilingPage() {
       <div className="fq-head">
         <div>
           <h1 className="eg-h1">Email to file</h1>
-          <p className="eg-sub" style={{ margin: '4px 0 0' }}>
-            Everything in your inbox that is not on a case yet. One question each: which case is it?
-            {filedCount > 0 && <> · <b>{filedCount} filed</b> just now</>}
-          </p>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="fq-count">{items === null ? '—' : left}</div>

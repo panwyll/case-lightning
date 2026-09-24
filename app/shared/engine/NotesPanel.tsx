@@ -45,10 +45,6 @@ export function NotesPanel({
   return (
     <div className="ep">
       <h3 style={{ margin: '4px 0 8px', fontSize: 14 }}>Notes and calls</h3>
-      <p style={{ color: '#64748b', margin: '0 0 8px', fontSize: 12.5 }}>
-        Write what was said. The note goes on the file as it is; anything it plainly records comes back as a
-        line to tick, and only what you tick is recorded on the case.
-      </p>
       <textarea
         className="ep-input"
         rows={4}

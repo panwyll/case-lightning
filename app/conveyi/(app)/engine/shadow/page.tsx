@@ -55,7 +55,6 @@ export default function RolloutPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">Rollout</h1>
-          <p className="eg-sub">Promote each sub-flow from shadow to assist to autonomous on evidence: how often the engine's conclusion matched what the handler actually did.</p>
         </div>
         <a className="eg-btn" href="/conveyi/decisions">← Queue</a>
       </div>

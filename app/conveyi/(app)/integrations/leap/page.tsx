@@ -56,7 +56,6 @@ export default function LeapPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">LEAP</h1>
-          <p className="eg-sub">LEAP holds the matters, parties and documents. CONVEYi reads them, runs the engine on our side, and writes its conclusions back as tasks and file notes.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {s?.configured && !connected && <a className="eg-btn accent" href="/api/v1/integrations/leap/connect">Connect LEAP</a>}

@@ -138,19 +138,35 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(
   return rows[0] ?? null;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Every statement with a user bound runs in its own transaction so the binding never
+ * leaks to the next pool borrower. That is the right isolation — but done naively it is
+ * four round trips per query (begin, set_config, the query, commit), and from a Vercel
+ * function to a database in another region each trip is ~100 ms. So the whole setup —
+ * begin, the user binding, the role switch — goes to the server as ONE simple-protocol
+ * message, and the query and commit follow: three trips, not four or five.
+ *
+ * The user id is only ever inlined after it has matched the UUID pattern; anything else
+ * takes the parameterised path. Nothing unvalidated is ever spliced into SQL.
+ */
 export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await pool().connect();
   try {
-    await client.query('begin');
     const user = await effectiveDbUser();
-    if (user) await client.query(`select set_config('app.user_id', $1, true)`, [user]);
-    if (inAutomationContext()) {
-      if (automationRoleAvailable === null) {
-        const r = await client.query<{ ok: boolean }>(`select pg_has_role(current_user, 'conveyi_automation', 'member') as ok`).catch(() => ({ rows: [{ ok: false }] }));
-        automationRoleAvailable = !!r.rows[0]?.ok;
-      }
-      if (automationRoleAvailable) await client.query('set local role conveyi_automation');
+    const automation = inAutomationContext();
+    if (automation && automationRoleAvailable === null) {
+      // Probed once per process, outside any transaction.
+      const r = await client.query<{ ok: boolean }>(`select pg_has_role(current_user, 'conveyi_automation', 'member') as ok`).catch(() => ({ rows: [{ ok: false }] }));
+      automationRoleAvailable = !!r.rows[0]?.ok;
     }
+    const setup = ['begin'];
+    const inlineUser = user && UUID.test(user) ? user : null;
+    if (inlineUser) setup.push(`select set_config('app.user_id', '${inlineUser}', true)`);
+    if (automation && automationRoleAvailable) setup.push('set local role conveyi_automation');
+    await client.query(setup.join('; '));
+    if (user && !inlineUser) await client.query(`select set_config('app.user_id', $1, true)`, [user]);
     const value = await work(client);
     await client.query('commit');
     return value;

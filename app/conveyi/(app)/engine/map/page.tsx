@@ -86,7 +86,6 @@ export default function MapPage() {
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">The machine, drawn from code</h1>
-          <p className="eg-sub">One machine, {spec.transactionTypes.length} transaction types. Spec version <code>{spec.version}</code> · {spec.stages.length} stages · {spec.subflows.length} sub-flows · {spec.commands.length} commands · {spec.events.length} event types · {spec.decisions.length} decision kinds · {spec.triggers.length} triggers · {spec.eventualities.length} eventualities · {spec.issues.kinds.length} issue kinds. Read-only; the tests keep it honest.</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <a className="eg-btn" href="/conveyi/decisions">Queue</a>
