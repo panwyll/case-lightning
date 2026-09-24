@@ -137,6 +137,22 @@ test('chases: draft by default (worklist item), send when configured; client ID 
   await assert.rejects(new ProductionChaser(fakeDeps({ contacts: {} }).deps).sendChase({ tenantId: 't1', matterId: 'm1', recipientRole: 'seller_solicitor', template: 'chase_enquiry_reply', context: {} }), /No seller solicitor email/);
 });
 
+test('acknowledgements: the other side is emailed at once from the fee-earner mailbox; the client hears on their channel; nobody to tell means nothing sent', async () => {
+  const f = fakeDeps();
+  const chaser = new ProductionChaser(f.deps);
+  const r = await chaser.sendAcknowledgement({ tenantId: 't1', matterId: 'm1', recipientRole: 'seller_solicitor', what: 'your replies to our enquiries', forEventType: 'enquiry_reply_received' });
+  assert.equal(r?.messageId, 'gm-1', 'sent, never drafted, whatever the chase mode');
+  assert.equal(f.sentEmail[0].to, 'other@side.law');
+  assert.match(f.sentEmail[0].subject, /received, thank you/);
+  assert.equal(f.logs.at(-1)?.template, 'ack_counterparty');
+  const c = await chaser.sendAcknowledgement({ tenantId: 't1', matterId: 'm1', recipientRole: 'client', what: 'the survey report', forEventType: 'survey_received' });
+  assert.equal(c?.channel, 'whatsapp');
+  const none = await new ProductionChaser(fakeDeps({ contacts: {} }).deps).sendAcknowledgement({ tenantId: 't1', matterId: 'm1', recipientRole: 'seller_solicitor', what: 'x', forEventType: 'enquiry_reply_received' });
+  assert.equal(none, null);
+  const off = fakeDeps(); off.deps.ackMode = 'off';
+  assert.equal(await new ProductionChaser(off.deps).sendAcknowledgement({ tenantId: 't1', matterId: 'm1', recipientRole: 'seller_solicitor', what: 'x', forEventType: 'enquiry_reply_received' }), null);
+});
+
 test('client Q&A: FAQ questions are answered (validated rephrase or verbatim); everything else is routed to a person with a holding reply', async () => {
   const f = fakeDeps();
   const qa = new ClientQaService(f.deps, new FakeLlm(() => ({ reply: 'Exchange is the moment the purchase becomes legally binding for both sides — before it either party can still walk away, after it everyone is committed to the completion date.' })), { model: 'fake' });

@@ -31,6 +31,19 @@ import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions } from './sla';
 import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction, type NoteKind } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
+
+/** What gets acknowledged, to whom, in their words. Anything not here is not a delivery from a party. */
+const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicitor' | 'client'; what: string }>> = {
+  enquiry_reply_received: { recipient: 'seller_solicitor', what: 'your replies to our enquiries' },
+  buyer_enquiries_received: { recipient: 'seller_solicitor', what: 'your enquiries' },
+  survey_received: { recipient: 'client', what: 'the survey report' },
+  specialist_report_received: { recipient: 'client', what: 'the specialist report' },
+  property_forms_received: { recipient: 'client', what: 'your completed property forms' },
+  proof_of_funds_submitted: { recipient: 'client', what: 'your proof of funds form' },
+  mortgage_offer_received: { recipient: 'client', what: 'your mortgage offer' },
+};
+/** One acknowledgement per party per delivery, not one per attachment. */
+const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
@@ -86,11 +99,37 @@ export class EngineService {
       return { events: appended, state: next };
     });
     await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
+    await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
     if (this.ports.onEvents && result.events.length) {
       const latest = await this.getState(tenantId, matterId).catch(() => result.state);
       await this.asAutomation(() => this.ports.onEvents!({ tenantId, matterId, events: result.events, state: latest })).catch((err) => this.ports.log('post-commit observer failed', err));
     }
     return result;
+  }
+
+  /**
+   * Acknowledgements. Something arrived from the other side or the client; they hear that
+   * it did, at once, so they never write to ask. One per item, and never twice to the same
+   * party inside a few hours (their five attachments are one delivery, not five). Shadow
+   * mode logs the intent instead.
+   */
+  private async acknowledge(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: SubflowConfig): Promise<void> {
+    for (const e of events) {
+      const rule = ACKNOWLEDGE[e.type];
+      if (!rule) continue;
+      try {
+        const current = await this.getState(tenantId, matterId);
+        if (current.acknowledgements.some((a) => a.forEventId === e.id)) continue;
+        const recent = current.acknowledgements.some((a) => a.recipientRole === rule.recipient && this.ports.now().getTime() - new Date(a.at).getTime() < ACK_WINDOW_MS);
+        if (recent) continue;
+        if (await this.suppressed(tenantId, matterId, state, subflows, 'acknowledgement', null, { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient })) continue;
+        const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: rule.recipient, what: rule.what, forEventType: e.type });
+        if (!sent) continue;
+        await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient, what: rule.what, channel: sent.channel, messageId: sent.messageId } });
+      } catch (err) {
+        this.ports.log(`acknowledgement failed (${e.type})`, err);
+      }
+    }
   }
 
   /** The tenant's per-sub-flow trust levels (addendum 3 §2). */

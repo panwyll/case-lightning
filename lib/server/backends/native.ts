@@ -23,6 +23,7 @@ const LINES: Record<string, (p: Record<string, unknown>) => string> = {
   search_ordered: (p) => `${p.searchType} search ordered via ${p.provider}${p.reissue ? ' (re-ordered)' : ''}`,
   id_check_requested: (p) => `ID/AML check requested via ${p.provider}`,
   chase_sent: (p) => `Chase sent to ${String(p.recipientRole).replace(/_/g, ' ')} re ${p.waitKey}${p.subject ? ` ${p.subject}` : ''}`,
+  acknowledgement_sent: (p) => `Acknowledged ${p.what} to ${String(p.recipientRole).replace(/_/g, ' ')}`,
   client_update_sent: (p) => `Client status update sent: ${p.template}`,
   report_on_title_sent: () => 'Report on title sent to the client (after human approval)',
   enquiry_raised: (p) => `Enquiry ${p.enquiryId} raised: ${p.subject}`,

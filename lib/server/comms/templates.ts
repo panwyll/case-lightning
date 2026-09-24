@@ -54,6 +54,12 @@ export const CHASES: Record<string, Template> = {
   chase_hmlr_registration: T('chase_hmlr_registration', 'chase', '{{matterRef}} — AP1 registration outstanding ({{address}})', 'Dear Sirs,\n\nOur reference {{matterRef}}. Our AP1 application for {{address}} was lodged on {{orderedDate}} and remains outstanding after {{ageWorkingDays}} working days. Please confirm the current position.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['matterRef', 'address']),
 };
 
+/** Acknowledgements: it arrived, it is with us, no need to chase. */
+export const ACKS: Record<string, Template> = {
+  ack_counterparty: T('ack_counterparty', 'chase', '{{address}} — received, thank you (our ref {{matterRef}})', 'Dear Sirs,\n\nThank you — we have received {{what}} in respect of {{address}}. It is with {{feeEarner}} for review and we will revert if anything further is needed.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['matterRef', 'address', 'what']),
+  ack_client: T('ack_client', 'client', '{{property}} — received, thank you', 'Hello {{firstName}},\n\nThank you — we have received {{what}} for {{property}}. {{feeEarner}} will review it and we will be in touch if anything is needed. Nothing more is needed from you right now.\n\n{{firmName}}', ['property', 'what']),
+};
+
 export const SEARCH_NAMES: Record<string, string> = {
   LLC1: 'local land charges search (LLC1)',
   CON29: 'local authority search (CON29)',

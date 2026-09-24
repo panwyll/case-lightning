@@ -127,6 +127,7 @@ export function productionCommsDeps(): CommsDeps {
       return r?.tenant_id ?? null;
     },
     chaseMode: config.chaseMode,
+    ackMode: config.ackMode,
     briefFor,
     onChaseDrafted: async (i) => {
       await addDraftReady({ tenantId: i.tenantId, matterId: i.matterId, dedupKey: `chase:${i.messageId ?? i.title}`, title: i.title, detail: i.detail, graphMessageId: i.messageId ?? undefined }).catch(() => {});

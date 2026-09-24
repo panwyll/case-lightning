@@ -97,6 +97,8 @@ export const config = {
   // send (default, safest); 'send' sends the template chase automatically from the
   // matter's fee-earner mailbox (spec #5: automated template chases).
   chaseMode: (env('ENGINE_CHASE_MODE') ?? 'draft') as 'draft' | 'send',
+  /** Acknowledgements of things that arrive: sent at once (default) or not at all. */
+  ackMode: (env('ENGINE_ACK_MODE') ?? 'send') as 'send' | 'off',
 
   // Groq failover (OpenAI-compatible). Used only when no Anthropic key is set —
   // a cheaper/faster stopgap; Anthropic is preferred for drafting quality.

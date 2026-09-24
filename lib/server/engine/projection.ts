@@ -488,6 +488,11 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       if (w) w.chasesSentAt.push(e.createdAt);
       break;
     }
+    case 'acknowledgement_sent': {
+      const p = e.payload as Payloads['acknowledgement_sent'];
+      s.acknowledgements.push({ forEventId: p.forEventId, recipientRole: p.recipientRole, at: e.createdAt });
+      break;
+    }
     case 'escalation_raised': {
       const p = e.payload as Payloads['escalation_raised'];
       if (p.waitKey) {

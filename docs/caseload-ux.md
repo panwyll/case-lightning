@@ -148,6 +148,18 @@ The case's health worsens as those thresholds pass — attention at the chase po
 delayed past escalation, critical while an escalation sits unanswered. In shadow mode
 nothing is sent and the chase is listed as needing a person instead.
 
+### Acknowledgements
+
+The other half of chasing: nobody should have to chase *us* to learn that what they sent
+arrived. When a reply to enquiries or the buyer's enquiries come in from the other side,
+or a survey, property forms, a mortgage offer or the proof-of-funds form come in from the
+client, the sender hears at once that it is received and with the fee-earner. It is a
+template (`ACKS` in `comms/templates.ts`), sent — never drafted — from the fee-earner's
+mailbox or down the client's channel, and recorded on the log as `acknowledgement_sent`
+against the event it answers. One per item; one per party within four hours, so five
+attachments are one delivery. Search providers, lenders and HMLR are not acknowledged. In
+shadow mode the intent is logged as suppressed. `ENGINE_ACK_MODE=off` turns it off.
+
 ## 6 · The day (`/today`)
 
 The operating model the whole product is for. Overnight every active matter is evaluated

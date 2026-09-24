@@ -117,6 +117,17 @@ export interface ThirdPartyChaser {
     template: string;
     context: Record<string, unknown>;
   }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null }>;
+  /**
+   * Tell whoever sent us something that it arrived. Returns null when there is nobody to
+   * tell (no address on the matter) — then nothing is recorded either.
+   */
+  sendAcknowledgement(input: {
+    tenantId: string;
+    matterId: string;
+    recipientRole: 'seller_solicitor' | 'client';
+    what: string;
+    forEventType: string;
+  }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null } | null>;
 }
 
 /** Component #2, front half: which sub-flow does an arriving document belong to? */

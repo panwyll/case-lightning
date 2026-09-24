@@ -66,7 +66,7 @@ import {
   type Engagement,
   DEFAULT_SUBFLOW_CONFIG,
   type Actor,
-  type ChaseSpec,
+  type ChaseSpec, type AcknowledgementSpec,
   type Citation,
   type CounterpartyType,
   type ClientUpdateSpec,
@@ -184,6 +184,7 @@ export type Command =
   | { type: 'ap1_submitted'; actor: Actor; reference?: string | null }
   | { type: 'ap1_confirmed'; actor: Actor; titleNumber?: string | null }
   | { type: 'record_chase'; chase: ChaseSpec }
+  | { type: 'record_acknowledgement'; ack: AcknowledgementSpec }
   | { type: 'raise_escalation'; waitKey: WaitKey; subject: string; reason: string; sourceDocumentId: string; summary?: SummaryOverride | null }
   | { type: 'record_client_update'; update: ClientUpdateSpec };
 
@@ -1595,6 +1596,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const w = s.waits.find((x) => x.key === cmd.chase.waitKey && x.subject === cmd.chase.subject && x.closedAt === null);
       if (!w) reject(`No open wait for ${cmd.chase.waitKey}:${cmd.chase.subject}.`);
       return [{ type: 'chase_sent', actor: SYSTEM, payload: cmd.chase.recipientRole === 'seller_solicitor' ? { ...cmd.chase, counterpartyType: s.counterpartyType } : cmd.chase }];
+    }
+    case 'record_acknowledgement': {
+      requireEnrolled(s);
+      if (s.acknowledgements.some((a) => a.forEventId === cmd.ack.forEventId)) reject('That item has already been acknowledged.');
+      return [{ type: 'acknowledgement_sent', actor: SYSTEM, payload: cmd.ack }];
     }
     case 'raise_escalation': {
       requireEnrolled(s);

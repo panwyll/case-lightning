@@ -119,6 +119,7 @@ export const EVENT_TYPES = [
   // comms / chasing / escalation
   'client_update_sent',
   'chase_sent',
+  'acknowledgement_sent',
   // notes and call transcripts (docs/intake.md)
   'note_recorded',
   'note_extracted',
@@ -545,6 +546,21 @@ export interface ChaseSpec {
   counterpartyType?: CounterpartyType | null;
 }
 
+/**
+ * An acknowledgement: the ping that tells whoever sent us something that it arrived, so
+ * they do not write again to ask. Sent by the system the moment the thing is recorded;
+ * never a review, never a decision, one per item.
+ */
+export interface AcknowledgementSpec {
+  forEventId: string;
+  forEventType: EventType;
+  recipientRole: 'seller_solicitor' | 'client';
+  /** What we received, in the recipient's words: "your replies to enquiries". */
+  what: string;
+  channel: 'email' | 'whatsapp' | 'portal' | 'mock';
+  messageId?: string | null;
+}
+
 export interface ClientUpdateSpec {
   template: string;
   channel: 'email' | 'whatsapp' | 'mock';
@@ -634,6 +650,7 @@ export interface Payloads {
 
   client_update_sent: ClientUpdateSpec;
   chase_sent: ChaseSpec;
+  acknowledgement_sent: AcknowledgementSpec;
   note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null };
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec };
   note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null };
@@ -814,7 +831,7 @@ export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', searc
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
 export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null };
 
-export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
+export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'acknowledgement' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
 
 // ───────────────────────────── Events ─────────────────────────────
 
@@ -1052,6 +1069,8 @@ export interface MatterState {
   /** When each client-update template last went out — so the same news is not sent twice in a day. */
   clientUpdateLastSentAt: Record<string, string>;
   chasesSent: number;
+  /** What we have told the sender we received, so nothing is acknowledged twice. */
+  acknowledgements: Array<{ forEventId: string; recipientRole: string; at: string }>;
   /** Addendum 2: every bank-details record ever put on file for this matter (versioned, never overwritten). */
   bankDetails: Record<string, BankDetailsState>;
   payments: PaymentAuthorisation[];
@@ -1124,6 +1143,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     clientUpdatesSent: 0,
     clientUpdateLastSentAt: {},
     chasesSent: 0,
+    acknowledgements: [],
     bankDetails: {},
     payments: [],
     suppressed: 0,

@@ -18,7 +18,7 @@
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
-import { CHASES, CLIENT_UPDATES, SEARCH_NAMES, render } from './templates';
+import { ACKS, CHASES, CLIENT_UPDATES, SEARCH_NAMES, render } from './templates';
 import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry, isStatusQuestion } from './guard';
 import { clientStatusAnswer, type CaseBrief } from '../engine/brief';
 
@@ -53,6 +53,8 @@ export interface CommsDeps {
   /** Tenant for an inbound address when the webhook is shared across firms. */
   tenantForAddress(address: string): Promise<string | null>;
   chaseMode: 'draft' | 'send';
+  /** Acknowledgements go out at once or not at all; a drafted one defeats its purpose. */
+  ackMode?: 'send' | 'off';
   /** The engine's account of a matter, for answering "any update?" from the case itself. */
   briefFor?(tenantId: string, matterId: string): Promise<CaseBrief | null>;
   onChaseDrafted?(input: { tenantId: string; matterId: string; messageId: string | null; title: string; detail: string }): Promise<void>;
@@ -188,6 +190,26 @@ export class ProductionChaser implements ThirdPartyChaser {
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
     await this.deps.onChaseDrafted?.({ tenantId: input.tenantId, matterId: input.matterId, messageId: draft.messageId, title: `Chase drafted: ${r.subject}`, detail: `To ${to} — open Drafts to send.` });
     return { channel: 'email' as const, messageId: draft.messageId };
+  }
+
+  async sendAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'client'; what: string; forEventType: string }) {
+    if (this.deps.ackMode === 'off') return null;
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what };
+    if (input.recipientRole === 'client') {
+      const r = render(ACKS.ack_client, vars);
+      if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
+      if (!info.clientEmail && !(info.clientPhone && info.clientWhatsAppOptIn)) return null;
+      const sent = await new ProductionClientComms(this.deps)['deliver'](input.tenantId, input.matterId, info, ACKS.ack_client.key, r.subject, r.body);
+      return { channel: sent.channel, messageId: sent.messageId };
+    }
+    const to = info.contacts.seller_solicitor?.email ?? null;
+    if (!to || !this.deps.mailbox || !info.feeEarnerUserId) return null;
+    const r = render(ACKS.ack_counterparty, vars);
+    if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
+    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    return { channel: 'email' as const, messageId: sent.messageId };
   }
 }
 
