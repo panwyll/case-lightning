@@ -9,7 +9,10 @@ import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
-import { SidebarNav, ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
+import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
+import { Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { paths } from '@/lib/paths';
 
 interface MatterHit {
   id: string;
@@ -276,7 +279,7 @@ function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSe
   );
 }
 
-export default function AdminPage() {
+function AdminPageInner() {
   const [me, setMe] = useState<{ role: string; email: string; displayName: string | null; tenantName?: string } | null>(null);
   const [meLoading, setMeLoading] = useState(true);
   const isAdmin = me?.role === 'ADMIN';
@@ -284,7 +287,15 @@ export default function AdminPage() {
   // non-admin. Gating on the async /me would otherwise pop the sidebar from 2 → all.
   const visibleTabs = me && !isAdmin ? TAB_KEYS.filter((k) => !ADMIN_ONLY.includes(k)) : TAB_KEYS;
 
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabKey>('mywork');
+  // The sidebar is a set of links to ?tab=…; this is what makes them switch in place.
+  const urlTab = searchParams?.get('tab') ?? null;
+  useEffect(() => {
+    if (urlTab && (TAB_KEYS as string[]).includes(urlTab)) setTab(urlTab as TabKey);
+    else if (!urlTab) setTab('mywork');
+  }, [urlTab]);
   // Onboarding progress (admins only) — drives the "Get started" nav item + auto-open.
   const [onb, setOnb] = useState<{ completed: number; total: number; onboarded: boolean } | null>(null);
   const onbAutoNav = useRef(false);
@@ -388,9 +399,6 @@ export default function AdminPage() {
       .catch(() => {})
       .finally(() => setMeLoading(false));
     api('/billing/account').then(setBilling).catch(() => {});
-    const t = new URLSearchParams(window.location.search).get('tab');
-    if (t && (TAB_KEYS as string[]).includes(t)) setTab(t as TabKey);
-    else setTab('mywork');
   }, []);
   // Never leave a non-admin parked on an admin-only tab.
   useEffect(() => {
@@ -404,15 +412,17 @@ export default function AdminPage() {
       .then((s) => {
         if (cancelled) return;
         setOnb({ completed: s.completed, total: s.total, onboarded: s.onboarded });
+        // A firm that has not finished setting up lands on Get started — by URL, so the
+        // sidebar, the page and the address bar all agree on where we are.
         const hasTabParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab');
-        if (!s.onboarded && !onbAutoNav.current && !hasTabParam) { onbAutoNav.current = true; setTab('getstarted'); }
+        if (!s.onboarded && !onbAutoNav.current && !hasTabParam) { onbAutoNav.current = true; router.replace(`${paths.admin}?tab=getstarted`); }
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [isAdmin]);
+  }, [isAdmin, router]);
   function go(t: TabKey) {
     setTab(t);
-    if (typeof window !== 'undefined') window.history.replaceState(null, '', `/admin?tab=${t}`);
+    router.push(`${paths.admin}?tab=${t}`);
   }
 
   const startTour = () => { tourReturn.current = tab; setTourOn(true); };
@@ -896,79 +906,39 @@ export default function AdminPage() {
     .join('');
 
   return (
-    <div style={{ background: '#f6f7fb', minHeight: '100vh', fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
-      {/* Shell-wide styling that inline styles can't express: hover states, motion, scrollbars. */}
+    <div>
+      {/* Board/card hover states and scrollbars the inline styles can't express. */}
       <style>{`
-        @keyframes adm-spin{to{transform:rotate(360deg)}}
-        .adm-nav{transition:background .12s ease,color .12s ease}
-        .adm-nav:hover{background:#eef1f6}
         .adm-bcard{box-shadow:0 1px 2px rgba(16,24,40,0.05);transition:box-shadow .13s ease,transform .13s ease}
         .adm-bcard:hover{box-shadow:0 5px 14px rgba(16,24,40,0.11);transform:translateY(-1px)}
         ::-webkit-scrollbar{height:8px;width:8px}
         ::-webkit-scrollbar-thumb{background:#d7dce3;border-radius:999px}
         ::-webkit-scrollbar-track{background:transparent}
       `}</style>
-      {/* Sticky brand bar */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #e8eaf0', position: 'sticky', top: 0, zIndex: 5 }}>
-        <div style={{ ...box, display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px' }}>
-          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-            <rect width="32" height="32" rx="7" fill="#5A27E0" />
-            <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
-          </svg>
-          <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
-          {me && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-              {showGetStarted && (
-                <button
-                  onClick={() => go('getstarted')}
-                  title="Get your firm set up"
-                  style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : 'none', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 10px', borderRadius: 8, fontFamily: 'inherit' }}
-                >
-                  <span aria-hidden>🚀</span> Get Started
-                  {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
-                </button>
-              )}
-              {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
-              <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
-              <button
-                onClick={startTour}
-                title="Show me around"
-                style={{ background: tourOn ? '#ede9fe' : 'none', border: 'none', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 9px', borderRadius: 7, fontFamily: 'inherit' }}
-              >
-                Show me around
-              </button>
-              <span title={me.email} style={{ width: 30, height: 30, borderRadius: 999, background: '#ede9fe', color: '#5A27E0', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{initials}</span>
-              <button
-                onClick={() => { try { window.localStorage.removeItem(TOKEN_KEY); } catch {} window.location.href = '/api/v1/auth/logout'; }}
-                title="Sign out"
-                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: '4px 6px', fontFamily: 'inherit' }}
-              >
-                Sign out
-              </button>
-            </div>
+      {me && (showGetStarted || billing?.plan) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          {showGetStarted && (
+            <button
+              onClick={() => go('getstarted')}
+              title="Get your firm set up"
+              data-tour="nav-getstarted"
+              style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : '#fff', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '5px 11px', borderRadius: 8, fontFamily: 'inherit' }}
+            >
+              <span aria-hidden>🚀</span> Get started
+              {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
+            </button>
           )}
+          {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
+          <button
+            onClick={startTour}
+            title="Show me around"
+            style={{ marginLeft: 'auto', background: tourOn ? '#ede9fe' : 'none', border: 'none', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 9px', borderRadius: 7, fontFamily: 'inherit' }}
+          >
+            Show me around
+          </button>
         </div>
-      </div>
-
-      <div style={{ ...box, display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap', padding: '22px 14px 56px' }}>
-        {/* The shared sidebar (app/shared/AppNav.tsx). "Get started" rides at the top while the firm is still onboarding. */}
-        <SidebarNav
-          isAdmin={isAdmin}
-          activeTab={tab}
-          onTab={go}
-          extra={showGetStarted ? (
-            <div style={{ marginBottom: 8 }}>
-              <button data-tour="nav-getstarted" className="adm-nav" style={navItem(tab === 'getstarted')} onClick={() => go('getstarted')}>
-                <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center' }}>🚀</span>
-                <span style={{ flex: 1 }}>Get Started</span>
-                {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
-              </button>
-            </div>
-          ) : null}
-        />
-
-        {/* Content — full width; every section uses the whole display. */}
-        <div style={{ flex: 1, minWidth: 300, maxWidth: 'none' }}>
+      )}
+        <div>
         <h1 style={{ fontSize: 20, margin: `0 0 ${TAB_META[tab].subtitle ? 4 : 18}px` }}>{TAB_META[tab].label}</h1>
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
@@ -2240,7 +2210,6 @@ export default function AdminPage() {
           );
         })()}
         </div>
-      </div>
 
       {showNewMatter && (
         <NewMatter
@@ -2256,5 +2225,13 @@ export default function AdminPage() {
         />
       )}
     </div>
+  );
+}
+
+export default function AdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <AdminPageInner />
+    </Suspense>
   );
 }

@@ -1,56 +1,54 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Suspense } from 'react';
 import { paths } from '@/lib/paths';
 
 /**
- * The one navigation for the CONVEYi app: the admin centre's sidebar, now shared.
+ * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
  *
- * The admin centre already had the right shell — a sticky brand bar and a grouped left
- * sidebar. The newer screens (caseload, Today, decisions, email) were built beside it
- * with their own ad-hoc buttons, which is how a person could sign in and find no nav at
- * all. Now there is one list of places, defined here, and every page renders it in the
- * same sidebar. The admin centre keeps its own bar (tour, plan badge, onboarding) but
- * draws its sidebar from this list too, so switching pages never changes the shape.
+ * The session comes in as props from the server layout — nothing is fetched to draw the
+ * nav, so it is there on the first paint. Every item is a client-side Link, so moving
+ * between pages swaps the content and leaves the shell exactly where it was. The admin
+ * centre's tabs are ordinary links to ?tab=…; it reads the URL and switches in place.
  */
 export type AdminTab = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
-export interface NavItem {
+export interface Me { role: string; displayName: string | null; email: string }
+
+interface NavItem {
   key: string;
   label: string;
   icon: string;
   href: string;
-  /** Set when the item is a tab of the admin centre; the admin page switches in place. */
   adminTab?: AdminTab;
   adminOnly?: boolean;
-  /** Which pathname(s) count as "here" for a standalone page. */
   match?: (path: string) => boolean;
 }
 
-export const NAV_GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
+const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Work',
     items: [
       { key: 'today', label: 'Today', icon: '☀️', href: paths.today, match: (p) => p.startsWith(paths.today) },
-      { key: 'engine-work', label: 'My Work', icon: '☑️', href: paths.myWork, match: (p) => p.startsWith(paths.myWork) },
+      { key: 'engine-work', label: 'My work', icon: '☑️', href: paths.myWork, match: (p) => p.startsWith(paths.myWork) },
       { key: 'decisions', label: 'Decisions', icon: '⚖️', href: paths.decisions, match: (p) => p.startsWith(paths.decisions) },
-      { key: 'email', label: 'Email to File', icon: '✉️', href: paths.email, match: (p) => p.startsWith(paths.email) },
+      { key: 'email', label: 'Email to file', icon: '✉️', href: paths.email, match: (p) => p.startsWith(paths.email) },
       { key: 'mywork', label: 'Tasks', icon: '📋', href: `${paths.admin}?tab=mywork`, adminTab: 'mywork' },
     ],
   },
   {
     label: 'Cases',
     items: [
-      { key: 'cases', label: 'Caseload', icon: '🏘️', href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/engine/`) },
-      { key: 'board', label: 'Matter Board', icon: '🗂️', href: `${paths.admin}?tab=board`, adminTab: 'board', adminOnly: true },
-      { key: 'workflow', label: 'Case Flow', icon: '🔀', href: `${paths.admin}?tab=workflow`, adminTab: 'workflow', adminOnly: true },
+      { key: 'cases', label: 'Caseload', icon: '🏘️', href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/matters/`) || p.startsWith(`${paths.product}/engine/`) },
+      { key: 'workflow', label: 'Case flow', icon: '🔀', href: `${paths.admin}?tab=workflow`, adminTab: 'workflow', adminOnly: true },
     ],
   },
   {
     label: 'Content',
     items: [
-      { key: 'templates', label: 'Email Templates', icon: '📨', href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
-      { key: 'docpacks', label: 'Doc Packs', icon: '📄', href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
+      { key: 'templates', label: 'Email templates', icon: '📨', href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
+      { key: 'docpacks', label: 'Doc packs', icon: '📄', href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
     ],
   },
   {
@@ -65,147 +63,105 @@ export const NAV_GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     label: 'Tools',
     items: [
       { key: 'actions', label: 'Tools', icon: '🔧', href: `${paths.admin}?tab=actions`, adminTab: 'actions', adminOnly: true },
-      { key: 'audit', label: 'Audit Log', icon: '🕘', href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
+      { key: 'audit', label: 'Audit log', icon: '🕘', href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
     ],
   },
   {
     label: 'Account',
     items: [
       { key: 'billing', label: 'Billing', icon: '💳', href: `${paths.admin}?tab=billing`, adminTab: 'billing' },
-      { key: 'help', label: 'Help & Support', icon: '💬', href: `${paths.admin}?tab=help`, adminTab: 'help' },
+      { key: 'help', label: 'Help & support', icon: '💬', href: `${paths.admin}?tab=help`, adminTab: 'help' },
     ],
   },
 ];
 
-/** The admin tabs the sidebar can reach — the admin page validates ?tab against this. */
-export const ADMIN_TABS_IN_NAV = NAV_GROUPS.flatMap((g) => g.items).map((i) => i.adminTab).filter((t): t is AdminTab => !!t);
+/** The admin tabs reachable from the nav — the admin page validates ?tab against this (plus its own hidden ones). */
+export const ADMIN_TABS_IN_NAV: AdminTab[] = GROUPS.flatMap((g) => g.items).map((i) => i.adminTab).filter((t): t is AdminTab => !!t);
 
-// The admin centre's exact styles, lifted verbatim so the two shells are indistinguishable.
-const navGroupLabel: React.CSSProperties = { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, textTransform: 'uppercase', color: '#9aa6b8', padding: '0 4px 3px', marginBottom: 3, borderBottom: '1px solid #eef1f5' };
-const navItem = (active: boolean): React.CSSProperties => ({
-  display: 'flex',
-  alignItems: 'center',
-  gap: 9,
-  width: '100%',
-  textAlign: 'left',
-  padding: '4px 9px',
-  borderRadius: 8,
-  border: 'none',
-  ...(active ? { background: '#ede9fe', boxShadow: 'inset 3px 0 0 #5A27E0' } : {}),
-  color: active ? '#5A27E0' : '#334155',
-  fontWeight: active ? 700 : 500,
-  fontSize: 13,
-  cursor: 'pointer',
-  marginBottom: 2,
-  fontFamily: 'inherit',
-  textDecoration: 'none',
-  boxSizing: 'border-box',
-});
-export const SIDEBAR_STYLE: React.CSSProperties = { width: 162, flexShrink: 0, position: 'sticky', top: 70, alignSelf: 'flex-start', background: '#fff', border: '1px solid #e8eaf0', borderRadius: 14, padding: '11px 9px', maxHeight: 'calc(100vh - 96px)', overflowY: 'auto', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' };
+const TOP = 56;
+const SIDE = 228;
 
 export const SHELL_CSS = `
 @keyframes adm-spin{to{transform:rotate(360deg)}}
 .adm-nav{transition:background .12s ease,color .12s ease}
 .adm-nav:hover{background:#eef1f6}
+.sh-top{height:${TOP}px;background:#fff;border-bottom:1px solid #e8eaf0;position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:12px;padding:0 18px;box-sizing:border-box}
+.sh-body{display:flex;align-items:stretch;min-height:calc(100vh - ${TOP}px)}
+.sh-side{width:${SIDE}px;flex:0 0 ${SIDE}px;background:#fff;border-right:1px solid #e8eaf0;position:sticky;top:${TOP}px;height:calc(100vh - ${TOP}px);overflow-y:auto;padding:14px 12px 24px;box-sizing:border-box}
+.sh-main{flex:1;min-width:0;padding:22px 24px 56px;box-sizing:border-box}
+.sh-grp{font-size:10.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#9aa6b8;padding:0 8px 5px;margin:10px 0 4px;border-bottom:1px solid #eef1f5}
+.sh-grp:first-child{margin-top:0}
+.sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#334155;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
+.sh-item.on{background:#ede9fe;box-shadow:inset 3px 0 0 #5A27E0;color:#5A27E0;font-weight:700}
+.sh-ico{font-size:14px;width:20px;text-align:center;filter:grayscale(.4);opacity:.75;flex-shrink:0}
+.sh-item.on .sh-ico{filter:none;opacity:1}
+.sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
+.sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
+.sh-out:hover{color:#0f172a}
+@media (max-width:820px){.sh-side{display:none}.sh-main{padding:16px}}
 `;
 
-/**
- * The sidebar. On the admin page, an item that is one of its tabs switches in place
- * (onTab); everywhere else every item is a link.
- */
-export function SidebarNav({ isAdmin, activeTab, onTab, extra }: { isAdmin: boolean; activeTab?: AdminTab | null; onTab?: (t: AdminTab) => void; extra?: React.ReactNode }) {
+function Items({ isAdmin }: { isAdmin: boolean }) {
   const path = usePathname() ?? '';
-  const onAdminPage = path.startsWith(paths.admin);
-  const isActive = (i: NavItem) => (onAdminPage ? !!i.adminTab && i.adminTab === activeTab : !!i.match && i.match(path));
+  const tab = useSearchParams()?.get('tab') ?? null;
+  const onAdmin = path.startsWith(paths.admin);
+  const active = (i: NavItem) => (onAdmin ? !!i.adminTab && i.adminTab === (tab ?? 'mywork') : !!i.match && i.match(path));
   return (
-    <nav style={SIDEBAR_STYLE} aria-label="Main">
-      {extra}
-      {NAV_GROUPS.map((grp) => {
-        const items = grp.items.filter((i) => isAdmin || !i.adminOnly);
+    <>
+      {GROUPS.map((g) => {
+        const items = g.items.filter((i) => isAdmin || !i.adminOnly);
         if (!items.length) return null;
         return (
-          <div key={grp.label} style={{ marginBottom: 8 }}>
-            <div style={navGroupLabel}>{grp.label}</div>
-            {items.map((i) => {
-              const active = isActive(i);
-              const inner = (
-                <>
-                  <span aria-hidden style={{ fontSize: 13, width: 18, textAlign: 'center', filter: active ? 'none' : 'grayscale(0.4)', opacity: active ? 1 : 0.75 }}>{i.icon}</span>
-                  <span style={{ flex: 1 }}>{i.label}</span>
-                </>
-              );
-              if (i.adminTab && onTab && onAdminPage) {
-                return (
-                  <button key={i.key} data-tour={`nav-${i.adminTab}`} className="adm-nav" style={navItem(active)} onClick={() => onTab(i.adminTab!)}>
-                    {inner}
-                  </button>
-                );
-              }
-              return (
-                <a key={i.key} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined} className="adm-nav" style={navItem(active)} href={i.href} aria-current={active ? 'page' : undefined}>
-                  {inner}
-                </a>
-              );
-            })}
+          <div key={g.label}>
+            <div className="sh-grp">{g.label}</div>
+            {items.map((i) => (
+              <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined}>
+                <span className="sh-ico" aria-hidden>{i.icon}</span>
+                <span>{i.label}</span>
+              </Link>
+            ))}
           </div>
         );
       })}
-    </nav>
+    </>
   );
 }
 
 export function Brand() {
   return (
-    <a href={paths.cases} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: '#0f172a' }} aria-label="CONVEYi — caseload">
+    <Link href={paths.cases} style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: '#0f172a' }} aria-label="CONVEYi — caseload">
       <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
         <rect width="32" height="32" rx="7" fill="#5A27E0" />
         <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
       </svg>
       <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
-    </a>
+    </Link>
   );
 }
 
-/**
- * The shell for every app page other than the admin centre (which keeps its own bar for
- * the tour, the plan and onboarding, and renders SidebarNav itself).
- */
-export function AppShell({ children }: { children: React.ReactNode }) {
-  const path = usePathname() ?? '';
-  const [me, setMe] = useState<{ role: string; displayName: string | null; email: string } | null>(null);
-  useEffect(() => {
-    fetch('/api/v1/me', { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((b) => setMe(b ? { role: b.role, displayName: b.displayName ?? null, email: b.email } : null))
-      .catch(() => setMe(null));
-  }, []);
-  if (path.startsWith(paths.admin)) return <>{children}</>;
+export function AppShell({ me, children }: { me: Me | null; children: React.ReactNode }) {
+  const isAdmin = me?.role === 'ADMIN';
   return (
     <div style={{ background: '#f6f7fb', minHeight: '100vh', fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
       <style>{SHELL_CSS}</style>
-      <div style={{ background: '#fff', borderBottom: '1px solid #e8eaf0', position: 'sticky', top: 0, zIndex: 5 }}>
-        <div style={{ width: '100%', boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 10, padding: '11px 20px' }}>
-          <Brand />
-          {me && (
-            <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 13, color: '#475569' }}>{me.displayName || me.email}</span>
-              <span title={me.email} style={{ width: 30, height: 30, borderRadius: 999, background: '#ede9fe', color: '#5A27E0', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {(me.displayName || me.email).slice(0, 2).toUpperCase()}
-              </span>
-              <button
-                onClick={() => { window.location.href = '/api/v1/auth/logout'; }}
-                title="Sign out"
-                style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: '4px 6px', fontFamily: 'inherit' }}
-              >
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-      <div style={{ width: '100%', boxSizing: 'border-box', display: 'flex', gap: 16, alignItems: 'flex-start', padding: '22px 14px 56px' }}>
-        {me ? <SidebarNav isAdmin={me.role === 'ADMIN'} /> : <nav style={SIDEBAR_STYLE} aria-label="Main" aria-busy="true" />}
-        <div style={{ flex: 1, minWidth: 300 }}>{children}</div>
+      <header className="sh-top">
+        <Brand />
+        {me && (
+          <div className="sh-me">
+            <span>{me.displayName || me.email}</span>
+            <span className="sh-av" title={me.email}>{(me.displayName || me.email).slice(0, 2).toUpperCase()}</span>
+            <button className="sh-out" onClick={() => { window.location.href = '/api/v1/auth/logout'; }}>Sign out</button>
+          </div>
+        )}
+      </header>
+      <div className="sh-body">
+        <nav className="sh-side" aria-label="Main">
+          <Suspense fallback={null}>
+            <Items isAdmin={isAdmin} />
+          </Suspense>
+        </nav>
+        <main className="sh-main">{children}</main>
       </div>
     </div>
   );

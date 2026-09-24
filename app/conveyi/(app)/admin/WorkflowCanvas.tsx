@@ -433,7 +433,7 @@ export default function WorkflowCanvas() {
       )}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <strong style={{ fontSize: 15, color: '#0f172a', flex: 1 }}>Case Flow</strong>
+          <span style={{ flex: 1 }} />
           {stages.length > 0 && <button onClick={toggleAll} style={btn}>{allOpen ? 'Collapse all' : 'Expand all'}</button>}
           <button onClick={addStage} style={btn}>+ Add stage</button>
         </div>
@@ -502,9 +502,12 @@ export default function WorkflowCanvas() {
         )}
       </div>
 
-      {/* Selected-task editor — a floating panel so opening/closing it never reflows the flow. */}
+      {/* Selected-task editor — a dialog over the flow. It is not a panel and not a sidebar:
+          it opens on the task you clicked and closes when you are done with it. */}
       {sel && (
-        <div style={{ ...card, position: 'fixed', right: 18, top: 92, width: 300, flex: 'none', maxHeight: '82vh', overflowY: 'auto', zIndex: 20, boxShadow: '0 12px 40px rgba(16,24,40,0.2)' }}>
+        <>
+        <div onClick={() => setSelected(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.32)', zIndex: 59 }} />
+        <div role="dialog" aria-modal="true" aria-label="Edit task" style={{ ...card, position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 'min(440px, calc(100vw - 32px))', flex: 'none', maxHeight: '85vh', overflowY: 'auto', zIndex: 60, boxShadow: '0 20px 60px rgba(16,24,40,0.28)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : sel.node_kind === 'DOC' ? '📄 Edit document' : 'Edit task'}</strong>
             <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
@@ -607,6 +610,7 @@ export default function WorkflowCanvas() {
             Active
           </label>
         </div>
+        </>
       )}
     </div>
   );

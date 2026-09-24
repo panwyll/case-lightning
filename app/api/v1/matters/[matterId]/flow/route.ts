@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { query, queryOne } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
+import { ensureDefaultWorkflow } from '@/lib/server/workflow';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -29,6 +30,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       [matterId, user.tenantId]
     );
     if (!matter) throw new Error('Matter not found.');
+
+    // A firm that has never opened Case Flow still gets the standard steps here — the
+    // matter page reads them, and an empty stage tells nobody anything.
+    await ensureDefaultWorkflow(user.tenantId);
 
     const [stages, templates, edges, tasks] = await Promise.all([
       query<{ key: string; name: string; sort_order: number }>(

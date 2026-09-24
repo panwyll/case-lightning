@@ -18,7 +18,10 @@ export const paths = {
   email: `${APP_BASE}/email`,
   decisions: `${APP_BASE}/decisions`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
-  matter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
+  /** The matter, as a person reads it: stages, steps, then the case data. */
+  matter: (matterId: string) => `${APP_BASE}/matters/${matterId}`,
+  /** The engine's own view of the matter: workstreams, decisions, timeline, diagnostics. */
+  engineMatter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
   matterShadow: (matterId: string) => `${APP_BASE}/engine/${matterId}/shadow`,
   machineMap: `${APP_BASE}/engine/map`,
   shadowQueue: `${APP_BASE}/engine/shadow`,
@@ -49,7 +52,7 @@ export const paths = {
  * these — so the list is explicit rather than a prefix match, and a new marketing page
  * can never accidentally end up behind the sign-in wall.
  */
-export const PROTECTED_SEGMENTS = ['cases', 'today', 'my-work', 'email', 'decisions', 'engine', 'account', 'admin', 'integrations'] as const;
+export const PROTECTED_SEGMENTS = ['cases', 'today', 'my-work', 'email', 'matters', 'decisions', 'engine', 'account', 'admin', 'integrations'] as const;
 
 export function isProtectedPath(pathname: string): boolean {
   if (!pathname.startsWith(`${APP_BASE}/`)) return false;

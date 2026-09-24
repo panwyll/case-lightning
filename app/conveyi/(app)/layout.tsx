@@ -1,9 +1,15 @@
+import { getSessionUser } from '@/lib/server/session';
 import { AppShell } from '@/app/shared/AppNav';
 
 /**
- * Every page behind the sign-in wall sits in the admin centre's shell: the brand bar and
- * the grouped sidebar. The marketing pages under /conveyi are outside this route group.
+ * Every page behind the sign-in wall sits in the same shell. The session is read here,
+ * on the server, so the nav is drawn on the first paint — no fetch, no flicker — and
+ * page changes swap only the content.
  */
-export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return <AppShell>{children}</AppShell>;
+export const dynamic = 'force-dynamic';
+
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const user = await getSessionUser();
+  const me = user ? { role: user.role, displayName: user.displayName ?? null, email: user.email } : null;
+  return <AppShell me={me}>{children}</AppShell>;
 }

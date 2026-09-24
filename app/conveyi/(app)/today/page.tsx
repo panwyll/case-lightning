@@ -37,7 +37,7 @@ const TAG: Record<string, string> = { escalate: 'Escalate', chase: 'Chase', do: 
 
 function Row({ i }: { i: WorkItem }) {
   return (
-    <a className="td-row" href={`/conveyi/engine/${i.matterId}`}>
+    <a className="td-row" href={paths.matter(i.matterId)}>
       <House band={i.urgency as HealthBand} size={24} />
       <span style={{ flex: 1, minWidth: 0 }}>
         <div className="td-what">{i.what}</div>
@@ -120,7 +120,7 @@ export default function TodayPage() {
               ) : (
                 <div className="td-card">
                   {d.risks.map((r) => (
-                    <a key={r.matterId} className="td-row" href={`/conveyi/engine/${r.matterId}`}>
+                    <a key={r.matterId} className="td-row" href={paths.matter(r.matterId)}>
                       <House band={r.band} size={24} />
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <div className="td-what">{r.propertyAddress ?? r.matterRef ?? 'Matter'}</div>
@@ -150,7 +150,7 @@ export default function TodayPage() {
               ) : (
                 <div className="td-card">
                   {d.endOfDay.chasingTomorrow.map((i) => (
-                    <a key={i.id} className="td-row" href={`/conveyi/engine/${i.matterId}`}>
+                    <a key={i.id} className="td-row" href={paths.matter(i.matterId)}>
                       <House band={i.urgency as HealthBand} size={22} />
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <div className="td-what">{i.what}</div>

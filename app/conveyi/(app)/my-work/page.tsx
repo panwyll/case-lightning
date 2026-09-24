@@ -4,6 +4,7 @@ import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { pretty, type WorkItem } from '@/app/shared/engine/types';
+import { paths } from '@/lib/paths';
 
 /**
  * My work (docs/caseload-ux.md §4–5): DO · WAITING · CHASE · ESCALATE.
@@ -44,7 +45,7 @@ function Item({ i }: { i: WorkItem }) {
   const toEscalation = i.escalatesInWorkingDays;
   const pct = i.escalated ? 100 : toEscalation != null && i.sinceWorkingDays != null ? Math.min(100, Math.round((i.sinceWorkingDays / Math.max(1, i.sinceWorkingDays + Math.max(0, toEscalation))) * 100)) : null;
   return (
-    <a className="wk-item" href={`/conveyi/engine/${i.matterId}`}>
+    <a className="wk-item" href={paths.matter(i.matterId)}>
       <div className="wk-what">{i.what}</div>
       <div className="wk-where">
         <House band={i.urgency} size={16} />
