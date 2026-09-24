@@ -42,6 +42,8 @@ export interface PendingDecisionRow extends DecisionState {
   matterId: string;
   matterRef: string | null;
   propertyAddress: string | null;
+  /** The fee-earner the matter is assigned to, so a tray can show a person their own. */
+  assignedTo?: string | null;
   stage: string;
   shadowMode: boolean;
 }
@@ -130,7 +132,7 @@ export interface EventStore {
   recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview>;
 }
 
-const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, stage: s.stage, shadowMode: s.shadowMode });
+const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, assignedTo: meta?.assignedTo ?? null, stage: s.stage, shadowMode: s.shadowMode });
 
 function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, cfg: SubflowConfig, now: Date = new Date()): QueueRow {
   const surfaced = surfacedDecisions(s, cfg);
@@ -376,12 +378,13 @@ interface PgDecisionRow {
   decision: DecisionState;
   tenant_id: string;
   matter_id: string;
+  assigned_to?: string | null;
   matter_ref: string | null;
   property_address: string | null;
   stage: string;
   shadow_mode: boolean | null;
 }
-const pgDecisionRow = (r: PgDecisionRow): PendingDecisionRow => ({ ...r.decision, tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, stage: r.stage, shadowMode: !!r.shadow_mode });
+const pgDecisionRow = (r: PgDecisionRow): PendingDecisionRow => ({ ...r.decision, tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to ?? null, stage: r.stage, shadowMode: !!r.shadow_mode });
 
 export class PgEventStore implements EventStore {
   async withMatterLock<T>(tenantId: string, matterId: string, fn: (tx: MatterTx) => Promise<T>): Promise<T> {
@@ -444,7 +447,7 @@ export class PgEventStore implements EventStore {
     const shadowed = SUB_FLOWS.filter((sf) => cfg[sf] === 'shadow');
     const hiddenKinds = opts?.includeShadow ? [] : (Object.keys(SUBFLOW_OF_KIND) as Array<keyof typeof SUBFLOW_OF_KIND>).filter((k) => SUBFLOW_OF_KIND[k] && shadowed.includes(SUBFLOW_OF_KIND[k] as SubFlow));
     const rows = await dbQuery<PgDecisionRow>(
-      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, s.stage, coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) as shadow_mode
+      `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, m.assigned_to, s.stage, coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) as shadow_mode
          from matter_decision d
          join matter m on m.id = d.matter_id
          left join matter_engine_state s on s.matter_id = d.matter_id

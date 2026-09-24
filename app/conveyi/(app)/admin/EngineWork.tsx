@@ -78,7 +78,7 @@ function Column({ title, items }: { title: string; items: WorkItem[] }) {
   return (
     <div className="wk-col">
       <div className="wk-head"><b>{title}</b><span className="n">{items.length}</span></div>
-      {items.length === 0 ? <div className="wk-none">None.</div> : items.map((i) => <Item key={i.id} i={i} />)}
+      {items.length === 0 ? <div className="wk-none">None.</div> : items.map((i) => <Item key={`${i.matterId}:${i.id}`} i={i} />)}
     </div>
   );
 }
@@ -90,7 +90,8 @@ export default function EngineWork({ all, showEmpty = false }: { all: boolean; s
   }, [all]);
   useEffect(() => { void load(); }, [load]);
   if (!data) return null;
-  const doItems = data.do;
+  // Decisions are the tray above; what is left of DO is issues and next steps.
+  const doItems = data.do.filter((i) => i.ref?.type !== 'decision');
   if (!doItems.length && !data.waiting.length && !data.chase.length && !data.escalate.length) {
     return showEmpty ? (
       <div style={{ background: '#fff', border: '1px solid #e6e8ee', borderRadius: 12, padding: 40, textAlign: 'center' }}>
@@ -102,7 +103,7 @@ export default function EngineWork({ all, showEmpty = false }: { all: boolean; s
   return (
     <div className="wk-cols" style={{ marginTop: 0, marginBottom: 14 }}>
       <style>{CSS}</style>
-      <Column title="Do" items={doItems} />
+      {doItems.length > 0 && <Column title="Do" items={doItems} />}
       <Column title="Waiting" items={data.waiting} />
       <Column title="Chase" items={data.chase} />
       {data.escalate.length > 0 && <Column title="Escalate" items={data.escalate} />}
