@@ -111,14 +111,17 @@ RECENT ACTIVITY
 
 ## 4 · The personal work list
 
-`/my-work`. Four columns, no new vocabulary.
+Tasks. The decision tray first — what only the conveyancer can decide — then three
+things, no new vocabulary.
 
-- **DO** — this person acts now: a decision to resolve, an issue whose next step is ours,
-  the next thing the gate needs.
-- **WAITING** — someone else acts, but we still own it. Every item carries who we are
-  waiting for, when we asked, their normal turnaround, the countdown to the next chase,
-  how many chases have gone, and the fee-earner accountable.
-- **CHASE** — a WAITING item whose clock expired. Nobody moves it: the clock does.
+- **DO** — this person acts now: an issue whose next step is ours, the next thing the
+  gate needs.
+- **WAITING** — folded away by default. Every line reads *waiting on X to do Y by Z*: who
+  owes us what, and the date we expect it (their turnaround from when we asked, then the
+  chase cadence from the last chase). When that date passes nobody moves it: the next
+  sweep sends the chase, the client and the estate agent are told we chased and when we
+  will chase again, and the line is a notch more serious — one chase unanswered is
+  attention, two is delayed, an escalation is critical. Chasing is not a pile.
 - **ESCALATE** — chasing has failed, or a date we owe is close enough to threaten the
   transaction. Writing again is not the answer: someone picks up the phone, or takes the
   client's instructions.
@@ -144,9 +147,11 @@ Management pack requested
   → 20 working days               → ESCALATE to the conveyancer
 ```
 
-The case's health worsens as those thresholds pass — attention at the chase point,
-delayed past escalation, critical while an escalation sits unanswered. In shadow mode
-nothing is sent and the chase is listed as needing a person instead.
+The case's health worsens as those thresholds pass and as chases go unanswered —
+attention at the chase point or after one chase, delayed past escalation or after two,
+critical while an escalation sits unanswered. Chases are sent, not drafted, unless
+`ENGINE_CHASE_MODE=draft`. In shadow mode nothing is sent and the chase is listed as
+needing a person instead.
 
 ### Acknowledgements
 

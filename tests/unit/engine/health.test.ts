@@ -176,25 +176,31 @@ test('work: a wait is WAITING with a countdown, becomes CHASE when the clock run
   assert.equal(search.slaWorkingDays, DEFAULT_SLA.search.chaseAfter);
   assert.ok((search.chaseInWorkingDays ?? 0) > 0, 'a countdown, not a reminder someone has to set');
   assert.equal(search.chasesSent, 0);
-  assert.equal(w.chase.length, 0);
+  assert.equal(search.chaseDue, false);
+  assert.ok(search.dueBy, 'it says by when we expect them');
+  assert.equal(search.urgency, 'normal');
 
-  // The clock expires: nobody moved it — it moved itself.
+  // The clock expires: nobody moved it — it moved itself. Still WAITING, flagged for the sweep.
   const now = h.advanceDays(Math.ceil(DEFAULT_SLA.search.chaseAfter * 1.4) + 1);
   s = await h.svc.getState(TENANT, MATTER);
   w = buckets(matterWork(s, now, ctx).items);
-  assert.equal(w.waiting.find((i) => i.ref.id === 'search:CON29'), undefined);
-  const due = w.chase.find((i) => i.ref.id === 'search:CON29')!;
-  assert.ok(due, 'it is now a CHASE');
+  const due = w.waiting.find((i) => i.ref.id === 'search:CON29')!;
+  assert.ok(due, 'it stays a WAITING item');
+  assert.equal(due.chaseDue, true, 'the next sweep sends the chase');
   assert.ok((due.chaseInWorkingDays ?? 1) <= 0);
   assert.equal(due.mode, 'automatic', 'the engine sends it; a person does not have to remember');
+  assert.equal(due.urgency, 'attention');
   assert.equal(due.responsibilityOwner, USER);
 
-  // After the chase goes out it is WAITING again, with the count on it.
+  // After the chase goes out it is WAITING again, with the count on it and a notch more serious.
   await h.svc.tick(TENANT, MATTER);
   s = await h.svc.getState(TENANT, MATTER);
   w = buckets(matterWork(s, now, ctx).items);
-  const again = [...w.waiting, ...w.chase].find((i) => i.ref.id === 'search:CON29')!;
+  const again = w.waiting.find((i) => i.ref.id === 'search:CON29')!;
   assert.equal(again.chasesSent, 1);
+  assert.equal(again.chaseDue, false);
+  assert.equal(again.urgency, 'attention');
+  assert.ok(again.dueBy && again.dueBy > (search.dueBy ?? ''), 'the date moves on to the chase cadence');
   assert.ok(again.escalatesInWorkingDays != null);
 });
 

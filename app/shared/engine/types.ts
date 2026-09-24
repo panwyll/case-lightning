@@ -323,7 +323,7 @@ export interface CaseToken extends QueueRow {
 }
 export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number; untracked?: number }
 
-export type WorkBucket = 'do' | 'waiting' | 'chase' | 'escalate';
+export type WorkBucket = 'do' | 'waiting' | 'escalate';
 export interface WorkItem {
   id: string;
   bucket: WorkBucket;
@@ -344,6 +344,8 @@ export interface WorkItem {
   mode: 'automatic' | 'needs_approval' | null;
   escalatesInWorkingDays: number | null;
   escalated: boolean;
+  dueBy?: string | null;
+  chaseDue?: boolean;
   ref: { type: string; id: string };
 }
 

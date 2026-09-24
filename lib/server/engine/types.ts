@@ -563,6 +563,8 @@ export interface AcknowledgementSpec {
 
 export interface ClientUpdateSpec {
   template: string;
+  /** Who heard: the client unless said otherwise (the agent hears that we chased, too). */
+  recipientRole?: 'client' | 'estate_agent';
   channel: 'email' | 'whatsapp' | 'mock';
   messageId?: string | null;
   triggeredByEventId?: string | null;

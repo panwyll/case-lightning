@@ -153,6 +153,16 @@ test('acknowledgements: the other side is emailed at once from the fee-earner ma
   assert.equal(await new ProductionChaser(off.deps).sendAcknowledgement({ tenantId: 't1', matterId: 'm1', recipientRole: 'seller_solicitor', what: 'x', forEventType: 'enquiry_reply_received' }), null);
 });
 
+test('party notices: the estate agent is told we chased, from the fee-earner mailbox; no agent on file means nothing sent', async () => {
+  const f = fakeDeps({ contacts: { seller_solicitor: { email: 'other@side.law', name: 'Other Side' }, estate_agent: { email: 'sam@agents.co.uk', name: 'Sam' } } });
+  const r = await new ProductionChaser(f.deps).sendPartyNotice({ tenantId: 't1', matterId: 'm1', recipientRole: 'estate_agent', template: 'chase_update_agent', context: { waitingOn: "the seller's solicitor", waitingFor: 'replies to enquiries', nextChase: 'Friday 2 October' } });
+  assert.equal(r?.messageId, 'gm-1');
+  assert.equal(f.sentEmail[0].to, 'sam@agents.co.uk');
+  assert.match(f.sentEmail[0].subject, /chased today/);
+  assert.equal(f.logs.at(-1)?.template, 'chase_update_agent');
+  assert.equal(await new ProductionChaser(fakeDeps().deps).sendPartyNotice({ tenantId: 't1', matterId: 'm1', recipientRole: 'estate_agent', template: 'chase_update_agent', context: {} }), null);
+});
+
 test('client Q&A: FAQ questions are answered (validated rephrase or verbatim); everything else is routed to a person with a holding reply', async () => {
   const f = fakeDeps();
   const qa = new ClientQaService(f.deps, new FakeLlm(() => ({ reply: 'Exchange is the moment the purchase becomes legally binding for both sides — before it either party can still walk away, after it everyone is committed to the completion date.' })), { model: 'fake' });

@@ -167,9 +167,9 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
     ];
     if (escalated) {
       reasons.push({ code: 'wait_escalated', band: 'critical', headline: `${what} — ${party} is ${plural(age - rule.escalateAfter, 'working day')} past escalation`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
-    } else if (age >= rule.escalateAfter) {
+    } else if (age >= rule.escalateAfter || chases >= 2) {
       reasons.push({ code: 'wait_overdue', band: 'delayed', headline: `${what} — ${party} is ${plural(age - rule.chaseAfter, 'working day')} overdue`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
-    } else if (age >= rule.chaseAfter) {
+    } else if (age >= rule.chaseAfter || chases >= 1) {
       reasons.push({ code: 'chase_due', band: 'attention', headline: `${what} — ${party} is ${plural(Math.max(1, age - rule.chaseAfter + 1), 'working day')} overdue`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
     }
   }

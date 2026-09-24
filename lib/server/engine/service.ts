@@ -28,7 +28,8 @@
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
-import { dueActions, deadlineActions, timedIssueActions } from './sla';
+import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
+import { addWorkingDays } from './working-days';
 import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction, type NoteKind } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
@@ -626,14 +627,16 @@ export class EngineService {
           const holding = brief.issues.some((i) => i.gate !== 'none') || brief.health.band === 'critical' || brief.health.band === 'blocked';
           const w = brief.waiting.find((x) => x.key === chase.waitKey && x.subject === (chase.subject ?? ''));
           if (chase.recipientRole !== 'client' && !sameDay && !holding && w) {
+            // When we will chase again, so the update says so and nobody asks.
+            const rule = (await this.store.loadSla(tenantId))[chase.waitKey as keyof SlaConfig];
+            const nextChase = rule?.chaseEvery ? addWorkingDays(this.ports.now(), rule.chaseEvery).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
+            const context = { eventType: e.type, payload: e.payload, waitingOn: w.who, waitingFor: w.what, nextChase, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
             if (!(await this.suppressed(tenantId, matterId, fresh, subflows, 'client_update', 'chase', { template: 'chase_update', triggeredByEventId: e.id, eventType: e.type }))) {
-              const sent = await this.ports.clientComms.sendStatusUpdate({
-                tenantId,
-                matterId,
-                template: 'chase_update',
-                context: { eventType: e.type, payload: e.payload, waitingOn: w.who, waitingFor: w.what, transaction: brief.side === 'seller' ? 'sale' : 'purchase' },
-              });
-              await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
+              const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: 'chase_update', context });
+              await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update', recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
+              // The agent hears the same: chased today, chasing again on a date, nothing needed from them.
+              const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: 'chase_update_agent', context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
+              if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update_agent', recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: e.id } });
             }
           }
         }

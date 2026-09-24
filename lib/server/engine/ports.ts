@@ -118,6 +118,17 @@ export interface ThirdPartyChaser {
     context: Record<string, unknown>;
   }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null }>;
   /**
+   * A note to another party on the matter — the estate agent, today — that is news and
+   * not a chase. Returns null when there is nobody to tell.
+   */
+  sendPartyNotice(input: {
+    tenantId: string;
+    matterId: string;
+    recipientRole: 'estate_agent';
+    template: string;
+    context: Record<string, unknown>;
+  }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
+  /**
    * Tell whoever sent us something that it arrived. Returns null when there is nobody to
    * tell (no address on the matter) — then nothing is recorded either.
    */

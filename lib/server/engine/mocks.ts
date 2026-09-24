@@ -184,9 +184,14 @@ export class MockChaser implements ThirdPartyChaser {
   readonly name = 'mock-chaser (stub for template chase emails #5)';
   chases: Array<{ matterId: string; recipientRole: string; template: string }> = [];
   acks: Array<{ matterId: string; recipientRole: string; what: string }> = [];
+  notices: Array<{ matterId: string; recipientRole: string; template: string }> = [];
   async sendChase(input: { matterId: string; recipientRole: string; template: string }) {
     this.chases.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template });
     return { channel: 'mock' as const, messageId: `mock-chase-${this.chases.length}` };
+  }
+  async sendPartyNotice(input: { matterId: string; recipientRole: string; template: string }) {
+    this.notices.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template });
+    return { channel: 'mock' as const, messageId: `mock-notice-${this.notices.length}` };
   }
   async sendAcknowledgement(input: { matterId: string; recipientRole: string; what: string }) {
     this.acks.push({ matterId: input.matterId, recipientRole: input.recipientRole, what: input.what });

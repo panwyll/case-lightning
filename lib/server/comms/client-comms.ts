@@ -18,7 +18,7 @@
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
-import { ACKS, CHASES, CLIENT_UPDATES, SEARCH_NAMES, render } from './templates';
+import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES, SEARCH_NAMES, render } from './templates';
 import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry, isStatusQuestion } from './guard';
 import { clientStatusAnswer, type CaseBrief } from '../engine/brief';
 
@@ -83,6 +83,7 @@ export class ProductionClientComms implements ClientComms {
       transaction: typeof context.transaction === 'string' ? context.transaction : 'purchase',
       waitingOn: typeof context.waitingOn === 'string' ? context.waitingOn : '',
       waitingFor: typeof context.waitingFor === 'string' ? context.waitingFor : '',
+      nextChaseNote: typeof context.nextChase === 'string' && context.nextChase ? ` and will chase again on ${context.nextChase} if we have not heard` : ' and will keep following it up',
       formUrl: typeof context.formUrl === 'string' ? context.formUrl : '',
       noteToClient: typeof context.noteToClient === 'string' ? context.noteToClient : '',
     };
@@ -190,6 +191,26 @@ export class ProductionChaser implements ThirdPartyChaser {
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
     await this.deps.onChaseDrafted?.({ tenantId: input.tenantId, matterId: input.matterId, messageId: draft.messageId, title: `Chase drafted: ${r.subject}`, detail: `To ${to} — open Drafts to send.` });
     return { channel: 'email' as const, messageId: draft.messageId };
+  }
+
+  async sendPartyNotice(input: { tenantId: string; matterId: string; recipientRole: 'estate_agent'; template: string; context: Record<string, unknown> }) {
+    const t = PARTY_NOTICES[input.template];
+    if (!t) throw new Error(`Unknown notice template ${input.template}`);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const agent = info.contacts.estate_agent;
+    if (!agent?.email || !this.deps.mailbox || !info.feeEarnerUserId) return null;
+    const ctx = input.context;
+    const vars = {
+      matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName,
+      agentName: agent.name || 'Sirs',
+      waitingOn: typeof ctx.waitingOn === 'string' ? ctx.waitingOn : '', waitingFor: typeof ctx.waitingFor === 'string' ? ctx.waitingFor : '',
+      nextChaseNote: typeof ctx.nextChase === 'string' && ctx.nextChase ? ` and will chase again on ${ctx.nextChase} if we have not heard` : ' and will keep following it up',
+    };
+    const r = render(t, vars);
+    if (r.missing.length) throw new Error(`Notice template ${t.key} missing ${r.missing.join(', ')}`);
+    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, agent.email, r.subject, toHtml(r.body));
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: agent.email, template: t.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    return { channel: 'email' as const, messageId: sent.messageId };
   }
 
   async sendAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'client'; what: string; forEventType: string }) {

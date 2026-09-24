@@ -25,9 +25,9 @@ import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
 import { openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type SubflowConfig } from './types';
-import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
+import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
 
-export type Bucket = 'do' | 'waiting' | 'chase' | 'escalate';
+export type Bucket = 'do' | 'waiting' | 'escalate';
 export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider';
 
 export interface WorkItem {
@@ -59,6 +59,10 @@ export interface WorkItem {
   /** CHASE: working days until this escalates to a person. */
   escalatesInWorkingDays: number | null;
   escalated: boolean;
+  /** WAITING: the date we expect them by — the SLA from when we asked, or the chase cadence from the last chase. */
+  dueBy: string | null;
+  /** WAITING: the clock has run out; the next sweep sends the chase. Nobody has to do anything. */
+  chaseDue: boolean;
   /** Where to go: the decision, the issue, the wait or just the case. */
   ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'client' | 'case'; id: string };
 }
@@ -84,6 +88,23 @@ const DECISION_LABEL: Record<string, string> = {
   title: 'the title', report_on_title: 'the report on title', escalation: 'the escalation', requisition: "HM Land Registry's requisition",
   proof_of_funds: 'the source of funds', management_pack: 'the management pack',
 };
+/** What we are waiting for them to do, as the second half of "waiting on X to …". */
+const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel' };
+const WAIT_ACTION: Record<string, (subject: string) => string> = {
+  search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
+  funds: () => 'release the completion funds', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',
+  management_pack: () => 'send the management pack', property_forms: () => 'return the property forms', redemption: () => 'send the redemption statement',
+  lender_consent: () => 'confirm consent', discharge: () => 'confirm the discharge',
+};
+/** "Client to answer query Q4 sent: …" → "answer query Q4"; "Take the client's instruction: X has not been recorded" → "give their instruction on X". */
+export function clientAction(what: string): string {
+  const q = what.match(/^Client to answer (query \S+)/i);
+  if (q) return `answer ${q[1]}`;
+  const i = what.match(/^Take the client's instruction:\s*(.+?)(?: has not been recorded)?$/i);
+  if (i) return `give their instruction — ${i[1].replace(/^the client's instruction to /i, '').trim()}`;
+  return what.charAt(0).toLowerCase() + what.slice(1);
+}
+export const waitAction = (key: string, subject: string): string => (WAIT_ACTION[key] ? WAIT_ACTION[key](subject) : `${key.replace(/_/g, ' ')}${subject ? ` — ${subject}` : ''}`);
 const WAIT_WHAT: Record<string, string> = {
   search: 'Search result', enquiry: 'Reply to enquiry', id_check: 'ID / AML result', funds: 'Completion funds',
   registration: 'HMLR registration', proof_of_funds: 'Proof of funds from the client', management_pack: 'Management pack',
@@ -138,7 +159,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       urgency: d.kind === 'bank_details' ? 'critical' : d.kind === 'escalation' || age >= 2 ? 'attention' : 'normal',
       workstream: null,
       since: d.createdAt, sinceWorkingDays: age, slaWorkingDays: null, chaseInWorkingDays: null,
-      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
       ref: { type: 'decision', id: d.eventId },
     });
   }
@@ -158,7 +179,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',
       workstream: spec.workstreams[0] ?? null,
       since: i.raisedAt, sinceWorkingDays: wd(i.updatedAt, now, cal), slaWorkingDays: spec.escalateAfterWorkingDays ?? null,
-      chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
       ref: { type: 'issue', id: i.id },
     });
   }
@@ -175,12 +196,14 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       urgency: a.urgency === 'critical' ? 'critical' : a.urgency === 'warning' ? 'attention' : 'normal',
       workstream: null,
       since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
-      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
       ref: { type: 'requirement', id: a.ref.id },
     });
   }
 
-  // ── WAITING / CHASE: every open wait, with its clock ──
+  // ── WAITING: every open wait, with its clock. Chasing is the engine's job, not a pile:
+  //    when the clock runs out the next sweep sends the chase, and the item stays here
+  //    with the count on it and its severity one notch higher. ──
   const chaseDue = new Set(dueActions(s, now, sla, cal).filter((d) => d.kind === 'chase').map((d) => `${d.wait.key}:${d.wait.subject}`));
   // A wait the timer has already escalated is on the list once, as the escalation a person
   // can actually resolve — not twice, as the wait and its escalation.
@@ -194,18 +217,20 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     const last = chases ? w.chasesSentAt[chases - 1] : null;
     // Next chase: the first at chaseAfter, then every chaseEvery working days after the last one.
     const nextChaseIn = !last ? rule.chaseAfter - age : rule.chaseEvery === null ? null : rule.chaseEvery - wd(last, now, cal);
+    const dueBy = (last && rule.chaseEvery !== null ? addWorkingDays(new Date(last), rule.chaseEvery, cal) : addWorkingDays(new Date(w.openedAt), rule.chaseAfter, cal)).toISOString().slice(0, 10);
     const escalated = w.escalations.some((e) => !e.resolvedAt);
     const isChase = chaseDue.has(key);
-    const bucket: Bucket = escalated ? 'escalate' : isChase ? 'chase' : 'waiting';
+    const bucket: Bucket = escalated ? 'escalate' : 'waiting';
     if (escalated && escalatedAsDecision.has(key)) continue;
     out.push({
       ...base,
       id: `${bucket}:${key}`,
       bucket,
-      what: `${WAIT_WHAT[w.key] ?? w.key.replace(/_/g, ' ')}${w.subject ? ` — ${w.subject}` : ''}`,
+      what: waitAction(w.key, w.subject),
       unblocks: null,
       actionOwner: PARTY[rule.recipientRole] ?? 'third_party',
-      urgency: escalated ? 'critical' : age >= rule.escalateAfter ? 'delayed' : isChase ? 'attention' : 'normal',
+      // Each chase that goes unanswered is a notch worse: one → attention, two → delayed, escalated → critical.
+      urgency: escalated ? 'critical' : age >= rule.escalateAfter || chases >= 2 ? 'delayed' : isChase || chases >= 1 ? 'attention' : 'normal',
       workstream: null,
       since: w.openedAt, sinceWorkingDays: age,
       slaWorkingDays: rule.chaseAfter,
@@ -214,6 +239,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       mode: s.shadowMode ? 'needs_approval' : 'automatic',
       escalatesInWorkingDays: escalated ? 0 : rule.escalateAfter - age,
       escalated,
+      dueBy,
+      chaseDue: isChase,
       ref: { type: 'wait', id: key },
     });
   }
@@ -237,6 +264,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       mode: null,
       escalatesInWorkingDays: r.dueInWorkingDays ?? null,
       escalated: true,
+      dueBy: null,
+      chaseDue: false,
       ref: { type: 'case', id: r.ref.id },
     });
   }
@@ -247,13 +276,13 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       ...base,
       id: `waiting:client:${a.ref.id}`,
       bucket: 'waiting',
-      what: a.what,
+      what: clientAction(a.what),
       unblocks: a.unblocks,
       actionOwner: 'client',
       urgency: a.urgency === 'critical' ? 'critical' : 'normal',
       workstream: null,
       since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
-      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false,
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
       ref: { type: 'client', id: a.ref.id },
     });
   }
@@ -265,11 +294,10 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
 }
 
 /** Group a person's items across their whole caseload into the four buckets, worst first. */
-export function buckets(items: WorkItem[]): { do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[]; escalate: WorkItem[] } {
+export function buckets(items: WorkItem[]): { do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[] } {
   return {
     do: items.filter((i) => i.bucket === 'do'),
     waiting: items.filter((i) => i.bucket === 'waiting'),
-    chase: items.filter((i) => i.bucket === 'chase'),
     escalate: items.filter((i) => i.bucket === 'escalate'),
   };
 }

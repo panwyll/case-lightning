@@ -96,7 +96,8 @@ export const config = {
   // Third-party chases: 'draft' leaves an Outlook draft + worklist item for a human to
   // send (default, safest); 'send' sends the template chase automatically from the
   // matter's fee-earner mailbox (spec #5: automated template chases).
-  chaseMode: (env('ENGINE_CHASE_MODE') ?? 'draft') as 'draft' | 'send',
+  /** Chases are the engine's job: sent when due. 'draft' leaves them in Outlook Drafts for a person instead. */
+  chaseMode: (env('ENGINE_CHASE_MODE') ?? 'send') as 'draft' | 'send',
   /** Acknowledgements of things that arrive: sent at once (default) or not at all. */
   ackMode: (env('ENGINE_ACK_MODE') ?? 'send') as 'send' | 'off',
 

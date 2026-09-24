@@ -130,7 +130,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
   const health = m.health;
   const gateId = (m.profile?.gates ?? ['exchange']).find((g) => m.gates[g] && !m.gates[g].ready) ?? (m.profile?.gates ?? ['close']).slice(-1)[0];
   const g = m.gates[gateId];
-  const waiting = (m.work ?? []).filter((w) => w.bucket === 'waiting' || w.bucket === 'chase');
+  const waiting = (m.work ?? []).filter((w) => w.bucket === 'waiting');
   // Newest first, with runs of the same thing collapsed — four searches chased in one
   // sweep is one line that says so, not four lines that bury the rest.
   const activity: Array<{ e: EngineEvent; line: string; times: number }> = [];

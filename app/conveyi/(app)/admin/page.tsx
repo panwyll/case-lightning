@@ -5,7 +5,6 @@ import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
 import WorkflowCanvas from './WorkflowCanvas';
 import Onboarding from './Onboarding';
-import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
@@ -13,7 +12,7 @@ import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
-import { Inbox, PenLine, FolderKanban, Rocket, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
+import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
 import EngineWork, { decisionTask } from './EngineWork';
 import DecisionTray from './DecisionTray';
 import EmailToFile from '@/app/shared/email/EmailToFile';
@@ -303,11 +302,6 @@ function AdminPageInner() {
   // Onboarding progress (admins only) — drives the "Get started" nav item + auto-open.
   const [onb, setOnb] = useState<{ completed: number; total: number; onboarded: boolean } | null>(null);
   const onbAutoNav = useRef(false);
-  // Guided tour of the admin nav. Each step opens the section it describes, and Skip/Done
-  // puts the user back on whatever tab they started from.
-  const [tourOn, setTourOn] = useState(false);
-  const tourReturn = useRef<TabKey | null>(null);
-  const showGetStarted = isAdmin && !!onb && !onb.onboarded;
   const [workload, setWorkload] = useState<Array<{ id: string | null; name: string; role: string | null; open_matters: number; needs_attention: number; overdue_chases: number; drafts_waiting: number }>>([]);
   // "My work": the same worklist the taskpane shows — chases + ready-to-send drafts —
   // so the web app is operable day-to-day without the add-in.
@@ -419,7 +413,7 @@ function AdminPageInner() {
         // A firm that has not finished setting up lands on Get started — by URL, so the
         // sidebar, the page and the address bar all agree on where we are.
         const hasTabParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab');
-        if (!s.onboarded && !onbAutoNav.current && !hasTabParam) { onbAutoNav.current = true; router.replace(`${paths.admin}?tab=getstarted`); }
+        void hasTabParam;
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -429,22 +423,6 @@ function AdminPageInner() {
     router.push(`${paths.admin}?tab=${t}`);
   }
 
-  const startTour = () => { tourReturn.current = tab; setTourOn(true); };
-  const endTour = () => {
-    setTourOn(false);
-    const back = tourReturn.current;
-    tourReturn.current = null;
-    if (back) go(back);
-  };
-  // Each step opens its section — showing a nav item without opening it teaches nothing.
-  // Steps whose tab is hidden for this user (non-admins) are skipped by the Tour itself,
-  // because their nav button simply isn't in the DOM.
-  // Only the sections whose value isn't obvious from the nav label. Team, Billing and
-  // Email templates say what they are — people find those on their own.
-  const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="nav-mywork"]', title: 'Tasks', body: 'Tasks, chases and drafts.', before: () => go('mywork') },
-    { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Templates the flow fills and files for you.', before: () => go('docpacks') },
-  ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
   const [aiGenBusy, setAiGenBusy] = useState(false);
   const aiGenFileRef = useRef<HTMLInputElement>(null);
@@ -917,36 +895,12 @@ function AdminPageInner() {
         ::-webkit-scrollbar-thumb{background:#d7dce3;border-radius:999px}
         ::-webkit-scrollbar-track{background:transparent}
       `}</style>
-      {me && (showGetStarted || billing?.plan) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          {showGetStarted && (
-            <button
-              onClick={() => go('getstarted')}
-              title="Get your firm set up"
-              data-tour="nav-getstarted"
-              style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : '#fff', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '5px 11px', borderRadius: 8, fontFamily: 'inherit' }}
-            >
-              <Rocket size={14} /> Get Started
-              {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
-            </button>
-          )}
-          {billing?.plan && <span style={planBadge}>{PLAN_LABEL[billing.plan] ?? billing.plan}</span>}
-          <button
-            onClick={startTour}
-            title="Show me around"
-            style={{ marginLeft: 'auto', background: tourOn ? '#ede9fe' : 'none', border: 'none', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 9px', borderRadius: 7, fontFamily: 'inherit' }}
-          >
-            Show Me Around
-          </button>
-        </div>
-      )}
         <div>
         <h1 style={{ fontSize: 20, margin: `0 0 ${TAB_META[tab].subtitle ? 4 : 18}px` }}>{TAB_META[tab].label}</h1>
         {TAB_META[tab].subtitle && <p style={{ color: '#64748b', margin: '0 0 18px', fontSize: 14 }}>{TAB_META[tab].subtitle}</p>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
 
-        {tourOn && <Tour steps={TOUR_STEPS} onClose={endTour} />}
 
 
         {tab === 'getstarted' && <Onboarding onNavigate={(t) => go(t as TabKey)} onChange={(s) => setOnb(s)} />}

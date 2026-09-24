@@ -36,7 +36,7 @@ export const CLIENT_UPDATES: Record<string, Template> = {
   proof_of_funds_request_again: T('proof_of_funds_request_again', 'client', 'Your purchase of {{property}} — proof of funds: a little more needed', 'Hello {{firstName}},\n\nThank you for completing the proof-of-funds form for {{property}}. Your conveyancer has reviewed it and needs a little more before it can be signed off:\n\n{{noteToClient}}\n\nPlease use this link to add to your answers or attach the extra documents: {{formUrl}}\n\n{{firmName}}', ['formUrl', 'noteToClient']),
   // Paired with a chase to a third party: the client hears that we are on it, without
   // having to ask. Process only — who we are waiting for and that we chased today.
-  chase_update: T('chase_update', 'client', 'Your {{transaction}} of {{property}} — we have chased today', 'Hello {{firstName}},\n\nA quick update on {{property}}: we are still waiting for {{waitingOn}} to come back to us on {{waitingFor}}. We chased them again today and will keep following it up.\n\nThere is nothing you need to do at the moment — we will let you know as soon as we hear.\n\n{{feeEarner}}\n{{firmName}}', ['property', 'waitingOn', 'waitingFor']),
+  chase_update: T('chase_update', 'client', 'Your {{transaction}} of {{property}} — we have chased today', 'Hello {{firstName}},\n\nA quick update on {{property}}: we are still waiting for {{waitingOn}} to come back to us on {{waitingFor}}. We chased them again today{{nextChaseNote}}.\n\nThere is nothing you need to do at the moment — we will let you know as soon as we hear.\n\n{{feeEarner}}\n{{firmName}}', ['property', 'waitingOn', 'waitingFor']),
   qa_routed_to_human: T('qa_routed_to_human', 'client', 'Your question', 'Thanks for your message. Because it relates to the specifics of your purchase, {{feeEarner}} will come back to you personally rather than this automated service. If it is urgent, please call the office.', ['feeEarner']),
 };
 
@@ -52,6 +52,11 @@ export const CHASES: Record<string, Template> = {
   chase_id_documents: T('chase_id_documents', 'client', 'Your purchase of {{property}} — identity documents needed', 'Hello {{firstName}},\n\nWe are still waiting for your identity and source-of-funds documents so we can complete the required checks for {{property}}. We cannot progress the purchase until these are done. Please send them as soon as you can, or reply here if you need help with what is required.\n\n{{firmName}}'),
   chase_completion_funds: T('chase_completion_funds', 'chase', '{{matterRef}} — completion funds ({{address}})', 'Dear Sirs,\n\nOur reference {{matterRef}}. Completion of {{address}} is scheduled for {{completionDate}}. We requested the advance/completion monies on {{orderedDate}} and have not yet received confirmation of release. Please confirm the funds will arrive in time.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['matterRef', 'address']),
   chase_hmlr_registration: T('chase_hmlr_registration', 'chase', '{{matterRef}} — AP1 registration outstanding ({{address}})', 'Dear Sirs,\n\nOur reference {{matterRef}}. Our AP1 application for {{address}} was lodged on {{orderedDate}} and remains outstanding after {{ageWorkingDays}} working days. Please confirm the current position.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['matterRef', 'address']),
+};
+
+/** Notices to other parties on the matter: news, not a chase. */
+export const PARTY_NOTICES: Record<string, Template> = {
+  chase_update_agent: T('chase_update_agent', 'chase', '{{address}} — chased today (our ref {{matterRef}})', 'Dear {{agentName}},\n\nA quick update on {{address}}: we are waiting for {{waitingOn}} to come back to us on {{waitingFor}}. We chased them again today{{nextChaseNote}}.\n\nNothing is needed from you at the moment — we will let you know as soon as we hear.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['address', 'waitingOn', 'waitingFor']),
 };
 
 /** Acknowledgements: it arrived, it is with us, no need to chase. */
