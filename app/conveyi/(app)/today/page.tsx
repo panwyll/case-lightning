@@ -90,9 +90,6 @@ export default function TodayPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button className={`eg-btn${evening ? ' on' : ''}`} onClick={() => setEvening(!evening)}>{evening ? 'Morning' : 'End of day'}</button>
           <button className={`eg-btn${all ? ' on' : ''}`} onClick={() => setAll(!all)}>{all ? 'Whole team' : 'Mine only'}</button>
-          <a className="eg-btn" href="/conveyi/cases">Caseload</a>
-          <a className="eg-btn" href="/conveyi/my-work">My work</a>
-          <a className="eg-btn" href="/conveyi/email">Email to file</a>
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}

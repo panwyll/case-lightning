@@ -35,6 +35,6 @@ test('signInTo remembers where the person was going, and refuses anywhere else',
   assert.equal(paths.signInTo(''), '/conveyi/sign-in');
 });
 
-test('after signing in a person lands on their work, not on settings', () => {
-  assert.equal(paths.afterSignIn, paths.today);
+test('after signing in a person lands on their caseload — every open matter, not settings or onboarding', () => {
+  assert.equal(paths.afterSignIn, paths.cases);
 });

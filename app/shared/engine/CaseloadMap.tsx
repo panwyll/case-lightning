@@ -74,7 +74,16 @@ export const CASELOAD_CSS = `
 `;
 
 /** One house. Colour groups; the badge's silhouette identifies, so it reads without colour. */
-export function House({ band, size = 30, title }: { band: HealthBand; size?: number; title?: string }) {
+export function House({ band, size = 30, title, untracked = false }: { band: HealthBand; size?: number; title?: string; untracked?: boolean }) {
+  if (untracked) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={`${title ? `${title} — ` : ''}not tracked yet`}>
+        {title ? <title>{`${title} — not tracked by CONVEYi yet`}</title> : null}
+        <path d="M1.6 9.6 L12 1.6 L22.4 9.6 Z" fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="2 1.6" strokeLinejoin="round" />
+        <rect x="4" y="9.6" width="16" height="11.4" fill="none" stroke="#94a3b8" strokeWidth="1" strokeDasharray="2 1.6" />
+      </svg>
+    );
+  }
   const c = COLOUR[band];
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={`${title ? `${title} — ` : ''}${HEALTH_LABEL[band]}`}>
@@ -91,29 +100,37 @@ export function House({ band, size = 30, title }: { band: HealthBand; size?: num
 }
 
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
+const isTracked = (t: CaseToken) => t.tracked !== false;
 
 export function CaseloadMap({ rows, rollup, onOpen }: {
   rows: CaseToken[];
-  rollup: { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number };
+  rollup: { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; untracked?: number };
   onOpen: (matterId: string) => void;
 }) {
-  const [filter, setFilter] = useState<HealthBand | 'all' | 'stuck'>('all');
+  const [filter, setFilter] = useState<HealthBand | 'all' | 'stuck' | 'untracked'>('all');
   const [openId, setOpenId] = useState<string | null>(null);
   const [tip, setTip] = useState<{ t: CaseToken; x: number; y: number } | null>(null);
 
+  // An untracked matter only ever matches "all" and "not tracked yet": it has no health, so
+  // it must never be counted as moving normally.
   const shows = (t: CaseToken) =>
-    filter === 'all' ? true : filter === 'stuck' ? t.health.band === 'delayed' || t.health.band === 'blocked' : t.health.band === filter;
+    filter === 'all' ? true
+    : filter === 'untracked' ? !isTracked(t)
+    : !isTracked(t) ? false
+    : filter === 'stuck' ? t.health.band === 'delayed' || t.health.band === 'blocked'
+    : t.health.band === filter;
 
   const byBand = useMemo(() => {
     const m = new Map<Band, CaseToken[]>(BANDS.map((b) => [b, [] as CaseToken[]]));
     const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
     for (const r of rows) m.get(bandOf(r.lifecycle))!.push(r);
-    for (const list of m.values()) list.sort((a, b) => rank[a.health.band] - rank[b.health.band] || b.dayOfCase - a.dayOfCase);
+    // Tracked matters first (they carry news), worst first; untracked after, oldest first.
+    for (const list of m.values()) list.sort((a, b) => Number(!isTracked(a)) - Number(!isTracked(b)) || rank[a.health.band] - rank[b.health.band] || b.dayOfCase - a.dayOfCase);
     return m;
   }, [rows]);
 
   const exceptions = useMemo(
-    () => rows.filter((r) => r.health.band !== 'normal' && shows(r)).sort((a, b) => {
+    () => rows.filter((r) => isTracked(r) && r.health.band !== 'normal' && shows(r)).sort((a, b) => {
       const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
       return rank[a.health.band] - rank[b.health.band] || (b.health.counts.waiting - a.health.counts.waiting);
     }),
@@ -121,7 +138,9 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
     [rows, filter]
   );
 
-  const stat = (key: HealthBand | 'all' | 'stuck', n: number, label: string, colour: string) => (
+  const untracked = rollup.untracked ?? rows.filter((r) => !isTracked(r)).length;
+  const trackedCount = rows.length - untracked;
+  const stat = (key: HealthBand | 'all' | 'stuck' | 'untracked', n: number, label: string, colour: string) => (
     <button key={key} type="button" className={`cm-stat${filter === key ? ' on' : ''}`} onClick={() => setFilter(filter === key ? 'all' : key)} aria-pressed={filter === key}>
       <b style={{ color: n ? colour : '#cbd5e1' }}>{n}</b>
       <span>{label}</span>
@@ -134,11 +153,12 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
 
       {/* Oversight strip — the counts double as filters. */}
       <div className="cm-strip">
-        {stat('all', rollup.total, 'active cases', '#0f172a')}
+        {stat('all', rows.length, 'open cases', '#0f172a')}
         {stat('normal', rollup.normal, 'moving normally', '#16a34a')}
         {stat('attention', rollup.attention, 'need attention', '#b45309')}
         {stat('stuck', rollup.stuck, 'stuck', '#9a3412')}
         {stat('critical', rollup.critical, 'critical', '#b91c1c')}
+        {untracked > 0 && stat('untracked', untracked, 'not tracked yet', '#64748b')}
       </div>
 
       <div className="cm-paper">
@@ -160,9 +180,9 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
                     onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
                     onMouseLeave={() => setTip(null)}
                     onFocus={() => setOpenId(t.matterId)}
-                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Matter'} — ${HEALTH_LABEL[t.health.band]}`}
+                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Matter'} — ${isTracked(t) ? HEALTH_LABEL[t.health.band] : 'not tracked yet'}`}
                   >
-                    <House band={t.health.band} title={t.propertyAddress ?? t.matterRef ?? undefined} />
+                    <House band={t.health.band} untracked={!isTracked(t)} title={t.propertyAddress ?? t.matterRef ?? undefined} />
                   </button>
                 ))}
                 {list.length > 0 && visible.length === 0 && <span className="cm-empty">none in this filter</span>}
@@ -175,15 +195,21 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
           {(['normal', 'attention', 'delayed', 'blocked', 'critical'] as HealthBand[]).map((b) => (
             <span key={b}><House band={b} size={20} /> {HEALTH_LABEL[b]}</span>
           ))}
+          {untracked > 0 && <span><House band="normal" untracked size={20} /> Not tracked yet</span>}
         </div>
       </div>
 
       {/* Exceptions — click one and it explains itself. */}
       <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '22px 0 8px' }}>
-        {exceptions.length === 0 ? 'Nothing needs you' : `Needs someone (${exceptions.length})`}
+        {exceptions.length === 0 ? (trackedCount === 0 ? 'Not tracking anything yet' : 'Nothing needs you') : `Needs someone (${exceptions.length})`}
       </h2>
       {exceptions.length === 0 ? (
-        <div className="eg-empty">Every case is moving normally. Nothing is overdue, blocked or near a deadline.</div>
+        // Never claim "every case is moving normally" about cases the engine is not following.
+        trackedCount === 0 ? (
+          <div className="eg-empty">These are your firm’s open matters. CONVEYi isn’t following any of them yet, so it can’t tell you which need you. Open one and enrol it to start.</div>
+        ) : (
+          <div className="eg-empty">Every case CONVEYi is following is moving normally.{untracked > 0 ? ` ${untracked} more ${untracked === 1 ? 'isn’t' : 'aren’t'} tracked yet.` : ''}</div>
+        )
       ) : (
         <div className="cm-exc">
           {exceptions.map((t) => (

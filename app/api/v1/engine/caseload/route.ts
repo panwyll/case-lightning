@@ -6,6 +6,7 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { rollup, HEALTH_LABEL } from '@/lib/server/engine/health';
 import { LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
+import { untrackedCaseRows } from '@/lib/server/engine/untracked';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,14 +26,28 @@ export async function GET(req: NextRequest) {
     const q = z
       .object({ mine: z.string().optional(), includeShadow: z.string().optional(), limit: z.coerce.number().min(1).max(500).optional() })
       .parse(Object.fromEntries(req.nextUrl.searchParams));
-    const rows = await engine().eventStore.listQueue(user.tenantId, {
+    // A matter the engine is watching in shadow mode is still a real case on the firm's
+    // books — shadow hides the engine's conclusions, never the matter. Shown by default.
+    const tracked = (
+      await engine().eventStore.listQueue(user.tenantId, {
+        assignedTo: q.mine === '1' ? user.userId : null,
+        includeShadow: q.includeShadow !== '0',
+        limit: q.limit ?? 300,
+      })
+    ).map((r) => ({ ...r, tracked: true as const }));
+    // And every open matter the engine is NOT running — the caseload is the firm's matters,
+    // not the engine's.
+    const untracked = await untrackedCaseRows(user.tenantId, {
       assignedTo: q.mine === '1' ? user.userId : null,
-      includeShadow: q.includeShadow === '1',
+      exclude: new Set(tracked.map((r) => r.matterId)),
       limit: q.limit ?? 300,
     });
+    const rows = [...tracked, ...untracked];
     return ok({
       rows,
-      rollup: rollup(rows.map((r) => r.health.band)),
+      // Health is only claimed for matters the engine actually knows about. An untracked
+      // matter is not "moving normally" — it is unknown — so it is counted separately.
+      rollup: { ...rollup(tracked.map((r) => r.health.band)), untracked: untracked.length },
       scope: q.mine === '1' ? 'mine' : 'all',
       labels: { health: HEALTH_LABEL, lifecycle: LIFECYCLE_LABEL },
     });

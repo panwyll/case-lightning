@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
-import NewMatter from '@/app/conveyi/admin/NewMatter';
+import NewMatter from '@/app/conveyi/(app)/admin/NewMatter';
 import { composeAddress, parseAddress, type AddrParts } from '@/lib/address';
 import CallNotes from './CallNotes';
 // Assist UI primitives, styles and constants — shared with the web inbox so both

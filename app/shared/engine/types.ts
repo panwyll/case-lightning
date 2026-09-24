@@ -318,8 +318,10 @@ export interface CaseToken extends QueueRow {
   lifecycle: string;
   health: HealthSummary;
   dayOfCase: number;
+  /** false = an open matter the engine is not running yet. It has no health to report. */
+  tracked?: boolean;
 }
-export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number }
+export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number; untracked?: number }
 
 export type WorkBucket = 'do' | 'waiting' | 'chase' | 'escalate';
 export interface WorkItem {

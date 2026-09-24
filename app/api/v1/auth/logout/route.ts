@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { config } from '@/lib/server/config';
 import { SESSION_COOKIE } from '@/lib/server/session';
+import { paths } from '@/lib/paths';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +18,7 @@ function clear(res: NextResponse): NextResponse {
 }
 
 export async function GET() {
-  return clear(NextResponse.redirect(`${config.appUrl.replace(/\/$/, '')}/admin`));
+  return clear(NextResponse.redirect(`${config.appUrl.replace(/\/$/, '')}${paths.signIn}`));
 }
 
 export async function POST() {

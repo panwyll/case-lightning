@@ -30,8 +30,11 @@ export const paths = {
   signIn: `${APP_BASE}/sign-in`,
   /** Where an unauthenticated visitor is sent, remembering where they were headed. */
   signInTo: (next?: string | null) => (next && next.startsWith('/') ? `${APP_BASE}/sign-in?next=${encodeURIComponent(next)}` : `${APP_BASE}/sign-in`),
-  /** Where a person lands once signed in: the day's work, not a settings screen. */
-  afterSignIn: `${APP_BASE}/today`,
+  /**
+   * Where a person lands once signed in: their caseload — every open matter the firm has,
+   * whether or not the engine is following it yet. Not Today, which only knows tracked ones.
+   */
+  afterSignIn: `${APP_BASE}/cases`,
 
   // ── public: marketing, signup, and the client-facing form ──
   home: '/',

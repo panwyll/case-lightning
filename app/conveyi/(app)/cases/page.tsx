@@ -38,7 +38,7 @@ export default function CasesPage() {
         <div>
           <h1 className="eg-h1">Caseload</h1>
           <p className="eg-sub">
-            {rollup ? `${rollup.total} active · ${rollup.needsSomeone} need someone` : 'Loading…'}
+            {rollup ? `${rollup.total + (rollup.untracked ?? 0)} open · ${rollup.total} followed by CONVEYi · ${rollup.needsSomeone} need someone` : 'Loading…'}
             {' · '}health is measured against what each phase should take, not the age of the case
           </p>
         </div>
@@ -46,10 +46,6 @@ export default function CasesPage() {
           <button className={`eg-btn${scope === 'mine' ? ' on' : ''}`} onClick={() => setScope(scope === 'mine' ? 'all' : 'mine')}>
             {scope === 'mine' ? 'My matters' : 'Whole team'}
           </button>
-          <a className="eg-btn" href="/conveyi/today">Today</a>
-          <a className="eg-btn" href="/conveyi/my-work">My work</a>
-          <a className="eg-btn" href="/conveyi/decisions">Decisions</a>
-          <a className="eg-btn" href="/conveyi/email">Email to file</a>
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}

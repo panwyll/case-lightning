@@ -164,7 +164,7 @@ export async function GET(req: NextRequest) {
     const wanted = req.cookies.get(OAUTH_NEXT_COOKIE)?.value;
     const next = wanted && wanted.startsWith('/') && !wanted.startsWith('//') ? wanted : null;
     const dest = webFlow
-      ? `${config.appUrl}${next ?? `${paths.admin}?tab=getstarted`}`
+      ? `${config.appUrl}${next ?? (user.created ? `${paths.admin}?tab=getstarted` : paths.afterSignIn)}`
       : `${config.appUrl}/addin/auth-complete#s=${session}`;
     const res = NextResponse.redirect(dest);
     if (webFlow) res.cookies.delete(OAUTH_FLOW_COOKIE);

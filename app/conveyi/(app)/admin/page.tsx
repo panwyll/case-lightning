@@ -9,6 +9,7 @@ import Tour, { type TourStep } from '@/app/shared/assist/Tour';
 import EmailTemplates from './EmailTemplates';
 import Automations from './Automations';
 import NewMatter from './NewMatter';
+import { AppNavLinks } from '@/app/shared/AppNav';
 
 interface MatterHit {
   id: string;
@@ -948,6 +949,7 @@ export default function AdminPage() {
             <path d="M5 16 C9 10 13 10 16 16 C19 22 23 22 27 16" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round" />
           </svg>
           <strong style={{ fontSize: 17 }}>CONVE<span style={{ color: '#5A27E0' }}>Yi</span></strong>
+          <AppNavLinks />
           {me && (
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
               {showGetStarted && (
