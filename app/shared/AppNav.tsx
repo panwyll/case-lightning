@@ -42,7 +42,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     label: 'Cases',
     items: [
       { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) },
-      { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || p.startsWith(`${paths.product}/engine/`) },
+      { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || /\/engine\/[0-9a-f-]{36}/i.test(p) },
     ],
   },
   {

@@ -135,7 +135,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   return (
     <div className="ep">
       <style>{WORK_CSS}</style>
-      <div className="ep-block">This matter is not yet run by the conveyancing engine. Choose the transaction type: it decides the phases, the workstreams, the gates and the commands that apply. Every step is logged and only genuine decisions are put in front of you.</div>
+      <div className="ep-block">Transaction type: Every step is logged and only genuine decisions are put in front of you.</div>
       <div className="ep-enrol">
         <label>Transaction type
           <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>{TRANSACTION_TYPES.map((t) => <option key={t} value={t}>{TRANSACTION_LABEL[t]}</option>)}</select>
@@ -197,7 +197,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
   );
   const authorise = (kind: string, purpose: 'completion_monies' | 'other', label: string, amountPennies?: number | null) => {
     const list = verified(kind);
-    if (!list.length) return <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>No verified {pretty(kind)} bank details — {label.toLowerCase()} cannot be authorised. Record and verify them under Money.</span>;
+    if (!list.length) return <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>No verified {pretty(kind)} bank details.</span>;
     return <span>{pickAccount(kind, list)}<button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</button></span>;
   };
   const ask = (q: string, dflt = '') => window.prompt(q, dflt);
@@ -231,7 +231,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
         <div style={{ marginTop: 8 }}>
           {(pof.statements?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Statements read:</b> {pof.statements!.map((x) => `${x.fileName ?? x.documentId}${x.readable ? ` (${x.holder ?? '?'}, ${x.from ?? '?'}–${x.to ?? '?'}, ${x.transactions} lines)` : ' (unreadable)'}`).join(' · ')}</div>}
           {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Flags:</b> {pof.flags!.map((f) => f.code).join(', ')}</div>}
-          {qs.length === 0 && <div className="ep-note">No queries. The rules draft one for every unusual credit when the client submits; you can add your own below.</div>}
+          {qs.length === 0 && <div className="ep-note">No queries.</div>}
           {qs.map((q) => (
             <div key={q.id} className="ep-row" style={{ display: 'block' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -393,7 +393,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
         ...(seller && completed ? [{ label: 'Balance to the client', status: paidTo('client') ? 'approved' : 'not_started' }] : []),
       ],
       actions: s.stage === 'pre_completion' && !completed ? <>
-        {needsRequest && firm.length === 0 && !s.completion.fundsReceivedAt && <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>Record and verify the firm&apos;s client-account details (under Money, below) before requesting funds.</span>}
+        {needsRequest && firm.length === 0 && !s.completion.fundsReceivedAt && <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>Firm client-account details not verified.</span>}
         {needsRequest && firm.length > 0 && !s.completion.fundsReceivedAt && pickAccount('firm_client_account', firm)}
         {p.fundsFrom.includes('lender') && firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request {remo ? 'the advance' : 'lender funds'}</button>}
         {p.fundsFrom.includes('client') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request client funds</button>}
@@ -468,7 +468,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
       {/* ── Money: payee bank details ── */}
       <div className="ep-sec">Money · payee bank details (versioned · every change is a hard stop)</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-        {Object.values(s.bankDetails).length === 0 && <div className="ep-note">No bank details on file yet. Nothing can be paid, or requested, until a payee's details are recorded and verified out-of-band.</div>}
+        {Object.values(s.bankDetails).length === 0 && <div className="ep-note">No bank details on file.</div>}
         {Object.values(s.bankDetails).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((b) => (
           <div key={b.id} className="ep-row">
             <b style={{ minWidth: 150 }}>{pretty(b.payeeKind)}{b.payeeRef ? ` · ${b.payeeRef}` : ''}</b>

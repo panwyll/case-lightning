@@ -90,7 +90,7 @@ export default function RolloutPage() {
             })}
           </div>
           <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Matters in shadow mode</h2>
-          {b.shadowMatters.length === 0 && <div className="eg-empty">No matter is in shadow mode. Enrol one with shadow mode on, or switch a matter into it from its comparison view.</div>}
+          {b.shadowMatters.length === 0 && <div className="eg-empty">No matters in shadow mode.</div>}
           {b.shadowMatters.length > 0 && (
             <div className="eg-card">
               {b.shadowMatters.map((r) => (

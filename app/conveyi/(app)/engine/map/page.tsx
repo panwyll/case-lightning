@@ -85,21 +85,21 @@ export default function MapPage() {
       <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
         <div>
-          <h1 className="eg-h1">The machine, drawn from code</h1>
+          <h1 className="eg-h1">Machine Map</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a className="eg-btn" href="/conveyi/decisions">Queue</a>
+          <a className="eg-btn" href="/conveyi/admin?tab=mywork">Tasks</a>
           <a className="eg-btn" href="/api/v1/engine/spec" target="_blank" rel="noreferrer">JSON</a>
         </div>
       </div>
 
-      <h2>0 · Transaction types: one machine, parameterised by a profile</h2>
+      <h2>Transaction Types</h2>
       <div className="filters">
         <button className={`eg-btn${txType === 'all' ? ' on' : ''}`} onClick={() => setTxType('all')}>All types</button>
         {spec.transactionTypes.map((t) => <button key={t.type} className={`eg-btn${txType === t.type ? ' on' : ''}`} onClick={() => setTxType(t.type)}>{t.label}</button>)}
       </div>
       <table>
-        <thead><tr><th>Type</th><th>Side</th><th>Tenure</th><th>Exchange</th><th>Phases</th><th>Workstreams</th><th>Sub-flows</th><th>Money from</th><th>After completion</th><th>What is different</th></tr></thead>
+        <thead><tr><th>Type</th><th>Side</th><th>Tenure</th><th>Exchange</th><th>Phases</th><th>Workstreams</th><th>Sub-flows</th><th>Money from</th><th>After completion</th></tr></thead>
         <tbody>
           {spec.transactionTypes.filter((t) => txType === 'all' || t.type === txType).map((t) => (
             <tr key={t.type}>
@@ -112,14 +112,12 @@ export default function MapPage() {
               <td>{t.subflows.join(', ')}</td>
               <td>{t.fundsFrom.map((f) => f.replace(/_/g, ' ')).join(', ')}</td>
               <td>{t.registration === 'ap1' ? 'SDLT / AP1 → registered' : t.registration === 'discharge_only' ? 'redeem → account to client → discharge' : '—'}</td>
-              <td>{t.note}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="eg-sub" style={{ marginTop: 6 }}>Pick a type above and the spine, its gates and the command table below narrow to that type (each profile carries its own gate lines, checked against the machine's blockers by the per-type tests).</p>
 
-      <h2>1 · The stage spine and its gates{profile ? ` — ${profile.label}` : ''}</h2>
+      <h2>Stages{profile ? ` — ${profile.label}` : ''}</h2>
       <figure>
         <svg viewBox={`0 0 ${X0 * 2 + stagesShown.length * (W + GAP)} ${spineH}`} role="img" aria-label="Eight stages left to right; under each, the gates that must be true to leave it; abandonment and manual handling can leave from any stage.">
           <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0f172a" /></marker></defs>
@@ -150,10 +148,9 @@ export default function MapPage() {
             <text x={X0 + 600} y={spineH - 26} textAnchor="middle" fontSize="10" fill="#14532d">ap1_confirmed · the last wait closes</text>
           </g>
         </svg>
-        <figcaption>A stage is left automatically the moment its gates are all true (stage_advanced, actor system). Gates are the union of sub-flow outcomes and recorded milestones; nothing else moves the stage.</figcaption>
       </figure>
 
-      <h2>2 · The sub-flow pattern, once per sub-flow</h2>
+      <h2>Sub-flows</h2>
       <figure>
         <svg viewBox={`0 0 1180 ${40 + spec.subflows.length * 78}`} role="img" aria-label="Each sub-flow: something arrives, the rule layer clears it or flags it, a flagged item is a decision a person resolves; chasing and escalation sit alongside.">
           <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b" /></marker></defs>
@@ -183,17 +180,15 @@ export default function MapPage() {
             );
           })}
         </svg>
-        <figcaption>Green: something arrived (external / a person). Blue: the deterministic rule layer cleared it (assist level also raises an advisory review). Purple: flagged by the rule layer, with the AI's summary and citations — a decision. Amber: a person resolved it, with a reason unless approving.</figcaption>
       </figure>
       <table>
-        <thead><tr><th>Sub-flow</th><th>Rule (deterministic, never the AI)</th></tr></thead>
+        <thead><tr><th>Sub-flow</th><th>Rule</th></tr></thead>
         <tbody>{spec.subflows.map((sf) => <tr key={sf.id}><td><b>{sf.label}</b></td><td>{sf.rule}</td></tr>)}</tbody>
       </table>
-      <p className="eg-sub" style={{ marginTop: 6 }}>Thresholds: extraction confidence ≥ {spec.thresholds.extractionConfidence} to be acted on (below → flagged for a person); classification confidence ≥ {spec.thresholds.classificationConfidence} to route a document automatically.</p>
 
-      <h2>3 · Commands: who may record what, and when{profile ? ` — ${profile.label} (${commandsShown.length} of ${spec.commands.length})` : ''}</h2>
+      <h2>Commands{profile ? ` — ${profile.label}` : ''}</h2>
       <table>
-        <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>What it means</th></tr></thead>
+        <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>Meaning</th></tr></thead>
         <tbody>
           {commandsShown.map((c) => (
             <tr key={c.type}>
@@ -207,20 +202,19 @@ export default function MapPage() {
         </tbody>
       </table>
 
-      <h2>4 · Time as a trigger</h2>
+      <h2>Timers</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(420px,1fr))', gap: 12 }}>
         <table>
-          <thead><tr><th>Wait (something owed to us)</th><th>Chase after</th><th>Every</th><th>Escalate</th><th>Again after</th><th>Who is chased</th></tr></thead>
+          <thead><tr><th>Wait</th><th>Chase after</th><th>Every</th><th>Escalate</th><th>Again after</th><th>Who is chased</th></tr></thead>
           <tbody>{spec.timers.waits.map((w) => <tr key={w.waitKey}><td><b>{w.waitKey.replace(/_/g, ' ')}</b><div className="muted">{w.template}</div></td><td>{w.chaseAfter} wd</td><td>{w.chaseEvery === null ? '—' : `${w.chaseEvery} wd`}</td><td>{w.escalateAfter} wd</td><td>{w.reEscalateAfter} wd</td><td>{w.recipientRole.replace(/_/g, ' ')}</td></tr>)}</tbody>
         </table>
         <table>
-          <thead><tr><th>Deadline (something we owe)</th><th>Raised</th><th>What</th></tr></thead>
+          <thead><tr><th>Deadline</th><th>Raised</th><th>What</th></tr></thead>
           <tbody>{spec.timers.deadlines.map((d) => <tr key={d.kind}><td><b>{d.kind.replace(/_/g, ' ')}</b></td><td>{d.leadWorkingDays} wd before</td><td>{d.description}</td></tr>)}</tbody>
         </table>
       </div>
-      <p className="eg-sub" style={{ marginTop: 6 }}>Working days, England &amp; Wales. A chase is a template message to the party that owes us; an escalation is a decision for a person with a dossier as its source. Deadlines are raised once each.</p>
 
-      <h2>5 · Triggers: every door into the engine</h2>
+      <h2>Triggers</h2>
       <div className="filters">
         {['all', 'native', 'leap'].map((b) => <button key={b} className={`eg-btn${backend === b ? ' on' : ''}`} onClick={() => setBackend(b)}>{b === 'all' ? 'Both backends' : b === 'native' ? 'Own app (CaseLightning)' : 'LEAP'}</button>)}
       </div>
@@ -240,7 +234,7 @@ export default function MapPage() {
         </tbody>
       </table>
 
-      <h2>6 · Eventualities: how a real purchase departs from the happy path</h2>
+      <h2>Eventualities</h2>
       <div className="filters">
         {['all', ...areas].map((a) => <button key={a} className={`eg-btn${area === a ? ' on' : ''}`} onClick={() => setArea(a)}>{a === 'all' ? 'All areas' : a.replace(/_/g, ' ')}</button>)}
         <span style={{ width: 12 }} />
@@ -254,10 +248,8 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
-      <p className="eg-sub" style={{ marginTop: 6 }}>built = modelled and tested · manual = automation stops, a person runs it · outside = the practice system's job · gap = design noted, not modelled. Full narrative: docs/engine-eventualities.md.</p>
 
-      <h2>7 · Issues: what goes wrong, what it holds, and the ways out</h2>
-      <p className="eg-sub" style={{ marginTop: 0 }}>A typed issue is raised by a person (or by the engine, for lender approval) when something the matter has to wait for comes up. An open issue holds its gate (exchange or completion) — everything else proceeds. It ends resolved with one of the kind's realistic outcomes, withdrawn, or fatal (the matter is abandoned). An issue nobody touches for {spec.issues.staleAfterWorkingDays} working days is raised to a person. Full research: docs/engine-issues.md.</p>
+      <h2>Issues</h2>
       <div className="filters">
         {['all', ...spec.issues.groups.map((g) => g.id)].map((g) => <button key={g} className={`eg-btn${issueGroup === g ? ' on' : ''}`} onClick={() => setIssueGroup(g)}>{g === 'all' ? 'All groups' : spec.issues.groups.find((x) => x.id === g)?.label}</button>)}
       </div>
@@ -280,15 +272,14 @@ export default function MapPage() {
         <tbody>{spec.issues.resolutions.filter((r) => r.effects.length).map((r) => <tr key={r.id}><td><b>{r.label}</b> <code>{r.id}</code></td><td>{r.effects.join('; ')}</td></tr>)}</tbody>
       </table>
 
-      <h2>8 · Invariants the machine enforces</h2>
+      <h2>Invariants</h2>
       <div className="inv">{spec.invariants.map((v) => <div key={v.id}><b>{v.title}</b>{v.rule}<div className="muted" style={{ marginTop: 4 }}>{v.enforcedBy.join(' · ')}</div></div>)}</div>
 
-      <h2>9 · Decision kinds</h2>
+      <h2>Decision Kinds</h2>
       <table>
         <thead><tr><th>Kind</th><th>Options</th><th>Its source</th></tr></thead>
         <tbody>{spec.decisions.map((d) => <tr key={d.kind}><td><b>{d.label}</b></td><td>{d.options.join(' · ')}</td><td>{d.source}</td></tr>)}</tbody>
       </table>
-      <p className="eg-sub" style={{ marginTop: 12 }}>{spec.generatedFrom}</p>
     </div>
   );
 }

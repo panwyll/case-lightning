@@ -187,7 +187,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       )}
 
       {/* What happens next. */}
-      <h3>What happens next</h3>
+      <h3>Next</h3>
       {g?.ready ? (
         <div className="ci-ok"><b>{g.label}.</b> Every requirement for this milestone is satisfied.</div>
       ) : m.nextActions.length === 0 ? (

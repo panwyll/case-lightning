@@ -51,7 +51,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
       {shadow && (
         <div className="eg-shadow-banner" role="status" aria-live="polite">
           <b>Shadow mode</b>
-          <span>The engine is observing this matter. Nothing shown here has been sent, ordered or put in front of a handler; decisions are logged for comparison only and cannot be actioned.</span>
+          <span>Observing only. Nothing is sent or actioned.</span>
           <a href={`/conveyi/engine/${matterId}/shadow`}>Compare with the human record →</a>
         </div>
       )}

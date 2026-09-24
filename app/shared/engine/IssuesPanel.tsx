@@ -132,7 +132,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
             </div>
           );
         })}
-        {open.length === 0 && <div style={{ fontSize: 12.5, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>No open issues. Raise one when something the matter has to wait for comes up: a survey finding, a down-valuation, missing building regs, a chain that is not ready, probate, a gifted deposit…</div>}
+        {open.length === 0 && <div style={{ fontSize: 12.5, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>No open issues.</div>}
 
         {!done && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10, borderTop: '1px solid #f1f5f9', paddingTop: 8 }}>

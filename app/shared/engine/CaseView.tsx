@@ -117,7 +117,7 @@ function Readiness({ m }: { m: CaseModel }) {
         </div>
       )}
 
-      <h3>Requirements ({g.satisfied.length} of {g.satisfied.length + g.unsatisfied.length} satisfied)</h3>
+      <h3>Requirements · {g.satisfied.length}/{g.satisfied.length + g.unsatisfied.length}</h3>
       <table>
         <thead><tr><th>Requirement</th><th>Status</th><th>Who says so</th><th>Detail</th></tr></thead>
         <tbody>
@@ -132,7 +132,7 @@ function Readiness({ m }: { m: CaseModel }) {
         </tbody>
       </table>
 
-      <h3>What needs to happen next</h3>
+      <h3>Next</h3>
       {m.nextActions.length === 0 ? <div className="ready">Nothing outstanding for this gate.</div> : (
         <table>
           <thead><tr><th>Action</th><th>Who</th><th>Unblocks</th><th>Urgency</th></tr></thead>
@@ -169,7 +169,7 @@ function Dependencies({ m }: { m: CaseModel }) {
   const all = [...layout.reqs, ...layout.ws, ...layout.blockers, ...m.graph.nodes.filter((n) => n.id === `gate:${layout.gateId}`)];
   return (
     <>
-      <h3>Flow / dependency view — {m.gates[layout.gateId].label}</h3>
+      <h3>Dependencies</h3>
       <figure>
         <svg role="img" aria-label="Gate, its requirements, the workstreams that satisfy them, and what blocks them" viewBox={`0 0 1180 ${layout.height}`} width="100%" style={{ height: "auto" }}>
           <defs><marker id="cv-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor" /></marker></defs>
@@ -196,7 +196,6 @@ function Dependencies({ m }: { m: CaseModel }) {
             );
           })}
         </svg>
-        <figcaption>Red arrows: blocks / threatens. Green: satisfies. Purple: discovered while dealing with (issue chains). Dotted: requires / relates to. Hover a node for its authority. Drawn from the same state the machine enforces; nothing here is edited by hand.</figcaption>
       </figure>
       <h3>Issue chains</h3>
       {m.graph.edges.filter((e) => e.type === 'DISCOVERED_BY').length === 0 ? <div style={{ fontSize: 12.5, color: '#64748b' }}>No issue was discovered while dealing with another.</div> : (

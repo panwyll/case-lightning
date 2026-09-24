@@ -31,11 +31,11 @@ const BAND_OF: Record<string, Band> = {
 export const bandOf = (lifecycle: string): Band => BAND_OF[lifecycle] ?? 'INSTRUCTION';
 
 const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> = {
-  normal: { roof: '#94a3b8', wall: '#ffffff', line: '#64748b' },
-  attention: { roof: '#f59e0b', wall: '#fffbeb', line: '#b45309' },
-  delayed: { roof: '#ea580c', wall: '#fff7ed', line: '#9a3412' },
+  normal: { roof: '#16a34a', wall: '#dcfce7', line: '#166534' },
+  attention: { roof: '#f59e0b', wall: '#fef3c7', line: '#b45309' },
+  delayed: { roof: '#ea580c', wall: '#ffedd5', line: '#9a3412' },
   blocked: { roof: '#475569', wall: '#e2e8f0', line: '#1e293b' },
-  critical: { roof: '#dc2626', wall: '#fef2f2', line: '#991b1b' },
+  critical: { roof: '#dc2626', wall: '#fee2e2', line: '#991b1b' },
 };
 
 export const CASELOAD_CSS = `
@@ -43,7 +43,7 @@ export const CASELOAD_CSS = `
 .cm-band{padding:0 0 4px}
 .cm-band-label{font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#a8a294;text-transform:uppercase;display:flex;align-items:baseline;gap:8px}
 .cm-band-label .n{font-weight:600;letter-spacing:0;color:#c3bdae;font-variant-numeric:tabular-nums}
-.cm-houses{display:flex;flex-wrap:wrap;gap:5px;align-items:flex-end;min-height:38px;padding:8px 0 5px}
+.cm-houses{display:flex;flex-wrap:wrap;gap:7px;align-items:flex-end;min-height:40px;padding:8px 0 5px}
 .cm-rule{border:0;border-top:1px solid #ded8c8;margin:0 0 14px}
 .cm-house{background:none;border:0;padding:0;cursor:pointer;line-height:0;border-radius:4px;transition:transform .08s ease}
 .cm-house:hover,.cm-house:focus-visible{transform:translateY(-3px);outline:none}
@@ -88,9 +88,14 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label={`${title ? `${title} — ` : ''}${HEALTH_LABEL[band]}`}>
       {title ? <title>{`${title} — ${HEALTH_LABEL[band]}`}</title> : null}
-      <path d="M1.6 9.6 L12 1.6 L22.4 9.6 Z" fill={c.roof} stroke={c.line} strokeWidth="1" strokeLinejoin="round" />
-      <rect x="4" y="9.6" width="16" height="11.4" fill={c.wall} stroke={c.line} strokeWidth="1" />
-      <rect x="10.2" y="14.4" width="3.6" height="6.6" fill={c.line} opacity=".55" />
+      <ellipse cx="12" cy="22.3" rx="9" ry="1.1" fill="#0f172a" opacity=".12" />
+      <rect x="15.2" y="3.4" width="2.4" height="4.4" rx=".4" fill={c.line} />
+      <rect x="4.3" y="10" width="15.4" height="11.6" rx="1.2" fill={c.wall} stroke={c.line} strokeWidth=".9" />
+      <path d="M2 11.2 L12 2.6 L22 11.2" fill={c.roof} stroke={c.line} strokeWidth=".9" strokeLinejoin="round" strokeLinecap="round" />
+      <path d="M2 11.2 L12 2.6 L22 11.2 Z" fill={c.roof} />
+      <rect x="10" y="15" width="4" height="6.6" rx="1.8" fill={c.line} />
+      <rect x="6.2" y="13" width="2.8" height="2.8" rx=".5" fill="#fff" stroke={c.line} strokeWidth=".7" />
+      <rect x="15" y="13" width="2.8" height="2.8" rx=".5" fill="#fff" stroke={c.line} strokeWidth=".7" />
       {band === 'attention' && <g><circle cx="20" cy="4.5" r="4" fill="#f59e0b" stroke="#fff" strokeWidth="1.1" /><rect x="19.4" y="2.4" width="1.2" height="2.7" rx=".6" fill="#fff" /><circle cx="20" cy="6.2" r=".7" fill="#fff" /></g>}
       {band === 'delayed' && <g><circle cx="20" cy="4.5" r="4" fill="#ea580c" stroke="#fff" strokeWidth="1.1" /><path d="M20 2.4 V4.6 H21.7" stroke="#fff" strokeWidth="1.1" fill="none" strokeLinecap="round" /></g>}
       {band === 'blocked' && <g><circle cx="20" cy="4.5" r="4" fill="#334155" stroke="#fff" strokeWidth="1.1" /><rect x="17.9" y="3.9" width="4.2" height="1.3" rx=".6" fill="#fff" /></g>}
@@ -129,17 +134,6 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
     return m;
   }, [rows]);
 
-  const exceptions = useMemo(
-    () => rows.filter((r) => isTracked(r) && r.health.band !== 'normal' && shows(r)).sort((a, b) => {
-      const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
-      return rank[a.health.band] - rank[b.health.band] || (b.health.counts.waiting - a.health.counts.waiting);
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, filter]
-  );
-
-  const untracked = rollup.untracked ?? rows.filter((r) => !isTracked(r)).length;
-  const trackedCount = rows.length - untracked;
   const stat = (key: HealthBand | 'all' | 'stuck' | 'untracked', n: number, label: string, colour: string) => (
     <button key={key} type="button" className={`cm-stat${filter === key ? ' on' : ''}`} onClick={() => setFilter(filter === key ? 'all' : key)} aria-pressed={filter === key}>
       <b style={{ color: n ? colour : '#cbd5e1' }}>{n}</b>
@@ -196,47 +190,6 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
           ))}
         </div>
       </div>
-
-      {/* Exceptions — click one and it explains itself. */}
-      <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '22px 0 8px' }}>
-        {exceptions.length === 0 ? (trackedCount === 0 ? 'Not tracking anything yet' : 'Nothing needs you') : `Needs someone (${exceptions.length})`}
-      </h2>
-      {exceptions.length === 0 ? (
-        // Never claim "every case is moving normally" about cases the engine is not following.
-        trackedCount === 0 ? (
-          <div className="eg-empty">These are your firm’s open matters. CONVEYi isn’t following any of them yet, so it can’t tell you which need you. Open one and enrol it to start.</div>
-        ) : (
-          <div className="eg-empty">Every case CONVEYi is following is moving normally.{untracked > 0 ? ` ${untracked} more ${untracked === 1 ? 'isn’t' : 'aren’t'} tracked yet.` : ''}</div>
-        )
-      ) : (
-        <div className="cm-exc">
-          {exceptions.map((t) => (
-            <div key={t.matterId}>
-              <button type="button" className="cm-exc-row" onClick={() => setOpenId(openId === t.matterId ? null : t.matterId)} aria-expanded={openId === t.matterId}>
-                <House band={t.health.band} size={26} />
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span className="cm-exc-addr">{t.propertyAddress ?? t.matterRef ?? t.matterId}</span>
-                  <div className="cm-exc-line">{line(t)}</div>
-                  <div className="cm-exc-meta">
-                    {t.matterRef ? `${t.matterRef} · ` : ''}day {t.dayOfCase} · {t.health.counts.waiting} waiting · {t.health.counts.openIssues} open issue{t.health.counts.openIssues === 1 ? '' : 's'}
-                    {t.health.reasonCount > 1 ? ` · ${t.health.reasonCount} reasons` : ''}
-                  </div>
-                </span>
-                <span style={{ color: '#94a3b8', fontSize: 12 }}>{openId === t.matterId ? 'Hide' : 'Why?'}</span>
-              </button>
-              {openId === t.matterId && (
-                <div className="cm-why">
-                  <ol>{t.health.why.map((w, i) => <li key={i}>{w}</li>)}</ol>
-                  {t.health.suggested && <div className="sug"><b>Suggested next action:</b> {t.health.suggested}</div>}
-                  <div style={{ marginTop: 10 }}>
-                    <button className="eg-btn primary" onClick={() => onOpen(t.matterId)}>Open the case →</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
 
       {tip && (
         <div className="cm-tip" style={{ left: Math.min(tip.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 310), top: tip.y + 16 }}>

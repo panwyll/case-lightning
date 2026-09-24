@@ -2,7 +2,6 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
-import MatterDrawer from './MatterDrawer';
 import EmailTemplates from './EmailTemplates';
 import NewMatter from './NewMatter';
 import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';

@@ -121,7 +121,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
               </button>
             ))}
           </div>
-          {!opened && <div className="dc-warn">Decisions are recorded against you by name. Open the source first — the buttons unlock once you have.</div>}
+          {!opened && <div className="dc-warn">Open the source to decide.</div>}
           {err && <div className="dc-err">{err}</div>}
         </>
       )}

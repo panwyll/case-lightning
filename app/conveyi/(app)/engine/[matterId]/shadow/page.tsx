@@ -99,7 +99,7 @@ export default function ShadowComparisonPage({ params }: { params: Promise<{ mat
     <div className="eg" style={{ maxWidth: 1180, margin: '0 auto', padding: '16px 16px 40px' }}>
       <style>{ENGINE_CSS + CSS}</style>
       {c?.engine.shadowMode && (
-        <div className="eg-shadow-banner"><b>Shadow mode</b><span>Internal comparison: the engine's conclusions against the human record. Nothing here reached the client or the other side.</span></div>
+        <div className="eg-shadow-banner"><b>Shadow mode</b><span>Engine against the human record.</span></div>
       )}
       <div className="eg-top">
         <div>
