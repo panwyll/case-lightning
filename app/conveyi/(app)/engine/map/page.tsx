@@ -67,7 +67,7 @@ export default function MapPage() {
     return (
       <div className="eg" style={{ padding: 24 }}>
         <style>{ENGINE_CSS}</style>
-        {err ? <div className="eg-err">{err}</div> : <div className="eg-sub">Loading the machine…</div>}
+        {err ? <div className="eg-err">{err}</div> : <div className="eg-sub">Loading…</div>}
       </div>
     );
   }

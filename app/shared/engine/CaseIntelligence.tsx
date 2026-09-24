@@ -162,7 +162,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       {/* What needs attention, and why. */}
       <h3>{health && health.reasons.length ? `Needs attention (${health.reasons.length})` : 'Needs attention'}</h3>
       {!health || health.reasons.length === 0 ? (
-        <div className="ci-ok">Nothing is overdue, blocked or near a deadline. This case is moving normally{health ? ` — ${health.pace.inStage} working days in this phase, ${health.pace.expected} is typical.` : '.'}</div>
+        <div className="ci-ok">Nothing needs attention.</div>
       ) : (
         <div className="ci-card">{health.reasons.map((r, i) => <Reason key={`${r.code}:${r.ref.id}:${i}`} r={r} />)}</div>
       )}
@@ -170,7 +170,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       {/* What are we waiting for. */}
       <h3>Waiting for ({waiting.length})</h3>
       {waiting.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>Nothing is outstanding with anyone else — the next move is ours.</div>
+        <div className="eg-empty" style={{ padding: 16 }}>Nothing outstanding.</div>
       ) : (
         <div className="ci-card">
           {waiting.map((w) => (
@@ -190,7 +190,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       {g?.ready ? (
         <div className="ci-ok"><b>{g.label}.</b> Every requirement for this milestone is satisfied.</div>
       ) : m.nextActions.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>Nothing outstanding for this milestone.</div>
+        <div className="eg-empty" style={{ padding: 16 }}>Nothing outstanding.</div>
       ) : (
         <div className="ci-card">
           {m.nextActions.slice(0, 8).map((a, i) => (
@@ -205,7 +205,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       {/* What happened lately. */}
       <h3>Recent activity</h3>
       {activity.length === 0 ? (
-        <div className="eg-empty" style={{ padding: 16 }}>Nothing has happened on this matter yet.</div>
+        <div className="eg-empty" style={{ padding: 16 }}>No activity yet.</div>
       ) : (
         <div className="ci-card ci-feed">
           {activity.map(({ e, line, times }) => (
@@ -215,8 +215,8 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       )}
 
       {onDiagnostics && (
-        <p className="eg-sub" style={{ marginTop: 18 }}>
-          Need the full picture? <button className="eg-btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={onDiagnostics}>Open diagnostics</button> — every requirement, dependency and issue chain behind this case.
+        <p style={{ marginTop: 18 }}>
+          <button className="eg-btn" style={{ padding: '4px 10px', fontSize: 12 }} onClick={onDiagnostics}>Diagnostics</button>
         </p>
       )}
     </div>

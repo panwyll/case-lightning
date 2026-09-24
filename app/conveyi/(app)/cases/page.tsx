@@ -50,7 +50,7 @@ export default function CasesPage() {
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}
-      {!rows && !err && <div className="eg-sub">Reading the caseload…</div>}
+      {!rows && !err && <div className="eg-sub">Loading…</div>}
       {rows && rows.length === 0 && <div className="eg-empty">No open matters{scope === 'mine' ? ' assigned to you' : ''} yet.</div>}
       {rows && rows.length > 0 && rollup && <CaseloadMap rows={rows} rollup={rollup} onOpen={(id) => router.push(paths.matter(id))} />}
     </div>

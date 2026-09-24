@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { paths } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { ListChecks, Scale, Mail, ClipboardList, Building, Workflow, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Building, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -32,24 +32,21 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Work',
     items: [
-      { key: 'engine-work', label: 'My work', icon: ListChecks, href: paths.myWork, match: (p) => p.startsWith(paths.myWork) },
-      { key: 'decisions', label: 'Decisions', icon: Scale, href: paths.decisions, match: (p) => p.startsWith(paths.decisions) },
-      { key: 'email', label: 'Email to file', icon: Mail, href: paths.email, match: (p) => p.startsWith(paths.email) },
-      { key: 'mywork', label: 'Tasks', icon: ClipboardList, href: `${paths.admin}?tab=mywork`, adminTab: 'mywork' },
+      { key: 'mywork', label: 'Tasks', icon: ClipboardList, href: paths.tasks, adminTab: 'mywork', match: (p) => p.startsWith(`${paths.product}/decisions/`) },
+      { key: 'email', label: 'Email', icon: Mail, href: paths.email, match: (p) => p.startsWith(paths.email) },
     ],
   },
   {
     label: 'Cases',
     items: [
       { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/matters/`) || p.startsWith(`${paths.product}/engine/`) },
-      { key: 'workflow', label: 'Case flow', icon: Workflow, href: `${paths.admin}?tab=workflow`, adminTab: 'workflow', adminOnly: true },
     ],
   },
   {
     label: 'Content',
     items: [
-      { key: 'templates', label: 'Email templates', icon: MailPlus, href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
-      { key: 'docpacks', label: 'Doc packs', icon: FileText, href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
+      { key: 'templates', label: 'Email Templates', icon: MailPlus, href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
+      { key: 'docpacks', label: 'Doc Packs', icon: FileText, href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
     ],
   },
   {
@@ -57,21 +54,21 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
       { key: 'policy', label: 'Policy', icon: Shield, href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
-      { key: 'integrations', label: 'Integrations', icon: Plug, href: paths.leap, adminOnly: true, match: (p) => p.startsWith(`${paths.product}/integrations`) },
+      { key: 'integrations', label: 'Integrations', icon: Plug, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) },
     ],
   },
   {
     label: 'Tools',
     items: [
       { key: 'actions', label: 'Tools', icon: Wrench, href: `${paths.admin}?tab=actions`, adminTab: 'actions', adminOnly: true },
-      { key: 'audit', label: 'Audit log', icon: History, href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
+      { key: 'audit', label: 'Audit Log', icon: History, href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
     ],
   },
   {
     label: 'Account',
     items: [
       { key: 'billing', label: 'Billing', icon: CreditCard, href: `${paths.admin}?tab=billing`, adminTab: 'billing' },
-      { key: 'help', label: 'Help & support', icon: LifeBuoy, href: `${paths.admin}?tab=help`, adminTab: 'help' },
+      { key: 'help', label: 'Help & Support', icon: LifeBuoy, href: `${paths.admin}?tab=help`, adminTab: 'help' },
     ],
   },
 ];
@@ -108,6 +105,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
   const tab = useSearchParams()?.get('tab') ?? null;
   const onAdmin = path.startsWith(paths.admin);
   const active = (i: NavItem) => (onAdmin ? !!i.adminTab && i.adminTab === (tab ?? 'mywork') : !!i.match && i.match(path));
+  // A decision page is a task being done; the nav says so.
   return (
     <>
       {GROUPS.map((g) => {

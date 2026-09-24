@@ -14,6 +14,7 @@ import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
 import { Inbox, PenLine, FolderKanban, Rocket, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
+import EngineWork, { decisionTask } from './EngineWork';
 
 interface MatterHit {
   id: string;
@@ -176,7 +177,7 @@ type TabKey = AdminTab;
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   getstarted: { label: 'Get Started', subtitle: '' },
-  mywork: { label: 'My Work', subtitle: '' },
+  mywork: { label: 'Tasks', subtitle: '' },
   billing: { label: 'Billing', subtitle: '' },
   board: { label: 'Matter Board', subtitle: '' },
   workload: { label: 'Workload', subtitle: '' },
@@ -439,9 +440,7 @@ function AdminPageInner() {
   // Only the sections whose value isn't obvious from the nav label. Team, Billing and
   // Email templates say what they are — people find those on their own.
   const TOUR_STEPS: TourStep[] = [
-    { target: '[data-tour="nav-mywork"]', title: 'My work', body: 'Chases and drafts due.', before: () => go('mywork') },
-    { target: '[data-tour="nav-board"]', title: 'Matter board', body: 'Every matter by stage.', before: () => go('board') },
-    { target: '[data-tour="nav-workflow"]', title: 'Case Flow', body: 'Stages, tasks and what waits on what.', before: () => go('workflow') },
+    { target: '[data-tour="nav-mywork"]', title: 'Tasks', body: 'Tasks, chases and drafts.', before: () => go('mywork') },
     { target: '[data-tour="nav-docpacks"]', title: 'Doc packs', body: 'Templates the flow fills and files for you.', before: () => go('docpacks') },
   ];
   const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
@@ -925,7 +924,7 @@ function AdminPageInner() {
               data-tour="nav-getstarted"
               style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : '#fff', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '5px 11px', borderRadius: 8, fontFamily: 'inherit' }}
             >
-              <Rocket size={14} /> Get started
+              <Rocket size={14} /> Get Started
               {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
             </button>
           )}
@@ -935,7 +934,7 @@ function AdminPageInner() {
             title="Show me around"
             style={{ marginLeft: 'auto', background: tourOn ? '#ede9fe' : 'none', border: 'none', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '4px 9px', borderRadius: 7, fontFamily: 'inherit' }}
           >
-            Show me around
+            Show Me Around
           </button>
         </div>
       )}
@@ -1520,7 +1519,7 @@ function AdminPageInner() {
           if (!mywork) {
             return (
               <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10, color: '#64748b' }}>
-                <span style={spinnerStyle} /> Loading your worklist…
+                <span style={spinnerStyle} /> Loading…
               </div>
             );
           }
@@ -1561,8 +1560,10 @@ function AdminPageInner() {
             const busy = myworkBusy === w.id || sendingId === w.id;
             const drafted = chaserDrafts[w.id];
             const dotColor = w.urgent || w.ageDays >= 10 ? '#dc2626' : w.ageDays >= 5 ? '#d97706' : '#16a34a';
+            const decision = w.kind === 'TASK' ? decisionTask(w.title) : null;
             const primaryText =
-              w.kind === 'TASK' ? w.title
+              decision ? decision.text
+              : w.kind === 'TASK' ? w.title
               : w.kind === 'CHASE' ? `${w.title || 'Chase for a reply'}${w.detail ? ` — ${w.detail}` : ''}`
               : w.title || w.detail || 'Reply ready to send';
             return (
@@ -1570,7 +1571,10 @@ function AdminPageInner() {
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '9px 10px', opacity: busy ? 0.6 : 1 }}>
                   <span title={`${w.ageDays} day${w.ageDays === 1 ? '' : 's'} old`} style={{ flex: 'none', width: 9, height: 9, borderRadius: 999, background: dotColor, marginTop: 4 }} />
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: 'block', fontSize: 13, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>{primaryText}</span>
+                    <span style={{ display: 'block', fontSize: 13, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>
+                      {primaryText}
+                      {decision && <>{' '}<a href={paths.decision(decision.id)} style={{ color: '#5A27E0', fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap' }}>Decide</a></>}
+                    </span>
                     {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10.5 }}>
                         {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}><Target size={12} /> {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
@@ -1717,8 +1721,7 @@ function AdminPageInner() {
               {mywork.items.length === 0 ? (
                 <div style={{ ...card, textAlign: 'center', padding: 40 }}>
                   <div style={{ color: '#16a34a', marginBottom: 8 }}><CheckCircle size={30} /></div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>All caught up</div>
-                  <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>No drafts waiting and nothing to chase. New work appears here as email comes in.</p>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Nothing to do</div>
                 </div>
               ) : (
                 <div style={card}>
@@ -1769,6 +1772,7 @@ function AdminPageInner() {
                   </div>
                 </div>
               )}
+              <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
             </>
           );
         })()}

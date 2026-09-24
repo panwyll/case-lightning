@@ -134,7 +134,7 @@ export default function EmailFilingPage() {
       <style>{ENGINE_CSS + CSS}</style>
       <div className="fq-head">
         <div>
-          <h1 className="eg-h1">Email to file</h1>
+          <h1 className="eg-h1">Email</h1>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div className="fq-count">{items === null ? '—' : left}</div>
@@ -143,12 +143,11 @@ export default function EmailFilingPage() {
       </div>
 
       {err && <div className="eg-err">{err}</div>}
-      {items === null && !err && !noMailbox && <div className="eg-sub">Reading your mailbox…</div>}
+      {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
 
       {noMailbox && (
         <div className="fq-done">
-          <b>Your mailbox isn’t connected yet.</b>
-          Filing email to cases needs read access to your inbox — the same connection the Outlook add-in uses.
+          <b>Mailbox not connected.</b>
           <div style={{ marginTop: 14 }}>
             <a className="eg-btn primary" href="/api/v1/auth/login?flow=web&consent=1">Connect Microsoft 365</a>{' '}
             <a className="eg-btn" href={paths.support}>What this can see</a>
@@ -159,9 +158,8 @@ export default function EmailFilingPage() {
       {!noMailbox && items !== null && left === 0 && (
         <div className="fq-done">
           <b>Nothing to file.</b>
-          Every email in your inbox is either on a case or set aside.
           <div style={{ marginTop: 14 }}>
-            <a className="eg-btn" href={paths.myWork}>My work</a>{' '}
+            <a className="eg-btn" href={paths.tasks}>Tasks</a>{' '}
             <a className="eg-btn" href={paths.cases}>Caseload</a>
           </div>
         </div>

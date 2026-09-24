@@ -71,7 +71,7 @@ export default function InTouchPage() {
       </div>
 
       {err && <div className="eg-err">{err}</div>}
-      {!s && !err && <div className="eg-sub">Reading the connection…</div>}
+      {!s && !err && <div className="eg-sub">Loading…</div>}
 
       {s && !s.configured && (
         <div className="eg-card" style={{ padding: 14 }}>
@@ -121,12 +121,8 @@ export default function InTouchPage() {
           {connected && (
             <>
               <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
-                <b>What your client sees</b>
-                <p className="eg-sub" style={{ margin: '6px 0 10px' }}>
-                  With this on, the case's real progress is pushed to InTouch as a milestone, so the client and the
-                  estate agent see where things actually are without anyone typing it twice. It only ever moves
-                  forwards, never twice for the same step, and never for a matter in shadow mode.
-                </p>
+                <b>Client milestones</b>
+                <div style={{ height: 8 }} />
                 <button
                   className={`eg-btn${c!.milestonesEnabled ? '' : ' primary'}`}
                   disabled={!!busy}
@@ -134,7 +130,7 @@ export default function InTouchPage() {
                 >
                   {c!.milestonesEnabled ? 'Turn milestone updates off' : 'Turn milestone updates on'}
                 </button>
-                <span className="eg-sub" style={{ marginLeft: 10 }}>{c!.milestonesEnabled ? 'On — your clients are being kept up to date.' : 'Off — nothing is written to your clients’ portal.'}</span>
+                <span className="eg-sub" style={{ marginLeft: 10 }}>{c!.milestonesEnabled ? 'On' : 'Off'}</span>
               </div>
 
               <div className="eg-card" style={{ padding: 14 }}>

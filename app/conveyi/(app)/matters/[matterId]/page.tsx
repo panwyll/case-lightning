@@ -1,12 +1,12 @@
 'use client';
-import { use, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, use, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { CaseIntelligence } from '@/app/shared/engine/CaseIntelligence';
 import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine } from '@/app/shared/engine/useEngine';
 import { paths } from '@/lib/paths';
-import { Check, CircleDot, Circle, Pause, Minus } from '@/app/shared/icons';
+import { Check, CircleDot, Circle, Pause, Minus, AlertTriangle, Ban, ChevronRight } from '@/app/shared/icons';
 
 /**
  * One matter, as a person reads it.
@@ -49,6 +49,13 @@ const STEP: Record<StepState, { label: string; mark: React.ReactNode; colour: st
   notstarted: { label: 'Not started', mark: <Minus size={14} />, colour: '#cbd5e1' },
 };
 type BlockState = 'done' | 'current' | 'upcoming';
+type Rag = 'green' | 'amber' | 'red' | 'grey';
+const RAG: Record<Rag, { fg: string; bg: string; border: string; icon: React.ReactNode }> = {
+  green: { fg: '#14532d', bg: '#dcfce7', border: '#86efac', icon: <Check size={12} /> },
+  amber: { fg: '#78350f', bg: '#fef3c7', border: '#fcd34d', icon: <AlertTriangle size={12} /> },
+  red: { fg: '#7f1d1d', bg: '#fee2e2', border: '#fca5a5', icon: <Ban size={12} /> },
+  grey: { fg: '#64748b', bg: '#f1f5f9', border: '#e6e8ee', icon: <Circle size={12} /> },
+};
 
 const FIGURES: Array<{ label: string; col: string; kind?: 'money' | 'date' }> = [
   { label: 'Price', col: 'purchase_price', kind: 'money' },
@@ -71,15 +78,16 @@ const CSS = `
 .mv-ref{color:#64748b;font-size:13px;margin:3px 0 0}
 .mv-ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
 .mv-sel{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit}
-.mv-blocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
-.mv-block{text-align:left;border:1px solid #e6e8ee;border-radius:12px;padding:12px 13px;background:#fff;cursor:pointer;font-family:inherit;position:relative;box-shadow:0 1px 2px rgba(16,24,40,.04)}
-.mv-block.done{border-color:#bbf7d0;background:#f0fdf4}
-.mv-block.current{border-color:#c4b5fd;background:#f5f3ff;box-shadow:0 0 0 2px #ddd6fe}
-.mv-block.sel{outline:2px solid #5A27E0;outline-offset:1px}
-.mv-bn{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b}
-.mv-block.done .mv-bn{color:#15803d}.mv-block.current .mv-bn{color:#5A27E0}
-.mv-bs{font-size:14.5px;font-weight:700;margin-top:4px;color:#0f172a}
-.mv-bp{font-size:12px;color:#64748b;margin-top:3px}
+
+.mv-flow{display:flex;align-items:stretch;overflow-x:auto;padding:2px 0 8px;margin-bottom:10px}
+.mv-node{flex:1 1 0;min-width:138px;text-align:left;border:1px solid #e6e8ee;background:#fff;border-radius:10px;padding:10px 12px;cursor:pointer;font-family:inherit;position:relative}
+.mv-node.current{border-width:2px}
+.mv-node.open{box-shadow:0 0 0 3px #ddd6fe}
+.mv-node:hover{background:#fafafa}
+.mv-nn{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#334155;line-height:1.25}
+.mv-rag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:999px;padding:2px 8px;margin-top:7px;white-space:nowrap}
+.mv-np{font-size:11px;color:#94a3b8;margin-top:5px}
+.mv-arrow{flex:0 0 22px;display:flex;align-items:center;justify-content:center;color:#cbd5e1}
 .mv-steps{background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:6px 14px;margin-bottom:18px}
 .mv-step{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid #f1f5f9}
 .mv-step:first-child{border-top:0}
@@ -160,24 +168,28 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     }
   };
 
-  // The blocks: every firm stage, in order, with what THIS matter has done in each.
+  // The flow: every stage in order, with a red/amber/green reading of where THIS matter is.
   const blocks = useMemo(() => {
     if (!flow) return [];
     const currentIdx = flow.stages.findIndex((s) => s.key === flow.matter.stage);
+    const now = Date.now();
     return flow.stages.map((s, i) => {
       const steps = flow.templates.filter((t) => t.stage === s.key).sort((a, b) => a.pos_y - b.pos_y || a.sort_order - b.sort_order);
       const state: BlockState = currentIdx >= 0 && i < currentIdx ? 'done' : i === currentIdx ? 'current' : 'upcoming';
       const states = steps.map((t) => stepState(flow.byTemplate[t.id], state));
       const done = states.filter((x) => x === 'done').length;
-      const status =
-        state === 'done' ? 'Done'
-        : state === 'current' ? (states.some((x) => x === 'blocked') ? 'Waiting on something' : 'In progress')
-        : 'Up next';
-      return { ...s, steps, states, done, total: steps.length, state, status };
+      const overdue = steps.some((t, k) => { const task = flow.byTemplate[t.id]; return states[k] !== 'done' && task?.due && new Date(task.due).getTime() < now; });
+      let rag: Rag; let status: string;
+      if (state === 'done') { rag = 'green'; status = 'Done'; }
+      else if (state === 'upcoming') { rag = 'grey'; status = 'Not started'; }
+      else if (row?.statusFlag === 'BLOCKED' || states.some((x) => x === 'blocked')) { rag = 'red'; status = 'Blocked'; }
+      else if (row?.statusFlag === 'NEEDS_ATTENTION' || overdue) { rag = 'amber'; status = 'Attention'; }
+      else { rag = 'green'; status = 'On track'; }
+      return { ...s, steps, states, done, total: steps.length, state, rag, status };
     });
-  }, [flow]);
+  }, [flow, row]);
 
-  const selectedKey = picked ?? flow?.matter.stage ?? blocks[0]?.key ?? null;
+  const selectedKey = picked;
   const selected = blocks.find((b) => b.key === selectedKey) ?? null;
   const m = detail?.matter ?? {};
   const outstanding: any[] = detail?.summary?.outstanding_items ?? [];
@@ -188,13 +200,13 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     <div className="eg" style={{ maxWidth: 1180, margin: '0 auto' }}>
       <style>{ENGINE_CSS + CSS}</style>
       {err && <div className="eg-err">{err}</div>}
-      {!flow && !err && <div className="eg-sub">Opening the matter…</div>}
+      {!flow && !err && <div className="eg-sub">Loading…</div>}
       {flow && row && (
         <>
           <div className="mv-head">
             <div>
               <h1 className="mv-title">{flow.matter.propertyAddress ?? flow.matter.matterRef}</h1>
-              <p className="mv-ref">{flow.matter.matterRef}{row.assignee ? ` · ${row.assignee}` : ''}{enrolled ? ' · followed by CONVEYi' : enrolled === false ? ' · not tracked by CONVEYi yet' : ''}</p>
+              <p className="mv-ref">{flow.matter.matterRef}{row.assignee ? ` · ${row.assignee}` : ''}{enrolled ? ' · tracked' : ''}</p>
             </div>
             <div className="mv-ctl">
               <select className="mv-sel" value={row.stage} onChange={(e) => void patch({ stage: e.target.value })} aria-label="Stage">
@@ -207,23 +219,30 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <option value="">Unassigned</option>
                 {team.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
               </select>
-              <a className="eg-btn" href={paths.engineMatter(matterId)}>{enrolled ? 'Engine' : 'Enrol in CONVEYi'}</a>
+              <a className="eg-btn" href={paths.engineMatter(matterId)}>{enrolled ? 'Details' : 'Track'}</a>
             </div>
           </div>
 
-          <div className="mv-blocks" role="tablist" aria-label="Stages">
-            {blocks.map((b) => (
-              <button key={b.key} role="tab" aria-selected={b.key === selectedKey} className={`mv-block ${b.state}${b.key === selectedKey ? ' sel' : ''}`} onClick={() => setPicked(b.key)}>
-                <div className="mv-bn">{b.name}</div>
-                <div className="mv-bs">{b.status}</div>
-                <div className="mv-bp">{b.total ? `${b.done} of ${b.total} steps done` : 'No steps set up'}</div>
-              </button>
-            ))}
+          <div className="mv-flow" role="tablist" aria-label="Stages">
+            {blocks.map((b, i) => {
+              const look = RAG[b.rag];
+              const open = b.key === selectedKey;
+              return (
+                <Fragment key={b.key}>
+                  <button role="tab" aria-selected={open} aria-expanded={open} className={`mv-node ${b.state}${open ? ' open' : ''}`} style={{ borderColor: look.border }} onClick={() => setPicked(open ? null : b.key)}>
+                    <div className="mv-nn">{b.name}</div>
+                    <span className="mv-rag" style={{ background: look.bg, color: look.fg }}>{look.icon}{b.status}</span>
+                    <div className="mv-np">{b.total ? `${b.done}/${b.total} steps` : 'No steps'}</div>
+                  </button>
+                  {i < blocks.length - 1 && <span className="mv-arrow" aria-hidden><ChevronRight size={16} /></span>}
+                </Fragment>
+              );
+            })}
           </div>
 
           {selected && (
             <div className="mv-steps" role="tabpanel">
-              {selected.steps.length === 0 && <p className="mv-none" style={{ padding: '10px 0' }}>No steps are set up for this stage.</p>}
+              {selected.steps.length === 0 && <p className="mv-none" style={{ padding: '10px 0' }}>No steps.</p>}
               {selected.steps.map((t, i) => {
                 const task = flow.byTemplate[t.id];
                 const st = selected.states[i];
@@ -238,22 +257,18 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                   </div>
                 );
               })}
-              {selected.state === 'current' && flow.offFlow.filter((t) => t.status !== 'DONE').length > 0 && (
-                <>
-                  {flow.offFlow.filter((t) => t.status !== 'DONE').map((t) => {
-                    const st = stepState(t, 'current'); const look = STEP[st];
-                    return (
-                      <div key={t.id} className="mv-step">
-                        <span className="mv-mark" style={{ background: look.colour }} aria-hidden>{look.mark}</span>
-                        <span className="mv-st">{t.detail}</span>
-                        {t.assignee && <span className="mv-sm">{t.assignee}</span>}
-                        {t.due && <span className="mv-sm">due {whenShort(t.due)}</span>}
-                        <span className="mv-sw" style={{ color: look.colour }}>{look.label}</span>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
+              {selected.state === 'current' && flow.offFlow.filter((t) => t.status !== 'DONE').map((t) => {
+                const st = stepState(t, 'current'); const look = STEP[st];
+                return (
+                  <div key={t.id} className="mv-step">
+                    <span className="mv-mark" style={{ background: look.colour }} aria-hidden>{look.mark}</span>
+                    <span className="mv-st">{t.detail}</span>
+                    {t.assignee && <span className="mv-sm">{t.assignee}</span>}
+                    {t.due && <span className="mv-sm">due {whenShort(t.due)}</span>}
+                    <span className="mv-sw" style={{ color: look.colour }}>{look.label}</span>
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -279,7 +294,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               </div>
               <div className="mv-card mv-sec">
                 <h2 className="mv-h">Outstanding</h2>
-                {outstanding.length === 0 ? <p className="mv-none">Nothing recorded as outstanding.</p> : (
+                {outstanding.length === 0 ? <p className="mv-none">Nothing outstanding.</p> : (
                   <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: '#334155' }}>
                     {outstanding.map((o, i) => <li key={i} style={{ marginBottom: 4 }}>{typeof o === 'string' ? o : o.label || o.item || JSON.stringify(o)}</li>)}
                   </ul>
@@ -295,7 +310,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               </div>
               <div className="mv-card mv-sec">
                 <h2 className="mv-h">Parties</h2>
-                {(detail?.contacts ?? []).length === 0 ? <p className="mv-none">No parties recorded yet.</p> : (detail!.contacts.slice(0, 12).map((c) => (
+                {(detail?.contacts ?? []).length === 0 ? <p className="mv-none">None yet.</p> : (detail!.contacts.slice(0, 12).map((c) => (
                   <div key={c.id} className="mv-row"><span>{c.name || c.email}</span><span className="mv-muted">{String(c.role || '').toLowerCase().replace(/_/g, ' ')}</span></div>
                 )))}
               </div>
@@ -303,19 +318,19 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <div>
               <div className="mv-card">
                 <h2 className="mv-h">Emails{emails ? ` · ${emails.length}` : ''}</h2>
-                {!emails ? <p className="mv-none">Loading…</p> : emails.length === 0 ? <p className="mv-none">No email filed to this matter yet.</p> : emails.slice(0, 10).map((t) => (
+                {!emails ? <p className="mv-none">Loading…</p> : emails.length === 0 ? <p className="mv-none">None yet.</p> : emails.slice(0, 10).map((t) => (
                   <div key={t.id} className="mv-row"><span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</span><span className="mv-muted">{whenShort(t.lastMessageAt)}</span></div>
                 ))}
               </div>
               <div className="mv-card mv-sec">
                 <h2 className="mv-h">Files{files ? ` · ${files.files.length}` : ''}</h2>
-                {!files ? <p className="mv-none">Loading…</p> : files.files.length === 0 ? <p className="mv-none">{files.folderProvisioned ? 'Nothing in the matter folder yet.' : 'No matter folder yet.'}</p> : files.files.slice(0, 12).map((f) => (
+                {!files ? <p className="mv-none">Loading…</p> : files.files.length === 0 ? <p className="mv-none">{files.folderProvisioned ? 'None yet.' : 'No folder yet.'}</p> : files.files.slice(0, 12).map((f) => (
                   <div key={f.id} className="mv-row">{f.webUrl ? <a href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</a> : <span>{f.name}</span>}</div>
                 ))}
               </div>
               <div className="mv-card mv-sec">
                 <h2 className="mv-h">Activity</h2>
-                {(detail?.timeline ?? []).length === 0 ? <p className="mv-none">Nothing yet.</p> : detail!.timeline.slice(0, 12).map((e) => (
+                {(detail?.timeline ?? []).length === 0 ? <p className="mv-none">None yet.</p> : detail!.timeline.slice(0, 12).map((e) => (
                   <div key={e.id} className="mv-tl"><time>{whenShort(e.event_at ?? e.created_at)}</time><span>{e.title}</span></div>
                 ))}
               </div>

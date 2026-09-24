@@ -13,9 +13,10 @@ export const APP_BASE = '/conveyi';
 export const paths = {
   // ── the conveyancer's app (behind sign-in) ──
   cases: `${APP_BASE}/cases`,
-  myWork: `${APP_BASE}/my-work`,
+  /** The one work list: tasks, drafts, chases, decisions. */
+  tasks: `${APP_BASE}/admin?tab=mywork`,
+  integrations: `${APP_BASE}/integrations`,
   email: `${APP_BASE}/email`,
-  decisions: `${APP_BASE}/decisions`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
   /** The matter, as a person reads it: stages, steps, then the case data. */
   matter: (matterId: string) => `${APP_BASE}/matters/${matterId}`,
@@ -51,7 +52,7 @@ export const paths = {
  * these — so the list is explicit rather than a prefix match, and a new marketing page
  * can never accidentally end up behind the sign-in wall.
  */
-export const PROTECTED_SEGMENTS = ['cases', 'my-work', 'email', 'matters', 'decisions', 'engine', 'account', 'admin', 'integrations'] as const;
+export const PROTECTED_SEGMENTS = ['cases', 'email', 'matters', 'decisions', 'engine', 'account', 'admin', 'integrations'] as const;
 
 export function isProtectedPath(pathname: string): boolean {
   if (!pathname.startsWith(`${APP_BASE}/`)) return false;

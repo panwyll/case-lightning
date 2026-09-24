@@ -76,7 +76,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
         </div>
       </div>
       {eng.err && !view && <div className="eg-err">{eng.err}</div>}
-      {!view && !eng.err && <div className="eg-sub">Loading the matter…</div>}
+      {!view && !eng.err && <div className="eg-sub">Loading…</div>}
       {view && !enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} />}
       {view && enrolled && (
         <>
@@ -89,7 +89,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
             <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')}>Diagnostics</button>
           </div>
-          {tab === 'case' && (model ? <CaseIntelligence m={model} events={eng.events} onDiagnostics={() => setTab('diagnostics')} /> : <div className="eg-sub">Reading the case…</div>)}
+          {tab === 'case' && (model ? <CaseIntelligence m={model} events={eng.events} onDiagnostics={() => setTab('diagnostics')} /> : <div className="eg-sub">Loading…</div>)}
           {tab === 'work' && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} />}
           {tab === 'issues' && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
           {tab === 'notes' && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={m?.assignedTo && m.handler ? { [m.assignedTo]: m.handler } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
