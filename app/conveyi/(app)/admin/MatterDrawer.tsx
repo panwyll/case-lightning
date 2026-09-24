@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import MatterFlow from './MatterFlow';
 import { EnginePanel } from '@/app/shared/engine/EnginePanel';
+import { paths } from '@/lib/paths';
 
 /**
  * Slide-over matter detail for the board — click a card to open it. Reuses the existing
@@ -545,7 +546,16 @@ export default function MatterDrawer({
 
           {tab === 'flow' && <MatterFlow matterId={id} api={api} />}
 
-          {tab === 'engine' && <EnginePanel matterId={id} api={api} />}
+          {tab === 'engine' && (
+            <>
+              {/* The compact panel covers the day-to-day; the full view carries the case
+                  intelligence, the timeline and the diagnostics. */}
+              <a href={paths.matter(id)} style={{ display: 'inline-block', marginBottom: 8, fontSize: 12.5, fontWeight: 700, color: '#5A27E0', textDecoration: 'none' }}>
+                Open the full case view →
+              </a>
+              <EnginePanel matterId={id} api={api} />
+            </>
+          )}
 
           {tab === 'activity' && (
             <>
