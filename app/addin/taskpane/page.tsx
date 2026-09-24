@@ -17,6 +17,7 @@ import {
   REPLY_BUSY_CREATE, REPLY_BUSY_REGEN, REPLY_BUSY_SEND,
   STAGES, stageLabel, isWaitingOnOthers, TRACKS, STATUS_FLAGS, hhmm,
 } from '@/app/shared/assist/constants';
+import { Lock, Check, AlertTriangle, Target, Calendar, Paperclip, X, Share, Rocket, CheckCircle } from '@/app/shared/icons';
 
 // ── Minimal Office.js typings (we only touch the mailbox item) ───────────────
 declare global {
@@ -234,7 +235,7 @@ export default function Taskpane() {
     // Targetless (centred): the pin is Outlook's own chrome, outside our DOM, so there is
     // nothing here to spotlight. First step because an unpinned pane closes the moment
     // they open the next email — which is when most people conclude the add-in is broken.
-    { title: 'Pin this pane', body: 'Click the 📌 at the top — it then stays open as you move between emails.' },
+    { title: 'Pin this pane', body: 'Click the pin at the top — it then stays open as you move between emails.' },
     // No `before` on purpose: opening the worklist swaps this very button's icon for a
     // back arrow, so the spotlight would land on a back arrow while the tooltip talks
     // about the worklist. Point at the button in its resting state instead.
@@ -787,7 +788,7 @@ export default function Taskpane() {
           const transient = status === 0 || status === 408 || status === 429 || status >= 500;
           if (transient && transientRetries < 4) {
             transientRetries += 1;
-            setStatus(`⚠️ ${raw} [HTTP ${status || 'network'}] — retrying ${transientRetries}/4…`);
+            setStatus(`${raw} [HTTP ${status || 'network'}] — retrying ${transientRetries}/4…`);
             await new Promise((res) => setTimeout(res, 1500 * transientRetries));
             continue;
           }
@@ -1880,7 +1881,7 @@ export default function Taskpane() {
       {boxedOut && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(255,255,255,0.97)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
           <div style={{ maxWidth: 320, textAlign: 'center' }}>
-            <div style={{ fontSize: 34, marginBottom: 8 }} aria-hidden>🔒</div>
+            <div style={{ color: '#64748b', marginBottom: 8 }}><Lock size={34} /></div>
             <h2 style={{ fontSize: 18, margin: '0 0 6px', color: '#0f172a' }}>
               {plan?.status === 'past_due' ? 'Payment needed' : 'Trial ended'}
             </h2>
@@ -1946,8 +1947,8 @@ export default function Taskpane() {
                 arrow. Always tappable to open the link/create drawer. ── */}
           {!homeView && (() => {
             const ref = matterInfo?.matter?.matter_ref ?? assist?.matter?.matterRef ?? topCandidate?.matterRef ?? null;
-            const meta: Record<typeof matchKind, { icon: string; dot: string; name: string; style: React.CSSProperties }> = {
-              found: { icon: '✓', dot: '#16a34a', name: ref || 'Matter found', style: S.heroFound },
+            const meta: Record<typeof matchKind, { icon: React.ReactNode; dot: string; name: string; style: React.CSSProperties }> = {
+              found: { icon: <Check size={16} />, dot: '#16a34a', name: ref || 'Matter found', style: S.heroFound },
               partial: { icon: '!', dot: '#f59e0b', name: ref || 'Unconfirmed match', style: S.heroPartial },
               none: { icon: '!', dot: '#dc2626', name: 'No matter found', style: S.heroNone },
               pending: assistError
@@ -2096,13 +2097,13 @@ export default function Taskpane() {
                            and not an auto-rewrite: the draft may already carry the fee
                            earner's own edits. */
                         <span style={{ display: 'block', marginTop: 3, fontSize: 10, color: '#b45309', fontWeight: 700, lineHeight: 1.35 }}>
-                          ⚠ Case updated since this was drafted{w.staleReason ? ` — ${w.staleReason}` : ''}. Check before sending.
+                          <AlertTriangle size={11} /> Case updated since this was drafted{w.staleReason ? ` — ${w.staleReason}` : ''}. Check before sending.
                         </span>
                       )}
                       {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10 }}>
-                          {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                          {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}><Target size={11} /> {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                          {w.kind === 'TASK' && w.due && <span title="Task due" style={{ flex: 'none', color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}><Calendar size={11} /> {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                         </span>
                       )}
                     </span>
@@ -2286,7 +2287,7 @@ export default function Taskpane() {
                                     {(g.stage || keyDate) && (
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10 }}>
                                         {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageOpts.find((s) => s.key === g.stage)?.name ?? stageLabel(g.stage)}</span>}
-                                        {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                        {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}><Target size={11} /> {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                                       </div>
                                     )}
                                   </div>
@@ -2379,7 +2380,7 @@ export default function Taskpane() {
                               </label>
                             )}
                             {isLinked ? (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}>✓ Linked</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: '#166534' }}><Check size={11} /> Linked</span>
                             ) : (
                               <button style={S.secondary} onClick={() => useCandidate(c)} disabled={!auto && !riskOk}>
                                 Use this
@@ -2521,7 +2522,7 @@ export default function Taskpane() {
               {(assist.documents?.length ?? 0) > 0 && (
                 <div style={{ margin: '0 0 10px' }}>
                   <button onClick={() => setDocsOpen((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11.5, fontWeight: 700, color: '#5A27E0', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0 }}>
-                    📎 {assist.documents!.length} attached document{assist.documents!.length === 1 ? '' : 's'} {docsOpen ? '▾' : '▸'}
+                    <Paperclip size={11} /> {assist.documents!.length} attached document{assist.documents!.length === 1 ? '' : 's'} {docsOpen ? '▾' : '▸'}
                   </button>
                   {docsOpen && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 6 }}>
@@ -2575,7 +2576,7 @@ export default function Taskpane() {
                 if (replySent) {
                   return (
                     <div style={S.actionPanel}>
-                      <p style={{ margin: 0, fontSize: 13, color: '#166534', fontWeight: 700 }}>✓ Sent</p>
+                      <p style={{ margin: 0, fontSize: 13, color: '#166534', fontWeight: 700 }}><Check size={12} /> Sent</p>
                       <p style={{ ...S.muted, margin: '4px 0 0' }}>You’re now waiting on a reply — I’ll surface this as a chase if it goes quiet. No need to nudge them yourself.</p>
                     </div>
                   );
@@ -2583,7 +2584,7 @@ export default function Taskpane() {
                 return (
                   <div style={S.actionPanel}>
                     {replyReady && !replying ? (
-                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}>✓ Reply drafted — review below, then Send.</p>
+                      <p style={{ margin: 0, fontSize: 12, color: '#166534', fontWeight: 600 }}><Check size={12} /> Reply drafted — review below, then Send.</p>
                     ) : replying ? (
                       <p style={{ ...S.muted, margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={S.spinner} /> Writing the draft into Outlook…
@@ -2598,7 +2599,7 @@ export default function Taskpane() {
 
                     {draftStaleEdited && (
                       <div style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 9px', lineHeight: 1.4 }}>
-                        ⚠ New activity on this case since you drafted this - and you've edited it, so I've left it as-is. Worth a check, or Regenerate to rebuild from the latest.
+                        <AlertTriangle size={11} /> New activity on this case since you drafted this - and you've edited it, so I've left it as-is. Worth a check, or Regenerate to rebuild from the latest.
                       </div>
                     )}
                     <div style={{ marginTop: 10 }}>
@@ -2809,7 +2810,7 @@ export default function Taskpane() {
                       <SubLabel>{pbResults.name} — done</SubLabel>
                       <ul style={{ ...S.ul, fontSize: 12 }}>
                         {pbResults.results.map((r, i) => (
-                          <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>{r.ok ? '✓' : '✕'} {r.detail}</li>
+                          <li key={i} style={{ color: r.ok ? '#166534' : '#b91c1c' }}>{r.ok ? <Check size={11} /> : <X size={11} />} {r.detail}</li>
                         ))}
                       </ul>
                       <p style={{ ...S.muted, margin: 0 }}>Drafts are in Outlook — review before sending. Nothing was sent.</p>
@@ -2822,7 +2823,7 @@ export default function Taskpane() {
               {effectiveAction === 'ignore' && (
                 <div style={S.actionPanel}>
                   {ignored ? (
-                    <p style={{ ...S.muted, margin: 0, color: '#166534' }}>✓ Marked as handled — no reply needed.</p>
+                    <p style={{ ...S.muted, margin: 0, color: '#166534' }}><Check size={12} /> Marked as handled — no reply needed.</p>
                   ) : (
                     <button style={S.secondary} onClick={markIgnore}>Mark as no action needed</button>
                   )}
@@ -2951,7 +2952,7 @@ export default function Taskpane() {
                             </span>
                           </span>
                           {blocked ? (
-                            <span title="Blocked until its prerequisite is completed" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#F1F5F9', borderRadius: 6, padding: '3px 8px' }}>🔒 Blocked</span>
+                            <span title="Blocked until its prerequisite is completed" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#F1F5F9', borderRadius: 6, padding: '3px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Lock size={10} /> Blocked</span>
                           ) : statusOpts.length ? (
                             <select
                               value={cur?.id ?? ''}
@@ -2963,7 +2964,7 @@ export default function Taskpane() {
                               {statusOpts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                             </select>
                           ) : (
-                            <button title="Mark done" style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#16a34a', cursor: 'pointer' }} disabled={taskBusy === t.id} onClick={() => void setTaskStatus(t.id, 'DONE', 'Done')}>✓ Done</button>
+                            <button title="Mark done" style={{ flex: 'none', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#16a34a', cursor: 'pointer' }} disabled={taskBusy === t.id} onClick={() => void setTaskStatus(t.id, 'DONE', 'Done')}><Check size={11} /> Done</button>
                           )}
                         </div>
                       );
@@ -3066,7 +3067,7 @@ export default function Taskpane() {
                         </ul>
                       </div>
                     ) : (
-                      <p style={{ fontSize: 12, color: '#166534', fontWeight: 600, margin: '0 0 10px' }}>✓ No discrepancies found across the file.</p>
+                      <p style={{ fontSize: 12, color: '#166534', fontWeight: 600, margin: '0 0 10px' }}><Check size={12} /> No discrepancies found across the file.</p>
                     )}
 
                     {/* The grid: one row per fact, matter value + each document, mismatches lit. */}
@@ -3087,7 +3088,7 @@ export default function Taskpane() {
                               return (
                                 <tr key={i} style={{ borderTop: '1px solid #eef2f7', background: bad ? '#fef2f2' : miss ? '#fffbeb' : '#fff' }}>
                                   <td style={{ ...reconTd, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                    {bad ? '⚠ ' : miss ? '• ' : ''}{row.field}
+                                    {bad ? <><AlertTriangle size={11} /> </> : miss ? '• ' : ''}{row.field}
                                   </td>
                                   <td style={reconTd}>{row.matterValue || '—'}</td>
                                   <td style={reconTd}>
@@ -3521,7 +3522,7 @@ export default function Taskpane() {
         <div style={S.schedWrap}>
           {scheduled.map((s) => (
             <div key={s.id} style={S.schedChip}>
-              <span style={{ fontSize: 13 }} aria-hidden>📤</span>
+              <span style={{ display: 'inline-flex' }}><Share size={13} /></span>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <strong>{s.source === 'REPLY' ? 'Reply' : 'Update email'}</strong> sending at {hhmm(s.scheduled_at)}
                 {s.subject && s.source !== 'REPLY' ? ` · ${s.subject}` : ''}
@@ -3540,9 +3541,9 @@ export default function Taskpane() {
       {quotaModal && (
         <div style={S.modalOverlay} onClick={() => setQuotaModal(null)}>
           <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
-            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setQuotaModal(null)} title="Close" aria-label="Close">✕</button>
+            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setQuotaModal(null)} title="Close" aria-label="Close"><X size={13} /></button>
             <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
-              <div style={{ fontSize: 30, lineHeight: 1 }}>🚀</div>
+              <div style={{ color: '#5A27E0', lineHeight: 1 }}><Rocket size={30} /></div>
               <h2 style={{ fontSize: 18, margin: '10px 0 4px', color: '#0f172a' }}>You’ve hit this month’s limit</h2>
               <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
                 You’ve processed {quotaModal.used.toLocaleString()} of {quotaModal.cap.toLocaleString()} emails this month
@@ -3576,9 +3577,9 @@ export default function Taskpane() {
       {showReferral && (
         <div style={S.modalOverlay} onClick={() => setShowReferral(false)}>
           <div style={S.modalCard} onClick={(e) => e.stopPropagation()}>
-            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowReferral(false)} title="Close" aria-label="Close">✕</button>
+            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowReferral(false)} title="Close" aria-label="Close"><X size={13} /></button>
             <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
-              <div style={{ fontSize: 30, lineHeight: 1 }}>🎉</div>
+              <div style={{ color: '#16a34a', lineHeight: 1 }}><CheckCircle size={30} /></div>
               <div style={{ fontSize: 40, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 10, lineHeight: 1 }}>
                 £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}
               </div>
@@ -3639,7 +3640,7 @@ export default function Taskpane() {
       {showAccount && me && (
         <div style={S.modalOverlay} onClick={() => setShowAccount(false)}>
           <div style={{ ...S.modalCard, maxWidth: 340 }} onClick={(e) => e.stopPropagation()}>
-            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowAccount(false)} title="Close" aria-label="Close">✕</button>
+            <button style={{ ...S.iconAction, width: 26, height: 26, position: 'absolute', top: 12, right: 12 }} onClick={() => setShowAccount(false)} title="Close" aria-label="Close"><X size={13} /></button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#EDE7FB', color: '#5A27E0', display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 'none' }}>
                 <Icon name="user" size={20} />

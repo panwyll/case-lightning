@@ -92,7 +92,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
               </div>
             ))}
           </div>
-          <button className="dc-btn primary" disabled={busy} onClick={openSource}>{opened ? 'Source opened ✓ — open again' : 'Open source document'}</button>
+          <button className="dc-btn primary" disabled={busy} onClick={openSource}>{opened ? 'Source opened — open again' : 'Open source document'}</button>
           {source && (
             <div className="dc-src">
               <strong>{source.fileName ?? source.id}</strong> {source.docType ? `· ${pretty(source.docType.toLowerCase())}` : ''}{' '}

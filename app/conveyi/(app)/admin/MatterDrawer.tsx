@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import MatterFlow from './MatterFlow';
 import { EnginePanel } from '@/app/shared/engine/EnginePanel';
 import { paths } from '@/lib/paths';
+import { X, Check, ChevronRight, Paperclip, FileText } from '@/app/shared/icons';
 
 /**
  * Slide-over matter detail for the board — click a card to open it. Reuses the existing
@@ -266,7 +267,7 @@ export default function MatterDrawer({
               </div>
               {matter.propertyAddress && <div style={{ fontSize: 13, color: '#475569', marginTop: 3 }}>{matter.propertyAddress}</div>}
             </div>
-            <button onClick={onClose} title="Close" style={{ ...miniSelect, border: '1px solid #e2e8f0', fontSize: 15, lineHeight: 1, padding: '3px 8px' }}>✕</button>
+            <button onClick={onClose} title="Close" style={{ ...miniSelect, border: '1px solid #e2e8f0', fontSize: 15, lineHeight: 1, padding: '3px 8px' }}><X size={14} /></button>
           </div>
           {/* Editable stage / status / owner — same writes as the board */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 }}>
@@ -293,7 +294,7 @@ export default function MatterDrawer({
               }}
               title={pile === 'CLOSED' ? 'Put this matter back on the board' : 'Move this matter to the Completed pile'}
             >
-              {pile === 'CLOSED' ? 'Reopen' : '✓ Mark completed'}
+              {pile === 'CLOSED' ? 'Reopen' : <><Check size={12} /> Mark completed</>}
             </button>
           </div>
         </div>
@@ -388,7 +389,7 @@ export default function MatterDrawer({
                 return (
                   <div key={t.id} style={{ borderTop: '1px solid #f4f6f9' }}>
                     <div onClick={() => toggleThread(t.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', cursor: 'pointer' }}>
-                      <span style={{ fontSize: 11, color: '#94a3b8', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s', flexShrink: 0 }}>▶</span>
+                      <span style={{ fontSize: 11, color: '#94a3b8', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s', flexShrink: 0, display: 'inline-flex' }}><ChevronRight size={13} /></span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject || '(no subject)'}</div>
                         {parts.length > 0 && (
@@ -410,7 +411,7 @@ export default function MatterDrawer({
                             <div key={m.id} style={{ border: '1px solid #eef1f5', borderRadius: 8, padding: '8px 10px', marginBottom: 6, background: '#fafbfc' }}>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                                 <strong style={{ fontSize: 12.5, color: '#0f172a', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.fromAddress || undefined}>{m.from}</strong>
-                                {m.hasAttachments && <span title="Has attachments" style={{ fontSize: 11 }}>📎</span>}
+                                {m.hasAttachments && <span title="Has attachments" style={{ color: '#94a3b8', display: 'inline-flex' }}><Paperclip size={11} /></span>}
                                 <span style={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap' }}>{m.sentAt ? new Date(m.sentAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
                               </div>
                               {m.to?.length > 0 && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>to {m.to.slice(0, 3).join(', ')}{m.to.length > 3 ? ` +${m.to.length - 3}` : ''}</div>}
@@ -442,7 +443,7 @@ export default function MatterDrawer({
                   rel="noopener noreferrer"
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderTop: '1px solid #f4f6f9', textDecoration: 'none' }}
                 >
-                  <span style={{ fontSize: 15 }}>📄</span>
+                  <span style={{ color: '#64748b', display: 'inline-flex' }}><FileText size={15} /></span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#1d4ed8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
                   {f.processed && <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#dcfce7', borderRadius: 999, padding: '1px 7px' }}>read</span>}
                 </a>

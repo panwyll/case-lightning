@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { X, Check } from '@/app/shared/icons';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -272,7 +273,7 @@ export default function Automations() {
                         <div style={{ display: 'flex', gap: 4 }}>
                           <button style={miniBtn} onClick={() => moveStep(a, i, -1)}>↑</button>
                           <button style={miniBtn} onClick={() => moveStep(a, i, 1)}>↓</button>
-                          <button style={{ ...miniBtn, border: '1px solid #fecaca', color: '#b91c1c' }} onClick={() => removeStep(a, i)}>✕</button>
+                          <button style={{ ...miniBtn, border: '1px solid #fecaca', color: '#b91c1c' }} onClick={() => removeStep(a, i)}><X size={12} /></button>
                         </div>
                       </div>
                       {s.type === 'DRAFT_REPLY' && (
@@ -355,7 +356,7 @@ export default function Automations() {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <button onClick={() => save(a)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
-                  {savedId === a.id && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}>✓ Saved</span>}
+                  {savedId === a.id && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 700 }}><Check size={12} /> Saved</span>}
                   <button onClick={() => remove(a)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', marginLeft: 'auto' }}>Delete</button>
                 </div>
               </div>

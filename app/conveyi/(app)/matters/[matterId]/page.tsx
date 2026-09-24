@@ -6,6 +6,7 @@ import { CaseIntelligence } from '@/app/shared/engine/CaseIntelligence';
 import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine } from '@/app/shared/engine/useEngine';
 import { paths } from '@/lib/paths';
+import { Check, CircleDot, Circle, Pause, Minus } from '@/app/shared/icons';
 
 /**
  * One matter, as a person reads it.
@@ -40,12 +41,12 @@ interface Detail {
 }
 
 type StepState = 'done' | 'doing' | 'todo' | 'blocked' | 'notstarted';
-const STEP: Record<StepState, { label: string; mark: string; colour: string }> = {
-  done: { label: 'Done', mark: '✓', colour: '#16a34a' },
-  doing: { label: 'In progress', mark: '●', colour: '#5A27E0' },
-  todo: { label: 'To do', mark: '○', colour: '#b45309' },
-  blocked: { label: 'Waiting on something', mark: '⏸', colour: '#64748b' },
-  notstarted: { label: 'Not started', mark: '–', colour: '#cbd5e1' },
+const STEP: Record<StepState, { label: string; mark: React.ReactNode; colour: string }> = {
+  done: { label: 'Done', mark: <Check size={14} />, colour: '#16a34a' },
+  doing: { label: 'In progress', mark: <CircleDot size={14} />, colour: '#5A27E0' },
+  todo: { label: 'To do', mark: <Circle size={14} />, colour: '#b45309' },
+  blocked: { label: 'Waiting on something', mark: <Pause size={13} />, colour: '#64748b' },
+  notstarted: { label: 'Not started', mark: <Minus size={14} />, colour: '#cbd5e1' },
 };
 type BlockState = 'done' | 'current' | 'upcoming';
 

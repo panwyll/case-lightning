@@ -13,6 +13,7 @@ import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
+import { Inbox, PenLine, FolderKanban, Rocket, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
 
 interface MatterHit {
   id: string;
@@ -873,13 +874,13 @@ function AdminPageInner() {
               Sign in with the Microsoft 365 account you do conveyancing from. Nothing to install — CONVEYi starts working on your mail straight away:
             </p>
             <ul style={{ margin: '0 0 18px', paddingLeft: 0, listStyle: 'none' }}>
-              {[
-                ['📥', 'Incoming email matched to the right matter and tagged'],
-                ['✍️', 'Replies drafted into your Outlook Drafts — nothing sends itself'],
-                ['🗂️', 'Every case tracked on the matter board, chases never forgotten'],
-              ].map(([ic, txt]) => (
+              {([
+                [Inbox, 'Incoming email matched to the right matter and tagged'],
+                [PenLine, 'Replies drafted into your Outlook Drafts — nothing sends itself'],
+                [FolderKanban, 'Every case on the caseload, chases never forgotten'],
+              ] as Array<[typeof Inbox, string]>).map(([Ic, txt]) => (
                 <li key={txt} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 13, color: '#334155', marginBottom: 8 }}>
-                  <span aria-hidden style={{ flexShrink: 0 }}>{ic}</span>
+                  <span style={{ flexShrink: 0, color: '#5A27E0', marginTop: 1 }}><Ic size={16} /></span>
                   <span>{txt}</span>
                 </li>
               ))}
@@ -924,7 +925,7 @@ function AdminPageInner() {
               data-tour="nav-getstarted"
               style={{ display: 'flex', alignItems: 'center', gap: 7, background: tab === 'getstarted' ? '#ede9fe' : '#fff', border: '1px solid #e8d9fb', color: '#5A27E0', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', padding: '5px 11px', borderRadius: 8, fontFamily: 'inherit' }}
             >
-              <span aria-hidden>🚀</span> Get started
+              <Rocket size={14} /> Get started
               {onb && <span style={{ fontSize: 10.5, fontWeight: 800, color: '#5A27E0', background: '#EDE7FB', borderRadius: 99, padding: '1px 7px' }}>{onb.completed}/{onb.total}</span>}
             </button>
           )}
@@ -1248,7 +1249,7 @@ function AdminPageInner() {
                               <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
                             )}
                             <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                              ✓ completed {new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                              <Check size={11} /> completed {new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                             </div>
                           </div>
                         ))
@@ -1328,7 +1329,7 @@ function AdminPageInner() {
                     <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
                     {/* Customise what cards show — persisted per browser */}
                     <div style={{ position: 'relative' }}>
-                      <button style={{ ...clearBtn, fontWeight: 700 }} onClick={() => setShowDisplayMenu((v) => !v)}>⚙ Display</button>
+                      <button style={{ ...clearBtn, fontWeight: 700 }} onClick={() => setShowDisplayMenu((v) => !v)}><Settings size={13} /> Display</button>
                       {showDisplayMenu && (
                         <>
                           <div onClick={() => setShowDisplayMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
@@ -1411,7 +1412,7 @@ function AdminPageInner() {
                                       <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
                                         {target && (
                                           <span title={m.completionTargetDate ? 'Completion target' : 'Exchange target'} style={{ ...chip, color: '#0e7490', background: '#ecfeff' }}>
-                                            🎯 {new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                            <Target size={12} /> {new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                                           </span>
                                         )}
                                         {boardPrefs.tasks && m.nextDue && (() => {
@@ -1572,8 +1573,8 @@ function AdminPageInner() {
                     <span style={{ display: 'block', fontSize: 13, color: '#3A3450', lineHeight: 1.4, wordBreak: 'break-word' }}>{primaryText}</span>
                     {((w.urgent && w.keyDate) || (w.kind === 'TASK' && w.due)) && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, fontSize: 10.5 }}>
-                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}>🎯 {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}>📅 {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {w.urgent && w.keyDate && <span title="Exchange/completion target" style={{ color: '#b91c1c', fontWeight: 700, whiteSpace: 'nowrap' }}><Target size={12} /> {new Date(w.keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                        {w.kind === 'TASK' && w.due && <span title="Task due" style={{ color: w.urgent ? '#b91c1c' : '#7A7388', fontWeight: 700, whiteSpace: 'nowrap' }}><Calendar size={12} /> {new Date(w.due).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                       </span>
                     )}
                   </span>
@@ -1715,7 +1716,7 @@ function AdminPageInner() {
 
               {mywork.items.length === 0 ? (
                 <div style={{ ...card, textAlign: 'center', padding: 40 }}>
-                  <div style={{ fontSize: 30, marginBottom: 8 }}>🎉</div>
+                  <div style={{ color: '#16a34a', marginBottom: 8 }}><CheckCircle size={30} /></div>
                   <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>All caught up</div>
                   <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>No drafts waiting and nothing to chase. New work appears here as email comes in.</p>
                 </div>
@@ -1750,7 +1751,7 @@ function AdminPageInner() {
                             {(g.stage || keyDate) && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10.5 }}>
                                 {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageName(g.stage)}</span>}
-                                {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}>🎯 {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                                {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}><Target size={12} /> {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                               </div>
                             )}
                           </div>
@@ -1842,7 +1843,7 @@ function AdminPageInner() {
             {/* Create with AI — the headline feature, up top */}
             <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 18 }} aria-hidden>✨</span>
+                <span style={{ color: '#6d28d9', display: 'flex' }}><Sparkles size={18} /></span>
                 <h2 style={{ margin: 0, fontSize: 18 }}>Create a template with AI</h2>
                 <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>Beta</span>
               </div>

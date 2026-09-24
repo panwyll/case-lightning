@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Paperclip, Check } from '@/app/shared/icons';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -132,7 +133,7 @@ export default function EmailTemplates() {
                       const d = docTemplates.find((x) => x.id === id);
                       return (
                         <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: '#7c4a03', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 6px 3px 9px' }}>
-                          📎 {d?.name ?? 'document'}
+                          <Paperclip size={11} /> {d?.name ?? 'document'}
                           <button onClick={() => setIds(ids.filter((x) => x !== id))} title="Remove" style={{ border: 'none', background: 'none', color: '#b45309', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
                         </span>
                       );
@@ -147,11 +148,11 @@ export default function EmailTemplates() {
                 );
               })()}
               {(cur.attachDocTemplateIds?.length ?? 0) > 0
-                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}>📎 Generated from the matter and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
+                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}><Paperclip size={11} /> Generated from the matter and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
                 : docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '6px 0 0' }}>No document templates yet — add one in Doc packs to attach it here.</p>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
-                {saved && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>}
+                {saved && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}><Check size={12} /> Saved</span>}
                 <button onClick={() => archive(cur)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', marginLeft: 'auto' }}>Archive</button>
               </div>
             </div>

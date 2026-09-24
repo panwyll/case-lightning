@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState, Fragment } from 'react';
+import { Mail, FileText, Plus, X, AlertTriangle, Paperclip } from '@/app/shared/icons';
 
 // ── Self-contained API helper (mirrors the admin page's) ──────────────────────
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -112,7 +113,7 @@ const WF_CSS = `
 .wf-handle{position:absolute;left:50%;bottom:-8px;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid #b0b8c4;cursor:crosshair;z-index:6}
 .wf-task:hover .wf-handle,.wf-handle:hover{border-color:#5A27E0;background:#EDE7FB}
 .wf-addbar{margin-top:14px;display:flex;gap:6px;justify-content:center}
-.wf-add{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid #d0d5dd;background:#fff;color:#475569;cursor:pointer}
+.wf-add{font-size:11.5px;font-weight:700;padding:4px 10px;border-radius:7px;border:1px solid #d0d5dd;background:#fff;color:#475569;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
 `;
 
 export default function WorkflowCanvas() {
@@ -371,13 +372,13 @@ export default function WorkflowCanvas() {
         title="Drag to move · drag the dot below to link to another task"
       >
         <div className="wf-t">
-          {t.node_kind === 'EMAIL' && <span style={{ fontSize: 9, fontWeight: 800, color: '#0ea5e9', marginRight: 5 }}>✉</span>}
-          {t.node_kind === 'DOC' && <span style={{ fontSize: 9, fontWeight: 800, color: '#d97706', marginRight: 5 }}>📄</span>}
+          {t.node_kind === 'EMAIL' && <span style={{ color: '#0ea5e9', marginRight: 5, display: 'inline-flex' }}><Mail size={11} /></span>}
+          {t.node_kind === 'DOC' && <span style={{ color: '#d97706', marginRight: 5, display: 'inline-flex' }}><FileText size={11} /></span>}
           {t.detail}
         </div>
         <div className="wf-m">
           {t.node_kind === 'EMAIL'
-            ? (() => { const et = emailTemplates.find((e) => e.id === t.email_template_id); const nDoc = et?.attach_doc_template_ids?.length ?? 0; return `${et?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? '⚡ auto-send' : '✎ draft'}${nDoc ? ` · 📎 ${nDoc}` : ''}`; })()
+            ? (() => { const et = emailTemplates.find((e) => e.id === t.email_template_id); const nDoc = et?.attach_doc_template_ids?.length ?? 0; return `${et?.name ?? 'no template'} · ${t.send_mode === 'SEND' ? 'auto-send' : 'draft'}${nDoc ? ` · ${nDoc} attached` : ''}`; })()
             : t.node_kind === 'DOC'
               ? `${docTemplates.find((d) => d.id === t.doc_template_id)?.name ?? 'no template'} · → Case files`
               : `→ ${assigneeText(t)}${t.due_offset_days != null ? ` · +${t.due_offset_days}d` : ''}`}
@@ -487,8 +488,8 @@ export default function WorkflowCanvas() {
                               </div>}
                           <div className="wf-addbar">
                             <button className="wf-add" onClick={() => addTask(s.key, 'TASK')}>+ task</button>
-                            <button className="wf-add" style={{ color: '#0369a1', borderColor: '#bae6fd' }} onClick={() => addTask(s.key, 'EMAIL')}>+ ✉ email</button>
-                            <button className="wf-add" style={{ color: '#b45309', borderColor: '#fde68a' }} onClick={() => addTask(s.key, 'DOC')}>+ 📄 document</button>
+                            <button className="wf-add" style={{ color: '#0369a1', borderColor: '#bae6fd' }} onClick={() => addTask(s.key, 'EMAIL')}><Plus size={11} /> email</button>
+                            <button className="wf-add" style={{ color: '#b45309', borderColor: '#fde68a' }} onClick={() => addTask(s.key, 'DOC')}><Plus size={11} /> document</button>
                           </div>
                         </div>
                       )}
@@ -509,9 +510,9 @@ export default function WorkflowCanvas() {
         <div onClick={() => setSelected(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.32)', zIndex: 59 }} />
         <div role="dialog" aria-modal="true" aria-label="Edit task" style={{ ...card, position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 'min(440px, calc(100vw - 32px))', flex: 'none', maxHeight: '85vh', overflowY: 'auto', zIndex: 60, boxShadow: '0 20px 60px rgba(16,24,40,0.28)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? '✉ Edit email' : sel.node_kind === 'DOC' ? '📄 Edit document' : 'Edit task'}</strong>
+            <strong style={{ fontSize: 13, color: '#0f172a', flex: 1 }}>{sel.node_kind === 'EMAIL' ? 'Edit email' : sel.node_kind === 'DOC' ? 'Edit document' : 'Edit task'}</strong>
             <button onClick={() => deleteNode(sel.id)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', padding: '3px 8px' }}>Delete</button>
-            <button onClick={() => setSelected(null)} title="Close" aria-label="Close" style={{ width: 26, height: 26, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, cursor: 'pointer', color: '#64748b', fontSize: 13, lineHeight: 1 }}>✕</button>
+            <button onClick={() => setSelected(null)} title="Close" aria-label="Close" style={{ width: 26, height: 26, border: '1px solid #e2e8f0', background: '#fff', borderRadius: 7, cursor: 'pointer', color: '#64748b', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={13} /></button>
           </div>
           <label style={lbl}>{sel.node_kind === 'EMAIL' ? 'Label' : sel.node_kind === 'DOC' ? 'Label' : 'Task'}</label>
           <textarea value={sel.detail} onChange={(e) => setTemplates((ts) => ts.map((x) => x.id === sel.id ? { ...x, detail: e.target.value } : x))} onBlur={() => saveNode(sel)} rows={2} style={{ ...input, resize: 'vertical' }} />
@@ -563,10 +564,10 @@ export default function WorkflowCanvas() {
                 <option value="DRAFT">Draft into the send queue (human sends)</option>
                 <option value="SEND">Auto-send (only if a client email is on file)</option>
               </select>
-              {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>⚠ Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
+              {sel.send_mode === 'SEND' && <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}><AlertTriangle size={11} /> Auto-send fires a real client email with no review. Use only for safe boilerplate. Falls back to a draft if no recipient is known.</p>}
               {emailTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>No email templates yet — add one in the Email templates tab.</p>}
               {(() => { const n = emailTemplates.find((e) => e.id === sel.email_template_id)?.attach_doc_template_ids?.length ?? 0; return n
-                ? <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}>📎 This template attaches {n} document{n === 1 ? '' : 's'}, generated from the matter.</p>
+                ? <p style={{ fontSize: 10.5, color: '#b45309', marginTop: 6 }}><Paperclip size={11} /> This template attaches {n} document{n === 1 ? '' : 's'}, generated from the matter.</p>
                 : <p style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 6 }}>To attach documents, set them on the template in the Email templates tab.</p>; })()}
             </>
           )}

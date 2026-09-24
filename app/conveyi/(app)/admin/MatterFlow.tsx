@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState, Fragment } from 'react';
+import { Mail, FileText } from '@/app/shared/icons';
 
 /**
  * A matter's live position on the firm's Case Flow — the same stage/task DAG the admin
@@ -163,7 +164,7 @@ export default function MatterFlow({ matterId, api }: { matterId: string; api: A
                           >
                             <div className="mf-t">
                               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 99, background: look.dot, marginRight: 6, verticalAlign: 'middle' }} />
-                              {t.node_kind === 'EMAIL' ? '✉ ' : t.node_kind === 'DOC' ? '📄 ' : ''}{detailOf(t)}
+                              {t.node_kind === 'EMAIL' ? <Mail size={11} /> : t.node_kind === 'DOC' ? <FileText size={11} /> : null}{t.node_kind === 'EMAIL' || t.node_kind === 'DOC' ? ' ' : ''}{detailOf(t)}
                             </div>
                             <div className="mf-m">
                               {st === 'blocked' && waiting.length

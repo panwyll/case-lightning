@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import { composeAddress, EMPTY_ADDR, type AddrParts } from '@/lib/address';
+import { X } from '@/app/shared/icons';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -84,7 +85,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
           <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New matter</strong>
-          <button onClick={onClose} style={S.x} aria-label="Close">✕</button>
+          <button onClick={onClose} style={S.x} aria-label="Close"><X size={14} /></button>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}>

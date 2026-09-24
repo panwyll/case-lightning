@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { CaseModel } from './CaseView';
 import { House } from './CaseloadMap';
 import { HEALTH_LABEL, fmtDay, pretty, type EngineEvent, type HealthBand, type HealthReason } from './types';
+import { Check, CircleDot, Circle, AlertTriangle, Ban } from '@/app/shared/icons';
 
 /**
  * Case intelligence (docs/caseload-ux.md §3) — the screen a conveyancer lands on.
@@ -46,14 +47,14 @@ const CI_CSS = `
 .ci-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:12px 14px;font-size:13px;color:#14532d}
 `;
 
-const MARK: Record<string, { g: string; cls: string }> = {
-  complete: { g: '✓', cls: 'done' },
-  in_progress: { g: '●', cls: '' },
-  awaiting: { g: '●', cls: '' },
-  not_started: { g: '○', cls: '' },
-  under_review: { g: '⚠', cls: 'risk' },
-  at_risk: { g: '⚠', cls: 'risk' },
-  blocked: { g: '⛔', cls: 'blocked' },
+const MARK: Record<string, { g: React.ReactNode; cls: string }> = {
+  complete: { g: <Check size={12} />, cls: 'done' },
+  in_progress: { g: <CircleDot size={12} />, cls: '' },
+  awaiting: { g: <CircleDot size={12} />, cls: '' },
+  not_started: { g: <Circle size={12} />, cls: '' },
+  under_review: { g: <AlertTriangle size={12} />, cls: 'risk' },
+  at_risk: { g: <AlertTriangle size={12} />, cls: 'risk' },
+  blocked: { g: <Ban size={12} />, cls: 'blocked' },
   not_applicable: { g: '—', cls: 'na' },
 };
 
@@ -149,7 +150,7 @@ export function CaseIntelligence({ m, events, onDiagnostics }: { m: CaseModel; e
       <h3>Where we are</h3>
       <div className="ci-marks">
         {m.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => {
-          const mk = MARK[w.status] ?? { g: '●', cls: '' };
+          const mk = MARK[w.status] ?? { g: <CircleDot size={12} />, cls: '' };
           return (
             <span key={w.id} className={`ci-mark ${mk.cls}`} title={w.detail}>
               <span className="g">{mk.g}</span>{w.label}

@@ -8,6 +8,7 @@ import { composeAddress, parseAddress, type AddrParts } from '@/lib/address';
 import { S } from './styles';
 import { Label } from './ui';
 import { STAGES, TRACKS, STATUS_FLAGS } from './constants';
+import { X } from '@/app/shared/icons';
 
 type Api = <T = any>(path: string, options?: RequestInit) => Promise<T>;
 
@@ -135,7 +136,7 @@ export function HousePanel({
           <div style={{ color: '#7A7388', marginTop: 1 }}>
             {h.actor || 'CONVEYi'} · {new Date(h.created_at).toLocaleDateString()} ·{' '}
             {h.source === 'MANUAL' ? 'by hand' : h.source === 'AI_EMAIL' ? 'from email' : h.source === 'AI_DOC' ? 'from a document' : String(h.source).toLowerCase()}
-            {h.ref_label ? ` · ${h.ref_kind === 'EMAIL' ? '✉' : '📎'} ${h.ref_label}` : ''}
+            {h.ref_label ? ` · ${h.ref_kind === 'EMAIL' ? 'email' : 'file'}: ${h.ref_label}` : ''}
           </div>
           {h.reason && h.source === 'MANUAL' && <div style={{ fontStyle: 'italic', color: '#7A7388', marginTop: 1 }}>{h.reason}</div>}
         </div>
@@ -384,7 +385,7 @@ export function ContactsPanel({ matterId, initial, api }: { matterId: string; in
           >
             {CONTACT_ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
-          <button style={{ ...S.iconAction, width: 30, height: 30 }} onClick={() => remove(c)} title="Remove contact" aria-label="Remove contact">✕</button>
+          <button style={{ ...S.iconAction, width: 30, height: 30 }} onClick={() => remove(c)} title="Remove contact" aria-label="Remove contact"><X size={13} /></button>
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_LABEL, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
+import { Check } from '@/app/shared/icons';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -297,7 +298,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
           {source?.webUrl && <a href={source.webUrl} target="_blank" rel="noopener noreferrer">open in OneDrive ↗</a>}
           {pending && (
             <span className="dp-gate" style={{ marginLeft: 'auto' }}>
-              {engaged ? <span style={{ color: '#15803d', fontWeight: 700 }}>Source read ✓</span> : (
+              {engaged ? <span style={{ color: '#15803d', fontWeight: 700 }}>Source read <Check size={12} /></span> : (
                 <>
                   <span>Reading the source…</span>
                   <span className="bar"><i style={{ width: `${Math.min(100, (dwell / UI_DWELL_MS) * 100)}%` }} /></span>

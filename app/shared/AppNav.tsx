@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { paths } from '@/lib/paths';
+import type { ComponentType } from 'react';
+import { ListChecks, Scale, Mail, ClipboardList, Building, Workflow, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -19,7 +21,7 @@ export interface Me { role: string; displayName: string | null; email: string }
 interface NavItem {
   key: string;
   label: string;
-  icon: string;
+  icon: ComponentType<{ size?: number }>;
   href: string;
   adminTab?: AdminTab;
   adminOnly?: boolean;
@@ -30,47 +32,46 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Work',
     items: [
-      { key: 'today', label: 'Today', icon: '☀️', href: paths.today, match: (p) => p.startsWith(paths.today) },
-      { key: 'engine-work', label: 'My work', icon: '☑️', href: paths.myWork, match: (p) => p.startsWith(paths.myWork) },
-      { key: 'decisions', label: 'Decisions', icon: '⚖️', href: paths.decisions, match: (p) => p.startsWith(paths.decisions) },
-      { key: 'email', label: 'Email to file', icon: '✉️', href: paths.email, match: (p) => p.startsWith(paths.email) },
-      { key: 'mywork', label: 'Tasks', icon: '📋', href: `${paths.admin}?tab=mywork`, adminTab: 'mywork' },
+      { key: 'engine-work', label: 'My work', icon: ListChecks, href: paths.myWork, match: (p) => p.startsWith(paths.myWork) },
+      { key: 'decisions', label: 'Decisions', icon: Scale, href: paths.decisions, match: (p) => p.startsWith(paths.decisions) },
+      { key: 'email', label: 'Email to file', icon: Mail, href: paths.email, match: (p) => p.startsWith(paths.email) },
+      { key: 'mywork', label: 'Tasks', icon: ClipboardList, href: `${paths.admin}?tab=mywork`, adminTab: 'mywork' },
     ],
   },
   {
     label: 'Cases',
     items: [
-      { key: 'cases', label: 'Caseload', icon: '🏘️', href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/matters/`) || p.startsWith(`${paths.product}/engine/`) },
-      { key: 'workflow', label: 'Case flow', icon: '🔀', href: `${paths.admin}?tab=workflow`, adminTab: 'workflow', adminOnly: true },
+      { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/matters/`) || p.startsWith(`${paths.product}/engine/`) },
+      { key: 'workflow', label: 'Case flow', icon: Workflow, href: `${paths.admin}?tab=workflow`, adminTab: 'workflow', adminOnly: true },
     ],
   },
   {
     label: 'Content',
     items: [
-      { key: 'templates', label: 'Email templates', icon: '📨', href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
-      { key: 'docpacks', label: 'Doc packs', icon: '📄', href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
+      { key: 'templates', label: 'Email templates', icon: MailPlus, href: `${paths.admin}?tab=templates`, adminTab: 'templates', adminOnly: true },
+      { key: 'docpacks', label: 'Doc packs', icon: FileText, href: `${paths.admin}?tab=docpacks`, adminTab: 'docpacks', adminOnly: true },
     ],
   },
   {
     label: 'Firm',
     items: [
-      { key: 'team', label: 'Team', icon: '👥', href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
-      { key: 'policy', label: 'Policy', icon: '🛡️', href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
-      { key: 'integrations', label: 'Integrations', icon: '🔌', href: paths.leap, adminOnly: true, match: (p) => p.startsWith(`${paths.product}/integrations`) },
+      { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
+      { key: 'policy', label: 'Policy', icon: Shield, href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
+      { key: 'integrations', label: 'Integrations', icon: Plug, href: paths.leap, adminOnly: true, match: (p) => p.startsWith(`${paths.product}/integrations`) },
     ],
   },
   {
     label: 'Tools',
     items: [
-      { key: 'actions', label: 'Tools', icon: '🔧', href: `${paths.admin}?tab=actions`, adminTab: 'actions', adminOnly: true },
-      { key: 'audit', label: 'Audit log', icon: '🕘', href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
+      { key: 'actions', label: 'Tools', icon: Wrench, href: `${paths.admin}?tab=actions`, adminTab: 'actions', adminOnly: true },
+      { key: 'audit', label: 'Audit log', icon: History, href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
     ],
   },
   {
     label: 'Account',
     items: [
-      { key: 'billing', label: 'Billing', icon: '💳', href: `${paths.admin}?tab=billing`, adminTab: 'billing' },
-      { key: 'help', label: 'Help & support', icon: '💬', href: `${paths.admin}?tab=help`, adminTab: 'help' },
+      { key: 'billing', label: 'Billing', icon: CreditCard, href: `${paths.admin}?tab=billing`, adminTab: 'billing' },
+      { key: 'help', label: 'Help & support', icon: LifeBuoy, href: `${paths.admin}?tab=help`, adminTab: 'help' },
     ],
   },
 ];
@@ -93,8 +94,8 @@ export const SHELL_CSS = `
 .sh-grp:first-child{margin-top:0}
 .sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#334155;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
 .sh-item.on{background:#ede9fe;box-shadow:inset 3px 0 0 #5A27E0;color:#5A27E0;font-weight:700}
-.sh-ico{font-size:14px;width:20px;text-align:center;filter:grayscale(.4);opacity:.75;flex-shrink:0}
-.sh-item.on .sh-ico{filter:none;opacity:1}
+.sh-ico{width:20px;display:flex;align-items:center;justify-content:center;color:#64748b;flex-shrink:0}
+.sh-item.on .sh-ico{color:#5A27E0}
 .sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
 .sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
@@ -117,7 +118,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
             <div className="sh-grp">{g.label}</div>
             {items.map((i) => (
               <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined}>
-                <span className="sh-ico" aria-hidden>{i.icon}</span>
+                <span className="sh-ico"><i.icon size={16} /></span>
                 <span>{i.label}</span>
               </Link>
             ))}

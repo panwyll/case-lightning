@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { Phone, CheckCircle } from '@/app/shared/icons';
 
 // Standalone recorder, opened as an Office Dialog (a real window, not the sandboxed
 // taskpane iframe) so the microphone is actually available. It records, uploads to
@@ -68,7 +69,7 @@ export default function RecordDialog() {
   return (
     <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18, background: 'linear-gradient(160deg,#F1ECFB,#FBFAFF)', color: '#1C1530' }}>
       <div style={{ background: '#fff', borderRadius: 18, boxShadow: '0 14px 44px rgba(90,39,224,0.16)', padding: '30px 26px 22px', width: '100%', maxWidth: 340, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ fontSize: 20 }}>📞</span><strong style={{ fontSize: 17 }}>Record a call</strong></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><span style={{ display: 'inline-flex', color: '#5A27E0' }}><Phone size={20} /></span><strong style={{ fontSize: 17 }}>Record a call</strong></div>
 
       {phase === 'recording' ? (
         <>
@@ -80,7 +81,7 @@ export default function RecordDialog() {
         <div style={{ fontSize: 14, color: '#5A27E0', fontWeight: 700 }}><span style={spin} /> Transcribing…</div>
       ) : phase === 'done' ? (
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 30 }}>✓</div>
+          <div style={{ color: '#16a34a' }}><CheckCircle size={30} /></div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a' }}>Saved</div>
           <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>You can close this window.</div>
         </div>

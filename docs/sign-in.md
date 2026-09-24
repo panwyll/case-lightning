@@ -21,7 +21,6 @@ The conveyancer's app sits under **`/conveyi`**, with the rest of the product:
 | | |
 | --- | --- |
 | `/conveyi/cases` | the caseload map |
-| `/conveyi/today` | the day's work |
 | `/conveyi/my-work` | DO / WAITING / CHASE / ESCALATE |
 | `/conveyi/decisions`, `/conveyi/decisions/{id}` | the queue and the decision panel |
 | `/conveyi/engine/{matterId}` | one matter |

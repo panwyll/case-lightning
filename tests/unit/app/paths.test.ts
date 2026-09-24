@@ -9,7 +9,7 @@ import { APP_BASE, paths, isProtectedPath, PROTECTED_SEGMENTS } from '../../../l
 
 test('every app page lives under /conveyi', () => {
   assert.equal(APP_BASE, '/conveyi');
-  const built = [paths.cases, paths.today, paths.myWork, paths.decisions, paths.account, paths.admin, paths.leap, paths.machineMap, paths.signIn, paths.decision('abc'), paths.matter('m1'), paths.matterShadow('m1')];
+  const built = [paths.cases, paths.myWork, paths.engineMatter('m1'), paths.decisions, paths.account, paths.admin, paths.leap, paths.machineMap, paths.signIn, paths.decision('abc'), paths.matter('m1'), paths.matterShadow('m1')];
   for (const p of built) assert.ok(p.startsWith('/conveyi/'), p);
 });
 

@@ -66,7 +66,7 @@ const firstRun = [
   },
   {
     name: 'Pin the pane',
-    body: 'Click the 📌 pin at the top of the pane. Without this it closes every time you open a different email.',
+    body: 'Click the pin at the top of the pane. Without this it closes every time you open a different email.',
   },
   {
     name: 'Sign in once',

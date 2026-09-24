@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Phone, X, PenLine, Check } from '@/app/shared/icons';
 
 const TOKEN_KEY = 'cl_token';
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -181,9 +182,9 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
     <div style={S.overlay} onClick={onClose}>
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{ fontSize: 18 }} aria-hidden>📞</span>
+          <span style={{ display: 'inline-flex', color: '#5A27E0' }}><Phone size={18} /></span>
           <strong style={{ fontSize: 15, color: '#1C1530', flex: 1 }}>Call notes</strong>
-          <button onClick={onClose} style={S.x} aria-label="Close">✕</button>
+          <button onClick={onClose} style={S.x} aria-label="Close"><X size={13} /></button>
         </div>
         {/* Recorder — a single mic button; a live timer + red stop while recording. */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 9, padding: '10px 0 16px' }}>
@@ -227,7 +228,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                     </div>
                   </div>
                   {n.matter_ref ? (
-                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} title="Move to another matter" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' }}>{n.matter_ref} ✎</button>
+                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} title="Move to another matter" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' }}>{n.matter_ref} <PenLine size={10} /></button>
                   ) : (
                     <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} style={{ ...S.miniBtn, color: '#5A27E0', borderColor: '#D9D2EC' }}>+ Assign to matter</button>
                   )}
@@ -282,7 +283,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                     <button onClick={() => addTask(n.matter_id!)} disabled={!taskText.trim()} style={{ ...S.miniBtn, background: '#5A27E0', color: '#fff', borderColor: '#5A27E0', opacity: taskText.trim() ? 1 : 0.5 }}>Add</button>
                   </div>
                 )}
-                {taskFor === n.id && taskDone && <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, marginTop: 4 }}>✓ Task added</div>}
+                {taskFor === n.id && taskDone && <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, marginTop: 4 }}><Check size={11} /> Task added</div>}
                 {open && <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.55, marginTop: 6, whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto', background: '#fff', border: '1px solid #eef0f4', borderRadius: 8, padding: '8px 10px' }}>{n.transcript || '(no transcript)'}</div>}
               </div>
             );

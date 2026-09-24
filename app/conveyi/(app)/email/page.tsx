@@ -161,8 +161,8 @@ export default function EmailFilingPage() {
           <b>Nothing to file.</b>
           Every email in your inbox is either on a case or set aside.
           <div style={{ marginTop: 14 }}>
-            <a className="eg-btn" href={paths.today}>Today →</a>{' '}
-            <a className="eg-btn" href={paths.cases}>Caseload →</a>
+            <a className="eg-btn" href={paths.myWork}>My work</a>{' '}
+            <a className="eg-btn" href={paths.cases}>Caseload</a>
           </div>
         </div>
       )}

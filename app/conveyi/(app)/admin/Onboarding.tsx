@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import MailboxScan from './MailboxScan';
 import MatterImport from './MatterImport';
 import { APPSOURCE_URL } from '@/app/_components/shared';
+import { Check } from '@/app/shared/icons';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -238,7 +239,7 @@ function StepCard({ step, n, children }: { step: Step; n: number; children: Reac
         flex: 'none', width: 26, height: 26, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 13, fontWeight: 800, color: step.done ? '#fff' : '#94a3b8',
         background: step.done ? '#16a34a' : '#f1f5f9', border: step.done ? 'none' : '1px solid #e2e8f0',
-      }}>{step.done ? '✓' : n}</div>
+      }}>{step.done ? <Check size={14} /> : n}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, color: '#0f172a' }}>{step.title}</div>
         <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 1 }}>{step.detail}</div>

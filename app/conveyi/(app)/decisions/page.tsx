@@ -54,7 +54,6 @@ export default function QueuePage() {
             </select>
           </label>
           <button className={`eg-btn${all ? ' on' : ''}`} onClick={() => setAll((x) => !x)} title="Seniors and admins can see every handler's matters">{all ? 'All handlers' : 'My matters'}</button>
-          <a className="eg-btn" href="/conveyi/today">Today</a>
           <a className="eg-btn" href="/conveyi/cases">Caseload</a>
           <a className="eg-btn" href="/conveyi/my-work">My work</a>
           <a className="eg-btn" href="/conveyi/engine/shadow">Rollout</a>
