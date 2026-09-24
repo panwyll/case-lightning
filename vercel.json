@@ -20,7 +20,7 @@
     },
     {
       "path": "/api/v1/cron/intouch-sync",
-      "schedule": "*/15 * * * *"
+      "schedule": "45 6 * * *"
     }
   ]
 }
