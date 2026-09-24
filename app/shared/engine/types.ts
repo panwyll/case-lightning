@@ -320,6 +320,7 @@ export interface CaseToken extends QueueRow {
   dayOfCase: number;
   /** false = an open matter the engine is not running yet. It has no health to report. */
   tracked?: boolean;
+  assignedToName?: string | null;
 }
 export interface CaseloadRollup { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; needsSomeone: number; untracked?: number }
 

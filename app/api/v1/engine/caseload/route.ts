@@ -7,6 +7,7 @@ import { engine } from '@/lib/server/engine/adapters';
 import { rollup, HEALTH_LABEL } from '@/lib/server/engine/health';
 import { LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 import { untrackedCaseRows } from '@/lib/server/engine/untracked';
+import { query } from '@/lib/server/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +43,11 @@ export async function GET(req: NextRequest) {
       exclude: new Set(tracked.map((r) => r.matterId)),
       limit: q.limit ?? 300,
     });
-    const rows = [...tracked, ...untracked];
+    // The handler's name, so a list can say who rather than show an id.
+    const ids = Array.from(new Set([...tracked, ...untracked].map((r) => r.assignedTo).filter((x): x is string => !!x)));
+    const names = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
+    const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    const rows = [...tracked, ...untracked].map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null }));
     return ok({
       rows,
       // Health is only claimed for matters the engine actually knows about. An untracked

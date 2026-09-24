@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { paths } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Building, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -41,7 +41,8 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Cases',
     items: [
-      { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) || p.startsWith(`${paths.product}/matters/`) || p.startsWith(`${paths.product}/engine/`) },
+      { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) },
+      { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || p.startsWith(`${paths.product}/engine/`) },
     ],
   },
   {
@@ -89,8 +90,8 @@ export const SHELL_CSS = `
 .sh-body{display:flex;align-items:stretch;min-height:calc(100vh - ${TOP}px)}
 .sh-side{width:${SIDE}px;flex:0 0 ${SIDE}px;background:#fff;border-right:1px solid #e8eaf0;position:sticky;top:${TOP}px;height:calc(100vh - ${TOP}px);overflow-y:auto;padding:14px 12px 24px;box-sizing:border-box}
 .sh-main{flex:1;min-width:0;padding:22px 24px 56px;box-sizing:border-box}
-.sh-grp{font-size:10.5px;font-weight:800;letter-spacing:1.6px;text-transform:uppercase;color:#64748b;padding:18px 10px 6px;margin:6px 0 0;border-top:1px solid #eef1f5}
-.sh-side > div:first-child .sh-grp{border-top:0;padding-top:2px;margin-top:0}
+.sh-group{padding:10px 0;border-top:1px solid #eef1f5}
+.sh-side > .sh-group:first-child{border-top:0;padding-top:0}
 .sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#334155;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
 .sh-item.on{background:#ede9fe;box-shadow:inset 3px 0 0 #5A27E0;color:#5A27E0;font-weight:700}
 .sh-ico{width:20px;display:flex;align-items:center;justify-content:center;color:#64748b;flex-shrink:0}
@@ -131,8 +132,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
         const items = g.items.filter((i) => isAdmin || !i.adminOnly);
         if (!items.length) return null;
         return (
-          <div key={g.label}>
-            <div className="sh-grp">{g.label}</div>
+          <div key={g.label} className="sh-group">
             {items.map((i) => (
               <Link key={i.key} href={i.href} className={`sh-item adm-nav${active(i) ? ' on' : ''}`} aria-current={active(i) ? 'page' : undefined} data-tour={i.adminTab ? `nav-${i.adminTab}` : undefined}>
                 <span className="sh-ico"><i.icon size={16} /></span>

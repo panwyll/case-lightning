@@ -18,6 +18,8 @@ export const paths = {
   integrations: `${APP_BASE}/integrations`,
   email: `${APP_BASE}/email`,
   decision: (eventId: string) => `${APP_BASE}/decisions/${eventId}`,
+  /** Every open case as a list, to pick one from. */
+  matters: `${APP_BASE}/matters`,
   /** The matter, as a person reads it: stages, steps, then the case data. */
   matter: (matterId: string) => `${APP_BASE}/matters/${matterId}`,
   /** The engine's own view of the matter: workstreams, decisions, timeline, diagnostics. */
