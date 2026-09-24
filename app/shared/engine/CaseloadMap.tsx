@@ -154,11 +154,10 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
       {/* Oversight strip — the counts double as filters. */}
       <div className="cm-strip">
         {stat('all', rows.length, 'open cases', '#0f172a')}
-        {stat('normal', rollup.normal, 'moving normally', '#16a34a')}
+        {stat('normal', rollup.normal, 'on track', '#16a34a')}
         {stat('attention', rollup.attention, 'need attention', '#b45309')}
         {stat('stuck', rollup.stuck, 'stuck', '#9a3412')}
         {stat('critical', rollup.critical, 'critical', '#b91c1c')}
-        {untracked > 0 && stat('untracked', untracked, 'not tracked yet', '#64748b')}
       </div>
 
       <div className="cm-paper">
@@ -195,7 +194,6 @@ export function CaseloadMap({ rows, rollup, onOpen }: {
           {(['normal', 'attention', 'delayed', 'blocked', 'critical'] as HealthBand[]).map((b) => (
             <span key={b}><House band={b} size={20} /> {HEALTH_LABEL[b]}</span>
           ))}
-          {untracked > 0 && <span><House band="normal" untracked size={20} /> Not tracked yet</span>}
         </div>
       </div>
 

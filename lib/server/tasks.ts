@@ -294,7 +294,8 @@ export async function onStageAdvanced(
     const label = stage.toLowerCase().replace(/_/g, ' ');
     const milestone = MILESTONE_UPDATE[stage];
     if (!milestone) {
-      await autoActionTask(user, matterId, `Update the client — matter now at the ${label} stage`);
+      // Client updates on a stage change are the engine's to send; nobody gets a to-do for it.
+      void label;
       // Nudge the fee-earner (timeline row already written by the caller).
       await notifyMatter(user.tenantId, matterId, {
         kind: 'STATUS_CHANGED',

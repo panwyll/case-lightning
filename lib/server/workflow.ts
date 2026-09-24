@@ -282,6 +282,8 @@ async function resolveAssignee(
   return { assignee: null, assigneeUserId: null };
 }
 
+const STAGE_TASKS_ENABLED = false;
+
 /** Insert one matter_task from a template. Own ref-lock; app-first (no To Do fan-out). */
 async function createTemplateTask(
   tenantId: string,
@@ -402,6 +404,9 @@ async function fireDocNode(userId: string, tenantId: string, matterId: string, t
 /** A matter reached `stage` — create its (not-yet-created) templates, blocking any with an
  *  unfinished prerequisite. Called from onStageAdvanced. */
 export async function instantiateStageTemplates(user: SessionUser, matterId: string, stage: string): Promise<number> {
+  // Stage steps are read from the templates by the matter page; they are not tasks for a
+  // person. The task list holds only what a conveyancer has to do.
+  if (!STAGE_TASKS_ENABLED) return 0;
   try {
     const templates = await selectTemplates('where tenant_id = $1 and stage = $2 and active = true order by sort_order', [user.tenantId, stage]);
     if (!templates.length) return 0;

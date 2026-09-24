@@ -12,7 +12,7 @@
 import { query, queryOne, runAsSystem } from '../db';
 import { PgDocumentBytesLoader, PgDocumentRepository } from '../engine/pg-documents';
 import type { CaseBackend, ConclusionSink, MatterDirectory } from '../engine/backend';
-import { DECISION_EVENT_TYPES, SUBFLOW_OF_KIND, surfacedDecisions, type DecisionKind, type DecisionOption, type EngineEvent, type MatterState } from '../engine/types';
+import { DECISION_EVENT_TYPES, surfacedDecisions, type DecisionOption, type EngineEvent, type MatterState } from '../engine/types';
 import { optionLabel } from '../engine/rules';
 import { TRIGGERS_BY_BACKEND } from '../engine/triggers';
 import { config } from '../config';
@@ -37,8 +37,6 @@ const LINES: Record<string, (p: Record<string, unknown>) => string> = {
   handler_changed: (p) => `Handler changed${p.reason ? `: ${p.reason}` : ''}`,
   correction_recorded: (p) => `Correction recorded: ${p.reason}`,
 };
-const firstLine = (s: string) => (s.split('\n').find((l) => l.trim()) ?? '').trim();
-
 export class NativeConclusionSink implements ConclusionSink {
   readonly name = 'native-tasks-and-timeline';
   constructor(private subflows: (tenantId: string) => Promise<Parameters<typeof surfacedDecisions>[1]>) {}
@@ -47,7 +45,7 @@ export class NativeConclusionSink implements ConclusionSink {
     if (!events.length || state.shadowMode) return;
     const cfg = await this.subflows(tenantId);
     const surfaced = new Set(surfacedDecisions(state, cfg).map((d) => d.eventId));
-    const { createTask, updateTask } = await import('../tasks');
+    const { updateTask } = await import('../tasks');
     const { emitMatterEvent } = await import('../events');
     const m = await runAsSystem(() => queryOne<{ assigned_to: string | null; created_by: string }>(`select assigned_to, created_by from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]));
     if (!m) return;
@@ -56,17 +54,9 @@ export class NativeConclusionSink implements ConclusionSink {
     for (const e of events) {
       try {
         const p = e.payload as Record<string, unknown>;
-        if (DECISION_EVENT_TYPES.includes(e.type)) {
-          const d = state.decisions[e.id];
-          if (!d || !surfaced.has(e.id) || d.kind === 'auto_clear') continue;
-          const tag = `[engine:${e.id}]`;
-          const dup = await runAsSystem(() => queryOne<{ id: string }>(`select id from matter_task where matter_id = $1 and detail like $2 limit 1`, [matterId, `%${tag}`]));
-          if (dup) continue;
-          const sf = SUBFLOW_OF_KIND[d.kind as DecisionKind];
-          const detail = `Decision needed — ${d.kind.replace(/_/g, ' ')}${d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}: ${firstLine(d.summary)} → ${config.appUrl}${paths.decision(e.id)}${sf ? ` (${sf})` : ''} ${tag}`;
-          await runAsSystem(() => createTask(actorUser, matterId, { type: 'DECISION', detail, assigneeUserId: handler, source: 'ENGINE', status: 'OPEN' }));
-          continue;
-        }
+        // A decision is a task by definition; the task list reads decisions from the engine
+        // itself, so nothing is copied into matter_task for it.
+        if (DECISION_EVENT_TYPES.includes(e.type)) continue;
         if (RESOLVING.has(e.type)) {
           const decisionEventId = String(p.decisionEventId ?? '');
           const d = decisionEventId ? state.decisions[decisionEventId] : null;

@@ -258,7 +258,8 @@ export async function getWorklist(tenantId: string, assignedToUserId?: string | 
       )
     );
     const now = Date.now();
-    taskEntries = rows.filter((r) => !isWaitingOnOthers(r.detail)).map((r) => ({
+    // Hand-made and workflow tasks are not on the list: it carries only what a person has to send or decide.
+    taskEntries = rows.filter(() => false).map((r) => ({
       id: r.id,
       kind: 'TASK',
       matterId: r.matter_id,

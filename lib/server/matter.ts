@@ -6,6 +6,7 @@ import { writeAudit } from './audit';
 import { matterRefFrom, fallbackMatterRef } from '../ref-name';
 import { timed } from './optrace';
 import type { SessionUser } from './types';
+import { enrolIfUntracked } from './engine/enrol';
 
 /**
  * Display name for a matter's Inbox subfolder, e.g. "Leaping Llama 14 Oak Street"
@@ -196,6 +197,9 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
     actionStatus: 'SUCCESS',
     payload: { matterRef, folderPath },
   });
+
+  // On the engine from the start. Best-effort: a matter exists even if enrolment fails.
+  await enrolIfUntracked(user.tenantId, matterId, user.userId).catch(() => {});
 
   return {
     id: matterId,

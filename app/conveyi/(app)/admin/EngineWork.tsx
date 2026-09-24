@@ -4,13 +4,14 @@ import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { pretty, type WorkItem } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
+import { CheckCircle } from '@/app/shared/icons';
 
 /**
  * The engine's side of the task list: what we are waiting for, what is due a chase, and
  * what writing again will not fix. Derived from the cases, never groomed by hand.
  */
 const CSS = `
-.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;align-items:start;margin-top:14px}
+.wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:14px;align-items:start}
 .wk-col{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
 .wk-head{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:baseline;gap:8px}
 .wk-head b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
@@ -82,20 +83,26 @@ function Column({ title, items }: { title: string; items: WorkItem[] }) {
   );
 }
 
-export default function EngineWork({ all }: { all: boolean }) {
+export default function EngineWork({ all, showEmpty = false }: { all: boolean; showEmpty?: boolean }) {
   const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; chase: WorkItem[]; escalate: WorkItem[] } | null>(null);
   const load = useCallback(async () => {
     try { setData(await api(`/engine/my-work?all=${all ? 1 : 0}`)); } catch { setData(null); }
   }, [all]);
   useEffect(() => { void load(); }, [load]);
   if (!data) return null;
-  // Decisions already sit in the list above as tasks; the rest of DO is issues and next steps.
-  const doItems = data.do.filter((i) => i.ref?.type !== 'decision');
-  if (!doItems.length && !data.waiting.length && !data.chase.length && !data.escalate.length) return null;
+  const doItems = data.do;
+  if (!doItems.length && !data.waiting.length && !data.chase.length && !data.escalate.length) {
+    return showEmpty ? (
+      <div style={{ background: '#fff', border: '1px solid #e6e8ee', borderRadius: 12, padding: 40, textAlign: 'center' }}>
+        <div style={{ color: '#16a34a', marginBottom: 8 }}><CheckCircle size={30} /></div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Nothing to do</div>
+      </div>
+    ) : null;
+  }
   return (
-    <div className="wk-cols">
+    <div className="wk-cols" style={{ marginTop: 0, marginBottom: 14 }}>
       <style>{CSS}</style>
-      {doItems.length > 0 && <Column title="Do" items={doItems} />}
+      <Column title="Do" items={doItems} />
       <Column title="Waiting" items={data.waiting} />
       <Column title="Chase" items={data.chase} />
       {data.escalate.length > 0 && <Column title="Escalate" items={data.escalate} />}

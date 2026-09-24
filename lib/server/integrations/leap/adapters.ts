@@ -21,6 +21,7 @@ import { handleLeapWebhook, routeByHint, syncMatters, syncOneMatter, type Ingest
 import { documentHint } from './mapping';
 import { writeBack, type LeapWritebackStore, type WritebackKind } from './writeback';
 import type { LeapDocument, LeapMatter, LeapMatterParty, LeapTokens, LeapWebhookEvent } from './types';
+import { enrolIfUntracked } from '../../engine/enrol';
 
 // Re-export so routes import one module.
 export { syncMatters, syncOneMatter, handleLeapWebhook };
@@ -149,6 +150,9 @@ export class PgLeapMirrorStore implements LeapMirrorStore {
         [tenantId, m.number, address, extras.track, creator, extras.assignedTo, m.number, m.exchangeDate, m.completionDate, m.purchasePrice, m.id, `Mirrored from LEAP (${m.matterType?.name ?? 'matter'}): ${m.description}`]
       );
       return { matterId: r!.id, created: true };
+    }).then(async (res) => {
+      if (res.created) await enrolIfUntracked(tenantId, res.matterId, extras.createdBy ?? 'system').catch(() => {});
+      return res;
     });
   }
 

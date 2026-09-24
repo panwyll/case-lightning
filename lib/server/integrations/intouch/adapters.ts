@@ -14,6 +14,7 @@ import { engine } from '../../engine/adapters';
 import { InTouchHttpClient, type InTouchApi, type InTouchClientConfig, type InTouchTokenStore } from './client';
 import type { InTouchCase, InTouchConnectionRow, InTouchDocument, InTouchParty, InTouchSyncSummary, InTouchTokens } from './types';
 import type { InTouchMirrorRef, InTouchMirrorStore, InTouchSyncDeps } from './sync';
+import { enrolIfUntracked } from '../../engine/enrol';
 
 export function inTouchConfigured(): boolean {
   return !!(config.intouchApiBaseUrl && config.intouchClientId && config.intouchClientSecret);
@@ -137,6 +138,9 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
         [tenantId, ref, address, TRACK[c.side] ?? 'PURCHASE', creator, extras.assignedTo, c.firmReference, price, c.id, `Mirrored from InTouch (${c.side} · ${c.tenure}) — case ${c.reference}`]
       );
       return { matterId: r!.id, created: true };
+    }).then(async (res) => {
+      if (res.created) await enrolIfUntracked(tenantId, res.matterId, extras.createdBy ?? 'system').catch(() => {});
+      return res;
     });
   }
 

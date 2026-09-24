@@ -23,7 +23,12 @@ export default function CasesPage() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      let r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      // Every open matter is tracked. One that is not gets enrolled now, then the map re-reads.
+      if ((r.rollup.untracked ?? 0) > 0) {
+        await api('/admin/enrol-all', { method: 'POST', body: '{}' }).catch(() => {});
+        r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      }
       setRows(r.rows);
       setRollup(r.rollup);
       setErr(null);

@@ -1718,15 +1718,11 @@ function AdminPageInner() {
                 <a href={draftsLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Open Outlook Drafts ↗</a>
               </div>
 
-              {mywork.items.length === 0 ? (
-                <div style={{ ...card, textAlign: 'center', padding: 40 }}>
-                  <div style={{ color: '#16a34a', marginBottom: 8 }}><CheckCircle size={30} /></div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a' }}>Nothing to do</div>
-                </div>
-              ) : (
+              <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} showEmpty={mywork.items.length === 0} />
+              {mywork.items.length === 0 ? null : (
                 <div style={card}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <strong style={{ fontSize: 14, color: '#0f172a' }}>What needs you</strong>
+                    <strong style={{ fontSize: 14, color: '#0f172a' }}>Ready to send</strong>
                     <span style={{ fontSize: 11, fontWeight: 800, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 8px' }}>{items.length}</span>
                     <select value={myworkSort} onChange={(e) => setMyworkSort(e.target.value as typeof myworkSort)} title="Sort the worklist" style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, padding: '4px 8px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', cursor: 'pointer' }}>
                       <option value="smart">Smart order</option>
@@ -1772,7 +1768,6 @@ function AdminPageInner() {
                   </div>
                 </div>
               )}
-              <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
             </>
           );
         })()}

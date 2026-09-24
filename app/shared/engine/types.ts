@@ -295,7 +295,7 @@ export const pretty = (s: string) => s.replace(/_/g, ' ');
 // ── Caseload map + work list (docs/caseload-ux.md) ──────────────────────────
 export type HealthBand = 'normal' | 'attention' | 'delayed' | 'blocked' | 'critical';
 export const HEALTH_BANDS: HealthBand[] = ['normal', 'attention', 'delayed', 'blocked', 'critical'];
-export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'Moving normally', attention: 'Needs attention', delayed: 'Delayed', blocked: 'Blocked', critical: 'Critical' };
+export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'Needs attention', delayed: 'Delayed', blocked: 'Blocked', critical: 'Critical' };
 
 export interface HealthReason {
   code: string;
