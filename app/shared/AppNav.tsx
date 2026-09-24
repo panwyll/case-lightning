@@ -14,7 +14,7 @@ import { Mail, ClipboardList, Building, MailPlus, FileText, Users, Shield, Plug,
  * between pages swaps the content and leaves the shell exactly where it was. The admin
  * centre's tabs are ordinary links to ?tab=…; it reads the URL and switches in place.
  */
-export type AdminTab = 'getstarted' | 'mywork' | 'billing' | 'board' | 'workload' | 'workflow' | 'templates' | 'docpacks' | 'automations' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
+export type AdminTab = 'mywork' | 'billing' | 'workload' | 'templates' | 'docpacks' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
 export interface Me { role: string; displayName: string | null; email: string }
 
@@ -87,7 +87,7 @@ export const SHELL_CSS = `
 .sh-body{display:flex;align-items:stretch;min-height:calc(100vh - ${TOP}px)}
 .sh-side{width:${SIDE}px;flex:0 0 ${SIDE}px;background:#fff;border-right:1px solid #e8eaf0;position:sticky;top:${TOP}px;height:calc(100vh - ${TOP}px);overflow-y:auto;padding:14px 12px 24px;box-sizing:border-box}
 .sh-main{flex:1;min-width:0;padding:22px 24px 56px;box-sizing:border-box}
-.sh-grp{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0f172a;padding:0 10px 6px;margin:14px 0 4px}
+.sh-grp{font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0f172a;padding:0 10px 2px;margin:22px 0 4px}
 .sh-grp:first-child{margin-top:0}
 .sh-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:8px;color:#475569;font-weight:500;font-size:13.5px;text-decoration:none;margin-bottom:2px;box-sizing:border-box;line-height:1.25}
 .sh-item.on{background:#ede9fe;box-shadow:inset 3px 0 0 #5A27E0;color:#5A27E0;font-weight:700}

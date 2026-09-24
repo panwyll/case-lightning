@@ -3,10 +3,7 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import MatterDrawer from './MatterDrawer';
-import WorkflowCanvas from './WorkflowCanvas';
-import Onboarding from './Onboarding';
 import EmailTemplates from './EmailTemplates';
-import Automations from './Automations';
 import NewMatter from './NewMatter';
 import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
@@ -177,15 +174,11 @@ type TabKey = AdminTab;
 
 // One entry per tab — just the label; the section content speaks for itself.
 const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
-  getstarted: { label: 'Get Started', subtitle: '' },
   mywork: { label: 'Tasks', subtitle: '' },
   billing: { label: 'Billing', subtitle: '' },
-  board: { label: 'Matter Board', subtitle: '' },
   workload: { label: 'Workload', subtitle: '' },
-  workflow: { label: 'Case Flow', subtitle: '' },
   templates: { label: 'Email Templates', subtitle: '' },
   docpacks: { label: 'Doc Packs', subtitle: '' },
-  automations: { label: 'Automations', subtitle: '' },
   team: { label: 'Team', subtitle: '' },
   policy: { label: 'Policy', subtitle: '' },
   actions: { label: 'Tools', subtitle: '' },
@@ -197,7 +190,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const TAB_KEYS: TabKey[] = [...ADMIN_TABS_IN_NAV];
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['getstarted', 'board', 'workload', 'workflow', 'templates', 'docpacks', 'automations', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['workload', 'templates', 'docpacks', 'team', 'policy', 'actions', 'audit'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 // Grey → red over ten steps: the age-dot ramp on board cards (one dot per 10 days).
@@ -466,20 +459,6 @@ function AdminPageInner() {
   const [addingStage, setAddingStage] = useState<string | null>(null);
   const [newMatterAddr, setNewMatterAddr] = useState('');
   const [creatingMatter, setCreatingMatter] = useState(false);
-  // "/" focuses the board search from anywhere on the tab.
-  const boardSearchRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => {
-    if (tab !== 'board') return;
-    const h = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.key === '/' && !(t instanceof HTMLInputElement) && !(t instanceof HTMLTextAreaElement) && !(t instanceof HTMLSelectElement) && !t?.isContentEditable) {
-        e.preventDefault();
-        boardSearchRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [tab]);
   // Collapsed kanban columns — remembered per browser so the layout survives reloads.
   // The Completed pile starts collapsed: it's history, not work in flight.
   const [collapsedStages, setCollapsedStages] = useState<string[]>(() => {
@@ -600,19 +579,6 @@ function AdminPageInner() {
       if (tab === 'mywork') {
         loadMywork();
         if (isAdmin) api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
-      }
-      if (tab === 'board') {
-        api<{ stages: Array<{ key: string; name: string }> }>('/stages').then((r) => setStages(r.stages ?? [])).catch(() => {});
-        setBoardLoading(true);
-        try {
-          const b = await api<{ matters: any[]; doneTotal?: number }>('/admin/board');
-          setBoard(b.matters);
-          setDoneTotal(b.doneTotal ?? 0);
-          // Members power the on-card "assign" dropdown (the board is editable in place).
-          api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
-        } finally {
-          setBoardLoading(false);
-        }
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
@@ -903,7 +869,6 @@ function AdminPageInner() {
 
 
 
-        {tab === 'getstarted' && <Onboarding onNavigate={(t) => go(t as TabKey)} onChange={(s) => setOnb(s)} />}
 
         {tab === 'billing' && (
           !billing ? (
@@ -1040,7 +1005,7 @@ function AdminPageInner() {
               <div style={overline}>Frequently asked</div>
               <div style={{ marginTop: 6 }}>
                 {[
-                  ['Does CONVEYi ever send email on my behalf?', 'No. Everything it produces — replies, updates, notifications — is created as an Outlook draft for you to review and send. Automations default to draft-only; only an automatic automation with an explicitly enabled send step (which requires a signed risk acknowledgement) ever sends, and even then on a cancellable delay.'],
+                  ['Does CONVEYi ever send email on my behalf?', 'Yes, for the routine admin: acknowledgements that something arrived, chases when a response is overdue, and the status note to the client and agent that says we chased. Anything with a professional judgement in it — a report on title, a reply on a legal point — is a decision for you first.'],
                   ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
                   ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
                   ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
@@ -1073,402 +1038,6 @@ function AdminPageInner() {
               </p>
             </div>
           </>
-        )}
-
-        {tab === 'board' && (
-          <>
-            <style>{`@keyframes adm-spin{to{transform:rotate(360deg)}}`}</style>
-            {boardLoading && board.length === 0 ? (
-              <div style={{ ...card, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: '#64748b' }}>
-                <span style={spinnerStyle} /> Loading matters…
-              </div>
-            ) : board.length === 0 ? (
-              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>No live matters yet.</div>
-            ) : (() => {
-              const assigneeOpts = Array.from(new Set(board.map((m) => m.assignee).filter(Boolean))).sort();
-              const hasUnassigned = board.some((m) => !m.assignee);
-              const stageMs = (m: any) => new Date(m.stageEnteredAt || m.updatedAt).getTime();
-              const q = boardQuery.trim().toLowerCase();
-              const visible = board
-                .filter(
-                  (m) =>
-                    (boardAssignee === '' || (boardAssignee === '__un' ? !m.assignee : m.assignee === boardAssignee)) &&
-                    (boardFlag === '' || (m.statusFlag || 'ON_TRACK') === boardFlag) &&
-                    (!q ||
-                      String(m.matterRef || '').toLowerCase().includes(q) ||
-                      String(m.propertyAddress || '').toLowerCase().includes(q) ||
-                      String(m.assignee || '').toLowerCase().includes(q))
-                )
-                .sort((a, b) => {
-                  if (boardSort === 'stage_age') return stageMs(a) - stageMs(b); // oldest in stage first (most dots)
-                  if (boardSort === 'completion') {
-                    const av = a.completionTargetDate ? new Date(a.completionTargetDate).getTime() : Infinity;
-                    const bv = b.completionTargetDate ? new Date(b.completionTargetDate).getTime() : Infinity;
-                    return av - bv; // soonest completion first
-                  }
-                  if (boardSort === 'ref') return String(a.matterRef || '').localeCompare(String(b.matterRef || ''));
-                  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); // most recently updated first
-                });
-              // Two piles: work in flight (stage columns) and Completed (done — capped
-              // server-side so it never bloats). No backlog: conveyancing has no sprint-
-              // grooming phase; a new instruction simply starts on the board.
-              // Post-completion sits with Completed rather than holding its own column:
-              // once a matter completes, what's left is filing and admin, not work in
-              // flight, and a near-empty column at the end of the rail earned no space.
-              const isDone = (m: any) => m.status === 'CLOSED' || (m.stage || 'INSTRUCTION') === 'POST_COMPLETION';
-              const active = visible.filter((m) => !isDone(m));
-              const donePile = visible
-                .filter(isDone)
-                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-              // Dropping a completed card onto a stage reactivates it there.
-              const dropOnStage = (stage: string) => {
-                if (!draggingId) return;
-                const dragged = board.find((x) => x.id === draggingId);
-                if (dragged) {
-                  if (dragged.status === 'CLOSED') patchMatter(draggingId, { stage, status: 'OPEN' });
-                  else if ((dragged.stage || 'INSTRUCTION') !== stage) patchMatter(draggingId, { stage });
-                }
-                setDraggingId(null);
-              };
-              const initialsOf = (n: string) =>
-                n.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('');
-              // Column chrome shared by stages and piles.
-              // The whole header is the collapse control, with a chevron to say so — only
-              // the label text used to be clickable, so once you expanded a column it read
-              // as a one-way door.
-              const colHead = (label: string, dot: string, count: React.ReactNode, onToggle: () => void) => (
-                <div
-                  onClick={onToggle}
-                  title={`${label} — click to collapse`}
-                  style={{ display: 'flex', alignItems: 'flex-start', gap: 6, padding: '18px 6px 9px', cursor: 'pointer', minHeight: 52, boxSizing: 'border-box', position: 'sticky', top: 40, zIndex: 3, background: '#f6f7fb' }}
-                >
-                  <span aria-hidden style={{ fontSize: 9, color: '#94a3b8', flexShrink: 0, lineHeight: 1 }}>▾</span>
-                  <span style={{ width: 8, height: 8, borderRadius: 999, background: dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155', letterSpacing: 0.2, minWidth: 0, textTransform: 'uppercase', lineHeight: 1.2, wordBreak: 'break-word', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{label}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#e9ebf1', borderRadius: 999, padding: '0 7px', flexShrink: 0, marginLeft: 'auto' }}>{count}</span>
-                </div>
-              );
-              // No per-column scroll: each column grows to its cards and the PAGE scrolls, the way
-              // Jira and ADO boards behave. A scroll box per column meant six scrollbars on
-              // one screen and cards you could only reach by scrolling the right container.
-              const colBody: React.CSSProperties = { background: '#f0f1f5', borderRadius: 12, padding: 8, minHeight: 80, flex: '1 1 auto', transition: 'background .12s' };
-              const collapsedStrip = (key: string, label: string, dot: string, count: React.ReactNode, onDrop: (e: React.DragEvent) => void) => (
-                <div
-                  key={key}
-                  onClick={() => toggleStage(key)}
-                  onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
-                  onDrop={onDrop}
-                  title={`${label} — ${count} (click to expand)`}
-                  style={{ flex: '0 0 36px', alignSelf: 'stretch', minHeight: 140, background: draggingId ? '#eef2ff' : '#f0f1f5', border: draggingId ? '1px dashed #a5b4fc' : '1px solid transparent', borderRadius: 12, cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '10px 0' }}
-                >
-                  <span style={{ width: 8, height: 8, borderRadius: 999, background: dot }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, color: '#64748b', background: '#fff', borderRadius: 999, padding: '1px 7px' }}>{count}</span>
-                  <span style={{ writingMode: 'vertical-rl', fontSize: 10.5, fontWeight: 800, color: '#64748b', letterSpacing: 0.6, textTransform: 'uppercase' }}>{label}</span>
-                </div>
-              );
-              // The Completed pile — drop target, collapsible, compact cards.
-              const pileColumn = (key: string, label: string, pile: any[], status: string, dot: string, countLabel?: string) => {
-                const onDrop = (e: React.DragEvent) => {
-                  e.preventDefault();
-                  if (draggingId) {
-                    const dragged = board.find((x) => x.id === draggingId);
-                    if (dragged && dragged.status !== status) patchMatter(draggingId, { status });
-                  }
-                  setDraggingId(null);
-                };
-                if (collapsedStages.includes(key)) return collapsedStrip(key, label, dot, countLabel ?? pile.length, onDrop);
-                return (
-                  <div key={key} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 260, display: 'flex', flexDirection: 'column' }}>
-                    {colHead(label, dot, countLabel ?? pile.length, () => toggleStage(key))}
-                    <div
-                      onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
-                      onDrop={onDrop}
-                      style={{ ...colBody, ...(draggingId ? { background: '#eef2ff', outline: '1px dashed #a5b4fc' } : {}) }}
-                    >
-                      {pile.length === 0 ? (
-                        <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '16px 0' }}>Drop a card here</div>
-                      ) : (
-                        pile.map((m) => (
-                          <div
-                            key={m.id}
-                            draggable
-                            onDragStart={() => setDraggingId(m.id)}
-                            onDragEnd={() => setDraggingId(null)}
-                            className="adm-bcard"
-                            onClick={() => setOpenMatter(m)}
-                            title="Open matter"
-                            style={{ background: '#fff', border: '1px solid #e9ebf1', borderRadius: 10, padding: '9px 11px', marginBottom: 8, cursor: 'pointer', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
-                          >
-                            <strong style={{ display: 'block', fontSize: 13, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.matterRef || 'Matter'}</strong>
-                            {m.propertyAddress && (
-                              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.propertyAddress}</div>
-                            )}
-                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
-                              <Check size={11} /> completed {new Date(m.updatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                      {status === 'CLOSED' && doneTotal > pile.filter((m: any) => m.status === 'CLOSED').length && (
-                        <div style={{ fontSize: 11, color: '#94a3b8', textAlign: 'center', padding: '4px 0 2px' }}>
-                          + {doneTotal - pile.filter((m: any) => m.status === 'CLOSED').length} older
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              };
-              // Pulse numbers over the whole live board (unfiltered) — the chips double as filters.
-              const live = board.filter((m) => m.status !== 'CLOSED');
-              const nAttention = live.filter((m) => m.statusFlag === 'NEEDS_ATTENTION').length;
-              const nBlocked = live.filter((m) => m.statusFlag === 'BLOCKED').length;
-              const nUnassigned = live.filter((m) => !m.assignee).length;
-              const in7d = Date.now() + 7 * 86_400_000;
-              const nDueSoon = live.filter((m) => {
-                const t = m.completionTargetDate || m.exchangeTargetDate;
-                return t && new Date(t).getTime() <= in7d;
-              }).length;
-              const statChip = (label: string, n: number, color: string, onClick?: () => void, active?: boolean) => (
-                <button
-                  key={label}
-                  onClick={onClick}
-                  disabled={!onClick}
-                  style={{ background: active ? '#ede9fe' : '#fff', border: `1px solid ${active ? '#c4b5fd' : '#e8eaf0'}`, borderRadius: 12, padding: '9px 16px', textAlign: 'left', cursor: onClick ? 'pointer' : 'default', fontFamily: 'inherit', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}
-                >
-                  <div style={{ fontSize: 19, fontWeight: 800, color, lineHeight: 1.1 }}>{n}</div>
-                  <div style={{ fontSize: 10.5, fontWeight: 700, color: '#8b93a3', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>{label}</div>
-                </button>
-              );
-              return (
-                <>
-                  {/* Pulse strip — the board's vital signs; attention/blocked/unassigned chips filter on click */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                    {statChip('In flight', live.length, '#0f172a')}
-                    {statChip('Needs attention', nAttention, nAttention ? '#b45309' : '#94a3b8', () => setBoardFlag(boardFlag === 'NEEDS_ATTENTION' ? '' : 'NEEDS_ATTENTION'), boardFlag === 'NEEDS_ATTENTION')}
-                    {statChip('Blocked', nBlocked, nBlocked ? '#b91c1c' : '#94a3b8', () => setBoardFlag(boardFlag === 'BLOCKED' ? '' : 'BLOCKED'), boardFlag === 'BLOCKED')}
-                    {statChip('Unassigned', nUnassigned, nUnassigned ? '#5A27E0' : '#94a3b8', () => setBoardAssignee(boardAssignee === '__un' ? '' : '__un'), boardAssignee === '__un')}
-                    {statChip('Target in 7 days', nDueSoon, nDueSoon ? '#0e7490' : '#94a3b8')}
-                    {statChip('Completed', doneTotal, '#16a34a')}
-                  </div>
-
-                  {/* Toolbar */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14, background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, padding: '9px 10px', boxShadow: '0 1px 2px rgba(16,24,40,0.04)' }}>
-                    <input
-                      ref={boardSearchRef}
-                      value={boardQuery}
-                      onChange={(e) => setBoardQuery(e.target.value)}
-                      placeholder="Search ref, address, owner…  ( / )"
-                      style={{ ...filterSelect, width: 230, cursor: 'text', background: '#f6f7fb', border: '1px solid #eef0f4' }}
-                    />
-                    <select value={boardAssignee} onChange={(e) => setBoardAssignee(e.target.value)} style={filterSelect}>
-                      <option value="">All assignees</option>
-                      {assigneeOpts.map((a) => <option key={a} value={a}>{a}</option>)}
-                      {hasUnassigned && <option value="__un">Unassigned</option>}
-                    </select>
-                    <select value={boardSort} onChange={(e) => setBoardSort(e.target.value as typeof boardSort)} style={filterSelect}>
-                      <option value="stage_age">Sort: longest in stage</option>
-                      <option value="completion">Sort: completion date</option>
-                      <option value="updated">Sort: recently updated</option>
-                      <option value="ref">Sort: matter ref</option>
-                    </select>
-                    <select value={boardFlag} onChange={(e) => setBoardFlag(e.target.value)} style={filterSelect}>
-                      <option value="">All statuses</option>
-                      <option value="ON_TRACK">On track</option>
-                      <option value="NEEDS_ATTENTION">Needs attention</option>
-                      <option value="BLOCKED">Blocked</option>
-                    </select>
-                    {(boardAssignee || boardFlag || boardQuery) && (
-                      <button style={clearBtn} onClick={() => { setBoardAssignee(''); setBoardFlag(''); setBoardQuery(''); }}>Clear</button>
-                    )}
-                    {boardLoading && <span style={spinnerStyle} />}
-                    <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }}>{visible.length} matter{visible.length === 1 ? '' : 's'}</span>
-                    {/* Customise what cards show — persisted per browser */}
-                    <div style={{ position: 'relative' }}>
-                      <button style={{ ...clearBtn, fontWeight: 700 }} onClick={() => setShowDisplayMenu((v) => !v)}><Settings size={13} /> Display</button>
-                      {showDisplayMenu && (
-                        <>
-                          <div onClick={() => setShowDisplayMenu(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
-                          <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 6px)', zIndex: 20, background: '#fff', border: '1px solid #e8eaf0', borderRadius: 12, boxShadow: '0 10px 30px rgba(16,24,40,0.14)', padding: '10px 12px', width: 210 }}>
-                            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#8b93a3', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 }}>Card fields</div>
-                            {([['address', 'Property address'], ['owner', 'Owner'], ['dates', 'Target dates'], ['tasks', 'Next task due'], ['age', 'Days in stage'], ['quickEdit', 'Quick-edit dropdowns']] as const).map(([k, label]) => (
-                              <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#334155', padding: '4px 0', cursor: 'pointer' }}>
-                                <input type="checkbox" checked={Boolean(boardPrefs[k])} onChange={() => togglePref(k)} style={{ accentColor: '#5A27E0' }} />
-                                {label}
-                              </label>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Kanban rail — fixed-width columns on a horizontal scroll, Completed pile at the end */}
-                  {/* No overflow on the rail: setting overflow-x alone makes overflow-y compute to
-                      auto, which would keep a scroll box around the whole board and defeat the
-                      point. Columns are sized to fit, so the page scrolls instead. */}
-                  <div style={{ display: 'flex', gap: 12, paddingBottom: 12, alignItems: 'stretch' }}>
-                    {(stages.length ? stages.map((s) => s.key) : (STAGE_ORDER as readonly string[])).filter((stage) => stage !== 'POST_COMPLETION').map((stage) => {
-                      const col = active.filter((m) => (m.stage || 'INSTRUCTION') === stage);
-                      if (collapsedStages.includes(stage)) {
-                        return collapsedStrip(stage, (stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, (e) => {
-                          e.preventDefault();
-                          dropOnStage(stage);
-                        });
-                      }
-                      return (
-                        <div key={stage} style={{ flex: '1 1 0', minWidth: 164, maxWidth: 290, display: 'flex', flexDirection: 'column' }}>
-                          {colHead((stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage), STAGE_COLOR[stage] ?? '#94a3b8', col.length, () => toggleStage(stage))}
-                          <div
-                            onDragOver={(e) => { if (draggingId) e.preventDefault(); }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              dropOnStage(stage);
-                            }}
-                            style={{ ...colBody, ...(draggingId ? { background: '#eef2ff', outline: '1px dashed #a5b4fc' } : {}) }}
-                          >
-                            {col.length === 0 && addingStage !== stage && (
-                              <div style={{ fontSize: 12, color: '#cbd5e1', textAlign: 'center', padding: '14px 0 6px' }}>Drop a card here</div>
-                            )}
-                            {col.map((m) => {
-                              const target = m.completionTargetDate || m.exchangeTargetDate;
-                              const days = Math.max(0, Math.floor((Date.now() - new Date(m.stageEnteredAt || m.updatedAt).getTime()) / 86_400_000));
-                              // Days in stage as dots: one per 10 days, capped at 10 (so 90+ days
-                              // fills the row), each stepped along a grey→red ramp. A stalled
-                              // matter then reads as both longer AND redder at a glance, which a
-                              // single number never did.
-                              const dotCount = Math.min(AGE_RAMP.length, Math.max(1, Math.ceil((days + 1) / 10)));
-                              const chip: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, borderRadius: 999, padding: '2px 8px', whiteSpace: 'nowrap' };
-                              return (
-                                <div
-                                  key={m.id}
-                                  draggable
-                                  onDragStart={() => setDraggingId(m.id)}
-                                  onDragEnd={() => setDraggingId(null)}
-                                  className="adm-bcard"
-                                  style={{ background: '#fff', border: '1px solid #e9ebf1', borderLeft: `3px solid ${FLAG_DOT[m.statusFlag] ?? '#e9ebf1'}`, borderRadius: 10, padding: '10px 11px', marginBottom: 8, cursor: 'grab', opacity: draggingId === m.id ? 0.4 : boardBusyId === m.id ? 0.6 : 1 }}
-                                >
-                                  {/* Card face opens the full matter drawer */}
-                                  <div onClick={() => setOpenMatter(m)} style={{ cursor: 'pointer' }} title="Open matter">
-                                    {boardPrefs.age && (
-                                      <span
-                                        title={`${days} day${days === 1 ? '' : 's'} in ${(stages.find((s) => s.key === stage)?.name ?? STAGE_LABEL[stage] ?? stage)}`}
-                                        style={{ display: 'flex', gap: 2, alignItems: 'center', marginBottom: 4 }}
-                                      >
-                                        {Array.from({ length: dotCount }).map((_, di) => (
-                                          <span key={di} style={{ width: 5, height: 5, borderRadius: 999, background: AGE_RAMP[di] }} />
-                                        ))}
-                                      </span>
-                                    )}
-                                    <strong style={{ display: 'block', fontSize: 13.5, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: -0.1 }}>{m.matterRef || 'Matter'}</strong>
-                                    {boardPrefs.address && m.propertyAddress && (
-                                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, lineHeight: 1.4, display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden' }}>{m.propertyAddress}</div>
-                                    )}
-                                    {boardPrefs.dates && (target || m.nextDue) && (
-                                      <div style={{ display: 'flex', gap: 5, marginTop: 7, flexWrap: 'wrap' }}>
-                                        {target && (
-                                          <span title={m.completionTargetDate ? 'Completion target' : 'Exchange target'} style={{ ...chip, color: '#0e7490', background: '#ecfeff' }}>
-                                            <Target size={12} /> {new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                          </span>
-                                        )}
-                                        {boardPrefs.tasks && m.nextDue && (() => {
-                                          const overdue = new Date(m.nextDue).getTime() < Date.now() - 86_400_000;
-                                          return (
-                                            <span title="Next task due" style={{ ...chip, color: overdue ? '#b91c1c' : '#475569', background: overdue ? '#fee2e2' : '#f1f5f9' }}>
-                                              due {new Date(m.nextDue).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                                            </span>
-                                          );
-                                        })()}
-                                      </div>
-                                    )}
-                                  </div>
-                                  {/* Owner row — quick-edit dropdowns, or a read-only avatar chip */}
-                                  {boardPrefs.owner && (
-                                    boardPrefs.quickEdit ? (
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 8 }}>
-                                        <select
-                                          value={m.assignedTo || ''}
-                                          title="Assign to"
-                                          onChange={(e) => patchMatter(m.id, { assignedTo: e.target.value || null })}
-                                          onDragStart={(e) => e.preventDefault()}
-                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: '#475569', cursor: 'pointer', fontFamily: 'inherit', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
-                                        >
-                                          <option value="">Unassigned</option>
-                                          {users.map((u: any) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
-                                        </select>
-                                        <select
-                                          value={m.statusFlag || 'ON_TRACK'}
-                                          title="Status"
-                                          onChange={(e) => patchMatter(m.id, { statusFlag: e.target.value })}
-                                          onDragStart={(e) => e.preventDefault()}
-                                          style={{ width: '100%', minWidth: 0, fontSize: 10.5, padding: '3px 6px', border: '1px solid #eef0f4', borderRadius: 7, background: '#fafbfc', color: FLAG_DOT[m.statusFlag] && m.statusFlag !== 'ON_TRACK' ? FLAG_DOT[m.statusFlag] : '#475569', cursor: 'pointer', fontFamily: 'inherit', fontWeight: m.statusFlag && m.statusFlag !== 'ON_TRACK' ? 700 : 400, textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden', }}
-                                        >
-                                          <option value="ON_TRACK">On track</option>
-                                          <option value="NEEDS_ATTENTION">Attention</option>
-                                          <option value="BLOCKED">Blocked</option>
-                                        </select>
-                                      </div>
-                                    ) : (
-                                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
-                                        <span style={{ width: 20, height: 20, borderRadius: 999, background: m.assignee ? '#ede9fe' : '#f1f5f9', color: m.assignee ? '#5A27E0' : '#94a3b8', fontSize: 9.5, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                          {m.assignee ? initialsOf(m.assignee) : '—'}
-                                        </span>
-                                        <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.assignee || 'Unassigned'}</span>
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              );
-                            })}
-                            {/* Trello-style quick add at the foot of every column */}
-                            {addingStage === stage ? (
-                              <div style={{ background: '#fff', border: '1px dashed #c7cdd8', borderRadius: 10, padding: 8 }}>
-                                <input
-                                  autoFocus
-                                  disabled={creatingMatter}
-                                  value={newMatterAddr}
-                                  onChange={(e) => setNewMatterAddr(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') quickCreateMatter(stage);
-                                    if (e.key === 'Escape') { setAddingStage(null); setNewMatterAddr(''); }
-                                  }}
-                                  placeholder="Property address…"
-                                  style={{ width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '6px 8px', border: '1px solid #e2e8f0', borderRadius: 7, fontFamily: 'inherit' }}
-                                />
-                                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                                  <button onClick={() => quickCreateMatter(stage)} disabled={creatingMatter || !newMatterAddr.trim()} style={{ ...btnPrimary, padding: '4px 12px', fontSize: 12, opacity: creatingMatter || !newMatterAddr.trim() ? 0.5 : 1 }}>
-                                    {creatingMatter ? 'Creating…' : 'Add matter'}
-                                  </button>
-                                  <button onClick={() => { setAddingStage(null); setNewMatterAddr(''); }} style={{ ...clearBtn, padding: '4px 10px' }}>Cancel</button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => { setAddingStage(stage); setNewMatterAddr(''); }}
-                                style={{ width: '100%', border: 'none', background: 'transparent', color: '#8b93a3', fontSize: 12.5, fontWeight: 700, padding: '7px 0 4px', cursor: 'pointer', borderRadius: 8, fontFamily: 'inherit', textAlign: 'left', paddingLeft: 6 }}
-                              >
-                                ＋ Add matter
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {pileColumn('__DONE', 'Completed', donePile, 'CLOSED', '#22c55e', doneTotal ? String(doneTotal + donePile.filter((m: any) => m.status !== 'CLOSED').length) : undefined)}
-                  </div>
-                </>
-              );
-            })()}
-          </>
-        )}
-
-        {openMatter && (
-          <MatterDrawer
-            matter={openMatter}
-            api={api}
-            users={users}
-            onPatch={patchMatter}
-            onClose={() => setOpenMatter(null)}
-          />
         )}
 
         {tab === 'mywork' && (() => {
@@ -1671,60 +1240,10 @@ function AdminPageInner() {
                   </label>
                 )}
                 <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
-                <a href={draftsLink} target="_blank" rel="noopener noreferrer" style={{ ...clearBtn, textDecoration: 'none' }}>Open Outlook Drafts ↗</a>
               </div>
 
               <DecisionTray userId={me?.userId ?? ''} all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
               <EngineWork all={mywork.assignedTo === 'any' || mywork.assignedTo === ''} />
-              {mywork.items.length === 0 ? null : (
-                <div style={card}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <strong style={{ fontSize: 14, color: '#0f172a' }}>Ready to send</strong>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 8px' }}>{items.length}</span>
-                    <select value={myworkSort} onChange={(e) => setMyworkSort(e.target.value as typeof myworkSort)} title="Sort the worklist" style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 600, padding: '4px 8px', borderRadius: 7, border: '1px solid #D9D2EC', background: '#fff', color: '#5A27E0', cursor: 'pointer' }}>
-                      <option value="smart">Smart order</option>
-                      <option value="due">By due date</option>
-                      <option value="matter">By matter</option>
-                    </select>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
-                    {groups.map((g) => {
-                      const open = !!g.matterId && myworkOpen === g.matterId;
-                      const folded = myworkFolded.has(g.key);
-                      const first = g.items[0];
-                      const nextAction = first ? (first.kind === 'TASK' ? first.title : first.title || first.detail || null) : null;
-                      const keyDate = g.items.find((i: any) => i.urgent && i.keyDate)?.keyDate ?? null;
-                      const toggleCard = () => setMyworkFolded((s) => { const n = new Set(s); n.has(g.key) ? n.delete(g.key) : n.add(g.key); return n; });
-                      return (
-                        <div key={g.key} style={{ border: '1px solid ' + (g.urgent ? '#fecaca' : '#E7E2F3'), borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
-                          {/* Matter header — the single collapse arrow folds the whole card. */}
-                          <div onClick={toggleCard} style={{ padding: '9px 11px', background: g.urgent ? '#fff7f7' : '#FAF9FE', borderBottom: folded ? 'none' : '1px solid ' + (g.urgent ? '#fde0e0' : '#EFEBF9'), cursor: 'pointer' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={g.urgent ? '#dc2626' : '#94a3b8'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', transform: folded ? 'none' : 'rotate(90deg)', transition: 'transform 0.15s' }}><path d="M9 6l6 6-6 6" /></svg>
-                              <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: '#1C1530', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.ref}{g.sub ? ` · ${g.sub}` : ''}</span>
-                              <span style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#94a3b8' }}>{g.items.length} to do</span>
-                            </div>
-                            {(g.stage || keyDate) && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, paddingLeft: 19, fontSize: 10.5 }}>
-                                {g.stage && <span style={{ flex: 'none', fontWeight: 700, color: '#5A27E0', background: '#ede9fe', borderRadius: 999, padding: '1px 7px' }}>{stageName(g.stage)}</span>}
-                                {keyDate && <span title="Exchange/completion target" style={{ flex: 'none', color: '#b91c1c', fontWeight: 700 }}><Target size={12} /> {new Date(keyDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
-                              </div>
-                            )}
-                          </div>
-                          {/* Key details — a text link (not a second arrow) that opens the matter's detail panel. */}
-                          {!folded && g.matterId && (
-                            <button onClick={() => toggleMyworkMatter(g.matterId!)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 11px', border: 'none', borderBottom: '1px solid #EFEBF9', background: open ? '#F7F5FD' : '#fff', color: '#5A27E0', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                              {open ? '▾ Hide key details' : '▸ Key details & history'}
-                            </button>
-                          )}
-                          {!folded && open && <div style={{ padding: 11, borderBottom: '1px solid #EFEBF9' }}>{matterDetail(g.matterId!, nextAction)}</div>}
-                          {!folded && <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 9 }}>{g.items.map((w: any) => row(w))}</div>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
               {me && !me.hasAssistants && <EmailToFile embedded />}
             </>
           );
@@ -1791,7 +1310,6 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'workflow' && <WorkflowCanvas />}
 
         {tab === 'templates' && <EmailTemplates />}
 
@@ -2034,7 +1552,6 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'automations' && <Automations />}
 
         {tab === 'actions' && (
           <>
