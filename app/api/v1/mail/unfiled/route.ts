@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       .object({ nextLink: z.string().nullish(), search: z.string().max(200).nullish(), top: z.coerce.number().int().min(5).max(100).optional() })
       .parse({ nextLink: req.nextUrl.searchParams.get('nextLink'), search: req.nextUrl.searchParams.get('search'), top: req.nextUrl.searchParams.get('top') ?? undefined });
 
-    const { unfiled, nextLink, filedBy, setAside } = await unfiledInbox(user, { top: q.top ?? 25, nextLink: q.nextLink, search: q.search });
+    const { unfiled, nextLink, filedBy, setAside } = await unfiledInbox(user, { top: q.top ?? 25, nextLink: q.nextLink, search: q.search, withBody: true });
 
     // Suggest a case for each. One thread can appear as several messages in a page; match
     // once per conversation so the work is proportional to threads, not to replies.
@@ -50,7 +50,8 @@ export async function GET(req: NextRequest) {
           fromAddress: m.from?.emailAddress?.address ?? undefined,
           recipientAddresses: (m.toRecipients ?? []).map((r: { emailAddress?: { address?: string } }) => r.emailAddress?.address).filter(Boolean),
           subject: m.subject ?? '',
-          bodyText: m.bodyPreview ?? '',
+          // The whole body, not the preview: a reference or postcode is often below the fold.
+          bodyText: String(m.body?.content ?? m.bodyPreview ?? '').slice(0, 20_000),
         }).catch(() => []);
         byConversation.set(conversationId, candidates);
       }
@@ -64,8 +65,9 @@ export async function GET(req: NextRequest) {
         bodyPreview: m.bodyPreview ?? '',
         hasAttachments: !!m.hasAttachments,
         webLink: m.webLink ?? null,
-        // Ranked best first; the top one is what the button offers.
-        suggestions: candidates.slice(0, 3).map((c) => ({ matterId: c.matterId, matterRef: c.matterRef, propertyAddress: c.propertyAddress, band: c.band, why: c.signals.slice(0, 3).map((s) => s.detail) })),
+        // Ranked best first; the top one is what the button offers. `score` is the engine's
+        // own 0–1 score, shown as a percentage; `band` is its AUTO / STRONG / WEAK verdict.
+        suggestions: candidates.slice(0, 3).map((c) => ({ matterId: c.matterId, matterRef: c.matterRef, propertyAddress: c.propertyAddress, band: c.band, score: c.score, why: c.signals.slice(0, 3).map((s) => s.detail) })),
       });
     }
 

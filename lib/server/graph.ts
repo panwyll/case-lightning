@@ -159,16 +159,19 @@ export async function listMailSince(
  */
 export async function listInboxMessages(
   userId: string,
-  opts?: { top?: number; nextLink?: string | null; search?: string | null }
+  opts?: { top?: number; nextLink?: string | null; search?: string | null; withBody?: boolean }
 ): Promise<{ messages: any[]; nextLink: string | null }> {
   const client = await graphClientForUser(userId);
-  const select = 'id,subject,from,toRecipients,receivedDateTime,bodyPreview,conversationId,hasAttachments,isRead,categories,webLink';
+  // `withBody` adds the whole body as plain text (Graph converts it), for matching on more
+  // than the 255-character preview. The caller keeps it server-side.
+  const select = `id,subject,from,toRecipients,receivedDateTime,bodyPreview,conversationId,hasAttachments,isRead,categories,webLink${opts?.withBody ? ',body' : ''}`;
+  const textBody = (r: any) => (opts?.withBody ? r.header('Prefer', 'outlook.body-content-type="text"') : r);
   try {
     if (opts?.nextLink) {
-      const page = await client.api(opts.nextLink).get();
+      const page = await textBody(client.api(opts.nextLink)).get();
       return { messages: page.value ?? [], nextLink: page['@odata.nextLink'] ?? null };
     }
-    let req = client.api("/me/mailFolders('inbox')/messages").select(select).top(opts?.top ?? 40);
+    let req = textBody(client.api("/me/mailFolders('inbox')/messages").select(select).top(opts?.top ?? 40));
     // $search and $orderby are mutually exclusive in Graph — search returns by relevance.
     if (opts?.search) req = req.search(`"${opts.search.replace(/"/g, '')}"`);
     else req = req.orderby('receivedDateTime desc');

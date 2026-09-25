@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { paths } from '@/lib/paths';
-import { Paperclip, Check, X, Mail } from '@/app/shared/icons';
+import { Paperclip, Check, X, Mail, ChevronDown } from '@/app/shared/icons';
 
 /**
  * Filing email to cases (docs/email-filing.md).
@@ -27,7 +27,6 @@ const CSS = `
 .ef-go{display:inline-flex;gap:8px;align-items:center;border:1px solid #5A27E0;background:#5A27E0;color:#fff;border-radius:10px;padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
 .ef-go:hover{background:#4c1fc4}
 .ef-go:disabled{opacity:.5;cursor:not-allowed}
-.ef-pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;border-radius:99px;padding:2px 8px;background:rgba(255,255,255,.22)}
 .ef-alt{border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;color:#334155;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
 .ef-alt:hover{background:#f8fafc}
 .ef-alt:disabled{opacity:.5;cursor:not-allowed}
@@ -37,14 +36,43 @@ const CSS = `
 .ef-hit{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:1px solid transparent;background:#fff;border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;font-family:inherit;margin-top:6px;color:#0f172a}
 .ef-hit:hover{border-color:#c4b5fd;background:#f5f3ff}
 .ef-hit b{color:#5A27E0}
+.ef-pct{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:99px;padding:2px 8px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ef-pct i{width:7px;height:7px;border-radius:99px;display:inline-block}
+.ef-go .ef-pct{background:#fff}
+.ef-open{margin-top:12px;border:1px solid #e6e8ee;border-radius:12px;background:#fafafa;overflow:hidden}
+.ef-meta{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;padding:10px 14px;font-size:12.5px;border-bottom:1px solid #eef1f5;background:#fff}
+.ef-meta dt{color:#94a3b8;font-weight:600}
+.ef-meta dd{margin:0;color:#334155;overflow-wrap:anywhere}
+.ef-att{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px;border-bottom:1px solid #eef1f5;background:#fff}
+.ef-att span{display:inline-flex;align-items:center;gap:5px;font-size:12px;border:1px solid #e2e8f0;border-radius:8px;padding:3px 8px;color:#334155}
+.ef-body{width:100%;height:420px;border:0;background:#fff;display:block}
+.ef-text{white-space:pre-wrap;font-size:13px;line-height:1.5;color:#334155;padding:12px 14px;max-height:420px;overflow:auto;margin:0;font-family:inherit}
 .ef-done{text-align:center;padding:48px 16px;color:#64748b;background:#fff;border:1px solid #e6e8ee;border-radius:14px}
 .ef-done b{display:block;font-size:19px;color:#0f172a;margin-bottom:6px}
 `;
 
-const BAND: Record<string, string> = { high: 'almost certain', medium: 'likely', low: 'possible' };
+/**
+ * The matching engine's own verdict, as a percentage and a colour. Green is AUTO — a
+ * linked thread, our reference, or two independent signals agree; amber is STRONG; red
+ * is WEAK, worth a look before filing.
+ */
+const RAG: Record<string, { fg: string; bg: string; dot: string }> = {
+  AUTO: { fg: '#166534', bg: '#dcfce7', dot: '#16a34a' },
+  STRONG: { fg: '#92400e', bg: '#fef3c7', dot: '#d97706' },
+  WEAK: { fg: '#991b1b', bg: '#fee2e2', dot: '#dc2626' },
+};
+function Pct({ s }: { s: Suggestion }) {
+  const c = RAG[s.band] ?? RAG.WEAK;
+  return <span className="ef-pct" style={{ color: c.fg, background: c.bg }} title={s.why.join(' · ')}><i style={{ background: c.dot }} />{Math.round(s.score * 100)}%</span>;
+}
 const HUES = ['#5A27E0', '#0ea5e9', '#16a34a', '#d97706', '#db2777', '#0f766e', '#7c3aed', '#b45309'];
 
-interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; why: string[] }
+interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; score: number; why: string[] }
+interface Person { name: string | null; address: string | null }
+interface FullMessage { subject: string; from: Person | null; to: Person[]; cc: Person[]; receivedDateTime: string | null; body: { contentType: 'html' | 'text'; content: string }; attachments: Array<{ id: string; name: string; size: number }> }
+const person = (p: Person) => (p.name && p.address ? `${p.name} <${p.address}>` : p.name || p.address || '');
+/** The email in a sandbox: no scripts, no remote content (tracking pixels stay unloaded). */
+const shell = (html: string) => `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:"><base target="_blank"><style>body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#1e293b;margin:12px 14px;overflow-wrap:anywhere}img{max-width:100%;height:auto}img:not([src^="data:"]){display:none}</style></head><body>${html}</body></html>`;
 interface Item {
   id: string;
   conversationId: string | null;
@@ -146,6 +174,17 @@ function Row({ item, going, busy, onFile, onNotACase }: { item: Item; going: boo
   const [hits, setHits] = useState<MatterHit[]>([]);
   const top = item.suggestions[0];
   const rest = item.suggestions.slice(1, 3);
+  const [open, setOpen] = useState(false);
+  const [full, setFull] = useState<FullMessage | null>(null);
+  const [readErr, setReadErr] = useState<string | null>(null);
+  const toggleOpen = async () => {
+    const next = !open;
+    setOpen(next);
+    if (next && !full) {
+      try { setFull((await api<{ message: FullMessage }>(`/mail/message/${encodeURIComponent(item.id)}`)).message); setReadErr(null); }
+      catch (e: unknown) { setReadErr(e instanceof Error ? e.message : 'Could not open the email.'); }
+    }
+  };
   const who = item.from.name ?? item.from.address ?? 'Unknown sender';
 
   useEffect(() => {
@@ -169,17 +208,40 @@ function Row({ item, going, busy, onFile, onNotACase }: { item: Item; going: boo
         <div className="ef-acts">
           {top ? (
             <button className="ef-go" disabled={busy} onClick={() => onFile(top.matterId)}>
-              <Check size={14} /> File to {top.matterRef}<span className="ef-pill">{BAND[top.band] ?? top.band}</span>
+              <Check size={14} /> File to {top.matterRef}<Pct s={top} />
             </button>
           ) : (
             <span className="eg-sub">No case looks like a match.</span>
           )}
-          {rest.map((s) => <button key={s.matterId} className="ef-alt" disabled={busy} onClick={() => onFile(s.matterId)}>{s.matterRef}</button>)}
+          {rest.map((s) => <button key={s.matterId} className="ef-alt" disabled={busy} onClick={() => onFile(s.matterId)} title={s.propertyAddress}>{s.matterRef}<Pct s={s} /></button>)}
           <button className="ef-alt" disabled={busy} onClick={() => setPicking((p) => !p)}>{picking ? 'Cancel' : 'Another case…'}</button>
           <button className="ef-alt" disabled={busy} onClick={onNotACase}><X size={13} /> Not a case</button>
+          <button className="ef-alt" onClick={toggleOpen} aria-expanded={open}><span style={{ display: 'inline-flex', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .12s' }}><ChevronDown size={13} /></span>{open ? 'Close' : 'Open'}</button>
           {item.webLink && <a className="ef-alt" href={item.webLink} target="_blank" rel="noopener noreferrer"><Mail size={13} /> Outlook</a>}
         </div>
         {top && <div className="ef-why">{top.propertyAddress}{top.why.length ? ` · ${top.why.join(' · ')}` : ''}</div>}
+        {open && (
+          <div className="ef-open">
+            {readErr && <div className="eg-err" style={{ margin: 10 }}>{readErr}</div>}
+            {!full && !readErr && <div className="eg-sub" style={{ padding: 12 }}>Opening…</div>}
+            {full && (
+              <>
+                <dl className="ef-meta">
+                  {full.from && <><dt>From</dt><dd>{person(full.from)}</dd></>}
+                  {full.to.length > 0 && <><dt>To</dt><dd>{full.to.map(person).join(', ')}</dd></>}
+                  {full.cc.length > 0 && <><dt>Cc</dt><dd>{full.cc.map(person).join(', ')}</dd></>}
+                  {full.receivedDateTime && <><dt>Received</dt><dd>{new Date(full.receivedDateTime).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}</dd></>}
+                </dl>
+                {full.attachments.length > 0 && (
+                  <div className="ef-att">{full.attachments.map((a) => <span key={a.id}><Paperclip size={12} />{a.name}</span>)}</div>
+                )}
+                {full.body.contentType === 'html'
+                  ? <iframe className="ef-body" title={full.subject || 'Email'} sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={shell(full.body.content)} />
+                  : <pre className="ef-text">{full.body.content}</pre>}
+              </>
+            )}
+          </div>
+        )}
         {picking && (
           <div className="ef-pick">
             <input autoFocus placeholder="Reference, address or a party's name" value={q} onChange={(e) => setQ(e.target.value)} />

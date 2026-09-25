@@ -100,6 +100,7 @@ const WAIT_ACTION: Record<string, (subject: string) => string> = {
 export function clientAction(what: string): string {
   const q = what.match(/^Client to answer (query \S+)/i);
   if (q) return `answer ${q[1]}`;
+  if (/instruction to exchange/i.test(what)) return 'authorise exchange';
   const i = what.match(/^Take the client's instruction:\s*(.+?)(?: has not been recorded)?$/i);
   if (i) return `give their instruction — ${i[1].replace(/^the client's instruction to /i, '').trim()}`;
   return what.charAt(0).toLowerCase() + what.slice(1);
@@ -279,7 +280,10 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   }
 
   // ── WAITING: the client owes us a decision only they can make ──
-  for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client')) {
+  // Only once it is theirs to give: nobody asks a client to authorise exchange while the
+  // searches are still out, so until pre-exchange that is not something we are waiting on.
+  const askable = (id: string) => id !== 'exchange_authority' || s.stage === 'pre_exchange';
+  for (const a of nextActions(s, now).filter((x) => x.who === 'client' && x.ref.type === 'client' && askable(x.ref.id))) {
     out.push({
       ...base,
       id: `waiting:client:${a.ref.id}`,

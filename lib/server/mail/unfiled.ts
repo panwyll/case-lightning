@@ -6,8 +6,8 @@ import { listInboxMessages } from '../graph';
  * threads a person set aside are gone. Deterministic — no model call — so a count or a
  * page of it costs nothing but the mailbox read.
  */
-export async function unfiledInbox(user: { userId: string; tenantId: string }, opts: { top?: number; nextLink?: string | null; search?: string | null } = {}) {
-  const { messages, nextLink } = await listInboxMessages(user.userId, { top: opts.top ?? 25, nextLink: opts.nextLink ?? null, search: opts.search ?? null });
+export async function unfiledInbox(user: { userId: string; tenantId: string }, opts: { top?: number; nextLink?: string | null; search?: string | null; withBody?: boolean } = {}) {
+  const { messages, nextLink } = await listInboxMessages(user.userId, { top: opts.top ?? 25, nextLink: opts.nextLink ?? null, search: opts.search ?? null, withBody: opts.withBody });
   const conversationIds = Array.from(new Set(messages.map((m: { conversationId?: string }) => m.conversationId).filter(Boolean))) as string[];
   const [filed, dismissed] = conversationIds.length
     ? await Promise.all([

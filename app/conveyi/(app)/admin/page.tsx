@@ -477,6 +477,12 @@ function AdminPageInner() {
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  // Everyone in the firm, for the "Assigned to" picker — not just the people who happen to
+  // have work, and not gated on the admin check (which resolves after the first load).
+  const [members, setMembers] = useState<Array<{ id: string; display_name: string | null; email: string }>>([]);
+  useEffect(() => {
+    api<{ members: Array<{ id: string; display_name: string | null; email: string }> }>('/team/members').then((r) => setMembers(r.members)).catch(() => {});
+  }, []);
   const [status, setStatus] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
   const [docUpload, setDocUpload] = useState({ name: '', description: '' });
@@ -495,9 +501,6 @@ function AdminPageInner() {
         setBilling(await api('/billing/account'));
         setReferrals(await api('/referrals'));
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
-      }
-      if (tab === 'mywork') {
-        if (isAdmin) api<{ users: any[] }>('/admin/users').then((r) => setUsers(r.users)).catch(() => {});
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
@@ -785,16 +788,14 @@ function AdminPageInner() {
           <h1 style={{ fontSize: 20, margin: 0 }}>{TAB_META[tab].label}</h1>
           {tab === 'mywork' && (
             <>
-              {isAdmin && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
-                  <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
-                    <option value="">Anyone</option>
-                    {users.map((u: any) => (<option key={u.id} value={u.id}>{u.display_name || u.email}</option>))}
-                  </select>
-                </label>
-              )}
-              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: isAdmin ? 0 : 'auto', padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
+                <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
+                  <option value="">Anyone</option>
+                  {members.map((u) => (<option key={u.id} value={u.id}>{u.display_name || u.email}{u.id === me?.userId ? ' (me)' : ''}</option>))}
+                </select>
+              </label>
+              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
             </>
           )}
         </div>
@@ -977,7 +978,7 @@ function AdminPageInner() {
         {tab === 'mywork' && (
           <>
             <DecisionTray userId={assignee || me?.userId || ''} all={assignee === ''} />
-            <EngineWork all={assignee === ''} />
+            <EngineWork who={assignee} />
           </>
         )}
 

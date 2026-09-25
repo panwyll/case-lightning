@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     if (config.intouchGrant === 'authorization_code') {
       const state = crypto.randomUUID();
       const url = InTouchHttpClient.authorizeUrl(cfg, state);
-      const res = NextResponse.json({ ok: true, data: { authorizeUrl: url } });
+      const res = NextResponse.json({ authorizeUrl: url });
       res.cookies.set('cl_intouch_state', state, { path: '/', httpOnly: true, sameSite: 'lax', secure: true, maxAge: 600 });
       return res;
     }

@@ -273,3 +273,16 @@ test('caseload: the queue row carries the health band, the coarse lifecycle and 
   assert.equal((await h.store.listQueue(TENANT, { includeFinished: true })).length, 1);
   assert.equal((await h.store.listStates(TENANT, { includeFinished: true })).length, 1);
 });
+
+test('work: the client\'s authority to exchange is not waited on until the case reaches pre-exchange', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: true });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.stage, 'instruction');
+  const early = matterWork(s, h.ports.now()).items.filter((i) => i.id === 'waiting:client:exchange_authority');
+  assert.equal(early.length, 0, 'nobody asks a client to authorise exchange at instruction');
+  const ready = matterWork({ ...s, stage: 'pre_exchange' }, h.ports.now()).items.find((i) => i.id === 'waiting:client:exchange_authority');
+  assert.ok(ready, 'at pre-exchange it is the client\'s to give');
+  assert.equal(ready!.what, 'authorise exchange');
+  assert.equal(ready!.actionOwner, 'client');
+});

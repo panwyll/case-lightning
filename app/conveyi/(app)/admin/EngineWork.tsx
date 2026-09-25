@@ -39,13 +39,10 @@ const CSS = `
 .wk-row .meta{font-size:11.5px;color:#94a3b8;margin-top:2px}
 .wk-row .right{font-size:11.5px;color:#64748b;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
 .wk-row .right .over{color:#b91c1c;font-weight:700}
-.wk-wait-hd{flex-wrap:wrap}
 .wk-who{display:flex;gap:6px;flex-wrap:wrap}
 .wk-who span{font-size:11.5px;font-weight:700;color:#334155;background:#f1f5f9;border-radius:999px;padding:2px 9px;white-space:nowrap}
-.wk-next{width:100%;display:grid;gap:3px;padding:2px 0 0 24px}
-.wk-next > span{display:flex;gap:8px;align-items:baseline;font-size:12.5px;color:#475569;min-width:0}
-.wk-next .t{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700}
-.wk-next .w{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wk-clear{display:flex;align-items:center;gap:8px;padding:2px 14px 12px;font-size:13px;color:#166534}
+.wk-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 .wk-left{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .wk-left.over{color:#b91c1c}.wk-left.soon{color:#b45309}.wk-left.ok{color:#0369a1}
 `;
@@ -109,12 +106,16 @@ function Item({ i }: { i: WorkItem }) {
 }
 
 /** Four at a time: the list is for acting on, not for reading end to end. */
-function Column({ title, items }: { title: string; items: WorkItem[] }) {
+function Column({ title, items, checkedAt }: { title: string; items: WorkItem[]; checkedAt?: Date }) {
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, 4);
   return (
     <div className="wk-col">
       <div className="wk-head" style={items.length ? undefined : { borderBottom: 0 }}><b>{title}</b><span className="n">{items.length}</span></div>
+      {/* An empty list says so, and when it was checked: proof it is working, not blank. */}
+      {!items.length && checkedAt && (
+        <div className="wk-clear"><CheckCircle size={16} /><span>All clear</span><span className="t">checked {checkedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span></div>
+      )}
       {shown.map((i) => <Item key={`${i.matterId}:${i.id}`} i={i} />)}
       {items.length > 4 && <button className="wk-more" onClick={() => setAll((a) => !a)}>{all ? 'Fewer' : `${items.length - 4} more`}</button>}
     </div>
@@ -122,31 +123,25 @@ function Column({ title, items }: { title: string; items: WorkItem[] }) {
 }
 
 /**
- * Waiting on X to do Y by Z. Collapsed, it still says who holds what and what is most
- * pressing, with the time left; open, it lists everything. It chases itself.
+ * Waiting on X to do Y by Z. Collapsed, one line: who holds how many, how many are
+ * overdue, and when the next one falls due. Open, every line. It chases itself.
  */
 function Waiting({ items }: { items: WorkItem[] }) {
   const [open, setOpen] = useState(false);
   const sorted = items.slice().sort(pressing);
   const overdue = items.filter((i) => (daysLeft(i) ?? 0) < 0).length;
+  const upcoming = sorted.find((i) => (daysLeft(i) ?? -1) >= 0);
   const byWho = Object.entries(items.reduce<Record<string, number>>((m, i) => ((m[i.actionOwner] = (m[i.actionOwner] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
   return (
     <div className="wk-wait">
       <button className="wk-wait-hd" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className={`chev${open ? ' open' : ''}`}><ChevronRight size={14} /></span>
-        <b>Waiting on</b><span className="n">{items.length}</span>
+        <b>Waiting</b><span className="n">{items.length}</span>
         <span className="wk-who">{byWho.map(([who, n]) => <span key={who}>{WHO_SHORT[who] ?? pretty(who)} {n}</span>)}</span>
-        <span className="sum">{overdue > 0 && <span style={{ color: '#b91c1c', fontWeight: 700 }}>{overdue} overdue</span>}</span>
-        {!open && (
-          <span className="wk-next">
-            {sorted.slice(0, 3).map((i) => (
-              <span key={`${i.matterId}:${i.id}`}>
-                <Left i={i} />
-                <span className="w"><strong style={{ color: '#0f172a', fontWeight: 700 }}>{WHO_SHORT[i.actionOwner] ?? pretty(i.actionOwner)}</strong> to {i.what} · {i.propertyAddress ?? i.matterRef ?? 'Matter'}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</span>
-              </span>
-            ))}
-          </span>
-        )}
+        <span className="sum">
+          {overdue > 0 && <span className="wk-left over">{overdue} overdue</span>}
+          {upcoming && <span>next due <Left i={upcoming} /></span>}
+        </span>
       </button>
       {open && sorted.map((i) => {
         const who = OWNER[i.actionOwner] ?? pretty(i.actionOwner);
@@ -172,11 +167,13 @@ function Waiting({ items }: { items: WorkItem[] }) {
   );
 }
 
-export default function EngineWork({ all }: { all: boolean }) {
+/** `who`: '' for the whole team, otherwise one person's id. */
+export default function EngineWork({ who }: { who: string }) {
   const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[] } | null>(null);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const load = useCallback(async () => {
-    try { setData(await api(`/engine/my-work?all=${all ? 1 : 0}`)); } catch { setData(null); }
-  }, [all]);
+    try { setData(await api(who ? `/engine/my-work?user=${who}` : '/engine/my-work?all=1')); setCheckedAt(new Date()); } catch { setData(null); }
+  }, [who]);
   useEffect(() => { void load(); }, [load]);
   if (!data) return null;
   // Decisions are the tray above; what is left of DO is issues and next steps.
@@ -185,7 +182,8 @@ export default function EngineWork({ all }: { all: boolean }) {
     <div>
       <style>{CSS}</style>
       <div className="wk-cols">
-        <Column title="To do" items={doItems} />
+        {/* "All clear" only when nothing at all needs them, decisions in the tray included. */}
+        <Column title="To do" items={doItems} checkedAt={data.do.length === 0 ? checkedAt ?? undefined : undefined} />
         {data.escalate.length > 0 && <Column title="Escalate" items={data.escalate} />}
       </div>
       {data.waiting.length > 0 && <Waiting items={data.waiting} />}
