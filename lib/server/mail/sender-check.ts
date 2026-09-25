@@ -13,7 +13,10 @@
  *      different ending (.co for .co.uk).
  *   3. Display name — the name is one we know (a contact on a case, or someone in the
  *      firm) but the address behind it is not theirs.
- *   4. Reply-To — replies would go to a different domain from the sender's.
+ *   4. Reply-To — the email claims to be from someone we deal with, but replies would go
+ *      to a different organisation. (A newsletter from mails.microsoft.com with replies to
+ *      microsoft.com is the same organisation, and a sender we have never dealt with is
+ *      not impersonating anyone we know, so neither counts.)
  *
  * Any of these makes the sender untrusted: the sender no longer counts towards a match,
  * the match can never be green, and the row says why in plain words.
@@ -38,6 +41,17 @@ export interface KnownParties {
 }
 
 const domainOf = (a: string | null | undefined) => (a?.split('@')[1] ?? '').toLowerCase().replace(/[>\s]+$/, '') || null;
+
+/** Two-part endings, where the organisation is the label before them (bartlett-law.co.uk). */
+const SECOND_LEVEL = new Set(['co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'ltd.uk', 'plc.uk', 'me.uk', 'net.uk', 'nhs.uk', 'com.au', 'net.au', 'org.au', 'co.nz', 'co.za', 'co.in', 'co.jp', 'com.br', 'com.sg', 'co.ie']);
+
+/** The organisation's domain: mails.microsoft.com → microsoft.com; a.b.bartlett-law.co.uk → bartlett-law.co.uk. */
+export function orgDomain(domain: string): string {
+  const parts = domain.toLowerCase().split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  const lastTwo = parts.slice(-2).join('.');
+  return SECOND_LEVEL.has(lastTwo) ? parts.slice(-3).join('.') : lastTwo;
+}
 
 /** The receiving server's verdict, from every Authentication-Results header on the message. */
 export function authVerdict(headers: SenderInput['headers']): 'pass' | 'fail' | 'none' {
@@ -103,26 +117,30 @@ export function checkSender(input: SenderInput, known: KnownParties): SenderChec
     warnings.push(`This email failed the checks that prove it came from ${fromDomain ?? 'the sender'}: the sender may be forged.`);
   }
 
-  const isKnownDomain = !!fromDomain && known.domains.includes(fromDomain);
-  const imitates = fromDomain && !isKnownDomain ? lookalikeOf(fromDomain, known.domains) : null;
+  const knownOrgs = [...new Set(known.domains.map(orgDomain))];
+  const fromOrg = fromDomain ? orgDomain(fromDomain) : null;
+  const isKnownDomain = !!fromOrg && knownOrgs.includes(fromOrg);
+  const imitates = fromOrg && !isKnownDomain ? lookalikeOf(fromOrg, knownOrgs) : null;
   if (imitates) {
     suspicious = true;
     warnings.push(`Sent from ${fromDomain}, which looks like ${imitates} but is not the same address.`);
   }
 
   const name = input.fromName?.trim().toLowerCase();
-  if (name && from && name.length > 3 && !name.includes('@')) {
-    const sameName = known.contacts.filter((c) => c.name && c.name.trim().toLowerCase() === name);
+  const sameName = name && name.length > 3 && !name.includes('@') ? known.contacts.filter((c) => c.name && c.name.trim().toLowerCase() === name) : [];
+  if (from) {
     if (sameName.length && !sameName.some((c) => c.email.toLowerCase() === from)) {
       suspicious = true;
       warnings.push(`Signed "${input.fromName}", but ${input.fromName} is on file as ${sameName[0].email}, not ${from}.`);
     }
   }
 
-  const replyDomains = input.replyTo.map(domainOf).filter((d): d is string => !!d && d !== fromDomain);
-  if (replyDomains.length) {
+  // Only someone claiming to be a party we deal with can divert our replies away from them.
+  const claimsKnownParty = isKnownDomain || !!imitates || sameName.length > 0;
+  const diverted = claimsKnownParty ? input.replyTo.find((r) => { const d = domainOf(r); return !!d && orgDomain(d) !== fromOrg; }) : undefined;
+  if (diverted) {
     suspicious = true;
-    warnings.push(`Replies would go to ${input.replyTo.find((r) => domainOf(r) === replyDomains[0])}, not the sender's own address.`);
+    warnings.push(`Replies would go to ${diverted}, not to ${fromOrg}.`);
   }
 
   return { verdict: suspicious ? 'suspicious' : auth === 'pass' ? 'ok' : 'unverified', warnings };

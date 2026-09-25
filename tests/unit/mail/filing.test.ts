@@ -5,7 +5,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mentionsStreet, streetKeyOf, streetLeads } from '../../../lib/server/mail/address-match';
-import { authVerdict, checkSender, lookalikeOf } from '../../../lib/server/mail/sender-check';
+import { authVerdict, checkSender, lookalikeOf, orgDomain } from '../../../lib/server/mail/sender-check';
+import { bulkReason, readablePreview } from '../../../lib/server/mail/bulk';
 import { explainMatch } from '../../../lib/server/mail/case-cards';
 
 test('street: "9 Arthur Road contract pack" is 9 Arthur Road, however the address is written', () => {
@@ -54,6 +55,34 @@ test('sender: forged, look-alike, borrowed name and diverted replies each make i
   const diverted = checkSender({ fromName: 'Sarah Bartlett', fromAddress: 'sarah@bartlett-law.co.uk', replyTo: ['accounts@gmail.com'], headers: pass }, known);
   assert.equal(diverted.verdict, 'suspicious');
   assert.match(diverted.warnings[0], /Replies would go to accounts@gmail\.com/);
+});
+
+test('sender: Reply-To is not over-read — same organisation, or a sender we never dealt with, is fine', () => {
+  const known = { contacts: [{ email: 'sarah@bartlett-law.co.uk', name: 'Sarah Bartlett' }], domains: ['bartlett-law.co.uk'] };
+  const pass = [{ name: 'Authentication-Results', value: 'dmarc=pass' }];
+  // Microsoft's newsletter: sent from mails.microsoft.com, replies to microsoft.com.
+  const ms = checkSender({ fromName: 'Microsoft Learn', fromAddress: 'Learn@mails.microsoft.com', replyTo: ['replies@microsoft.com'], headers: pass }, known);
+  assert.equal(ms.verdict, 'ok');
+  assert.deepEqual(ms.warnings, []);
+  // A stranger's Reply-To elsewhere impersonates nobody we know.
+  const stranger = checkSender({ fromName: 'Some Portal', fromAddress: 'noreply@portal.example', replyTo: ['help@support.example'], headers: null }, known);
+  assert.equal(stranger.verdict, 'unverified');
+  // Our own contact's other office on the same organisation is fine.
+  const office = checkSender({ fromName: 'Sarah Bartlett', fromAddress: 'sarah@bartlett-law.co.uk', replyTo: ['conveyancing@leeds.bartlett-law.co.uk'], headers: pass }, known);
+  assert.equal(office.verdict, 'ok');
+  assert.equal(orgDomain('mails.microsoft.com'), 'microsoft.com');
+  assert.equal(orgDomain('leeds.bartlett-law.co.uk'), 'bartlett-law.co.uk');
+});
+
+test('not case mail: mailing lists and automatic senders are set apart; a forwarded email previews what it says', () => {
+  assert.equal(bulkReason({ headers: [{ name: 'List-Unsubscribe', value: '<mailto:x>' }], fromAddress: 'Learn@mails.microsoft.com' }), 'mailing list');
+  assert.equal(bulkReason({ headers: [{ name: 'Precedence', value: 'bulk' }], fromAddress: 'a@b.co.uk' }), 'bulk mail');
+  assert.equal(bulkReason({ headers: null, fromAddress: 'no-reply@portal.example' }), 'automatic sender');
+  assert.equal(bulkReason({ headers: [{ name: 'Authentication-Results', value: 'dmarc=pass' }], fromAddress: 'sarah@bartlett-law.co.uk' }), null);
+
+  const fw = readablePreview('________________________________\nFrom: Osiris Law <onboarding@resend.dev>\nSent: Tuesday, 25 August 2026 14:47\nTo: pete@example.com\nSubject: New enquiry\n\nMargaret Hale called about selling 4 Elm Close. Please call her back on 020 7946 0321.', 'fallback');
+  assert.equal(fw.forwardedFrom, 'Osiris Law');
+  assert.match(fw.preview, /^Margaret Hale called about selling 4 Elm Close/);
 });
 
 test('match reasons read as sentences about the case, not codes', () => {

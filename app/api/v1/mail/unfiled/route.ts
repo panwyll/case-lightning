@@ -8,6 +8,7 @@ import { matchMessage } from '@/lib/server/matching';
 import { query } from '@/lib/server/db';
 import { checkSender } from '@/lib/server/mail/sender-check';
 import { caseCards, explainMatch } from '@/lib/server/mail/case-cards';
+import { bulkReason, readablePreview } from '@/lib/server/mail/bulk';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -105,16 +106,24 @@ export async function GET(req: NextRequest) {
     const items = rows.map(({ m, sender, candidates }) => {
       const fromName: string | null = m.from?.emailAddress?.name ?? null;
       const fromAddress: string | null = m.from?.emailAddress?.address ?? null;
+      const headers = Array.isArray(m.internetMessageHeaders) ? m.internetMessageHeaders : null;
+      // Newsletters and notifications with nothing tying them to a case are set apart, and
+      // a sender check on them is noise: they are not pretending to be anyone on a case.
+      const bulk = bulkReason({ headers, fromAddress });
+      const notCaseMail = !!bulk && !candidates.some((c) => c.band === 'AUTO' || c.band === 'STRONG');
+      const { preview, forwardedFrom } = readablePreview(m.body?.content, m.bodyPreview ?? '');
       return {
         id: m.id,
         conversationId: m.conversationId ?? null,
         subject: m.subject ?? '(no subject)',
         from: { name: fromName, address: fromAddress },
         receivedDateTime: m.receivedDateTime ?? null,
-        bodyPreview: m.bodyPreview ?? '',
+        bodyPreview: preview,
+        forwardedFrom: /^\s*(fw|fwd)\s*:/i.test(m.subject ?? '') ? forwardedFrom : null,
+        notCaseMail: notCaseMail ? bulk : null,
         hasAttachments: !!m.hasAttachments,
         webLink: m.webLink ?? null,
-        sender,
+        sender: notCaseMail ? { verdict: sender.verdict === 'suspicious' ? 'unverified' : sender.verdict, warnings: [] } : sender,
         // Ranked best first. `score` is the engine's own 0–1 score and `band` its verdict;
         // `case` is the case in recognisable terms and `matched` says why, in words.
         suggestions: candidates.map((c) => ({

@@ -61,7 +61,8 @@ export async function caseCards(tenantId: string, matterIds: string[]): Promise<
       clients: clients.length ? clients : ((selling ? r.buyer_names : r.seller_names) ?? []).filter(Boolean),
       stage: r.stage ? (selling ? STAGE_SELL : STAGE_BUY)[r.stage] ?? null : null,
       handler: r.handler,
-      otherSide: r.counterparty_solicitor,
+      // "Mason Clarke Solicitors (Aoife Patel) [Ref: CL-2026-1049]" → "Mason Clarke Solicitors (Aoife Patel)"
+      otherSide: r.counterparty_solicitor?.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim() || null,
       closed: r.status === 'CLOSED',
     });
   }
@@ -94,7 +95,7 @@ export function explainMatch(
       case 'PARTICIPANT_EMAIL':
         out.push(
           s.value && ctx.fromAddress && s.value === ctx.fromAddress.toLowerCase()
-            ? ctx.senderRole ? `From ${from}, ${ROLE[ctx.senderRole] ?? ctx.senderRole.toLowerCase().replace(/_/g, ' ')} on this case` : `${from} has emailed about this case before`
+            ? ctx.senderRole && ROLE[ctx.senderRole] ? `From ${from}, ${ROLE[ctx.senderRole]} on this case` : `${from} has emailed about this case before`
             : `Copied to ${s.value}, who is on this case`
         );
         break;

@@ -50,6 +50,21 @@ at "9 Arthur Road contract pack" and thinks "SOO-10202". Each suggestion is a ca
 - **what matched**, in words: "Mentions 9 Arthur Road", "From Sarah Bartlett, the other
   side's solicitor on this case", "Mentions Priya Shah".
 
+The page is a list and one email in hand. On the left is what is left to file, each with
+its best case (a coloured dot, the street, the client). On the right is the selected
+email: its cases, the actions, and the email itself to read. Filing moves on to the
+next. Up and down (or j / k) move through the list.
+
+**Mail that is not about a case** (newsletters, notifications) is set apart in a
+collapsed "Probably not case mail" group with "Set all aside"
+(`lib/server/mail/bulk.ts`). The mailing systems say so themselves (List-Unsubscribe,
+List-Id, Precedence: bulk, Auto-Submitted), or the address does (no-reply, news@...). It
+is only set apart when nothing ties it to a case: a notification that clearly matches
+one stays in the queue. The sender check is not shown on it.
+
+A forwarded email previews what it actually says, not the "From: … Sent: …" block, and
+names who it was forwarded from.
+
 Two cases at the same address in different towns score the same. The card is what tells
 them apart. Up to three are shown, and "A different case…" searches by address, client
 or reference and shows the same details. "Open" shows the whole email inline, in a
@@ -68,7 +83,11 @@ evidence of which case an email belongs to once it has passed
    with.
 3. **Borrowed name**: the display name is a known contact or colleague, but the address
    is not theirs.
-4. **Diverted replies**: Reply-To points to a different domain.
+4. **Diverted replies**: the email claims to be from someone we deal with (their
+   organisation, a look-alike of it, or a known name), but Reply-To goes to a different
+   organisation. Domains are compared by organisation, so a newsletter from
+   mails.microsoft.com with replies to microsoft.com is fine, and a sender we have never
+   dealt with impersonates nobody we know.
 
 Any of these makes the row show a red "Check this sender before acting on it" box, with
 the reasons in plain words. The sender's From, To and Cc then do not count towards the
