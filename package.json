@@ -14,7 +14,8 @@
     "engine:demo": "tsx scripts/engine-demo.ts",
     "leap:mock": "tsx scripts/mock-leap-server.ts",
     "engine:map": "tsx scripts/engine-map.ts",
-    "caseload:demo": "tsx scripts/caseload-demo.ts"
+    "caseload:demo": "tsx scripts/caseload-demo.ts",
+    "cases:stage": "tsx scripts/stage-cases.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

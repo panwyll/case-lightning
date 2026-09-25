@@ -123,7 +123,7 @@ function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
       <div className="dt-main">
         <div className="dt-top">
           <span className="dt-addr">{d.propertyAddress ?? d.matterRef ?? 'Matter'}</span>
-          <span className="dt-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</span>
+          <span className="dt-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{subjectLabel(d.subject)}</span>
         </div>
         <p className="dt-sum">{headline(d.summary)}</p>
         {quick && PROPOSED[d.kind] && (
@@ -144,6 +144,12 @@ function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
       )}
     </div>
   );
+}
+
+/** A subject worth showing (E2, LLC1, POF-4); internal ids are not. */
+function subjectLabel(subject: string | null): string {
+  const s = subject?.replace(/^[a-z_]+:/, '') ?? '';
+  return s && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(s) ? ` · ${s}` : '';
 }
 
 /**
