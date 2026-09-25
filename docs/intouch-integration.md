@@ -98,18 +98,27 @@ shows up as a mapping fix, not a rewrite.
 
 ## Configuration
 
+Each firm connects its own InTouch account. An admin enters the firm's details at
+**/conveyi/integrations/intouch**:
+
 ```
-INTOUCH_API_BASE_URL     the firm's region host
-INTOUCH_AUTH_BASE_URL    optional; defaults to the API host
-INTOUCH_CLIENT_ID        \ the firm's own credentials
-INTOUCH_CLIENT_SECRET    /
-INTOUCH_API_KEY          optional, if the firm is issued one
-INTOUCH_WEBHOOK_SECRET   an unsigned webhook is refused when this is set
-INTOUCH_GRANT            client_credentials (default) | authorization_code
+InTouch API address   the firm's region host
+Client ID / secret    the firm's own credentials, issued by InTouch
+API key               optional, if the firm is issued one
+Webhook secret        optional; an unsigned webhook is refused when this is set
+Sign-in address       optional; defaults to the API address
 ```
 
-An admin connects it at **/conveyi/integrations/intouch**, and the same page carries the
-milestone switch and what has come across. Disconnecting stops all reading and all
+They are stored encrypted against the firm (`intouch_connection.credentials_enc`,
+migration 078). A secret left blank on a later edit keeps the one already saved. If
+InTouch refuses them, the page says so and keeps what was typed.
+
+The `INTOUCH_*` env vars (`INTOUCH_API_BASE_URL`, `INTOUCH_AUTH_BASE_URL`,
+`INTOUCH_CLIENT_ID`, `INTOUCH_CLIENT_SECRET`, `INTOUCH_API_KEY`, `INTOUCH_WEBHOOK_SECRET`)
+are only a fallback for a deployment that serves one firm. `INTOUCH_GRANT`
+(`client_credentials` by default, or `authorization_code`) stays deployment-wide.
+
+The same page carries the milestone switch and what has come across. Disconnecting stops all reading and all
 pushing at once; what is already mirrored stays on the matter, because it is the firm's
 own case file.
 

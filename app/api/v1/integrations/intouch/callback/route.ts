@@ -5,7 +5,7 @@ import { fail } from '@/lib/server/http';
 import { runAsAutomation } from '@/lib/server/db';
 import { InTouchHttpClient } from '@/lib/server/integrations/intouch/client';
 import { INTOUCH_WEBHOOK_EVENTS } from '@/lib/server/integrations/intouch/endpoints';
-import { inTouchClientConfig, inTouchWebhookUrl, PgInTouchTokenStore, setInTouchConnectionMeta } from '@/lib/server/integrations/intouch/adapters';
+import { inTouchClientConfig, inTouchCredentials, inTouchWebhookUrl, PgInTouchTokenStore, setInTouchConnectionMeta } from '@/lib/server/integrations/intouch/adapters';
 import { paths } from '@/lib/paths';
 
 export const runtime = 'nodejs';
@@ -23,7 +23,9 @@ export async function GET(req: NextRequest) {
     if (!code) throw new Error('InTouch did not return an authorization code.');
     if (!state || !expected || state !== expected) throw new Error('The InTouch sign-in state did not match. Start again.');
 
-    const client = new InTouchHttpClient(inTouchClientConfig(), user.tenantId, new PgInTouchTokenStore());
+    const creds = await inTouchCredentials(user.tenantId);
+    if (!creds) throw new Error('Enter the firm’s InTouch details first.');
+    const client = new InTouchHttpClient(inTouchClientConfig(creds), user.tenantId, new PgInTouchTokenStore());
     await client.connectWithCode(code);
     const account = await client.account();
     let webhookSubId: string | null = null;

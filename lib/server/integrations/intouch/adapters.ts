@@ -12,23 +12,69 @@ import { config } from '../../config';
 import { paths } from '../../../paths';
 import { engine } from '../../engine/adapters';
 import { InTouchHttpClient, type InTouchApi, type InTouchClientConfig, type InTouchTokenStore } from './client';
+import { InTouchError } from './types';
 import type { InTouchCase, InTouchConnectionRow, InTouchDocument, InTouchParty, InTouchSyncSummary, InTouchTokens } from './types';
 import type { InTouchMirrorRef, InTouchMirrorStore, InTouchSyncDeps } from './sync';
 import { enrolIfUntracked } from '../../engine/enrol';
 
-export function inTouchConfigured(): boolean {
-  return !!(config.intouchApiBaseUrl && config.intouchClientId && config.intouchClientSecret);
+/**
+ * A firm's own InTouch credentials: which InTouch host it is on, and the client id/secret
+ * (plus API key and webhook secret where InTouch issued them). Entered by the firm's admin
+ * on the InTouch page and stored encrypted; the INTOUCH_* env vars are only a fallback for
+ * a deployment that serves one firm.
+ */
+export interface InTouchFirmCredentials {
+  apiBaseUrl: string;
+  authBaseUrl: string | null;
+  clientId: string;
+  clientSecret: string;
+  apiKey: string | null;
+  webhookSecret: string | null;
 }
 
-export function inTouchClientConfig(): InTouchClientConfig {
+function envCredentials(): InTouchFirmCredentials | null {
+  if (!config.intouchApiBaseUrl || !config.intouchClientId || !config.intouchClientSecret) return null;
   return {
-    apiBaseUrl: config.intouchApiBaseUrl!,
+    apiBaseUrl: config.intouchApiBaseUrl,
     authBaseUrl: config.intouchAuthBaseUrl ?? null,
-    clientId: config.intouchClientId!,
-    clientSecret: config.intouchClientSecret!,
+    clientId: config.intouchClientId,
+    clientSecret: config.intouchClientSecret,
     apiKey: config.intouchApiKey ?? null,
-    redirectUri: config.intouchRedirectUri,
     webhookSecret: config.intouchWebhookSecret ?? null,
+  };
+}
+
+/** The firm's saved credentials, then the deployment's; null when neither exists. */
+export async function inTouchCredentials(tenantId: string): Promise<(InTouchFirmCredentials & { source: 'firm' | 'deployment' }) | null> {
+  const r = await runAsSystem(() => queryOne<{ credentials_enc: string | null }>(`select credentials_enc from intouch_connection where tenant_id = $1`, [tenantId])).catch(() => null);
+  if (r?.credentials_enc) return { ...(JSON.parse(decryptSecret(r.credentials_enc)) as InTouchFirmCredentials), source: 'firm' };
+  const env = envCredentials();
+  return env ? { ...env, source: 'deployment' } : null;
+}
+
+export async function saveInTouchCredentials(tenantId: string, creds: InTouchFirmCredentials): Promise<void> {
+  await runAsSystem(() =>
+    query(
+      `insert into intouch_connection (tenant_id, credentials_enc, updated_at) values ($1,$2,now())
+       on conflict (tenant_id) do update set credentials_enc = excluded.credentials_enc, updated_at = now()`,
+      [tenantId, encryptSecret(JSON.stringify(creds))]
+    )
+  );
+}
+
+export async function markInTouchError(tenantId: string, detail: string): Promise<void> {
+  await runAsSystem(() => query(`update intouch_connection set status = 'ERROR', status_detail = $2, updated_at = now() where tenant_id = $1`, [tenantId, detail]));
+}
+
+export function inTouchClientConfig(creds: InTouchFirmCredentials): InTouchClientConfig {
+  return {
+    apiBaseUrl: creds.apiBaseUrl,
+    authBaseUrl: creds.authBaseUrl,
+    clientId: creds.clientId,
+    clientSecret: creds.clientSecret,
+    apiKey: creds.apiKey,
+    redirectUri: config.intouchRedirectUri,
+    webhookSecret: creds.webhookSecret,
     grant: config.intouchGrant,
   };
 }
@@ -53,8 +99,10 @@ export class PgInTouchTokenStore implements InTouchTokenStore {
   }
 }
 
-export function inTouchClient(tenantId: string): InTouchApi & InTouchHttpClient {
-  return new InTouchHttpClient(inTouchClientConfig(), tenantId, new PgInTouchTokenStore());
+export async function inTouchClient(tenantId: string): Promise<InTouchApi & InTouchHttpClient> {
+  const creds = await inTouchCredentials(tenantId);
+  if (!creds) throw new InTouchError('InTouch is not connected for this firm — connect it from the integrations page.', 503, false);
+  return new InTouchHttpClient(inTouchClientConfig(creds), tenantId, new PgInTouchTokenStore());
 }
 
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
@@ -238,9 +286,9 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
 }
 
 /** The dependency bundle the sync and the webhook both use. */
-export function inTouchSyncDeps(tenantId: string): InTouchSyncDeps {
+export async function inTouchSyncDeps(tenantId: string): Promise<InTouchSyncDeps> {
   return {
-    api: inTouchClient(tenantId),
+    api: await inTouchClient(tenantId),
     store: new PgInTouchMirrorStore(),
     engine: engine(),
     systemUserId: null,

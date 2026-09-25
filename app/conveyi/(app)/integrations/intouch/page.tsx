@@ -12,6 +12,8 @@ import { fmtWhen } from '@/app/shared/engine/types';
  */
 interface Status {
   configured: boolean;
+  canManage: boolean;
+  credentials: { source: 'firm' | 'deployment'; apiBaseUrl: string; authBaseUrl: string | null; clientId: string; hasSecret: boolean; hasApiKey: boolean; hasWebhookSecret: boolean } | null;
   connection: {
     status: string;
     statusDetail: string | null;
@@ -24,6 +26,39 @@ interface Status {
     milestonesEnabled: boolean;
   } | null;
   counts: { cases: number; identityChecks: number; forms: number; documents: number };
+}
+
+const CSS = `
+.it-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;margin-top:14px;max-width:760px}
+.it-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:#475569}
+.it-form input{padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-family:inherit;color:#0f172a;background:#fff}
+.it-form input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
+.it-form .wide{grid-column:1 / -1}
+.it-acts{grid-column:1 / -1;display:flex;gap:8px}
+@media (max-width:700px){.it-form{grid-template-columns:1fr}}
+`;
+
+interface Form { apiBaseUrl: string; authBaseUrl: string; clientId: string; clientSecret: string; apiKey: string; webhookSecret: string }
+const EMPTY: Form = { apiBaseUrl: '', authBaseUrl: '', clientId: '', clientSecret: '', apiKey: '', webhookSecret: '' };
+
+/** The firm's InTouch details. Secrets already saved show as dots and stay unless retyped. */
+function ConnectForm({ s, busy, onConnect }: { s: Status; busy: boolean; onConnect: (f: Form) => void }) {
+  const cr = s.credentials;
+  const [f, setF] = useState<Form>({ ...EMPTY, apiBaseUrl: cr?.apiBaseUrl ?? '', authBaseUrl: cr?.authBaseUrl ?? '', clientId: cr?.clientId ?? '' });
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement>) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const saved = '••••••••';
+  const ready = !!f.apiBaseUrl.trim() && !!f.clientId.trim() && (!!f.clientSecret.trim() || !!cr?.hasSecret);
+  return (
+    <form className="it-form" onSubmit={(e) => { e.preventDefault(); if (ready) onConnect(f); }}>
+      <label className="wide">InTouch API address<input id="it-api" type="url" required placeholder="https://" value={f.apiBaseUrl} onChange={set('apiBaseUrl')} autoComplete="off" /></label>
+      <label>Client ID<input id="it-client-id" required value={f.clientId} onChange={set('clientId')} autoComplete="off" /></label>
+      <label>Client secret<input id="it-client-secret" type="password" placeholder={cr?.hasSecret ? saved : ''} value={f.clientSecret} onChange={set('clientSecret')} autoComplete="new-password" /></label>
+      <label>API key<input id="it-api-key" type="password" placeholder={cr?.hasApiKey ? saved : 'If InTouch issued one'} value={f.apiKey} onChange={set('apiKey')} autoComplete="new-password" /></label>
+      <label>Webhook secret<input id="it-webhook-secret" type="password" placeholder={cr?.hasWebhookSecret ? saved : 'If InTouch issued one'} value={f.webhookSecret} onChange={set('webhookSecret')} autoComplete="new-password" /></label>
+      <label className="wide">Sign-in address<input id="it-auth" type="url" placeholder="Only if InTouch gave you a separate one" value={f.authBaseUrl} onChange={set('authBaseUrl')} autoComplete="off" /></label>
+      <div className="it-acts"><button className="eg-btn primary" type="submit" disabled={busy || !ready}>{busy ? 'Connecting…' : 'Connect InTouch'}</button></div>
+    </form>
+  );
 }
 
 export default function InTouchPage() {
@@ -62,7 +97,7 @@ export default function InTouchPage() {
 
   return (
     <div className="eg" style={{ maxWidth: 1100 }}>
-      <style>{ENGINE_CSS}</style>
+      <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">InTouch</h1>
@@ -73,17 +108,7 @@ export default function InTouchPage() {
       {err && <div className="eg-err">{err}</div>}
       {!s && !err && <div className="eg-sub">Loading…</div>}
 
-      {s && !s.configured && (
-        <div className="eg-card" style={{ padding: 14 }}>
-          <b>Not configured on this deployment.</b>
-          <p className="eg-sub" style={{ margin: '6px 0 0' }}>
-            InTouch needs <code>INTOUCH_API_BASE_URL</code>, <code>INTOUCH_CLIENT_ID</code> and <code>INTOUCH_CLIENT_SECRET</code>
-            {' '}before a firm can connect. See <code>docs/intouch-integration.md</code>.
-          </p>
-        </div>
-      )}
-
-      {s?.configured && (
+      {s && (
         <>
           <div className="eg-card" style={{ padding: 14, marginBottom: 12 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -91,15 +116,7 @@ export default function InTouchPage() {
               {c?.accountName && <b>{c.accountName}</b>}
               {connected && <span className="eg-sub">{c?.webhookSubId ? 'Webhooks registered' : 'Polling every 15 minutes (no webhook)'}</span>}
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                {!connected && (
-                  <button className="eg-btn primary" disabled={!!busy} onClick={() => act('Connect', async () => {
-                    const r = await api<{ authorizeUrl?: string }>('/integrations/intouch/connect', { method: 'POST', body: '{}' });
-                    if (r?.authorizeUrl) window.location.assign(r.authorizeUrl);
-                  })}>
-                    {busy === 'Connect' ? 'Connecting…' : 'Connect InTouch'}
-                  </button>
-                )}
-                {connected && (
+                {connected && s.canManage && (
                   <>
                     <button className="eg-btn" disabled={!!busy} onClick={() => act('Sync', () => api('/integrations/intouch/sync', { method: 'POST', body: '{}' }))}>
                       {busy === 'Sync' ? 'Syncing…' : 'Sync now'}
@@ -114,7 +131,13 @@ export default function InTouchPage() {
                 )}
               </span>
             </div>
-            {c?.statusDetail && <div className="eg-sub" style={{ marginTop: 8 }}>{c.statusDetail}</div>}
+            {c?.statusDetail && <div className={c.status === 'ERROR' ? 'eg-err' : 'eg-sub'} style={{ marginTop: 8 }}>{c.statusDetail}</div>}
+            {!connected && s.canManage && (
+              <ConnectForm s={s} busy={busy === 'Connect'} onConnect={(f) => act('Connect', async () => {
+                const r = await api<{ authorizeUrl?: string }>('/integrations/intouch/connect', { method: 'POST', body: JSON.stringify(f) });
+                if (r?.authorizeUrl) window.location.assign(r.authorizeUrl);
+              })} />
+            )}
             {connected && <div className="eg-sub" style={{ marginTop: 8 }}>Connected {fmtWhen(c!.connectedAt ?? '')}{c?.lastSyncAt ? ` · last sync ${fmtWhen(c.lastSyncAt)}` : ' · not synced yet'}</div>}
           </div>
 

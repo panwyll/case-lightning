@@ -17,9 +17,10 @@ const CSS = `
 .ig-state i{width:8px;height:8px;border-radius:999px;display:inline-block}
 `;
 
-function state(s: Status | null | undefined) {
+/** `firmOwned`: the firm enters its own credentials, so unconfigured just means not connected yet. */
+function state(s: Status | null | undefined, firmOwned = false) {
   if (!s) return { label: 'Loading…', bg: '#f1f5f9', fg: '#64748b', dot: '#cbd5e1' };
-  if (!s.configured) return { label: 'Not available', bg: '#f1f5f9', fg: '#64748b', dot: '#cbd5e1' };
+  if (!s.configured && !firmOwned) return { label: 'Not available', bg: '#f1f5f9', fg: '#64748b', dot: '#cbd5e1' };
   const st = s.connection?.status?.toUpperCase();
   if (st === 'CONNECTED' || st === 'ACTIVE') return { label: 'Connected', bg: '#dcfce7', fg: '#14532d', dot: '#16a34a' };
   if (st === 'ERROR' || st === 'FAILED') return { label: 'Needs attention', bg: '#fee2e2', fg: '#7f1d1d', dot: '#dc2626' };
@@ -34,8 +35,8 @@ export default function IntegrationsPage() {
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
   }, []);
   const cards = [
-    { name: 'LEAP', href: paths.leap, s: leap },
-    { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch },
+    { name: 'LEAP', href: paths.leap, s: leap, firmOwned: false },
+    { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch, firmOwned: true },
   ];
   return (
     <div className="eg" style={{ maxWidth: 1100 }}>
@@ -43,7 +44,7 @@ export default function IntegrationsPage() {
       <div className="eg-top"><h1 className="eg-h1">Integrations</h1></div>
       <div className="ig-grid">
         {cards.map((c) => {
-          const st = state(c.s);
+          const st = state(c.s, c.firmOwned);
           return (
             <a key={c.name} className="ig-card" href={c.href}>
               <h2 className="ig-name">{c.name}</h2>
