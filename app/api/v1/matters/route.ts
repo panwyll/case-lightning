@@ -4,6 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { createMatter } from '@/lib/server/matter';
 import { query } from '@/lib/server/db';
+import { caseCards } from '@/lib/server/mail/case-cards';
 import { ok, fail } from '@/lib/server/http';
 
 export const runtime = 'nodejs';
@@ -31,7 +32,9 @@ export async function GET(req: NextRequest) {
         limit 20`,
       [user.tenantId, q, like]
     );
-    return ok({ matters: rows.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address })) });
+    // With each, the case as a person recognises it (client, type, stage, handler).
+    const cards = await caseCards(user.tenantId, rows.map((m) => m.id)).catch(() => new Map());
+    return ok({ matters: rows.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, case: cards.get(m.id) ?? null })) });
   } catch (error) {
     return fail(error);
   }

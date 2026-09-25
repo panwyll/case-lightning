@@ -32,15 +32,47 @@ Everything in the inbox that is not already answered for:
 
 ## The suggestions
 
-Matching is **deterministic** — case reference tokens, the firm's own ref, participant
-addresses, the property address, postcodes (`lib/server/matching.ts`) — and banded
-`almost certain` / `likely` / `possible`. It is not AI. Scrolling a queue must never cost
-a model call or burn the firm's monthly cap, which is the same rule `/api/v1/mail`
-already follows.
+Matching is **deterministic**: case reference tokens, the firm's own ref, participant
+addresses, the property's house number and street ("9 Arthur Road contract pack"), its
+postcode, and client names (`lib/server/matching.ts`, `lib/server/mail/address-match.ts`).
+It is not AI. Scrolling a queue must never cost a model call or burn the firm's monthly
+cap, which is the same rule `/api/v1/mail` already follows. It reads the whole body as
+plain text, not only the preview.
 
-Each row shows the top match as a one-click button with **why** it matched underneath, up
-to two alternatives, and a search box for the case nobody guessed. Matching runs once per
-conversation, not once per reply, so the work is proportional to threads.
+**A case is shown the way a person recognises it, not by its reference.** Nobody looks
+at "9 Arthur Road contract pack" and thinks "SOO-10202". Each suggestion is a card
+(`lib/server/mail/case-cards.ts`):
+
+- the property address, with the reference small beside it;
+- "Purchase for Priya Shah · Searches & enquiries · Alice Okafor · other side Bartlett & Co";
+- the engine's score as a percentage, coloured by its verdict: green for AUTO (a linked
+  thread, our reference, or two independent signals agree), amber for STRONG, red for WEAK;
+- **what matched**, in words: "Mentions 9 Arthur Road", "From Sarah Bartlett, the other
+  side's solicitor on this case", "Mentions Priya Shah".
+
+Two cases at the same address in different towns score the same. The card is what tells
+them apart. Up to three are shown, and "A different case…" searches by address, client
+or reference and shows the same details. "Open" shows the whole email inline, in a
+sandbox with no scripts and no remote content.
+
+## The sender is checked before it counts
+
+Conveyancing is the most targeted sector for email fraud. A sender only counts as
+evidence of which case an email belongs to once it has passed
+`lib/server/mail/sender-check.ts`:
+
+1. **Authentication**: the receiving server's DMARC / SPF / DKIM / compauth verdict,
+   from the Authentication-Results headers.
+2. **Look-alike domain**: one character off, a swapped glyph (1/l, 0/o, rn/m, vv/w), a
+   dropped hyphen or a different ending (.co for .co.uk) from any domain the firm deals
+   with.
+3. **Borrowed name**: the display name is a known contact or colleague, but the address
+   is not theirs.
+4. **Diverted replies**: Reply-To points to a different domain.
+
+Any of these makes the row show a red "Check this sender before acting on it" box, with
+the reasons in plain words. The sender's From, To and Cc then do not count towards the
+match, and the match can never be green, whatever else agrees.
 
 ## What filing actually does
 

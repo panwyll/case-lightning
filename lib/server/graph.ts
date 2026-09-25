@@ -163,10 +163,11 @@ export async function listInboxMessages(
 ): Promise<{ messages: any[]; nextLink: string | null }> {
   const client = await graphClientForUser(userId);
   // `withBody` adds the whole body as plain text (Graph converts it), for matching on more
-  // than the 255-character preview. The caller keeps it server-side.
-  const select = `id,subject,from,toRecipients,receivedDateTime,bodyPreview,conversationId,hasAttachments,isRead,categories,webLink${opts?.withBody ? ',body' : ''}`;
+  // than the 255-character preview, and the headers and Reply-To, for the sender checks
+  // (mail/sender-check.ts). The caller keeps all of it server-side.
+  const base = 'id,subject,from,toRecipients,receivedDateTime,bodyPreview,conversationId,hasAttachments,isRead,categories,webLink';
   const textBody = (r: any) => (opts?.withBody ? r.header('Prefer', 'outlook.body-content-type="text"') : r);
-  try {
+  const read = async (select: string) => {
     if (opts?.nextLink) {
       const page = await textBody(client.api(opts.nextLink)).get();
       return { messages: page.value ?? [], nextLink: page['@odata.nextLink'] ?? null };
@@ -177,6 +178,16 @@ export async function listInboxMessages(
     else req = req.orderby('receivedDateTime desc');
     const page = await req.get();
     return { messages: page.value ?? [], nextLink: page['@odata.nextLink'] ?? null };
+  };
+  try {
+    if (!opts?.withBody) return await read(base);
+    try {
+      return await read(`${base},body,replyTo,internetMessageHeaders`);
+    } catch {
+      // A mailbox that will not list headers still gets its queue; the senders then read
+      // as unverified rather than checked.
+      return await read(`${base},body,replyTo`);
+    }
   } catch (error) {
     // Same body-less 401 case as listMailSince: no accessible Exchange mailbox.
     throw new Error(describeGraphError(error));

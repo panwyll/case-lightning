@@ -14,13 +14,16 @@
  *    signals.
  */
 import { query } from './db';
+import { mentionsStreet, streetKeyOf, streetLeads } from './mail/address-match';
 
 export type Band = 'AUTO' | 'STRONG' | 'WEAK' | 'NONE';
 
 export interface MatchSignal {
-  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'FIRM_REF' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'NAME' | 'SENDER_DOMAIN';
+  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'FIRM_REF' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'STREET' | 'NAME' | 'SENDER_DOMAIN';
   detail: string;
   weight: number;
+  /** What matched, raw: the address, the name, the postcode, the reference. */
+  value?: string;
 }
 
 export interface Candidate {
@@ -188,7 +191,7 @@ export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined
 function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
   const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN') || kinds.has('FIRM_REF');
-  const corroborating = ['PARTICIPANT_EMAIL', 'ADDRESS', 'NAME'].filter((k) => kinds.has(k as MatchSignal['kind'])).length;
+  const corroborating = ['PARTICIPANT_EMAIL', 'ADDRESS', 'STREET', 'NAME'].filter((k) => kinds.has(k as MatchSignal['kind'])).length;
   // AUTO requires a definitive signal OR at least two independent corroborating ones.
   if (score >= 0.9 && (hasDefinitive || corroborating >= 2)) return 'AUTO';
   if (score >= 0.6) return 'STRONG';
@@ -200,7 +203,7 @@ function bandFor(score: number, signals: MatchSignal[]): Band {
  * Returns ranked candidate matters for a message. `tenantId` scopes everything;
  * candidates are produced only from hard identifiers + linked threads.
  */
-export async function matchMessage(tenantId: string, signals: MessageSignals): Promise<Candidate[]> {
+export async function matchMessage(tenantId: string, signals: MessageSignals, opts: { distrustSender?: boolean } = {}): Promise<Candidate[]> {
   const haystack = `${signals.subject}\n${signals.bodyText}`;
   const tokens = extractCaseRefTokens(haystack);
   const postcodes = extractPostcodes(haystack);
@@ -216,7 +219,9 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
   // email merely addressed to the firm matches every matter the firm's own
   // address was ever recorded against.
   const self = await tenantSelfAddresses(tenantId);
-  const participants = ([signals.fromAddress, ...signals.recipientAddresses].filter(Boolean) as string[])
+  // An untrusted sender (sender-check.ts: forged, look-alike, name/address mismatch) is not
+  // evidence: its From, To and Cc are all the sender's to write, so none of them count.
+  const participants = (opts.distrustSender ? [] : [signals.fromAddress, ...signals.recipientAddresses].filter(Boolean) as string[])
     .map((p) => p.toLowerCase())
     .filter((p) => !self.emails.has(p));
   const domains = Array.from(new Set(participants.map(domainOf).filter(Boolean) as string[]))
@@ -263,6 +268,17 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
       [tenantId, idValues.map((v) => v.toLowerCase())]
     );
     byIdent.forEach((r) => candidateIds.add(r.matter_id));
+  }
+
+  // The property as people write it — "9 Arthur Road contract pack" — narrowed on the
+  // "<number> <street>" openings in the text, then confirmed on the full street below.
+  const leads = streetLeads(haystack);
+  if (leads.length) {
+    const byStreet = await query<{ id: string }>(
+      `select id from matter where tenant_id = $1 and regexp_replace(lower(coalesce(property_address, '')), '[^a-z0-9]+', ' ', 'g') like any($2)`,
+      [tenantId, leads.map((l) => `%${l}%`)]
+    ).catch(() => []);
+    byStreet.forEach((r) => candidateIds.add(r.id));
   }
 
   if (!candidateIds.size) return [];
@@ -315,36 +331,42 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
       signalsHit.push({ kind: 'LINKED_THREAD', detail: 'Thread already linked to this matter', weight: 1.0 });
     }
     if (m.case_ref_token && tokens.includes(m.case_ref_token.toUpperCase())) {
-      signalsHit.push({ kind: 'CASE_REF_TOKEN', detail: `Subject/body carries [#${m.case_ref_token}]`, weight: 0.9 });
+      signalsHit.push({ kind: 'CASE_REF_TOKEN', detail: `Subject/body carries [#${m.case_ref_token}]`, weight: 0.9, value: m.case_ref_token });
     }
     // The firm's own reference. Weighted just under our own token: it's a strong,
     // deliberate identifier written by a fee earner, but unlike [#TOKEN] it wasn't
     // minted by us, so a mistyped or recycled ref is possible.
     if (m.firm_ref && refCandidates.includes(m.firm_ref.toUpperCase())) {
-      signalsHit.push({ kind: 'FIRM_REF', detail: `Correspondence quotes your ref ${m.firm_ref}`, weight: 0.85 });
+      signalsHit.push({ kind: 'FIRM_REF', detail: `Correspondence quotes your ref ${m.firm_ref}`, weight: 0.85, value: m.firm_ref });
     }
     // Exact participant email (strong, but capped — counterparties recur)
     const emailMatches = mIdents.filter((i) => i.kind === 'EMAIL' && participants.includes(i.value));
     if (emailMatches.length) {
-      signalsHit.push({ kind: 'PARTICIPANT_EMAIL', detail: `Known participant: ${emailMatches[0].value}`, weight: 0.35 });
+      signalsHit.push({ kind: 'PARTICIPANT_EMAIL', detail: `Known participant: ${emailMatches[0].value}`, weight: 0.35, value: emailMatches[0].value });
     }
     // Address / postcode
     const addrMatch = mIdents.find((i) => i.kind === 'POSTCODE' && lcHay.includes(i.value));
     if (addrMatch) {
-      signalsHit.push({ kind: 'ADDRESS', detail: `Property postcode ${addrMatch.value.toUpperCase()} present`, weight: 0.35 });
+      signalsHit.push({ kind: 'ADDRESS', detail: `Property postcode ${addrMatch.value.toUpperCase()} present`, weight: 0.35, value: addrMatch.value.toUpperCase() });
+    }
+    // The property's house number and street, however it is written
+    const street = streetKeyOf(m.property_address);
+    if (street && mentionsStreet(haystack, street.key)) {
+      signalsHit.push({ kind: 'STREET', detail: `Mentions ${street.label}`, weight: 0.45, value: street.label });
     }
     // Party name
     const names = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].map((n) => n.toLowerCase()).filter(Boolean);
     const nameHit = names.find((n) => n.length > 3 && lcHay.includes(n));
     if (nameHit) {
-      signalsHit.push({ kind: 'NAME', detail: `Party name "${nameHit}" present`, weight: 0.2 });
+      const asWritten = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].find((n) => n.toLowerCase() === nameHit) ?? nameHit;
+      signalsHit.push({ kind: 'NAME', detail: `Party name "${nameHit}" present`, weight: 0.2, value: asWritten });
     }
     // Sender domain only — weak, never decisive. Never the firm's own domain.
-    const senderDomain = domainOf(signals.fromAddress);
+    const senderDomain = opts.distrustSender ? null : domainOf(signals.fromAddress);
     const domainMatch =
       senderDomain && !self.domains.has(senderDomain) && mIdents.some((i) => i.kind === 'DOMAIN' && i.value === senderDomain);
     if (domainMatch && !emailMatches.length) {
-      signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this matter`, weight: 0.1 });
+      signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this matter`, weight: 0.1, value: senderDomain ?? undefined });
     }
 
     const score = Math.min(1, signalsHit.reduce((s, x) => s + x.weight, 0));
@@ -353,7 +375,8 @@ export async function matchMessage(tenantId: string, signals: MessageSignals): P
       matterRef: m.matter_ref,
       propertyAddress: m.property_address,
       score,
-      band: bandFor(score, signalsHit),
+      // An untrusted sender never makes a match green, whatever else agrees.
+      band: opts.distrustSender && bandFor(score, signalsHit) === 'AUTO' ? 'STRONG' : bandFor(score, signalsHit),
       signals: signalsHit,
     };
   });
