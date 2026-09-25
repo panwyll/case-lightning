@@ -427,7 +427,7 @@ export async function runAutoAutomations(user: SessionUser, message: any, triage
     [user.tenantId]
   );
   if (!policy?.automation_enabled) return { applied: false, actions: [], reason: 'Automation disabled for this firm.' };
-  if (!(await isPremiumTenant(user.tenantId))) return { applied: false, actions: [], reason: 'Premium automation requires the Pro or Firm plan.' };
+  if (!(await isPremiumTenant(user.tenantId))) return { applied: false, actions: [], reason: 'Automation needs an active subscription or trial.' };
 
   const autos = await query<AutoAutomationRow>(
     `select id, name, steps, intents, min_confidence, require_no_attention, sender_domains, match_stages, risk_accepted

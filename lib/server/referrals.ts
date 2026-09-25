@@ -149,10 +149,10 @@ export async function accrueCommission(args: {
   if (!edge) return;
 
   // Commission is a share of what the referred firm actually paid this invoice, capped.
-  // The scaling mattered when Solo (£39) was the entry tier. On the Go/Pro/Firm ladder
-  // 0.25 × invoice reaches or exceeds the £50 cap on every plan, so this is effectively
-  // a flat £50 (see the note on referralCommissionRate in config.ts). A £0 invoice accrues
-  // nothing; you only ever pay commission out of revenue you've collected.
+  // Under per-case billing an invoice is £100 × cases opened that month, so a one-case
+  // month accrues £25 and two or more cases reach the £50 cap (see referralCommissionRate
+  // in config.ts). A £0 invoice accrues nothing; you only ever pay commission out of
+  // revenue you've collected.
   const paid = Math.max(0, args.amountPaidPennies ?? 0);
   const amount = Math.min(config.referralCommissionPennies, Math.round(paid * config.referralCommissionRate));
   if (amount <= 0) return;

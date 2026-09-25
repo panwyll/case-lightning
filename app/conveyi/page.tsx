@@ -158,7 +158,7 @@ export default function Page() {
             <Cta label="Get it on AppSource" href={APPSOURCE_URL} dataCta="hero_appsource" variant="ghost" size="lg" />
           </div>
           <p className="mt-5 text-sm text-ink-soft">
-            From £200/month · 30-day money-back guarantee · nothing to download
+            £100 per case · 30-day money-back guarantee · nothing to download
           </p>
         </div>
       </section>
@@ -255,24 +255,24 @@ export default function Page() {
       <section className="border-t border-line px-6 py-20 md:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-end">
-            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">Three plans. No lock-in.</h2>
+            <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">£100 per case. No lock-in.</h2>
             <Cta label="See full pricing" href={ctaHref(ROUTES.pricing, PAGE_SOURCE, 'pricing_teaser')} dataCta="pricing_teaser" variant="ghost" />
           </div>
           <div className="mt-10 grid gap-6 md:grid-cols-3">
-            <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Go</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£200<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">The whole product on a meter — auto-triage, auto-rules and AI drafting, with monthly limits.</p>
-            </div>
-            <div className="rounded-2xl border border-line bg-paper-soft p-8">
-              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Pro</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£500<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">The same tools with the limits taken off — unlimited email volume and a far bigger AI document allowance.</p>
-            </div>
             <div className="rounded-2xl border-2 border-violet bg-paper-soft p-8 shadow-violet">
-              <div className="text-sm font-semibold uppercase tracking-widest text-violet">Firm</div>
-              <div className="mt-3 font-serif text-5xl font-semibold">£1,000<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
-              <p className="mt-3 text-ink-soft">The whole practice as a team — matter board, workload and assignment. The only multi-seat plan; 3 seats included.</p>
+              <div className="text-sm font-semibold uppercase tracking-widest text-violet">Per case</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£100<span className="text-lg font-sans font-normal text-ink-soft">/case</span></div>
+              <p className="mt-3 text-ink-soft">The whole product — auto-triage, auto-rules, AI drafting and documents, the team layer. Charged once, the first time CONVEYi works on a case.</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-paper-soft p-8">
+              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Seats</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£0<span className="text-lg font-sans font-normal text-ink-soft">/seat</span></div>
+              <p className="mt-3 text-ink-soft">Everyone in the firm, no per-user fee. Matter board, workload and assignment included.</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-paper-soft p-8">
+              <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Monthly fee</div>
+              <div className="mt-3 font-serif text-5xl font-semibold">£0<span className="text-lg font-sans font-normal text-ink-soft">/mo</span></div>
+              <p className="mt-3 text-ink-soft">A quiet month costs nothing. Triage, matching and summaries run free on every email.</p>
             </div>
           </div>
         </div>

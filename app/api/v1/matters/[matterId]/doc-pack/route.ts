@@ -83,9 +83,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       }
     }
 
-    // Premium plans (Pro, Enterprise) get the AI [[prompt]] fills. Pro is usage-
-    // capped on heavy LLM per month — once over, we still generate the document but
-    // leave the AI sections blank and tell the user (graceful degrade, not a hard fail).
+    // Every entitled firm gets the AI [[prompt]] fills; a trial is capped on heavy LLM
+    // work — once over, we still generate the document but leave the AI sections blank
+    // and tell the user (graceful degrade, not a hard fail).
     const isPremium = await isPremiumTenant(user.tenantId);
     let useAi = isPremium;
     let capped = false;

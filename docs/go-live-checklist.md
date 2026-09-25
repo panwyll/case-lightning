@@ -34,26 +34,21 @@ All read in [`lib/server/config.ts`](../lib/server/config.ts). Set for **Product
 
 ---
 
-## 2. Stripe (feature `billing`) — 3 tiers: plus / pro / enterprise
+## 2. Stripe (feature `billing`) — usage-based: £100 per case
 
-Gating is lazy: `getTenantPlan()` ([`lib/server/plan.ts`](../lib/server/plan.ts)) **grants enterprise to everyone when `STRIPE_SECRET_KEY` is unset** (pilot mode). With it set, gating is live: premium = pro|enterprise, team seats = enterprise, Pro is heavy-LLM usage-capped.
-
-**Current state (test mode):** `billing:true` on prod — `STRIPE_SECRET_KEY` (test, rotated), `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_PLUS/PRO/ENTERPRISE` (test) all set; plan-detection verified against the real price IDs. Good enough to test the flow; **not** launch.
-
-Done (test):
-- [x] `STRIPE_SECRET_KEY` (test, rotated after exposure) + `STRIPE_WEBHOOK_SECRET` set → `billing:true`.
-- [x] `STRIPE_PRICE_PLUS` / `STRIPE_PRICE_PRO` / `STRIPE_PRICE_ENTERPRISE` set (Production). Plan resolves by price ID (4/4 verified).
-- [x] Webhook endpoint live + signature-enforced (probe returns 400 "missing signature", not 503).
-- [x] `BILLING_CURRENCY=gbp`.
+One plan. Gating is lazy: `getTenantBilling()` ([`lib/server/plan.ts`](../lib/server/plan.ts)) **grants full access to everyone when `STRIPE_SECRET_KEY` is unset** (pilot mode). With it set, entitlement is live (active/trialing subscription or card-free trial) and every entitled firm has the whole product — there are no tier or seat gates. Revenue is the case meter: [`lib/server/case-billing.ts`](../lib/server/case-billing.ts) reports one Stripe Billing Meter event per matter the first time a chargeable feature (draft, doc review/fill, reconcile) succeeds on it; trial/comp/pilot cases are recorded in `matter_charge` but never reported.
 
 Remaining for launch:
-- [ ] **Swap test → live**: `sk_live_…`, a **live** webhook endpoint's `whsec_…`, and **live-mode** `price_…` IDs for all three tiers. (Test/live are separate worlds.)
+- [ ] **Create the Billing Meter** (Dashboard → Billing → Meters): event name `conveyi_case`, aggregation `sum` over `value`, customer mapping `stripe_customer_id`. Set `STRIPE_CASE_METER_EVENT` if you pick a different name.
+- [ ] **Create the price**: a recurring, monthly, **metered** price on the meter above, £100 per unit → `STRIPE_PRICE_CASE` (live-mode `price_…`). Retire `STRIPE_PRICE_PLUS/PRO/ENTERPRISE/FIRM_SEAT` — nothing reads them.
+- [ ] **Swap test → live**: `sk_live_…`, a **live** webhook endpoint's `whsec_…`. (Test/live are separate worlds.)
 - [ ] Webhook subscribed to: `checkout.session.completed`, `customer.subscription.created/updated/deleted`, `invoice.paid`, `invoice.payment_failed`, `charge.refunded`, `invoice.voided`, `invoice.marked_uncollectible`.
-- [ ] **Configure the Stripe Billing Portal** (Settings → Billing): enable plan switching (add all 3 prices) + cancellation — powers the "Manage subscription" button.
-- [ ] `PRO_HEAVY_LLM_MONTHLY_CAP` — confirm the Pro monthly heavy-LLM cap (default `300`).
-- [ ] `REFERRAL_COMMISSION_PENNIES` — confirm (default `5000` = £50/mo).
-- [ ] Add the three price vars to the **Preview** env too (only Production took; CLI quirk).
-- [ ] **Verify with a test-card purchase** (`4242…`) → `billing_account.plan` = correct tier, `status=active`; Plus blocked from premium, Pro premium-but-single-seat + capped, Enterprise full.
+- [ ] **Configure the Stripe Billing Portal** (Settings → Billing): payment-method updates, invoice history + cancellation — powers the "Manage subscription" button. No plan switching (one plan).
+- [ ] `CASE_PRICE_PENNIES` — must match the Stripe price (default `10000` = £100); it is display + ledger only.
+- [ ] `REFERRAL_COMMISSION_PENNIES` — confirm (default `5000` = £50/mo cap; a one-case month accrues £25).
+- [ ] Apply `065_usage_billing.sql` (creates `matter_charge`, remaps `billing_account.plan` to `usage`).
+- [ ] **Verify with a test-card checkout** (`4242…`) → `billing_account.status=active`; then draft a reply on a matter → a `matter_charge` row with `billed=true` and the meter event visible on the customer in Stripe; a second draft on the same matter adds nothing.
+- [ ] Optional: schedule `retryUnbilledCases()` (cron) so a Stripe blip (`unbilled_reason='ERROR'`) gets re-driven; the meter event identifier is the row id, so a retry can't double-bill.
 
 ---
 
@@ -133,7 +128,7 @@ DPA in place and an entry in your **Record of Processing Activities**:
 - [ ] Create a matter → OneDrive folder provisioned.
 - [ ] Receive a test client email → matched, tagged; a marketing email → **not** matched.
 - [ ] Generate a doc-pack template into Case files.
-- [ ] Complete a live Stripe checkout → plan/gating correct.
+- [ ] Complete a live Stripe checkout → entitlement correct; first draft on a matter produces one billed `matter_charge`.
 - [ ] `/internal` reachable only with `INTERNAL_DASHBOARD_KEY`.
 - [ ] Error monitoring/logging in place (Vercel logs retained; alert on 5xx).
 

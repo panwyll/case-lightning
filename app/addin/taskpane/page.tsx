@@ -420,7 +420,6 @@ export default function Taskpane() {
   const [obSearch, setObSearch] = useState('');
   // Per-matter Inbox subfolders — opt-in; nudge the admin once at first import.
   const [subfolderPref, setSubfolderPref] = useState<{ enabled: boolean; prompted: boolean } | null>(null);
-  const [obUpsell, setObUpsell] = useState(false); // monthly backlog-scan cap hit (non-pro)
   const obDriving = useRef(false);
   // First-run: until the firm has scanned its backlog (or chosen to skip), lead
   // with the import. obFetched gates it so the hero doesn't flash before we know.
@@ -820,7 +819,6 @@ export default function Taskpane() {
   }
 
   async function startOnboarding() {
-    setObUpsell(false);
     const started = await run('Starting scan', async () => {
       const lookbackMonths = obLookback === 'unlimited' ? null : 3;
       try {
@@ -832,9 +830,8 @@ export default function Taskpane() {
         setStatus('Scanning your mailbox…');
         return true;
       } catch (e) {
-        // Monthly backlog-scan cap → show the message (and an upsell when not on Pro).
+        // Monthly backlog-scan cap → show the message.
         if ((e as { status?: number }).status === 429) {
-          if ((e as { action?: string }).action === 'upgrade') setObUpsell(true);
           setStatus((e as Error).message);
           return false;
         }
@@ -1430,7 +1427,7 @@ export default function Taskpane() {
       }
       setStatus(
         (j as any).capped
-          ? `Generated “${(j as any).file?.name ?? tpl.name}” — but you’ve hit your Pro monthly AI limit, so the AI sections were left blank. Upgrade to Firm for uncapped AI.`
+          ? `Generated “${(j as any).file?.name ?? tpl.name}” — but you’ve used your trial’s AI document allowance, so the AI sections were left blank. Add payment details for unlimited AI.`
           : `Generated “${(j as any).file?.name ?? tpl.name}” — saved to Case files.`
       );
       await loadFiles();
@@ -1890,7 +1887,7 @@ export default function Taskpane() {
               style={{ ...S.primary, marginTop: 0 }}
               onClick={() => openAdmin('billing')}
             >
-              {plan?.status === 'past_due' ? 'Update payment' : 'Choose a plan'}
+              {plan?.status === 'past_due' ? 'Update payment' : 'Add payment details'}
             </button>
             <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 12 }}>
               Opens your billing page in the browser. Nothing in your mailbox or cases is touched.
@@ -3318,18 +3315,6 @@ export default function Taskpane() {
                 <button style={S.primary} onClick={startOnboarding}>
                   Scan my inbox
                 </button>
-                {obUpsell && (
-                  <div style={{ background: '#faf5ff', border: '1px solid #e9d5ff', borderRadius: 8, padding: '10px 12px', marginTop: 10 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#6d28d9', marginBottom: 4 }}>You’ve used this month’s backlog scan</div>
-                    <p style={{ fontSize: 12, color: '#475569', margin: '0 0 8px', lineHeight: 1.45 }}>
-                      Re-scanning the whole mailbox is heavy, so it’s limited per month. Pro firms get more scans a month
-                      (and all-history lookback).
-                    </p>
-                    <button style={{ ...S.primary, marginTop: 0, background: '#7c3aed' }} onClick={() => openAdmin('billing')}>
-                      Upgrade to Pro
-                    </button>
-                  </div>
-                )}
                 {obJob?.status === 'COMPLETED' && (
                   <p style={{ ...S.muted, marginTop: 8 }}>Last run onboarded {obJob.cases_onboarded} case(s).</p>
                 )}
@@ -3552,10 +3537,10 @@ export default function Taskpane() {
                 )}.
               </p>
               <p style={{ fontSize: 13, color: '#475569', margin: '0 0 16px', lineHeight: 1.5 }}>
-                Upgrade for <strong>unlimited</strong> emails — new mail keeps being triaged, matched and drafted with no monthly cap.
+                Add payment details for <strong>unlimited</strong> emails — new mail keeps being triaged, matched and drafted with no monthly cap. You only pay £100 per case you work on.
               </p>
               <button style={{ ...S.primary, marginTop: 0 }} onClick={() => { setQuotaModal(null); openAdmin('billing'); }}>
-                Upgrade for unlimited
+                Add payment details
               </button>
               <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 10 }}>
                 Already-opened emails still work. Your limit resets on the 1st.
@@ -3655,7 +3640,7 @@ export default function Taskpane() {
               <div style={{ flex: 1, background: '#F8FAFC', border: '1px solid #eef2f7', borderRadius: 10, padding: '9px 11px' }}>
                 <div style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>Plan</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginTop: 2 }}>
-                  {plan?.plan === 'enterprise' ? 'Firm' : plan?.plan === 'pro' ? 'Pro' : plan?.plan === 'plus' ? 'Go' : plan?.status === 'trialing' ? 'Trial' : 'Free'}
+                  {plan?.status === 'trialing' ? 'Trial' : plan?.plan ? '£100 / case' : 'Free'}
                 </div>
                 {plan?.status && plan.status !== 'active' && (
                   <div style={{ fontSize: 11, color: plan.status === 'past_due' ? '#b91c1c' : '#64748b', marginTop: 1, textTransform: 'capitalize' }}>

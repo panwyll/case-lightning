@@ -129,30 +129,21 @@ export const config = {
   // Billing + referrals (Stripe)
   stripeSecretKey: env('STRIPE_SECRET_KEY'),
   stripeWebhookSecret: env('STRIPE_WEBHOOK_SECRET'),
-  // Recurring price IDs per plan — power in-app upgrade/downgrade (Checkout for new
-  // subscribers, subscription-item swap for existing ones). Three tiers:
-  //   plus       — entry; no premium AI/automation, single seat
-  //   pro        — premium AI/automation, single seat, heavy-LLM usage capped
-  //   enterprise — premium AI/automation + team (multi-seat), uncapped
-  // Optional: when unset the checkout route 503s; plan changes still work via portal.
-  stripePricePlus: env('STRIPE_PRICE_PLUS'),
-  stripePricePro: env('STRIPE_PRICE_PRO'),
-  stripePriceEnterprise: env('STRIPE_PRICE_ENTERPRISE'),
-  // Firm (enterprise) per-seat overage: a separate per-unit recurring price billed for
-  // each seat beyond FIRM_INCLUDED_SEATS. When unset, Firm bills flat (no overage) —
-  // so the app degrades to the old single-price behaviour until this is configured.
-  stripePriceFirmSeat: env('STRIPE_PRICE_FIRM_SEAT'),
-  // Pro tier is rate-limited on heavy LLM work (e.g. AI document generation). This
-  // caps the number of heavy-LLM calls (DOC_FILL) a Pro tenant can make per calendar
-  // month; Enterprise is uncapped. Tune without a deploy via env.
-  proHeavyLlmMonthlyCap: Number(env('PRO_HEAVY_LLM_MONTHLY_CAP') ?? '300'),
-  // Trial users get their chosen tier's features, but expensive AI work (doc fills,
-  // matter reconciliation) is capped to a few attempts so they get a flavour without
-  // running up cost. Trial backlog/onboarding lookback is also clamped (days).
+  // Usage-based billing: one metered recurring price — £100 per case. The price is
+  // attached to a Stripe Billing Meter; we report one meter event per case the first
+  // time CONVEYi does chargeable work on it (see lib/server/case-billing.ts). Stripe
+  // sums the events and invoices monthly. Optional: when unset the checkout route 503s.
+  stripePriceCase: env('STRIPE_PRICE_CASE'),
+  // event_name of the Billing Meter the price above reads from (Stripe dashboard →
+  // Billing → Meters). The meter must map customers by stripe_customer_id.
+  stripeCaseMeterEvent: env('STRIPE_CASE_METER_EVENT') ?? 'conveyi_case',
+  // Advertised price per case, in pennies. Display only — Stripe's price object is
+  // the source of truth for what's charged; keep the two in step.
+  casePricePennies: Number(env('CASE_PRICE_PENNIES') ?? '10000'),
+  // Trial firms get the full product, but expensive AI work (doc fills, matter
+  // reconciliation) is capped to a few attempts so they get a flavour without running
+  // up cost — a trial case is never charged, so this is the only brake. Trial backlog/onboarding lookback is also clamped (days).
   trialExpensiveCap: Number(env('TRIAL_EXPENSIVE_CAP') ?? '3'),
-  // Go's monthly heavy-LLM (doc fill) ceiling. Small on purpose: enough to run doc
-  // packs on a couple of matters and want them, not enough to run a practice on.
-  goHeavyLlmMonthlyCap: Number(env('GO_HEAVY_LLM_MONTHLY_CAP') ?? '25'),
   // How far back a trial's backlog scan may reach. This is the first thing a new firm
   // sees, so it has to surface REAL matters: 7 days was a demo, and a live conveyance
   // can easily go a fortnight without traffic. 30 days catches anything active while
@@ -170,32 +161,25 @@ export const config = {
   // card-free clock is computed from tenant.created_at rather than stored per tenant,
   // raising this EXTENDS EXISTING TENANTS TOO — which is the intent for now.
   trialDays: Number(env('TRIAL_DAYS') ?? '60'),
-  // Emails a trial may process per month, whatever tier it's evaluating — trials get
-  // Pro features but not Pro volume. 0 = fall back to the evaluated tier's cap.
+  // Emails a trial may process per month — trials get the full product but not full
+  // volume. 0 = fall back to EMAIL_CAP.
   emailCapTrial: Number(env('EMAIL_CAP_TRIAL') ?? '200'),
-  // Historical-import (backlog scan) is heavy, so cap it per calendar month. Non-pro
-  // gets fewer with an upsell; pro/enterprise get more.
-  onboardingMonthlyCapFree: Number(env('ONBOARDING_MONTHLY_CAP_FREE') ?? '1'),
-  onboardingMonthlyCapPremium: Number(env('ONBOARDING_MONTHLY_CAP_PREMIUM') ?? '3'),
+  // Historical-import (backlog scan) is heavy, so cap it per calendar month.
+  onboardingMonthlyCap: Number(env('ONBOARDING_MONTHLY_CAP') ?? '3'),
   // Minutes a drafted reply saves vs writing from scratch — used only for the clearly
   // labelled "estimated time saved" in the import-impact report. Tune via env.
   estimatedMinutesSavedPerReply: Number(env('ESTIMATED_MINUTES_SAVED_PER_REPLY') ?? '8'),
   // "Chase up": a matched, OPEN matter's thread becomes a chase when the firm sent the
   // last message and no reply has arrived within this many days. Tune via env.
   chaseSlaDays: Number(env('CHASE_SLA_DAYS') ?? '5'),
-  // Monthly cap on emails the tool processes (triage/analyse), per plan. 0 = unlimited.
-  // EMAIL_CAP_PLUS is Go's funnel lever and the main reason to upgrade: calibrate it so
-  // an active conveyancer exhausts it two to three weeks in — long enough to bed the
-  // habit in, short enough to bite. Pro and Firm are unlimited.
-  emailCapPlus: Number(env('EMAIL_CAP_PLUS') ?? '1000'),
-  emailCapPro: Number(env('EMAIL_CAP_PRO') ?? '0'),
-  emailCapEnterprise: Number(env('EMAIL_CAP_ENTERPRISE') ?? '0'),
+  // Monthly cap on emails the tool processes (triage/analyse) for a paying firm.
+  // 0 = unlimited. Per-case pricing means volume is already paid for, so this is a
+  // safety valve against runaway mailboxes, not a funnel lever.
+  emailCap: Number(env('EMAIL_CAP') ?? '0'),
   // Recurring single-level referral commission — a share of what the *referred* firm
   // actually pays each invoice, capped. Commission = min(cap, rate × invoice).
-  // NOTE: with the Go/Pro/Firm ladder the cap binds on every tier. 0.25 × £200 = £50 exactly,
-  // 0.25 × £500 = £125 and 0.25 × £1,000 = £250 — every tier meets or exceeds the cap.
-  // So it is a flat £50 per referral whatever they buy: a quarter of Go, a twentieth of
-  // Firm. Revisit if referral cost per customer starts to matter.
+  // Under per-case billing an invoice is £100 × cases that month, so a referred firm
+  // that opens one case earns £25 and one that opens two or more earns the £50 cap.
   referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
   referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',

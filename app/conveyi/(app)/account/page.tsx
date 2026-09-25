@@ -24,9 +24,12 @@ interface Seat {
 interface Summary {
   plan: string | null;
   status: string;
+  trialing: boolean;
   hasSubscription: boolean;
   seats: Seat[];
   seatCount: number;
+  pricePerCasePennies: number;
+  cases: { thisMonth: number; billedThisMonth: number; billedPenniesThisMonth: number; allTime: number };
   referralCode: string;
   referralLink: string;
   creditBalancePennies: number;
@@ -69,7 +72,6 @@ const STATUS_LABEL: Record<string, { label: string; cls: string }> = {
   none: { label: 'No subscription', cls: 'bg-slate-100 text-slate-600' },
 };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Go', pro: 'Pro', enterprise: 'Firm' };
 
 export default function AccountPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -117,20 +119,17 @@ export default function AccountPage() {
     }
   }
 
-  async function changePlanTo(plan: 'plus' | 'pro' | 'enterprise') {
+  async function subscribe() {
     setBusy(true);
     try {
-      const res = await api<{ url?: string; updated?: boolean }>('/billing/checkout', {
-        method: 'POST',
-        body: JSON.stringify({ plan }),
-      });
+      const res = await api<{ url?: string; updated?: boolean }>('/billing/checkout', { method: 'POST' });
       if (res.url) {
         window.location.href = res.url; // new subscriber → Stripe Checkout
         return;
       }
-      await load(); // existing subscriber → in-place prorated swap done; refresh
+      await load(); // already subscribed → nothing to change; refresh
     } catch (e: any) {
-      setError(e.message || 'Could not change your plan.');
+      setError(e.message || 'Could not start your subscription.');
     } finally {
       setBusy(false);
     }
@@ -169,7 +168,7 @@ export default function AccountPage() {
   }
 
   const status = STATUS_LABEL[summary.status] ?? { label: summary.status, cls: 'bg-line text-ink-soft' };
-  const planName = summary.plan ? PLAN_LABEL[summary.plan] ?? summary.plan : 'No plan yet';
+  const perCase = money(summary.pricePerCasePennies, summary.currency);
 
   return (
     <Shell>
@@ -178,7 +177,7 @@ export default function AccountPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-ink-soft">Your plan</p>
-            <h2 className="mt-1 font-serif text-2xl text-ink">{planName}</h2>
+            <h2 className="mt-1 font-serif text-2xl text-ink">{perCase} per case</h2>
           </div>
           <span className={`rounded-full px-3 py-1 text-xs font-semibold ${status.cls}`}>{status.label}</span>
         </div>
@@ -189,38 +188,52 @@ export default function AccountPage() {
           </p>
         )}
 
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg bg-paper-soft px-3 py-2">
+            <p className="text-xs text-ink-soft">Cases this month</p>
+            <p className="font-serif text-2xl text-ink">{summary.cases.thisMonth}</p>
+          </div>
+          <div className="rounded-lg bg-paper-soft px-3 py-2">
+            <p className="text-xs text-ink-soft">Billed this month</p>
+            <p className="font-serif text-2xl text-ink">{money(summary.cases.billedPenniesThisMonth, summary.currency)}</p>
+          </div>
+          <div className="rounded-lg bg-paper-soft px-3 py-2">
+            <p className="text-xs text-ink-soft">Free on trial</p>
+            <p className="font-serif text-2xl text-ink">{summary.cases.thisMonth - summary.cases.billedThisMonth}</p>
+          </div>
+          <div className="rounded-lg bg-paper-soft px-3 py-2">
+            <p className="text-xs text-ink-soft">Cases all time</p>
+            <p className="font-serif text-2xl text-ink">{summary.cases.allTime}</p>
+          </div>
+        </div>
+        <p className="mt-3 text-sm text-ink-soft">
+          A case is charged once, the first time CONVEYi drafts, reviews, generates or reconciles something on it.
+          Triage, matching and summaries are free. Cases opened on your trial are never charged.
+        </p>
+
         <div className="mt-4 flex flex-wrap gap-3">
-          {/* Upgrade is an in-app prorated swap (or Checkout for new subscribers) —
-              no detour through the portal. Offer the tiers above the current one. */}
-          {summary.plan !== 'pro' && summary.plan !== 'enterprise' && (
+          {!summary.hasSubscription && (
             <button
-              onClick={() => changePlanTo('pro')}
+              onClick={subscribe}
               disabled={busy}
               className="rounded-lg bg-violet px-4 py-2 font-semibold text-white shadow-violet disabled:opacity-60"
             >
-              {busy ? 'Working…' : 'Upgrade to Pro'}
+              {busy ? 'Working…' : 'Add payment details'}
             </button>
           )}
-          {summary.plan !== 'enterprise' && (
+          {summary.hasSubscription && (
             <button
-              onClick={() => changePlanTo('enterprise')}
+              onClick={manageSubscription}
               disabled={busy}
-              className="rounded-lg bg-ink px-4 py-2 font-semibold text-white disabled:opacity-60"
+              className="rounded-lg border border-line bg-paper-soft px-4 py-2 font-semibold text-ink disabled:opacity-60"
             >
-              {busy ? 'Working…' : 'Upgrade to Firm'}
+              Manage subscription
             </button>
           )}
-          <button
-            onClick={manageSubscription}
-            disabled={busy}
-            className="rounded-lg border border-line bg-paper-soft px-4 py-2 font-semibold text-ink disabled:opacity-60"
-          >
-            {summary.hasSubscription ? 'Manage subscription' : 'Choose a plan'}
-          </button>
         </div>
         {summary.hasSubscription && (
           <p className="mt-2 text-sm text-ink-soft">
-            “Manage subscription” opens Stripe for your card, invoices, plan changes &amp; cancellation.
+            “Manage subscription” opens Stripe for your card, invoices &amp; cancellation.
           </p>
         )}
       </Card>
@@ -244,9 +257,8 @@ export default function AccountPage() {
           ))}
         </ul>
         <p className="mt-3 text-sm text-ink-soft">
-          {summary.plan === 'enterprise'
-            ? 'Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in or on the web — and they’re added to your firm automatically. Your first 3 seats are included; extra seats are £59/month each.'
-            : 'Pro is single-seat. The Firm plan opens the practice up — the matter board, workload and assignment — with 3 seats included. Upgrade above.'}
+          Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in or on the web — and
+          they’re added to your firm automatically. Seats are free: you pay per case, not per person.
         </p>
       </Card>
 

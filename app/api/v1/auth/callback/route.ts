@@ -4,8 +4,6 @@ import { assertFeature, config } from '@/lib/server/config';
 import { exchangeCodeForToken } from '@/lib/server/oauth';
 import { transaction } from '@/lib/server/db';
 import { signSession, SESSION_COOKIE, OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE, OAUTH_NEXT_COOKIE } from '@/lib/server/session';
-import { hasTeamAccess } from '@/lib/server/plan';
-import { syncFirmSeats } from '@/lib/server/billing';
 import { ensureSubscription } from '@/lib/server/subscriptions';
 import { applyInviteOnJoin } from '@/lib/server/invites';
 import { paths } from '@/lib/paths';
@@ -35,14 +33,6 @@ function authErrorPage(message: string, consentIssue: boolean): NextResponse {
   <a href="${href}" style="display:inline-block;background:#5A27E0;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:10px">${cta}</a>
 </div></body></html>`;
   return new NextResponse(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
-}
-
-/** Thrown when a second+ colleague signs in to a firm on a single-seat plan. */
-class SeatLimitError extends Error {
-  constructor() {
-    super('single-seat-plan');
-    this.name = 'SeatLimitError';
-  }
 }
 
 function parseJwt(token: string): Record<string, unknown> {
@@ -117,17 +107,7 @@ export async function GET(req: NextRequest) {
         tenant.id,
       ]);
       const seatCount = Number(count.rows[0]?.n ?? '0');
-      // Solo/Pro are single-seat; only Firm (team) admits additional colleagues.
-      // Fail OPEN on a plan-check error so a billing hiccup never locks a firm out.
-      if (seatCount > 0) {
-        let teamOk = true;
-        try {
-          teamOk = await hasTeamAccess(tenant.id);
-        } catch {
-          teamOk = true;
-        }
-        if (!teamOk) throw new SeatLimitError();
-      }
+      // Seats are free under per-case billing — any colleague may join.
       const role = seatCount === 0 ? 'ADMIN' : 'CONVEYANCER';
       const created = await client.query<{ id: string }>(
         `insert into app_user
@@ -137,10 +117,6 @@ export async function GET(req: NextRequest) {
       );
       return { id: created.rows[0]!.id, created: true };
     });
-
-    // A new colleague just took a seat → reconcile the Firm per-seat overage. Fire-and-
-    // forget: a Stripe hiccup must never block sign-in (no-op off Firm / under the cap).
-    if (user.created) void syncFirmSeats(tenant.id).catch(() => {});
 
     // If this address was invited to the firm, apply the invited role and mark the invite
     // accepted. No-op when there's no matching invite; never blocks sign-in.
@@ -179,12 +155,6 @@ export async function GET(req: NextRequest) {
     res.cookies.delete(OAUTH_STATE_COOKIE);
     return res;
   } catch (error) {
-    if (error instanceof SeatLimitError) {
-      return authErrorPage(
-        'Your firm’s plan is single-seat. Ask your admin to upgrade to the Firm (team) plan to add colleagues, then reconnect.',
-        false
-      );
-    }
     // A consent/permission problem (e.g. a scope was added but not yet granted, or a stale
     // grant) → offer the consent-forcing reconnect. Everything else → a plain retry.
     const msg = String((error as Error)?.message ?? error);

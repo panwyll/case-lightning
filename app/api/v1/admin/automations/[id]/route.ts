@@ -58,7 +58,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     const sends = effTrigger === 'AUTO' && hasSendingStep(effSteps);
 
     if (b.enabled === true && effTrigger === 'AUTO' && !(await isPremiumTenant(user.tenantId))) {
-      return fail(new Error('Premium automations require the Pro or Firm plan.'));
+      return fail(new Error('Automations need an active subscription or trial.'));
     }
     if (sends && b.enabled === true && (!b.riskAccepted || !b.riskAcknowledgement)) {
       return fail(new Error('Enabling an automation that auto-sends requires re-accepting responsibility (riskAccepted + riskAcknowledgement).'));

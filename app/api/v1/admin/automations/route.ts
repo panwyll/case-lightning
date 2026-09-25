@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     const b = automationSchema.parse(await req.json());
 
     if (b.enabled && b.trigger === 'AUTO' && !(await isPremiumTenant(user.tenantId))) {
-      return fail(new Error('Premium automations require the Pro or Firm plan. Create it disabled, or upgrade.'));
+      return fail(new Error('Automations need an active subscription or trial. Create it disabled, or add payment details.'));
     }
     // An enabled AUTO automation that sends must carry an explicit, re-accepted risk ack.
     const sends = b.trigger === 'AUTO' && hasSendingStep(b.steps);

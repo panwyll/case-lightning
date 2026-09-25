@@ -11,6 +11,7 @@
  */
 import { query } from './db';
 import { aiCostUsd, embedCostUsd, type AiProvider, type EmbedProvider, type TokenUsage } from './pricing';
+import { chargeCase, isChargeableFeature } from './case-billing';
 
 /** Stable feature taxonomy — one value per metered AI/embed operation. */
 export type UsageFeature =
@@ -93,6 +94,13 @@ async function insertUsage(row: RecordInput): Promise<void> {
   } catch (err) {
     // Never let metering break the product path.
     console.warn('[usage] failed to record usage_event:', (err as Error).message);
+    return;
+  }
+  // Per-case billing rides on the same fact stream: the first successful chargeable
+  // piece of work on a matter opens (charges) the case. Once-only and best-effort —
+  // see case-billing.ts. Failed calls don't open a case; the user got nothing.
+  if (row.status === 'SUCCESS' && row.matterId && isChargeableFeature(row.feature)) {
+    await chargeCase(row.tenantId, row.matterId, row.feature);
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * POST /api/v1/matters/[matterId]/reconcile
- * Build the cross-document reconciliation grid for a matter. Premium (pro/enterprise)
- * — expensive synthesis. Trial users of a premium tier get a few attempts.
+ * Build the cross-document reconciliation grid for a matter — expensive synthesis, and
+ * a chargeable feature (it opens the case for billing). Trial users get a few attempts.
  */
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     await assertMatterAccess(user, matterId);
 
     if (!(await isPremiumTenant(user.tenantId))) {
-      return fail(Object.assign(new Error('Matter reconciliation is a Pro/Enterprise feature.'), { status: 402 }));
+      return fail(Object.assign(new Error('Matter reconciliation needs an active subscription or trial.'), { status: 402 }));
     }
     const gate = await canUseExpensiveFeature(user.tenantId, 'RECONCILE');
     if (!gate.allowed) {

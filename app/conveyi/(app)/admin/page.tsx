@@ -215,7 +215,6 @@ const STAGE_LABEL: Record<string, string> = {
 };
 const FLAG_DOT: Record<string, string> = { ON_TRACK: '#16a34a', NEEDS_ATTENTION: '#f59e0b', BLOCKED: '#dc2626' };
 
-const PLAN_LABEL: Record<string, string> = { plus: 'Go', pro: 'Pro', enterprise: 'Firm' };
 const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }> = {
   active: { label: 'Active', bg: '#dcfce7', color: '#166534' },
   trialing: { label: 'Trial', bg: '#ede9fe', color: '#6d28d9' },
@@ -567,14 +566,14 @@ function AdminPageInner() {
     }
   }
 
-  async function changePlanTo(plan: 'plus' | 'pro' | 'enterprise') {
+  async function subscribe() {
     setBillingBusy(true);
     try {
-      const res = await api<{ url?: string }>('/billing/checkout', { method: 'POST', body: JSON.stringify({ plan }) });
+      const res = await api<{ url?: string }>('/billing/checkout', { method: 'POST' });
       if (res.url) { window.location.href = res.url; return; }
-      await load(); // existing subscriber → in-place prorated swap; refresh
+      await load(); // already subscribed → nothing to change; refresh
     } catch (e: any) {
-      setStatus(e.message || 'Could not change your plan.');
+      setStatus(e.message || 'Could not start your subscription.');
     } finally {
       setBillingBusy(false);
     }
@@ -814,7 +813,7 @@ function AdminPageInner() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                   <div>
                     <div style={overline}>Your plan</div>
-                    <div style={{ fontSize: 26, fontWeight: 800, marginTop: 2 }}>{billing.plan ? (PLAN_LABEL[billing.plan] ?? billing.plan) : 'No plan yet'}</div>
+                    <div style={{ fontSize: 26, fontWeight: 800, marginTop: 2 }}>{money(billing.pricePerCasePennies ?? 10000, billing.currency ?? 'gbp')} per case</div>
                   </div>
                   {(() => {
                     const s = STATUS_STYLE[billing.status] ?? { label: billing.status, bg: '#f1f5f9', color: '#64748b' };
@@ -826,18 +825,34 @@ function AdminPageInner() {
                     Your last payment failed. Update your card to keep your team running.
                   </p>
                 )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14 }}>
+                  {[
+                    ['Cases this month', String(billing.cases?.thisMonth ?? 0)],
+                    ['Billed this month', money(billing.cases?.billedPenniesThisMonth ?? 0, billing.currency ?? 'gbp')],
+                    ['Free on trial', String((billing.cases?.thisMonth ?? 0) - (billing.cases?.billedThisMonth ?? 0))],
+                    ['Cases all time', String(billing.cases?.allTime ?? 0)],
+                  ].map(([k, v]) => (
+                    <div key={k} style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 10px' }}>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>{k}</div>
+                      <div style={{ fontSize: 20, fontWeight: 800 }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
+                  A case is charged once, the first time CONVEYi drafts, reviews, generates or reconciles something on it.
+                  Triage, matching and summaries are free. Cases opened on your trial are never charged.
+                </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
-                  {billing.plan !== 'pro' && billing.plan !== 'enterprise' && (
-                    <button style={btnPrimary} disabled={billingBusy} onClick={() => changePlanTo('pro')}>{billingBusy ? 'Working…' : 'Upgrade to Pro'}</button>
+                  {!billing.hasSubscription && (
+                    <button style={btnPrimary} disabled={billingBusy} onClick={subscribe}>{billingBusy ? 'Working…' : 'Add payment details'}</button>
                   )}
-                  {billing.plan !== 'enterprise' && (
-                    <button style={{ ...btnPrimary, background: '#0f172a' }} disabled={billingBusy} onClick={() => changePlanTo('enterprise')}>{billingBusy ? 'Working…' : 'Upgrade to Firm'}</button>
+                  {billing.hasSubscription && (
+                    <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>Manage subscription</button>
                   )}
-                  <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>{billing.hasSubscription ? 'Manage subscription' : 'Choose a plan'}</button>
                 </div>
                 {billing.hasSubscription && (
                   <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
-                    “Manage subscription” opens Stripe for your card, invoices, plan changes &amp; cancellation.
+                    “Manage subscription” opens Stripe for your card, invoices &amp; cancellation.
                   </p>
                 )}
               </div>
@@ -882,9 +897,7 @@ function AdminPageInner() {
                   ))}
                 </div>
                 <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
-                  {billing.plan === 'enterprise'
-                    ? 'Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in, or just at this web address. Your first 3 seats are included; extra seats are £59/month each.'
-                    : 'Pro is single-seat. Firm opens up the matter board, workload and assignment, with 3 seats included — upgrade above.'}
+                  Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in, or just at this web address. Seats are free: you pay per case, not per person.
                 </p>
               </div>
 
@@ -944,7 +957,7 @@ function AdminPageInner() {
                   ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
                   ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
                   ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
-                  ['How is billing handled?', 'Plans and seats are shown here; the card, invoices, plan changes and cancellation are handled securely by Stripe via “Manage subscription”.'],
+                  ['How is billing handled?', 'You pay per case — £100 the first time CONVEYi does work on a matter, invoiced monthly. The card, invoices and cancellation are handled securely by Stripe via “Manage subscription”.'],
                   ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
                 ].map(([q, a]) => (
                   <details key={q} style={{ borderTop: '1px solid #f1f5f9', padding: '10px 0' }}>

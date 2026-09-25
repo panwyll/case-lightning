@@ -1,35 +1,28 @@
 /**
- * Plan tiers & capability gates.
+ * Entitlement & capability gates.
  *
- * Internal keys are stable; the customer-facing names differ (see PLAN_LABEL in the
- * admin/account UIs): plus → "Solo", pro → "Pro", enterprise → "Firm".
+ * Billing is USAGE-BASED: one plan, £100 per case. There is no tier ladder any more —
+ * every entitled firm gets the whole product (auto-rules, unlimited onboarding lookback,
+ * AI doc fills, team/multi-seat) and pays per case CONVEYi does chargeable work on (see
+ * lib/server/case-billing.ts for what counts as a case and when it's charged).
  *
- *   plus       — "Go".   ENTRY TIER. £200/mo, single seat. Gets the premium features
- *                but on tight meters — the point is to like them and run out.
- *   pro        — "Pro".  £500/mo, single seat. Same features, room to actually work.
- *   enterprise — "Firm". £1,000/mo. The only multi-seat tier, and uncapped.
+ * The one plan key is 'usage'. billing_account.plan still carries it (and Stripe
+ * metadata may carry the historical plus/pro/enterprise keys) — migration 065 remaps
+ * old rows, and the gates below never branch on the key, only on entitlement.
  *
- * The keys are historical (plus/pro/enterprise) and deliberately left alone: they are
- * written into billing_account rows and Stripe metadata, and renaming them would buy a
- * migration for no behavioural gain. Read them as Go/Pro/Firm.
- *
- * EVERY tier gets the premium features (auto-rules, unlimited onboarding lookback, AI
- * doc-template [[prompt]] fills) — the ladder is metered, not feature-gated. What Go
- * lacks is headroom: an email cap that bites two to three weeks in, and a heavy-LLM
- * cap of a couple of dozen doc fills. Team/multi-seat is the one true feature gate and
- * it requires Firm. When Stripe isn't configured (pilot / self-host) there's no billing
- * to check, so we grant the top tier — nothing is gated.
+ * What still varies is ENTITLEMENT (may the firm use the app at all) and whether the
+ * firm is on a TRIAL: trial firms get everything, but expensive AI work is capped so a
+ * free trial can't run up cost, and a trial case is never charged. When Stripe isn't
+ * configured (pilot / self-host) there's no billing to check, so nothing is gated.
  */
 import { config } from './config';
 import { queryOne } from './db';
 import type { UsageFeature } from './usage';
 
-export type Plan = 'plus' | 'pro' | 'enterprise';
+export type Plan = 'usage';
 
-const PLANS: readonly Plan[] = ['plus', 'pro', 'enterprise'];
-// Every paid tier gets the premium features; Go is limited by its meters, not by a
-// feature wall. Kept as a set so a future non-premium tier stays easy to express.
-const PREMIUM_PLANS = new Set<Plan>(['plus', 'pro', 'enterprise']);
+/** The single plan key written to billing_account.plan. */
+export const USAGE_PLAN: Plan = 'usage';
 
 /** 402 — caller is signed in but has no active entitlement (trial ended / unpaid). */
 export class EntitlementError extends Error {
@@ -65,7 +58,7 @@ export interface TenantBilling {
  */
 export async function getTenantBilling(tenantId: string): Promise<TenantBilling> {
   if (!config.stripeSecretKey) {
-    return { plan: 'enterprise', status: 'pilot', entitled: true, trialing: false, pilot: true, trialEndsAt: null };
+    return { plan: USAGE_PLAN, status: 'pilot', entitled: true, trialing: false, pilot: true, trialEndsAt: null };
   }
   // One read for both the subscription and the tenant's own trial clock. The lateral
   // keeps the "latest billing_account row" semantics the previous query had.
@@ -90,10 +83,11 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
     [tenantId]
   );
   const account = row?.has_account ? row : null;
-  // Comp override (test / pilot / internal) — full tier access for free, above Stripe,
-  // so a webhook resync can't clobber it. See migration 032.
-  if (account?.comp_plan && PLANS.includes(account.comp_plan as Plan)) {
-    return { plan: account.comp_plan as Plan, status: 'active', entitled: true, trialing: false, pilot: false, trialEndsAt: null };
+  // Comp override (test / pilot / internal) — full access for free, above Stripe, so a
+  // webhook resync can't clobber it. See migration 032. Any non-null value comps the
+  // firm; cases opened by a comped firm are recorded but never reported to Stripe.
+  if (account?.comp_plan) {
+    return { plan: USAGE_PLAN, status: 'active', entitled: true, trialing: false, pilot: false, trialEndsAt: null };
   }
   let status = account?.status ?? 'none';
   let entitled = status === 'active' || status === 'trialing';
@@ -122,12 +116,9 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
       trialEndsAt = endsAt.toISOString();
     }
   }
-  let plan = entitled && PLANS.includes(account?.plan as Plan) ? (account!.plan as Plan) : null;
-  // A trial must be evaluable: if the subscription didn't resolve to a known tier,
-  // grant Pro features rather than nothing, so auto-rules/doc AI can be tried. Volume
-  // is still held down by the trial email cap and trialExpensiveCap — features, not
-  // throughput. Without this a plan-less trial silently gets the free-tier experience.
-  if (trialing && plan === null) plan = 'pro';
+  // One plan: entitled → 'usage', otherwise no plan. The stored key is irrelevant to
+  // the gates (a pre-migration row may still say plus/pro/enterprise).
+  const plan: Plan | null = entitled ? USAGE_PLAN : null;
   return { plan, status, entitled, trialing, pilot: false, trialEndsAt };
 }
 
@@ -169,23 +160,18 @@ export async function getTenantPlan(tenantId: string): Promise<Plan | null> {
   return (await getTenantBilling(tenantId)).plan;
 }
 
-/** Premium AI/automation (auto-rules, unlimited onboarding, AI doc fills): pro or enterprise. */
+/**
+ * Premium AI/automation (auto-rules, unlimited onboarding, AI doc fills). Under per-case
+ * billing every entitled firm has it — kept as a named gate so call sites read as
+ * intent and a future feature wall stays a one-line change.
+ */
 export async function isPremiumTenant(tenantId: string): Promise<boolean> {
-  const plan = await getTenantPlan(tenantId);
-  return plan !== null && PREMIUM_PLANS.has(plan);
+  return isEntitled(tenantId);
 }
 
-/**
- * Monthly cap on emails processed (triage/analyse) for a plan. null = unlimited.
- *
- * A null plan means we could not resolve a tier (e.g. the Stripe price didn't match
- * a known price id). That must fail CLOSED to the entry-tier cap — treating "unknown"
- * as unlimited would hand the loosest quota to the least-identified accounts.
- */
-export function emailMonthlyCap(plan: Plan | null): number | null {
-  if (plan === null) return config.emailCapPlus > 0 ? config.emailCapPlus : null;
-  const c = plan === 'plus' ? config.emailCapPlus : plan === 'pro' ? config.emailCapPro : config.emailCapEnterprise;
-  return c && c > 0 ? c : null;
+/** Monthly cap on emails processed (triage/analyse) for a paying firm. null = unlimited. */
+export function emailMonthlyCap(_plan: Plan | null): number | null {
+  return config.emailCap > 0 ? config.emailCap : null;
 }
 
 /**
@@ -200,8 +186,8 @@ export async function emailQuotaStatus(
   known?: TenantBilling
 ): Promise<{ allowed: boolean; used: number; cap: number | null; hoursSavedThisMonth: number; plan: Plan | null }> {
   const billing = known ?? (await getTenantBilling(tenantId));
-  // A trial is held to the lower of its evaluated tier's cap and the trial cap, so
-  // trialing on an "unlimited" tier doesn't hand out unlimited volume.
+  // A trial is held to the lower of the paid cap and the trial cap, so an unlimited
+  // paid cap doesn't hand a free trial unlimited volume.
   const trialCap = billing.trialing && config.emailCapTrial > 0 ? config.emailCapTrial : null;
   const caps = [emailMonthlyCap(billing.plan), trialCap].filter((c): c is number => c != null);
   const cap = caps.length ? Math.min(...caps) : null;
@@ -247,44 +233,25 @@ export async function canUseExpensiveFeature(
   return { allowed: used < cap, trialing: true, used, cap };
 }
 
-/** Team / multi-seat: Firm only. Go and Pro are single-seat — this is the one
- *  genuine feature gate in the ladder, and the reason to move up from Pro. */
-export async function hasTeamAccess(tenantId: string): Promise<boolean> {
-  return (await getTenantPlan(tenantId)) === 'enterprise';
-}
-
 /**
- * Heavy-LLM calls (DOC_FILL) this tenant has made in the current calendar month —
- * the meter behind the Pro tier's usage cap. Reuses the usage_event fact stream.
+ * Team / multi-seat. There is no single-seat plan any more — a firm pays per case, not
+ * per person — so every entitled firm may add colleagues.
  */
-export async function heavyLlmCallsThisMonth(tenantId: string): Promise<number> {
-  const row = await queryOne<{ n: number }>(
-    `select count(*)::int as n from usage_event
-     where tenant_id = $1 and event_type = 'DOC_FILL' and created_at >= date_trunc('month', now())`,
-    [tenantId]
-  );
-  return row?.n ?? 0;
+export async function hasTeamAccess(tenantId: string): Promise<boolean> {
+  return isEntitled(tenantId);
 }
 
 /**
- * Whether this tenant may make another heavy-LLM call right now. Enterprise (and
- * pilot mode) is uncapped; Pro is capped per month; non-premium plans never reach
- * here (the feature is gated upstream).
+ * Whether this tenant may make another heavy-LLM call (DOC_FILL) right now. Paying
+ * firms are uncapped — the case it's for is what they pay for. A trial gets a few
+ * attempts (see canUseExpensiveFeature) so a free trial can't run up cost.
  */
 export async function canUseHeavyLlm(tenantId: string): Promise<{ allowed: boolean; plan: Plan | null; capped: boolean }> {
   const billing = await getTenantBilling(tenantId);
   if (!billing.entitled) return { allowed: false, plan: null, capped: true };
-  // Trial: a few attempts only — give a flavour without running up cost.
   if (billing.trialing) {
     const gate = await canUseExpensiveFeature(tenantId, 'DOC_FILL');
     return { allowed: gate.allowed, plan: billing.plan, capped: !gate.allowed };
   }
-  // Firm is uncapped. Go and Pro each have a monthly ceiling — Go's is deliberately
-  // small enough to run out on. NB the old `plan !== 'pro'` short-circuit would have
-  // handed Go unlimited doc fills, which is the opposite of the intent.
-  if (billing.plan === 'enterprise') return { allowed: true, plan: billing.plan, capped: false };
-  const cap = billing.plan === 'plus' ? config.goHeavyLlmMonthlyCap : config.proHeavyLlmMonthlyCap;
-  const used = await heavyLlmCallsThisMonth(tenantId);
-  const allowed = used < cap;
-  return { allowed, plan: billing.plan, capped: !allowed };
+  return { allowed: true, plan: billing.plan, capped: false };
 }

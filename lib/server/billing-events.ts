@@ -8,17 +8,10 @@
  */
 import { query, queryOne } from './db';
 
-// GBP pennies per plan — mirrors plan_price (see 058_plan_price_refresh.sql).
-//
-// These keys MUST match what billing_account.plan actually stores. They were
-// 'standard'/'team', which no plan has been called since the Go/Pro/Firm rename, so
-// every lookup missed and every event recorded mrr_pennies = 0 — MRR, churn and
-// acquisition analytics would all have read zero however many customers paid.
-const PLAN_MRR_PENNIES: Record<string, number> = {
-  plus: 20_000, // Go   — £200
-  pro: 50_000, // Pro  — £500
-  enterprise: 100_000, // Firm — £1,000
-};
+// Under per-case billing there is no recurring amount to attribute to a subscription
+// event: revenue is the case meter (see v_case_revenue, migration 065). mrr_pennies is
+// kept on the row for the historical views but is always 0 for the 'usage' plan.
+const PLAN_MRR_PENNIES: Record<string, number> = { usage: 0 };
 
 type SubEventType = 'CHECKOUT' | 'PAID' | 'PAST_DUE' | 'SUBSCRIPTION' | 'CANCELED';
 

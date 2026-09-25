@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * The firm's colleagues, for the "assign to" picker. Readable by any signed-in member (the
- * admin/users endpoint is ADMIN-only and returns more). Returns just the whole firm — on a
- * single-seat firm that's only the one person, so the picker simply won't offer anyone else.
+ * admin/users endpoint is ADMIN-only and returns more). Returns just the whole firm — for a
+ * sole practitioner that's only the one person, so the picker simply won't offer anyone else.
  */
 export async function GET() {
   try {

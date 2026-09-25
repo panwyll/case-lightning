@@ -35,8 +35,8 @@ const faqs = [
     a: 'It’s the most generous in legal software: refer another firm and you earn a quarter of what they pay — up to £50 — every month they remain a customer, recurring, not a one-off. It’s paid as account credit, so a handful of referrals can cover your own subscription entirely.',
   },
   {
-    q: 'What’s the difference between the Go, Pro and Firm plans?',
-    a: 'Every plan has the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, the OneDrive knowledge base and the case board. What changes is headroom and seats. Go (£200/month) meters you: a monthly email allowance and a small AI document allowance, enough to see what it does to your week. Pro (£500/month) takes the limits off — unlimited email volume and a far larger document allowance, for one fee earner running a full caseload. Firm (£1,000/month, three seats included then £59 a seat) is the only plan with more than one seat, and adds the team layer: a matter board, a workload dashboard, matter assignment and admin oversight.',
+    q: 'How does £100 per case work?',
+    a: 'There is one plan and one price. Everyone in the firm gets the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, AI document packs, the OneDrive knowledge base, the case board and the team layer (matter board, workload dashboard, assignment, admin oversight). A case is charged once, the first time CONVEYi drafts a reply, reviews or generates a document, or reconciles that matter: £100 goes on that month’s invoice and that case is never charged again. Triage, matching and summaries run free on every email, so a case you never draft on costs nothing, and cases you open during the free trial are never charged. There are no seats, no monthly fee and no tiers.',
   },
   {
     q: 'What if it doesn’t work for us?',

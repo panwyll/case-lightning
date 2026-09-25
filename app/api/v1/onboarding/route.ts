@@ -14,14 +14,14 @@ export const dynamic = 'force-dynamic';
 
 const FREE_LOOKBACK_MONTHS = 3;
 
-/** Start a backlog scan. Non-premium tenants are clamped to the free lookback. */
+/** Start a backlog scan. Trial tenants are clamped to the free lookback; paying firms may go back further. */
 export async function POST(req: NextRequest) {
   try {
     assertFeature('auth');
     assertFeature('graph');
     assertFeature('ai');
     const user = await requireUser();
-    // lookbackMonths: omitted → free default; null → unlimited (premium only).
+    // lookbackMonths: omitted → free default; null → unlimited (paying firms only).
     const body = z
       .object({ lookbackMonths: z.number().int().positive().nullable().optional() })
       .parse(await req.json().catch(() => ({})));
@@ -32,11 +32,10 @@ export async function POST(req: NextRequest) {
 
     const billing = await getTenantBilling(user.tenantId);
     if (!billing.entitled) throw new EntitlementError();
-    const premium = billing.plan === 'pro' || billing.plan === 'enterprise';
 
     // A full backlog scan is heavy — cap it per calendar month (failed/cancelled runs
-    // don't count). Non-pro gets fewer with a Pro upsell.
-    const cap = premium ? config.onboardingMonthlyCapPremium : config.onboardingMonthlyCapFree;
+    // don't count).
+    const cap = config.onboardingMonthlyCap;
     const ran = await queryOne<{ n: number }>(
       `select count(*)::int as n from onboarding_job
        where tenant_id = $1 and created_at >= date_trunc('month', now())
@@ -44,13 +43,13 @@ export async function POST(req: NextRequest) {
       [user.tenantId]
     );
     if ((ran?.n ?? 0) >= cap) {
-      const msg = premium
-        ? `You've used all ${cap} backlog scans this month. The limit resets on the 1st.`
-        : `You've used your backlog scan for this month. Upgrade to Pro for ${config.onboardingMonthlyCapPremium} scans a month.`;
-      return fail(Object.assign(new Error(msg), { status: 429, action: premium ? undefined : 'upgrade' }));
+      const msg = `You've used all ${cap} backlog scans this month. The limit resets on the 1st.`;
+      return fail(Object.assign(new Error(msg), { status: 429 }));
     }
+    // Under per-case billing every paying firm has unlimited lookback; a trial is held
+    // to the free window (its scan is also date-clamped by trialLookbackDays below).
+    const premium = !billing.trialing;
     let months: number | null = body.lookbackMonths === undefined ? FREE_LOOKBACK_MONTHS : body.lookbackMonths;
-    // Only premium tenants may look back further than the free window.
     if (!premium && (months === null || months > FREE_LOOKBACK_MONTHS)) months = FREE_LOOKBACK_MONTHS;
 
     let since = sinceForLookback(months);
