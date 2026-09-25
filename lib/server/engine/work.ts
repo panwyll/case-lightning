@@ -153,7 +153,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     const what =
       d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
       : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
-      : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') ? ` — ${d.subject}` : ''}`;
+      : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` — ${d.subject}` : ''}`;
     out.push({
       ...base,
       id: `${d.kind === 'escalation' ? 'escalate' : 'do'}:decision:${d.eventId}`,
