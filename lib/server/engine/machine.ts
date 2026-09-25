@@ -134,7 +134,7 @@ export type Command =
   // ── case model: survey workstream, client decisions, closure ──
   | { type: 'survey_received'; actor: Actor; documentId: string; surveyType: SurveyType; facts: SurveyFacts; extractor: string }
   | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
-  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null }
+  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null }
   | { type: 'close_matter'; actor: Actor; reason?: string | null }
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
@@ -1166,7 +1166,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed') reject('Record what the client said (note).', 400);
-      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
       if (cmd.subject === 'physical_condition' && cmd.decision === 'renegotiate') {
         out.push({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: nextIssueId(s), kind: 'survey_defect', title: `Client wants to renegotiate after the survey${cmd.note ? `: ${cmd.note.trim().slice(0, 120)}` : ''}`, detail: cmd.note?.trim() || null, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.evidenceDocumentId ?? null, origin: null, party: null, severity: 'warning', causedBy: null }, sourceDocumentId: cmd.evidenceDocumentId ?? null });
       }

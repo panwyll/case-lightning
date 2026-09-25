@@ -445,6 +445,10 @@ export async function classifyEmail(input: {
   needsAttention: boolean;
   urgency: 'LOW' | 'MEDIUM' | 'HIGH';
   reason: string;
+  /** Is this about a property transaction at all? 'no' only for the plainly unrelated. */
+  caseMail?: 'yes' | 'no' | 'unsure';
+  /** ≤6 words on what it is when it is not case mail: "Microsoft Learn newsletter". */
+  caseMailWhat?: string;
 }> {
   return structured(
     input.userId,
@@ -468,8 +472,17 @@ export async function classifyEmail(input: {
             'The shortest possible statement of what the fee earner must do — action-first, ≤12 words, no preamble and no restating the email. ' +
             'E.g. "Client wants a status update", "Review mortgage offer, report to client", "Reply confirming the completion date", "No action — for information only".',
         },
+        caseMail: {
+          type: 'string',
+          enum: ['yes', 'no', 'unsure'],
+          description:
+            'Is this email about a property transaction (a purchase, sale, remortgage, transfer) or the people in one? ' +
+            '"no" ONLY for the plainly unrelated: marketing, newsletters, product or service notifications, receipts, social media, recruitment, internal admin. ' +
+            'Judge the content, never the sender\'s domain: a person at a large company (microsoft.com, a bank, a council) writing about their own move is "yes". When in doubt, "unsure".',
+        },
+        caseMailWhat: { type: 'string', description: 'When caseMail is "no": what it is, ≤6 words, e.g. "Microsoft Learn newsletter". Otherwise "".' },
       },
-      required: ['intent', 'needsAttention', 'urgency', 'reason'],
+      required: ['intent', 'needsAttention', 'urgency', 'reason', 'caseMail', 'caseMailWhat'],
     },
     `Email (DATA):\n${input.emailText}`
   );

@@ -15,11 +15,12 @@
  */
 import { query } from './db';
 import { mentionsStreet, streetKeyOf, streetLeads } from './mail/address-match';
+import { orgDomain } from './mail/sender-check';
 
 export type Band = 'AUTO' | 'STRONG' | 'WEAK' | 'NONE';
 
 export interface MatchSignal {
-  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'FIRM_REF' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'STREET' | 'NAME' | 'SENDER_DOMAIN';
+  kind: 'LINKED_THREAD' | 'CASE_REF_TOKEN' | 'FIRM_REF' | 'KNOWN_CONTACT' | 'ONLY_CASE' | 'CONTACT_FIRM' | 'PARTICIPANT_EMAIL' | 'ADDRESS' | 'STREET' | 'NAME' | 'SENDER_DOMAIN';
   detail: string;
   weight: number;
   /** What matched, raw: the address, the name, the postcode, the reference. */
@@ -45,6 +46,8 @@ export interface MessageSignals {
 
 const POSTCODE_RE = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi;
 const CASE_REF_RE = /\[#([A-Z0-9][A-Z0-9\-_/.]{2,40})\]/gi;
+/** Personal mail providers: two people on gmail.com are not "the same firm". */
+const FREEMAIL = new Set(['gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'live.com', 'live.co.uk', 'msn.com', 'yahoo.com', 'yahoo.co.uk', 'icloud.com', 'me.com', 'mac.com', 'aol.com', 'btinternet.com', 'sky.com', 'virginmedia.com', 'talktalk.net', 'protonmail.com', 'proton.me', 'gmx.com', 'gmx.co.uk', 'mail.com', 'zoho.com']);
 
 export function domainOf(email?: string): string | null {
   if (!email) return null;
@@ -170,9 +173,11 @@ export function hasDefinitiveSignal(c: { signals?: MatchSignal[] } | null | unde
   // references read out of email content, good enough to surface case data to the
   // firm's own reviewer, but neither is server-side state and so neither authorises
   // a write (see hasTrustedLink).
-  return !!c?.signals?.some(
-    (s) => s.kind === 'LINKED_THREAD' || s.kind === 'CASE_REF_TOKEN' || s.kind === 'FIRM_REF'
-  );
+  // Content alone (a quoted ref) is not enough to surface case data: anyone can quote a
+  // reference. It has to come with who sent it — a contact on the case, or their firm.
+  const kinds = new Set((c?.signals ?? []).map((s) => s.kind));
+  if (kinds.has('LINKED_THREAD') || kinds.has('KNOWN_CONTACT')) return true;
+  return (kinds.has('CASE_REF_TOKEN') || kinds.has('FIRM_REF')) && (kinds.has('CONTACT_FIRM') || kinds.has('PARTICIPANT_EMAIL'));
 }
 
 /**
@@ -188,12 +193,18 @@ export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined
   return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD');
 }
 
-function bandFor(score: number, signals: MatchSignal[]): Band {
+/**
+ * Green (AUTO) needs to know WHO sent it, not just what it says. Everything in an email's
+ * text — an address, a client's name, a postcode, even a quoted reference — is public or
+ * guessable, so anyone can write an email that "matches" a case. What a stranger cannot
+ * do is be a confirmed contact on the case (entered by a person, or by LEAP / InTouch),
+ * or reply inside a thread already on the case as someone the case has heard from. So:
+ * content alone can reach amber (STRONG) at best; green takes a trusted sender.
+ */
+export function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
-  const hasDefinitive = kinds.has('LINKED_THREAD') || kinds.has('CASE_REF_TOKEN') || kinds.has('FIRM_REF');
-  const corroborating = ['PARTICIPANT_EMAIL', 'ADDRESS', 'STREET', 'NAME'].filter((k) => kinds.has(k as MatchSignal['kind'])).length;
-  // AUTO requires a definitive signal OR at least two independent corroborating ones.
-  if (score >= 0.9 && (hasDefinitive || corroborating >= 2)) return 'AUTO';
+  const fromThisCase = kinds.has('KNOWN_CONTACT') || (kinds.has('LINKED_THREAD') && (kinds.has('CONTACT_FIRM') || kinds.has('PARTICIPANT_EMAIL')));
+  if (fromThisCase && score >= 0.8) return 'AUTO';
   if (score >= 0.6) return 'STRONG';
   if (score >= 0.3) return 'WEAK';
   return 'NONE';
@@ -281,6 +292,19 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     byStreet.forEach((r) => candidateIds.add(r.id));
   }
 
+  // The sender as a confirmed contact (a role set by a person, LEAP or InTouch — not an
+  // address merely seen on email). An untrusted sender is not looked up at all.
+  const from = opts.distrustSender ? null : signals.fromAddress?.toLowerCase() ?? null;
+  const confirmedOn = from
+    ? await query<{ matter_id: string; role: string; closed: boolean }>(
+        `select c.matter_id, c.role, (m.status = 'CLOSED') as closed from matter_contact c join matter m on m.id = c.matter_id
+          where c.tenant_id = $1 and lower(c.email) = $2 and c.role <> 'UNKNOWN'`,
+        [tenantId, from]
+      ).catch(() => [])
+    : [];
+  confirmedOn.forEach((r) => candidateIds.add(r.matter_id));
+  const openCasesAsContact = new Set(confirmedOn.filter((r) => !r.closed).map((r) => r.matter_id));
+
   if (!candidateIds.size) return [];
 
   // 2) Load candidates + their identifiers, then score deterministically.
@@ -322,6 +346,13 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     linked.forEach((r) => linkedSet.add(r.matter_id));
   }
 
+  // Confirmed contacts on the candidate cases, for "from the same firm as …".
+  const confirmed = await query<{ matter_id: string; email: string; role: string }>(
+    `select matter_id, lower(email) as email, role from matter_contact where tenant_id = $1 and matter_id = any($2) and role <> 'UNKNOWN'`,
+    [tenantId, ids]
+  ).catch(() => []);
+  const fromOrg = from && domainOf(from) ? orgDomain(domainOf(from)!) : null;
+
   const lcHay = haystack.toLowerCase();
   const candidates: Candidate[] = matters.map((m) => {
     const signalsHit: MatchSignal[] = [];
@@ -339,8 +370,21 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     if (m.firm_ref && refCandidates.includes(m.firm_ref.toUpperCase())) {
       signalsHit.push({ kind: 'FIRM_REF', detail: `Correspondence quotes your ref ${m.firm_ref}`, weight: 0.85, value: m.firm_ref });
     }
-    // Exact participant email (strong, but capped — counterparties recur)
-    const emailMatches = mIdents.filter((i) => i.kind === 'EMAIL' && participants.includes(i.value));
+    // WHO: the sender is a confirmed contact on this case — the one thing a stranger
+    // quoting public details cannot fake (the sender check has already ruled out forgery).
+    const asContact = from ? confirmed.find((c) => c.matter_id === m.id && c.email === from) : undefined;
+    if (asContact) {
+      signalsHit.push({ kind: 'KNOWN_CONTACT', detail: `From a confirmed contact on this case (${asContact.role})`, weight: 0.5, value: asContact.role });
+      if (openCasesAsContact.size === 1 && openCasesAsContact.has(m.id)) {
+        signalsHit.push({ kind: 'ONLY_CASE', detail: 'Their only open case with us', weight: 0.35 });
+      }
+    } else if (fromOrg && !FREEMAIL.has(fromOrg) && !self.domains.has(domainOf(from!)!)) {
+      const colleague = confirmed.find((c) => c.matter_id === m.id && domainOf(c.email) && orgDomain(domainOf(c.email)!) === fromOrg);
+      if (colleague) signalsHit.push({ kind: 'CONTACT_FIRM', detail: `From ${fromOrg}, the same firm as a contact on this case`, weight: 0.25, value: colleague.role });
+    }
+    // Exact participant email seen on this case's email (not confirmed: anyone copied into a
+    // thread lands here, so it corroborates but is never on its own proof of who).
+    const emailMatches = asContact ? [] : mIdents.filter((i) => i.kind === 'EMAIL' && participants.includes(i.value));
     if (emailMatches.length) {
       signalsHit.push({ kind: 'PARTICIPANT_EMAIL', detail: `Known participant: ${emailMatches[0].value}`, weight: 0.35, value: emailMatches[0].value });
     }
@@ -365,7 +409,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     const senderDomain = opts.distrustSender ? null : domainOf(signals.fromAddress);
     const domainMatch =
       senderDomain && !self.domains.has(senderDomain) && mIdents.some((i) => i.kind === 'DOMAIN' && i.value === senderDomain);
-    if (domainMatch && !emailMatches.length) {
+    if (domainMatch && !emailMatches.length && !asContact && !signalsHit.some((x) => x.kind === 'CONTACT_FIRM')) {
       signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this matter`, weight: 0.1, value: senderDomain ?? undefined });
     }
 

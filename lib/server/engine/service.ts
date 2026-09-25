@@ -603,7 +603,9 @@ export class EngineService {
             try {
               const c = action.command;
               if (c.type === 'client_decision_recorded') {
-                await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId });
+                // Cites the approval it came from: the database refuses a client decision written
+                // from an automation context without one (migration 079).
+                await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId, approvedEventId: e.id });
               } else {
                 await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
               }

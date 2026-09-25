@@ -7,7 +7,8 @@ import { unfiledInbox } from '@/lib/server/mail/unfiled';
 import { matchMessage } from '@/lib/server/matching';
 import { query } from '@/lib/server/db';
 import { checkSender } from '@/lib/server/mail/sender-check';
-import { caseCards, explainMatch } from '@/lib/server/mail/case-cards';
+import { knownParties } from '@/lib/server/mail/known-parties';
+import { caseCards, explainMatch, senderOnCase } from '@/lib/server/mail/case-cards';
 import { bulkReason, readablePreview } from '@/lib/server/mail/bulk';
 import { ok, fail } from '@/lib/server/http';
 
@@ -43,15 +44,7 @@ export async function GET(req: NextRequest) {
 
     const { unfiled, nextLink, filedBy, setAside } = await unfiledInbox(user, { top: q.top ?? 25, nextLink: q.nextLink, search: q.search, withBody: true });
 
-    // Who this firm deals with, for the sender checks: its own people and every case contact.
-    const [contacts, people] = await Promise.all([
-      query<{ email: string; name: string | null }>(`select distinct lower(email) as email, name from matter_contact where tenant_id = $1 and email not like '%@intouch.party'`, [user.tenantId]).catch(() => []),
-      query<{ email: string; name: string | null }>(`select lower(email) as email, display_name as name from app_user where tenant_id = $1`, [user.tenantId]).catch(() => []),
-    ]);
-    const known = {
-      contacts: [...contacts, ...people],
-      domains: [...new Set([...contacts, ...people].map((c) => c.email.split('@')[1]).filter(Boolean))],
-    };
+    const known = await knownParties(user.tenantId);
 
     // Suggest a case for each. One thread can appear as several messages in a page; match
     // once per conversation so the work is proportional to threads, not to replies.
@@ -88,6 +81,18 @@ export async function GET(req: NextRequest) {
       rows.push({ m, sender, candidates: (byConversation.get(conversationId) ?? []).slice(0, 3) });
     }
 
+    // What the AI triage made of each email when it arrived (one model call per email,
+    // already paid for): whether it is about a property transaction at all. Read, not re-run.
+    const messageIds = rows.map((r) => r.m.id as string);
+    const triaged = messageIds.length
+      ? await query<{ graph_message_id: string; case_mail: string | null; what: string | null }>(
+          `select distinct on (graph_message_id) graph_message_id, classification->>'caseMail' as case_mail, classification->>'caseMailWhat' as what
+             from email_triage where tenant_id = $1 and graph_message_id = any($2) order by graph_message_id, created_at desc`,
+          [user.tenantId, messageIds]
+        ).catch(() => [])
+      : [];
+    const aiSaysNot = new Map(triaged.filter((t) => t.case_mail === 'no').map((t) => [t.graph_message_id, t.what || 'not about a property transaction']));
+
     // Each suggested case as a person recognises it, and the sender's role on it.
     const matterIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
     const cards = await caseCards(user.tenantId, matterIds);
@@ -109,7 +114,9 @@ export async function GET(req: NextRequest) {
       const headers = Array.isArray(m.internetMessageHeaders) ? m.internetMessageHeaders : null;
       // Newsletters and notifications with nothing tying them to a case are set apart, and
       // a sender check on them is noise: they are not pretending to be anyone on a case.
-      const bulk = bulkReason({ headers, fromAddress });
+      // Either the mailing system says so, or the AI triage read it as unrelated — and in
+      // both cases only when no case matches it at amber or better.
+      const bulk = bulkReason({ headers, fromAddress }) ?? aiSaysNot.get(m.id) ?? null;
       const notCaseMail = !!bulk && !candidates.some((c) => c.band === 'AUTO' || c.band === 'STRONG');
       const { preview, forwardedFrom } = readablePreview(m.body?.content, m.bodyPreview ?? '');
       return {
@@ -134,6 +141,7 @@ export async function GET(req: NextRequest) {
           score: c.score,
           case: cards.get(c.matterId) ?? null,
           matched: explainMatch(c.signals, { fromName, fromAddress, senderRole: roleOf(c.matterId, fromAddress) }),
+          senderOnCase: senderOnCase(c.signals, fromAddress),
         })),
       };
     });

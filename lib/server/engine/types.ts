@@ -745,7 +745,8 @@ export interface Payloads {
   /** A specialist's report arrived for a further-investigation issue: read; "no further investigation" resolves that issue (a fact), a new recommendation chains a new one. */
   specialist_report_received: { facts: SurveyFacts; forIssueId: string | null; extractor: string; furtherInvestigation: boolean };
   /** The client's decision on something only the client decides — recorded by a person, never inferred. */
-  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null };
+  /** approvedEventId: the note_actions_applied event a person approved it in, when it came from a note (the database checks it). */
+  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
   /** The file is closed: registered, everything served, nothing further. */

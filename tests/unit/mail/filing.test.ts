@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import { mentionsStreet, streetKeyOf, streetLeads } from '../../../lib/server/mail/address-match';
 import { authVerdict, checkSender, lookalikeOf, orgDomain } from '../../../lib/server/mail/sender-check';
 import { bulkReason, readablePreview } from '../../../lib/server/mail/bulk';
-import { explainMatch } from '../../../lib/server/mail/case-cards';
+import { explainMatch, senderOnCase } from '../../../lib/server/mail/case-cards';
+import { bandFor, hasDefinitiveSignal, type MatchSignal } from '../../../lib/server/matching';
 
 test('street: "9 Arthur Road contract pack" is 9 Arthur Road, however the address is written', () => {
   const key = streetKeyOf('Flat 2, 9 Arthur Rd, Leeds LS6 1AB');
@@ -95,4 +96,30 @@ test('match reasons read as sentences about the case, not codes', () => {
     { fromName: 'Sarah Bartlett', fromAddress: 'sarah@bartlett-law.co.uk', senderRole: 'OTHER_SIDE' }
   );
   assert.deepEqual(lines, ['Mentions 9 Arthur Road', "From Sarah Bartlett, the other side's solicitor on this case", 'Mentions Priya Shah']);
+});
+
+test('trust: what an email says can never make a match green — only who sent it can', () => {
+  const sig = (kind: MatchSignal['kind'], weight: number, value?: string): MatchSignal => ({ kind, detail: '', weight, value });
+  // Everything public or guessable at once: street, postcode, client's name, our own reference.
+  const contentOnly = [sig('STREET', 0.45), sig('ADDRESS', 0.35), sig('NAME', 0.2), sig('CASE_REF_TOKEN', 0.9)];
+  assert.equal(bandFor(1, contentOnly), 'STRONG', 'amber at best');
+  // A confirmed contact on the case, mentioning the property: green.
+  assert.equal(bandFor(0.95, [sig('KNOWN_CONTACT', 0.5, 'OTHER_SIDE'), sig('STREET', 0.45)]), 'AUTO');
+  // The client, on their only open case: green without anything else.
+  assert.equal(bandFor(0.85, [sig('KNOWN_CONTACT', 0.5, 'CLIENT'), sig('ONLY_CASE', 0.35)]), 'AUTO');
+  // A reply inside a thread already on the case, from a stranger: amber, not green.
+  assert.equal(bandFor(1, [sig('LINKED_THREAD', 1)]), 'STRONG');
+  // …from someone the case has heard from: green.
+  assert.equal(bandFor(1, [sig('LINKED_THREAD', 1), sig('PARTICIPANT_EMAIL', 0.35, 'sarah@bartlett-law.co.uk')]), 'AUTO');
+
+  // Case data is only surfaced for drafting when the sender is part of the case.
+  assert.equal(hasDefinitiveSignal({ signals: [sig('CASE_REF_TOKEN', 0.9)] }), false, 'a quoted reference alone is not enough');
+  assert.equal(hasDefinitiveSignal({ signals: [sig('CASE_REF_TOKEN', 0.9), sig('CONTACT_FIRM', 0.25, 'OTHER_SIDE')] }), true);
+  assert.equal(hasDefinitiveSignal({ signals: [sig('KNOWN_CONTACT', 0.5, 'CLIENT')] }), true);
+
+  assert.equal(senderOnCase([sig('KNOWN_CONTACT', 0.5, 'CLIENT')], 'priya@example.com'), 'contact');
+  assert.equal(senderOnCase([sig('STREET', 0.45)], 'someone@gmail.com'), 'none');
+  assert.equal(senderOnCase([sig('PARTICIPANT_EMAIL', 0.35, 'someone@gmail.com')], 'someone@gmail.com'), 'seen');
+  const lines = explainMatch([sig('KNOWN_CONTACT', 0.5, 'CLIENT'), sig('ONLY_CASE', 0.35)], { fromName: 'Priya Shah', fromAddress: 'priya@example.com', senderRole: 'CLIENT' });
+  assert.deepEqual(lines, ['From Priya Shah, our client on this case', 'Their only open case with us']);
 });

@@ -6,6 +6,8 @@
  */
 import { query, queryOne } from './db';
 import { matchMessage, messageSignals, hasTrustedLink, type Candidate } from './matching';
+import { checkSender } from './mail/sender-check';
+import { knownParties } from './mail/known-parties';
 import { maybeAdvanceStage } from './stage-inference';
 import { onStageAdvanced } from './tasks';
 import { classifyEmail, type EmailIntent } from './ai';
@@ -20,6 +22,11 @@ export interface Classification {
   needsAttention: boolean;
   urgency: 'LOW' | 'MEDIUM' | 'HIGH';
   reason: string;
+  /** The model's read on whether this is about a property transaction at all. */
+  caseMail?: 'yes' | 'no' | 'unsure';
+  caseMailWhat?: string;
+  /** The sender check at arrival (mail/sender-check.ts). */
+  sender?: import('./mail/sender-check').SenderCheck;
 }
 
 export interface TriageResult {
@@ -33,7 +40,18 @@ export interface TriageResult {
 /** Classify + match a message and persist a triage record. Pure read on Graph. */
 export async function runTriage(user: SessionUser, message: any): Promise<TriageResult> {
   const signals = messageSignals(message);
-  const candidates = await matchMessage(user.tenantId, signals);
+  // The sender is checked before it may count as evidence of which case this is — the same
+  // check the filing queue runs (mail/sender-check.ts).
+  const sender = checkSender(
+    {
+      fromName: message.from?.emailAddress?.name ?? null,
+      fromAddress: message.from?.emailAddress?.address ?? null,
+      replyTo: (message.replyTo ?? []).map((r: { emailAddress?: { address?: string } }) => r.emailAddress?.address).filter(Boolean),
+      headers: Array.isArray(message.internetMessageHeaders) ? message.internetMessageHeaders : null,
+    },
+    await knownParties(user.tenantId)
+  );
+  const candidates = await matchMessage(user.tenantId, signals, { distrustSender: sender.verdict === 'suspicious' });
   const top = candidates[0] ?? null;
 
   const emailText = [
@@ -43,12 +61,15 @@ export async function runTriage(user: SessionUser, message: any): Promise<Triage
     stripHtml(message.body?.content) || (message.bodyPreview ?? ''),
   ].join('\n');
 
-  const classification = await classifyEmail({
-    userId: user.userId,
-    tenantId: user.tenantId,
-    matterId: top?.matterId ?? null,
-    emailText,
-  });
+  const classification = {
+    ...(await classifyEmail({
+      userId: user.userId,
+      tenantId: user.tenantId,
+      matterId: top?.matterId ?? null,
+      emailText,
+    })),
+    sender,
+  };
 
   const row = await queryOne<{ id: string }>(
     `insert into email_triage

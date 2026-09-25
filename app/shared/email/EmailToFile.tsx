@@ -52,6 +52,7 @@ const CSS = `
 .ef-case .side{grid-row:1 / span 2;grid-column:3;display:flex;gap:8px;align-items:center}
 .ef-case ul{grid-column:2 / -1;list-style:none;margin:3px 0 0;padding:0;display:flex;gap:3px 14px;flex-wrap:wrap}
 .ef-case li{display:inline-flex;gap:5px;align-items:center;font-size:12px;color:#166534}
+.ef-case li.amber{color:#b45309}
 .ef-pct{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;border-radius:99px;padding:2px 8px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ef-pct i{width:7px;height:7px;border-radius:99px;display:inline-block}
 .ef-file{display:inline-flex;gap:6px;align-items:center;border:1px solid #5A27E0;background:#5A27E0;color:#fff;border-radius:9px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
@@ -92,7 +93,7 @@ const RAG: Record<string, { fg: string; bg: string; dot: string }> = {
 };
 
 interface CaseCard { matterId: string; matterRef: string; propertyAddress: string | null; type: string; clients: string[]; stage: string | null; handler: string | null; otherSide: string | null; closed: boolean }
-interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; score: number; case: CaseCard | null; matched: string[] }
+interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; score: number; case: CaseCard | null; matched: string[]; senderOnCase?: 'contact' | 'firm' | 'seen' | 'none' }
 interface Person { name: string | null; address: string | null }
 interface FullMessage { subject: string; from: Person | null; to: Person[]; cc: Person[]; receivedDateTime: string | null; body: { contentType: 'html' | 'text'; content: string }; attachments: Array<{ id: string; name: string; size: number }> }
 interface Item {
@@ -317,7 +318,13 @@ function Detail({ item, busy, onFile, onNotACase }: { item: Item; busy: boolean;
                 <span className="addr">{s.case?.propertyAddress ?? s.propertyAddress}<span className="ref">{s.matterRef}</span></span>
                 <span className="side"><Pct s={s} /><button className={`ef-file${i === 0 && item.sender?.verdict !== 'suspicious' ? '' : ' ghost'}`} disabled={busy} onClick={() => onFile(s.matterId)}><Check size={13} /> File here</button></span>
                 <span className="who">{describe(s.case)}{s.case?.otherSide ? ` · other side ${s.case.otherSide}` : ''}</span>
-                {s.matched.length > 0 && <ul>{s.matched.map((m) => <li key={m}><Check size={12} />{m}</li>)}</ul>}
+                {(s.matched.length > 0 || s.senderOnCase === 'none') && (
+                  <ul>
+                    {s.matched.map((m) => <li key={m}><Check size={12} />{m}</li>)}
+                    {/* Names and addresses are public: say so when that is all there is. */}
+                    {s.senderOnCase === 'none' && <li className="amber"><AlertTriangle size={12} />Not from anyone on this case: only what it says matches</li>}
+                  </ul>
+                )}
               </div>
             ))}
           </div>

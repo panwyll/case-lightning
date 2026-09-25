@@ -229,10 +229,14 @@ export async function downloadDriveItem(userId: string, itemId: string): Promise
 
 export async function getMessage(userId: string, messageId: string): Promise<any> {
   const client = await graphClientForUser(userId);
-  return client
-    .api(`/me/messages/${messageId}`)
-    .select('id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments')
-    .get();
+  const base = 'id,subject,body,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments,replyTo';
+  // The headers carry the sender-authentication verdict (mail/sender-check.ts). A mailbox
+  // that will not return them still gets its message; the sender then reads as unverified.
+  try {
+    return await client.api(`/me/messages/${messageId}`).select(`${base},internetMessageHeaders`).get();
+  } catch {
+    return client.api(`/me/messages/${messageId}`).select(base).get();
+  }
 }
 
 /**

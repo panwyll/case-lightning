@@ -137,6 +137,8 @@ test('no code path can write a payment or send event without a human approver', 
       const seq = await nextSeq();
       await c.query(`insert into matter_event (id, tenant_id, matter_id, seq, type, actor, payload, created_at, prev_hash, hash) values ($1,$2,$3,$4,'report_on_title_approved',$5,'{"draftId":"rot-x"}'::jsonb,now(),'','')`, [ownApproval, t, M, seq, HUMAN]);
       await c.query(`insert into matter_event (id, tenant_id, matter_id, seq, type, actor, payload, created_at, prev_hash, hash) values ($1,$2,$3,$4,'report_on_title_sent',$5,$6::jsonb,now(),'','')`, [crypto.randomUUID(), t, M, seq + 1, HUMAN, JSON.stringify({ draftId: 'rot-x', channel: 'email', approvedBy: HUMAN, approvedEventId: ownApproval })]);
+      // Money only moves to bank details verified out of band (migration 079): verify some first.
+      await c.query(`insert into payee_bank_details (id, tenant_id, matter_id, payee_kind, sort_code, account_number, account_name, source_channel, status, recorded_by, verified_at, verified_by, verification_method) values ('bd-x',$1,$2,'firm_client_account','000000','00000000','Client account','letter','verified',$3,now(),$3,'phone_callback_known_number')`, [t, M, HUMAN]);
       await c.query(`insert into matter_event (id, tenant_id, matter_id, seq, type, actor, payload, created_at, prev_hash, hash) values ($1,$2,$3,$4,'funds_requested',$5,$6::jsonb,now(),'','')`, [crypto.randomUUID(), t, M, seq + 2, HUMAN, JSON.stringify({ fromRole: 'client', bankDetailsId: 'bd-x', approvedBy: HUMAN })]);
       throw new Error('ROLLBACK_OK');
     }),

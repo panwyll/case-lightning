@@ -172,7 +172,13 @@ export class PgLeapMirrorStore implements LeapMirrorStore {
         await query(
           `insert into matter_contact (tenant_id, matter_id, email, name, role, source, phone, leap_card_id, leap_role, last_seen_at)
            values ($1,$2,$3,$4,$5,'LEAP',$6,$7,$8,now())
-           on conflict (matter_id, email) do update set name = coalesce(excluded.name, matter_contact.name), role = excluded.role, phone = coalesce(excluded.phone, matter_contact.phone), leap_card_id = excluded.leap_card_id, leap_role = excluded.leap_role, last_seen_at = now()`,
+           on conflict (matter_id, email) do update set name = coalesce(excluded.name, matter_contact.name),
+                 -- LEAP updates its own contacts and adopts ones first seen on email; a role or
+                 -- phone a person entered here is theirs (migration 079 refuses the overwrite).
+                 role = case when matter_contact.role = 'UNKNOWN' or matter_contact.source = 'LEAP' then excluded.role else matter_contact.role end,
+                 phone = case when matter_contact.phone is null or matter_contact.source = 'LEAP' then coalesce(excluded.phone, matter_contact.phone) else matter_contact.phone end,
+                 source = case when matter_contact.source is null or matter_contact.source like 'EMAIL%' then 'LEAP' else matter_contact.source end,
+                 leap_card_id = excluded.leap_card_id, leap_role = excluded.leap_role, last_seen_at = now()`,
           [tenantId, matterId, email, p.card.name || null, contactRoleOf(p.role), p.card.phone, p.card.id, p.rawRole]
         );
       }

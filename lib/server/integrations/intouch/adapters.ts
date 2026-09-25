@@ -206,8 +206,13 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
         await query(
           `insert into matter_contact (tenant_id, matter_id, email, name, role, source, phone, intouch_party_id, last_seen_at)
            values ($1,$2,$3,$4,$5,'INTOUCH',$6,$7,now())
-           on conflict (matter_id, email) do update set name = coalesce(excluded.name, matter_contact.name), role = excluded.role,
-                 phone = coalesce(excluded.phone, matter_contact.phone), intouch_party_id = excluded.intouch_party_id, last_seen_at = now()`,
+           on conflict (matter_id, email) do update set name = coalesce(excluded.name, matter_contact.name),
+                 -- InTouch updates its own contacts and adopts ones first seen on email; a role or
+                 -- phone a person entered here is theirs (migration 079 refuses the overwrite).
+                 role = case when matter_contact.role = 'UNKNOWN' or matter_contact.source = 'INTOUCH' then excluded.role else matter_contact.role end,
+                 phone = case when matter_contact.phone is null or matter_contact.source = 'INTOUCH' then coalesce(excluded.phone, matter_contact.phone) else matter_contact.phone end,
+                 source = case when matter_contact.source is null or matter_contact.source like 'EMAIL%' then 'INTOUCH' else matter_contact.source end,
+                 intouch_party_id = excluded.intouch_party_id, last_seen_at = now()`,
           [tenantId, matterId, email, p.name || null, CONTACT_ROLE[p.role] ?? 'OTHER', p.phone, p.id]
         );
       }

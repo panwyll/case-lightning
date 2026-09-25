@@ -87,6 +87,9 @@ export function explainMatch(
   for (const s of signals) {
     switch (s.kind) {
       case 'LINKED_THREAD': out.push('Earlier emails in this conversation are already on this case'); break;
+      case 'KNOWN_CONTACT': out.push(`From ${from}, ${ROLE[s.value ?? ''] ?? 'a contact'} on this case`); break;
+      case 'ONLY_CASE': out.push('Their only open case with us'); break;
+      case 'CONTACT_FIRM': out.push(`Sent from ${s.value && ROLE[s.value] ? `the same firm as ${ROLE[s.value]}` : 'the firm of a contact on this case'}`); break;
       case 'CASE_REF_TOKEN': out.push(`Carries this case's tag [#${s.value ?? ''}]`); break;
       case 'FIRM_REF': out.push(`Quotes this case's reference, ${s.value ?? ''}`); break;
       case 'STREET': out.push(`Mentions ${s.value ?? 'the property'}`); break;
@@ -99,8 +102,22 @@ export function explainMatch(
             : `Copied to ${s.value}, who is on this case`
         );
         break;
-      case 'SENDER_DOMAIN': out.push(`Sent from ${s.value}, a firm on this case`); break;
+      case 'SENDER_DOMAIN': out.push(`Sent from ${s.value}, seen on this case's email before`); break;
     }
   }
   return out;
+}
+
+/**
+ * Who sent it, relative to this case — the part a stranger cannot fake by quoting public
+ * details. 'contact': a confirmed contact on the case. 'firm': someone at a contact's firm.
+ * 'seen': an address seen on this case's email before, never confirmed. 'none': only what
+ * the email says matches.
+ */
+export function senderOnCase(signals: MatchSignal[], fromAddress: string | null): 'contact' | 'firm' | 'seen' | 'none' {
+  const kinds = new Set(signals.map((s) => s.kind));
+  if (kinds.has('KNOWN_CONTACT')) return 'contact';
+  if (kinds.has('CONTACT_FIRM')) return 'firm';
+  if (signals.some((s) => s.kind === 'PARTICIPANT_EMAIL' && s.value && s.value === fromAddress?.toLowerCase())) return 'seen';
+  return 'none';
 }

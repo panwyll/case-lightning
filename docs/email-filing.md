@@ -70,6 +70,32 @@ them apart. Up to three are shown, and "A different case…" searches by address
 or reference and shows the same details. "Open" shows the whole email inline, in a
 sandbox with no scripts and no remote content.
 
+## Who sent it decides trust, not what it says
+
+Everything in an email's text can be copied from public records: an address, a client's
+name, a postcode, even a quoted reference. So what an email says can raise a case as a
+likely match (amber at best). **Only who sent it can make it green.**
+
+- **Confirmed contact**: the sender is a contact on the case with a role, entered by a
+  person or by LEAP / InTouch. An address merely seen on the case's email is not
+  confirmed, because anyone copied into a thread lands there.
+- **Their only open case with us**: a confirmed contact on exactly one open case is the
+  strongest single signal there is.
+- **A reply in a thread already on the case** counts only when it comes from someone the
+  case has heard from.
+- The case card says who: "From Priya Shah, our client on this case", or in amber, "Not
+  from anyone on this case: only what it says matches".
+
+Case data is surfaced for drafting a reply only when the sender is part of the case,
+never on a quoted reference alone.
+
+**Not case mail.** When an email arrives, the AI triage's existing classification call
+also answers "is this about a property transaction at all?". It judges the content,
+never the sender's domain: someone at microsoft.com writing about their own move is
+case mail. The queue reads that stored verdict (no new model call) and groups what it
+says is unrelated with the newsletters, again only when no case matches at amber or
+better.
+
 ## The sender is checked before it counts
 
 Conveyancing is the most targeted sector for email fraud. A sender only counts as
@@ -88,6 +114,8 @@ evidence of which case an email belongs to once it has passed
    organisation. Domains are compared by organisation, so a newsletter from
    mails.microsoft.com with replies to microsoft.com is fine, and a sender we have never
    dealt with impersonates nobody we know.
+
+The same check runs when an email arrives (the AI triage), not only on this page.
 
 Any of these makes the row show a red "Check this sender before acting on it" box, with
 the reasons in plain words. The sender's From, To and Cc then do not count towards the
@@ -110,3 +138,17 @@ like every other app page.
 
 *(The page is the real one; the mailbox behind it is sampled, because the build
 environment has no Microsoft 365 connection.)*
+
+## What no email can change
+
+However an email is matched, and whatever it says, the database refuses these from any
+automated path (migration 079, `docs/conveyance-engine.md`):
+
+- verifying bank details, or paying or requesting money to details that were not
+  verified out of band;
+- recording exchange, completion or a client's decision;
+- changing a contact's email, a phone number on file or a role a person set, or
+  deleting a contact.
+
+New bank details arriving by email are recorded as unverified and stop payments until a
+person checks them by phone on a number already on file, or with Lawyer Checker.
