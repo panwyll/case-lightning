@@ -24,6 +24,12 @@ const CSS = `
 .ig-search{flex:1;min-width:220px;max-width:420px;border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
 .ig-sel{border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff}
 .ig-count{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
+.ig-scroll{max-height:420px;overflow-y:auto;border:1px solid #e6e8ee;border-radius:10px;background:#fff}
+.ig-scroll .ig-row{border:0;border-bottom:1px solid #f1f5f9;border-radius:0;margin:0}
+.ig-scroll .ig-row:last-child{border-bottom:0}
+.ig-pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:8px;font-size:12px;color:#64748b;font-variant-numeric:tabular-nums}
+.ig-pager button{border:1px solid #d0d5dd;background:#fff;border-radius:8px;padding:4px 10px;font:inherit;font-size:12px;font-weight:700;color:#334155;cursor:pointer}
+.ig-pager button:disabled{color:#cbd5e1;cursor:default}
 .ig-row .st{margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:99px;padding:1px 8px;flex:0 0 auto}
 `;
 
@@ -46,6 +52,9 @@ export default function ToolsPage() {
   const [status, setStatus] = useState<'open' | 'closed' | 'all'>('open');
   const [matters, setMatters] = useState<MatterRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const PAGE = 25;
+  const pages = Math.max(1, Math.ceil(total / PAGE));
   useEffect(() => {
     api<Status>('/integrations/leap/status').then(setLeap).catch(() => setLeap(null));
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
@@ -53,7 +62,7 @@ export default function ToolsPage() {
   useEffect(() => {
     const t = setTimeout(() => {
       api<{ matters?: Array<{ id: string; matterRef: string; propertyAddress: string; status: string }>; total?: number }>(
-        `/matters?q=${encodeURIComponent(q)}&status=${status}&limit=25`
+        `/matters?q=${encodeURIComponent(q)}&status=${status}&limit=${PAGE}&offset=${page * PAGE}`
       )
         .then((r) => {
           setMatters((r.matters ?? []).map((m) => ({ id: m.id, matter_ref: m.matterRef, property_address: m.propertyAddress, status: m.status })));
@@ -62,7 +71,8 @@ export default function ToolsPage() {
         .catch(() => { setMatters([]); setTotal(0); });
     }, 200);
     return () => clearTimeout(t);
-  }, [q, status]);
+  }, [q, status, page]);
+  useEffect(() => { setPage(0); }, [q, status]);
   const cards = [
     { name: 'LEAP', href: paths.leap, s: leap, firmOwned: false },
     { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch, firmOwned: true },
@@ -101,17 +111,24 @@ export default function ToolsPage() {
           <option value="closed">Closed</option>
           <option value="all">All</option>
         </select>
-        <span className="ig-count">{total > matters.length ? `${matters.length} of ${total}` : `${total}`}</span>
+        <span className="ig-count">{total}</span>
       </div>
-      {matters.map((m) => (
-        <a key={m.id} className="ig-row" href={paths.engineMatter(m.id)}>
-          <b>{m.matter_ref}</b>
-          <span>{m.property_address}</span>
-          {status === 'all' && <span className="st">{m.status === 'CLOSED' ? 'Closed' : 'Open'}</span>}
-        </a>
-      ))}
-      {matters.length === 0 && <p className="ig-what">No cases match.</p>}
-      {total > matters.length && <p className="ig-what">Showing the newest {matters.length}. Narrow it with a search.</p>}
+      <div className="ig-scroll">
+        {matters.map((m) => (
+          <a key={m.id} className="ig-row" href={paths.engineMatter(m.id)}>
+            <b>{m.matter_ref}</b>
+            <span>{m.property_address}</span>
+            {status === 'all' && <span className="st">{m.status === 'CLOSED' ? 'Closed' : 'Open'}</span>}
+          </a>
+        ))}
+      </div>
+      {pages > 1 && (
+        <div className="ig-pager">
+          <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</button>
+          <span>{page + 1} / {pages}</span>
+          <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+        </div>
+      )}
     </div>
   );
 }

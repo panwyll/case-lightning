@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     // status: open (default for pickers that pass it) | closed | all. limit: up to 100.
     const status = z.enum(['open', 'closed', 'all']).catch('all').parse(sp.get('status') ?? 'all');
     const limit = z.coerce.number().int().min(1).max(100).catch(20).parse(sp.get('limit') ?? 20);
+    const offset = z.coerce.number().int().min(0).max(100_000).catch(0).parse(sp.get('offset') ?? 0);
     const where = `tenant_id = $1
           and ($2 = ''
                or matter_ref ilike $3
@@ -32,8 +33,8 @@ export async function GET(req: NextRequest) {
           and ($4 = 'all' or ($4 = 'closed') = (status = 'CLOSED'))`;
     const [rows, totalRow] = await Promise.all([
       query<{ id: string; matter_ref: string; property_address: string; status: string }>(
-        `select id, matter_ref, property_address, status from matter where ${where} order by created_at desc limit $5`,
-        [user.tenantId, q, like, status, limit]
+        `select id, matter_ref, property_address, status from matter where ${where} order by created_at desc limit $5 offset $6`,
+        [user.tenantId, q, like, status, limit, offset]
       ),
       query<{ n: number }>(`select count(*)::int as n from matter where ${where}`, [user.tenantId, q, like, status]),
     ]);
