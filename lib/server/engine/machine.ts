@@ -41,7 +41,7 @@ import {
   type SourceChannel,
   type VerificationMethod,
   type SubFlow,
-  type SubflowConfig,
+  type LevelConfig,
   type SuppressedAction,
   type AbandonReason,
   ABANDON_REASONS,
@@ -64,7 +64,9 @@ import {
   type ManagementPackFacts,
   type TransactionType,
   type Engagement,
-  DEFAULT_SUBFLOW_CONFIG,
+  DEFAULT_LEVELS,
+  type EngineAction,
+  type TrustLevel,
   type Actor,
   type ChaseSpec, type AcknowledgementSpec,
   type Citation,
@@ -186,7 +188,10 @@ export type Command =
   | { type: 'record_chase'; chase: ChaseSpec }
   | { type: 'record_acknowledgement'; ack: AcknowledgementSpec }
   | { type: 'raise_escalation'; waitKey: WaitKey; subject: string; reason: string; sourceDocumentId: string; summary?: SummaryOverride | null }
-  | { type: 'record_client_update'; update: ClientUpdateSpec };
+  | { type: 'record_client_update'; update: ClientUpdateSpec }
+  /** PROPOSE level: the service asks before acting. `sourceDocumentId` is the generated dossier the person reads. */
+  | { type: 'propose_action'; action: EngineAction; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
+  | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
 
 export type CommandType = Command['type'];
 
@@ -263,8 +268,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
 
 export interface DecideContext {
   now: Date;
-  /** Addendum 3 §2: trust level per sub-flow (tenant config). Defaults to assist. */
-  subflows?: SubflowConfig;
+  /** Trust level per engine action (tenant config). Defaults to propose. Only auto_clear matters inside the machine. */
+  levels?: LevelConfig;
 }
 
 export interface Decision {
@@ -568,14 +573,27 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   extra: Record<string, unknown>;
   confidence: number;
   causedBy?: string | null;
-  /** assist → the auto-clear is put in front of a person too (non-blocking); autonomous/shadow → not. */
-  subflowStatus?: 'shadow' | 'assist' | 'autonomous';
+  /** Trust level for auto_clear: propose → the clear waits for a person; assist → clears, then asks to confirm; auto → clears. */
+  level?: TrustLevel;
 }): NewEvent[] {
   if (input.verdict.outcome === 'clear') {
     const cleared = { type: input.cleared, actor: SYSTEM, payload: { ...input.extra, reasons: input.verdict.reasons }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent;
-    if ((input.subflowStatus ?? 'assist') !== 'assist') return [cleared];
+    const level = input.level ?? 'propose';
+    if (level === 'auto') return [cleared];
     const subFlow = SUBFLOW_FOR_KIND[input.kind];
     const subject = String(input.extra.searchType ?? input.extra.enquiryId ?? input.subjectLabel);
+    if (level === 'propose') {
+      const decision: DecisionSpec = {
+        kind: 'auto_clear',
+        summary: `${input.subjectLabel}: the rule layer finds nothing wrong (${input.verdict.reasons.join('; ')}). At PROPOSE level nothing is cleared until you approve it. Approve to clear, or escalate.`,
+        sourceDocumentId: input.sourceDocumentId,
+        citations: [{ documentId: input.sourceDocumentId, label: `${input.subjectLabel} — full document` }],
+        options: OPTIONS_FOR.auto_clear,
+        summarisedBy: 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'auto_clear_proposed', actor: AI, payload: { subFlow, subject, clearedEvent: cleared, reasons: input.verdict.reasons, decision }, sourceDocumentId: input.sourceDocumentId } as NewEvent];
+    }
     const decision: DecisionSpec = {
       kind: 'auto_clear',
       summary: `${input.subjectLabel} was auto-cleared by the rule layer (${input.verdict.reasons.join('; ')}). This sub-flow is at ASSIST level: confirm the engine got it right, or escalate. The matter is not held up by this review.`,
@@ -592,7 +610,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
 
-const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase' };
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase', proposal: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -652,7 +670,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
         kind: 'id_check',
-        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).id_check,
+        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
         subjectLabel: `ID/AML check (${cmd.facts.provider})`,
         sourceDocumentId: cmd.documentId,
         summary: cmd.summary,
@@ -691,7 +709,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'search_cleared',
           flagged: 'search_flagged',
           kind: 'search',
-        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).search,
+        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
           subjectLabel: `${cmd.searchType} search`,
           sourceDocumentId: sr.documentId,
           summary: cmd.summary,
@@ -726,7 +744,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'enquiry_reply_cleared',
           flagged: 'enquiry_reply_flagged',
           kind: 'enquiry',
-        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).enquiry,
+        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
           subjectLabel: `Reply to enquiry ${cmd.enquiryId} (${q.subject})`,
           sourceDocumentId: cmd.documentId,
           summary: cmd.summary,
@@ -756,7 +774,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'mortgage_offer_cleared',
           flagged: 'mortgage_condition_flagged',
           kind: 'mortgage',
-        subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).mortgage,
+        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
           subjectLabel: `Mortgage offer (${cmd.facts.lender})`,
           sourceDocumentId: s.mortgage.documentId,
           summary: cmd.summary,
@@ -778,7 +796,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const verdict = evaluateTitle(cmd.facts, expectedTenure);
       const out = [
         extracted,
-        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', subflowStatus: (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG).title, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
+        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
       // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
       if (expectedTenure !== 'any' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
@@ -1590,6 +1608,27 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'shadow_mode_changed', actor: cmd.actor, payload: { shadowMode: cmd.shadowMode, reason: cmd.reason ?? null } }];
     }
 
+    case 'propose_action': {
+      requireEnrolled(s);
+      if (Object.values(s.proposals).some((p) => p.action === cmd.action && p.dedupKey === cmd.dedupKey && p.status === 'pending')) reject(`That ${cmd.action.replace(/_/g, ' ')} is already proposed and waiting.`, 409);
+      const decision: DecisionSpec = {
+        kind: 'proposal',
+        summary: cmd.summary,
+        sourceDocumentId: cmd.sourceDocumentId,
+        citations: [{ documentId: cmd.sourceDocumentId, label: 'What the engine proposes to send or do' }],
+        options: OPTIONS_FOR.proposal,
+        summarisedBy: 'template',
+      };
+      assertDecisionSpec(decision);
+      return [{ type: 'action_proposed', actor: AI, payload: { action: cmd.action, detail: cmd.detail, dedupKey: cmd.dedupKey, decision }, sourceDocumentId: cmd.sourceDocumentId }];
+    }
+
+    case 'record_action_failed': {
+      requireEnrolled(s);
+      if (!s.proposals[cmd.proposalEventId]) reject('Proposal not found.', 404);
+      return [{ type: 'action_failed', actor: SYSTEM, payload: { proposalEventId: cmd.proposalEventId, action: cmd.action, detail: cmd.detail, reason: cmd.reason } }];
+    }
+
     // ── Timers / comms ──
     case 'record_chase': {
       requireEnrolled(s);
@@ -1679,15 +1718,8 @@ const fatalAbandonReason = (kind: IssueKind): AbandonReason => {
   return FATAL_ABANDON_REASON_BY_GROUP[ISSUE_KIND_SPEC[kind].group];
 };
 
-/**
- * Addendum 3 §2: a decision on a shadow-mode matter, or from a sub-flow still in shadow,
- * is logged but never put in front of a person — so it cannot be opened or resolved either.
- */
-function requireSurfaced(s: MatterState, d: DecisionState, ctx: DecideContext): void {
-  if (s.shadowMode) reject('This matter is in shadow mode: the engine observes and logs, but its decisions are not actioned.', 409);
-  const sf = SUBFLOW_OF_KIND[d.kind];
-  if (sf && (ctx.subflows ?? DEFAULT_SUBFLOW_CONFIG)[sf] === 'shadow') reject(`The ${sf.replace(/_/g, ' ')} sub-flow is in shadow mode: its decisions are logged, not actioned.`, 409);
-}
+/** Every decision is a person's to act on. (Shadow mode, which hid some, is gone; the hook stays for its callers.) */
+function requireSurfaced(_s: MatterState, _d: DecisionState, _ctx: DecideContext): void {}
 
 function pendingDecision(s: MatterState, id: string): DecisionState {
   const d = s.decisions[id];
@@ -1701,10 +1733,22 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
-  // assist-level auto-clear review: confirm (no state change) or escalate to a person.
+  // PROPOSE level: the engine asked to do something. Yes → the service does it; no → it doesn't, and the reason is on the log.
+  if (d.kind === 'proposal') {
+    const p = s.proposals[d.eventId];
+    if (!p) reject('Proposal not found for this decision.', 500);
+    if (option === 'approve') return [{ type: 'action_approved', actor: userId, payload: { proposalEventId: d.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: d.sourceDocumentId }];
+    if (option === 'reject') return [{ type: 'action_rejected', actor: userId, payload: { proposalEventId: d.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: d.sourceDocumentId }];
+    reject(`"${option}" is not an option for a proposal (approve or reject).`, 400);
+  }
+
+  // Auto-clear: at PROPOSE the clear itself was held back and goes through now; at ASSIST it
+  // already happened and this only confirms it. Either way escalation goes to a person.
   if (d.kind === 'auto_clear' && option !== 'escalate') {
     const [subFlow, ...rest] = subject.split(':');
-    return [{ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId }];
+    const held = s.pendingAutoClears[d.eventId];
+    const confirmed: NewEvent = { type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId };
+    return held ? [held, confirmed] : [confirmed];
   }
 
   // Addendum 2 §3: a bank-details decision is resolved by a VERIFICATION with a named
@@ -1863,6 +1907,7 @@ function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | 
     case 'bank_details':
     case 'auto_clear':
     case 'requisition':
+    case 'proposal':
       return reject('Not a reviewable decision kind.', 500);
   }
 }

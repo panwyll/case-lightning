@@ -204,16 +204,16 @@ test('work: a wait is WAITING with a countdown, becomes CHASE when the clock run
   assert.ok(again.escalatesInWorkingDays != null);
 });
 
-test('work: a decision is a DO for a person, a hard stop is critical, and a shadow matter asks before chasing', async () => {
+test('work: a decision is a DO for a person, a hard stop is critical, and a proposed chase asks before sending', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleWithCharge()));
   let s = await h.svc.getState(TENANT, MATTER);
-  const cfg = await h.store.loadSubflows(TENANT);
-  let items = matterWork(s, h.ports.now(), { assignedTo: USER, subflows: cfg }).items;
-  const decide = items.find((i) => i.bucket === 'do' && i.ref.type === 'decision')!;
+  const cfg = await h.store.loadLevels(TENANT);
+  let items = matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items;
+  const decide = items.find((i) => i.bucket === 'do' && i.ref.type === 'decision' && /title/i.test(i.what))!;
   assert.ok(decide, 'the flagged title is something a person must do');
   assert.equal(decide.actionOwner, 'conveyancer');
   assert.match(decide.what, /^Decide: the title/);
@@ -222,7 +222,7 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a shad
   const rec = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: { sortCode: '401234', accountNumber: '11112222', accountName: 'Smith & Co Client Account', firmName: 'Smith & Co' }, sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'email' }) });
   assert.ok(rec.events.length);
   s = await h.svc.getState(TENANT, MATTER);
-  items = matterWork(s, h.ports.now(), { assignedTo: USER, subflows: cfg }).items;
+  items = matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items;
   const stop = items.find((i) => i.what.startsWith('Verify bank details'))!;
   assert.ok(stop, 'the hard stop is on the list');
   assert.equal(stop.urgency, 'critical');
@@ -233,14 +233,15 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a shad
   await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
   await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'verify', 'called back', { method: 'phone_callback_known_number' });
   s = await h.svc.getState(TENANT, MATTER);
-  assert.equal(matterWork(s, h.ports.now(), { assignedTo: USER, subflows: cfg }).items.some((i) => i.what.startsWith('Verify bank details')), false);
+  assert.equal(matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items.some((i) => i.what.startsWith('Verify bank details')), false);
 
-  // Shadow mode: the chase is listed but needs a person, because nothing is sent.
-  await h.svc.setShadowMode(TENANT, MATTER, USER, true, 'observing');
+  // PROPOSE level for chases: the timer proposes the chase, and the work list says a person must approve it.
+  await h.store.setLevel(TENANT, 'chase', 'propose', null);
   const now = h.advanceDays(Math.ceil(DEFAULT_SLA.search.chaseAfter * 1.4) + 1);
+  await h.svc.tick(TENANT, MATTER, now);
   s = await h.svc.getState(TENANT, MATTER);
-  const shadow = matterWork(s, now, { assignedTo: USER, subflows: cfg }).items.find((i) => i.ref.id === 'search:CON29')!;
-  assert.equal(shadow.mode, 'needs_approval');
+  const proposed = matterWork(s, now, { assignedTo: USER, levels: cfg }).items.find((i) => i.ref.id === 'search:CON29')!;
+  assert.equal(proposed.mode, 'needs_approval');
 });
 
 test('work: a closed or abandoned matter produces no work at all', async () => {

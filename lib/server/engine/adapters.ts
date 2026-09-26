@@ -69,7 +69,7 @@ let _backend: CaseBackend | null = null;
  */
 export function backend(): CaseBackend {
   if (!_backend) {
-    _backend = leapBackendActive() ? leapBackend() : nativeBackend((t) => engine().subflows(t));
+    _backend = leapBackendActive() ? leapBackend() : nativeBackend((t) => engine().levels(t));
   }
   return _backend;
 }

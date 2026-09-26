@@ -28,12 +28,12 @@ export async function GET(req: NextRequest) {
     const svc = engine();
     const [states, subflows] = await Promise.all([
       svc.eventStore.listStates(user.tenantId, { assignedTo: all ? null : who, limit: q.limit ?? 300 }),
-      svc.eventStore.loadSubflows(user.tenantId),
+      svc.eventStore.loadLevels(user.tenantId),
     ]);
     const now = new Date();
     const items: WorkItem[] = [];
     for (const { state, meta } of states) {
-      items.push(...matterWork(state, now, { ...meta, subflows }).items);
+      items.push(...matterWork(state, now, { ...meta, levels: subflows }).items);
     }
     return ok({ ...buckets(items), scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters: states.length, ownerLabels: OWNER_LABEL });
   } catch (error) {

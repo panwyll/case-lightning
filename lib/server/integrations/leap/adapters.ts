@@ -374,7 +374,7 @@ export async function leapOnEvents(input: { tenantId: string; matterId: string; 
   const conn = await leapConnection(input.tenantId).catch(() => null);
   if (!apiFactory && conn?.status !== 'CONNECTED') return;
   const { engine } = await engineModule();
-  await writeBack({ leap: leapApi(input.tenantId), store: new PgLeapWritebackStore(), appUrl: config.appUrl, subflows: (t) => engine().subflows(t), log: (m, d) => console.warn(`[leap] ${m}`, d instanceof Error ? d.message : d ?? '') }, input.tenantId, input.matterId, input.events, input.state);
+  await writeBack({ leap: leapApi(input.tenantId), store: new PgLeapWritebackStore(), appUrl: config.appUrl, levels: (t) => engine().levels(t), log: (m, d) => console.warn(`[leap] ${m}`, d instanceof Error ? d.message : d ?? '') }, input.tenantId, input.matterId, input.events, input.state);
 }
 
 // ───────────────────────────── sync deps ─────────────────────────────

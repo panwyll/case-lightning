@@ -21,7 +21,7 @@
  */
 import type { LeapApi } from './client';
 import { tagExternalRef } from './mapping';
-import { DECISION_EVENT_TYPES, SUBFLOW_OF_KIND, surfacedDecisions, type DecisionKind, type DecisionOption, type EngineEvent, type MatterState, type SubflowConfig } from '../../engine/types';
+import { DECISION_EVENT_TYPES, SUBFLOW_OF_KIND, surfacedDecisions, type DecisionKind, type DecisionOption, type EngineEvent, type MatterState, type LevelConfig } from '../../engine/types';
 import { optionLabel } from '../../engine/rules';
 import { paths } from '../../../paths';
 
@@ -40,7 +40,7 @@ export interface WritebackDeps {
   leap: LeapApi;
   store: LeapWritebackStore;
   appUrl: string;
-  subflows: (tenantId: string) => Promise<SubflowConfig>;
+  levels: (tenantId: string) => Promise<LevelConfig>;
   options?: { tasks?: boolean; notes?: boolean };
   log: (msg: string, detail?: unknown) => void;
 }
@@ -74,8 +74,7 @@ export async function writeBack(deps: WritebackDeps, tenantId: string, matterId:
     out.skipped = events.length;
     return out;
   }
-  const cfg = await deps.subflows(tenantId);
-  const surfaced = new Set(surfacedDecisions(state, cfg).map((d) => d.eventId));
+  const surfaced = new Set(surfacedDecisions(state).map((d) => d.eventId));
   const wantTasks = deps.options?.tasks !== false;
   const wantNotes = deps.options?.notes !== false;
 

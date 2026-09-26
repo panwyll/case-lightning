@@ -95,7 +95,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const eng = useEngine(matterId, api);
   const view = eng.view;
   const enrolled = !!view?.state.enrolled;
-  const shadow = !!view?.state.shadowMode;
   const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
   const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => i.status === 'open' || i.status === 'negotiating').length;
   const unreadNotes = Object.values(view?.state.notes ?? {}).filter((n) => n.status === 'proposed').length;
@@ -138,13 +137,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     <div className="eg">
       <style>{ENGINE_CSS + WORK_CSS + CSS}</style>
       {err && <div className="eg-err">{err}</div>}
-      {shadow && (
-        <div className="eg-shadow-banner" role="status" aria-live="polite">
-          <b>Shadow mode</b>
-          <span>Observing only. Nothing is sent or actioned.</span>
-          <a href={paths.matterShadow(matterId)}>Compare with the human record →</a>
-        </div>
-      )}
       {row && (
         <>
           <div className="mx-head">

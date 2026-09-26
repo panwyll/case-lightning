@@ -168,7 +168,10 @@ export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>
     await client.query(setup.join('; '));
     if (user && !inlineUser) await client.query(`select set_config('app.user_id', $1, true)`, [user]);
     const value = await work(client);
-    await client.query('commit');
+    // COMMIT on an aborted transaction does not error: Postgres answers ROLLBACK. Say so,
+    // or a swallowed failure earlier in `work` silently loses every write in it.
+    const done = await client.query('commit');
+    if (done.command === 'ROLLBACK') throw new Error('Transaction was aborted by an earlier statement and rolled back.');
     return value;
   } catch (error) {
     await client.query('rollback').catch(() => {});

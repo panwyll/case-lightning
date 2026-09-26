@@ -63,6 +63,8 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   // A note's proposals: apply what the note actually says (approve), throw them away with
   // a reason (reject), or put the note in front of someone senior.
   note_actions: ['approve', 'reject', 'escalate'],
+  // PROPOSE level: the engine asked to do something. Yes, or no with a reason.
+  proposal: ['approve', 'reject'],
 };
 
 const lowConfidenceFlag = (confidence: number, what: string): Flag => ({

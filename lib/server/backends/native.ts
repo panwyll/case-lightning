@@ -9,6 +9,7 @@
  * the event store. Never on a shadow matter. Idempotent per event (the task detail
  * carries the event id; a timeline row is keyed by source_ref).
  */
+import type { LevelConfig } from '../engine/types';
 import { query, queryOne, runAsSystem } from '../db';
 import { PgDocumentBytesLoader, PgDocumentRepository } from '../engine/pg-documents';
 import type { CaseBackend, ConclusionSink, MatterDirectory } from '../engine/backend';
@@ -40,12 +41,11 @@ const LINES: Record<string, (p: Record<string, unknown>) => string> = {
 };
 export class NativeConclusionSink implements ConclusionSink {
   readonly name = 'native-tasks-and-timeline';
-  constructor(private subflows: (tenantId: string) => Promise<Parameters<typeof surfacedDecisions>[1]>) {}
+  constructor(private levels: (tenantId: string) => Promise<LevelConfig>) {}
 
   async onEvents({ tenantId, matterId, events, state }: { tenantId: string; matterId: string; events: EngineEvent[]; state: MatterState }): Promise<void> {
-    if (!events.length || state.shadowMode) return;
-    const cfg = await this.subflows(tenantId);
-    const surfaced = new Set(surfacedDecisions(state, cfg).map((d) => d.eventId));
+    if (!events.length) return;
+    const surfaced = new Set(surfacedDecisions(state).map((d) => d.eventId));
     const { updateTask } = await import('../tasks');
     const { emitMatterEvent } = await import('../events');
     const m = await runAsSystem(() => queryOne<{ assigned_to: string | null; created_by: string }>(`select assigned_to, created_by from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]));
@@ -98,13 +98,13 @@ export class NativeMatterDirectory implements MatterDirectory {
   }
 }
 
-export function nativeBackend(subflows: (tenantId: string) => Promise<Parameters<typeof surfacedDecisions>[1]>): CaseBackend {
+export function nativeBackend(levels: (tenantId: string) => Promise<LevelConfig>): CaseBackend {
   return {
     kind: 'native',
     label: 'CaseLightning (own app)',
     documents: new PgDocumentRepository(),
     bytes: new PgDocumentBytesLoader(),
-    conclusions: new NativeConclusionSink(subflows),
+    conclusions: new NativeConclusionSink(levels),
     matters: new NativeMatterDirectory(),
     triggers: TRIGGERS_BY_BACKEND('native'),
     status: async () => ({ ok: true, detail: 'matters, documents and tasks in CaseLightning; documents in OneDrive / document_blob' }),

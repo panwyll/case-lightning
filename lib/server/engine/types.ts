@@ -135,9 +135,15 @@ export const EVENT_TYPES = [
   'bank_details_verified',
   'bank_details_verification_failed',
   'payment_authorised',
-  // addendum 3: shadow mode + assist-level review of auto-clears
+  // addendum 3 (historical): shadow mode. Kept so old logs replay; nothing emits them now.
   'action_suppressed',
   'shadow_mode_changed',
+  // trust levels: at PROPOSE the engine asks before it acts; the answer is an event too
+  'action_proposed',
+  'action_approved',
+  'action_rejected',
+  'action_failed',
+  'auto_clear_proposed',
   // eventualities (docs/engine-eventualities.md)
   'matter_abandoned',
   'target_dates_changed',
@@ -404,7 +410,7 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack', 'note_actions'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack', 'note_actions', 'proposal'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify', 'indemnity'] as const;
@@ -680,6 +686,14 @@ export interface Payloads {
   action_suppressed: { action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> };
   /** A person switched shadow mode on or off for this matter (the flag is part of the log, like everything else). */
   shadow_mode_changed: { shadowMode: boolean; reason?: string | null };
+  /** PROPOSE level: what the engine wants to do, put in front of a person as a decision. `detail` is everything needed to do it on approval. */
+  action_proposed: { action: EngineAction; detail: Record<string, unknown>; dedupKey: string; decision: DecisionSpec };
+  action_approved: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
+  action_rejected: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
+  /** A person approved it and the doing failed (a send bounced, a provider was down). Visible on the case, never swallowed. */
+  action_failed: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
+  /** PROPOSE level: the rule layer would clear this; the clear waits for a person. `clearedEvent` is emitted verbatim on approval. */
+  auto_clear_proposed: { subFlow: SubFlow; subject: string; clearedEvent: NewEvent; reasons: string[]; decision: DecisionSpec };
   // ── eventualities ──
   /** The transaction is over without completing: the matter is closed to further commands, timers stop. */
   matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
@@ -804,6 +818,8 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'escalation_raised',
   'bank_details_change_flagged',
   'auto_clear_review_raised',
+  'auto_clear_proposed',
+  'action_proposed',
   'notice_to_complete_served',
   'hmlr_requisition_received',
   'proof_of_funds_submitted',
@@ -820,19 +836,39 @@ export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 
 export type SubFlow = (typeof SUB_FLOWS)[number];
 
 /**
- * shadow      — logged only: nothing surfaces to a person, nothing is sent/ordered.
- * assist      — decisions surface; auto-clears ALSO surface as a non-blocking review so
- *               their accuracy can be measured (the evidence for promotion).
- * autonomous  — the auto-clear branch runs unobserved. Decision events are never
- *               autonomous: anything flagged always goes to a person.
+ * Trust levels, per action the engine takes on its own (docs/conveyance-engine.md §2).
+ *
+ *   propose — the engine asks first: the intended action is a decision in Tasks and
+ *             nothing happens until a person approves it. The outset for every firm.
+ *   assist  — the mechanical goes out unasked (acks, chases, search orders); anything
+ *             with judgement or the client's ear is still proposed; auto-clears happen
+ *             and are put in front of a person afterwards to confirm.
+ *   auto    — everything proceeds. Flagged decisions and human-gated events are a
+ *             person's regardless of level.
+ *
+ * Promotion is earned per action, from the proposals a firm has approved unchanged.
  */
-export const SUBFLOW_STATUSES = ['shadow', 'assist', 'autonomous'] as const;
-export type SubflowStatus = (typeof SUBFLOW_STATUSES)[number];
-export type SubflowConfig = Record<SubFlow, SubflowStatus>;
-export const DEFAULT_SUBFLOW_CONFIG: SubflowConfig = { id_check: 'assist', search: 'assist', enquiry: 'assist', mortgage: 'assist', title: 'assist', report_on_title: 'assist', chase: 'assist', proof_of_funds: 'assist', management_pack: 'assist' };
+export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear'] as const;
+export type EngineAction = (typeof ENGINE_ACTIONS)[number];
+export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
+  acknowledgement: 'Acknowledge what arrives',
+  chase: 'Chase the other side',
+  client_update: 'Update the client',
+  search_order: 'Order searches',
+  auto_clear: 'Clear a document the rules pass',
+};
+export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+export type LevelConfig = Record<EngineAction, TrustLevel>;
+export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose' };
+/** What ASSIST does unasked. Everything else at assist is proposed. */
+export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true };
+/** Whether an action at a level goes ahead without a person. */
+export const actsUnasked = (level: TrustLevel, action: EngineAction): boolean => level === 'auto' || (level === 'assist' && ASSIST_ACTS[action]);
+
 
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
-export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null };
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null, proposal: null };
 
 export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'acknowledgement' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
 
@@ -1080,8 +1116,25 @@ export interface MatterState {
   /** Addendum 2: every bank-details record ever put on file for this matter (versioned, never overwritten). */
   bankDetails: Record<string, BankDetailsState>;
   payments: PaymentAuthorisation[];
-  /** Intents logged instead of executed (shadow). */
+  /** Intents logged instead of executed (historical shadow mode). */
   suppressed: number;
+  /** PROPOSE level: what the engine has asked to do, by the proposing event's id. */
+  proposals: Record<string, ProposalState>;
+  /** PROPOSE level: auto-clears waiting for a person, by decision event id — the clear itself, held back. */
+  pendingAutoClears: Record<string, NewEvent>;
+}
+
+export interface ProposalState {
+  eventId: string;
+  action: EngineAction;
+  detail: Record<string, unknown>;
+  dedupKey: string;
+  status: 'pending' | 'approved' | 'rejected' | 'failed';
+  proposedAt: string;
+  /** Why an approved action could not be done. */
+  failure: string | null;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
 }
 
 export function initialState(tenantId: string, matterId: string): MatterState {
@@ -1153,6 +1206,8 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     bankDetails: {},
     payments: [],
     suppressed: 0,
+    proposals: {},
+    pendingAutoClears: {},
   };
 }
 
@@ -1235,12 +1290,14 @@ export function pendingDecisions(state: MatterState): DecisionState[] {
 export function blockingDecisions(state: MatterState): DecisionState[] {
   return pendingDecisions(state).filter((d) => d.kind !== 'auto_clear');
 }
-export function surfacedDecisions(state: MatterState, cfg: SubflowConfig): DecisionState[] {
-  if (state.shadowMode) return [];
-  return pendingDecisions(state).filter((d) => {
-    const sf = SUBFLOW_OF_KIND[d.kind];
-    return !sf || cfg[sf] !== 'shadow';
-  });
+/** Every pending decision is a person's to see. (Shadow mode, which hid some, is gone.) */
+export function surfacedDecisions(state: MatterState): DecisionState[] {
+  return pendingDecisions(state);
+}
+
+/** A pending proposal for this action and key, if any. */
+export function pendingProposal(state: MatterState, action: EngineAction, dedupKey: string): ProposalState | null {
+  return Object.values(state.proposals).find((p) => p.action === action && p.dedupKey === dedupKey && p.status === 'pending') ?? null;
 }
 
 /** Issues still holding the matter (open or negotiating), oldest first. */

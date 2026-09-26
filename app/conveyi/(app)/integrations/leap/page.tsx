@@ -105,13 +105,13 @@ export default function LeapPage() {
           {s.matters.length > 0 && (
             <div className="eg-card">
               {s.matters.map((m) => (
-                <a key={m.matterId} className="q-row" href={m.shadowMode ? `/engine/${m.matterId}/shadow` : `/engine/${m.matterId}`}>
+                <a key={m.matterId} className="q-row" href={paths.matter(m.matterId)}>
                   <div style={{ minWidth: 0 }}>
                     <div className="q-addr">{m.propertyAddress}</div>
                     <div className="q-ref">{m.matterRef} · LEAP {m.leapMatterId}</div>
                   </div>
                   {m.stage ? <span className="eg-chip stage">{STAGE_LABEL[m.stage] ?? m.stage}</span> : <span className="eg-chip muted">not enrolled</span>}
-                  <div className="q-cell">{m.shadowMode ? <span className="eg-chip shadow">shadow</span> : m.stage ? <span className="eg-chip ok">live</span> : <span className="eg-chip muted">mirror only</span>}</div>
+                  <div className="q-cell">{m.stage ? <span className="eg-chip ok">live</span> : <span className="eg-chip muted">mirror only</span>}</div>
                   <div className="q-cell hide">synced {ago(m.syncedAt)} ago</div>
                 </a>
               ))}

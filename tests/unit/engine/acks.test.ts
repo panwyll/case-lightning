@@ -53,16 +53,24 @@ test('the client is acknowledged on their own channel for what they send; nothin
   assert.equal(h.ports.chaser.acks.length, 1, 'a search provider is not a party to acknowledge');
 });
 
-test('in shadow mode the acknowledgement is logged as suppressed and nothing is sent', async () => {
+test('at PROPOSE the acknowledgement is proposed, not sent; approving it sends it', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['LLC1'], shadowMode: true });
+  await h.store.setLevel(TENANT, 'acknowledgement', 'propose', null);
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['LLC1'] });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, enquiryId: 'E1', subject: 'a' });
   await h.svc.run(TENANT, MATTER, { type: 'enquiry_reply_received', actor: EXTERNAL, enquiryId: 'E1', documentId: h.doc({}) });
-  assert.equal(h.ports.chaser.acks.length, 0);
-  const suppressed = h.store.dump(TENANT, MATTER).filter((e) => e.type === 'action_suppressed' && (e.payload as { action: string }).action === 'acknowledgement');
-  assert.equal(suppressed.length, 1);
+  assert.equal(h.ports.chaser.acks.length, 0, 'nothing sent');
+  const s = await h.svc.getState(TENANT, MATTER);
+  const proposal = Object.values(s.proposals).find((p) => p.action === 'acknowledgement')!;
+  assert.ok(proposal, 'the acknowledgement was proposed');
+  const d = s.decisions[proposal.eventId];
+  assert.equal(d.kind, 'proposal');
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  assert.equal(h.ports.chaser.acks.length, 1, 'approved → sent');
+  assert.equal((await h.svc.getState(TENANT, MATTER)).proposals[proposal.eventId].status, 'approved');
 });
 
 test('the machine refuses to record the same acknowledgement twice', async () => {

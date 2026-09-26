@@ -238,19 +238,32 @@ UI: the decision card for a bank-details change is red-striped and its **Verifie
 
 `EnginePorts.asAutomation` is the seam: production binds it to `runAsAutomation`; the mocks run the block as-is, and a unit test asserts effects and the timer sweep run inside it.
 
-### §2 Shadow mode and per-sub-flow trust levels
+### §2 Trust levels: propose, assist, auto
 
-* **`matter.shadow_mode`** is set at enrolment (`enrol.shadowMode`) or switched by an admin with the `set_shadow_mode` command → `shadow_mode_changed` event (people only; logged like everything else). The column mirrors the log.
-* On a shadow matter the engine runs exactly as normal — extraction, rule verdicts, decisions, its **own** stage moves — but:
-  * no decision is ever surfaced: `surfacedDecisions()` / `listPendingDecisions()` exclude it, the queue omits the matter, and the machine refuses `open_decision_source` / `resolve_decision` with 409;
-  * nothing is sent, ordered or delivered: search orders, the ID-check request, client updates, chases, the report send and linked-enquiry delivery are each replaced by an **`action_suppressed`** event carrying the full intent (`action`, `reason: shadow_mode | subflow_shadow`, `subFlow`, `detail`). A suppressed chase still advances the SLA clock, so escalations are logged on time;
-  * the legacy `matter.stage` mirror and timeline entries are skipped, so the human's record stays the human's.
-* **`engine_subflow_status`** (tenant × sub-flow → `shadow | assist | autonomous`, default `assist`) is loaded into every `decide()` call:
-  * `shadow` — that sub-flow's decisions are logged but hidden and non-actionable; its outbound actions are suppressed;
-  * `assist` — flagged items surface; every auto-clear **also** raises an advisory, non-blocking `auto_clear_review_raised` decision (options: confirm / escalate) citing the source, so a person confirms the engine got it right;
-  * `autonomous` — flagged items still surface (always); auto-clears proceed without a review. `autonomous` only ever changes the auto-clear path.
-* **Comparison view** — `GET /matters/:id/engine/shadow` puts the engine's conclusions (stage + history, every decision incl. hidden ones, every auto-clear, every suppressed action) beside the human record (board stage, tasks, timeline). `POST` records an `engine_shadow_review` (agrees / disagrees, what the handler actually did) against any conclusion. `GET /engine/shadow` (admin) aggregates agreement per sub-flow — the evidence for promotion — and `PUT /admin/engine/subflows` changes a level (audited).
-* Audit: `summary.autoClearReviews`; `action_suppressed` and `shadow_mode_changed` are ordinary chained events.
+Every action the engine takes on its own has a trust level, per firm and per action
+(`engine_action_level`, migration 082). The actions are acknowledgements, chases, client
+updates, search orders and auto-clears. A person asking for something (an ID check, the
+proof-of-funds form, sending the approved report) is never gated: their click is the approval.
+
+* **propose** — the engine asks first. The intent becomes a decision of kind `proposal`
+  (`action_proposed`) in Tasks, citing a generated dossier of exactly what would be sent or
+  ordered, with the options approve / reject. Approving appends `action_approved` and the
+  service performs the action the same way the unasked path would (`perform()`); rejecting
+  appends `action_rejected` with the reason and keeps that action quiet for a few days so the
+  timer does not re-ask daily. An auto-clear at propose is held: `auto_clear_proposed` carries
+  the clear itself, unapplied, and approving the review emits it. **Every firm starts at
+  propose for every action.**
+* **assist** — acknowledgements, chases and search orders go out unasked; client updates are
+  still proposed; auto-clears happen and are put in front of a person afterwards as a
+  non-blocking `auto_clear_review_raised` to confirm.
+* **auto** — everything proceeds and auto-clears are silent. Flagged decisions and the
+  human-gated events (payments, report on title, exchange, completion) are a person's at every level.
+
+Promotion is earned per action: the trust levels page (`/engine/shadow`, admins) shows each
+action's level beside how many of its proposals were approved and rejected, and
+`PUT /admin/engine/subflows` changes a level (audited). Shadow mode — observe only, hide
+everything — is gone: its events (`action_suppressed`, `shadow_mode_changed`) remain in old
+logs and still replay, but nothing emits them and nothing is hidden from a person any more.
 
 ### §3 The dashboard (`/decisions`, `/engine/:matterId`, `/decisions/:eventId`)
 

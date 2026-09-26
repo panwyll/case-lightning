@@ -4,6 +4,7 @@
  * sign-off feeds the issues layer and the lender.
  */
 import { test } from 'node:test';
+import { ENGINE_ACTIONS } from '../../../lib/server/engine/types';
 import assert from 'node:assert/strict';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { evaluateProofOfFunds, factsFromSubmission, templateBriefing, type ProofOfFundsSubmission } from '../../../lib/server/engine/proof-of-funds';
@@ -164,7 +165,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await assert.rejects(h.svc.requestProofOfFunds(TENANT, MATTER, USER), /already approved/);
 });
 
-test('request further re-opens the form automatically with the conveyancer\'s note; reject halts automation; shadow logs the intent and sends nothing', async () => {
+test('request further re-opens the form automatically with the conveyancer\'s note; reject halts automation; a person\'s request is never gated by trust levels', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
@@ -188,13 +189,15 @@ test('request further re-opens the form automatically with the conveyancer\'s no
   assert.equal(s.manualHandling.required, true);
   assert.equal(s.manualHandling.reason, 'proof_of_funds_rejected');
 
+  // Trust levels gate what the engine does on its own. A person asking for the form is
+  // not that: at PROPOSE for everything the form still goes out.
   const sh = harness();
-  await sh.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], shadowMode: true });
+  for (const a of ENGINE_ACTIONS) await sh.store.setLevel(TENANT, a, 'propose', null);
+  await sh.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
   const r = await sh.svc.requestProofOfFunds(TENANT, MATTER, USER);
-  assert.deepEqual(sh.store.dump(TENANT, MATTER).slice(-2).map((e) => e.type), ['action_suppressed', 'proof_of_funds_requested']);
-  assert.equal(sh.ports.pofForms.issued.length, 0, 'no link issued in shadow');
-  assert.equal(sh.ports.clientComms.sent.length, 0, 'nothing sent in shadow');
-  assert.equal(r.state.proofOfFunds.status, 'requested', 'the wait still opens so the SLA clock is observable');
+  assert.equal(sh.ports.pofForms.issued.length, 1, 'the link is issued');
+  assert.equal(sh.ports.clientComms.sent.length, 1, 'and sent');
+  assert.equal(r.state.proofOfFunds.status, 'requested');
 });
 
 test('leasehold purchase: the management pack gates pre_contract, lease facts flag on title, a freehold title is a mismatch, notice of assignment after completion', async () => {

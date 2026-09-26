@@ -26,6 +26,7 @@ export const paths = {
   engineMatter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
   matterShadow: (matterId: string) => `${APP_BASE}/engine/${matterId}/shadow`,
   machineMap: `${APP_BASE}/engine/map`,
+  /** Trust levels per engine action (admins). */
   shadowQueue: `${APP_BASE}/engine/shadow`,
   account: `${APP_BASE}/account`,
   admin: `${APP_BASE}/admin`,

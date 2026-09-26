@@ -69,7 +69,7 @@ export function Timeline({ events, state, people = {} }: { events: EngineEvent[]
             const d = state.decisions[e.id];
             if (DECISION_EVENT_TYPES.has(e.type) && d) {
               const cls = d.kind === 'bank_details' ? ' bank' : d.kind === 'auto_clear' ? ' review' : '';
-              const hidden = state.shadowMode;
+              const hidden = false;
               return (
                 <a key={e.id} className={`eg-card tl-card ${d.status}${cls}${hidden ? ' hidden' : ''}`} href={`/conveyi/decisions/${e.id}`}>
                   <div className="tl-card-top">

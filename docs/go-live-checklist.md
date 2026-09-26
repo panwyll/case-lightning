@@ -46,7 +46,8 @@ Remaining for launch:
 - [ ] **Configure the Stripe Billing Portal** (Settings → Billing): payment-method updates, invoice history + cancellation — powers the "Manage subscription" button. No plan switching (one plan).
 - [ ] `CASE_PRICE_PENNIES` — must match the Stripe price (default `10000` = £100); it is display + ledger only.
 - [ ] `REFERRAL_COMMISSION_PENNIES` — confirm (default `5000` = £50/mo cap; a one-case month accrues £25).
-- [ ] Apply `065_usage_billing.sql` (creates `matter_charge`, remaps `billing_account.plan` to `usage`).
+- [ ] Apply `080_usage_billing.sql` (creates `matter_charge`, remaps `billing_account.plan` to `usage`).
+- [ ] Apply `081_email_queue.sql`, `082_trust_levels.sql` and `083_automation_can_read.sql`. **083 matters most:** without it the automation role sees no rows in `tenant`/`app_user`, so every timer chase, acknowledgement and client update fails with "Matter not found" — silently, until now.
 - [ ] **Verify with a test-card checkout** (`4242…`) → `billing_account.status=active`; then draft a reply on a matter → a `matter_charge` row with `billed=true` and the meter event visible on the customer in Stripe; a second draft on the same matter adds nothing.
 - [ ] Optional: schedule `retryUnbilledCases()` (cron) so a Stripe blip (`unbilled_reason='ERROR'`) gets re-driven; the meter event identifier is the row id, so a retry can't double-bill.
 

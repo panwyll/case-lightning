@@ -88,7 +88,9 @@ export interface NoteActionsDetail {
   refused: Array<{ id: string; reason: string }>;
 }
 
-export type SubflowStatus = 'shadow' | 'assist' | 'autonomous';
+export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
+export type TrustLevel = (typeof TRUST_LEVELS)[number];
+export const ENGINE_ACTION_LABEL: Record<string, string> = { acknowledgement: 'Acknowledge what arrives', chase: 'Chase the other side', client_update: 'Update the client', search_order: 'Order searches', auto_clear: 'Clear a document the rules pass' };
 export const SUB_FLOWS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'chase'] as const;
 export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', search: 'Searches', enquiry: 'Enquiries', mortgage: 'Mortgage offer', title: 'Title', report_on_title: 'Report on title', chase: 'Chasing & escalation' };
 
@@ -244,13 +246,14 @@ export interface NoteRow {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
-export interface EngineView { state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; subflows?: Record<string, SubflowStatus>; matter?: MatterMeta | null }
+export interface EngineView { state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 
 export const STAGES = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
 
 export const KIND_LABEL: Record<string, string> = {
+  proposal: 'Proposed action',
   search: 'Search result',
   enquiry: 'Enquiry reply',
   mortgage: 'Mortgage offer',
@@ -278,6 +281,7 @@ export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId:
 
 /** Kind-specific wording where the generic label would mislead. */
 export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
+  proposal: { approve: 'Yes — do it', reject: 'No — do not do this' },
   proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)', reject: 'Reject — stop automation (consider a report)' },
   management_pack: { request_further: 'Request further information from the managing agent' },
 };

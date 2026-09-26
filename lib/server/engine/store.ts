@@ -21,7 +21,7 @@ import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
 import { caseHealth, summariseHealth, type HealthSummary } from './health';
 import { lifecycle, type Lifecycle } from './graph';
-import { DEFAULT_SUBFLOW_CONFIG, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type SubflowConfig, type SubflowStatus, type TransactionType, type WaitKey } from './types';
+import { DEFAULT_LEVELS, ENGINE_ACTIONS, TRUST_LEVELS, type EngineAction, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type LevelConfig, type TrustLevel, type TransactionType, type WaitKey } from './types';
 
 export interface MatterTx {
   load(): Promise<EngineEvent[]>;
@@ -120,9 +120,9 @@ export interface EventStore {
   loadSla(tenantId: string): Promise<SlaConfig>;
   /** The cached read model, for the audit's replay check (null when none / in memory). */
   cachedState(tenantId: string, matterId: string): Promise<MatterState | null>;
-  /** Addendum 3 §2: per-sub-flow trust levels. Missing rows are `assist`. */
-  loadSubflows(tenantId: string): Promise<SubflowConfig>;
-  setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, userId: string | null): Promise<SubflowConfig>;
+  /** Trust level per engine action. Missing rows are `propose`. */
+  loadLevels(tenantId: string): Promise<LevelConfig>;
+  setLevel(tenantId: string, action: EngineAction, level: TrustLevel, userId: string | null): Promise<LevelConfig>;
   /** Addendum 3 §3: the handler's queue — one row per matter. */
   listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]>;
   /** Full state per matter, for anything that has to reason over the whole caseload (the work list). */
@@ -134,8 +134,8 @@ export interface EventStore {
 
 const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, assignedTo: meta?.assignedTo ?? null, stage: s.stage, shadowMode: s.shadowMode });
 
-function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, cfg: SubflowConfig, now: Date = new Date()): QueueRow {
-  const surfaced = surfacedDecisions(s, cfg);
+function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, _cfg: LevelConfig | null, now: Date = new Date()): QueueRow {
+  const surfaced = surfacedDecisions(s);
   const pending = surfaced.filter((d) => d.kind !== 'auto_clear');
   return {
     tenantId: s.tenantId,
@@ -194,8 +194,10 @@ export class MemoryEventStore implements EventStore {
   private states = new Map<string, MatterState>();
   private locks = new Map<string, Promise<unknown>>();
   private slaOverrides = new Map<string, Array<Partial<SlaRule> & { waitKey: WaitKey }>>();
-  private subflows = new Map<string, SubflowConfig>();
+  private subflows = new Map<string, LevelConfig>();
   private reviews: ShadowReview[] = [];
+  /** Tests: the levels a tenant starts at (the product default is propose for everything). */
+  constructor(private defaultLevels: LevelConfig = DEFAULT_LEVELS) {}
   matterMeta = new Map<string, { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null }>();
 
   private key(tenantId: string, matterId: string) {
@@ -250,13 +252,13 @@ export class MemoryEventStore implements EventStore {
   }
 
   async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number; includeShadow?: boolean }): Promise<PendingDecisionRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
+    const cfg = await this.loadLevels(tenantId);
     const rows: PendingDecisionRow[] = [];
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId) continue;
       if (opts?.matterId && s.matterId !== opts.matterId) continue;
       const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
-      const list = opts?.includeShadow ? Object.values(s.decisions).filter((d) => d.status === 'pending') : surfacedDecisions(s, cfg);
+      const list = surfacedDecisions(s);
       for (const d of list) rows.push(row(s, d, meta));
     }
     rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.seq - b.seq);
@@ -272,13 +274,13 @@ export class MemoryEventStore implements EventStore {
     return null;
   }
 
-  async loadSubflows(tenantId: string): Promise<SubflowConfig> {
-    return { ...DEFAULT_SUBFLOW_CONFIG, ...(this.subflows.get(tenantId) ?? {}) };
+  async loadLevels(tenantId: string): Promise<LevelConfig> {
+    return { ...this.defaultLevels, ...(this.subflows.get(tenantId) ?? {}) };
   }
 
-  async setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, _userId: string | null = null): Promise<SubflowConfig> {
-    this.subflows.set(tenantId, { ...(await this.loadSubflows(tenantId)), [subFlow]: status });
-    return this.loadSubflows(tenantId);
+  async setLevel(tenantId: string, action: EngineAction, level: TrustLevel, _userId: string | null = null): Promise<LevelConfig> {
+    this.subflows.set(tenantId, { ...(await this.loadLevels(tenantId)), [action]: level });
+    return this.loadLevels(tenantId);
   }
 
   /** Every enrolled matter this view should consider, with its meta. */
@@ -286,7 +288,6 @@ export class MemoryEventStore implements EventStore {
     const out: Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }> = [];
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId || !s.enrolled) continue;
-      if (s.shadowMode && !opts?.includeShadow) continue;
       if (!opts?.includeFinished && (s.closedAt || s.abandoned)) continue;
       const meta = this.matterMeta.get(this.key(s.tenantId, s.matterId));
       if (opts?.assignedTo && meta?.assignedTo !== opts.assignedTo) continue;
@@ -296,7 +297,7 @@ export class MemoryEventStore implements EventStore {
   }
 
   async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
+    const cfg = await this.loadLevels(tenantId);
     const rows = this.matching(tenantId, opts).map(({ state, meta }) => queueRow(state, meta, cfg));
     const sorted = sortQueue(rows, opts?.sort);
     return opts?.limit ? sorted.slice(0, opts.limit) : sorted;
@@ -443,16 +444,14 @@ export class PgEventStore implements EventStore {
   }
 
   async listPendingDecisions(tenantId: string, opts?: { matterId?: string | null; limit?: number; includeShadow?: boolean }): Promise<PendingDecisionRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
-    const shadowed = SUB_FLOWS.filter((sf) => cfg[sf] === 'shadow');
-    const hiddenKinds = opts?.includeShadow ? [] : (Object.keys(SUBFLOW_OF_KIND) as Array<keyof typeof SUBFLOW_OF_KIND>).filter((k) => SUBFLOW_OF_KIND[k] && shadowed.includes(SUBFLOW_OF_KIND[k] as SubFlow));
+    const hiddenKinds: string[] = [];
     const rows = await dbQuery<PgDecisionRow>(
       `select d.decision, d.tenant_id, d.matter_id, m.matter_ref, m.property_address, m.assigned_to, s.stage, coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) as shadow_mode
          from matter_decision d
          join matter m on m.id = d.matter_id
          left join matter_engine_state s on s.matter_id = d.matter_id
         where d.tenant_id = $1 and d.status = 'pending' and ($2::uuid is null or d.matter_id = $2::uuid)
-          and ($4::boolean or coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) = false)
+          and ($4::boolean or true)
           and not (d.kind = any($5::text[]))
         order by d.created_at asc limit $3`,
       [tenantId, opts?.matterId ?? null, opts?.limit ?? 200, !!opts?.includeShadow, hiddenKinds]
@@ -472,20 +471,20 @@ export class PgEventStore implements EventStore {
     return r[0] ? pgDecisionRow(r[0]) : null;
   }
 
-  async loadSubflows(tenantId: string): Promise<SubflowConfig> {
-    const rows = await dbQuery<{ sub_flow: SubFlow; status: SubflowStatus }>(`select sub_flow, status from engine_subflow_status where tenant_id = $1`, [tenantId]).catch(() => []);
-    const cfg: SubflowConfig = { ...DEFAULT_SUBFLOW_CONFIG };
-    for (const r of rows) if ((SUB_FLOWS as readonly string[]).includes(r.sub_flow)) cfg[r.sub_flow] = r.status;
+  async loadLevels(tenantId: string): Promise<LevelConfig> {
+    const rows = await dbQuery<{ action: EngineAction; level: TrustLevel }>(`select action, level from engine_action_level where tenant_id = $1`, [tenantId]).catch(() => []);
+    const cfg: LevelConfig = { ...DEFAULT_LEVELS };
+    for (const r of rows) if ((ENGINE_ACTIONS as readonly string[]).includes(r.action) && (TRUST_LEVELS as readonly string[]).includes(r.level)) cfg[r.action] = r.level;
     return cfg;
   }
 
-  async setSubflowStatus(tenantId: string, subFlow: SubFlow, status: SubflowStatus, userId: string | null): Promise<SubflowConfig> {
+  async setLevel(tenantId: string, action: EngineAction, level: TrustLevel, userId: string | null): Promise<LevelConfig> {
     await dbQuery(
-      `insert into engine_subflow_status (tenant_id, sub_flow, status, updated_by, updated_at) values ($1,$2,$3,$4,now())
-       on conflict (tenant_id, sub_flow) do update set status = excluded.status, updated_by = excluded.updated_by, updated_at = now()`,
-      [tenantId, subFlow, status, userId]
+      `insert into engine_action_level (tenant_id, action, level, updated_by, updated_at) values ($1,$2,$3,$4,now())
+       on conflict (tenant_id, action) do update set level = excluded.level, updated_by = excluded.updated_by, updated_at = now()`,
+      [tenantId, action, level, userId]
     );
-    return this.loadSubflows(tenantId);
+    return this.loadLevels(tenantId);
   }
 
   private async queueRows(tenantId: string, opts?: QueueOptions) {
@@ -507,7 +506,7 @@ export class PgEventStore implements EventStore {
   }
 
   async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
-    const cfg = await this.loadSubflows(tenantId);
+    const cfg = await this.loadLevels(tenantId);
     const rows = await this.queueRows(tenantId, opts);
     return sortQueue(
       rows.map((r) => queueRow(withStateDefaults(r.state), { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
@@ -558,6 +557,22 @@ export class PgEventStore implements EventStore {
   }
 }
 
+/**
+ * A best-effort statement inside a transaction. A plain `.catch(() => {})` is a trap in
+ * Postgres: the failed statement leaves the transaction aborted, every later statement
+ * fails, and the final COMMIT quietly becomes a ROLLBACK — the event append itself is
+ * lost with no error anywhere. A savepoint confines the failure to this one statement.
+ */
+async function bestEffort(client: pg.PoolClient, name: string, fn: () => Promise<unknown>): Promise<void> {
+  await client.query(`savepoint ${name}`);
+  try {
+    await fn();
+    await client.query(`release savepoint ${name}`);
+  } catch {
+    await client.query(`rollback to savepoint ${name}`);
+  }
+}
+
 /** Rebuild the read models for one matter from the projected state (idempotent). */
 async function refreshReadModels(client: pg.PoolClient, state: MatterState, appended: EngineEvent[]): Promise<void> {
   await client.query(
@@ -577,8 +592,8 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
   // Addendum 2: the versioned PayeeBankDetails read model. Insert-only; only status +
   // verification columns may change (the table's trigger enforces that too).
   for (const b of Object.values(state.bankDetails)) {
-    await client
-      .query(
+    await bestEffort(client, 'bank', () =>
+      client.query(
         `insert into payee_bank_details (id, tenant_id, matter_id, payee_kind, payee_ref, sort_code, account_number, account_name, firm_name, source_channel, source_document_id, supersedes_id, status, recorded_by, verified_at, verified_by, verification_method, verification_ref, created_at)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          on conflict (id) do update set status = excluded.status,
@@ -588,11 +603,11 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
            verification_ref = coalesce(payee_bank_details.verification_ref, excluded.verification_ref)`,
         [b.id, state.tenantId, state.matterId, b.payeeKind, b.payeeRef, b.details.sortCode, b.details.accountNumber, b.details.accountName, b.details.firmName, b.sourceChannel, b.sourceDocumentId || null, b.supersedesId, b.status, b.recordedBy, b.verifiedAt, b.verifiedBy, b.verificationMethod, b.verificationRef, b.recordedAt]
       )
-      .catch(() => {});
+    );
   }
   // Addendum 3 §2: keep matter.shadow_mode in step with the log (it is queryable without projecting).
   if (appended.some((e) => e.type === 'matter_created' || e.type === 'shadow_mode_changed')) {
-    await client.query(`update matter set shadow_mode = $1 where id = $2 and tenant_id = $3`, [state.shadowMode, state.matterId, state.tenantId]).catch(() => {});
+    await bestEffort(client, 'shadow', () => client.query(`update matter set shadow_mode = $1 where id = $2 and tenant_id = $3`, [state.shadowMode, state.matterId, state.tenantId]));
   }
   // Mirror stage moves onto the legacy board (forward-only) + the drawer's Activity tab.
   // NOT in shadow mode: the engine's stage is its conclusion; the human's record stays theirs
@@ -601,22 +616,22 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
     if (state.shadowMode) break;
     if (e.type !== 'stage_advanced' && e.type !== 'matter_created') continue;
     const legacy = LEGACY_STAGE[state.stage];
-    await client
-      .query(
+    await bestEffort(client, 'stage', () =>
+      client.query(
         `update matter set stage = $1, stage_entered_at = now(), updated_at = now(), transaction_type = coalesce(transaction_type, 'freehold_purchase')
           where id = $2 and tenant_id = $3 and coalesce(array_position($4::text[], stage), 0) < array_position($4::text[], $1)`,
         [legacy, state.matterId, state.tenantId, LEGACY_ORDER]
       )
-      .catch(() => {});
+    );
     if (e.type === 'stage_advanced') {
       const p = e.payload as { from: string; to: string; reason: string };
-      await client
-        .query(
+      await bestEffort(client, 'timeline', () =>
+        client.query(
           `insert into matter_timeline_event (tenant_id, matter_id, event_at, event_type, title, details, source_ref)
            values ($1,$2,now(),'ENGINE_STAGE_ADVANCED',$3,$4,$5::jsonb)`,
           [state.tenantId, state.matterId, `Engine: ${p.from.replace(/_/g, ' ')} → ${p.to.replace(/_/g, ' ')}`, p.reason, JSON.stringify({ eventId: e.id, seq: e.seq })]
         )
-        .catch(() => {});
+      );
     }
   }
 }

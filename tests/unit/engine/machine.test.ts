@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { decide, stageBlockers, assertCanSendReport } from '../../../lib/server/engine/machine';
 import { project } from '../../../lib/server/engine/projection';
 import { initialState, EngineError, type EngineEvent, type NewEvent } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, titleClear, offerClear } from './helpers';
+import { harness, resolve, firstDecision, FIXTURE_LEVELS, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, titleClear, offerClear } from './helpers';
 
 const now = new Date('2026-09-14T09:00:00Z');
 
@@ -12,7 +12,8 @@ function runPure(cmds: Parameters<typeof decide>[1][]) {
   let log: EngineEvent[] = [];
   let state = initialState(TENANT, MATTER);
   for (const c of cmds) {
-    const { events } = decide(state, c, { now });
+    // The pure machine at the fixture's levels (auto-clears confirmed afterwards, not held).
+    const { events } = decide(state, c, { now, levels: FIXTURE_LEVELS });
     const appended = events.map((e, i) => ({ ...e, id: `e${log.length + i + 1}`, tenantId: TENANT, matterId: MATTER, seq: log.length + i + 1, createdAt: now.toISOString() }) as EngineEvent);
     log = [...log, ...appended];
     state = project(TENANT, MATTER, log);

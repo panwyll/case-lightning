@@ -31,7 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const svc = engine();
     const [state, subflows, matter] = await Promise.all([
       svc.getState(user.tenantId, matterId),
-      svc.subflows(user.tenantId),
+      svc.levels(user.tenantId),
       queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null }>(
         `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler
            from matter m left join app_user u on u.id = m.assigned_to where m.id = $1 and m.tenant_id = $2`,
@@ -49,8 +49,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       // Everything the log holds (the panel shows the engine's conclusions) …
       pendingDecisions: pendingDecisions(state),
       // … and what a person may act on (addendum 3 §2).
-      surfacedDecisions: surfacedDecisions(state, subflows),
-      subflows,
+      surfacedDecisions: surfacedDecisions(state),
+      levels: subflows,
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler } : null,
     });
   } catch (error) {

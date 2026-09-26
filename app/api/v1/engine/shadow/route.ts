@@ -2,34 +2,46 @@ import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
-import { SUB_FLOWS } from '@/lib/server/engine/types';
+import { ENGINE_ACTIONS, type EngineAction } from '@/lib/server/engine/types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * Addendum 3 §2 — the rollout board (admins): every shadow-mode matter, each sub-flow's
- * trust level, and the agreement rate between engine conclusions and human handling
- * per sub-flow — the evidence for promoting a sub-flow from shadow to assist.
+ * Trust levels (admins): each engine action's level and the record that earns a
+ * promotion — how many proposals of that action people approved, and how many they
+ * rejected, across the firm's cases.
  */
 export async function GET() {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
     const svc = engine();
-    const [subflows, reviews, queue] = await Promise.all([svc.subflows(user.tenantId), svc.eventStore.listShadowReviews(user.tenantId), svc.eventStore.listQueue(user.tenantId, { includeShadow: true, sort: 'oldest_pending', limit: 1000 })]);
-    const perSubflow = SUB_FLOWS.map((sf) => {
-      const rs = reviews.filter((r) => r.subFlow === sf);
-      const agreed = rs.filter((r) => r.agrees).length;
-      return { subFlow: sf, status: subflows[sf], reviewed: rs.length, agreed, disagreed: rs.length - agreed, agreementRate: rs.length ? agreed / rs.length : null };
-    });
-    return ok({
-      subflows,
-      perSubflow,
-      shadowMatters: queue.filter((r) => r.shadowMode),
-      liveMatters: queue.filter((r) => !r.shadowMode).length,
-      totals: { reviewed: reviews.length, agreed: reviews.filter((r) => r.agrees).length },
-    });
+    const [levels, states] = await Promise.all([svc.levels(user.tenantId), svc.eventStore.listStates(user.tenantId, { includeFinished: true, limit: 5000 })]);
+    const tally: Record<EngineAction, { proposed: number; approved: number; rejected: number; pending: number; failed: number }> = Object.fromEntries(ENGINE_ACTIONS.map((a) => [a, { proposed: 0, approved: 0, rejected: 0, pending: 0, failed: 0 }])) as never;
+    for (const { state } of states) {
+      for (const p of Object.values(state.proposals ?? {})) {
+        const t = tally[p.action];
+        if (!t) continue;
+        t.proposed += 1;
+        if (p.status === 'approved') t.approved += 1;
+        else if (p.status === 'rejected') t.rejected += 1;
+        else if (p.status === 'failed') { t.approved += 1; t.failed += 1; }
+        else t.pending += 1;
+      }
+      // Held auto-clears are proposals too: approve = the clear went through.
+      for (const d of Object.values(state.decisions)) {
+        if (d.kind !== 'auto_clear' || !d.subject) continue;
+        const held = state.pendingAutoClears?.[d.eventId] !== undefined || d.summary.includes('PROPOSE level');
+        if (!held) continue;
+        const t = tally.auto_clear;
+        t.proposed += 1;
+        if (d.status === 'pending') t.pending += 1;
+        else if (d.resolution === 'approve') t.approved += 1;
+        else t.rejected += 1;
+      }
+    }
+    return ok({ levels, actions: ENGINE_ACTIONS.map((a) => ({ action: a, level: levels[a], ...tally[a] })) });
   } catch (error) {
     return fail(error);
   }

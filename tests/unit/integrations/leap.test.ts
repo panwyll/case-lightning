@@ -5,6 +5,7 @@
  * signing). The engine underneath is the real one on the in-memory store.
  */
 import { test } from 'node:test';
+import { FIXTURE_LEVELS } from '../engine/helpers';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { EngineService } from '../../../lib/server/engine/service';
@@ -137,7 +138,7 @@ const pdfWithFacts = (name: string, facts: unknown, lines: string[]) => {
 
 function harness(leap: LeapApi, opts: { shadow?: boolean } = {}) {
   const ports = mockPorts();
-  const store = new MemoryEventStore();
+  const store = new MemoryEventStore(FIXTURE_LEVELS);
   const svc = new EngineService(store, ports);
   const mirror = new MemoryMirror(ports.documents);
   mirror.enrolledFilter = async (matterId) => (await svc.getState(TENANT, matterId)).enrolled;
@@ -269,15 +270,15 @@ test('sync: a webhook for a new LEAP document on an enrolled matter lands in the
   assert.match(out.reason, /matter mirrored and enrolled/);
 });
 
-test('sync: LEAP matters can be enrolled in SHADOW mode — the engine observes, nothing surfaces, nothing is ordered', async () => {
+test('sync: LEAP matters are enrolled live — every decision surfaces; what the engine does unasked is the firm\'s trust levels', async () => {
   const leap = new MockLeap();
   const { oak } = seedFirm(leap);
-  const h = harness(leap, { shadow: true });
+  const h = harness(leap);
   await syncMatters(h.deps, TENANT, { full: true });
   const ref = (await h.mirror.matterByLeapId(TENANT, oak.id))!;
   const state = await h.svc.getState(TENANT, ref.matterId);
-  assert.equal(state.shadowMode, true);
-  assert.equal((await h.store.listQueue(TENANT)).length, 0);
+  assert.equal(state.shadowMode, false);
+  assert.equal((await h.store.listQueue(TENANT)).length, 1);
 });
 
 test('sync: documents arrive in LEAP in any order — a search result filed before the ID check clears waits (PENDING) and is taken on the next sync', async () => {
@@ -320,7 +321,7 @@ test('write-back: a surfaced decision becomes a LEAP task; its resolution comple
   const applied: EngineEvent[] = [];
   h.ports.onEvents = async (input: { tenantId: string; matterId: string; events: EngineEvent[]; state: MatterState }) => {
     applied.push(...input.events);
-    await writeBack({ leap, store: wb, appUrl: 'https://conveyi.test', subflows: async () => h.store.loadSubflows(TENANT), log: () => {} }, input.tenantId, input.matterId, input.events, input.state);
+    await writeBack({ leap, store: wb, appUrl: 'https://conveyi.test', levels: async () => h.store.loadLevels(TENANT), log: () => {} }, input.tenantId, input.matterId, input.events, input.state);
   };
   await h.svc.requestIdCheck(TENANT, ref.matterId, ALICE);
   await h.svc.idCheckResultReceived(TENANT, ref.matterId, h.ports.documents.seed({ tenantId: TENANT, matterId: ref.matterId, docType: 'PDF', extractedFacts: { provider: 'mock', outcome: 'clear', flags: [], confidence: 0.99 } }).id);
@@ -351,7 +352,7 @@ test('write-back: a surfaced decision becomes a LEAP task; its resolution comple
 
   // Idempotent: re-applying the same events writes nothing new.
   const before = dump.notes.length + dump.tasks.length;
-  await writeBack({ leap, store: wb, appUrl: 'https://conveyi.test', subflows: async () => h.store.loadSubflows(TENANT), log: () => {} }, TENANT, ref.matterId, applied, await h.svc.getState(TENANT, ref.matterId));
+  await writeBack({ leap, store: wb, appUrl: 'https://conveyi.test', levels: async () => h.store.loadLevels(TENANT), log: () => {} }, TENANT, ref.matterId, applied, await h.svc.getState(TENANT, ref.matterId));
   dump = leap.dump(oak.id);
   assert.equal(dump.notes.length + dump.tasks.length, before);
 
@@ -364,7 +365,7 @@ test('write-back: a surfaced decision becomes a LEAP task; its resolution comple
   const ref2 = (await sh.mirror.matterByLeapId(TENANT, oak2.id))!;
   const wb2 = new MemoryWriteback(sh.mirror);
   const r2 = await sh.svc.requestIdCheck(TENANT, ref2.matterId, ALICE);
-  const res = await writeBack({ leap: leap2, store: wb2, appUrl: 'x', subflows: async () => sh.store.loadSubflows(TENANT), log: () => {} }, TENANT, ref2.matterId, r2.events, r2.state);
+  const res = await writeBack({ leap: leap2, store: wb2, appUrl: 'x', levels: async () => sh.store.loadLevels(TENANT), log: () => {} }, TENANT, ref2.matterId, r2.events, r2.state);
   assert.deepEqual(res, { tasks: 0, notes: 0, completed: 0, skipped: r2.events.length });
   assert.equal(leap2.dump(oak2.id).notes.length, 0);
 });

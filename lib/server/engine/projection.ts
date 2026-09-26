@@ -907,8 +907,33 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'auto_clear_review_raised':
       break; // the decision itself is registered generically above; non-blocking by design
+    case 'auto_clear_proposed': {
+      // The decision is registered generically; the clear it holds back waits here for approval.
+      s.pendingAutoClears[e.id] = (e.payload as Payloads['auto_clear_proposed']).clearedEvent;
+      break;
+    }
+    case 'action_proposed': {
+      const p = e.payload as Payloads['action_proposed'];
+      s.proposals[e.id] = { eventId: e.id, action: p.action, detail: p.detail, dedupKey: p.dedupKey, status: 'pending', proposedAt: e.createdAt, resolvedAt: null, resolvedBy: null, failure: null };
+      break;
+    }
+    case 'action_approved':
+    case 'action_rejected': {
+      const p = e.payload as Payloads['action_approved'];
+      const pr = s.proposals[p.proposalEventId];
+      if (pr) { pr.status = e.type === 'action_approved' ? 'approved' : 'rejected'; pr.resolvedAt = e.createdAt; pr.resolvedBy = e.actor; }
+      resolveDecision(s, p.proposalEventId, e.type === 'action_approved' ? 'approve' : 'reject', p.note, e);
+      break;
+    }
+    case 'action_failed': {
+      const p = e.payload as Payloads['action_failed'];
+      const pr = s.proposals[p.proposalEventId];
+      if (pr) { pr.status = 'failed'; pr.failure = p.reason; }
+      break;
+    }
     case 'auto_clear_confirmed': {
       const p = e.payload as Payloads['auto_clear_confirmed'];
+      delete s.pendingAutoClears[p.decisionEventId];
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
       break;
     }
@@ -943,6 +968,12 @@ function subjectOf(e: EngineEvent): string | null {
   if (e.type === 'hmlr_requisition_received') return (p as Payloads['hmlr_requisition_received']).reference ?? 'requisition';
   if (e.type === 'notice_to_complete_served') return `notice:${(p as Payloads['notice_to_complete_served']).servedBy}`;
   if (e.type === 'auto_clear_review_raised') return `${(p as Payloads['auto_clear_review_raised']).subFlow}:${(p as Payloads['auto_clear_review_raised']).subject}`;
+  if (e.type === 'auto_clear_proposed') return `${(p as Payloads['auto_clear_proposed']).subFlow}:${(p as Payloads['auto_clear_proposed']).subject}`;
+  if (e.type === 'action_proposed') {
+    // A readable key (a wait, a search type) is worth showing; an event id is not.
+    const q = p as Payloads['action_proposed'];
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(q.dedupKey) || /:[0-9a-f]{8}-/i.test(q.dedupKey) ? q.action : `${q.action}:${q.dedupKey}`;
+  }
   if (e.type === 'escalation_raised') {
     const q = p as Payloads['escalation_raised'];
     return q.waitKey ? `${q.waitKey}:${q.subject}` : q.subject || null;

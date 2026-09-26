@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     await assertMatterAccess(user, d.matterId);
     const [events, subflows, matter] = await Promise.all([
       svc.listEvents(user.tenantId, d.matterId),
-      svc.subflows(user.tenantId),
+      svc.levels(user.tenantId),
       queryOne<{ matter_ref: string; property_address: string; shadow_mode: boolean | null }>(`select matter_ref, property_address, shadow_mode from matter where id = $1 and tenant_id = $2`, [d.matterId, user.tenantId]).catch(() => null),
     ]);
     const raised = events.find((e) => e.id === eventId) ?? null;
@@ -38,8 +38,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     const opens = events.filter((e) => e.type === 'decision_source_opened' && (e.payload as { decisionEventId?: string }).decisionEventId === eventId).map((e) => ({ by: e.actor, at: e.createdAt, documentId: (e.payload as { documentId: string }).documentId }));
     const ids = Array.from(new Set([d.resolvedBy, resolving?.actor, ...opens.map((o) => o.by)].filter((x): x is string => !!x && /^[0-9a-f-]{36}$/i.test(x))));
     const people = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
-    const sf = SUBFLOW_OF_KIND[d.kind as DecisionKind];
-    const shadowed = !!(matter?.shadow_mode || d.shadowMode) ? 'matter' : sf && subflows[sf] === 'shadow' ? 'subflow' : null;
+    const shadowed = null;
     let source: { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl: string | null } | null = null;
     if (d.status !== 'pending') {
       const doc = await svc.getDocument(user.tenantId, d.matterId, d.sourceDocumentId);

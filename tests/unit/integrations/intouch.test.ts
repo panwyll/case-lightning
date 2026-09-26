@@ -8,6 +8,7 @@
  * nothing lands twice.
  */
 import { test } from 'node:test';
+import { FIXTURE_LEVELS } from '../engine/helpers';
 import assert from 'node:assert/strict';
 import { EngineService } from '../../../lib/server/engine/service';
 import { MemoryEventStore } from '../../../lib/server/engine/store';
@@ -99,7 +100,7 @@ function harness(opts: { webhookSecret?: string } = {}) {
     itouch.transport
   );
   const ports = mockPorts(new Date('2026-09-14T09:00:00Z'));
-  const engine = new EngineService(new MemoryEventStore(), ports);
+  const engine = new EngineService(new MemoryEventStore(FIXTURE_LEVELS), ports);
   const store = new MemoryMirror(ports.documents);
   const deps: InTouchSyncDeps = { api: client, store, engine, systemUserId: ALICE, log: () => {} };
   return { itouch, tokens, client, engine, store, deps, ports };

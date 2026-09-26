@@ -63,7 +63,7 @@ export default function ToolsPage() {
       <h2 className="ig-h2">Engine</h2>
       <div className="ig-grid" style={{ marginBottom: 18 }}>
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2><p className="ig-what">Every stage, command and gate the engine knows.</p></a>
-        <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Shadow review</h2><p className="ig-what">What the engine would have done, for checking before it is trusted.</p></a>
+        <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Trust levels</h2><p className="ig-what">Per action: propose, assist or auto, with the approvals that earn a promotion.</p></a>
       </div>
     </div>
   );

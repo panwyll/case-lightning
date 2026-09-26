@@ -30,8 +30,11 @@ import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_SUBFLOW_CONFIG, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type SubflowConfig, type SuppressedAction, type NoteKind } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
+
+/** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
+const REJECTED_QUIET_MS = 5 * 86_400_000;
 
 /** What gets acknowledged, to whom, in their words. Anything not here is not a delivery from a party. */
 const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicitor' | 'client'; what: string }>> = {
@@ -71,15 +74,6 @@ const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
 };
 
 /** Which sub-flow an automatic client update belongs to (null → only matter-level shadow suppresses it). */
-const CLIENT_UPDATE_SUBFLOW: Partial<Record<EventType, SubFlow>> = {
-  search_ordered: 'search',
-  search_cleared: 'search',
-  search_flagged: 'search',
-  enquiry_raised: 'enquiry',
-  mortgage_offer_cleared: 'mortgage',
-  report_on_title_sent: 'report_on_title',
-};
-
 export class EngineService {
   constructor(
     private store: EventStore,
@@ -90,12 +84,12 @@ export class EngineService {
 
   /** Run one command atomically, then its effects. */
   async run(tenantId: string, matterId: string, cmd: Command): Promise<RunResult> {
-    const subflows = await this.subflows(tenantId);
+    const subflows = await this.levels(tenantId);
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
       const log = await tx.load();
       const state = project(tenantId, matterId, log);
       const now = this.ports.now();
-      const { events } = decide(state, cmd, { now, subflows });
+      const { events } = decide(state, cmd, { now, levels: subflows });
       const appended = await tx.append(events, state.lastSeq, now, this.ports.newId);
       const next = project(tenantId, matterId, [...log, ...appended]);
       await tx.afterAppend(next, appended);
@@ -116,7 +110,7 @@ export class EngineService {
    * party inside a few hours (their five attachments are one delivery, not five). Shadow
    * mode logs the intent instead.
    */
-  private async acknowledge(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: SubflowConfig): Promise<void> {
+  private async acknowledge(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
     for (const e of events) {
       const rule = ACKNOWLEDGE[e.type];
       if (!rule) continue;
@@ -125,19 +119,18 @@ export class EngineService {
         if (current.acknowledgements.some((a) => a.forEventId === e.id)) continue;
         const recent = current.acknowledgements.some((a) => a.recipientRole === rule.recipient && this.ports.now().getTime() - new Date(a.at).getTime() < ACK_WINDOW_MS);
         if (recent) continue;
-        if (await this.suppressed(tenantId, matterId, state, subflows, 'acknowledgement', null, { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient })) continue;
-        const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: rule.recipient, what: rule.what, forEventType: e.type });
-        if (!sent) continue;
-        await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient, what: rule.what, channel: sent.channel, messageId: sent.messageId } });
+        const detail = { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient, what: rule.what };
+        if (await this.proposeUnless(tenantId, matterId, subflows, 'acknowledgement', e.id, detail, `ACKNOWLEDGEMENT\n\nTo: ${rule.recipient.replace(/_/g, ' ')}\nWhat: ${rule.what}\nFor: ${e.type.replace(/_/g, ' ')} received ${e.createdAt}\n\nA short note that it arrived, so they do not write to ask.`)) continue;
+        await this.perform(tenantId, matterId, 'acknowledgement', detail);
       } catch (err) {
         this.ports.log(`acknowledgement failed (${e.type})`, err);
       }
     }
   }
 
-  /** The tenant's per-sub-flow trust levels (addendum 3 §2). */
-  async subflows(tenantId: string): Promise<SubflowConfig> {
-    return this.store.loadSubflows ? this.store.loadSubflows(tenantId) : { ...DEFAULT_SUBFLOW_CONFIG };
+  /** The tenant's trust level per engine action (docs/conveyance-engine.md §2). Missing rows are propose. */
+  async levels(tenantId: string): Promise<LevelConfig> {
+    return this.store.loadLevels ? this.store.loadLevels(tenantId) : { ...DEFAULT_LEVELS };
   }
 
   private asAutomation<T>(fn: () => Promise<T>): Promise<T> {
@@ -145,14 +138,53 @@ export class EngineService {
   }
 
   /**
-   * Shadow gate. Returns true (and logs the intent) when the action must NOT happen:
-   * the matter is in shadow mode, or the sub-flow it belongs to is still in shadow.
+   * The trust gate. Returns false when the action may go ahead now. Otherwise it is put
+   * in front of a person as a proposal (a decision in Tasks citing a generated dossier
+   * of exactly what would be done) and true is returned: the caller does nothing. One
+   * proposal per key at a time; a rejection keeps the same key quiet for a few days so
+   * the timer does not nag.
    */
-  private async suppressed(tenantId: string, matterId: string, state: MatterState, subflows: SubflowConfig, action: SuppressedAction, subFlow: SubFlow | null, detail: Record<string, unknown>): Promise<boolean> {
-    const reason = state.shadowMode ? 'shadow_mode' : subFlow && subflows[subFlow] === 'shadow' ? 'subflow_shadow' : null;
-    if (!reason) return false;
-    await this.run(tenantId, matterId, { type: 'record_suppressed', action, reason, subFlow, detail });
+  private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, dedupKey: string, detail: Record<string, unknown>, summary: string): Promise<boolean> {
+    if (actsUnasked(levels[action], action)) return false;
+    const state = await this.getState(tenantId, matterId);
+    if (pendingProposal(state, action, dedupKey)) return true;
+    const quietUntil = this.ports.now().getTime() - REJECTED_QUIET_MS;
+    if (Object.values(state.proposals).some((p) => p.action === action && p.dedupKey === dedupKey && p.status === 'rejected' && new Date(p.resolvedAt ?? p.proposedAt).getTime() > quietUntil)) return true;
+    const doc = await this.ports.documents.createGenerated({
+      tenantId,
+      matterId,
+      docType: 'PROPOSAL',
+      fileName: `proposal-${action}-${dedupKey.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${this.ports.now().toISOString().slice(0, 10)}.txt`,
+      content: summary,
+    });
+    await this.run(tenantId, matterId, { type: 'propose_action', action, detail, dedupKey, summary, sourceDocumentId: doc.id });
     return true;
+  }
+
+  /** Do what a person approved. The same code the assist/auto path runs; only the gate differs. */
+  private async perform(tenantId: string, matterId: string, action: EngineAction, detail: Record<string, unknown>): Promise<void> {
+    if (action === 'acknowledgement') {
+      const d = detail as { forEventId: string; forEventType: EventType; recipientRole: string; what: string };
+      const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType });
+      if (!sent) return;
+      await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'chase') {
+      const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown> };
+      const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context });
+      await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'client_update') {
+      const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
+      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: d.context });
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId } });
+      if (d.agentTemplate) {
+        const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: d.agentTemplate, context: d.context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
+        if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
+      }
+    } else if (action === 'search_order') {
+      const d = detail as { searchType: SearchType };
+      const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
+      await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType: d.searchType, provider: this.ports.searchProvider.name, reference });
+    }
   }
 
   /** Addendum 3 §2: switch shadow mode for one matter (people only; logged). Mirrors to matter.shadow_mode via the store. */
@@ -182,11 +214,7 @@ export class EngineService {
 
   /** ID/AML: ask the provider, then record the request. */
   async requestIdCheck(tenantId: string, matterId: string, actor: string): Promise<RunResult> {
-    const state = await this.getState(tenantId, matterId);
-    if (await this.suppressed(tenantId, matterId, state, await this.subflows(tenantId), 'id_check_request', 'id_check', { provider: this.ports.idCheckProvider.name, actor })) {
-      // Shadow: the request is logged as an intent, not placed. The wait still opens so the SLA clock is observable.
-      return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference: null });
-    }
+    // A person asked for this: their click is the approval, whatever the trust levels say.
     const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId });
     return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference });
   }
@@ -201,10 +229,6 @@ export class EngineService {
   async requestProofOfFunds(tenantId: string, matterId: string, actor: string, opts: { noteToClient?: string | null; followUpOf?: string | null } = {}): Promise<RunResult> {
     if (!this.ports.pofForms) throw Object.assign(new Error('Proof-of-funds forms are not configured on this deployment.'), { status: 501 });
     const state = await this.getState(tenantId, matterId);
-    const subflows = await this.subflows(tenantId);
-    if (await this.suppressed(tenantId, matterId, state, subflows, 'proof_of_funds_request', 'proof_of_funds', { actor, followUpOf: opts.followUpOf ?? null })) {
-      return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: `shadow:${this.ports.newId()}`, channel: 'suppressed', followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
-    }
     const form = await this.ports.pofForms.create({ tenantId, matterId, requestedBy: actor, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null });
     // Drafted queries go out with this round; the client answers them in the form.
     const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
@@ -470,9 +494,6 @@ export class EngineService {
     const draftId = state.reportOnTitle.draftId ?? '';
     assertCanSendReport(state, draftId);
     const doc = await this.requireDoc(tenantId, matterId, state.reportOnTitle.draftDocumentId as string);
-    if (await this.suppressed(tenantId, matterId, state, await this.subflows(tenantId), 'report_send', 'report_on_title', { draftId, actor })) {
-      return { events: [], state: await this.getState(tenantId, matterId) };
-    }
     const sent = await this.ports.clientComms.sendReportOnTitle({ tenantId, matterId, draftDocument: doc });
     return this.run(tenantId, matterId, { type: 'record_report_on_title_sent', actor, draftId, channel: sent.channel, messageId: sent.messageId });
   }
@@ -488,7 +509,7 @@ export class EngineService {
     let state = await this.getState(tenantId, matterId);
     if (!state.enrolled || state.manualHandling.required || state.abandoned || state.closedAt) return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
-    const subflows = await this.subflows(tenantId);
+    const subflows = await this.levels(tenantId);
     let chases = 0;
     let escalations = 0;
     // Time as a source of events (docs/case-model.md §6): offer expiry, aged waits, sitting issues — first, so the deadlines below see the result.
@@ -518,19 +539,11 @@ export class EngineService {
     for (const a of dueActions(state, now, sla)) {
       try {
         if (a.kind === 'chase') {
-          // Shadow: the chase is logged as an intent (which still advances the SLA clock, see projection) and not sent.
-          if (await this.suppressed(tenantId, matterId, state, subflows, 'chase', 'chase', { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, ageWorkingDays: a.ageWorkingDays })) {
-            chases += 1;
-            continue;
-          }
-          const sent = await this.ports.chaser.sendChase({
-            tenantId,
-            matterId,
-            recipientRole: a.rule.recipientRole,
-            template: a.rule.template,
-            context: { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length },
-          });
-          await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, channel: sent.channel, messageId: sent.messageId } });
+          const context = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length };
+          const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
+          const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
+          await this.perform(tenantId, matterId, 'chase', detail);
           chases += 1;
         } else {
           // The escalation's SOURCE is the chase dossier — every decision points at a document.
@@ -571,18 +584,30 @@ export class EngineService {
   // ───────────── effects ─────────────
 
   /** Post-commit reactions. Best-effort; each becomes its own command so the log records only what really happened. */
-  private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: SubflowConfig): Promise<void> {
+  private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
     for (const e of events) {
       try {
+        // PROPOSE level: a person said yes — do it now, the same way the unasked path would.
+        if (e.type === 'action_approved') {
+          const p = e.payload as { proposalEventId: string; action: EngineAction; detail: Record<string, unknown> };
+          try {
+            await this.perform(tenantId, matterId, p.action, p.detail);
+          } catch (err) {
+            // The person said yes and it still did not happen: that goes on the case, in words.
+            const reason = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
+            this.ports.log(`approved ${p.action} could not be done`, err);
+            await this.run(tenantId, matterId, { type: 'record_action_failed', proposalEventId: p.proposalEventId, action: p.action, detail: p.detail, reason }).catch(() => {});
+          }
+        }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
         if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract') {
           const state = await this.getState(tenantId, matterId);
           for (const searchType of state.requiredSearches) {
             if (state.searches[searchType]) continue;
-            if (await this.suppressed(tenantId, matterId, state, subflows, 'search_order', 'search', { searchType, provider: this.ports.searchProvider.name })) continue;
+            const detail = { searchType, provider: this.ports.searchProvider.name };
+            if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
             try {
-              const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType });
-              await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType, provider: this.ports.searchProvider.name, reference });
+              await this.perform(tenantId, matterId, 'search_order', detail);
             } catch (err) {
               // Provider down: the search stays un-ordered and shows as a stage blocker; a human can record it manually.
               this.ports.log(`could not order ${searchType} search — manual fallback needed`, err);
@@ -594,9 +619,8 @@ export class EngineService {
         // exchange, with no read of the other matter's state (the wall is in the DB too).
         if (e.type === 'enquiry_raised' && (e.payload as { counterpartyType?: string }).counterpartyType === 'internal' && this.ports.linked) {
           const p = e.payload as { enquiryId: string; subject: string };
-          if (!(await this.suppressed(tenantId, matterId, state, subflows, 'linked_enquiry_delivery', 'enquiry', { enquiryId: p.enquiryId, subject: p.subject }))) {
-            await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
-          }
+          // A person raised the enquiry; delivering it is their act, not a trust-level question.
+          await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
         }
         // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
         if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
@@ -647,21 +671,19 @@ export class EngineService {
             const rule = (await this.store.loadSla(tenantId))[chase.waitKey as keyof SlaConfig];
             const nextChase = rule?.chaseEvery ? addWorkingDays(this.ports.now(), rule.chaseEvery).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) : '';
             const context = { eventType: e.type, payload: e.payload, waitingOn: w.who, waitingFor: w.what, nextChase, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
-            if (!(await this.suppressed(tenantId, matterId, fresh, subflows, 'client_update', 'chase', { template: 'chase_update', triggeredByEventId: e.id, eventType: e.type }))) {
-              const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: 'chase_update', context });
-              await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update', recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
-              // The agent hears the same: chased today, chasing again on a date, nothing needed from them.
-              const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: 'chase_update_agent', context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
-              if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: 'chase_update_agent', recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: e.id } });
+            const detail = { template: 'chase_update', context, triggeredByEventId: e.id, agentTemplate: 'chase_update_agent' };
+            const summary = `CLIENT UPDATE\n\nTo: the client (and the estate agent)\nWhat: we have chased ${w.who} for ${w.what}${nextChase ? `; we will chase again on ${nextChase}` : ''}\nTemplate: chase_update\n\nA short status line so they know it is in hand and nobody has to ask.`;
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', `chase_update:${e.id}`, detail, summary))) {
+              await this.perform(tenantId, matterId, 'client_update', detail);
             }
           }
         }
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
-          if (await this.suppressed(tenantId, matterId, state, subflows, 'client_update', CLIENT_UPDATE_SUBFLOW[e.type] ?? null, { template, triggeredByEventId: e.id, eventType: e.type })) continue;
-          const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { eventType: e.type, payload: e.payload } });
-          await this.run(tenantId, matterId, { type: 'record_client_update', update: { template, channel: sent.channel, messageId: sent.messageId, triggeredByEventId: e.id } });
+          const detail = { template, context: { eventType: e.type, payload: e.payload }, triggeredByEventId: e.id };
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', `${template}:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${e.type.replace(/_/g, ' ')}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
+          await this.perform(tenantId, matterId, 'client_update', detail);
         }
       } catch (err) {
         this.ports.log(`effect failed for ${e.type}`, err);

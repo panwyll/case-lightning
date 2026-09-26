@@ -5,8 +5,11 @@
 import { EngineService } from '../../../lib/server/engine/service';
 import { MemoryEventStore } from '../../../lib/server/engine/store';
 import { mockPorts, type MockPorts } from '../../../lib/server/engine/mocks';
-import { blockingDecisions, type MatterState, type DecisionKind, type DecisionState } from '../../../lib/server/engine/types';
+import { blockingDecisions, type LevelConfig, type MatterState, type DecisionKind, type DecisionState } from '../../../lib/server/engine/types';
 import type { EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from '../../../lib/server/engine/types';
+
+/** Sends and orders unasked; auto-clears confirmed afterwards (the fullest exercise of the machine). */
+export const FIXTURE_LEVELS: LevelConfig = { acknowledgement: 'auto', chase: 'auto', client_update: 'auto', search_order: 'auto', auto_clear: 'assist' };
 
 export const TENANT = '11111111-1111-4111-8111-111111111111';
 export const MATTER = '22222222-2222-4222-8222-222222222222';
@@ -24,7 +27,10 @@ export interface Harness {
 }
 
 export function harness(start = new Date('2026-09-14T09:00:00Z')): Harness {
-  const store = new MemoryEventStore();
+  // The product default is PROPOSE for every action; these fixtures run the machine with
+  // everything unasked except the auto-clear confirmation, so every path is exercised
+  // end to end. levels.test.ts covers the gate itself.
+  const store = new MemoryEventStore(FIXTURE_LEVELS);
   const ports = mockPorts(start);
   const svc = new EngineService(store, ports);
   return {
