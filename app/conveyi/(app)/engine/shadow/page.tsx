@@ -20,7 +20,7 @@ const CSS = `
 .tl-t th{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;text-align:right;padding:8px 12px;border-bottom:1px solid #e8eaf0}
 .tl-t th:first-child,.tl-t td:first-child{text-align:left}
 .tl-t td{padding:9px 12px;border-top:1px solid #f1f5f9;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-.tl-t tr.g td{font-weight:800;background:#fafafa}
+.tl-t tr.g td{font-weight:800;background:#ede9fe;color:#3b1d8f;border-top:1px solid #ddd6fe}
 .tl-t tr.s td:first-child{padding-left:28px;color:#334155}
 .tl-t td.lv{text-align:left}
 .tl-t td.lv .eg-btn{display:inline-flex;align-items:center;justify-content:center;width:76px;height:28px;padding:0;font-size:12px;margin:0 4px 0 0;box-sizing:border-box}
