@@ -9,6 +9,10 @@ import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 
 /** Every open case as a list: find one by reference, address or handler, open it. */
 const CSS = `
+.cv-seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;background:#fff}
+.cv-seg button{padding:6px 12px;border:0;border-left:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.cv-seg button:first-child{border-left:0}
+.cv-seg button.on{background:#5A27E0;color:#fff}
 .cv-search{width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px}
 .cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:60vh}
 .cv-row{display:grid;grid-template-columns:28px 1fr 150px 150px 130px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
@@ -28,6 +32,7 @@ export default function CaseViewPage() {
   const [rollup, setRollup] = useState<CaseloadRollup | null>(null);
   const [scope, setScope] = useState<Scope>('all');
   const [q, setQ] = useState('');
+  const [byHandler, setByHandler] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
@@ -46,6 +51,16 @@ export default function CaseViewPage() {
   }, [scope]);
   useEffect(() => { void load(); }, [load]);
 
+  const groups = useMemo(() => {
+    const m = new Map<string, CaseToken[]>();
+    for (const r of rows ?? []) { const k = r.assignedToName ?? 'Unassigned'; (m.get(k) ?? m.set(k, []).get(k)!).push(r); }
+    return Array.from(m.entries()).sort((a, b) => (a[0] === 'Unassigned' ? 1 : b[0] === 'Unassigned' ? -1 : a[0].localeCompare(b[0])));
+  }, [rows]);
+  const rollupOf = (list: CaseToken[]): CaseloadRollup => {
+    const c = { total: list.length, normal: 0, attention: 0, delayed: 0, blocked: 0, critical: 0, stuck: 0, needsSomeone: 0, untracked: 0 } as CaseloadRollup;
+    for (const r of list) { const b = r.health?.band as keyof CaseloadRollup | undefined; if (b && typeof c[b] === 'number') (c[b] as number) += 1; }
+    return c;
+  };
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (rows ?? [])
@@ -57,7 +72,14 @@ export default function CaseViewPage() {
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       {rows && rollup ? (
-        <CaseloadMap title="Case View" actions={<ScopeSelect value={scope} onChange={setScope} />} rows={rows} rollup={rollup} onOpen={(id) => { window.location.href = paths.matter(id); }} />
+        <>
+          <CaseloadMap title="Case View" actions={<span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{scope === 'all' && <span className="cv-seg" role="radiogroup" aria-label="Group"><button type="button" role="radio" aria-checked={byHandler} className={byHandler ? 'on' : ''} onClick={() => setByHandler(true)}>By Handler</button><button type="button" role="radio" aria-checked={!byHandler} className={!byHandler ? 'on' : ''} onClick={() => setByHandler(false)}>Together</button></span>}<ScopeSelect value={scope} onChange={setScope} /></span>} rows={scope === 'all' && byHandler ? [] : rows} rollup={rollup} onOpen={(id) => { window.location.href = paths.matter(id); }} />
+          {scope === 'all' && byHandler && groups.map(([name, list]) => (
+            <div key={name} style={{ marginTop: 10 }}>
+              <CaseloadMap compact title={name} rows={list} rollup={rollupOf(list)} onOpen={(id) => { window.location.href = paths.matter(id); }} />
+            </div>
+          ))}
+        </>
       ) : (
         <div className="eg-top"><h1 className="eg-h1">Case View</h1><ScopeSelect value={scope} onChange={setScope} /></div>
       )}

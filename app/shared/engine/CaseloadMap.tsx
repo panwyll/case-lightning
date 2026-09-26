@@ -96,7 +96,9 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
 const isTracked = (t: CaseToken) => t.tracked !== false;
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false }: {
+  /** A section inside a grouped board: smaller title, no filter chips. */
+  compact?: boolean;
   /** The page's title and controls share one row with the filter chips. */
   title: string;
   actions?: React.ReactNode;
@@ -129,15 +131,15 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions }: {
     <div onMouseLeave={() => setTip(null)}>
       <style>{CASELOAD_CSS}</style>
       <div className="cm-head">
-        <h1 className="eg-h1">{title}</h1>
-        <div className="cm-chips">
+        {compact ? <h2 className="eg-h1" style={{ fontSize: 15 }}>{title}<span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>{rows.length}</span></h2> : <h1 className="eg-h1">{title}</h1>}
+        {!compact && <div className="cm-chips">
           {chip('all', rows.length, 'All')}
           {chip('normal', rollup.normal, 'On track')}
           {chip('attention', rollup.attention, 'Needs attention')}
           {chip('delayed', rollup.delayed, 'Delayed')}
           {chip('blocked', rollup.blocked, 'Blocked')}
           {chip('critical', rollup.critical, 'Critical')}
-        </div>
+        </div>}
         {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
       </div>
       <div className="cm-board">

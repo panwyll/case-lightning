@@ -73,7 +73,6 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
           {role === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={enquiryId} onChange={(e) => setEnquiryId(e.target.value)} style={{ width: 120 }} />}
           <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !file || (role === 'enquiry_reply' && !enquiryId.trim())} onClick={upload}>File into engine</button>
         </div>
-        <div className="ep-note" style={{ marginTop: 6 }}>{buyer ? 'Search results, replies, offers, title and ID reports arrive here (or via OneDrive / InfoTrack automatically). ' : p?.side === 'seller' ? 'Official copies, ID reports and the management pack arrive here; the property forms and the buyer\'s enquiries are recorded under Work. ' : 'Official copies, the offer and ID reports arrive here. '}The engine extracts, rule-checks and either clears it or raises a decision for you.</div>
         {msg && <div style={{ fontSize: 12.5, color: '#14532d', marginTop: 6 }}>{msg}</div>}
         {err && <div className="ep-err">{err}</div>}
       </div>

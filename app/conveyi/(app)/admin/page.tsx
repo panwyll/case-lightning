@@ -91,13 +91,55 @@ const AUDIT_CATEGORY: Record<string, string> = {
 };
 const AUDIT_FILTERS: Array<[string, string]> = [
   ['', 'Everything'], ['email', 'Email'], ['matter', 'Case & status'], ['tasks', 'Tasks'],
-  ['docs', 'Documents'], ['automation', 'Automation'], ['admin', 'Admin & access'], ['other', 'Other'],
+  ['docs', 'Documents'], ['automation', 'Automation'], ['engine', 'Engine'], ['admin', 'Admin & access'], ['other', 'Other'],
 ];
-const auditCategory = (row: any) => AUDIT_CATEGORY[String(row.action_type)] ?? 'other';
+const auditCategory = (row: any) => (String(row.action_type).startsWith('ENGINE_') ? 'engine' : AUDIT_CATEGORY[String(row.action_type)] ?? 'other');
+
+const nice = (s: unknown) => String(s ?? '').replace(/_/g, ' ');
+const firstLine = (s: unknown) => String(s ?? '').split('\n').find((l) => l.trim())?.trim().slice(0, 140) ?? '';
+/** Engine events, in words: what the engine proposed, what a person decided, what moved. */
+function describeEngine(type: string, p: Record<string, any>): string {
+  const subj = p.subject ? ` · ${String(p.subject).split(':').pop()}` : '';
+  switch (type) {
+    case 'command': return `Recorded ${nice(p.command)}${Array.isArray(p.events) && p.events.length ? ` (${p.events.map((e: any) => nice(e.type)).join(', ')})` : ''}`;
+    case 'decision_resolved': return `Decided ${nice(p.kind)}: ${nice(p.option)}${p.verificationMethod ? ` by ${nice(p.verificationMethod)}` : ''}${p.hasNote ? ' — with a reason' : ''}`;
+    case 'decision_source_opened': return 'Opened the source document for a decision';
+    case 'trust_level': return `Set ${nice(p.action)} to ${nice(p.level)}`;
+    case 'sla': return `Set the ${nice(p.waitKey)} timer: chase after ${p.chaseAfter}, every ${p.chaseEvery ?? 'once'}, escalate after ${p.escalateAfter}, re-escalate after ${p.reEscalateAfter} working days`;
+    case 'upload': return `Filed ${p.fileName ?? 'a document'} as ${nice(p.role)}${p.action?.kind ? ` — ${nice(p.action.kind)}` : ''}`;
+    case 'ingest': return `Handed a document to the engine as ${nice(p.role)}`;
+    case 'audit_export': return 'Exported the audit log';
+    case 'action_proposed': return `Engine proposed ${nice(p.action)}${subj} — ${firstLine(p.summary)}`;
+    case 'action_approved': return `Approved the engine's ${nice(p.action)}${subj}`;
+    case 'action_rejected': return `Declined the engine's ${nice(p.action)}${subj}${p.reason ? ` — ${p.reason}` : ''}`;
+    case 'action_failed': return `Approved ${nice(p.action)}${subj}, but it did not go through — ${p.reason ?? 'unknown error'}`;
+    case 'action_suppressed': return `Engine held back ${nice(p.action)}${subj} (${nice(p.reason ?? 'not performed')})`;
+    case 'auto_clear_proposed': return `Rules cleared ${nice(p.subFlow ?? p.subject)}${subj}; put to a person to confirm`;
+    case 'auto_clear_confirmed': return `Confirmed the rules' clear of ${nice(p.subFlow ?? p.subject)}${subj}`;
+    case 'auto_clear_review_raised': return `Rules cleared ${nice(p.subFlow ?? p.subject)}${subj}; review raised`;
+    case 'stage_advanced': return `Case moved from ${nice(p.from)} to ${nice(p.to)}${p.reason ? ` — ${p.reason}` : ''}`;
+    case 'manual_handling_required': return `Case put into manual handling — ${nice(p.reason)}${p.detail ? `: ${p.detail}` : ''}`;
+    case 'search_ordered': return `Ordered the ${p.searchType} search from ${p.provider ?? 'the provider'}`;
+    case 'chase_sent': return `Chased ${nice(p.chase?.recipientRole ?? p.recipientRole)} for ${nice(p.chase?.waitKey ?? p.waitKey)}${p.chase?.subject ? ` ${p.chase.subject}` : ''}`;
+    case 'acknowledgement_sent': return `Acknowledged ${p.ack?.what ?? 'a delivery'} to ${nice(p.ack?.recipientRole)}`;
+    case 'client_update_sent': return `Sent the client an update: ${nice(p.update?.template ?? p.template)}`;
+    case 'escalation_raised': return `Escalated ${nice(p.waitKey ?? p.kind)}${p.subject ? ` ${p.subject}` : ''} — ${firstLine(p.reason ?? p.summary)}`;
+    case 'escalation_resolved': return `Escalation resolved${p.note ? ` — ${p.note}` : ''}`;
+    case 'bank_details_recorded': return `Bank details recorded for ${nice(p.payeeKind)} via ${p.sourceChannel}${p.isChange ? ' — a CHANGE from details already held' : ''}`;
+    case 'bank_details_change_flagged': return `Hard stop raised on ${nice(p.payeeKind)} bank details`;
+    case 'bank_details_verified': return `Bank details verified by ${nice(p.verificationMethod)}${p.verificationRef ? ` (${p.verificationRef})` : ''}`;
+    case 'bank_details_verification_failed': return `Bank details verification failed${p.reason ? ` — ${p.reason}` : ''}`;
+    case 'payment_authorised': return `Authorised ${nice(p.purpose)} to ${nice(p.payeeKind)}${p.amountPennies ? ` £${(p.amountPennies / 100).toLocaleString('en-GB')}` : ''}`;
+    default:
+      if (p.decisionEventId) return `Decided ${nice(type.replace(/_(reviewed|approved|rejected|verified|applied)$/, ''))}${subj}: ${nice(p.option ?? p.resolution ?? type.split('_').pop())}${p.note ? ` — ${p.note}` : ''}`;
+      return nice(type).replace(/^./, (c) => c.toUpperCase());
+  }
+}
 
 function describeAudit(row: any): string {
   const p = (row.payload && typeof row.payload === 'object' ? row.payload : {}) as Record<string, any>;
   const q = (s: any) => (s ? `“${String(s).slice(0, 80)}”` : '');
+  if (String(row.action_type).startsWith('ENGINE_')) return describeEngine(String(row.action_type).slice(7).toLowerCase(), p);
   switch (row.action_type as string) {
     case 'EMAIL_SENT':
       return `Sent an email${p.subject ? ` ${q(p.subject)}` : ''}${p.source === 'SCHEDULED' ? ' (on the send delay)' : p.source === 'WORKLIST_WEB' ? ' from My work' : ''}`;
@@ -163,9 +205,16 @@ function describeAudit(row: any): string {
       return `Provisioned a case during import${p.summary ? ` — ${String(p.summary).slice(0, 80)}` : ''}`;
     case 'ONBOARDING_CANCELLED':
       return 'Cancelled the case import';
-    default:
-      // Prettify an unmapped code: EMAIL_SENT → "Email sent".
-      return String(row.action_type || 'Action').toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    case 'RULE_SIGNOFF': return `${p.signed ? 'Signed off' : 'Withdrew sign-off of'} the rule ${nice(p.ruleId)}`;
+    case 'VIEW_AS_STARTED': return `Started viewing as ${p.asName ?? p.asEmail ?? p.userId ?? 'a colleague'}`;
+    case 'VIEW_AS_ENDED': return 'Returned to their own account';
+    case 'USER_CREATED': return `Created the account for ${p.name ?? p.email ?? 'a colleague'}${p.role ? ` as ${nice(p.role).toLowerCase()}` : ''}`;
+    default: {
+      // An unmapped code, then the facts in its payload: ACCESS_CHANGED → "Access changed · cases: selected · inboxes: own".
+      const label = String(row.action_type || 'Action').toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+      const facts = Object.entries(p).filter(([, v]) => ['string', 'number', 'boolean'].includes(typeof v) && String(v).length <= 60).slice(0, 4).map(([k, v]) => `${nice(k)}: ${String(v)}`);
+      return facts.length ? `${label} · ${facts.join(' · ')}` : label;
+    }
   }
 }
 
@@ -600,6 +649,11 @@ function AdminPageInner() {
   const [status, setStatus] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
   const [docUpload, setDocUpload] = useState({ name: '', description: '' });
+  const docFocus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc') : null;
+  useEffect(() => {
+    if (!docFocus || !docTemplates.length) return;
+    document.getElementById(`doc-${docFocus.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`)?.scrollIntoView({ block: 'center' });
+  }, [docFocus, docTemplates.length]);
   const [docUploading, setDocUploading] = useState(false);
   const docFileRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -728,6 +782,19 @@ function AdminPageInner() {
     }
   }
 
+  async function replaceDocTemplate(id: string, file: File) {
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`/api/v1/admin/doc-templates/${id}`, { method: 'PUT', credentials: 'include', body: form });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
   async function deleteDocTemplate(id: string) {
     try {
       await api(`/admin/doc-templates/${id}`, { method: 'DELETE' });
@@ -737,15 +804,6 @@ function AdminPageInner() {
     }
   }
 
-  async function loadExampleTemplates() {
-    try {
-      await api('/admin/doc-templates/examples', { method: 'POST' });
-      await load();
-      setStatus('Example templates loaded.');
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
 
   async function openPerson(u: any) {
     try {
@@ -1009,11 +1067,6 @@ function AdminPageInner() {
                     <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>Manage subscription</button>
                   )}
                 </div>
-                {billing.hasSubscription && (
-                  <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
-                    “Manage subscription” opens Stripe for your card, invoices &amp; cancellation.
-                  </p>
-                )}
               </div>
 
               {/* Impact — response-time stats from the historical import (renewal value). */}
@@ -1055,9 +1108,6 @@ function AdminPageInner() {
                     </div>
                   ))}
                 </div>
-                <p style={{ color: '#64748b', fontSize: 13, marginTop: 10, marginBottom: 0 }}>
-                  Colleagues join by signing in with their Microsoft 365 account — in the CONVEYi add-in, or just at this web address. Seats are free: you pay per case, not per person.
-                </p>
               </div>
 
               {/* Referrals — merged in under Billing. */}
@@ -1156,9 +1206,6 @@ function AdminPageInner() {
 
         {tab === 'workload' && (
           <div style={card}>
-            <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
-              Who’s carrying what right now. Assign cases from the board or a case’s drawer; anything without an owner shows in its own row so nothing slips.
-            </p>
             {workload.length === 0 ? (
               <p style={{ fontSize: 13, color: '#64748b' }}>No open cases yet.</p>
             ) : (
@@ -1223,7 +1270,7 @@ function AdminPageInner() {
             {/* Template list */}
 
             {docTemplates.map((tpl) => (
-              <div key={tpl.id} style={card}>
+              <div key={tpl.id} id={`doc-${tpl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} style={{ ...card, ...(docFocus && docFocus === tpl.name ? { borderColor: '#5A27E0', boxShadow: '0 0 0 3px #ede9fe' } : {}) }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div>
                     <strong>{tpl.name}</strong>
@@ -1253,25 +1300,23 @@ function AdminPageInner() {
                     >
                       Download
                     </a>
-                    <button
-                      style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                      onClick={() => deleteDocTemplate(tpl.id)}
-                    >
-                      Delete
-                    </button>
+                    <label style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} title="Upload your own .docx for this document; its place in the flow stays the same">
+                      Replace
+                      <input type="file" accept=".docx" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void replaceDocTemplate(tpl.id, f); e.target.value = ''; }} />
+                    </label>
+                    {!tpl.usage && (
+                      <button
+                        style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                        onClick={() => deleteDocTemplate(tpl.id)}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
 
-            {docTemplates.length > 0 && (
-              <button
-                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                onClick={loadExampleTemplates}
-              >
-                + Add example templates
-              </button>
-            )}
             {/* Create with AI — the headline feature, up top */}
             <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1279,12 +1324,6 @@ function AdminPageInner() {
                 <h2 style={{ margin: 0, fontSize: 18 }}>Create a template with AI</h2>
                 <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>Beta</span>
               </div>
-              <p style={{ fontSize: 13, color: '#475569', margin: '8px 0 14px' }}>
-                Two ways: <strong>upload an existing Word document</strong> and we’ll turn it into a fillable
-                template — keeping your wording and swapping the client/property/date details for case
-                placeholders automatically — <strong>or describe</strong> the document and we’ll draft it from
-                scratch. Nothing is sent; the template is saved here to download and review first.
-              </p>
 
               <input
                 style={input}
@@ -1320,12 +1359,8 @@ function AdminPageInner() {
             {/* How it works */}
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                <h3 style={{ marginTop: 0, fontSize: 15 }}>Document templates</h3>
-                <a href="/conveyi/doc-packs" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#0369a1', fontWeight: 600 }}>
-                  Full guide →
-                </a>
+                <h3 style={{ marginTop: 0, fontSize: 15 }}>Placeholders</h3>
               </div>
-              <p style={{ fontSize: 13, fontWeight: 600, margin: '0 0 4px' }}>Placeholder syntax</p>
               <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
                 <tbody>
                   {[
@@ -1385,14 +1420,6 @@ function AdminPageInner() {
                 >
                   {docUploading ? 'Uploading…' : 'Upload'}
                 </button>
-                {docTemplates.length === 0 && (
-                  <button
-                    style={{ padding: '8px 16px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
-                    onClick={loadExampleTemplates}
-                  >
-                    Load example templates
-                  </button>
-                )}
               </div>
             </div>
 

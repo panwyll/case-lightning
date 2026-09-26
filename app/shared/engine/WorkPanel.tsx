@@ -165,7 +165,7 @@ const ABOUT: Record<string, About> = {
   'ID / AML check': { creates: 'Client care letter (.docx)', starts: 'On enrolment, for every client.', done: 'Provider result clear. A referred result goes to a conveyancer with the report; a fail halts the case.', via: 'InfoTrack ID (or the mock until InfoTrack is connected). At Propose you approve the request first.' },
   'Proof of funds': { starts: 'On enrolment on a purchase, when firm policy requires it. The form link goes to the client.', done: 'A conveyancer signs off the declaration and statements. Exchange is held until then.', note: 'The rules read the statements, draft queries on large or unexplained credits and rate the risk; sign-off is never automated.', via: 'Client comms (email / WhatsApp). At Propose you approve the send first.' },
   'Queries to the client': { starts: 'Drafted by the rules from the submission, or added by you.', done: 'Each query answered through the form or withdrawn with a reason. Sign-off is refused while any is open.' },
-  'Official copies': { starts: 'When the register and plan are filed, however they arrive.', done: 'Read by the rules: a clean title clears; restrictions, charges, covenants and a short lease go to a conveyancer.', via: 'Extraction of the official copy. HMLR ordering through InfoTrack is planned, not live.' },
+  'Official copies': { starts: 'When the register and plan are filed under Documents, however they arrive.', done: 'Read by the rules: a clean title clears; restrictions, charges, covenants and a short lease go to a conveyancer.', via: 'Extraction of the official copy. HMLR ordering through InfoTrack is planned, not live.' },
   'Report on title': { starts: 'Drafted once title, searches and enquiries are resolved.', done: 'A conveyancer approves the draft; it is then sent to the client and recorded as sent.', via: 'AI drafts from the file; a person approves; client comms sends.', creates: 'Report on title (.docx, from the Report on title doc pack)' },
   'search:LLC1': { starts: 'Ordered when the case reaches pre-contract.', done: 'Result read by the rules; clear, or flagged to a conveyancer on financial charges, listing, conservation area or TPOs.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
   'search:CON29': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on enforcement, contravention, unadopted road, proposed schemes, contaminated land or radon.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
@@ -210,13 +210,13 @@ const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok'
 const STATE_ICON: Record<LaneDef['state'], { Icon: typeof Circle; colour: string }> = { done: { Icon: CheckCircle, colour: '#16a34a' }, open: { Icon: Clock, colour: '#f59e0b' }, blocked: { Icon: AlertTriangle, colour: '#dc2626' }, idle: { Icon: Circle, colour: '#cbd5e1' } };
 
 /** The ⓘ: a description rendered on the top layer, so no box or band can sit over it. */
-function Tip({ text, label, icon }: { text: ReactNode; label: string; icon?: ReactNode }) {
-  const ref = useRef<HTMLSpanElement>(null);
+function Tip({ text, label, icon, href }: { text: ReactNode; label: string; icon?: ReactNode; href?: string }) {
+  const ref = useRef<HTMLElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const show = () => { const r = ref.current?.getBoundingClientRect(); if (r) setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom + 6 }); };
   return (
     <>
-      <span ref={ref} className={icon ? 'ep-who' : 'ep-i'} tabIndex={0} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon ?? 'i'}</span>
+      {href ? <a ref={ref as never} href={href} className={`ep-who${href ? ' doc' : ''}`} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon}</a> : <span ref={ref} className={icon ? 'ep-who' : 'ep-i'} tabIndex={0} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon ?? 'i'}</span>}
       {pos && createPortal(<div className="ep-tip" role="tooltip" style={{ left: pos.x, top: pos.y }}>{text}</div>, document.body)}
     </>
   );
@@ -251,7 +251,7 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
                 <b>
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
-                  {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents; the wording is the firm's own under Doc Packs.</>} />}
+                  {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
                 <Pill s={x.status} />
@@ -563,7 +563,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ) : null });
   }
 
-  if (has('property_forms')) lane({ id: 'property_forms', order: 'sequence', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', note: 'completed by the client; sent out with the contract pack',
+  if (has('property_forms')) lane({ id: 'property_forms', order: 'sequence', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', 
     tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)} · the client is chased on the SLA` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
     actions: <>
       {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send the forms to the client</button>}
@@ -572,7 +572,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
-      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? 'file the official copy of the register under Documents' },
+      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure },
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],
     actions: has('report_on_title') ? <>
@@ -580,7 +580,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.reportOnTitle.status === 'approved' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send approved report to client</button>}
     </> : null });
 
-  if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', note: 'ordered when the case reaches pre-contract',
+  if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', 
     tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
 
   if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
@@ -615,7 +615,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('redemption') && redemptionApplies) lane({ id: 'redemption', order: 'sequence', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
     tiles: [
       { label: 'Redemption statement', status: red.status, detail: red.redemptionPennies != null ? `${gbp(red.redemptionPennies)}${red.validUntil ? ` · valid to ${red.validUntil}` : ''}${red.dailyInterestPennies ? ` · ${gbp(red.dailyInterestPennies)}/day` : ''}` : undefined },
-      { label: 'Payment to the lender', status: paidTo('lender') ? 'approved' : 'not_started', detail: 'a person authorises this against verified lender details' },
+      { label: 'Payment to the lender', status: paidTo('lender') ? 'approved' : 'not_started' },
       { label: 'Redeemed', status: red.status === 'redeemed' || red.status === 'discharged' ? 'redeemed' : 'not_started', detail: red.redeemedAt ? fmtDay(red.redeemedAt) : undefined },
     ],
     actions: <>
@@ -664,7 +664,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (p.hasExchange) lane({ id: 'exchange', order: 'sequence', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
     tiles: [
       ...(seller ? [{ label: 'Contract pack', status: s.contractPack?.sentAt ? 'sent' : 'not_started', detail: s.contractPack?.sentAt ? `sent ${fmtDay(s.contractPack.sentAt)}` : undefined }] : []),
-      { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started', detail: 'approved, then signed and held ready for exchange' },
+      { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started' },
       ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting' }] : []),
       ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started' }] : []),
       { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead' },
@@ -694,7 +694,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ...(p.fundsFrom.includes('client') ? [{ label: "Client's balance", status: s.completion.fundsReceivedAt ? 'received' : openWaits.some((w) => w.key === 'funds' && w.subject === 'client') ? 'requested' : 'not_started' }] : []),
         ...(p.fundsFrom.includes('buyer_solicitor') ? [{ label: "Completion monies from the buyer's solicitor", status: s.completion.fundsReceivedAt ? 'received' : 'awaiting' }] : []),
         ...(p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 ? [{ label: `Consideration from the incoming owner · ${gbp(s.considerationPennies)}`, status: s.completion.fundsReceivedAt ? 'received' : 'awaiting' }] : []),
-        ...(buyer ? [{ label: "Completion payment to the seller's solicitor", status: paidTo('seller_solicitor', 'completion_monies') ? 'approved' : 'not_started', detail: 'a person authorises this against verified bank details' }] : []),
+        ...(buyer ? [{ label: "Completion payment to the seller's solicitor", status: paidTo('seller_solicitor', 'completion_monies') ? 'approved' : 'not_started' }] : []),
         { label: 'Completion', status: completed ? 'done' : 'not_started', detail: completed ? fmtDay(s.completion.confirmedAt) : undefined },
         ...(seller && completed ? [{ label: 'Balance to the client', status: paidTo('client') ? 'approved' : 'not_started' }] : []),
       ],

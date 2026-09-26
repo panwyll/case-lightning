@@ -72,7 +72,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
 
   return (
     <>
-      <div className="ep-sec">Issues — what is wrong and what it holds ({open.length} open{open.some((i) => i.gate !== 'none') ? ` · ${open.filter((i) => i.gate !== 'none').length} holding ${exchanged ? 'completion' : 'exchange'}` : ''})</div>
+      <div className="ep-sec">Issues ({open.length} open{open.some((i) => i.gate !== 'none') ? ` · ${open.filter((i) => i.gate !== 'none').length} holding ${exchanged ? 'completion' : 'exchange'}` : ''})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12.5, marginBottom: open.length ? 8 : 0 }}>
           <span><b>Price:</b> {state.purchasePricePennies != null ? gbp(state.purchasePricePennies) : 'not recorded'}</span>

@@ -86,7 +86,7 @@ export default function EmailTemplates() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10 }}>
         <strong style={{ fontSize: 15, color: '#0f172a' }}>Email templates</strong>
-        <span style={{ fontSize: 12.5, color: '#64748b', flex: 1 }}>Reusable emails the reply drafter and workflow send from. Insert <code>{'{{placeholders}}'}</code> that fill with each case's data.</span>
+        <span style={{ flex: 1 }} />
         <button onClick={create} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ New template</button>
       </div>
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}

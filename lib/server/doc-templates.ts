@@ -390,7 +390,7 @@ function sanitizeTemplateParagraphs(paragraphs: string[], allowAiBlocks: boolean
 }
 
 /** True if both fill passes render without throwing (i.e. no unbalanced delimiters). */
-function templateRendersCleanly(content: Buffer): boolean {
+export function templateRendersCleanly(content: Buffer): boolean {
   try {
     const d1 = new Docxtemplater(new PizZip(content), { delimiters: { start: '[[', end: ']]' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
     d1.render({});
