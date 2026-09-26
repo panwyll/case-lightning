@@ -71,6 +71,12 @@ export const WORK_CSS = `
 .ep-sub b{font-weight:600;font-size:12.5px;min-width:0}
 .ep-sub .ep-pill{margin-top:0;justify-self:end}
 .ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
+.ep-sub-a{color:#5A27E0;text-decoration:none}
+.ep-sub-a:hover{text-decoration:underline}
+.ep-i{position:relative;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;border:1px solid #cbd5e1;color:#94a3b8;font-size:9.5px;font-weight:800;font-style:normal;margin-left:6px;vertical-align:1px;cursor:help}
+.ep-i:hover,.ep-i:focus{border-color:#5A27E0;color:#5A27E0;outline:none}
+.ep-i::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);width:260px;background:#0f172a;color:#fff;font-size:11.5px;font-weight:500;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.2);opacity:0;pointer-events:none;transition:opacity .12s;z-index:5;white-space:normal}
+.ep-i:hover::after,.ep-i:focus::after{opacity:1}
 .ep-box-b .acts{display:grid;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9}
 .ep-box-b .acts .ep-btn{margin:0;width:100%;text-align:center}
 .ep-box-b .acts > span{display:contents}
@@ -121,10 +127,50 @@ export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMA
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
 const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Blocked' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
 const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable']);
+const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
-interface Tile { label: string; status: string; detail?: string }
+interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string }
+/** What each sub-block is and what completes it: the sentence a new starter needs. */
+const ABOUT: Record<string, string> = {
+  'ID / AML check': "Identity and anti-money-laundering check on every client through the ID provider. Complete when the provider's result is clear, or a person has reviewed a referred result.",
+  'Proof of funds': 'The client declares where the purchase money comes from and provides statements. Complete when a conveyancer signs it off; exchange is held until then.',
+  'Queries to the client': 'Questions raised on the proof-of-funds submission. Each is answered through the form or withdrawn with a reason.',
+  'Official copies': 'The register and plan from HM Land Registry. Read by the rules; restrictions, charges and covenants go to a person.',
+  'Report on title': 'Our report to the client on the title, searches and enquiries. Drafted from the file, approved by a conveyancer, then sent.',
+  'search:LLC1': 'Local land charges register: financial charges, conservation areas, listing, tree preservation orders.',
+  'search:CON29': 'Local authority enquiries: planning history, building regulations, roads, proposed schemes, contaminated land.',
+  'search:DRAINAGE_WATER': 'Water company search: sewer and water connections, sewers within 3m, build-over agreements.',
+  'search:ENVIRONMENTAL': 'Environmental report: flooding, contaminated land, subsidence, mining, landfill.',
+  'search:CHANCEL': 'Whether the property carries a liability to repair the parish church chancel.',
+  Offer: "The lender's mortgage offer. Standard conditions clear by rule; special conditions and a short expiry go to a person.",
+  'Mortgage deed': 'Signed by every borrower and witnessed, held undated until completion.',
+  'Certificate of title': 'Our confirmation to the lender that the title is good, requesting the advance for completion.',
+  Deposit: 'The exchange deposit, usually 10%, received into client account before exchange.',
+  'Contract approved / signed': 'The contract as agreed with the other side, approved by the conveyancer, then signed by the client and held ready.',
+  Exchange: 'Contracts exchanged with the other side and the completion date fixed. Needs every item above and the client\'s authority.',
+  'Contract pack': 'Draft contract, official copies, plan and the property forms, sent to the buyer\'s solicitor.',
+  'Completion statement': 'The figures for completion: price, deposit, advance, redemption, fees and SDLT, sent to the client with the balance due.',
+  Completion: 'Completion monies sent and received, keys released. Starts the clocks for SDLT and registration.',
+  'Balance to the client': 'What is left after redemption and fees, paid to the client\'s verified account.',
+  'Payment to the lender': 'Redemption of the existing mortgage on completion.',
+  'Redemption statement': "The existing lender's figure to redeem, with the daily rate and the date it holds to.",
+  Redeemed: 'The redemption paid and the lender\'s confirmation received.',
+  'Discharge (DS1 / e-DS1)': 'The lender\'s release of its charge, lodged so the charge comes off the register.',
+  Consent: "The existing lender's consent to the transfer, with any conditions.",
+  'Transfer deed': 'The TR1 transferring the property, signed by every party and witnessed.',
+  'Declaration of trust': 'How co-owners hold their shares, where they hold as tenants in common.',
+  'How they hold': 'Joint tenants or tenants in common: the clients\' decision, recorded from their instruction.',
+  'Management pack (LPE1)': "The freeholder's or managing agent's pack: service charge, ground rent, arrears, works, insurance.",
+  'Notice of assignment': 'Notice to the landlord that the lease has changed hands, and of any charge, with the fee.',
+  SDLT: 'The Stamp Duty Land Tax return and payment, due within 14 days of completion.',
+  AP1: 'The application to HM Land Registry to register the transfer and any charge, within the priority period.',
+  File: 'The case closed once registration is confirmed and the client sent the completed register.',
+  Forms: 'TA6 property information, TA10 fittings and contents, and TA7 for leasehold, completed by the client.',
+  Enquiry: "A question we put to the seller's solicitor about the title, the searches or the property. Cleared when the reply answers it, or a person accepts the reply.",
+};
+const aboutFor = (x: Tile) => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
 interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
@@ -147,7 +193,17 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
       {open && (
         <div className="ep-box-b">
           {lane.note && <div className="ep-note" style={{ padding: '4px 0 6px' }}>{lane.note}</div>}
-          {lane.tiles.map((x) => <div key={x.label} className="ep-sub"><b>{titleCase(x.label)}</b><Pill s={x.status} />{x.detail && <span className="d">{x.detail}</span>}</div>)}
+          {lane.tiles.map((x) => {
+            const about = aboutFor(x);
+            const name = x.href ? <a href={x.href} className="ep-sub-a">{titleCase(x.label)}</a> : titleCase(x.label);
+            return (
+              <div key={x.label} className="ep-sub">
+                <b>{name}{about && <span className="ep-i" tabIndex={0} aria-label={about} data-tip={about}>i</span>}</b>
+                <Pill s={x.status} />
+                {x.detail && <span className="d">{x.detail}</span>}
+              </div>
+            );
+          })}
           {lane.extra}
           {lane.actions && <div className="acts">{lane.actions}</div>}
           <NoticeBox n={notice ?? null} />
@@ -431,7 +487,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ) : null });
   }
 
-  if (has('property_forms')) lane({ id: 'property_forms', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', note: 'from the client; the pack goes out with them',
+  if (has('property_forms')) lane({ id: 'property_forms', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', note: 'completed by the client; sent out with the contract pack',
     tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)} · the client is chased on the SLA` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
     actions: <>
       {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send the forms to the client</button>}
@@ -448,8 +504,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.reportOnTitle.status === 'approved' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send approved report to client</button>}
     </> : null });
 
-  if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', note: 'ordered automatically on entry to pre-contract',
-    tiles: s.requiredSearches.map((t) => ({ label: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => f.code).join(', ') : undefined })) });
+  if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', note: 'ordered when the case reaches pre-contract',
+    tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
 
   if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
     tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, status: q.status, detail: q.subject })),
@@ -483,7 +539,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('redemption') && redemptionApplies) lane({ id: 'redemption', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
     tiles: [
       { label: 'Redemption statement', status: red.status, detail: red.redemptionPennies != null ? `${gbp(red.redemptionPennies)}${red.validUntil ? ` · valid to ${red.validUntil}` : ''}${red.dailyInterestPennies ? ` · ${gbp(red.dailyInterestPennies)}/day` : ''}` : undefined },
-      { label: 'Payment to the lender', status: paidTo('lender') ? 'approved' : 'not_started', detail: 'authorised by a person against verified lender details (hard stop)' },
+      { label: 'Payment to the lender', status: paidTo('lender') ? 'approved' : 'not_started', detail: 'a person authorises this against verified lender details' },
       { label: 'Redeemed', status: red.status === 'redeemed' || red.status === 'discharged' ? 'redeemed' : 'not_started', detail: red.redeemedAt ? fmtDay(red.redeemedAt) : undefined },
     ],
     actions: <>
@@ -533,9 +589,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     tiles: [
       ...(seller ? [{ label: 'Contract pack', status: s.contractPack?.sentAt ? 'sent' : 'not_started', detail: s.contractPack?.sentAt ? `sent ${fmtDay(s.contractPack.sentAt)}` : undefined }] : []),
       ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting' }] : []),
-      { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started', detail: 'readiness milestones (advisory)' },
+      { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started', detail: 'approved, then signed and held ready for exchange' },
       ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started' }] : []),
-      { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'conditions met — exchange when instructed' : 'conditions derive from the gates' },
+      { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead' },
       ...(exchanged ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started' }] : []),
     ],
     actions: <>
@@ -549,7 +605,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('New contractual completion date (YYYY-MM-DD):', s.exchange.completionDate ?? ''); if (d) { const r = ask('Reason?'); if (r) void cmd({ type: 'change_completion_date', completionDate: d, reason: r }); } }}>Change completion date</button>}
     </> });
 
-  if (toe || buyer) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', state: deeds.transferDeedAt ? 'done' : toe && s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'advisory on a purchase: signed with the contract in practice' : 'every party signs, witnessed',
+  if (toe || buyer) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', state: deeds.transferDeedAt ? 'done' : toe && s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'usually signed with the contract' : 'every party signs, witnessed',
     tiles: [{ label: 'Transfer deed', status: deeds.transferDeedAt ? 'done' : 'not_started', detail: deeds.transferDeedAt ? `executed ${fmtDay(deeds.transferDeedAt)}` : undefined }],
     actions: !deeds.transferDeedAt && !completed ? act('transfer_deed', 'transfer_deed_executed', 'Transfer Deed Executed', { witnessed: true }, { primary: toe }) : null });
 
@@ -562,7 +618,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ...(p.fundsFrom.includes('client') ? [{ label: "Client's balance", status: s.completion.fundsReceivedAt ? 'received' : openWaits.some((w) => w.key === 'funds' && w.subject === 'client') ? 'requested' : 'not_started' }] : []),
         ...(p.fundsFrom.includes('buyer_solicitor') ? [{ label: "Completion monies from the buyer's solicitor", status: s.completion.fundsReceivedAt ? 'received' : 'awaiting' }] : []),
         ...(p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 ? [{ label: `Consideration from the incoming owner · ${gbp(s.considerationPennies)}`, status: s.completion.fundsReceivedAt ? 'received' : 'awaiting' }] : []),
-        ...(buyer ? [{ label: "Completion payment to the seller's solicitor", status: paidTo('seller_solicitor', 'completion_monies') ? 'approved' : 'not_started', detail: 'authorised by a person against verified details (hard stop)' }] : []),
+        ...(buyer ? [{ label: "Completion payment to the seller's solicitor", status: paidTo('seller_solicitor', 'completion_monies') ? 'approved' : 'not_started', detail: 'a person authorises this against verified bank details' }] : []),
         { label: 'Completion', status: completed ? 'done' : 'not_started', detail: completed ? fmtDay(s.completion.confirmedAt) : undefined },
         ...(seller && completed ? [{ label: 'Balance to the client', status: paidTo('client') ? 'approved' : 'not_started' }] : []),
       ],
@@ -595,6 +651,15 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.stage === 'post_completion' && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close file</button>}
     </> : null });
 
+  // A sub-block with a decision waiting on it links straight to that decision.
+  const linkFor = (x: Tile): string | undefined => {
+    const subj = x.key?.startsWith('search:') ? x.key.slice(7) : /^Enquiry (\S+)/.exec(x.label)?.[1] ?? null;
+    const kind = x.key?.startsWith('search:') ? 'search' : x.label.startsWith('Enquiry ') ? 'enquiry' : x.label.startsWith('ID / AML') ? 'id_check' : x.label.startsWith('Offer') ? 'mortgage' : x.label.startsWith('Official copies') ? 'title' : x.label.startsWith('Report on title') ? 'report_on_title' : x.label.startsWith('Proof of funds') ? 'proof_of_funds' : x.label.startsWith('Management pack') ? 'management_pack' : null;
+    if (!kind) return undefined;
+    const d = view.pendingDecisions.find((dd) => dd.kind === kind && (!subj || (dd.subject ?? '').split(':').pop() === subj));
+    return d ? `/conveyi/decisions/${d.eventId}` : undefined;
+  };
+  for (const l of lanes) for (const x of l.tiles) if (!x.href) x.href = linkFor(x);
   const current = openLane === undefined ? (lanes.find((l) => l.state === 'blocked') ?? lanes.find((l) => l.state === 'open'))?.id ?? null : openLane;
   const toggle = (l: LaneDef) => setOpenLane(current === l.id ? null : l.id);
 
