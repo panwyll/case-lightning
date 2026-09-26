@@ -373,18 +373,9 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   const seller = type === 'freehold_sale' || type === 'leasehold_sale';
   const remo = type === 'remortgage';
   const toe = type === 'transfer_of_equity';
-  const NOTE: Record<TransactionType, string> = {
-    freehold_purchase: 'ID/AML → searches (auto-ordered), enquiries, mortgage offer, proof of funds → title, report on title → exchange → completion → SDLT, AP1 → registered.',
-    leasehold_purchase: 'As a freehold purchase, plus the management pack (LPE1), the lease review and the notice of assignment after completion.',
-    freehold_sale: "ID/AML → property forms from the client, official copies, contract pack out → the buyer's enquiries answered → redemption figure → exchange → completion monies in, the lender redeemed → balance to the client → discharge → closed.",
-    leasehold_sale: 'As a freehold sale, plus obtaining the management pack from the freeholder / agent for the buyer and the TA7.',
-    remortgage: 'No exchange: title and the new offer investigated, redemption figure from the old lender → mortgage deed executed, certificate of title → advance in, old lender redeemed → AP1 → discharged and registered.',
-    transfer_of_equity: "No exchange: every party identified, the lender's consent where charged, the clients decide how they hold (declaration of trust for tenants in common) → transfer deed executed, any consideration in → SDLT where due, AP1 → registered.",
-  };
   return (
     <div className="ep">
       <style>{WORK_CSS}</style>
-      <div className="ep-block">Transaction type: Every step is logged and only genuine decisions are put in front of you.</div>
       <div className="ep-enrol">
         <label>Transaction type
           <select value={type} onChange={(e) => setType(e.target.value as TransactionType)}>{TRANSACTION_TYPES.map((t) => <option key={t} value={t}>{TRANSACTION_LABEL[t]}</option>)}</select>
@@ -395,7 +386,6 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         {toe && <label>Consideration (£, 0 for none)<input type="number" min={0} value={consideration} onChange={(e) => setConsideration(e.target.value)} placeholder="0" /></label>}
         {(buyer || remo) && <label>Searches (comma-separated; blank = the type's defaults)<input value={searches} onChange={(e) => setSearches(e.target.value)} placeholder={buyer ? 'LLC1, CON29, DRAINAGE_WATER, ENVIRONMENTAL' : 'none by default'} /></label>}
       </div>
-      <div className="ep-note" style={{ marginTop: 8 }}>{NOTE[type]}</div>
       <button className="ep-btn primary" disabled={busy} onClick={() => {
         const body: Record<string, unknown> = { type: 'enrol', transactionType: type, hasLender: buyer || remo ? hasLender : false, hasExistingMortgage: seller || remo || toe ? hasExistingMortgage : false, parties: buyer || toe ? parties : 1 };
         if (toe) body.considerationPennies = Math.round((Number(consideration) || 0) * 100);

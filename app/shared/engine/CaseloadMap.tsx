@@ -96,9 +96,11 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
 const isTracked = (t: CaseToken) => t.tracked !== false;
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false, hideBoard = false }: {
   /** A section inside a grouped board: smaller title, no filter chips. */
   compact?: boolean;
+  /** Header only: the chips and controls, with the board drawn elsewhere (the by-handler columns). */
+  hideBoard?: boolean;
   /** The page's title and controls share one row with the filter chips. */
   title: string;
   actions?: React.ReactNode;
@@ -142,7 +144,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
         </div>}
         {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
       </div>
-      <div className="cm-board">
+      {!hideBoard && <div className="cm-board">
         {BANDS.map((b) => {
           const list = byBand.get(b) ?? [];
           return (
@@ -167,7 +169,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {tip && (
         <div className="cm-tip" style={{ left: Math.min(tip.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 310), top: tip.y + 16 }}>
