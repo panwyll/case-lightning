@@ -37,16 +37,17 @@ export const WORK_CSS = `
 .ep-lane-h b{font-size:12.5px}
 .ep-lane-h .tw{color:#94a3b8;font-size:11px;width:10px}
 .ep-lane-h .sub{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-.ep-flow{position:relative;background:#f8fafc;border:1px solid #eef1f5;border-radius:16px;padding:18px 18px 22px 18px}
-.ep-flow > svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
-.ep-tier{position:relative;z-index:1;display:grid;grid-template-columns:104px minmax(0,1fr);align-items:start;gap:0 12px}
-.ep-tier + .ep-tier{margin-top:56px}
-.ep-tier-l{position:sticky;top:8px;display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:4px 11px 4px 8px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#334155;white-space:nowrap;margin-top:10px;justify-self:start}
-.ep-tier-l i{width:8px;height:8px;border-radius:99px;display:inline-block}
-.ep-tier-l.done{border-color:#bbf7d0;color:#14532d}
-.ep-tier-l.blocked{border-color:#fecaca;color:#7f1d1d}
-.ep-tier-l.open{border-color:#fde68a;color:#78350f}
-.ep-tier-b{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;align-items:flex-start}
+.ep-flow{position:relative;border:1px solid #eef1f5;border-radius:16px;overflow:hidden;background:#fff}
+.ep-flow > svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
+.ep-tier{position:relative;padding:26px 18px 34px;background:#fff}
+.ep-tier:nth-child(even){background:#f8fafc}
+.ep-tier + .ep-tier{border-top:1px solid #eef1f5}
+.ep-tier-l{position:absolute;right:14px;bottom:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap}
+.ep-tier-l i{width:7px;height:7px;border-radius:99px;display:inline-block}
+.ep-tier-l.done{color:#15803d}
+.ep-tier-l.blocked{color:#b91c1c}
+.ep-tier-l.open{color:#b45309}
+.ep-tier-b{position:relative;z-index:2;display:flex;flex-wrap:wrap;justify-content:center;gap:14px;align-items:flex-start}
 .ep-tier-b .ep-box{flex:0 1 200px;min-width:150px}
 .ep-tier-b .ep-box.on{flex-basis:300px}
 .ep-box{position:relative;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;background:#fff;min-width:0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
@@ -205,10 +206,10 @@ function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string
         const ps = phaseState(tier.items);
         return (
           <div key={tier.id} className="ep-tier" data-tier={tier.id}>
-            <span className={`ep-tier-l ${ps}`}><i style={{ background: RAG[ps].dot }} />{tier.label}</span>
             <div className="ep-tier-b">
               {tier.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
             </div>
+            <span className={`ep-tier-l ${ps}`}><i style={{ background: RAG[ps].dot }} />{tier.label}</span>
           </div>
         );
       })}
