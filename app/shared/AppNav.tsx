@@ -16,7 +16,7 @@ import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield,
  */
 export type AdminTab = 'mywork' | 'billing' | 'workload' | 'templates' | 'docpacks' | 'team' | 'policy' | 'actions' | 'audit' | 'help';
 
-export interface Me { role: string; displayName: string | null; email: string }
+export interface Me { role: string; displayName: string | null; email: string; actor?: { displayName: string | null; email: string } | null }
 
 interface NavItem {
   key: string;
@@ -94,6 +94,8 @@ export const SHELL_CSS = `
 .sh-badge{margin-left:auto;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#5A27E0;color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
 .sh-badge.soft{background:#e2e8f0;color:#334155}
 .sh-item.on .sh-badge.soft{background:#ddd6fe;color:#4c1d95}
+.sh-viewas{display:flex;align-items:center;gap:10px;margin-left:16px;background:#fef3c7;color:#78350f;border:1px solid #fde68a;border-radius:999px;padding:4px 6px 4px 12px;font-size:12.5px;font-weight:700}
+.sh-viewas button{border:1px solid #f59e0b;background:#fff;color:#78350f;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
 .sh-me{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:#475569}
 .sh-av{width:30px;height:30px;border-radius:999px;background:#ede9fe;color:#5A27E0;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center}
 .sh-out{background:none;border:none;color:#94a3b8;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 6px;font-family:inherit}
@@ -161,6 +163,12 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
       <style>{SHELL_CSS}</style>
       <header className="sh-top">
         <Brand />
+        {me?.actor && (
+          <div className="sh-viewas" role="status">
+            Viewing as {me.displayName || me.email}
+            <button onClick={() => { void fetch('/api/v1/auth/view-as/stop', { method: 'POST', credentials: 'include' }).then(() => { window.location.href = `${paths.admin}?tab=team`; }); }}>Return to {me.actor.displayName || me.actor.email}</button>
+          </div>
+        )}
         {me && (
           <div className="sh-me">
             <span>{me.displayName || me.email}</span>

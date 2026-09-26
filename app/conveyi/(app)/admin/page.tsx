@@ -476,6 +476,10 @@ function AdminPageInner() {
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState('CONVEYANCER');
+  const [inviteBusy, setInviteBusy] = useState(false);
   // Everyone in the firm, for the "Assigned to" picker — not just the people who happen to
   // have work, and not gated on the admin check (which resolves after the first load).
   const [members, setMembers] = useState<Array<{ id: string; display_name: string | null; email: string }>>([]);
@@ -505,7 +509,7 @@ function AdminPageInner() {
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
-      if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
+      if (tab === 'team') { setUsers((await api<{ users: any[] }>('/admin/users')).users); setInvites((await api<{ invites: any[] }>('/admin/invites')).invites ?? []); }
       if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
       setStatus('');
     } catch (e) {
@@ -627,6 +631,31 @@ function AdminPageInner() {
       await api('/admin/doc-templates/examples', { method: 'POST' });
       await load();
       setStatus('Example templates loaded.');
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+
+  async function inviteColleague() {
+    if (!inviteEmail.trim()) return;
+    setInviteBusy(true);
+    try {
+      await api('/admin/invites', { method: 'POST', body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }) });
+      setInviteEmail('');
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setInviteBusy(false);
+    }
+  }
+  async function revokeInvite(id: string) {
+    try { await api(`/admin/invites?id=${id}`, { method: 'DELETE' }); await load(); } catch (e) { setStatus((e as Error).message); }
+  }
+  async function viewAs(userId: string) {
+    try {
+      await api(`/admin/users/${userId}/view-as`, { method: 'POST' });
+      window.location.href = paths.cases;
     } catch (e) {
       setStatus((e as Error).message);
     }
@@ -1277,22 +1306,45 @@ function AdminPageInner() {
 
         {tab === 'team' && (
           <div style={card}>
-            <h3 style={{ marginTop: 0 }}>Team members</h3>
-            <p style={{ fontSize: 13, color: '#64748b' }}>
-              The first person to sign in is the firm Admin; everyone else joins as a Conveyancer. Change roles here.
-            </p>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Team</h3>
+              <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length + invites.length} of 100</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
+              <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@firm.co.uk" type="email" style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} onKeyDown={(e) => { if (e.key === 'Enter') void inviteColleague(); }} />
+              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }} title="The role they join with">
+                <option value="CONVEYANCER">Conveyancer</option>
+                <option value="ASSISTANT">Assistant</option>
+                <option value="ADMIN">Admin</option>
+              </select>
+              <button style={btnPrimary} disabled={inviteBusy || !inviteEmail.trim()} onClick={() => void inviteColleague()} title="Emails a one-time sign-in link. They join with this role the first time they sign in.">{inviteBusy ? 'Sending…' : 'Invite'}</button>
+            </div>
             {users.map((u) => (
-              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}</div>
+              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}{u.email === me?.email ? <span style={{ color: '#94a3b8', fontWeight: 500 }}> · you</span> : null}</div>
                   <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
                 </div>
-                <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }}>
-                  <option value="ADMIN">Admin</option>
-                  <option value="CONVEYANCER">Conveyancer</option>
-                  <option value="ASSISTANT">Assistant</option>
-                  <option value="READ_ONLY">Read only</option>
-                </select>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {u.email !== me?.email && (
+                    <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void viewAs(u.id)} title="See the app exactly as this person does — their caseload, their tasks, their access. A banner at the top brings you back. Both ends are logged.">View as</button>
+                  )}
+                  <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Admin: everything, including this page. Conveyancer: cases and decisions. Assistant: cases, no decisions on money or reports. Read only: looks, changes nothing.">
+                    <option value="ADMIN">Admin</option>
+                    <option value="CONVEYANCER">Conveyancer</option>
+                    <option value="ASSISTANT">Assistant</option>
+                    <option value="READ_ONLY">Read only</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+            {invites.filter((i) => i.status === 'PENDING').map((i) => (
+              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#64748b' }}>{i.email}</div>
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>Invited · {String(i.role).toLowerCase()}</div>
+                </div>
+                <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void revokeInvite(i.id)} title="Cancels the invitation. The sign-in link stops working.">Revoke</button>
               </div>
             ))}
           </div>

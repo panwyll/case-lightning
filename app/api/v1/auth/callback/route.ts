@@ -35,6 +35,14 @@ function authErrorPage(message: string, consentIssue: boolean): NextResponse {
   return new NextResponse(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
+/** Thrown when a firm has hit the team ceiling. */
+class TeamFullError extends Error {
+  constructor() {
+    super('team-full');
+    this.name = 'TeamFullError';
+  }
+}
+
 function parseJwt(token: string): Record<string, unknown> {
   const [, payload] = token.split('.');
   if (!payload) throw new Error('Invalid JWT payload');
@@ -107,7 +115,8 @@ export async function GET(req: NextRequest) {
         tenant.id,
       ]);
       const seatCount = Number(count.rows[0]?.n ?? '0');
-      // Seats are free under per-case billing — any colleague may join.
+      // Seats are free under per-case billing — any colleague may join, up to a sanity ceiling.
+      if (seatCount >= config.teamMaxMembers) throw new TeamFullError();
       const role = seatCount === 0 ? 'ADMIN' : 'CONVEYANCER';
       const created = await client.query<{ id: string }>(
         `insert into app_user
@@ -155,6 +164,9 @@ export async function GET(req: NextRequest) {
     res.cookies.delete(OAUTH_STATE_COOKIE);
     return res;
   } catch (error) {
+    if (error instanceof TeamFullError) {
+      return authErrorPage(`Your firm's team is at its limit of ${config.teamMaxMembers} people. Ask your admin to remove someone, then reconnect.`, false);
+    }
     // A consent/permission problem (e.g. a scope was added but not yet granted, or a stale
     // grant) → offer the consent-forcing reconnect. Everything else → a plain retry.
     const msg = String((error as Error)?.message ?? error);

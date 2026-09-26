@@ -6,6 +6,8 @@ export interface SessionUser {
   role: Role;
   email: string;
   displayName: string | null;
+  /** Set when an admin is viewing the app as this user. */
+  actor?: { userId: string; email: string; displayName: string | null };
 }
 
 export interface AppClaims {

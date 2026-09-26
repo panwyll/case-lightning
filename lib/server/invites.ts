@@ -37,6 +37,13 @@ export async function createInvite(user: SessionUser, emailRaw: string, roleRaw:
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address.');
   const role = ROLES.includes(roleRaw) ? roleRaw : 'CONVEYANCER';
 
+  // Room on the team? Members plus invites still open.
+  const size = await queryOne<{ n: string }>(
+    `select ((select count(*) from app_user where tenant_id = $1) + (select count(*) from team_invite where tenant_id = $1 and status = 'PENDING'))::text as n`,
+    [user.tenantId]
+  );
+  if (Number(size?.n ?? '0') >= config.teamMaxMembers) throw new Error(`Your team is at its limit of ${config.teamMaxMembers} people.`);
+
   // Already a member?
   const member = await queryOne<{ id: string }>(`select id from app_user where tenant_id = $1 and lower(email) = $2`, [user.tenantId, email]).catch(() => null);
   if (member) throw new Error('That person is already on your team.');

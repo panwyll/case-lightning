@@ -137,6 +137,8 @@ export const config = {
   // event_name of the Billing Meter the price above reads from (Stripe dashboard →
   // Billing → Meters). The meter must map customers by stripe_customer_id.
   stripeCaseMeterEvent: env('STRIPE_CASE_METER_EVENT') ?? 'conveyi_case',
+  // Seats are free under per-case billing; this is a sanity ceiling, not a plan limit.
+  teamMaxMembers: Number(env('TEAM_MAX_MEMBERS') ?? '100'),
   // Advertised price per case, in pennies. Display only — Stripe's price object is
   // the source of truth for what's charged; keep the two in step.
   casePricePennies: Number(env('CASE_PRICE_PENNIES') ?? '10000'),

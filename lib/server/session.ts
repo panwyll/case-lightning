@@ -49,18 +49,19 @@ function secret(): Uint8Array {
   return new TextEncoder().encode(config.sessionJwtSecret);
 }
 
-export async function signSession(userId: string): Promise<string> {
-  return new SignJWT({ userId })
+/** `actorId`: an admin viewing the app as `userId`. The session acts as the target; the actor is remembered so they can return. */
+export async function signSession(userId: string, actorId?: string | null): Promise<string> {
+  return new SignJWT(actorId ? { userId, actorId } : { userId })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime('7d')
     .sign(secret());
 }
 
-export async function verifySession(token: string): Promise<{ userId: string } | null> {
+export async function verifySession(token: string): Promise<{ userId: string; actorId: string | null } | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
-    return typeof payload.userId === 'string' ? { userId: payload.userId } : null;
+    return typeof payload.userId === 'string' ? { userId: payload.userId, actorId: typeof payload.actorId === 'string' ? payload.actorId : null } : null;
   } catch {
     return null;
   }
@@ -86,8 +87,19 @@ export async function getSessionUser(): Promise<SessionUser | null> {
      from app_user where id = $1`,
     [verified.userId]
   );
+  if (!user) return null;
+  // View-as: the session is the target's, but only while the actor is still an admin of
+  // the same firm. A demoted or removed admin's view-as session dies with their role.
+  if (verified.actorId) {
+    const actor = await queryOne<{ id: string; email: string; display_name: string | null }>(
+      `select id, email, display_name from app_user where id = $1 and tenant_id = $2 and role = 'ADMIN'`,
+      [verified.actorId, user.tenantId]
+    );
+    if (!actor) return null;
+    user.actor = { userId: actor.id, email: actor.email, displayName: actor.display_name };
+  }
   // Every query from here on carries this user for the database's ethical-wall check.
-  if (user) bindDbUser(user.userId);
+  bindDbUser(user.userId);
   return user;
 }
 
