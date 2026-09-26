@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
     await assertMatterAccess(user, doc.matter_id);
     const [pages, facts] = await Promise.all([
-      query<{ page: number; verdict: string; text_chars: number }>(`select page, verdict, text_chars from document_page where document_id = $1 and tenant_id = $2 order by page`, [documentId, user.tenantId]),
+      query<{ page: number; verdict: string; text_chars: number; ocr_confidence: number | null }>(`select page, verdict, text_chars, ocr_confidence from document_page where document_id = $1 and tenant_id = $2 order by page`, [documentId, user.tenantId]),
       query<{ id: string; role: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmed_at: string | null; confirmed_name: string | null; disputed_note: string | null }>(
         `select f.id, f.role, f.key, f.value, f.page, f.quote, f.verified, f.note, f.confirmed_at, coalesce(u.display_name, u.email) as confirmed_name, f.disputed_note from document_fact f left join app_user u on u.id = f.confirmed_by where f.document_id = $1 and f.tenant_id = $2 order by f.page nulls last, f.key`,
         [documentId, user.tenantId]

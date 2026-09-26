@@ -16,7 +16,7 @@ import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOffe
 
 export type PageVerdict = 'facts' | 'nothing' | 'unreadable' | 'unattested';
 
-export interface PageRow { page: number; verdict: PageVerdict; textChars: number }
+export interface PageRow { page: number; verdict: PageVerdict; textChars: number; /** OCR confidence 0–100 when the page text came from OCR */ ocr?: number | null }
 export interface FactRow {
   key: string;
   value: string;
@@ -40,7 +40,7 @@ export const PageLedgerSchema = z
   .describe('One entry for EVERY page of the document, in order: "facts" if you took a fact or flag from it, "nothing" if you read it and it holds nothing relevant, "unreadable" if you could not read it. Never skip a page.');
 export type PageLedger = z.infer<typeof PageLedgerSchema>;
 
-export interface PageTexts { pages: string[]; textLayer: boolean }
+export interface PageTexts { pages: string[]; textLayer: boolean; /** per page, OCR confidence when that page's text came from OCR */ ocr?: Array<number | null> }
 
 /** Per-page text of a PDF through pdf.js; an image or a scan without a text layer yields empty pages. */
 export async function pdfPageTexts(bytes: Buffer): Promise<PageTexts> {
@@ -56,16 +56,48 @@ export async function pdfPageTexts(bytes: Buffer): Promise<PageTexts> {
   return { pages, textLayer: pages.some((p) => p.replace(/\s+/g, '').length > 20) };
 }
 
+const thin = (s: string) => s.replace(/\s+/g, '').length <= 20;
+
+/**
+ * Page text with OCR where the text layer is missing: every page of a PDF that carries no
+ * usable text is rendered and read; an image is read whole. The result says which pages
+ * came from OCR and how confident the OCR was, so a poor scan reads as poor, not as blank.
+ */
+export async function pageTextsWithOcr(input: { kind: 'pdf' | 'image' | 'text'; data: string }, opts: { ocr?: boolean } = {}): Promise<PageTexts> {
+  if (input.kind === 'text') return { pages: [input.data], textLayer: true };
+  const { ocrImage, ocrPdfPages } = await import('./ocr');
+  if (input.kind === 'image') {
+    if (opts.ocr === false) return { pages: [], textLayer: false };
+    try {
+      const r = await ocrImage(Buffer.from(input.data, 'base64'));
+      return { pages: [r.text], textLayer: !thin(r.text), ocr: [r.confidence] };
+    } catch {
+      return { pages: [], textLayer: false };
+    }
+  }
+  const bytes = Buffer.from(input.data, 'base64');
+  const base = await pdfPageTexts(bytes).catch(() => ({ pages: [] as string[], textLayer: false }));
+  if (opts.ocr === false) return base;
+  const missing = base.pages.map((s, i) => (thin(s) ? i + 1 : 0)).filter(Boolean);
+  if (!missing.length) return base;
+  const read = await ocrPdfPages(bytes, missing).catch(() => new Map());
+  const pages = base.pages.slice();
+  const ocr: Array<number | null> = base.pages.map(() => null);
+  for (const [p, r] of read) { pages[p - 1] = r.text; ocr[p - 1] = r.confidence; }
+  return { pages, textLayer: pages.some((s) => !thin(s)), ocr };
+}
+
 const norm = (s: string) => s.toLowerCase().replace(/[‘’“”]/g, "'").replace(/[^a-z0-9£$%.,;:/()'-]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 /** Is the quote in the page's text? Whitespace, case and quote marks are forgiven; words are not. */
 export function verifyQuote(quote: string | null | undefined, page: number | null, texts: PageTexts): { verified: boolean; note: string | null } {
   if (!quote || !quote.trim()) return { verified: false, note: 'no quote' };
   if (!texts.textLayer) return { verified: false, note: 'no text layer to check against' };
+  const ocrConf = page != null ? texts.ocr?.[page - 1] ?? null : null;
   const q = norm(quote);
   if (q.length < 6) return { verified: false, note: 'quote too short to check' };
   const onPage = page != null && texts.pages[page - 1] ? norm(texts.pages[page - 1]).includes(q) : false;
-  if (onPage) return { verified: true, note: null };
+  if (onPage) return { verified: true, note: ocrConf != null ? `matched against OCR text (${ocrConf}% confidence)` : null };
   const elsewhere = texts.pages.findIndex((t) => norm(t).includes(q));
   if (elsewhere >= 0) return { verified: true, note: `found on page ${elsewhere + 1}, not page ${page ?? '?'}` };
   return { verified: false, note: page != null ? `quote not found on page ${page}` : 'quote not found in the document' };
@@ -76,7 +108,7 @@ export function buildLedger(ledger: PageLedger | null | undefined, texts: PageTe
   const count = Math.max(texts.pages.length, pageCountHint ?? 0, ...(ledger ?? []).map((l) => l.page));
   const byPage = new Map((ledger ?? []).map((l) => [l.page, l.verdict] as const));
   const rows: PageRow[] = [];
-  for (let p = 1; p <= count; p++) rows.push({ page: p, verdict: byPage.get(p) ?? 'unattested', textChars: (texts.pages[p - 1] ?? '').replace(/\s+/g, '').length });
+  for (let p = 1; p <= count; p++) rows.push({ page: p, verdict: byPage.get(p) ?? 'unattested', textChars: (texts.pages[p - 1] ?? '').replace(/\s+/g, '').length, ocr: texts.ocr?.[p - 1] ?? null });
   return rows;
 }
 

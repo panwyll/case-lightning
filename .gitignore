@@ -16,3 +16,4 @@ test-results/
 .claude/
 tsconfig.tsbuildinfo
 .env*.local
+eng.traineddata

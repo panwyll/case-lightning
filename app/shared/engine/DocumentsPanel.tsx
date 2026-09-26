@@ -25,7 +25,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [reviews, setReviews] = useState<Record<string, DocumentReviewSummary | null>>({});
   const [checks, setChecks] = useState<Array<{ check: string; label: string; status: string; message: string; values: Array<{ source: string; value: string; page: number | null }> }>>([]);
   const [openReview, setOpenReview] = useState<string | null>(null);
-  const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }> } | null>(null);
+  const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }> } | null>(null);
   const loadTable = async (id: string) => {
     setOpenReview(id);
     const r = await api<{ pages: Array<{ page: number; verdict: string }>; facts: typeof table extends infer T ? (T extends { facts: infer F } ? F : never) : never }>(`/documents/${id}/review`).catch(() => null);
@@ -121,18 +121,18 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
-        {filed.map((e) => (
+        {filed.map((e, i) => (
           <div key={e.id}>
           <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId)) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
             <b>{pretty(e.type)}</b>
             <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>
-            {badge(reviewOf(e.sourceDocumentId))}
+            {filed.findIndex((x) => x.sourceDocumentId === e.sourceDocumentId) === i && badge(reviewOf(e.sourceDocumentId))}
           </div>
           {openReview === e.sourceDocumentId && table && table.id === e.sourceDocumentId && (
             <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, overflow: 'hidden' }}>
               <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid #eef1f5', flexWrap: 'wrap' }}>
-                {table.pages.map((p) => <span key={p.page} title={`Page ${p.page}: ${p.verdict}`} style={{ width: 18, height: 18, borderRadius: 4, fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: p.verdict === 'facts' ? '#dcfce7' : p.verdict === 'nothing' ? '#f1f5f9' : p.verdict === 'unreadable' ? '#fef3c7' : '#fee2e2', color: p.verdict === 'facts' ? '#14532d' : p.verdict === 'nothing' ? '#64748b' : p.verdict === 'unreadable' ? '#78350f' : '#7f1d1d' }}>{p.page}</span>)}
+                {table.pages.map((p) => <span key={p.page} title={`Page ${p.page}: ${p.verdict}${p.ocr_confidence != null ? ` · OCR ${p.ocr_confidence}%` : ''}`} style={{ width: 18, height: 18, borderRadius: 4, fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: p.verdict === 'facts' ? '#dcfce7' : p.verdict === 'nothing' ? '#f1f5f9' : p.verdict === 'unreadable' ? '#fef3c7' : '#fee2e2', color: p.verdict === 'facts' ? '#14532d' : p.verdict === 'nothing' ? '#64748b' : p.verdict === 'unreadable' ? '#78350f' : '#7f1d1d' }}>{p.page}</span>)}
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead><tr style={{ textAlign: 'left', color: '#94a3b8', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}><th style={{ padding: '6px 10px' }}>Fact</th><th style={{ padding: '6px 10px' }}>Value</th><th style={{ padding: '6px 10px' }}>Page</th><th style={{ padding: '6px 10px' }}>Quote</th><th style={{ padding: '6px 10px' }}>Checked</th><th style={{ padding: '6px 10px' }} /></tr></thead>

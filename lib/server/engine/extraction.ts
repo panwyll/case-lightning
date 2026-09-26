@@ -27,7 +27,7 @@ import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
 import { MIN_EXTRACTION_CONFIDENCE } from './rules';
-import { PageLedgerSchema, buildReview, pdfPageTexts, type DocumentReview, type PageTexts } from './review';
+import { PageLedgerSchema, buildReview, pageTextsWithOcr, type DocumentReview, type PageTexts } from './review';
 import type { StatementFacts } from './proof-of-funds';
 
 // ───────────────────────────── schemas (what the model must return) ─────────────────────────────
@@ -432,9 +432,7 @@ export class ClaudeExtractor implements DocumentExtractor {
   private pageTexts(input: EngineDocumentInput, contentHash: string): Promise<PageTexts> {
     let p = this.texts.get(contentHash);
     if (!p) {
-      p = input.kind === 'pdf'
-        ? pdfPageTexts(Buffer.from(input.data, 'base64')).catch(() => ({ pages: [], textLayer: false }))
-        : Promise.resolve(input.kind === 'text' ? { pages: [input.data], textLayer: true } : { pages: [], textLayer: false });
+      p = pageTextsWithOcr(input).catch(() => ({ pages: [], textLayer: false }));
       this.texts.set(contentHash, p);
     }
     return p;
