@@ -53,6 +53,14 @@ export const CASELOAD_CSS = `
 .cm-lab{padding:0 14px;font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8f8878;text-transform:uppercase;display:flex;gap:6px;border-right:1px solid #ece7da;align-self:stretch;align-items:center;white-space:nowrap}
 .cm-lab .n{font-weight:600;letter-spacing:0;color:#b8b1a0;font-variant-numeric:tabular-nums}
 .cm-houses{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-end;padding:8px 12px}
+.cm-cols{display:grid;min-width:0;align-self:stretch}
+.cm-cell{border-left:1px solid #ece7da;min-height:36px;align-content:flex-start}
+.cm-cell:first-child{border-left:0}
+.cm-names{min-height:0;background:#faf8f3}
+.cm-names .cm-lab{border-right:1px solid #ece7da}
+.cm-name{padding:6px 12px;font-size:11.5px;font-weight:800;color:#5b5646;border-left:1px solid #ece7da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm-name:first-child{border-left:0}
+.cm-name .n{margin-left:6px;font-weight:600;color:#b8b1a0;font-variant-numeric:tabular-nums}
 .cm-compact .cm-board{background:#fff}
 .cm-compact .cm-row{display:block;min-height:0;padding:8px 10px 6px}
 .cm-compact .cm-lab{border-right:0;padding:0 0 4px;font-size:9.5px;letter-spacing:.08em;align-self:auto}
@@ -100,11 +108,13 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
 const isTracked = (t: CaseToken) => t.tracked !== false;
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false, hideBoard = false }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false, hideBoard = false, byHandler = false }: {
   /** A section inside a grouped board: smaller title, no filter chips. */
   compact?: boolean;
-  /** Header only: the chips and controls, with the board drawn elsewhere (the by-handler columns). */
+  /** Header only: the chips and controls, with the board drawn elsewhere. */
   hideBoard?: boolean;
+  /** Split every row into a column per handler, names along the top, Unassigned last. */
+  byHandler?: boolean;
   /** The page's title and controls share one row with the filter chips. */
   title: string;
   actions?: React.ReactNode;
@@ -126,6 +136,26 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
     return m;
   }, [rows]);
 
+  const handlers = useMemo(() => {
+    if (!byHandler) return [] as string[];
+    const names = new Set<string>();
+    for (const r of rows) names.add(r.assignedToName ?? 'Unassigned');
+    return Array.from(names).sort((a, b) => (a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b)));
+  }, [rows, byHandler]);
+  const houses = (list: CaseToken[]) => list.map((t) => (
+    <button
+      key={t.matterId}
+      type="button"
+      className={`cm-house${shows(t) ? '' : ' dim'}`}
+      onClick={() => onOpen(t.matterId)}
+      onMouseEnter={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
+      onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setTip(null)}
+      aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Case'} — ${HEALTH_LABEL[t.health.band]}`}
+    >
+      <House band={t.health.band} size={28} title={t.propertyAddress ?? t.matterRef ?? undefined} />
+    </button>
+  ));
   const chip = (key: HealthBand | 'all', n: number, label: string) => (
     <button key={key} type="button" className={`cm-chip${filter === key ? ' on' : ''}${key === 'all' ? ' all' : ''}`} onClick={() => setFilter(filter === key ? 'all' : key)} aria-pressed={filter === key}>
       {key !== 'all' && <House band={key} size={20} />}
@@ -149,27 +179,26 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
         {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
       </div>
       {!hideBoard && <div className="cm-board">
+        {byHandler && handlers.length > 0 && (
+          <div className="cm-row cm-names">
+            <div className="cm-lab" />
+            <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${handlers.length}, minmax(0, 1fr))` }}>
+              {handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{rows.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
+            </div>
+          </div>
+        )}
         {BANDS.filter((b) => !compact || (byBand.get(b)?.length ?? 0) > 0).map((b) => {
           const list = byBand.get(b) ?? [];
           return (
             <div key={b} className="cm-row">
               <div className="cm-lab">{b}<span className="n">{list.length}</span></div>
-              <div className="cm-houses">
-                {list.map((t) => (
-                  <button
-                    key={t.matterId}
-                    type="button"
-                    className={`cm-house${shows(t) ? '' : ' dim'}`}
-                    onClick={() => onOpen(t.matterId)}
-                    onMouseEnter={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
-                    onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
-                    onMouseLeave={() => setTip(null)}
-                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Case'} — ${HEALTH_LABEL[t.health.band]}`}
-                  >
-                    <House band={t.health.band} size={28} title={t.propertyAddress ?? t.matterRef ?? undefined} />
-                  </button>
-                ))}
-              </div>
+              {byHandler && handlers.length > 0 ? (
+                <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${handlers.length}, minmax(0, 1fr))` }}>
+                  {handlers.map((h) => <div key={h} className="cm-houses cm-cell">{houses(list.filter((t) => (t.assignedToName ?? 'Unassigned') === h))}</div>)}
+                </div>
+              ) : (
+                <div className="cm-houses">{houses(list)}</div>
+              )}
             </div>
           );
         })}

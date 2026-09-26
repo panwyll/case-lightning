@@ -9,13 +9,11 @@ import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 
 /** Every open case as a list: find one by reference, address or handler, open it. */
 const CSS = `
-.cv-cols{display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding:2px 2px 10px}
-.cv-col{flex:0 0 300px;min-width:240px}
-.cv-col .cm-board{min-width:0}
-.cv-seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;background:#fff}
-.cv-seg button{padding:6px 12px;border:0;border-left:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
-.cv-seg button:first-child{border-left:0}
-.cv-seg button.on{background:#5A27E0;color:#fff}
+.cv-toggle{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:4px 2px;font-size:12.5px;font-weight:600;color:#334155;cursor:pointer;font-family:inherit}
+.cv-toggle i{width:28px;height:16px;border-radius:99px;background:#cbd5e1;position:relative;transition:background .12s}
+.cv-toggle i::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:99px;background:#fff;transition:left .12s}
+.cv-toggle.on i{background:#5A27E0}
+.cv-toggle.on i::after{left:14px}
 .cv-search{width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px}
 .cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:60vh}
 .cv-row{display:grid;grid-template-columns:28px 1fr 150px 150px 130px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
@@ -54,16 +52,6 @@ export default function CaseViewPage() {
   }, [scope]);
   useEffect(() => { void load(); }, [load]);
 
-  const groups = useMemo(() => {
-    const m = new Map<string, CaseToken[]>();
-    for (const r of rows ?? []) { const k = r.assignedToName ?? 'Unassigned'; (m.get(k) ?? m.set(k, []).get(k)!).push(r); }
-    return Array.from(m.entries()).sort((a, b) => (a[0] === 'Unassigned' ? 1 : b[0] === 'Unassigned' ? -1 : a[0].localeCompare(b[0])));
-  }, [rows]);
-  const rollupOf = (list: CaseToken[]): CaseloadRollup => {
-    const c = { total: list.length, normal: 0, attention: 0, delayed: 0, blocked: 0, critical: 0, stuck: 0, needsSomeone: 0, untracked: 0 } as CaseloadRollup;
-    for (const r of list) { const b = r.health?.band as keyof CaseloadRollup | undefined; if (b && typeof c[b] === 'number') (c[b] as number) += 1; }
-    return c;
-  };
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (rows ?? [])
@@ -75,18 +63,14 @@ export default function CaseViewPage() {
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       {rows && rollup ? (
-        <>
-          <CaseloadMap title="Case View" actions={<span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{scope === 'all' && <span className="cv-seg" role="radiogroup" aria-label="Group"><button type="button" role="radio" aria-checked={byHandler} className={byHandler ? 'on' : ''} onClick={() => setByHandler(true)}>By Handler</button><button type="button" role="radio" aria-checked={!byHandler} className={!byHandler ? 'on' : ''} onClick={() => setByHandler(false)}>Together</button></span>}<ScopeSelect value={scope} onChange={setScope} /></span>} rows={rows} hideBoard={scope === 'all' && byHandler} rollup={rollup} onOpen={(id) => { window.location.href = paths.matter(id); }} />
-          {scope === 'all' && byHandler && (
-            <div className="cv-cols">
-              {groups.map(([name, list]) => (
-                <div key={name} className="cv-col">
-                  <CaseloadMap compact title={name} rows={list} rollup={rollupOf(list)} onOpen={(id) => { window.location.href = paths.matter(id); }} />
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        <CaseloadMap
+          title="Case View"
+          actions={<span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>{scope === 'all' && <button type="button" className={`cv-toggle${byHandler ? ' on' : ''}`} role="switch" aria-checked={byHandler} onClick={() => setByHandler(!byHandler)}><i />Show Assignee</button>}<ScopeSelect value={scope} onChange={setScope} /></span>}
+          rows={rows}
+          rollup={rollup}
+          byHandler={scope === 'all' && byHandler}
+          onOpen={(id) => { window.location.href = paths.matter(id); }}
+        />
       ) : (
         <div className="eg-top"><h1 className="eg-h1">Case View</h1><ScopeSelect value={scope} onChange={setScope} /></div>
       )}
