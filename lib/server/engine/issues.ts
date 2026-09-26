@@ -93,6 +93,7 @@ export const ISSUE_KINDS = [
   'completion_failure',
   // survey / physical condition
   'survey_further_investigation',
+  'document_mismatch',
   'other',
 ] as const;
 export type IssueKind = (typeof ISSUE_KINDS)[number];
@@ -234,6 +235,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   // ── completion ──
   { kind: 'completion_failure', group: 'completion', label: 'Completion failure', arisesFrom: 'lender funds late, the CHAPS cut-off missed, chain money not through, keys not released, a removal van on the drive and no money', gate: 'completion', stages: ['pre_completion'], resolutions: ['completed_late', 'funds_in_place', 'other'], note: 'Late-completion interest under the standard conditions; a notice to complete if it slips further.' },
   { kind: 'survey_further_investigation', group: 'property', label: 'Further investigation recommended', arisesFrom: 'the survey (or a specialist report) recommends a further specialist investigation before exchange: damp, timber, drainage, structural, electrical, roof', gate: 'exchange', stages: PRE, resolutions: ['specialist_report_clear', 'accepted_as_is', 'price_reduced', 'retention_agreed', 'works_before_exchange', 'other'], note: 'Raised automatically from the survey facts, one per recommendation. A specialist report that finds nothing resolves it (a fact); the client\'s satisfaction with the property is a separate client decision.' },
+  { kind: 'document_mismatch', group: 'other', label: 'Documents disagree', arisesFrom: 'the same fact (price, names, address, title number, lender, completion date) reading differently on two documents or against the case record', gate: 'exchange', stages: ['instruction', ...PRE, ...POST_EX], resolutions: [...ISSUE_RESOLUTIONS], note: 'A cross-check the register runs after every read; resolves itself when the documents agree again.' },
   { kind: 'other', group: 'other', label: 'Other', arisesFrom: 'anything else the handler needs the matter to wait for', gate: 'exchange', stages: ['instruction', ...PRE, ...POST_EX], resolutions: [...ISSUE_RESOLUTIONS], note: '' },
 ];
 
@@ -283,6 +285,7 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   disclosure_concern: { severity: 'warning', workstreams: ['enquiries'], threatens: ['exchange'], actions: ['Raise the specific further enquiry', 'Advise the client on misrepresentation', 'Record the client\'s decision'], responsible: 'conveyancer', escalateAfterWorkingDays: 5 },
   completion_failure: { severity: 'critical', workstreams: ['completion'], threatens: ['completion'], actions: ['Establish where the money is', 'Agree the new time / date with the other side', 'Calculate late-completion interest', 'Consider a notice to complete'], responsible: 'conveyancer', escalateAfterWorkingDays: 1 },
   survey_further_investigation: { severity: 'warning', workstreams: ['survey'], threatens: ['exchange'], actions: ['Instruct the specialist named by the surveyor', 'File the report when it arrives (it is read automatically)', 'Put the outcome to the client'], responsible: 'client', escalateAfterWorkingDays: 10 },
+  document_mismatch: { severity: 'warning', workstreams: ['contract'], threatens: ['exchange'], actions: ['Open both sources at the cited pages', 'Decide which is right and have the other corrected', 'Record the outcome'], responsible: 'conveyancer', escalateAfterWorkingDays: 5 },
   other: { severity: 'warning', workstreams: [], threatens: ['exchange'], actions: [], responsible: 'conveyancer', escalateAfterWorkingDays: null },
 };
 

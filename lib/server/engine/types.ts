@@ -401,6 +401,27 @@ export interface NoteState {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
+/** A contract (draft or engrossed) as the pipeline reads it: the terms a conveyancer checks before approval and exchange. */
+export interface ContractFacts {
+  sellers: string[];
+  buyers: string[];
+  propertyAddress: string;
+  titleNumber: string | null;
+  pricePennies: number | null;
+  depositPennies: number | null;
+  depositHolder: string | null;
+  completionDate: string | null;
+  chattelsPricePennies: number | null;
+  vat: string | null;
+  incorporatedConditions: string | null;
+  noticeToCompleteDays: number | null;
+  fixturesListPresent: boolean;
+  specialConditions: Array<{ code: string; text: string; locator?: SourceLocator }>;
+  indemnities: Array<{ text: string; locator?: SourceLocator }>;
+  flags: Flag[];
+  confidence: number;
+}
+
 export interface IdCheckFacts {
   provider: string;
   outcome: 'clear' | 'refer' | 'fail';

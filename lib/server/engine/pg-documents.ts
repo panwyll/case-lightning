@@ -12,6 +12,7 @@ import type { DocumentRef, DocumentRepository } from './ports';
 import type { EngineDocumentInput } from './llm';
 import type { DocumentBytesLoader, DocumentFactsWriter } from './extraction';
 import type { DocumentReview } from './review';
+import { runCrossChecks } from './crosscheck-run';
 
 interface DocRow {
   id: string;
@@ -106,6 +107,7 @@ export class PgDocumentFactsWriter implements DocumentFactsWriter {
     for (const pg of review.pages) await query(`insert into document_page (document_id, tenant_id, page, verdict, text_chars) values ($1, $2, $3, $4, $5)`, [doc.id, doc.tenantId, pg.page, pg.verdict, pg.textChars]);
     await query(`delete from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
     for (const f of review.facts) await query(`insert into document_fact (document_id, tenant_id, matter_id, role, key, value, page, quote, confidence, verified, note, extractor) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [doc.id, doc.tenantId, doc.matterId, review.role, f.key, f.value.slice(0, 4000), f.page, f.quote?.slice(0, 2000) ?? null, f.confidence, f.verified, f.note, extractor]);
+    await runCrossChecks(doc.tenantId, doc.matterId).catch(() => {});
   }
 }
 

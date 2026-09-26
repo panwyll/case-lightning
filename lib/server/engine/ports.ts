@@ -17,7 +17,7 @@
  *   #8 Outlook      → out of scope for this phase
  */
 import type { NoteActionDraft } from './notes';
-import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts } from './types';
+import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
 
@@ -48,6 +48,8 @@ export interface DocumentExtractor {
   extractMortgageOffer(doc: DocumentRef): Promise<MortgageOfferFacts>;
   extractTitle(doc: DocumentRef): Promise<TitleFacts>;
   extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts>;
+  /** A contract read for its terms: parties, price, deposit, dates, conditions. Reviewed by a person; never approved by rule. */
+  extractContract(doc: DocumentRef): Promise<ContractFacts>;
   /** Proof of funds: read a client-attached document as a bank statement, transaction by transaction. null = readable but not a statement (a gift letter, an ID). Throws when unreadable. */
   extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
   /** Case model §7: a survey / valuation / specialist report read for its recommendations (facts, never the client's view). */

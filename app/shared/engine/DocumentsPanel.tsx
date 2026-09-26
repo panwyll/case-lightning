@@ -23,8 +23,23 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const leasehold = p?.tenure === 'leasehold';
   const filed = useMemo(() => events.filter((e) => e.sourceDocumentId).sort((a, b) => b.seq - a.seq), [events]);
   const [reviews, setReviews] = useState<Record<string, DocumentReviewSummary | null>>({});
+  const [checks, setChecks] = useState<Array<{ check: string; label: string; status: string; message: string; values: Array<{ source: string; value: string; page: number | null }> }>>([]);
+  const [openReview, setOpenReview] = useState<string | null>(null);
+  const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }> } | null>(null);
+  const loadTable = async (id: string) => {
+    setOpenReview(id);
+    const r = await api<{ pages: Array<{ page: number; verdict: string }>; facts: typeof table extends infer T ? (T extends { facts: infer F } ? F : never) : never }>(`/documents/${id}/review`).catch(() => null);
+    setTable(r ? { id, pages: r.pages, facts: r.facts as never } : null);
+  };
+  const mark = async (factId: string, action: 'confirm' | 'dispute' | 'clear') => {
+    if (!table) return;
+    const note = action === 'dispute' ? window.prompt('What is wrong with this fact?') : null;
+    if (action === 'dispute' && !note) return;
+    await api(`/documents/${table.id}/review`, { method: 'POST', body: JSON.stringify({ factId, action, note }) }).catch(() => {});
+    await loadTable(table.id);
+  };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null])))).catch(() => {});
+    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -89,15 +104,57 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
         {err && <div className="ep-err">{err}</div>}
       </div>
 
+      {checks.length > 0 && (
+        <>
+          <div className="ep-sec">Cross-Checks</div>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {checks.map((c) => (
+              <div key={c.check} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
+                <b style={{ minWidth: 130 }}>{c.label}</b>
+                <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
         {filed.map((e) => (
-          <div key={e.id} id={`doc-${e.sourceDocumentId}`} className="ep-row" style={doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : undefined}>
+          <div key={e.id}>
+          <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId)) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
             <b>{pretty(e.type)}</b>
             <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>
             {badge(reviewOf(e.sourceDocumentId))}
+          </div>
+          {openReview === e.sourceDocumentId && table && table.id === e.sourceDocumentId && (
+            <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid #eef1f5', flexWrap: 'wrap' }}>
+                {table.pages.map((p) => <span key={p.page} title={`Page ${p.page}: ${p.verdict}`} style={{ width: 18, height: 18, borderRadius: 4, fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: p.verdict === 'facts' ? '#dcfce7' : p.verdict === 'nothing' ? '#f1f5f9' : p.verdict === 'unreadable' ? '#fef3c7' : '#fee2e2', color: p.verdict === 'facts' ? '#14532d' : p.verdict === 'nothing' ? '#64748b' : p.verdict === 'unreadable' ? '#78350f' : '#7f1d1d' }}>{p.page}</span>)}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                <thead><tr style={{ textAlign: 'left', color: '#94a3b8', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}><th style={{ padding: '6px 10px' }}>Fact</th><th style={{ padding: '6px 10px' }}>Value</th><th style={{ padding: '6px 10px' }}>Page</th><th style={{ padding: '6px 10px' }}>Quote</th><th style={{ padding: '6px 10px' }}>Checked</th><th style={{ padding: '6px 10px' }} /></tr></thead>
+                <tbody>
+                  {table.facts.map((f) => (
+                    <tr key={f.id} style={{ borderTop: '1px solid #f1f5f9', verticalAlign: 'top' }}>
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap', fontWeight: 600 }}>{f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}</td>
+                      <td style={{ padding: '6px 10px', maxWidth: 360 }}>{f.value}</td>
+                      <td style={{ padding: '6px 10px', color: '#64748b' }}>{f.page ?? ''}</td>
+                      <td style={{ padding: '6px 10px', color: '#64748b', fontStyle: 'italic', maxWidth: 320 }}>{f.quote ? `“${f.quote.slice(0, 140)}${f.quote.length > 140 ? '…' : ''}”` : ''}</td>
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                        {f.confirmedAt ? <span style={{ color: '#14532d', fontWeight: 700 }}>Confirmed · {f.confirmedBy}</span> : f.disputedNote ? <span style={{ color: '#b91c1c', fontWeight: 700 }} title={f.disputedNote}>Disputed</span> : f.verified ? <span style={{ color: '#14532d' }}>Quote found</span> : <span style={{ color: '#b45309' }} title={f.note ?? ''}>{f.note ?? 'unchecked'}</span>}
+                      </td>
+                      <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                        {f.confirmedAt || f.disputedNote ? <button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'clear')}>Undo</button> : <><button className="ep-btn" style={{ margin: '0 4px 0 0', padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'confirm')}>Confirm</button><button className="ep-btn" style={{ margin: 0, padding: '2px 8px', fontSize: 11.5 }} onClick={() => void mark(f.id, 'dispute')}>Dispute</button></>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           </div>
         ))}
       </div>

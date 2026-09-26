@@ -12,7 +12,7 @@
  * Pure functions here; pdf.js is loaded lazily by `pdfPageTexts` so nothing else pays for it.
  */
 import { z } from 'zod/v4';
-import type { EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts } from './types';
 
 export type PageVerdict = 'facts' | 'nothing' | 'unreadable' | 'unattested';
 
@@ -84,9 +84,16 @@ const flagRows = (prefix: string, flags: Flag[] | undefined): Array<Omit<FactRow
   (flags ?? []).map((f) => ({ key: `${prefix}:${f.code}`, value: f.description, page: f.locator?.page ?? null, quote: f.locator?.quote ?? null, confidence: null }));
 
 /** Typed facts → rows of the register. Keys are stable per document kind so cross-checks can be written against them. */
-export function flattenFacts(role: string, facts: unknown): Array<Omit<FactRow, 'verified' | 'note'>> {
+export function flattenFacts(role: string, facts: unknown, raw?: unknown): Array<Omit<FactRow, 'verified' | 'note'>> {
   const out: Array<Omit<FactRow, 'verified' | 'note'>> = [];
-  const plain = (key: string, value: unknown) => { if (value !== undefined && value !== null && value !== '') out.push({ key, value: String(value), page: null, quote: null, confidence: null }); };
+  const plain = (key: string, value: unknown) => { if (value !== undefined && value !== null && value !== '' && value !== 0) out.push({ key, value: String(value), page: null, quote: null, confidence: null }); };
+  const r = (raw ?? {}) as Record<string, unknown>;
+  const list = (key: string, v: unknown) => { if (Array.isArray(v)) v.forEach((x, i) => plain(`${key}.${i}`, typeof x === 'string' ? x.trim() : x)); };
+  // Identity facts the typed shapes drop but the cross-checks need: who, where, which title.
+  if (role.startsWith('search')) plain('search.address', r.propertyAddressAsSearched);
+  if (role === 'mortgage') { plain('offer.address', r.propertyAddress); list('offer.borrower', r.borrowerNames); }
+  if (role === 'title') { plain('title.property_description', r.propertyDescription); list('title.proprietor', r.registeredProprietors); }
+  if (role === 'id_check') list('id.subject', r.subjectNames);
   if (role.startsWith('search')) {
     const f = facts as SearchFacts;
     plain('search.type', f.searchType);
@@ -117,6 +124,24 @@ export function flattenFacts(role: string, facts: unknown): Array<Omit<FactRow, 
     plain('id.provider', f.provider);
     plain('id.outcome', f.outcome);
     out.push(...flagRows('id.flag', f.flags));
+  } else if (role === 'contract') {
+    const f = facts as ContractFacts;
+    list('contract.seller', f.sellers);
+    list('contract.buyer', f.buyers);
+    plain('contract.address', f.propertyAddress);
+    plain('contract.title_number', f.titleNumber);
+    plain('contract.price_pennies', f.pricePennies);
+    plain('contract.deposit_pennies', f.depositPennies);
+    plain('contract.deposit_holder', f.depositHolder);
+    plain('contract.completion_date', f.completionDate);
+    plain('contract.chattels_price_pennies', f.chattelsPricePennies);
+    plain('contract.vat', f.vat);
+    plain('contract.incorporated_conditions', f.incorporatedConditions);
+    plain('contract.notice_to_complete_days', f.noticeToCompleteDays);
+    plain('contract.fixtures_list', f.fixturesListPresent ? 'present' : 'absent');
+    for (const c of f.specialConditions) out.push({ key: `contract.special_condition.${c.code}`, value: c.text, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text, confidence: null });
+    f.indemnities.forEach((c, i) => out.push({ key: `contract.indemnity.${i + 1}`, value: c.text, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text, confidence: null }));
+    out.push(...flagRows('contract.flag', f.flags));
   } else if (role.startsWith('enquiry')) {
     const f = facts as EnquiryReplyFacts;
     plain('reply.enquiry', f.enquiryId);
@@ -126,9 +151,9 @@ export function flattenFacts(role: string, facts: unknown): Array<Omit<FactRow, 
   return out;
 }
 
-export function buildReview(input: { role: string; facts: unknown; ledger: PageLedger | null | undefined; texts: PageTexts; pageCountHint?: number | null }): DocumentReview {
+export function buildReview(input: { role: string; facts: unknown; ledger: PageLedger | null | undefined; texts: PageTexts; pageCountHint?: number | null; raw?: unknown }): DocumentReview {
   const pages = buildLedger(input.ledger, input.texts, input.pageCountHint);
-  const facts: FactRow[] = flattenFacts(input.role, input.facts).map((f) => {
+  const facts: FactRow[] = flattenFacts(input.role, input.facts, input.raw).map((f) => {
     if (!f.quote) return { ...f, verified: false, note: f.page == null ? 'stated without a quote' : 'no quote' };
     const v = verifyQuote(f.quote, f.page, input.texts);
     return { ...f, verified: v.verified, note: v.note };

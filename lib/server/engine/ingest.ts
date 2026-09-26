@@ -30,6 +30,7 @@ export type IngestAction =
   | { kind: 'title' }
   | { kind: 'id_check' }
   | { kind: 'management_pack' }
+  | { kind: 'contract' }
   | { kind: 'survey' }
   | { kind: 'specialist_report'; forIssueId: string | null }
   | { kind: 'skip'; reason: string };
@@ -66,6 +67,9 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
     case 'id_check':
       if (state.idCheck.status !== 'requested') return { kind: 'skip', reason: `ID check is ${state.idCheck.status}, not awaiting a result` };
       return { kind: 'id_check' };
+    case 'contract':
+      if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts already exchanged; file the contract under Documents' };
+      return { kind: 'contract' };
     case 'survey':
       if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts exchanged — a survey now is manual handling' };
       return { kind: 'survey' };
@@ -124,6 +128,8 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.titleReceived(tenantId, matterId, documentId);
     case 'id_check':
       return svc.idCheckResultReceived(tenantId, matterId, documentId);
+    case 'contract':
+      return svc.contractReceived(tenantId, matterId, documentId);
     case 'management_pack':
       return svc.managementPackReceived(tenantId, matterId, documentId);
     case 'survey':

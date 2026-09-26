@@ -119,7 +119,7 @@ const KIND_PREFIX: Record<string, string> = { id_check: 'id_check', mortgage: 'm
 
 const flagWords = (flags: Array<{ code: string }>) => flags.map((f) => f.code.replace(/_/g, ' ').toLowerCase()).join(', ');
 
-export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null }): TaskContext {
+export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null; crosschecks?: Array<{ check: string; label: string; status: string; message: string }> | null }): TaskContext {
   const { state: s, matter: m, events, target } = input;
   const now = input.now ?? new Date();
   const p = profileOf(s.transactionType);
@@ -339,6 +339,9 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     task.unshift({ k: 'Read', v: bits.join(' · '), warn: !rv.complete || rv.unreadable > 0 });
     if (rv.facts) task.push({ k: 'Facts checked', v: `${rv.verified} of ${rv.facts} quotes found on the page${rv.unverified.length ? ` · unconfirmed: ${rv.unverified.slice(0, 4).map((u) => `${u.key.split('.').slice(-1)[0]} (${u.note ?? 'no quote'})`).join(', ')}${rv.unverified.length > 4 ? ` +${rv.unverified.length - 4}` : ''}` : ''}`, warn: rv.verified < rv.facts && rv.textLayer });
   }
+
+  // ── Cross-checks: documents that disagree with each other or the case record ──
+  for (const c of (input.crosschecks ?? []).filter((x) => x.status === 'mismatch')) task.push({ k: 'Documents disagree', v: c.message, warn: true });
 
   // ── History: what already happened on this subject ──
   const touches = (e: EngineEvent) => {

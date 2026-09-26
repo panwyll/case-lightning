@@ -22,7 +22,7 @@
  */
 import crypto from 'node:crypto';
 import { z } from 'zod/v4';
-import type { EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts } from './types';
 import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
@@ -151,6 +151,28 @@ export const SurveyExtractionSchema = z.object({
   surveyor: z.string().nullable(),
   summary: z.string().nullable().describe('The report\'s own overall summary in one or two sentences, if it gives one.'),
   recommendations: z.array(z.object({ code: z.string().describe('Short stable code, e.g. DAMP_REAR, ROOF_COVERING, ELECTRICS'), text: z.string(), furtherInvestigation: z.boolean(), specialist: z.string().nullable(), severity: z.enum(['info', 'low', 'medium', 'high']), page: z.number().int().nullable() })),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
+export const ContractExtractionSchema = z.object({
+  pages: PageLedgerSchema,
+  sellers: z.array(z.string()).describe('Every seller as named in the contract.'),
+  buyers: z.array(z.string()).describe('Every buyer as named in the contract.'),
+  propertyAddress: z.string(),
+  titleNumber: z.string().describe('Title number as printed, or empty string.'),
+  pricePennies: z.number().int().min(0).describe('Purchase price in pennies; 0 if not stated.'),
+  depositPennies: z.number().int().min(0).describe('Deposit in pennies; 0 if not stated.'),
+  depositHolder: z.string().describe('Who holds the deposit and on what terms (stakeholder / agent), or empty string.'),
+  completionDate: z.string().describe('ISO completion date if fixed, else empty string.'),
+  chattelsPricePennies: z.number().int().min(0).describe('Chattels / contents price in pennies; 0 if none.'),
+  vat: z.string().describe('What the contract says about VAT, or empty string.'),
+  incorporatedConditions: z.string().describe('The standard conditions incorporated (e.g. "Standard Conditions of Sale (5th edition, 2018 revision)"), or empty string.'),
+  noticeToCompleteDays: z.number().int().min(0).describe('Working days a notice to complete gives; 0 if not stated.'),
+  fixturesListPresent: z.boolean(),
+  specialConditions: z.array(z.object({ code: z.string().describe('The condition\'s own number, e.g. "SC 5".'), text: z.string().describe('Verbatim (≤ 600 chars).'), locator, confidence: conf })),
+  indemnities: z.array(z.object({ text: z.string().describe('Verbatim indemnity or indemnity-insurance term (≤ 400 chars).'), locator, confidence: conf })),
+  flags: z.array(flagSchema).describe('Anything a conveyancer must decide on: a non-standard special condition, an unusual deposit, a completion date fixed already, a retention, a conditional contract, VAT, missing fixtures list.'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
 });
@@ -290,6 +312,30 @@ export function toTitleFacts(out: z.infer<typeof TitleExtractionSchema>): TitleF
   };
 }
 
+export function toContractFacts(out: z.infer<typeof ContractExtractionSchema>): ContractFacts {
+  const { flags, minConfidence } = normaliseFlags(out.flags);
+  const loc = (l: { page: number; section: string; quote: string }) => ({ page: l.page, section: l.section || undefined, quote: l.quote || undefined });
+  return {
+    sellers: out.sellers.map((s) => s.trim()).filter(Boolean),
+    buyers: out.buyers.map((s) => s.trim()).filter(Boolean),
+    propertyAddress: out.propertyAddress.trim(),
+    titleNumber: out.titleNumber.trim().toUpperCase() || null,
+    pricePennies: out.pricePennies || null,
+    depositPennies: out.depositPennies || null,
+    depositHolder: out.depositHolder.trim() || null,
+    completionDate: out.completionDate.trim() || null,
+    chattelsPricePennies: out.chattelsPricePennies || null,
+    vat: out.vat.trim() || null,
+    incorporatedConditions: out.incorporatedConditions.trim() || null,
+    noticeToCompleteDays: out.noticeToCompleteDays || null,
+    fixturesListPresent: out.fixturesListPresent,
+    specialConditions: out.specialConditions.map((c) => ({ code: normaliseCode(c.code), text: c.text.trim(), locator: loc(c.locator) })),
+    indemnities: out.indemnities.map((c) => ({ text: c.text.trim(), locator: loc(c.locator) })),
+    flags,
+    confidence: overallConfidence(out.confidence, [minConfidence, ...out.specialConditions.map((c) => c.confidence)], out.scanQuality),
+  };
+}
+
 export function toIdCheckFacts(out: z.infer<typeof IdCheckExtractionSchema>): IdCheckFacts {
   const { flags, minConfidence } = normaliseFlags(out.flags);
   return { provider: out.provider.trim() || 'unknown', outcome: out.outcome, flags, confidence: overallConfidence(out.confidence, [minConfidence], out.scanQuality) };
@@ -309,6 +355,7 @@ const SCAN_NOTE =
   'report what you can, set scanQuality accordingly and LOWER the confidence of anything you had to infer. Never fill a gap with a plausible value.';
 
 const PROMPTS = {
+  contract: `Extract this contract for the sale and purchase of land (a draft, an approved draft or an engrossment). Name every seller and buyer exactly as printed, the property, the title number, the price, the deposit and who holds it, any fixed completion date, chattels, VAT wording, the standard conditions incorporated and the notice-to-complete period. Copy every special condition verbatim with its number and page, and every indemnity term. Flag anything a conveyancer must decide on before approval. Return a verdict for every page.`,
   classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), or other. ${SCAN_NOTE}`,
   survey: `Read this survey, valuation or specialist report for a house buyer. Extract every recommendation the author makes, verbatim where possible, and for each say whether it recommends a FURTHER specialist investigation or report before purchase (as opposed to routine maintenance or a note). Name the specialist recommended if the report does. Grade severity as the report does (high for structural / safety / "urgent", medium for "should be investigated", low for advisory). Do not judge whether the buyer should proceed. ${SCAN_NOTE}`,
   search: `Extract the findings of this property search as typed facts. ${TAXONOMY} Include informational entries so the handler can see what was checked. ${SCAN_NOTE}`,
@@ -393,14 +440,14 @@ export class ClaudeExtractor implements DocumentExtractor {
     return p;
   }
 
-  private async persist(doc: DocumentRef, role: string, facts: unknown, confidence: number, meta: { model: string; promptHash: string; contentHash: string }, ledger?: z.infer<typeof PageLedgerSchema> | null) {
+  private async persist(doc: DocumentRef, role: string, facts: unknown, confidence: number, meta: { model: string; promptHash: string; contentHash: string }, ledger?: z.infer<typeof PageLedgerSchema> | null, raw?: unknown) {
     if (!this.writer) return;
     await this.writer.write(doc, { _pipeline: { role, ...meta, at: new Date().toISOString() }, facts }, confidence, { role, ...meta }).catch(() => {});
     if (this.writer.writeReview && ledger !== undefined) {
       try {
         const input = await this.loader.load(doc);
         const texts = input ? await this.pageTexts(input, meta.contentHash) : { pages: [], textLayer: false };
-        await this.writer.writeReview(doc, buildReview({ role, facts, ledger, texts }), this.name);
+        await this.writer.writeReview(doc, buildReview({ role, facts, ledger, texts, raw }), this.name);
       } catch {
         /* the review is a projection; a failure here never fails the read */
       }
@@ -418,7 +465,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'search', SearchExtractionSchema, PROMPTS.search, `Expected search type: ${searchType}. Extract this search result.`, 'DOC_EXTRACT');
     const facts = toSearchFacts(out, searchType);
-    await this.persist(doc, `search:${searchType}`, facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
+    await this.persist(doc, `search:${searchType}`, facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 
@@ -438,7 +485,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'mortgage', MortgageOfferExtractionSchema, PROMPTS.mortgage, 'Extract this mortgage offer.', 'DOC_EXTRACT');
     const facts = toMortgageFacts(out);
-    await this.persist(doc, 'mortgage', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
+    await this.persist(doc, 'mortgage', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 
@@ -448,7 +495,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
-    await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
+    await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 
@@ -488,13 +535,23 @@ export class ClaudeExtractor implements DocumentExtractor {
     return facts;
   }
 
+  async extractContract(doc: DocumentRef): Promise<ContractFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<ContractFacts>(doc, 'contract', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'contract', ContractExtractionSchema, PROMPTS.contract, 'Extract this contract.', 'DOC_EXTRACT');
+    const facts = toContractFacts(out);
+    await this.persist(doc, 'contract', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
+    return facts;
+  }
+
   async extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts> {
     const { contentHash } = await this.input(doc);
     const hit = this.cached<IdCheckFacts>(doc, 'id_check', contentHash);
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'id_check', IdCheckExtractionSchema, PROMPTS.idCheck, 'Extract this ID/AML check report.', 'DOC_EXTRACT');
     const facts = toIdCheckFacts(out);
-    await this.persist(doc, 'id_check', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
+    await this.persist(doc, 'id_check', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 }

@@ -405,6 +405,19 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'mortgage_offer_extracted', actor: SYSTEM, facts, extractor: this.ports.extractor.name, summary });
   }
 
+  /**
+   * A contract is read for its terms and goes into the register with a page ledger; the
+   * cross-checks then compare its price, parties, address, title number and completion date
+   * with the case record and every other document. No engine event: approval is a person's
+   * command (contract_approved), and a disagreement surfaces as a document_mismatch issue.
+   */
+  async contractReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = await this.ports.extractor.extractContract(doc).catch((err) => { this.ports.log('contract extraction failed — the review table will be empty', err); return null; });
+    const state = await this.getState(tenantId, matterId);
+    return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
+  }
+
   async titleReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     if (await this.alreadyHave(tenantId, matterId, 'official_copies', null)) {
       this.ports.log('official copies already on the case; duplicate ignored', { matterId, documentId });

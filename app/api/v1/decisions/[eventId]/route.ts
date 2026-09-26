@@ -9,6 +9,7 @@ import { query, queryOne } from '@/lib/server/db';
 import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
 import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
 import { taskContext } from '@/lib/server/engine/context';
+import { loadCrossChecks } from '@/lib/server/engine/crosscheck-run';
 
 type MatterRow = { matter_ref: string; property_address: string; shadow_mode: boolean | null; buyer_names: string[] | null; seller_names: string[] | null; purchase_price: string | null; lender: string | null; counterparty_solicitor: string | null; counterparty_agent: string | null; exchange_target_date: string | null; completion_target_date: string | null };
 
@@ -83,10 +84,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
       query<{ key: string; value: string; verified: boolean; note: string | null }>(`select key, value, verified, note from document_fact where tenant_id = $1 and document_id = $2 order by verified, key`, [user.tenantId, d.sourceDocumentId]).catch(() => []),
     ]);
     const review = pageRow && Number(pageRow.pages) > 0 ? { pages: Number(pageRow.pages), read: Number(pageRow.read), withFacts: Number(pageRow.with_facts), unreadable: Number(pageRow.unreadable), unattested: Number(pageRow.unattested), complete: Number(pageRow.unattested) === 0, facts: factRows.length, verified: factRows.filter((f) => f.verified).length, textLayer: Number(pageRow.text_chars) > 20, unverified: factRows.filter((f) => !f.verified).map((f) => ({ key: f.key, value: f.value, note: f.note })) } : null;
+    const crosschecks = await loadCrossChecks(user.tenantId, d.matterId);
     const stateForContext = await svc.getState(user.tenantId, d.matterId);
     const live = stateForContext.decisions[eventId];
     const context = live
-      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
+      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, crosschecks, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
       : null;
     return ok({
       context,
