@@ -109,6 +109,20 @@ export async function GET(req: NextRequest) {
         );
         return { id: existing.rows[0]!.id, created: false };
       }
+      // An account an admin created ahead of time: claim it by email, keeping the role and
+      // access they set. The placeholder object id becomes the real one.
+      const pending = await client.query<{ id: string }>(
+        `select id from app_user where tenant_id = $1 and lower(email) = lower($2) and entra_object_id like 'pending:%' limit 1`,
+        [tenant.id, email]
+      );
+      if (pending.rowCount) {
+        await client.query(
+          `update app_user set entra_object_id=$1, display_name=coalesce(display_name, $2), graph_access_token=$3,
+             graph_refresh_token=$4, token_expires_at=$5 where id=$6`,
+          [oid, name, token.access_token, token.refresh_token ?? null, expiresAt, pending.rows[0]!.id]
+        );
+        return { id: pending.rows[0]!.id, created: false };
+      }
       // First user in a tenant becomes ADMIN (the firm owner); everyone after is a
       // CONVEYANCER until an admin promotes them.
       const count = await client.query<{ n: string }>('select count(*)::text as n from app_user where tenant_id = $1', [

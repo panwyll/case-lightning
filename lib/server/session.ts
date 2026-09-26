@@ -85,7 +85,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!verified) return null;
 
   const user = await queryOne<SessionUser>(
-    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName"
+    `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName", case_access as "caseAccess", mailbox_access as "mailboxAccess"
      from app_user where id = $1`,
     [verified.userId]
   );

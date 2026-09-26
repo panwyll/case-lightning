@@ -6,6 +6,9 @@ export interface SessionUser {
   role: Role;
   email: string;
   displayName: string | null;
+  /** Who they may see (migration 087). */
+  caseAccess?: 'all' | 'selected';
+  mailboxAccess?: 'own' | 'all' | 'selected';
   /** Set when an admin is viewing the app as this user. */
   actor?: { userId: string; email: string; displayName: string | null };
 }

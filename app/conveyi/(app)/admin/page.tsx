@@ -224,6 +224,78 @@ const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }>
 };
 
 // A matter search box with a results dropdown; calls onSelect with the chosen matter.
+
+/** One person's account and access: role, whose cases they may see, whose inboxes they may file from. */
+function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, input, btnPrimary, btnGhost, toggleIn }: {
+  person: { name: string; email: string; role: string; caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] };
+  setPerson: (p: PersonPanelProps) => void;
+  users: any[];
+  isNew: boolean;
+  busy: boolean;
+  onSave: () => void;
+  onClose: () => void;
+  input: React.CSSProperties;
+  btnPrimary: React.CSSProperties;
+  btnGhost: React.CSSProperties;
+  toggleIn: (list: string[], id: string) => string[];
+}) {
+  const seg = (on: boolean): React.CSSProperties => ({ ...(on ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 });
+  const colleagues = users.filter((u) => u.email !== person.email);
+  const list = (which: 'covers' | 'mailboxes') => (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+      {colleagues.map((u) => {
+        const on = person[which].includes(u.id);
+        return (
+          <button key={u.id} style={{ ...(on ? btnPrimary : btnGhost), padding: '4px 10px', fontSize: 12.5 }} onClick={() => setPerson({ ...person, [which]: toggleIn(person[which], u.id) })} title={which === 'covers' ? `Every case ${u.display_name || u.email} handles` : `${u.display_name || u.email}'s inbox, to file from`}>
+            {u.display_name || u.email}
+          </button>
+        );
+      })}
+      {colleagues.length === 0 && <span style={{ fontSize: 12, color: '#94a3b8' }}>No colleagues yet</span>}
+    </div>
+  );
+  return (
+    <div style={{ background: '#f8fafc', border: '1px solid #e6e8ee', borderRadius: 10, padding: 14, margin: '0 0 10px' }}>
+      {isNew && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          <input value={person.name} onChange={(e) => setPerson({ ...person, name: e.target.value })} placeholder="Full name" style={{ ...input, flex: 1, minWidth: 180, marginBottom: 0 }} />
+          <input value={person.email} onChange={(e) => setPerson({ ...person, email: e.target.value })} placeholder="Email" type="email" style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} />
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '12px 14px', alignItems: 'start' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Role</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {[['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'], ['READ_ONLY', 'Read only', 'Looks, changes nothing.']].map(([v, l, h]) => (
+            <button key={v} style={seg(person.role === v)} onClick={() => setPerson({ ...person, role: v })} title={h}>{l}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Cases</div>
+        <div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button style={seg(person.caseAccess === 'all')} onClick={() => setPerson({ ...person, caseAccess: 'all' })} title="Every case in the firm, including those of people who join later.">All</button>
+            <button style={seg(person.caseAccess === 'selected')} onClick={() => setPerson({ ...person, caseAccess: 'selected' })} title="Their own cases, plus the cases of the colleagues picked below.">Selected</button>
+          </div>
+          {person.caseAccess === 'selected' && list('covers')}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Inboxes</div>
+        <div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button style={seg(person.mailboxAccess === 'own')} onClick={() => setPerson({ ...person, mailboxAccess: 'own' })} title="Only their own email.">Own</button>
+            <button style={seg(person.mailboxAccess === 'all')} onClick={() => setPerson({ ...person, mailboxAccess: 'all' })} title="Every colleague's email, including people who join later. Filing only; nothing is sent from it.">All</button>
+            <button style={seg(person.mailboxAccess === 'selected')} onClick={() => setPerson({ ...person, mailboxAccess: 'selected' })} title="Their own, plus the colleagues picked below.">Selected</button>
+          </div>
+          {person.mailboxAccess === 'selected' && list('mailboxes')}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button style={btnPrimary} disabled={busy || (isNew && (!person.name.trim() || !person.email.trim()))} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create and send sign-in link' : 'Save'}</button>
+        <button style={btnGhost} disabled={busy} onClick={onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+type PersonPanelProps = { name: string; email: string; role: string; caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] };
+
 function MatterPicker({ selected, onSelect }: { selected: MatterHit | null; onSelect: (m: MatterHit | null) => void }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<MatterHit[]>([]);
@@ -476,10 +548,11 @@ function AdminPageInner() {
   const [mergeAway, setMergeAway] = useState<MatterHit | null>(null);
   const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
-  const [invites, setInvites] = useState<any[]>([]);
-  const [access, setAccess] = useState<{ mode: 'open' | 'granted'; grants: any[] } | null>(null);
-  const [grant, setGrant] = useState<{ granteeUserId: string; kind: 'case' | 'cover' | 'mailbox'; subjectUserId: string; matter: MatterHit | null; endsAt: string }>({ granteeUserId: '', kind: 'case', subjectUserId: '', matter: null, endsAt: '' });
-  const [grantBusy, setGrantBusy] = useState(false);
+  type Access = { caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] };
+  const blankPerson = { name: '', email: '', role: 'CONVEYANCER', caseAccess: 'all' as const, mailboxAccess: 'own' as const, covers: [] as string[], mailboxes: [] as string[] };
+  const [editing, setEditing] = useState<string | 'new' | null>(null); // user id, 'new', or closed
+  const [person, setPerson] = useState<{ name: string; email: string; role: string; caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] }>(blankPerson);
+  const [personBusy, setPersonBusy] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('CONVEYANCER');
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -512,7 +585,7 @@ function AdminPageInner() {
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
-      if (tab === 'team') { setUsers((await api<{ users: any[] }>('/admin/users')).users); setInvites((await api<{ invites: any[] }>('/admin/invites')).invites ?? []); setAccess(await api('/admin/access')); }
+      if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
       if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
       setStatus('');
     } catch (e) {
@@ -639,41 +712,41 @@ function AdminPageInner() {
     }
   }
 
-  async function setAccessMode(mode: 'open' | 'granted') {
-    try { await api('/admin/access', { method: 'PUT', body: JSON.stringify({ mode }) }); await load(); } catch (e) { setStatus((e as Error).message); }
-  }
-  async function addAccess() {
-    setGrantBusy(true);
+  async function openPerson(u: any) {
     try {
-      await api('/admin/access', { method: 'POST', body: JSON.stringify({ granteeUserId: grant.granteeUserId, kind: grant.kind, matterId: grant.kind === 'case' ? grant.matter?.id ?? null : null, subjectUserId: grant.kind === 'case' ? null : grant.subjectUserId || null, endsAt: grant.endsAt || null }) });
-      setGrant({ ...grant, matter: null, subjectUserId: '', endsAt: '' });
+      const a = await api<Access>(`/admin/users/${u.id}/access`);
+      setPerson({ name: u.display_name || '', email: u.email, role: u.role, ...a });
+      setEditing(u.id);
+    } catch (e) {
+      setStatus((e as Error).message);
+    }
+  }
+  function openNew() {
+    setPerson(blankPerson);
+    setEditing('new');
+  }
+  async function savePerson() {
+    setPersonBusy(true);
+    try {
+      const access = { caseAccess: person.caseAccess, mailboxAccess: person.mailboxAccess, covers: person.covers, mailboxes: person.mailboxes };
+      if (editing === 'new') {
+        const r = await api<{ signInLinkSent: boolean }>('/admin/users', { method: 'POST', body: JSON.stringify({ name: person.name, email: person.email, role: person.role, ...access }) });
+        setStatus(r.signInLinkSent ? `Account created. A sign-in link has been emailed to ${person.email}.` : `Account created. Email is not configured here, so send ${person.email} the sign-in page yourself.`);
+      } else if (editing) {
+        const u = users.find((x) => x.id === editing);
+        if (u && u.role !== person.role) await api(`/admin/users/${editing}`, { method: 'PATCH', body: JSON.stringify({ role: person.role }) });
+        await api(`/admin/users/${editing}/access`, { method: 'PUT', body: JSON.stringify(access) });
+      }
+      setEditing(null);
       await load();
     } catch (e) {
       setStatus((e as Error).message);
     } finally {
-      setGrantBusy(false);
+      setPersonBusy(false);
     }
   }
-  async function removeAccess(id: string) {
-    try { await api(`/admin/access?id=${id}`, { method: 'DELETE' }); await load(); } catch (e) { setStatus((e as Error).message); }
-  }
+  const toggleIn = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
-  async function inviteColleague() {
-    if (!inviteEmail.trim()) return;
-    setInviteBusy(true);
-    try {
-      await api('/admin/invites', { method: 'POST', body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }) });
-      setInviteEmail('');
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    } finally {
-      setInviteBusy(false);
-    }
-  }
-  async function revokeInvite(id: string) {
-    try { await api(`/admin/invites?id=${id}`, { method: 'DELETE' }); await load(); } catch (e) { setStatus((e as Error).message); }
-  }
   async function viewAs(userId: string) {
     try {
       await api(`/admin/users/${userId}/view-as`, { method: 'POST' });
@@ -1328,92 +1401,37 @@ function AdminPageInner() {
 
         {tab === 'team' && (
           <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>Team</h3>
-              <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length + invites.length} of 100</span>
+              <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
+              <button style={{ ...btnPrimary, marginLeft: 'auto', padding: '7px 14px', fontSize: 13 }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 14 }}>
-              <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="colleague@firm.co.uk" type="email" style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} onKeyDown={(e) => { if (e.key === 'Enter') void inviteColleague(); }} />
-              <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }} title="The role they join with">
-                <option value="CONVEYANCER">Conveyancer</option>
-                <option value="ASSISTANT">Assistant</option>
-                <option value="ADMIN">Admin</option>
-              </select>
-              <button style={btnPrimary} disabled={inviteBusy || !inviteEmail.trim()} onClick={() => void inviteColleague()} title="Emails a one-time sign-in link. They join with this role the first time they sign in.">{inviteBusy ? 'Sending…' : 'Invite'}</button>
-            </div>
+            {editing === 'new' && (
+              <PersonPanel person={person} setPerson={setPerson} users={users} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} input={input} btnPrimary={btnPrimary} btnGhost={btnGhost} toggleIn={toggleIn} />
+            )}
             {users.map((u) => (
-              <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{u.display_name || u.email}{u.email === me?.email ? <span style={{ color: '#94a3b8', fontWeight: 500 }}> · you</span> : null}</div>
-                  <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
+              <div key={u.id} style={{ borderTop: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '8px 0' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>
+                      {u.display_name || u.email}
+                      {u.email === me?.email ? <span style={{ color: '#94a3b8', fontWeight: 500 }}> · you</span> : null}
+                      {u.signed_in === false ? <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#78350f', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }} title="The account exists; they have not signed in yet.">Not signed in yet</span> : null}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>{u.email} · {String(u.role).toLowerCase().replace('_', ' ')} · {u.case_access === 'all' ? 'all cases' : 'selected cases'} · {u.mailbox_access === 'all' ? 'all inboxes' : u.mailbox_access === 'selected' ? 'selected inboxes' : 'own inbox'}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {u.email !== me?.email && (
+                      <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void viewAs(u.id)} title="See the app exactly as this person does. A banner at the top brings you back. Both ends are logged.">View as</button>
+                    )}
+                    <button style={{ ...btnGhost, padding: '6px 10px', fontSize: 13 }} onClick={() => (editing === u.id ? setEditing(null) : void openPerson(u))} title="Role, cases and inboxes for this person" aria-label={`Settings for ${u.display_name || u.email}`}>⚙</button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  {u.email !== me?.email && (
-                    <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void viewAs(u.id)} title="See the app exactly as this person does — their caseload, their tasks, their access. A banner at the top brings you back. Both ends are logged.">View as</button>
-                  )}
-                  <select value={u.role} onChange={(e) => setUserRole(u.id, e.target.value)} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Admin: everything, including this page. Conveyancer: cases and decisions. Assistant: cases, no decisions on money or reports. Read only: looks, changes nothing.">
-                    <option value="ADMIN">Admin</option>
-                    <option value="CONVEYANCER">Conveyancer</option>
-                    <option value="ASSISTANT">Assistant</option>
-                    <option value="READ_ONLY">Read only</option>
-                  </select>
-                </div>
-              </div>
-            ))}
-            {users.map((u) => {
-              const mine = (access?.grants ?? []).filter((g) => g.granteeUserId === u.id);
-              if (!mine.length) return null;
-              return (
-                <div key={`g-${u.id}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 0 8px', borderTop: '1px solid #f1f5f9' }}>
-                  <span style={{ fontSize: 12, color: '#64748b', minWidth: 140 }}>{u.display_name || u.email} can see</span>
-                  {mine.map((g) => (
-                    <span key={g.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f1f5f9', borderRadius: 999, padding: '2px 8px 2px 10px', fontSize: 12 }} title={g.kind === 'case' ? 'One case' : g.kind === 'cover' ? `Every case ${g.subjectName} handles${g.endsAt ? `, until ${new Date(g.endsAt).toLocaleDateString('en-GB')}` : ''}` : `${g.subjectName}'s email, to file from`}>
-                      {g.kind === 'case' ? `${g.matterRef} · ${(g.propertyAddress || '').split(',')[0]}` : g.kind === 'cover' ? `Cover for ${g.subjectName}${g.endsAt ? ` to ${new Date(g.endsAt).toLocaleDateString('en-GB')}` : ''}` : `Mailbox: ${g.subjectName}`}
-                      <button onClick={() => void removeAccess(g.id)} title="Remove this access" style={{ border: 0, background: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
-                    </span>
-                  ))}
-                </div>
-              );
-            })}
-            {invites.filter((i) => i.status === 'PENDING').map((i) => (
-              <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#64748b' }}>{i.email}</div>
-                  <div style={{ fontSize: 12, color: '#94a3b8' }}>Invited · {String(i.role).toLowerCase()}</div>
-                </div>
-                <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void revokeInvite(i.id)} title="Cancels the invitation. The sign-in link stops working.">Revoke</button>
-              </div>
-            ))}
-
-            <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 12, paddingTop: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                <h3 style={{ margin: 0 }}>Access</h3>
-                <span style={{ fontSize: 13, color: '#64748b' }}>Cases</span>
-                <button style={{ ...(access?.mode === 'open' ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 }} disabled={!access || access.mode === 'open'} onClick={() => void setAccessMode('open')} title="Every conveyancer can open every case in the firm. Assistants still see only what they are granted.">Open to the firm</button>
-                <button style={{ ...(access?.mode === 'granted' ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 }} disabled={!access || access.mode === 'granted'} onClick={() => void setAccessMode('granted')} title="A conveyancer sees the cases they handle, cases granted to them, and every case of anyone they are covering. Admins see everything.">Granted only</button>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                <select value={grant.granteeUserId} onChange={(e) => setGrant({ ...grant, granteeUserId: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Who gets the access">
-                  <option value="">Who…</option>
-                  {users.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
-                </select>
-                <select value={grant.kind} onChange={(e) => setGrant({ ...grant, kind: e.target.value as 'case' | 'cover' | 'mailbox' })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Case: one case. Cover: every case a colleague handles, while the window is open. Mailbox: a colleague's email, to file from.">
-                  <option value="case">a case</option>
-                  <option value="cover">cover for</option>
-                  <option value="mailbox">the mailbox of</option>
-                </select>
-                {grant.kind === 'case' ? (
-                  <div style={{ minWidth: 260 }}><MatterPicker selected={grant.matter} onSelect={(m) => setGrant({ ...grant, matter: m })} /></div>
-                ) : (
-                  <select value={grant.subjectUserId} onChange={(e) => setGrant({ ...grant, subjectUserId: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Whose cases or mailbox">
-                    <option value="">Colleague…</option>
-                    {users.filter((u) => u.id !== grant.granteeUserId).map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
-                  </select>
+                {editing === u.id && (
+                  <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => x.id !== u.id)} isNew={false} busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} input={input} btnPrimary={btnPrimary} btnGhost={btnGhost} toggleIn={toggleIn} />
                 )}
-                {grant.kind === 'cover' && <input type="date" value={grant.endsAt} onChange={(e) => setGrant({ ...grant, endsAt: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Cover ends at the start of this day. Leave blank for open-ended." />}
-                <button style={btnPrimary} disabled={grantBusy || !grant.granteeUserId || (grant.kind === 'case' ? !grant.matter : !grant.subjectUserId)} onClick={() => void addAccess()} title="Adds the access. It shows against the person above and is logged.">Grant</button>
               </div>
-            </div>
+            ))}
           </div>
         )}
 
