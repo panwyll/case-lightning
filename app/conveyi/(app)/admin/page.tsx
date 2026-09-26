@@ -188,7 +188,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
 const TAB_KEYS: TabKey[] = [...ADMIN_TABS_IN_NAV];
 // Tabs that need the ADMIN role. Billing and Help are per-user, so a non-admin who
 // lands here from "click your name" still sees those.
-const ADMIN_ONLY: TabKey[] = ['workload', 'templates', 'docpacks', 'team', 'policy', 'actions', 'audit'];
+const ADMIN_ONLY: TabKey[] = ['workload', 'templates', 'docpacks', 'team', 'policy', 'actions', 'audit', 'billing'];
 
 // Conveyancing stage model — the board's columns, in workflow order.
 // Grey → red over ten steps: the age-dot ramp on board cards (one dot per 10 days).

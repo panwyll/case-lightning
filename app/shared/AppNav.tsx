@@ -65,7 +65,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Account',
     items: [
-      { key: 'billing', label: 'Billing', icon: CreditCard, href: `${paths.admin}?tab=billing`, adminTab: 'billing' },
+      { key: 'billing', label: 'Billing', icon: CreditCard, href: `${paths.admin}?tab=billing`, adminTab: 'billing', adminOnly: true },
       { key: 'help', label: 'Help & Support', icon: LifeBuoy, href: `${paths.admin}?tab=help`, adminTab: 'help' },
     ],
   },
@@ -159,6 +159,12 @@ export function Brand() {
 /** An assistant's app is filing email and the cases they have been granted. */
 const ASSISTANT_KEYS = new Set(['email', 'matters', 'help']);
 
+/** "Peter Anwyll" → PA; "peter@firm.co.uk" → PE. */
+export const initials = (name: string): string => {
+  const words = name.split('@')[0].split(/[\s._-]+/).filter(Boolean);
+  return (words.length >= 2 ? words[0][0] + words[words.length - 1][0] : name.slice(0, 2)).toUpperCase();
+};
+
 export function AppShell({ me, children }: { me: Me | null; children: React.ReactNode }) {
   const isAdmin = me?.role === 'ADMIN';
   const assistant = me?.role === 'ASSISTANT';
@@ -176,7 +182,7 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
         {me && (
           <div className="sh-me">
             <span>{me.displayName || me.email}</span>
-            <span className="sh-av" title={me.email}>{(me.displayName || me.email).slice(0, 2).toUpperCase()}</span>
+            <span className="sh-av" title={me.email}>{initials(me.displayName || me.email)}</span>
             <button className="sh-out" onClick={() => { window.location.href = '/api/v1/auth/logout'; }}>Sign out</button>
           </div>
         )}
