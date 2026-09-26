@@ -17,7 +17,7 @@ import { config } from './config';
  * signed-in user. Bound once per request by session.ts; the engine's own effects,
  * cron and webhooks run without a user and are not walled (the wall is between people).
  */
-const dbUser = new AsyncLocalStorage<{ userId: string | null }>();
+const dbUser = new AsyncLocalStorage<{ userId: string | null; actorId?: string | null }>();
 
 /**
  * Addendum 3 §1: automation contexts (cron, webhooks, ingestion, the engine's own
@@ -63,8 +63,13 @@ async function effectiveDbUser(): Promise<string | null> {
 }
 
 /** Bind the current async context to a user (session.ts calls this after loading the session). */
-export function bindDbUser(userId: string | null): void {
-  dbUser.enterWith({ userId });
+export function bindDbUser(userId: string | null, actorId: string | null = null): void {
+  dbUser.enterWith({ userId, actorId });
+}
+
+/** The real person behind the session when an admin is viewing the app as someone else; null otherwise. */
+export function currentActingUser(): string | null {
+  return dbUser.getStore()?.actorId ?? null;
 }
 
 /** Run `fn` explicitly as the system (no user): the sanctioned way to read across the wall for non-confidential lookups. */

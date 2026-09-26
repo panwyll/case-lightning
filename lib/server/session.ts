@@ -99,7 +99,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     user.actor = { userId: actor.id, email: actor.email, displayName: actor.display_name };
   }
   // Every query from here on carries this user for the database's ethical-wall check.
-  bindDbUser(user.userId);
+  bindDbUser(user.userId, user.actor?.userId ?? null);
   return user;
 }
 

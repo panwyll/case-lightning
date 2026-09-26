@@ -1378,7 +1378,7 @@ function AdminPageInner() {
           const rows = audit.filter((r) =>
             (!auditCat || auditCategory(r) === auditCat) &&
             (!auditStatus || String(r.action_status) === auditStatus) &&
-            (!q || `${describeAudit(r)} ${r.actor_name || ''} ${r.matter_ref || ''} ${r.action_type}`.toLowerCase().includes(q))
+            (!q || `${describeAudit(r)} ${r.actor_name || ''} ${r.acting_name || ''} ${r.matter_ref || ''} ${r.action_type}`.toLowerCase().includes(q))
           );
           return (
           <div style={card}>
@@ -1427,7 +1427,7 @@ function AdminPageInner() {
                       <td style={{ padding: '9px 10px 9px 0', color: '#64748b', whiteSpace: 'nowrap' }} title={when.toLocaleString()}>
                         {when.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}<span style={{ color: '#cbd5e1' }}> · </span>{when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td style={{ padding: '9px 10px 9px 0', color: '#334155', whiteSpace: 'nowrap' }}>{row.actor_name || 'System'}</td>
+                      <td style={{ padding: '9px 10px 9px 0', color: '#334155', whiteSpace: 'nowrap' }}>{row.acting_name ? `${row.acting_name} on behalf of ${row.actor_name}` : row.actor_name || 'System'}</td>
                       <td style={{ padding: '9px 10px 9px 0', color: '#0f172a', lineHeight: 1.45 }}>
                         <span aria-hidden style={{ color: '#cbd5e1', marginRight: 6, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>›</span>
                         {describeAudit(row)}
