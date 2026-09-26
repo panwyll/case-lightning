@@ -93,7 +93,7 @@ export default function EmailTemplates() {
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         {/* List */}
-        <div style={{ ...card, width: 220, flex: 'none', padding: 8 }}>
+        <div style={{ ...card, width: 220, flex: 'none', padding: 8, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' }}>
           {templates.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>No templates yet.</div>}
           {templates.map((t) => (
             <button key={t.id} onClick={() => setSel(t.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: sel === t.id ? '#F2EEFC' : 'transparent', cursor: 'pointer', marginBottom: 2 }}>
@@ -105,7 +105,7 @@ export default function EmailTemplates() {
 
         {/* Editor */}
         {cur ? (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto', paddingRight: 4 }}>
             <div style={card}>
               {cur.category === 'Engine' && engine[cur.name] ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginBottom: 8, alignItems: 'baseline' }}>

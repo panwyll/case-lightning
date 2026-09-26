@@ -65,9 +65,9 @@ export const canon = {
 export function canonsOf(key: string, value: string): Array<{ kind: ClaimKind; canon: string }> {
   const out: Array<{ kind: ClaimKind; canon: string }> = [];
   const v = value.trim();
-  if (/_pennies$/.test(key) && /^\d+$/.test(v)) out.push({ kind: 'money', canon: v });
+  if (/_pennies(?:_|$)/.test(key) && /^\d+$/.test(v)) out.push({ kind: 'money', canon: v });
   for (const m of v.matchAll(RE.money)) { const c = canon.money(m[0]); if (c) out.push({ kind: 'money', canon: c }); }
-  if (/^\d[\d,]*(?:\.\d{1,2})?$/.test(v) && !/_pennies$/.test(key) && /(price|amount|deposit|fee|rent|premium|advance|loan|sum|balance|total|charge)/i.test(key)) { const c = canon.money(v); if (c) out.push({ kind: 'money', canon: c }); }
+  if (/^\d[\d,]*(?:\.\d{1,2})?$/.test(v) && !/_pennies(?:_|$)/.test(key) && /(price|amount|deposit|fee|rent|premium|advance|loan|sum|balance|total|charge)/i.test(key)) { const c = canon.money(v); if (c) out.push({ kind: 'money', canon: c }); }
   for (const m of v.matchAll(RE.date)) { const c = canon.date(m[0]); if (c) out.push({ kind: 'date', canon: c }); }
   if (/(date|expiry|expires|_at|_on)$/i.test(key) && !out.some((o) => o.kind === 'date')) { const c = canon.date(v); if (c) out.push({ kind: 'date', canon: c }); }
   for (const m of v.matchAll(RE.title_number)) out.push({ kind: 'title_number', canon: canon.title_number(m[0]) });

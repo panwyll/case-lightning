@@ -87,6 +87,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId);
     else if (input.type === 'request_proof_of_funds') result = await svc.requestProofOfFunds(user.tenantId, matterId, user.userId, { noteToClient: input.noteToClient ?? null });
     else if (input.type === 'draft_report_on_title') result = await svc.draftReportOnTitle(user.tenantId, matterId);
+    else if (input.type === 'draft_completion_statement') {
+      result = await svc.draftCompletionStatement(user.tenantId, matterId);
+      await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_DRAFT', actionStatus: 'SUCCESS', payload: { kind: 'completion_statement', documentId: (result as { documentId: string }).documentId } }).catch(() => {});
+    }
     else if (input.type === 'send_report_on_title') {
       requireDecider(user);
       result = await svc.sendReportOnTitle(user.tenantId, matterId, user.userId);

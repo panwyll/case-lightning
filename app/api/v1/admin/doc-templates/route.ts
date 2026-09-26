@@ -28,11 +28,20 @@ export async function GET() {
        from doc_template where tenant_id = $1 order by sort_order, created_at`,
       [user.tenantId]
     );
+    // Two first loads at once used to seed twice: fold any later copy of a standard template whose file is byte-identical to an earlier one.
+    const dupes = await query<{ id: string }>(
+      `select d.id from doc_template d where d.tenant_id = $1 and exists (select 1 from doc_template e where e.tenant_id = d.tenant_id and e.name = d.name and e.file_content = d.file_content and (e.created_at < d.created_at or (e.created_at = d.created_at and e.id < d.id)))`,
+      [user.tenantId]
+    );
+    if (dupes.length) {
+      await query(`delete from doc_template where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, dupes.map((d) => d.id)]);
+      return GET();
+    }
     if (rows.length === 0) {
-      // A new firm starts with the standard set; they replace any with their own.
+      // A new firm starts with the standard set; they replace any with their own. The insert is guarded so two first loads cannot seed twice.
       for (const tpl of EXAMPLE_TEMPLATES) {
         const content = createMinimalDocx(tpl.paragraphs);
-        await query(`insert into doc_template (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, sort_order, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [user.tenantId, tpl.name, tpl.description, tpl.fileName, content, content.length, tpl.hasLlmPrompts, EXAMPLE_TEMPLATES.indexOf(tpl), user.userId]).catch(() => {});
+        await query(`insert into doc_template (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, sort_order, created_by) select $1,$2,$3,$4,$5,$6,$7,$8,$9 where not exists (select 1 from doc_template where tenant_id = $1 and name = $2)`, [user.tenantId, tpl.name, tpl.description, tpl.fileName, content, content.length, tpl.hasLlmPrompts, EXAMPLE_TEMPLATES.indexOf(tpl), user.userId]).catch(() => {});
       }
       return GET();
     }

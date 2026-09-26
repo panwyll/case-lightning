@@ -70,6 +70,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('record_search_ordered'), searchType, provider: z.string().min(1).max(100), reference: z.string().max(100).nullish() }),
   // Report on title lifecycle (the service does the I/O; these are the human-triggered steps).
   z.object({ type: z.literal('draft_report_on_title') }),
+  z.object({ type: z.literal('draft_completion_statement') }),
   z.object({ type: z.literal('send_report_on_title') }),
   // Eventualities (docs/engine-eventualities.md).
   z.object({ type: z.literal('abandon_matter'), reason: z.enum(ABANDON_REASONS), detail: z.string().max(2000).nullish() }),
@@ -119,6 +120,7 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'request_id_check':
     case 'request_proof_of_funds':
     case 'draft_report_on_title':
+    case 'draft_completion_statement':
     case 'send_report_on_title':
     case 'record_bank_details':
     case 'record_note':

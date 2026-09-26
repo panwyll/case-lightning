@@ -28,7 +28,6 @@ interface Spec {
 }
 
 const CSS = `
-.mp h2{font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin:28px 0 10px}
 .mp figure{margin:0;background:#fff;border:1px solid #e6e8ee;border-radius:12px;padding:12px;overflow-x:auto}
 .mp figure svg{display:block;min-width:1180px;height:auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
 .mp figcaption{font-size:12px;color:#64748b;margin-top:8px}
@@ -37,6 +36,17 @@ const CSS = `
 .mp th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;border-top:0;background:#fafafa}
 .mp code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:#f1f5f9;border-radius:4px;padding:1px 4px}
 .mp .muted{color:#94a3b8}
+.mp-nav{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
+.mp-nav a{font-size:12px;font-weight:700;color:#0f172a;text-decoration:none;border:1px solid #e6e8ee;border-radius:999px;padding:4px 10px;background:#fff}
+.mp-nav a:hover{background:#f3efff;border-color:#c7b8f5}
+.mp-sec{border:1px solid #e6e8ee;border-radius:12px;background:#fafafa;margin:0 0 10px;padding:0 12px}
+.mp-sec[open]{background:#fff}
+.mp-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:12px 0;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0f172a}
+.mp-sec>summary::-webkit-details-marker{display:none}
+.mp-sec>summary::before{content:'▸';font-size:11px;color:#94a3b8;transition:transform .12s}
+.mp-sec[open]>summary::before{transform:rotate(90deg)}
+.mp-count{font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:1px 8px;letter-spacing:0;text-transform:none}
+.mp-sec>*:not(summary){margin-bottom:12px}
 .mp .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .mp .inv{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
 .mp .inv div{background:#fff;border:1px solid #e6e8ee;border-left:3px solid #0f172a;border-radius:10px;padding:10px 12px;font-size:12.5px}
@@ -53,7 +63,7 @@ export default function MapPage() {
   const [handling, setHandling] = useState('all');
   const [backend, setBackend] = useState('all');
   const [issueGroup, setIssueGroup] = useState('all');
-  const [txType, setTxType] = useState('all');
+  const [txType, setTxType] = useState('freehold_purchase');
   useEffect(() => {
     api<Spec>('/engine/spec').then(setSpec).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the spec.'));
   }, []);
@@ -88,12 +98,15 @@ export default function MapPage() {
           <h1 className="eg-h1">Machine Map</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <a className="eg-btn" href="/conveyi/integrations">Tools</a>
           <a className="eg-btn" href="/conveyi/admin?tab=mywork">Tasks</a>
           <a className="eg-btn" href="/api/v1/engine/spec" target="_blank" rel="noreferrer">JSON</a>
         </div>
       </div>
+      <nav className="mp-nav"><a href="#transaction-types">Transaction Types</a><a href="#stages">Stages</a><a href="#sub-flows">Sub-flows</a><a href="#commands">Commands</a><a href="#timers">Timers</a><a href="#triggers">Triggers</a><a href="#eventualities">Eventualities</a><a href="#issues">Issues</a><a href="#invariants">Invariants</a><a href="#decision-kinds">Decision Kinds</a></nav>
 
-      <h2>Transaction Types</h2>
+      <details id="transaction-types" className="mp-sec" open>
+        <summary><span>Transaction Types</span><span className="mp-count">{spec.transactionTypes.length}</span></summary>
       <div className="filters">
         <button className={`eg-btn${txType === 'all' ? ' on' : ''}`} onClick={() => setTxType('all')}>All types</button>
         {spec.transactionTypes.map((t) => <button key={t.type} className={`eg-btn${txType === t.type ? ' on' : ''}`} onClick={() => setTxType(t.type)}>{t.label}</button>)}
@@ -116,8 +129,10 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
+      </details>
 
-      <h2>Stages{profile ? ` — ${profile.label}` : ''}</h2>
+      <details id="stages" className="mp-sec" open>
+        <summary><span>Stages{profile ? ` — ${profile.label}` : ''}</span><span className="mp-count">{stagesShown.length}</span></summary>
       <figure>
         <svg viewBox={`0 0 ${X0 * 2 + stagesShown.length * (W + GAP)} ${spineH}`} role="img" aria-label="Eight stages left to right; under each, the gates that must be true to leave it; abandonment and manual handling can leave from any stage.">
           <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0f172a" /></marker></defs>
@@ -149,8 +164,10 @@ export default function MapPage() {
           </g>
         </svg>
       </figure>
+      </details>
 
-      <h2>Sub-flows</h2>
+      <details id="sub-flows" className="mp-sec">
+        <summary><span>Sub-flows</span><span className="mp-count">{spec.subflows.length}</span></summary>
       <figure>
         <svg viewBox={`0 0 1180 ${40 + spec.subflows.length * 78}`} role="img" aria-label="Each sub-flow: something arrives, the rule layer clears it or flags it, a flagged item is a decision a person resolves; chasing and escalation sit alongside.">
           <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b" /></marker></defs>
@@ -185,8 +202,10 @@ export default function MapPage() {
         <thead><tr><th>Sub-flow</th><th>Rule</th></tr></thead>
         <tbody>{spec.subflows.map((sf) => <tr key={sf.id}><td><b>{sf.label}</b></td><td>{sf.rule}</td></tr>)}</tbody>
       </table>
+      </details>
 
-      <h2>Commands{profile ? ` — ${profile.label}` : ''}</h2>
+      <details id="commands" className="mp-sec">
+        <summary><span>Commands{profile ? ` — ${profile.label}` : ''}</span><span className="mp-count">{commandsShown.length}</span></summary>
       <table>
         <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>Meaning</th></tr></thead>
         <tbody>
@@ -201,8 +220,10 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
+      </details>
 
-      <h2>Timers</h2>
+      <details id="timers" className="mp-sec">
+        <summary><span>Timers</span><span className="mp-count">{spec.timers.waits.length + spec.timers.deadlines.length}</span></summary>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(420px,1fr))', gap: 12 }}>
         <table>
           <thead><tr><th>Wait</th><th>Chase after</th><th>Every</th><th>Escalate</th><th>Again after</th><th>Who is chased</th></tr></thead>
@@ -213,8 +234,10 @@ export default function MapPage() {
           <tbody>{spec.timers.deadlines.map((d) => <tr key={d.kind}><td><b>{d.kind.replace(/_/g, ' ')}</b></td><td>{d.leadWorkingDays} wd before</td><td>{d.description}</td></tr>)}</tbody>
         </table>
       </div>
+      </details>
 
-      <h2>Triggers</h2>
+      <details id="triggers" className="mp-sec">
+        <summary><span>Triggers</span><span className="mp-count">{spec.triggers.length}</span></summary>
       <div className="filters">
         {['all', 'native', 'leap'].map((b) => <button key={b} className={`eg-btn${backend === b ? ' on' : ''}`} onClick={() => setBackend(b)}>{b === 'all' ? 'Both backends' : b === 'native' ? 'Own app (CaseLightning)' : 'LEAP'}</button>)}
       </div>
@@ -233,8 +256,10 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
+      </details>
 
-      <h2>Eventualities</h2>
+      <details id="eventualities" className="mp-sec">
+        <summary><span>Eventualities</span><span className="mp-count">{spec.eventualities.length}</span></summary>
       <div className="filters">
         {['all', ...areas].map((a) => <button key={a} className={`eg-btn${area === a ? ' on' : ''}`} onClick={() => setArea(a)}>{a === 'all' ? 'All areas' : a.replace(/_/g, ' ')}</button>)}
         <span style={{ width: 12 }} />
@@ -248,8 +273,10 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
+      </details>
 
-      <h2>Issues</h2>
+      <details id="issues" className="mp-sec">
+        <summary><span>Issues</span><span className="mp-count">{spec.issues.kinds.length}</span></summary>
       <div className="filters">
         {['all', ...spec.issues.groups.map((g) => g.id)].map((g) => <button key={g} className={`eg-btn${issueGroup === g ? ' on' : ''}`} onClick={() => setIssueGroup(g)}>{g === 'all' ? 'All groups' : spec.issues.groups.find((x) => x.id === g)?.label}</button>)}
       </div>
@@ -271,15 +298,21 @@ export default function MapPage() {
         <thead><tr><th>Resolution</th><th>Effect on the rest of the machine</th></tr></thead>
         <tbody>{spec.issues.resolutions.filter((r) => r.effects.length).map((r) => <tr key={r.id}><td><b>{r.label}</b> <code>{r.id}</code></td><td>{r.effects.join('; ')}</td></tr>)}</tbody>
       </table>
+      </details>
 
-      <h2>Invariants</h2>
+      <details id="invariants" className="mp-sec">
+        <summary><span>Invariants</span><span className="mp-count">{spec.invariants.length}</span></summary>
       <div className="inv">{spec.invariants.map((v) => <div key={v.id}><b>{v.title}</b>{v.rule}<div className="muted" style={{ marginTop: 4 }}>{v.enforcedBy.join(' · ')}</div></div>)}</div>
+      </details>
 
-      <h2>Decision Kinds</h2>
+      <details id="decision-kinds" className="mp-sec">
+        <summary><span>Decision Kinds</span><span className="mp-count">{spec.decisions.length}</span></summary>
       <table>
         <thead><tr><th>Kind</th><th>Options</th><th>Its source</th></tr></thead>
         <tbody>{spec.decisions.map((d) => <tr key={d.kind}><td><b>{d.label}</b></td><td>{d.options.join(' · ')}</td><td>{d.source}</td></tr>)}</tbody>
       </table>
+      </details>
+
     </div>
   );
 }

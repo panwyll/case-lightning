@@ -30,6 +30,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [openReview, setOpenReview] = useState<string | null>(null);
   const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }>; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null } | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [drafts, setDrafts] = useState<Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string }>>([]);
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<{ q: string; facts: Array<{ id: string; documentId: string; fileName: string | null; key: string; value: string; page: number | null; quote: string | null; verified: boolean }>; passages: Array<{ documentId: string; fileName: string | null; page: number; text: string }> } | null>(null);
@@ -52,7 +53,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -158,6 +159,24 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                 <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
                 <b style={{ minWidth: 130 }}>{c.label}</b>
                 <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {drafts.length > 0 && (
+        <>
+          <div className="ep-sec">Drafts ({drafts.length})</div>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {drafts.map((d) => (
+              <div key={d.id}>
+                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => { if (openReview === d.id) { setOpenReview(null); setTable(null); } else void loadTable(d.id); }}>
+                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(d.createdAt)}</span>
+                  <b>{pretty((d.docType ?? 'draft').toLowerCase())}</b>
+                  <span className="ep-note">{d.fileName}</span>
+                  <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>
+                </div>
+                {openReview === d.id && table && table.id === d.id && table.draftCheck && <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, padding: '10px 12px' }}><CheckedDraft check={table.draftCheck} /></div>}
               </div>
             ))}
           </div>

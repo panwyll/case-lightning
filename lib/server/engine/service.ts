@@ -26,6 +26,7 @@
  * events from there whatever this code does.
  */
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
+import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { profileOf } from './transactions';
@@ -560,6 +561,31 @@ export class EngineService {
     const citations = [...draft.citations];
     for (const f of check?.cited ?? []) if (!citations.some((c) => c.documentId === f.documentId && c.locator?.quote === (f.quote ?? undefined))) citations.push({ documentId: f.documentId, label: `${f.documentLabel}${f.page ? ` p.${f.page}` : ''} — ${f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}: ${f.value}`, locator: { page: f.page ?? undefined, quote: f.quote ?? undefined } });
     return this.run(tenantId, matterId, { type: 'draft_report_on_title', draftId, draftDocumentId: doc.id, model: draft.model, summary, citations, basedOn: draft.basedOn });
+  }
+
+  /** The completion statement drafted from the register: every figure cited or marked to confirm; filed as a document for the Completion Statement Produced milestone. */
+  async draftCompletionStatement(tenantId: string, matterId: string): Promise<RunResult & { documentId: string }> {
+    const state = await this.getState(tenantId, matterId);
+    if (!state.enrolled) throw Object.assign(new Error('Enrol the case first.'), { status: 409 });
+    const register = this.ports.documents.loadRegister ? await this.ports.documents.loadRegister(tenantId, matterId).catch(() => null) : null;
+    const record = register ? await this.caseRecord(tenantId, matterId) : null;
+    const side = profileOf(state.transactionType).side;
+    const built = buildCompletionStatement({ state, side, register: register?.facts ?? [], record: record ?? { propertyAddress: null, purchasePricePennies: state.purchasePricePennies, buyerNames: [], sellerNames: [] } });
+    const check = checkDraft(built.text, register?.facts ?? [], { allowed: [...(register?.allowed ?? []), ...built.allowed, state.exchange.completionDate ?? '', ...(record?.buyerNames ?? []), ...(record?.sellerNames ?? [])] });
+    const content = renderChecked(built.text, check);
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'COMPLETION_STATEMENT', fileName: `completion-statement-${this.ports.now().toISOString().slice(0, 10)}.txt`, content });
+    if (this.ports.documents.writeDraftCheck) await this.ports.documents.writeDraftCheck(tenantId, doc.id, check).catch(() => {});
+    const warning = `Completion statement drafted under Documents: ${draftCheckLine(check)}${built.toConfirm.length ? ` ${built.toConfirm.length} line${built.toConfirm.length === 1 ? '' : 's'} for you to fill in.` : ''}`;
+    return { state, events: [], warning, documentId: doc.id };
+  }
+
+  /** The case record as the drafters see it: what the matter row says about the parties, the property and the price. */
+  private async caseRecord(tenantId: string, matterId: string): Promise<{ propertyAddress: string | null; purchasePricePennies: number | null; buyerNames: string[]; sellerNames: string[] } | null> {
+    try {
+      const { loadCaseRecord } = await import('./crosscheck-run');
+      const r = await loadCaseRecord(tenantId, matterId);
+      return r ? { propertyAddress: r.propertyAddress, purchasePricePennies: r.purchasePricePennies, buyerNames: r.buyerNames, sellerNames: r.sellerNames } : null;
+    } catch { return null; }
   }
 
   /** Send the APPROVED report. The machine's invariant is checked before any I/O and again when recording. */
