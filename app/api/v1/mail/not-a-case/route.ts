@@ -6,11 +6,12 @@ import { query } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
 import { writeAudit } from '@/lib/server/audit';
 import { resolveConversation, reopenConversation } from '@/lib/server/mail/queue';
+import { resolveMailbox } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const schema = z.object({ conversationId: z.string().min(1).max(500), subject: z.string().max(500).nullish(), reason: z.string().max(500).nullish() });
+const schema = z.object({ conversationId: z.string().min(1).max(500), subject: z.string().max(500).nullish(), reason: z.string().max(500).nullish(), mailboxUserId: z.string().uuid().nullish() });
 
 /**
  * "This is not case email." Sets the thread aside so the filing queue stops offering it.
@@ -23,6 +24,7 @@ export async function POST(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const input = schema.parse(await req.json());
+    await resolveMailbox(user, input.mailboxUserId); // 403 unless it is yours or granted
     await query(
       `insert into email_not_filed (tenant_id, graph_conversation_id, subject, dismissed_by, reason)
        values ($1,$2,$3,$4,$5) on conflict (tenant_id, graph_conversation_id) do nothing`,

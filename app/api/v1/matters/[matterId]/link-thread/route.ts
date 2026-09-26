@@ -10,6 +10,7 @@ import { matterColor } from '@/lib/server/colors';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
 import { resolveConversation } from '@/lib/server/mail/queue';
+import { resolveMailbox, grantCaseIfAssistant } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,10 +28,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         subject: z.string().optional(),
         participants: z.array(z.string()).default([]),
         category: z.string().default('Matter Linked'),
+        /** Filing from a colleague's mailbox you have been granted. */
+        mailboxUserId: z.string().uuid().nullish(),
       })
       .parse(await req.json());
 
+    // An assistant may file to a case they cannot yet see; filing is what grants it.
+    await grantCaseIfAssistant(user, matterId);
     await assertMatterAccess(user, matterId);
+    const owner = await resolveMailbox(user, body.mailboxUserId);
 
     // Tag with the matter's own name (ref) so the email is visibly filed to the
     // matter in Outlook — same label/colour the auto-triage path uses. Falls back
@@ -47,7 +53,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     let conversationId = body.graphConversationId ?? body.graphThreadId;
     if (body.messageId) {
       try {
-        const msg = await getMessage(user.userId, body.messageId);
+        const msg = await getMessage(owner.userId, body.messageId);
         if (msg?.conversationId) conversationId = msg.conversationId;
       } catch {
         /* fall back to the client-supplied id */
@@ -79,15 +85,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
 
     // Stamp the matter-name category onto the actual Outlook message (best-effort).
     if (body.messageId) {
-      await ensureMasterCategory(user.userId, label, matterColor(label)).catch(() => {});
-      await addMessageCategories(user.userId, body.messageId, [label]).catch(() => {});
+      await ensureMasterCategory(owner.userId, label, matterColor(label)).catch(() => {});
+      await addMessageCategories(owner.userId, body.messageId, [label]).catch(() => {});
     }
 
     // Linking the email to a matter saves its attachments to the matter folder
     // (best-effort; no-ops when there are none). The email itself stays in the
     // inbox in-tray until the user actually actions it.
     if (body.messageId) {
-      await saveEmailAttachmentsToMatter(user, matterId, body.messageId, body.subject).catch(() => {});
+      await saveEmailAttachmentsToMatter(owner, matterId, body.messageId, body.subject).catch(() => {});
     }
 
     await writeAudit({

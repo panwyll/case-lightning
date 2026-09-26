@@ -16,6 +16,7 @@ import { Paperclip, Check, X, Mail, AlertTriangle, Home } from '@/app/shared/ico
 const CSS = `
 .ef{display:grid;grid-template-columns:360px minmax(0,1fr);gap:14px;height:calc(100vh - 128px);min-height:420px}
 .ef-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.ef-mbox{margin-left:auto;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px;font:inherit;font-size:13px;background:#fff}
 .ef-head .n{font-size:14px;font-weight:700;color:#94a3b8;font-variant-numeric:tabular-nums}
 .ef-list{background:#fff;border:1px solid #e6e8ee;border-radius:14px;overflow:auto}
 .ef-li{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #f1f5f9;background:#fff;padding:10px 14px 10px 12px;cursor:pointer;font-family:inherit;color:inherit;border-left:3px solid transparent}
@@ -142,12 +143,14 @@ export default function EmailToFile() {
   const [sel, setSel] = useState<string | null>(null);
   const [tab, setTab] = useState<'cases' | 'bulk'>('cases');
   const [totals, setTotals] = useState<{ toFile: number; bulk: number } | null>(null);
+  const [mailboxes, setMailboxes] = useState<Array<{ userId: string; name: string; self: boolean }>>([]);
+  const [mailbox, setMailbox] = useState<string | null>(null); // null = my own
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>('/mail/unfiled');
+      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>(`/mail/unfiled${mailbox ? `?mailbox=${mailbox}` : ''}`);
       setItems(r.items);
       setNextCursor(r.nextCursor);
       setTotals({ toFile: r.toFile, bulk: r.bulk });
@@ -157,15 +160,16 @@ export default function EmailToFile() {
       const msg = e instanceof Error ? e.message : 'Could not read your mailbox.';
       if (/graph account not connected/i.test(msg)) { setNoMailbox(true); setItems([]); } else setErr(msg);
     }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [mailbox]);
+  useEffect(() => { setItems(null); setSel(null); void load(); }, [load]);
+  useEffect(() => { api<{ mailboxes: Array<{ userId: string; name: string; self: boolean }> }>('/mail/mailboxes').then((r) => setMailboxes(r.mailboxes)).catch(() => {}); }, []);
 
   /** The next page of the queue, appended. */
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>(`/mail/unfiled?cursor=${encodeURIComponent(nextCursor)}`);
+      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>(`/mail/unfiled?cursor=${encodeURIComponent(nextCursor)}${mailbox ? `&mailbox=${mailbox}` : ''}`);
       setItems((cur) => [...(cur ?? []), ...r.items.filter((i) => !(cur ?? []).some((c) => c.id === i.id))]);
       setNextCursor(r.nextCursor);
       setTotals({ toFile: r.toFile, bulk: r.bulk });
@@ -199,7 +203,7 @@ export default function EmailToFile() {
   const fileTo = async (item: Item, matterId: string) => {
     setBusy(true); setErr(null);
     try {
-      await api(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean) }) });
+      await api(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
       retire([item.id]);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not file that email.');
@@ -208,7 +212,7 @@ export default function EmailToFile() {
   const setAside = async (list: Item[]) => {
     setBusy(true); setErr(null);
     try {
-      for (const item of list) await api('/mail/not-a-case', { method: 'POST', body: JSON.stringify({ conversationId: item.conversationId ?? item.id, subject: item.subject, reason: item.notCaseMail ?? null }) });
+      for (const item of list) await api('/mail/not-a-case', { method: 'POST', body: JSON.stringify({ conversationId: item.conversationId ?? item.id, subject: item.subject, reason: item.notCaseMail ?? null, mailboxUserId: mailbox ?? undefined }) });
       retire(list.map((i) => i.id));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not set that aside.');
@@ -234,6 +238,11 @@ export default function EmailToFile() {
       <style>{CSS}</style>
       <div className="ef-head">
         <h1 className="eg-h1" style={{ margin: 0 }}>Email</h1>
+        {mailboxes.length > 1 && (
+          <select className="ef-mbox" value={mailbox ?? ''} onChange={(e) => setMailbox(e.target.value || null)} title="Whose mailbox to file from">
+            {mailboxes.map((m) => <option key={m.userId} value={m.self ? '' : m.userId}>{m.name}</option>)}
+          </select>
+        )}
       </div>
       {err && <div className="eg-err">{err}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
@@ -267,7 +276,7 @@ export default function EmailToFile() {
             )}
           </div>
           {current ? (
-            <Detail key={current.id} item={current} busy={busy} onFile={(m) => fileTo(current, m)} onNotACase={() => setAside([current])} />
+            <Detail key={current.id} item={current} mailbox={mailbox} busy={busy} onFile={(m) => fileTo(current, m)} onNotACase={() => setAside([current])} />
           ) : <div />}
         </div>
       )}
@@ -296,7 +305,7 @@ function ListRow({ item, on, onPick, muted = false }: { item: Item; on: boolean;
 }
 
 /** The email in hand: which case, why, and the email itself. */
-function Detail({ item, busy, onFile, onNotACase }: { item: Item; busy: boolean; onFile: (matterId: string) => void; onNotACase: () => void }) {
+function Detail({ item, mailbox, busy, onFile, onNotACase }: { item: Item; mailbox: string | null; busy: boolean; onFile: (matterId: string) => void; onNotACase: () => void }) {
   const [picking, setPicking] = useState(false);
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<MatterHit[]>([]);
@@ -305,11 +314,11 @@ function Detail({ item, busy, onFile, onNotACase }: { item: Item; busy: boolean;
 
   useEffect(() => {
     let live = true;
-    api<{ message: FullMessage }>(`/mail/message/${encodeURIComponent(item.id)}`)
+    api<{ message: FullMessage }>(`/mail/message/${encodeURIComponent(item.id)}${mailbox ? `?mailbox=${mailbox}` : ''}`)
       .then((r) => { if (live) setFull(r.message); })
       .catch((e: unknown) => { if (live) setReadErr(e instanceof Error ? e.message : 'Could not open the email.'); });
     return () => { live = false; };
-  }, [item.id]);
+  }, [item.id, mailbox]);
 
   useEffect(() => {
     if (!picking || q.trim().length < 2) { setHits([]); return; }

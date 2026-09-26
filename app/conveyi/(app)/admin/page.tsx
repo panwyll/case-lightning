@@ -477,6 +477,9 @@ function AdminPageInner() {
   const [mergeBusy, setMergeBusy] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [invites, setInvites] = useState<any[]>([]);
+  const [access, setAccess] = useState<{ mode: 'open' | 'granted'; grants: any[] } | null>(null);
+  const [grant, setGrant] = useState<{ granteeUserId: string; kind: 'case' | 'cover' | 'mailbox'; subjectUserId: string; matter: MatterHit | null; endsAt: string }>({ granteeUserId: '', kind: 'case', subjectUserId: '', matter: null, endsAt: '' });
+  const [grantBusy, setGrantBusy] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('CONVEYANCER');
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -509,7 +512,7 @@ function AdminPageInner() {
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
-      if (tab === 'team') { setUsers((await api<{ users: any[] }>('/admin/users')).users); setInvites((await api<{ invites: any[] }>('/admin/invites')).invites ?? []); }
+      if (tab === 'team') { setUsers((await api<{ users: any[] }>('/admin/users')).users); setInvites((await api<{ invites: any[] }>('/admin/invites')).invites ?? []); setAccess(await api('/admin/access')); }
       if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
       setStatus('');
     } catch (e) {
@@ -634,6 +637,25 @@ function AdminPageInner() {
     } catch (e) {
       setStatus((e as Error).message);
     }
+  }
+
+  async function setAccessMode(mode: 'open' | 'granted') {
+    try { await api('/admin/access', { method: 'PUT', body: JSON.stringify({ mode }) }); await load(); } catch (e) { setStatus((e as Error).message); }
+  }
+  async function addAccess() {
+    setGrantBusy(true);
+    try {
+      await api('/admin/access', { method: 'POST', body: JSON.stringify({ granteeUserId: grant.granteeUserId, kind: grant.kind, matterId: grant.kind === 'case' ? grant.matter?.id ?? null : null, subjectUserId: grant.kind === 'case' ? null : grant.subjectUserId || null, endsAt: grant.endsAt || null }) });
+      setGrant({ ...grant, matter: null, subjectUserId: '', endsAt: '' });
+      await load();
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setGrantBusy(false);
+    }
+  }
+  async function removeAccess(id: string) {
+    try { await api(`/admin/access?id=${id}`, { method: 'DELETE' }); await load(); } catch (e) { setStatus((e as Error).message); }
   }
 
   async function inviteColleague() {
@@ -1338,6 +1360,21 @@ function AdminPageInner() {
                 </div>
               </div>
             ))}
+            {users.map((u) => {
+              const mine = (access?.grants ?? []).filter((g) => g.granteeUserId === u.id);
+              if (!mine.length) return null;
+              return (
+                <div key={`g-${u.id}`} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 0 8px', borderTop: '1px solid #f1f5f9' }}>
+                  <span style={{ fontSize: 12, color: '#64748b', minWidth: 140 }}>{u.display_name || u.email} can see</span>
+                  {mine.map((g) => (
+                    <span key={g.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#f1f5f9', borderRadius: 999, padding: '2px 8px 2px 10px', fontSize: 12 }} title={g.kind === 'case' ? 'One case' : g.kind === 'cover' ? `Every case ${g.subjectName} handles${g.endsAt ? `, until ${new Date(g.endsAt).toLocaleDateString('en-GB')}` : ''}` : `${g.subjectName}'s email, to file from`}>
+                      {g.kind === 'case' ? `${g.matterRef} · ${(g.propertyAddress || '').split(',')[0]}` : g.kind === 'cover' ? `Cover for ${g.subjectName}${g.endsAt ? ` to ${new Date(g.endsAt).toLocaleDateString('en-GB')}` : ''}` : `Mailbox: ${g.subjectName}`}
+                      <button onClick={() => void removeAccess(g.id)} title="Remove this access" style={{ border: 0, background: 'none', cursor: 'pointer', color: '#94a3b8', padding: 0, fontSize: 14, lineHeight: 1 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+              );
+            })}
             {invites.filter((i) => i.status === 'PENDING').map((i) => (
               <div key={i.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderTop: '1px solid #e2e8f0', padding: '8px 0' }}>
                 <div style={{ minWidth: 0 }}>
@@ -1347,6 +1384,36 @@ function AdminPageInner() {
                 <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void revokeInvite(i.id)} title="Cancels the invitation. The sign-in link stops working.">Revoke</button>
               </div>
             ))}
+
+            <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 12, paddingTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                <h3 style={{ margin: 0 }}>Access</h3>
+                <span style={{ fontSize: 13, color: '#64748b' }}>Cases</span>
+                <button style={{ ...(access?.mode === 'open' ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 }} disabled={!access || access.mode === 'open'} onClick={() => void setAccessMode('open')} title="Every conveyancer can open every case in the firm. Assistants still see only what they are granted.">Open to the firm</button>
+                <button style={{ ...(access?.mode === 'granted' ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 }} disabled={!access || access.mode === 'granted'} onClick={() => void setAccessMode('granted')} title="A conveyancer sees the cases they handle, cases granted to them, and every case of anyone they are covering. Admins see everything.">Granted only</button>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select value={grant.granteeUserId} onChange={(e) => setGrant({ ...grant, granteeUserId: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Who gets the access">
+                  <option value="">Who…</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+                </select>
+                <select value={grant.kind} onChange={(e) => setGrant({ ...grant, kind: e.target.value as 'case' | 'cover' | 'mailbox' })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Case: one case. Cover: every case a colleague handles, while the window is open. Mailbox: a colleague's email, to file from.">
+                  <option value="case">a case</option>
+                  <option value="cover">cover for</option>
+                  <option value="mailbox">the mailbox of</option>
+                </select>
+                {grant.kind === 'case' ? (
+                  <div style={{ minWidth: 260 }}><MatterPicker selected={grant.matter} onSelect={(m) => setGrant({ ...grant, matter: m })} /></div>
+                ) : (
+                  <select value={grant.subjectUserId} onChange={(e) => setGrant({ ...grant, subjectUserId: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Whose cases or mailbox">
+                    <option value="">Colleague…</option>
+                    {users.filter((u) => u.id !== grant.granteeUserId).map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
+                  </select>
+                )}
+                {grant.kind === 'cover' && <input type="date" value={grant.endsAt} onChange={(e) => setGrant({ ...grant, endsAt: e.target.value })} style={{ ...input, width: 'auto', marginBottom: 0 }} title="Cover ends at the start of this day. Leave blank for open-ended." />}
+                <button style={btnPrimary} disabled={grantBusy || !grant.granteeUserId || (grant.kind === 'case' ? !grant.matter : !grant.subjectUserId)} onClick={() => void addAccess()} title="Adds the access. It shows against the person above and is logged.">Grant</button>
+              </div>
+            </div>
           </div>
         )}
 

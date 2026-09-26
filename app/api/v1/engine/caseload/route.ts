@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
+import { onlyVisible } from '@/lib/server/access';
 import { engine } from '@/lib/server/engine/adapters';
 import { rollup, HEALTH_LABEL } from '@/lib/server/engine/health';
 import { LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
@@ -47,12 +48,12 @@ export async function GET(req: NextRequest) {
     const ids = Array.from(new Set([...tracked, ...untracked].map((r) => r.assignedTo).filter((x): x is string => !!x)));
     const names = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
     const nameOf = new Map(names.map((n) => [n.id, n.name]));
-    const rows = [...tracked, ...untracked].map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null }));
+    const rows = await onlyVisible(user, [...tracked, ...untracked].map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null })));
     return ok({
       rows,
       // Health is only claimed for matters the engine actually knows about. An untracked
       // matter is not "moving normally" — it is unknown — so it is counted separately.
-      rollup: { ...rollup(tracked.map((r) => r.health.band)), untracked: untracked.length },
+      rollup: { ...rollup(tracked.filter((r) => rows.some((x) => x.matterId === r.matterId)).map((r) => r.health.band)), untracked: rows.filter((r) => !r.tracked).length },
       scope: q.mine === '1' ? 'mine' : 'all',
       labels: { health: HEALTH_LABEL, lifecycle: LIFECYCLE_LABEL },
     });

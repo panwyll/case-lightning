@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
+import { onlyVisible } from '@/lib/server/access';
 import { engine } from '@/lib/server/engine/adapters';
 
 export const runtime = 'nodejs';
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const q = z.object({ matterId: z.string().uuid().optional(), limit: z.coerce.number().int().positive().max(500).default(100) }).parse(Object.fromEntries(req.nextUrl.searchParams));
-    const decisions = await engine().eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit });
+    const decisions = await onlyVisible(user, await engine().eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit }));
     return ok({ decisions: decisions.map((d) => ({ ...d, sourceOpenedByMe: d.openedBy.includes(user.userId) })) });
   } catch (error) {
     return fail(error);

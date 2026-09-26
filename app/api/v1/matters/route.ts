@@ -6,6 +6,7 @@ import { createMatter } from '@/lib/server/matter';
 import { query } from '@/lib/server/db';
 import { caseCards } from '@/lib/server/mail/case-cards';
 import { ok, fail } from '@/lib/server/http';
+import { visibleMatterIds } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -38,11 +39,13 @@ export async function GET(req: NextRequest) {
       ),
       query<{ n: number }>(`select count(*)::int as n from matter where ${where}`, [user.tenantId, q, like, status]),
     ]);
-    const total = totalRow[0]?.n ?? rows.length;
+    const visible = await visibleMatterIds(user);
+    const seen = visible ? rows.filter((m) => visible.has(m.id)) : rows;
+    const total = visible ? seen.length : (totalRow[0]?.n ?? rows.length);
     // With each, the case as a person recognises it (client, type, stage, handler).
-    const cards = await caseCards(user.tenantId, rows.map((m) => m.id)).catch(() => new Map());
+    const cards = await caseCards(user.tenantId, seen.map((m) => m.id)).catch(() => new Map());
     return ok({
-      matters: rows.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, status: m.status, case: cards.get(m.id) ?? null })),
+      matters: seen.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, status: m.status, case: cards.get(m.id) ?? null })),
       total,
     });
   } catch (error) {

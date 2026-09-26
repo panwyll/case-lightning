@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { assertEntitled } from '@/lib/server/plan';
 import { filingQueue } from '@/lib/server/mail/filing-queue';
 import { ok, fail } from '@/lib/server/http';
+import { resolveMailbox } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,12 +37,14 @@ export async function GET(req: NextRequest) {
     await assertEntitled(user.tenantId);
 
     const q = z
-      .object({ cursor: z.string().max(200).nullish(), limit: z.coerce.number().int().min(5).max(200).optional() })
-      .parse({ cursor: req.nextUrl.searchParams.get('cursor'), limit: req.nextUrl.searchParams.get('limit') ?? undefined });
+      .object({ cursor: z.string().max(200).nullish(), limit: z.coerce.number().int().min(5).max(200).optional(), mailbox: z.string().uuid().nullish() })
+      .parse({ cursor: req.nextUrl.searchParams.get('cursor'), limit: req.nextUrl.searchParams.get('limit') ?? undefined, mailbox: req.nextUrl.searchParams.get('mailbox') });
 
+    // Whose queue: your own, or a colleague's you have been granted (an assistant's usual case).
+    const owner = await resolveMailbox(user, q.mailbox);
     // The sweep (backlog once, then one page of the newest mail) runs on the first page
     // only; a "load more" is a plain table read.
-    return ok(await filingQueue(user, { ...q, sweep: !q.cursor }));
+    return ok(await filingQueue(owner, { cursor: q.cursor, limit: q.limit, sweep: !q.cursor }));
   } catch (error) {
     return fail(error);
   }

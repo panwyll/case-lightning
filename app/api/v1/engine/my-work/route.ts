@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
+import { visibleMatterIds } from '@/lib/server/access';
 import { engine } from '@/lib/server/engine/adapters';
 import { buckets, matterWork, OWNER_LABEL, type WorkItem } from '@/lib/server/engine/work';
 
@@ -32,7 +33,9 @@ export async function GET(req: NextRequest) {
     ]);
     const now = new Date();
     const items: WorkItem[] = [];
+    const visible = await visibleMatterIds(user);
     for (const { state, meta } of states) {
+      if (visible && !visible.has(state.matterId)) continue;
       items.push(...matterWork(state, now, { ...meta, levels: subflows }).items);
     }
     return ok({ ...buckets(items), scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters: states.length, ownerLabels: OWNER_LABEL });

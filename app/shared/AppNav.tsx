@@ -116,7 +116,7 @@ function useCounts(): { tasks: number; email: number } {
   return c;
 }
 
-function Items({ isAdmin }: { isAdmin: boolean }) {
+function Items({ isAdmin, assistant }: { isAdmin: boolean; assistant: boolean }) {
   const path = usePathname() ?? '';
   const counts = useCounts();
   const tab = useSearchParams()?.get('tab') ?? null;
@@ -126,7 +126,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
   return (
     <>
       {GROUPS.map((g) => {
-        const items = g.items.filter((i) => isAdmin || !i.adminOnly);
+        const items = g.items.filter((i) => (isAdmin || !i.adminOnly) && (!assistant || ASSISTANT_KEYS.has(i.key)));
         if (!items.length) return null;
         return (
           <div key={g.label} className="sh-group">
@@ -156,8 +156,12 @@ export function Brand() {
   );
 }
 
+/** An assistant's app is filing email and the cases they have been granted. */
+const ASSISTANT_KEYS = new Set(['email', 'matters', 'help']);
+
 export function AppShell({ me, children }: { me: Me | null; children: React.ReactNode }) {
   const isAdmin = me?.role === 'ADMIN';
+  const assistant = me?.role === 'ASSISTANT';
   return (
     <div style={{ background: '#f6f7fb', minHeight: '100vh', fontFamily: 'var(--font-manrope), ui-sans-serif, system-ui, sans-serif', color: '#0f172a' }}>
       <style>{SHELL_CSS}</style>
@@ -180,7 +184,7 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
       <div className="sh-body">
         <nav className="sh-side" aria-label="Main">
           <Suspense fallback={null}>
-            <Items isAdmin={isAdmin} />
+            <Items isAdmin={isAdmin} assistant={assistant} />
           </Suspense>
         </nav>
         <main className="sh-main">{children}</main>

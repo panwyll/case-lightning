@@ -4,6 +4,7 @@
  * guard but adapted for Next.js Request headers.
  */
 import { queryOne } from './db';
+import { canAccessMatter } from './access';
 import type { SessionUser } from './types';
 
 export async function assertMatterAccess(user: SessionUser, matterId: string): Promise<void> {
@@ -19,6 +20,10 @@ export async function assertMatterAccess(user: SessionUser, matterId: string): P
   );
   if (!row) {
     throw new Error('Case not found or inaccessible');
+  }
+  // Firm access rules (migration 086): handled, granted, covered — or everything, in open mode.
+  if (!(await canAccessMatter(user, matterId))) {
+    throw Object.assign(new Error('You do not have access to this case. Ask an admin to grant it.'), { status: 403 });
   }
 }
 
