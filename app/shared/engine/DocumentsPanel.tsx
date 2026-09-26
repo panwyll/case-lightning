@@ -11,7 +11,7 @@ type RegisterDiffView = { previousAt: string; added: Array<{ key: string; value:
  * a flagged result becomes a decision), and the list of what has been filed so far — every
  * event on the log that cites a source document, newest first.
  */
-type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'survey' | 'specialist_report';
+type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'lease' | 'survey' | 'specialist_report';
 
 export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged, doc = null }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void; doc?: string | null }) {
   const [role, setRole] = useState<Role>('auto');
@@ -105,6 +105,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             {(buyer || p?.type === 'remortgage') && <option value="search">Search result</option>}
             {buyer && <option value="enquiry_reply">Reply to our enquiries</option>}
             {(buyer || p?.type === 'remortgage') && <option value="mortgage_offer">Mortgage offer</option>}
+            {leasehold && <option value="lease">Lease</option>}
             {leasehold && <option value="management_pack">Management pack (LPE1)</option>}
             {buyer && <option value="survey">Survey / valuation report</option>}
             {buyer && <option value="specialist_report">Specialist report (damp, timber, structural…)</option>}

@@ -136,6 +136,7 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('title'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('id_check'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('management_pack'), documentId: z.string().uuid() }),
+  z.object({ role: z.literal('lease'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('survey'), documentId: z.string().uuid(), surveyType: z.enum(['level1', 'level2', 'level3', 'valuation']).nullish() }),
   z.object({ role: z.literal('specialist_report'), documentId: z.string().uuid(), forIssueId: z.string().max(60).nullish() }),
 ]);

@@ -13,7 +13,7 @@ import type { StatementFacts } from './proof-of-funds';
  *   - TemplateReportDrafter assembles a plain report from cleared facts.
  *   - Mock providers/comms record what they were asked to do and return fake ids.
  */
-import type { Citation, EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts, SurveyFacts, ContractFacts } from './types';
+import type { Citation, EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts, SurveyFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { ClientComms, DecisionSummariser, DocumentExtractor, DocumentRef, DocumentRepository, EnginePorts, IdCheckProvider, ReportDrafter, SearchProvider, ThirdPartyChaser, ProofOfFundsForms } from './ports';
 
 export class MemoryDocumentRepository implements DocumentRepository {
@@ -86,6 +86,12 @@ export class FixtureExtractor implements DocumentExtractor {
   }
   async extractContract(doc: DocumentRef): Promise<ContractFacts> {
     return this.facts<ContractFacts>(doc, 'contract');
+  }
+  async extractLease(doc: DocumentRef): Promise<LeaseFacts> {
+    return this.facts<LeaseFacts>(doc, 'lease');
+  }
+  async extractManagementPack(doc: DocumentRef): Promise<ManagementPackFacts> {
+    return this.facts<ManagementPackFacts>(doc, 'management pack');
   }
   async extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts> {
     return this.facts(doc, 'ID check');

@@ -22,7 +22,7 @@
  */
 import crypto from 'node:crypto';
 import { z } from 'zod/v4';
-import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
 import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
@@ -49,7 +49,7 @@ const flagSchema = z.object({
 });
 
 export const ClassificationSchema = z.object({
-  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'other']),
+  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'lease', 'other']),
   searchType: z.enum([...SEARCH_TYPES, 'NONE']).describe('Only when role = search.'),
   enquiryReferences: z.array(z.string()).describe('Enquiry numbers/identifiers the document replies to (e.g. "E1", "3", "Additional enquiry 2"), when role = enquiry_reply.'),
   titleNumber: z.string().describe('Land Registry title number if visible, else empty string.'),
@@ -177,6 +177,67 @@ export const ContractExtractionSchema = z.object({
   confidence: conf,
 });
 
+const money = (what: string) => z.number().int().min(0).describe(`${what} in pennies; 0 if not stated.`);
+const text = (what: string) => z.string().describe(`${what}, verbatim or closely paraphrased (≤ 400 chars); empty string if the document is silent.`);
+
+/** The lease read for its terms: what the review table shows and the rules test. */
+export const LeaseExtractionSchema = z.object({
+  pages: PageLedgerSchema,
+  demise: text('The demised premises as described (flat, floor, included parts such as a balcony, store or parking space)'),
+  landlord: z.string().describe('The lessor / landlord as named; empty string if not stated.'),
+  managementCompany: z.string().describe('Any management company party to the lease; empty string if none.'),
+  termYears: z.number().int().min(0).describe('The term in years; 0 if not stated.'),
+  termStartDate: z.string().describe('ISO date the term runs from; empty string if not stated.'),
+  leaseDate: z.string().describe('ISO date of the lease; empty string if not stated.'),
+  unexpiredYears: z.number().int().min(0).describe('Years left today, computed from the term start and length; 0 if it cannot be computed.'),
+  groundRentPenniesPa: money('Ground rent a year now'),
+  groundRentReview: text('The ground rent review clause: when and how the rent changes (doubling, RPI, fixed steps)'),
+  serviceChargeProportion: text('The service charge proportion or apportionment the lessee pays'),
+  repairs: text('Who repairs and maintains what: structure, roof, foundations, windows, the interior of the flat, common parts'),
+  alienation: text('Assignment, underletting and sharing: whether consent is required, absolute or qualified, and any conditions such as a deed of covenant or notice'),
+  alterations: text('Alterations: what is prohibited and what needs consent'),
+  permittedUse: text('The permitted use and any restrictions (single private dwelling, no business, pets)'),
+  insurance: text('Who insures the building and who pays the premium'),
+  landlordNotices: text('Notices of assignment / charge, registration and deed of covenant requirements and the fees the lease fixes'),
+  forfeiture: text('The forfeiture / re-entry clause in short'),
+  clauses: z.array(z.object({ code: z.string().describe('The clause number as printed, e.g. "3.14" or "Schedule 5 para 2".'), topic: z.enum(['term', 'rent', 'service_charge', 'repairs', 'alienation', 'alterations', 'use', 'insurance', 'notices', 'forfeiture', 'other']), text: z.string().describe('Verbatim (≤ 600 chars).'), locator, confidence: conf })).describe('Every clause relied on for the fields above, verbatim with its page.'),
+  flags: z.array(flagSchema).describe('Anything a conveyancer must decide on: a short term, an escalating rent, an onerous covenant, an absolute bar on assignment, a use restriction that bites, a forfeiture on bankruptcy, a rent that turns the lease into an assured tenancy.'),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
+/** The LPE1 / management pack read for its answers: what the review table shows and the decision summarises. */
+export const ManagementPackExtractionSchema = z.object({
+  pages: PageLedgerSchema,
+  landlord: z.string().describe('The landlord / freeholder as named; empty string if not stated.'),
+  managingAgent: z.string().describe('The managing agent as named; empty string if none.'),
+  serviceChargePenniesPa: money('Current service charge a year for this flat'),
+  serviceChargePeriod: z.string().describe('The service charge year the figure covers, as written; empty string if not stated.'),
+  serviceChargeProportion: z.string().describe('The proportion this flat pays, as written; empty string if not stated.'),
+  groundRentPenniesPa: money('Ground rent a year'),
+  arrearsPennies: money('Service charge or ground rent arrears on the account'),
+  reserveFundPennies: money('The reserve / sinking fund balance'),
+  majorWorksPlanned: z.boolean().describe('True if any major works are planned, consulted on or levied.'),
+  majorWorks: text('The major works: what, when, the estimated cost and this flat\'s share'),
+  section20Notice: z.boolean().describe('True if a section 20 consultation has started or is in progress.'),
+  buildingsInsuranceInPlace: z.boolean(),
+  insurer: z.string().describe('The buildings insurer; empty string if not stated.'),
+  insuredSumPennies: money('The sum insured for the building'),
+  insuranceExpiryDate: z.string().describe('ISO expiry / renewal date of the buildings insurance; empty string if not stated.'),
+  feeNoticeOfAssignmentPennies: money('Fee for registering a notice of assignment'),
+  feeNoticeOfChargePennies: money('Fee for registering a notice of charge'),
+  feeDeedOfCovenantPennies: money('Fee for a deed of covenant'),
+  feeCertificateOfCompliancePennies: money('Fee for a certificate of compliance (Land Registry restriction)'),
+  feesOther: text('Any other fees the buyer must pay the landlord or agent on sale'),
+  consentsRequired: text('Consents the landlord requires on sale: licence to assign, deed of covenant, share transfer, references'),
+  disputes: text('Disputes, litigation, breaches of covenant, forfeiture proceedings or complaints disclosed'),
+  accountsProvided: z.string().describe('Which years\' accounts and budgets are enclosed, as written; empty string if none.'),
+  entries: z.array(z.object({ code: z.string().describe('The LPE1 question number, e.g. "3.4", or the enclosure name.'), text: z.string().describe('The answer verbatim (≤ 600 chars).'), locator, confidence: conf })).describe('Every answer relied on for the fields above, verbatim with its page.'),
+  flags: z.array(flagSchema).describe('Anything a conveyancer must decide on: arrears, major works or a section 20 notice, no or inadequate insurance, a reserve fund not held, a dispute, high fees, a consent that may be refused, accounts missing.'),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
 export const IdCheckExtractionSchema = z.object({
   pages: PageLedgerSchema,
   provider: z.string(),
@@ -192,6 +253,21 @@ export const IdCheckExtractionSchema = z.object({
 
 /** Known codes and the LOWEST severity they may be reported at. The model may raise, never lower. */
 export const MIN_SEVERITY: Record<string, Severity> = {
+  // lease and management pack
+  SHORT_LEASE: 'medium',
+  GROUND_RENT_HIGH: 'medium',
+  GROUND_RENT_DOUBLING: 'high',
+  LEASE_ALIENATION_ABSOLUTE: 'high',
+  ONEROUS_COVENANT: 'medium',
+  FORFEITURE_ON_BANKRUPTCY: 'medium',
+  SERVICE_CHARGE_ARREARS: 'medium',
+  MAJOR_WORKS_PLANNED: 'medium',
+  SECTION_20_NOTICE: 'medium',
+  NO_BUILDINGS_INSURANCE: 'high',
+  RESERVE_FUND_NONE: 'low',
+  LEASEHOLD_DISPUTE: 'high',
+  ACCOUNTS_MISSING: 'low',
+  HIGH_LANDLORD_FEES: 'low',
   PLANNING_ENFORCEMENT: 'high',
   BREACH_OF_CONDITION: 'high',
   CONTAMINATED_LAND: 'high',
@@ -312,6 +388,69 @@ export function toTitleFacts(out: z.infer<typeof TitleExtractionSchema>): TitleF
   };
 }
 
+const orNull = (s: string) => (s.trim() ? s.trim() : null);
+const orNullN = (n: number) => (n > 0 ? n : null);
+
+export function toLeaseFacts(out: z.infer<typeof LeaseExtractionSchema>): LeaseFacts {
+  const { flags, minConfidence } = normaliseFlags(out.flags);
+  const loc = (l: { page: number; section: string; quote: string }) => ({ page: l.page, section: l.section || undefined, quote: l.quote || undefined });
+  const clauses = out.clauses.map((c) => ({ code: c.code.trim(), topic: c.topic, text: c.text.trim(), locator: loc(c.locator) }));
+  const rentClause = clauses.find((c) => c.topic === 'rent');
+  return {
+    demise: orNull(out.demise),
+    landlord: orNull(out.landlord),
+    managementCompany: orNull(out.managementCompany),
+    termYears: orNullN(out.termYears),
+    termStartDate: orNull(out.termStartDate),
+    leaseDate: orNull(out.leaseDate),
+    unexpiredYears: orNullN(out.unexpiredYears),
+    groundRentPenniesPa: out.groundRentPenniesPa > 0 ? out.groundRentPenniesPa : null,
+    groundRentReview: orNull(out.groundRentReview),
+    serviceChargeProportion: orNull(out.serviceChargeProportion),
+    repairs: orNull(out.repairs),
+    alienation: orNull(out.alienation),
+    alterations: orNull(out.alterations),
+    permittedUse: orNull(out.permittedUse),
+    insurance: orNull(out.insurance),
+    landlordNotices: orNull(out.landlordNotices),
+    forfeiture: orNull(out.forfeiture),
+    locator: rentClause?.locator ?? clauses[0]?.locator,
+    clauses,
+    flags,
+    confidence: overallConfidence(out.confidence, [...out.clauses.map((c) => c.confidence), minConfidence], out.scanQuality),
+  };
+}
+
+export function toManagementPackFacts(out: z.infer<typeof ManagementPackExtractionSchema>): ManagementPackFacts {
+  const { flags, minConfidence } = normaliseFlags(out.flags);
+  const loc = (l: { page: number; section: string; quote: string }) => ({ page: l.page, section: l.section || undefined, quote: l.quote || undefined });
+  const fees = { noticeOfAssignmentPennies: orNullN(out.feeNoticeOfAssignmentPennies), noticeOfChargePennies: orNullN(out.feeNoticeOfChargePennies), deedOfCovenantPennies: orNullN(out.feeDeedOfCovenantPennies), certificateOfCompliancePennies: orNullN(out.feeCertificateOfCompliancePennies), other: orNull(out.feesOther) };
+  return {
+    landlord: orNull(out.landlord),
+    managingAgent: orNull(out.managingAgent),
+    serviceChargePenniesPa: orNullN(out.serviceChargePenniesPa),
+    serviceChargePeriod: orNull(out.serviceChargePeriod),
+    serviceChargeProportion: orNull(out.serviceChargeProportion),
+    groundRentPenniesPa: orNullN(out.groundRentPenniesPa),
+    arrearsPennies: out.arrearsPennies,
+    reserveFundPennies: orNullN(out.reserveFundPennies),
+    majorWorksPlanned: out.majorWorksPlanned,
+    majorWorks: orNull(out.majorWorks),
+    section20Notice: out.section20Notice,
+    buildingsInsuranceInPlace: out.buildingsInsuranceInPlace,
+    insurer: orNull(out.insurer),
+    insuredSumPennies: orNullN(out.insuredSumPennies),
+    insuranceExpiryDate: orNull(out.insuranceExpiryDate),
+    fees: Object.values(fees).some((v) => v != null) ? fees : null,
+    consentsRequired: orNull(out.consentsRequired),
+    disputes: orNull(out.disputes),
+    accountsProvided: orNull(out.accountsProvided),
+    entries: out.entries.map((e) => ({ code: e.code.trim(), text: e.text.trim(), locator: loc(e.locator) })),
+    flags,
+    confidence: overallConfidence(out.confidence, [...out.entries.map((e) => e.confidence), minConfidence], out.scanQuality),
+  };
+}
+
 export function toContractFacts(out: z.infer<typeof ContractExtractionSchema>): ContractFacts {
   const { flags, minConfidence } = normaliseFlags(out.flags);
   const loc = (l: { page: number; section: string; quote: string }) => ({ page: l.page, section: l.section || undefined, quote: l.quote || undefined });
@@ -356,7 +495,9 @@ const SCAN_NOTE =
 
 const PROMPTS = {
   contract: `Extract this contract for the sale and purchase of land (a draft, an approved draft or an engrossment). Name every seller and buyer exactly as printed, the property, the title number, the price, the deposit and who holds it, any fixed completion date, chattels, VAT wording, the standard conditions incorporated and the notice-to-complete period. Copy every special condition verbatim with its number and page, and every indemnity term. Flag anything a conveyancer must decide on before approval. Return a verdict for every page.`,
-  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), or other. ${SCAN_NOTE}`,
+  lease: `Extract this residential lease (the lease itself, a counterpart, a deed of variation or the lease with its plan) for a buyer. Read the parties, the demise, the term and its start, the ground rent and every review provision, the service charge proportion, the repairing obligations of lessee and lessor, assignment and underletting, alterations, use, insurance, the notices and fees the lease fixes on assignment or charge, and forfeiture. Compute the unexpired term from today's date. Copy every clause you rely on verbatim with its page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
+  management_pack: `Extract this leasehold information pack (LPE1, LPE2, the managing agent's pack or the landlord's replies) for a buyer. Read every question and enclosure: the landlord and managing agent, the service charge for this flat and the year it covers, the proportion, the ground rent, arrears, the reserve fund, major works planned or consulted on (section 20), buildings insurance and its expiry, every fee charged on sale, the consents required, any dispute or breach, and which accounts and budgets are enclosed. Copy every answer you rely on verbatim with its question number and page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
+  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), a lease (the lease deed itself, a counterpart or a deed of variation), or other. ${SCAN_NOTE}`,
   survey: `Read this survey, valuation or specialist report for a house buyer. Extract every recommendation the author makes, verbatim where possible, and for each say whether it recommends a FURTHER specialist investigation or report before purchase (as opposed to routine maintenance or a note). Name the specialist recommended if the report does. Grade severity as the report does (high for structural / safety / "urgent", medium for "should be investigated", low for advisory). Do not judge whether the buyer should proceed. ${SCAN_NOTE}`,
   search: `Extract the findings of this property search as typed facts. ${TAXONOMY} Include informational entries so the handler can see what was checked. ${SCAN_NOTE}`,
   enquiry: `Extract the seller's solicitor's replies to pre-contract enquiries. For each reply, decide whether it fully answers the question ("answered"), only partly ("partial"), declines ("refused" — e.g. "the buyer must rely on their own survey/searches" where a factual answer was asked), or is unclear. Record any issue the reply reveals as a flag. ${TAXONOMY} ${SCAN_NOTE}`,
@@ -530,6 +671,26 @@ export class ClaudeExtractor implements DocumentExtractor {
       confidence: out.scanQuality === 'poor' ? Math.min(out.confidence, 0.6) : out.confidence,
     };
     await this.persist(doc, 'statement', facts, facts.confidence, { model, promptHash, contentHash });
+    return facts;
+  }
+
+  async extractLease(doc: DocumentRef): Promise<LeaseFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<LeaseFacts>(doc, 'lease', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'lease', LeaseExtractionSchema, PROMPTS.lease, `Today is ${new Date().toISOString().slice(0, 10)}. Extract this lease.`, 'DOC_EXTRACT');
+    const facts = toLeaseFacts(out);
+    await this.persist(doc, 'lease', facts, facts.confidence ?? 0, { model, promptHash, contentHash }, out.pages, out);
+    return facts;
+  }
+
+  async extractManagementPack(doc: DocumentRef): Promise<ManagementPackFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<ManagementPackFacts>(doc, 'management_pack', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'management_pack', ManagementPackExtractionSchema, PROMPTS.management_pack, 'Extract this management pack.', 'DOC_EXTRACT');
+    const facts = toManagementPackFacts(out);
+    await this.persist(doc, 'management_pack', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 

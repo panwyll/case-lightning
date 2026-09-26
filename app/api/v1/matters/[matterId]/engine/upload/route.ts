@@ -30,7 +30,7 @@ const bodySchema = z.object({
   fileName: z.string().min(1).max(200),
   base64: z.string().min(1),
   mimeType: z.string().max(100).default('application/pdf'),
-  role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'survey', 'specialist_report']).default('auto'),
+  role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report']).default('auto'),
   searchType: z.enum(SEARCH_TYPES).optional(),
   enquiryId: z.string().max(60).optional(),
   facts: z.unknown().optional(),

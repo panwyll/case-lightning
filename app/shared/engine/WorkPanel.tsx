@@ -192,6 +192,7 @@ const ABOUT: Record<string, About> = {
   'Transfer deed': { starts: 'Sent for signature with the contract.', done: 'The TR1 signed by every party and witnessed.' },
   'Declaration of trust': { starts: 'When the clients hold as tenants in common.', done: 'Signed by every co-owner, witnessed, shares as instructed.' },
   'How they hold': { starts: 'Asked of the clients where there is more than one.', done: 'Joint tenants or tenants in common, recorded from their instruction.' },
+  'Lease': { starts: 'The lease is filed under Documents on a leasehold case, before or after the official copy.', done: 'Read into the review table: term, ground rent and its review, service charge proportion, repairs, assignment, alterations, use, insurance, notices and fees, forfeiture, every clause quoted with its page.', note: 'A short term, an escalating rent or an absolute bar on assignment raises the title decision; the lease and the official copy are one review.', via: 'Claude reads the lease; the rules test the term and the rent.', creates: 'A title decision when anything needs a person; otherwise the lease facts on the case.' },
   'Management pack (LPE1)': { starts: 'Requested from the freeholder or agent on a leasehold; chased on the SLA.', done: 'Read by the rules: service charge, ground rent, arrears, major works and insurance; anything off goes to a conveyancer.' },
   'Notice of assignment': { starts: 'After completion on a leasehold.', done: 'Served on the landlord with the fee; notice of charge where there is a lender.' },
   SDLT: { starts: 'On completion.', done: 'Return filed and paid within 14 days; UTRN on file.', note: 'The deadline is tracked and escalated.' },
@@ -643,6 +644,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   if (has('leasehold')) lane({ id: 'leasehold', order: 'sequence', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
     tiles: [
+      { label: 'Lease', status: s.title?.lease ? 'read' : 'not_started', detail: s.title?.lease ? [s.title.lease.unexpiredYears != null ? `${s.title.lease.unexpiredYears} years left` : null, s.title.lease.groundRentPenniesPa != null ? `ground rent £${(s.title.lease.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year` : null].filter(Boolean).join(' · ') || undefined : undefined, documentId: s.title?.leaseDocumentId ?? undefined, focus: 'title' },
       { label: 'Management pack (LPE1)', status: s.managementPack?.status ?? 'not_started', documentId: s.managementPack?.documentId, focus: 'management_pack' },
       ...(buyer ? [{ label: 'Notice of assignment', status: s.postCompletion.noticeOfAssignmentAt ? 'sent' : 'not_started' }] : []),
     ],

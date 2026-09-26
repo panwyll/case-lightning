@@ -217,7 +217,7 @@ export interface EngineState {
   searches: Record<string, { searchType: string; status: string; orderedAt: string | null; returnedAt: string | null; flags: Array<{ code: string; severity: string; description: string }>; resolution: string | null; documentId?: string | null }>;
   enquiries: Record<string, { enquiryId: string; subject: string; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null; documentId?: string | null }>;
   mortgage: { status: string; facts: { lender?: string } | null; documentId?: string | null };
-  title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null };
+  title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null; lease?: { unexpiredYears?: number | null; groundRentPenniesPa?: number | null; demise?: string | null } | null; leaseDocumentId?: string | null };
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };

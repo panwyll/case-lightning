@@ -12,7 +12,7 @@
  * Pure functions here; pdf.js is loaded lazily by `pdfPageTexts` so nothing else pays for it.
  */
 import { z } from 'zod/v4';
-import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, TitleFacts, LeaseFacts, ManagementPackFacts } from './types';
 
 export type PageVerdict = 'facts' | 'nothing' | 'unreadable' | 'unattested';
 
@@ -174,6 +174,54 @@ export function flattenFacts(role: string, facts: unknown, raw?: unknown): Array
     for (const c of f.specialConditions) out.push({ key: `contract.special_condition.${c.code}`, value: c.text, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text, confidence: null });
     f.indemnities.forEach((c, i) => out.push({ key: `contract.indemnity.${i + 1}`, value: c.text, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text, confidence: null }));
     out.push(...flagRows('contract.flag', f.flags));
+  } else if (role === 'lease') {
+    const f = facts as LeaseFacts;
+    plain('lease.demise', f.demise);
+    plain('lease.landlord', f.landlord);
+    plain('lease.management_company', f.managementCompany);
+    plain('lease.term_years', f.termYears);
+    plain('lease.term_start_date', f.termStartDate);
+    plain('lease.date', f.leaseDate);
+    plain('lease.unexpired_years', f.unexpiredYears);
+    plain('lease.ground_rent_pennies_pa', f.groundRentPenniesPa);
+    plain('lease.ground_rent_review', f.groundRentReview);
+    plain('lease.service_charge_proportion', f.serviceChargeProportion);
+    plain('lease.repairs', f.repairs);
+    plain('lease.alienation', f.alienation);
+    plain('lease.alterations', f.alterations);
+    plain('lease.permitted_use', f.permittedUse);
+    plain('lease.insurance', f.insurance);
+    plain('lease.landlord_notices', f.landlordNotices);
+    plain('lease.forfeiture', f.forfeiture);
+    for (const c of f.clauses ?? []) out.push({ key: `lease.clause.${c.topic}.${c.code}`, value: c.text, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text, confidence: null });
+    out.push(...flagRows('lease.flag', f.flags));
+  } else if (role === 'management_pack') {
+    const f = facts as ManagementPackFacts;
+    plain('pack.landlord', f.landlord);
+    plain('pack.managing_agent', f.managingAgent);
+    plain('pack.service_charge_pennies_pa', f.serviceChargePenniesPa);
+    plain('pack.service_charge_period', f.serviceChargePeriod);
+    plain('pack.service_charge_proportion', f.serviceChargeProportion);
+    plain('pack.ground_rent_pennies_pa', f.groundRentPenniesPa);
+    plain('pack.arrears_pennies', f.arrearsPennies);
+    plain('pack.reserve_fund_pennies', f.reserveFundPennies);
+    plain('pack.major_works_planned', f.majorWorksPlanned == null ? null : f.majorWorksPlanned ? 'yes' : 'no');
+    plain('pack.major_works', f.majorWorks);
+    plain('pack.section_20_notice', f.section20Notice == null ? null : f.section20Notice ? 'yes' : 'no');
+    plain('pack.buildings_insurance', f.buildingsInsuranceInPlace == null ? null : f.buildingsInsuranceInPlace ? 'in place' : 'not in place');
+    plain('pack.insurer', f.insurer);
+    plain('pack.insured_sum_pennies', f.insuredSumPennies);
+    plain('pack.insurance_expiry_date', f.insuranceExpiryDate);
+    plain('pack.fee.notice_of_assignment_pennies', f.fees?.noticeOfAssignmentPennies);
+    plain('pack.fee.notice_of_charge_pennies', f.fees?.noticeOfChargePennies);
+    plain('pack.fee.deed_of_covenant_pennies', f.fees?.deedOfCovenantPennies);
+    plain('pack.fee.certificate_of_compliance_pennies', f.fees?.certificateOfCompliancePennies);
+    plain('pack.fee.other', f.fees?.other);
+    plain('pack.consents_required', f.consentsRequired);
+    plain('pack.disputes', f.disputes);
+    plain('pack.accounts_provided', f.accountsProvided);
+    for (const e of f.entries ?? []) out.push({ key: `pack.entry.${e.code}`, value: e.text, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text, confidence: null });
+    out.push(...flagRows('pack.flag', f.flags));
   } else if (role.startsWith('enquiry')) {
     const f = facts as EnquiryReplyFacts;
     plain('reply.enquiry', f.enquiryId);

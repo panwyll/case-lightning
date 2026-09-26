@@ -21,7 +21,7 @@ import { assertCompletion, CompletionError, type Completion } from './completion
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
-import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
+import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import {
@@ -90,6 +90,7 @@ import {
   type SearchType,
   type Stage,
   type TitleFacts,
+  type LeaseFacts,
   type WaitKey,
   NOTE_KINDS,
   type NoteKind,
@@ -116,6 +117,7 @@ type CommandBody =
   | { type: 'mortgage_offer_received'; actor: Actor; documentId: string; lender?: string | null }
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
+  | { type: 'lease_extracted'; actor: Actor; documentId: string; facts: LeaseFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
   | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null }
@@ -824,6 +826,21 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return out;
     }
 
+    case 'lease_extracted': {
+      requireEnrolled(s);
+      requireStageAtLeast(s, 'pre_contract', 'Lease review');
+      if (!isLeasehold(s)) reject('A lease is read on a leasehold matter; this matter is freehold.');
+      if (s.title.status === 'flagged') reject('A title decision is pending; resolve it before reading the lease.');
+      if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing the lease now needs manual handling.');
+      const extracted: NewEvent = { type: 'lease_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence ?? null };
+      // The lease's flags are title flags: one decision, one sub-flow, the official copy and the lease side by side.
+      const verdict = evaluateLease(cmd.facts);
+      return [
+        extracted,
+        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Lease${cmd.facts.demise ? ` of ${cmd.facts.demise}` : ''}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence ?? 0 }),
+      ];
+    }
+
     // ── Decisions ──
     case 'open_decision_source': {
       const d = pendingDecision(s, cmd.decisionEventId);
@@ -1399,6 +1416,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         `The management pack (LPE1 / leasehold information) has arrived${s.managementPack.requestedAt ? ` (requested ${s.managementPack.requestedAt.slice(0, 10)})` : ' (not requested through the engine)'}. Every figure in it is a client-advice point; check it against the lease and the seller\'s replies.`,
         '',
         facts ? `Service charge: ${facts.serviceChargePenniesPa != null ? `${gbp(facts.serviceChargePenniesPa)} a year` : 'not read'} · Ground rent: ${facts.groundRentPenniesPa != null ? `${gbp(facts.groundRentPenniesPa)} a year` : 'not read'} · Arrears: ${facts.arrearsPennies != null ? gbp(facts.arrearsPennies) : 'not read'} · Major works planned: ${facts.majorWorksPlanned == null ? 'not read' : facts.majorWorksPlanned ? 'YES' : 'no'} · Buildings insurance: ${facts.buildingsInsuranceInPlace == null ? 'not read' : facts.buildingsInsuranceInPlace ? 'in place' : 'NOT confirmed'} · Reserve fund: ${facts.reserveFundPennies != null ? gbp(facts.reserveFundPennies) : 'not read'}` : 'The pack was not extracted: read it in full.',
+        ...(facts && (facts.landlord || facts.managingAgent) ? [`Landlord: ${facts.landlord ?? 'not stated'} · Managing agent: ${facts.managingAgent ?? 'not stated'}${facts.serviceChargePeriod ? ` · Service charge year: ${facts.serviceChargePeriod}` : ''}${facts.serviceChargeProportion ? ` · Proportion: ${facts.serviceChargeProportion}` : ''}`] : []),
+        ...(facts && facts.buildingsInsuranceInPlace != null ? [`Buildings insurance: ${facts.buildingsInsuranceInPlace ? 'in place' : 'NOT in place'}${facts.insurer ? ` · ${facts.insurer}` : ''}${facts.insuredSumPennies ? ` · sum insured ${gbp(facts.insuredSumPennies)}` : ''}${facts.insuranceExpiryDate ? ` · expires ${facts.insuranceExpiryDate}` : ''}`] : []),
+        ...(facts?.fees ? [`Fees on sale: ${[facts.fees.noticeOfAssignmentPennies != null ? `notice of assignment ${gbp(facts.fees.noticeOfAssignmentPennies)}` : null, facts.fees.noticeOfChargePennies != null ? `notice of charge ${gbp(facts.fees.noticeOfChargePennies)}` : null, facts.fees.deedOfCovenantPennies != null ? `deed of covenant ${gbp(facts.fees.deedOfCovenantPennies)}` : null, facts.fees.certificateOfCompliancePennies != null ? `certificate of compliance ${gbp(facts.fees.certificateOfCompliancePennies)}` : null, facts.fees.other].filter(Boolean).join(' · ')}`] : []),
+        ...(facts?.majorWorks ? [`Major works: ${facts.majorWorks}${facts.section20Notice ? ' (section 20 consultation under way)' : ''}`] : []),
+        ...(facts?.consentsRequired ? [`Consents required on sale: ${facts.consentsRequired}`] : []),
+        ...(facts?.disputes ? [`Disputes disclosed: ${facts.disputes}`] : []),
+        ...(facts?.accountsProvided ? [`Accounts enclosed: ${facts.accountsProvided}`] : []),
         ...(flagList.length ? ['', 'Points for your attention:', ...flagList.map((f, i) => `${i + 1}. [${f.severity.toUpperCase()}] ${f.description}`)] : []),
         '',
         'Usual checks: arrears cleared before completion; planned major works and who pays (retention?); the insurance schedule names the block; the landlord\'s notice fees and consent requirements; the accounts for the last three years.',

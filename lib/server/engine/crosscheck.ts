@@ -16,7 +16,7 @@ export interface CaseRecord {
   lender: string | null;
   completionDate: string | null;
 }
-export type CheckId = 'address' | 'title_number' | 'price' | 'buyer_names' | 'seller_names' | 'lender' | 'completion_date';
+export type CheckId = 'address' | 'title_number' | 'price' | 'buyer_names' | 'seller_names' | 'lender' | 'completion_date' | 'ground_rent' | 'landlord';
 export interface CheckValue { source: string; documentId: string | null; value: string; page: number | null }
 export interface CheckResult {
   check: CheckId;
@@ -26,7 +26,7 @@ export interface CheckResult {
   message: string;
 }
 
-const CHECK_LABEL: Record<CheckId, string> = { address: 'Property address', title_number: 'Title number', price: 'Price', buyer_names: "Buyer's names", seller_names: "Seller's names", lender: 'Lender', completion_date: 'Completion date' };
+const CHECK_LABEL: Record<CheckId, string> = { address: 'Property address', title_number: 'Title number', price: 'Price', buyer_names: "Buyer's names", seller_names: "Seller's names", lender: 'Lender', completion_date: 'Completion date', ground_rent: 'Ground rent', landlord: 'Landlord' };
 
 /** Keys in the register that carry each fact. The suffix is what every extractor writes; the prefix says which document. */
 const KEYS: Record<CheckId, RegExp> = {
@@ -37,6 +37,8 @@ const KEYS: Record<CheckId, RegExp> = {
   seller_names: /^(contract\.seller|title\.proprietor)\.\d+$/,
   lender: /^(offer\.lender|contract\.lender)$/,
   completion_date: /\.completion_date$/,
+  ground_rent: /^(lease|pack)\.ground_rent_pennies_pa$/,
+  landlord: /^(lease|pack)\.landlord$/,
 };
 
 const POSTCODE = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
@@ -86,6 +88,9 @@ export function crossCheck(record: CaseRecord, rows: RegisterRow[]): CheckResult
   finish('price', [...caseVal(record.purchasePricePennies != null ? String(record.purchasePricePennies) : null), ...pick('price')], (a, b) => Number(a.value) === Number(b.value), (v) => (Number.isFinite(Number(v.value)) ? `£${(Number(v.value) / 100).toLocaleString('en-GB')}` : v.value));
   finish('lender', [...caseVal(record.lender), ...pick('lender')], (a, b) => normLender(a.value) === normLender(b.value));
   finish('completion_date', [...caseVal(record.completionDate), ...pick('completion_date')], (a, b) => normDate(a.value) === normDate(b.value));
+  // Leasehold: what the lease says against what the pack says.
+  finish('ground_rent', pick('ground_rent'), (a, b) => Number(a.value) === Number(b.value), (v) => (Number.isFinite(Number(v.value)) ? `£${(Number(v.value) / 100).toLocaleString('en-GB')} a year` : v.value));
+  finish('landlord', pick('landlord'), (a, b) => normLender(a.value) === normLender(b.value) || namesMatch(a.value, b.value));
 
   // Names: every document's list against the case record's list; a document may name a subset (one borrower of two).
   const nameCheck = (check: CheckId, recordNames: string[], docRows: CheckValue[]) => {

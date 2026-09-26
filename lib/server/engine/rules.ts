@@ -30,6 +30,7 @@ import type {
   Severity,
   SourceLocator,
   TitleFacts,
+  LeaseFacts,
 } from './types';
 
 /** Below this the extraction is not trusted and a human must look at the source. */
@@ -163,6 +164,33 @@ export const SHORT_LEASE_YEARS = { flag: 85, serious: 80 };
 /** Ground rent above this (outside London) risks the lease being an assured tenancy; many lenders refuse. */
 export const GROUND_RENT_FLAG_PENNIES_PA = 25_000;
 
+/** What the rules say about a lease: the term, the rent and its review, and what the extractor flagged in the covenants. */
+export function leaseFlags(l: LeaseFacts): Flag[] {
+  const flags: Flag[] = [];
+  if (l.unexpiredYears != null && l.unexpiredYears < SHORT_LEASE_YEARS.flag) {
+    flags.push({ code: 'SHORT_LEASE', severity: l.unexpiredYears < SHORT_LEASE_YEARS.serious ? 'high' : 'medium', description: `${l.unexpiredYears} years unexpired${l.unexpiredYears < SHORT_LEASE_YEARS.serious ? ' — below 80, marriage value applies to an extension and many lenders will not lend' : ' — near the point lenders and buyers start to discount'}.`, locator: l.locator });
+  }
+  if (l.groundRentPenniesPa != null && l.groundRentPenniesPa > GROUND_RENT_FLAG_PENNIES_PA) {
+    flags.push({ code: 'GROUND_RENT_HIGH', severity: 'medium', description: `Ground rent £${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year exceeds the assured-tenancy threshold; lender acceptability must be checked.`, locator: l.locator });
+  }
+  if (l.groundRentReview && /doubl|x\s?2|twice|compound/i.test(l.groundRentReview)) {
+    flags.push({ code: 'GROUND_RENT_DOUBLING', severity: 'high', description: `Ground rent review clause: "${l.groundRentReview}". Doubling rents are refused by many lenders; a deed of variation may be needed.`, locator: l.locator });
+  }
+  if (l.alienation && /absolute|not (?:to )?assign|no assignment|prohibit/i.test(l.alienation) && !/consent/i.test(l.alienation)) {
+    flags.push({ code: 'LEASE_ALIENATION_ABSOLUTE', severity: 'high', description: `The lease restricts assignment: "${l.alienation.slice(0, 200)}".`, locator: l.clauses?.find((c) => c.topic === 'alienation')?.locator ?? l.locator });
+  }
+  for (const f of l.flags ?? []) if (!flags.some((x) => x.code === f.code)) flags.push(f);
+  return flags;
+}
+
+/** The lease on its own (the lease document read before or after the official copy). */
+export function evaluateLease(l: LeaseFacts): Verdict {
+  const flags = leaseFlags(l);
+  if (l.confidence != null && l.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(l.confidence, 'lease'));
+  if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
+  return { outcome: 'clear', reasons: [l.unexpiredYears != null ? `${l.unexpiredYears} years unexpired` : 'term read', l.groundRentPenniesPa != null ? `ground rent £${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year` : 'ground rent read', 'no restrictive alienation clause'] };
+}
+
 export function evaluateTitle(facts: TitleFacts, expectedTenure: 'freehold' | 'leasehold' | 'any' = 'freehold'): Verdict {
   const flags: Flag[] = [];
   if (facts.tenure === 'unknown') {
@@ -175,17 +203,7 @@ export function evaluateTitle(facts: TitleFacts, expectedTenure: 'freehold' | 'l
   if (facts.tenure === 'leasehold' && expectedTenure !== 'freehold') {
     const l = facts.lease;
     if (!l) flags.push({ code: 'LEASE_NOT_READ', severity: 'medium', description: 'The lease terms (unexpired term, ground rent, review clause) were not extracted. Read the lease before the report on title.' });
-    else {
-      if (l.unexpiredYears != null && l.unexpiredYears < SHORT_LEASE_YEARS.flag) {
-        flags.push({ code: 'SHORT_LEASE', severity: l.unexpiredYears < SHORT_LEASE_YEARS.serious ? 'high' : 'medium', description: `${l.unexpiredYears} years unexpired${l.unexpiredYears < SHORT_LEASE_YEARS.serious ? ' — below 80, marriage value applies to an extension and many lenders will not lend' : ' — near the point lenders and buyers start to discount'}.`, locator: l.locator });
-      }
-      if (l.groundRentPenniesPa != null && l.groundRentPenniesPa > GROUND_RENT_FLAG_PENNIES_PA) {
-        flags.push({ code: 'GROUND_RENT_HIGH', severity: 'medium', description: `Ground rent £${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year exceeds the assured-tenancy threshold; lender acceptability must be checked.`, locator: l.locator });
-      }
-      if (l.groundRentReview && /doubl|x\s?2|twice|compound/i.test(l.groundRentReview)) {
-        flags.push({ code: 'GROUND_RENT_DOUBLING', severity: 'high', description: `Ground rent review clause: "${l.groundRentReview}". Doubling rents are refused by many lenders; a deed of variation may be needed.`, locator: l.locator });
-      }
-    }
+    else flags.push(...leaseFlags(l));
   }
   if (facts.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(facts.confidence, 'title register'));
   for (const r of facts.restrictions) {

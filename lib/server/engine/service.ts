@@ -28,10 +28,11 @@
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
+import { profileOf } from './transactions';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -50,7 +51,7 @@ export const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicit
 /** One acknowledgement per party per delivery, not one per attachment. */
 const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
-import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateTitle, evaluateIdCheck } from './rules';
+import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
 import { openPofQueries } from './types';
 
@@ -330,11 +331,22 @@ export class EngineService {
 
   // ───────────── leasehold ─────────────
 
-  /** The management pack (LPE1) arrived: always a decision citing it (extraction is optional and best-effort). */
+  /** The management pack (LPE1) arrived: read into the review table, then always a decision citing it (a failed read still raises the decision, with nothing filled in). */
   async managementPackReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
-    const facts = (doc.extractedFacts && typeof doc.extractedFacts === 'object' && 'flags' in (doc.extractedFacts as object) ? (doc.extractedFacts as import('./types').ManagementPackFacts) : null);
+    const facts = await this.ports.extractor.extractManagementPack(doc).catch((err) => { this.ports.log('management pack extraction failed — the decision goes up unread', err); return null; });
     return this.run(tenantId, matterId, { type: 'management_pack_received', actor: EXTERNAL, documentId, facts });
+  }
+
+  /** The lease arrived: read into the review table; its flags go through the title decision (leasehold only). */
+  async leaseReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = await this.ports.extractor.extractLease(doc).catch((err) => {
+      this.ports.log('lease extraction failed — routing to human', err);
+      return { confidence: 0, flags: [], clauses: [] } as LeaseFacts;
+    });
+    const summary = await this.summarise('title', `Lease${facts.demise ? ` of ${facts.demise}` : ''}`, evaluateLease(facts), doc, tenantId, matterId);
+    return this.run(tenantId, matterId, { type: 'lease_extracted', actor: SYSTEM, documentId, facts, extractor: this.ports.extractor.name, summary });
   }
 
   /** ID/AML result landed (webhook / upload): extract → rule → cleared or flagged. */
@@ -362,7 +374,7 @@ export class EngineService {
   async alreadyHave(tenantId: string, matterId: string, kind: 'search' | 'official_copies' | 'id_check', subject: string | null): Promise<boolean> {
     const s = await this.getState(tenantId, matterId);
     if (kind === 'search') { const sr = subject ? s.searches[subject] : null; return !!sr && sr.status !== 'ordered'; }
-    if (kind === 'official_copies') return s.title.status !== 'awaiting';
+    if (kind === 'official_copies') return !!s.title.documentId; // the lease may have been read first; only the official copy itself counts
     return s.idCheck.status !== 'not_started' && s.idCheck.status !== 'requested';
   }
 
@@ -425,11 +437,14 @@ export class EngineService {
       return { state: await this.getState(tenantId, matterId), events: [], warning: 'Official copies are already on the case; this copy was filed but not read again.' };
     }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
-    const facts = await this.ports.extractor.extractTitle(doc).catch((err) => {
+    const facts: TitleFacts = await this.ports.extractor.extractTitle(doc).catch((err) => {
       this.ports.log('title extraction failed — routing to human', err);
       return { titleNumber: 'unknown', tenure: 'unknown' as const, restrictions: [], charges: [], covenants: [], confidence: 0 };
     });
-    const summary = await this.summarise('title', `Title ${facts.titleNumber}`, evaluateTitle(facts), doc, tenantId, matterId);
+    // A lease already read stays with the title: the rules see both.
+    const before = await this.getState(tenantId, matterId);
+    if (before.title.lease && !facts.lease) facts.lease = before.title.lease;
+    const summary = await this.summarise('title', `Title ${facts.titleNumber}`, evaluateTitle(facts, profileOf(before.transactionType).tenure), doc, tenantId, matterId);
     return this.run(tenantId, matterId, { type: 'title_extracted', actor: SYSTEM, documentId, facts, extractor: this.ports.extractor.name, summary });
   }
 

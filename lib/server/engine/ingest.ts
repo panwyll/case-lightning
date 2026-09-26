@@ -30,6 +30,7 @@ export type IngestAction =
   | { kind: 'title' }
   | { kind: 'id_check' }
   | { kind: 'management_pack' }
+  | { kind: 'lease' }
   | { kind: 'contract' }
   | { kind: 'survey' }
   | { kind: 'specialist_report'; forIssueId: string | null }
@@ -79,6 +80,10 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
       // One open further-investigation issue → the report is for it; several → a person links it (the route accepts forIssueId).
       return { kind: 'specialist_report', forIssueId: open.length === 1 ? open[0].id : null };
     }
+    case 'lease':
+      if (state.transactionType !== 'leasehold_purchase' && state.transactionType !== 'leasehold_sale') return { kind: 'skip', reason: 'a lease on a freehold matter' };
+      if (state.title.status === 'flagged') return { kind: 'skip', reason: 'a title decision is pending' };
+      return { kind: 'lease' };
     case 'management_pack':
       if (state.transactionType !== 'leasehold_purchase') return { kind: 'skip', reason: 'management pack on a freehold matter' };
       if (state.managementPack.status === 'flagged') return { kind: 'skip', reason: 'a management-pack decision is pending' };
@@ -132,6 +137,8 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.contractReceived(tenantId, matterId, documentId);
     case 'management_pack':
       return svc.managementPackReceived(tenantId, matterId, documentId);
+    case 'lease':
+      return svc.leaseReceived(tenantId, matterId, documentId);
     case 'survey':
       return svc.surveyReceived(tenantId, matterId, documentId);
     case 'specialist_report':

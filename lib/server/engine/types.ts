@@ -95,6 +95,7 @@ export const EVENT_TYPES = [
   'mortgage_condition_reviewed',
   // title
   'title_extracted',
+  'lease_extracted',
   'title_cleared',
   'title_flagged',
   'title_reviewed',
@@ -286,7 +287,31 @@ export interface LeaseFacts {
   leaseDate?: string | null;
   landlord?: string | null;
   locator?: SourceLocator;
+  // ── the lease read in full (Document Review Engine: the lease review table) ──
+  termYears?: number | null;
+  termStartDate?: string | null;
+  /** The demised premises as described, e.g. "Flat 3, second floor, with the balcony and bin store". */
+  demise?: string | null;
+  managementCompany?: string | null;
+  /** Service charge proportion as written, e.g. "12.5%" or "a fair proportion". */
+  serviceChargeProportion?: string | null;
+  /** Who repairs what: structure, roof, windows, interior; verbatim where possible. */
+  repairs?: string | null;
+  /** Assignment and subletting: consent needed, absolute or qualified. */
+  alienation?: string | null;
+  alterations?: string | null;
+  permittedUse?: string | null;
+  /** Who insures and who pays. */
+  insurance?: string | null;
+  /** Notice of assignment / charge, deed of covenant and registration fees the lease requires. */
+  landlordNotices?: string | null;
+  forfeiture?: string | null;
+  /** Every clause relied on, verbatim with its page, for the review table. */
+  clauses?: LeaseClause[];
+  flags?: Flag[];
+  confidence?: number;
 }
+export interface LeaseClause { code: string; topic: 'term' | 'rent' | 'service_charge' | 'repairs' | 'alienation' | 'alterations' | 'use' | 'insurance' | 'notices' | 'forfeiture' | 'other'; text: string; locator?: SourceLocator }
 
 export interface TitleFacts {
   titleNumber: string;
@@ -309,6 +334,30 @@ export interface ManagementPackFacts {
   reserveFundPennies?: number | null;
   flags: Flag[];
   confidence: number;
+  // ── the LPE1 read in full (Document Review Engine: the management pack review table) ──
+  landlord?: string | null;
+  managingAgent?: string | null;
+  /** The service charge year the figure is for, e.g. "1 April 2026 to 31 March 2027". */
+  serviceChargePeriod?: string | null;
+  /** The buyer's proportion as the pack states it. */
+  serviceChargeProportion?: string | null;
+  /** Planned or consulted-on major works: what, when, the cost and who pays. */
+  majorWorks?: string | null;
+  /** Section 20 consultation started or in progress. */
+  section20Notice?: boolean | null;
+  insurer?: string | null;
+  insuredSumPennies?: number | null;
+  insuranceExpiryDate?: string | null;
+  /** Fees the landlord or agent charges the buyer, in pennies; null when the pack does not state them. */
+  fees?: { noticeOfAssignmentPennies?: number | null; noticeOfChargePennies?: number | null; deedOfCovenantPennies?: number | null; certificateOfCompliancePennies?: number | null; other?: string | null } | null;
+  /** Consents the landlord requires on sale (licence to assign, deed of covenant, share transfer). */
+  consentsRequired?: string | null;
+  /** Disputes, litigation, breaches or forfeiture the pack discloses. */
+  disputes?: string | null;
+  /** Which years' accounts and budget the pack includes. */
+  accountsProvided?: string | null;
+  /** Every answer relied on, verbatim with its page, for the review table. */
+  entries?: Array<{ code: string; text: string; locator?: SourceLocator }>;
 }
 
 export interface EnquiryReplyFacts {
@@ -648,6 +697,8 @@ export interface Payloads {
   mortgage_condition_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
   title_extracted: { facts: TitleFacts; extractor: string };
+  /** The lease itself read (leasehold): merged into the title facts; flags go through the title decision. */
+  lease_extracted: { facts: LeaseFacts; extractor: string };
   title_cleared: { reasons: string[] };
   title_flagged: { flags: Flag[]; decision: DecisionSpec };
   title_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
@@ -1098,6 +1149,9 @@ export interface MatterState {
     documentId: string | null;
     facts: TitleFacts | null;
     decisionEventId: string | null;
+    /** The lease as read from the lease itself (leasehold); also mirrored onto facts.lease once the title is read. */
+    lease: LeaseFacts | null;
+    leaseDocumentId: string | null;
   };
   reportOnTitle: {
     status: 'not_started' | 'drafted' | 'approved' | 'rejected' | 'sent';
@@ -1244,7 +1298,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     searches: {},
     enquiries: {},
     mortgage: { status: 'not_required', documentId: null, facts: null, decisionEventId: null },
-    title: { status: 'awaiting', documentId: null, facts: null, decisionEventId: null },
+    title: { status: 'awaiting', documentId: null, facts: null, decisionEventId: null, lease: null, leaseDocumentId: null },
     reportOnTitle: {
       status: 'not_started',
       draftId: null,

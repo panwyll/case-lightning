@@ -317,8 +317,18 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'title_extracted': {
       const p = e.payload as Payloads['title_extracted'];
       s.title.status = 'extracted';
-      s.title.facts = p.facts;
+      s.title.facts = s.title.lease && !p.facts.lease ? { ...p.facts, lease: s.title.lease } : p.facts;
+      if (p.facts.lease) s.title.lease = p.facts.lease;
       s.title.documentId = e.sourceDocumentId ?? s.title.documentId;
+      s.title.decisionEventId = null;
+      break;
+    }
+    case 'lease_extracted': {
+      const p = e.payload as Payloads['lease_extracted'];
+      s.title.lease = p.facts;
+      s.title.leaseDocumentId = e.sourceDocumentId ?? s.title.leaseDocumentId;
+      if (s.title.facts) s.title.facts = { ...s.title.facts, lease: p.facts };
+      if (s.title.status === 'awaiting') s.title.status = 'extracted';
       s.title.decisionEventId = null;
       break;
     }

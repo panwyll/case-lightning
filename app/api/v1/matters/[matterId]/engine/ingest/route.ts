@@ -41,6 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
               ? await svc.titleReceived(t, matterId, input.documentId)
               : input.role === 'management_pack'
                 ? await svc.managementPackReceived(t, matterId, input.documentId)
+              : input.role === 'lease'
+                ? await svc.leaseReceived(t, matterId, input.documentId)
                 : input.role === 'survey'
                   ? await svc.surveyReceived(t, matterId, input.documentId, input.surveyType ?? null)
                   : input.role === 'specialist_report'
