@@ -36,7 +36,7 @@ export interface TransactionProfile {
   /** What "the other side" is called in this type. */
   counterparty: string;
   /** Who pays us completion money. */
-  fundsFrom: Array<'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'>;
+  fundsFrom: Array<'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'>;
   /** Registration work after completion. */
   registration: 'ap1' | 'discharge_only' | 'none';
   note: string;

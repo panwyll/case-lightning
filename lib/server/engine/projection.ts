@@ -113,6 +113,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       if (p.hasExistingMortgage && p.transactionType === 'transfer_of_equity') s.lenderConsent.status = 'not_started';
       if (p.transactionType === 'leasehold_sale') s.managementPack.status = 'not_started';
       s.hasLender = p.hasLender;
+      s.shapes = [...(p.shapes ?? [])];
       s.requiredSearches = [...p.requiredSearches];
       s.shadowMode = !!p.shadowMode;
       s.counterpartyType = p.counterpartyType ?? null;

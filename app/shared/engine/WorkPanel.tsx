@@ -16,6 +16,9 @@ import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, User, Zap }
 export const WORK_CSS = `
 .ep{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;font-size:13px}
 .ep-steps{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0 12px}
+.ep-shapes{display:flex;flex-wrap:wrap;gap:6px 14px;grid-column:1 / -1}
+.ep-shape{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:#0f172a;cursor:pointer}
+.ep-shape input{width:15px;height:15px;margin:0;accent-color:#5A27E0}
 .ep-step{padding:5px 9px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid #e2e8f0;color:#94a3b8;background:#fff}
 .ep-step.done{background:#f0fdf4;border-color:#86efac;color:#14532d}
 .ep-step.now{background:#0f172a;border-color:#0f172a;color:#fff}
@@ -362,6 +365,16 @@ const phaseState = (ls: LaneDef[]): LaneDef['state'] => (ls.some((l) => l.state 
 
 type Cmd = (body: Record<string, unknown>) => Promise<void>;
 
+/** Case shapes a case can be enrolled with (mirrors lib/server/engine/shapes.ts). */
+const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: string }> = [
+  { id: 'company_buyer', label: 'Company Buyer', sides: ['buyer'], summary: 'Companies House, directors and PSCs, authority to buy, the company\'s funds.' },
+  { id: 'buy_to_let', label: 'Buy To Let', sides: ['buyer'], summary: 'Buy-to-let offer conditions, any sitting tenancy, licensing, higher-rate SDLT.' },
+  { id: 'new_build', label: 'New Build', sides: ['buyer'], summary: 'Developer\'s pack, warranty, planning and roads, exchange deadline, completion on notice.' },
+  { id: 'auction', label: 'Auction', sides: ['buyer', 'seller'], summary: 'Legal pack before the auction; the hammer is the exchange; completion to the conditions.' },
+  { id: 'lifetime_isa', label: 'Lifetime ISA', sides: ['buyer'], summary: 'Declarations, eligibility limits, the bonus paid to us by the ISA manager.' },
+  { id: 'help_to_buy_isa', label: 'Help To Buy ISA', sides: ['buyer'], summary: 'Closing statement, the bonus claim, the bonus paid to us before completion.' },
+];
+
 /** Enrolment: the transaction type decides everything that follows. */
 function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | null }) {
   const [type, setType] = useState<TransactionType>('freehold_purchase');
@@ -370,6 +383,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   const [parties, setParties] = useState(1);
   const [consideration, setConsideration] = useState('');
   const [searches, setSearches] = useState('');
+  const [shapes, setShapes] = useState<string[]>([]);
   const buyer = type === 'freehold_purchase' || type === 'leasehold_purchase';
   const seller = type === 'freehold_sale' || type === 'leasehold_sale';
   const remo = type === 'remortgage';
@@ -385,11 +399,22 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         {(seller || remo || toe) && <label>Existing mortgage on the property<select value={hasExistingMortgage ? 'yes' : 'no'} onChange={(e) => setHasExistingMortgage(e.target.value === 'yes')}><option value="yes">Yes — charge to redeem / consent needed</option><option value="no">No — unencumbered</option></select></label>}
         {(buyer || toe) && <label>Clients (co-owners after completion)<input type="number" min={1} max={4} value={parties} onChange={(e) => setParties(Math.max(1, Number(e.target.value) || 1))} /></label>}
         {toe && <label>Consideration (£, 0 for none)<input type="number" min={0} value={consideration} onChange={(e) => setConsideration(e.target.value)} placeholder="0" /></label>}
+        {(buyer || seller) && (
+          <div className="ep-shapes">
+            {SHAPES.filter((sh) => sh.sides.includes(buyer ? 'buyer' : 'seller')).map((sh) => (
+              <label key={sh.id} className="ep-shape" title={sh.summary}>
+                <input type="checkbox" checked={shapes.includes(sh.id)} onChange={(e) => setShapes((cur) => (e.target.checked ? [...cur, sh.id] : cur.filter((x) => x !== sh.id)))} />
+                {sh.label}
+              </label>
+            ))}
+          </div>
+        )}
         {(buyer || remo) && <label>Searches (comma-separated; blank = the type's defaults)<input value={searches} onChange={(e) => setSearches(e.target.value)} placeholder={buyer ? 'LLC1, CON29, DRAINAGE_WATER, ENVIRONMENTAL' : 'none by default'} /></label>}
       </div>
       <button className="ep-btn primary" disabled={busy} onClick={() => {
         const body: Record<string, unknown> = { type: 'enrol', transactionType: type, hasLender: buyer || remo ? hasLender : false, hasExistingMortgage: seller || remo || toe ? hasExistingMortgage : false, parties: buyer || toe ? parties : 1 };
         if (toe) body.considerationPennies = Math.round((Number(consideration) || 0) * 100);
+        if (shapes.length && (buyer || seller)) body.shapes = shapes;
         const list = searches.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
         if (list.length) body.requiredSearches = list;
         void cmd(body);
@@ -505,7 +530,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const lane = (l: LaneDef | null | false) => { if (l) lanes.push(l); };
 
   lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
-    tiles: [{ label: 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' }],
+    tiles: [{ label: s.shapes?.includes('company_buyer') ? 'ID / AML check (company, directors and PSCs)' : 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' }],
     actions: s.stage === 'instruction' && s.idCheck.status === 'not_started' ? <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button> : null });
 
   if (has('source_of_funds')) {
@@ -696,6 +721,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {needsRequest && firm.length > 0 && !s.completion.fundsReceivedAt && pickAccount('firm_client_account', firm)}
         {p.fundsFrom.includes('lender') && firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request {remo ? 'the advance' : 'lender funds'}</button>}
         {p.fundsFrom.includes('client') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request client funds</button>}
+        {p.fundsFrom.includes('isa_provider') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'isa_provider') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'isa_provider', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request The ISA Bonus</button>}
         {openWaits.filter((w) => w.key === 'funds').map((w) => <span key={w.subject}>{act('completion', 'funds_received', `${pretty(w.subject)} Funds Received`, { fromRole: w.subject })}</span>)}
         {p.fundsFrom.includes('buyer_solicitor') && !s.completion.fundsReceivedAt && act('completion', 'funds_received', "Completion Monies Received from the Buyer's Solicitor", { fromRole: 'buyer_solicitor' }, { primary: true })}
         {p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt && act('completion', 'funds_received', 'Consideration Received', { fromRole: 'incoming_owner' }, { primary: true })}

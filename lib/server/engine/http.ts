@@ -3,6 +3,7 @@
  * the commands a human may issue. Everything the machine treats as automation-only
  * (search_extracted, record_chase, …) is deliberately NOT expressible here.
  */
+import { CASE_SHAPES } from './shapes';
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
@@ -23,7 +24,7 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(6).optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
@@ -32,7 +33,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish() }),
   z.object({ type: z.literal('completion_statement_generated'), documentId: z.string().uuid().nullish() }),
-  z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client']), amountPennies: z.number().int().nonnegative().nullish(), bankDetailsId: z.string().min(1).max(60) }),
+  z.object({ type: z.literal('funds_requested'), fromRole: z.enum(['lender', 'client', 'isa_provider']), amountPennies: z.number().int().nonnegative().nullish(), bankDetailsId: z.string().min(1).max(60) }),
   // Addendum 2 — payment verification
   z.object({
     type: z.literal('record_bank_details'),
@@ -44,7 +45,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
     note: z.string().max(1000).nullish(),
   }),
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
-  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner']), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), amountPennies: z.number().int().nonnegative().nullish() }),
   // transaction types (docs/transaction-types.md)
   z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),
   z.object({ type: z.literal('property_forms_received'), forms: z.array(z.string().max(10)).min(1).max(6), documentId: z.string().uuid().nullish() }),

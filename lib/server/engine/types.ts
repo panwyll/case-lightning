@@ -2,7 +2,8 @@
  * CONVEYi conveyancing engine — the vocabulary.
  *
  * This is the domain model for the state machine that RUNS a residential freehold
- * purchase (buyer-side). Everything else in lib/server/engine imports from here, so
+ * purchase (buyer-side). Everything else in lib/server/engine
+imports from here, so
  * there is exactly one place that says what an event is, what a stage is, what a
  * decision looks like and what the projected state of a matter contains.
  *
@@ -17,6 +18,7 @@
  * v1 scope: `freehold_purchase` only. Anything else is flagged for manual handling.
  */
 
+import type { CaseShape } from './shapes';
 import type { IssueGate, IssueKind, IssueResolution, IssueSeverity, IssueStatus } from './issues';
 import type { PofQuery, PofRiskRating, ProofOfFundsFacts, StatementTransaction, TransactionReview } from './proof-of-funds';
 
@@ -650,6 +652,8 @@ export interface ClientUpdateSpec {
 export interface Payloads {
   matter_created: {
     transactionType: TransactionType;
+    /** Case shapes chosen at enrolment (shapes.ts). Undefined on old logs = none. */
+    shapes?: CaseShape[];
     hasLender: boolean;
     requiredSearches: SearchType[];
     targetExchangeDate?: string | null;
@@ -715,13 +719,13 @@ export interface Payloads {
 
   completion_statement_generated: { documentId?: string | null };
   funds_requested: {
-    fromRole: 'lender' | 'client';
+    fromRole: 'lender' | 'client' | 'isa_provider';
     amountPennies?: number | null;
     /** The VERIFIED firm client-account record the payer is told to pay into (addendum 2 §5). */
     bankDetailsId: string;
     approvedBy: string;
   };
-  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'; amountPennies?: number | null };
+  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null };
   completion_confirmed: { completedAt?: string | null };
 
   sdlt_submitted: { reference?: string | null };
@@ -1109,6 +1113,8 @@ export interface MatterState {
   enrolled: boolean;
   transactionType: TransactionType | null;
   hasLender: boolean;
+  /** Case shapes (shapes.ts): what this case is beyond its type; each raised its checklist issue at enrolment. */
+  shapes: CaseShape[];
   requiredSearches: SearchType[];
   shadowMode: boolean;
   /** Firm policy: exchange needs a signed-off proof of funds (docs/proof-of-funds.md). */
@@ -1287,6 +1293,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     hasExistingMortgage: false,
     considerationPennies: null,
     counterpartyType: null,
+    shapes: [],
     targetExchangeDate: null,
     targetCompletionDate: null,
     stage: 'instruction',

@@ -1,3 +1,4 @@
+import { fundsFromFor } from '@/lib/server/engine/shapes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -43,7 +44,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     return ok({
       state,
       // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
-      profile: { ...profile, lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
+      profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
       lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
       blockers: stageBlockers(state),
       waits: openWaits(state),

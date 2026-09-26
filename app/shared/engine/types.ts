@@ -186,7 +186,7 @@ export interface ProfileView {
   subflows: string[];
   defaultSearches: string[];
   counterparty: string;
-  fundsFrom: Array<'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'>;
+  fundsFrom: Array<'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'>;
   registration: 'ap1' | 'discharge_only' | 'none';
   note: string;
   lifecycle: string[];
@@ -207,6 +207,7 @@ export interface EngineState {
   deeds?: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null };
   sdltNotRequiredAt?: string | null;
   hasLender: boolean;
+  shapes?: string[];
   requiredSearches: string[];
   stage: string;
   stageHistory: Array<{ stage: string; at: string; seq: number }>;

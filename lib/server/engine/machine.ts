@@ -21,6 +21,7 @@ import { assertCompletion, CompletionError, type Completion } from './completion
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
@@ -105,7 +106,7 @@ export interface SummaryOverride {
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
@@ -168,8 +169,8 @@ type CommandBody =
   | { type: 'deposit_received'; actor: Actor; amountPennies?: number | null }
   | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
   | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null }
-  | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client'; amountPennies?: number | null; bankDetailsId: string }
-  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner'; amountPennies?: number | null }
+  | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client' | 'isa_provider'; amountPennies?: number | null; bankDetailsId: string }
+  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null }
   // ── transaction types (docs/transaction-types.md) ──
   | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
   | { type: 'property_forms_received'; actor: Actor; forms: string[]; documentId?: string | null; facts?: PropertyFormsFacts | null }
@@ -647,15 +648,21 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
   switch (cmd.type) {
     case 'enrol': {
       if (s.enrolled) reject('Matter is already enrolled.');
+      const side = profileOf(cmd.transactionType).side;
+      const shapes = [...new Set(cmd.shapes ?? [])].filter((sh) => SHAPE_SPEC[sh]);
+      for (const sh of shapes) if (!SHAPE_SPEC[sh].sides.includes(side)) reject(`${SHAPE_SPEC[sh].label} does not apply to a ${profileOf(cmd.transactionType).label.toLowerCase()}.`, 400);
+      // A shape's checklist is an issue from day one, holding the gate it threatens until a person resolves it.
+      const shapeIssues: NewEvent[] = shapes.map((sh, i) => ({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `I${i + 1}`, kind: SHAPE_SPEC[sh].issue.kind, title: SHAPE_SPEC[sh].issue.title, detail: SHAPE_SPEC[sh].issue.detail, gate: SHAPE_SPEC[sh].issue.gate, stage: 'instruction', sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[SHAPE_SPEC[sh].issue.kind].severity, causedBy: null } }));
       return [
         {
           type: 'matter_created',
           actor: cmd.actor,
           payload: {
             transactionType: cmd.transactionType ?? 'freehold_purchase',
-            // Proof of funds and the client's exchange authority are purchase-side policies; a sale, remortgage or transfer has neither.
-            requireProofOfFunds: profileOf(cmd.transactionType).side === 'buyer' ? (cmd.requireProofOfFunds ?? true) : false,
-            requireExchangeAuthority: profileOf(cmd.transactionType).hasExchange ? (cmd.requireExchangeAuthority ?? true) : false,
+            shapes,
+            // Proof of funds and the client's exchange authority are purchase-side policies; a sale, remortgage or transfer has neither. At auction the hammer is the exchange.
+            requireProofOfFunds: side === 'buyer' ? (cmd.requireProofOfFunds ?? true) : false,
+            requireExchangeAuthority: profileOf(cmd.transactionType).hasExchange && !shapes.some((sh) => SHAPE_SPEC[sh].skipExchangeAuthority) ? (cmd.requireExchangeAuthority ?? true) : false,
             parties: Math.max(1, cmd.parties ?? 1),
             hasExistingMortgage: !!cmd.hasExistingMortgage,
             considerationPennies: cmd.considerationPennies ?? null,
@@ -667,6 +674,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
             shadowMode: !!cmd.shadowMode,
           },
         },
+        ...shapeIssues,
       ];
     }
 
@@ -928,6 +936,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'funds_requested': {
       requireEnrolled(s);
+      if (cmd.fromRole === 'isa_provider' && !s.shapes.some((sh) => SHAPE_SPEC[sh]?.fundsFrom === 'isa_provider')) reject('No ISA on this matter: enrol it with a Lifetime ISA or Help to Buy ISA shape.');
       requireStage(s, 'pre_completion', 'Requesting funds');
       requireSide(s, ['buyer', 'owner'], 'Requesting completion funds');
       if (cmd.fromRole === 'lender' && !s.hasLender) reject('No lender on this matter to request funds from.');
@@ -941,7 +950,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       const inbound = cmd.fromRole === 'buyer_solicitor' || cmd.fromRole === 'incoming_owner';
       if (inbound) {
-        if (!profile(s).fundsFrom.includes(cmd.fromRole)) reject(`Money from the ${cmd.fromRole.replace(/_/g, ' ')} does not arise on a ${profile(s).label.toLowerCase()}.`);
+        if (!fundsFromFor(profile(s).fundsFrom, s.shapes ?? []).includes(cmd.fromRole)) reject(`Money from the ${cmd.fromRole.replace(/_/g, ' ')} does not arise on a ${profile(s).label.toLowerCase()}.`);
         if (!stageAtLeast(s, 'pre_completion')) reject('Completion monies arrive at pre-completion.');
         if (s.completion.fundsReceivedAt) reject('Completion monies already recorded.');
       } else if (!s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);

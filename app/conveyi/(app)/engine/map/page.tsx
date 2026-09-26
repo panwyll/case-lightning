@@ -14,6 +14,7 @@ import { ChevronRight } from '@/app/shared/icons';
 interface Spec {
   version: string;
   generatedFrom: string;
+  shapes: Array<{ id: string; label: string; sides: string[]; summary: string; issue: string; gate: string; fundsFrom: string | null }>;
   transactionTypes: Array<{ type: string; label: string; side: string; tenure: string; hasExchange: boolean; stages: string[]; stageLabels: Record<string, string>; stageGates: Record<string, string[]>; workstreams: string[]; subflows: string[]; defaultSearches: string[]; counterparty: string; fundsFrom: string[]; registration: string; note: string }>;
   stages: Array<{ id: string; label: string; purpose: string; gates: string[]; subflows: string[]; typical: string[] }>;
   terminal: Array<{ id: string; label: string; how: string }>;
@@ -38,6 +39,16 @@ const CSS = `
 .mp th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;border-top:0;background:#fafafa}
 .mp code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:#f1f5f9;border-radius:4px;padding:1px 4px}
 .mp .muted{color:#94a3b8}
+.mp-group{margin-bottom:14px;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden;background:#fff}
+.mp-group-h{padding:7px 12px;font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+.mp-cmds{border:0;border-radius:0;table-layout:fixed}
+.mp-cmds td,.mp-cmds th{overflow-wrap:anywhere;word-break:break-word}
+.mp-cmds td b{font-weight:700;text-transform:capitalize}
+.mp-actor{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.mp-actor.person{background:#fef3c7;color:#92400e}
+.mp-actor.automation{background:#e2e8f0;color:#334155}
+.mp-actor.either{background:#dbeafe;color:#1e40af}
+.mp-emits span{display:inline-block;font-size:11px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:6px;padding:1px 6px;margin:0 4px 4px 0;text-transform:capitalize}
 .mp-sec{border:1px solid #e6e8ee;border-radius:12px;background:#fafafa;margin:0 0 10px;padding:0 12px}
 .mp-sec[open]{background:#fff}
 .mp-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:14px 0;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0f172a}
@@ -85,6 +96,16 @@ export default function MapPage() {
   const label = (id: string) => profile?.stageLabels[id] ?? STAGE_LABEL[id] ?? id;
   const step = (text: string | null | undefined) => (text ? [{ label: text.replace(/_/g, ' ').replace(/\bid\b/gi, 'ID').replace(/\baml\b/gi, 'AML').replace(/\bsdlt\b/gi, 'SDLT').replace(/\bap1\b/gi, 'AP1'), status: 'not_started' }] : []);
   // Every stage a band; in it each sub-flow as a box (its event pair as steps) and the gates to leave the stage as the last box.
+  const GROUP_COLOUR: Record<string, { bg: string; fg: string }> = {
+    not_enrolled: { bg: '#f1f5f9', fg: '#334155' }, instruction: { bg: '#e0f2fe', fg: '#075985' }, pre_contract: { bg: '#dcfce7', fg: '#166534' }, contract_review: { bg: '#fef9c3', fg: '#854d0e' }, pre_exchange: { bg: '#ffedd5', fg: '#9a3412' },
+    exchanged: { bg: '#fce7f3', fg: '#9d174d' }, pre_completion: { bg: '#ede9fe', fg: '#5b21b6' }, completed: { bg: '#e0e7ff', fg: '#3730a3' }, post_completion: { bg: '#ccfbf1', fg: '#115e59' }, any: { bg: '#f1f5f9', fg: '#475569' },
+  };
+  const stageOrder = stagesShown.map((st) => st.id);
+  const groupOf = (c: Spec['commands'][number]) => (c.stages === 'not_enrolled' ? 'not_enrolled' : c.stages === 'any' ? 'any' : stageOrder.find((st) => (c.stages as string[]).includes(st)) ?? 'any');
+  const commandGroups = ['not_enrolled', ...stageOrder, 'any'].map((id) => ({
+    id, label: id === 'not_enrolled' ? 'Before Enrolment' : id === 'any' ? 'Any Stage' : label(id), ...(GROUP_COLOUR[id] ?? GROUP_COLOUR.any),
+    items: commandsShown.filter((c) => groupOf(c) === id),
+  })).filter((g) => g.items.length);
   const tiers = [
     ...stagesShown.map((st) => {
       const items: LaneDef[] = subflowsOf(st).map((id) => {
@@ -139,6 +160,14 @@ export default function MapPage() {
           ))}
         </tbody>
       </table>
+        <table style={{ marginTop: 10 }}>
+          <thead><tr><th>Shape</th><th>Side</th><th>What It Adds</th><th>Holds</th><th>Money From</th></tr></thead>
+          <tbody>
+            {spec.shapes.filter((sh) => !profile || sh.sides.includes(profile.side)).map((sh) => (
+              <tr key={sh.id}><td><b>{sh.label}</b></td><td>{sh.sides.join(', ')}</td><td>{sh.summary}<div className="muted" style={{ marginTop: 3 }}>{sh.issue}</div></td><td>{sh.gate}</td><td>{sh.fundsFrom ? sh.fundsFrom.replace(/_/g, ' ') : <span className="muted">—</span>}</td></tr>
+            ))}
+          </tbody>
+        </table>
       </details>
 
       <details id="stages" className="mp-sec" open>
@@ -158,20 +187,26 @@ export default function MapPage() {
 
       <details id="commands" className="mp-sec">
         <summary><ChevronRight size={18} className="mp-chev" /><span>Commands{profile ? ` — ${profile.label}` : ''}</span></summary>
-      <table>
-        <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>Meaning</th></tr></thead>
-        <tbody>
-          {commandsShown.map((c) => (
-            <tr key={c.type}>
-              <td><code>{c.type}</code>{c.eventuality && <span className="eg-chip info" style={{ marginLeft: 6 }}>eventuality</span>}{c.humanGated && <span className="eg-chip bad" style={{ marginLeft: 6 }}>human gate</span>}{c.hardStop && <span className="eg-chip bad" style={{ marginLeft: 6 }}>hard stop</span>}</td>
-              <td><span className={`eg-chip ${c.actor === 'person' ? 'pending' : c.actor === 'automation' ? 'muted' : 'info'}`}>{ACTOR[c.actor]}</span></td>
-              <td>{c.stages === 'any' ? <span className="muted">any (enrolled)</span> : c.stages === 'not_enrolled' ? <span className="muted">before enrolment</span> : c.stages.filter((st) => !profile || profile.stages.includes(st)).map((st) => label(st)).join(', ')}{c.types && !profile ? <div className="muted" style={{ fontSize: 11 }}>{c.types.map((t) => spec.transactionTypes.find((x) => x.type === t)?.label ?? t).join(', ')}</div> : null}</td>
-              <td>{c.emits.map((e) => <code key={e} style={{ marginRight: 4 }}>{e}</code>)}</td>
-              <td>{c.description}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        {commandGroups.map((g) => (
+          <div key={g.id} className="mp-group">
+            <div className="mp-group-h" style={{ background: g.bg, color: g.fg }}>{g.label}</div>
+            <table className="mp-cmds">
+              <colgroup><col style={{ width: '24%' }} /><col style={{ width: '12%' }} /><col style={{ width: '18%' }} /><col style={{ width: '20%' }} /><col /></colgroup>
+              <thead><tr><th>Command</th><th>Actor</th><th>Accepted At</th><th>Emits</th><th>Meaning</th></tr></thead>
+              <tbody>
+                {g.items.map((c) => (
+                  <tr key={c.type} style={{ boxShadow: `inset 3px 0 0 ${g.fg}` }}>
+                    <td><b>{c.type.replace(/_/g, ' ').replace(/\bid\b/gi, 'ID').replace(/\bsdlt\b/gi, 'SDLT').replace(/\bap1\b/gi, 'AP1').replace(/\bpof\b/gi, 'proof of funds')}</b>{c.eventuality && <span className="eg-chip info" style={{ marginLeft: 6 }}>eventuality</span>}{c.humanGated && <span className="eg-chip bad" style={{ marginLeft: 6 }}>human gated</span>}{c.hardStop && <span className="eg-chip muted" style={{ marginLeft: 6 }}>hard stop</span>}</td>
+                    <td><span className={`mp-actor ${c.actor}`}>{ACTOR[c.actor]}</span></td>
+                    <td>{c.stages === 'any' ? <span className="muted">any (enrolled)</span> : c.stages === 'not_enrolled' ? <span className="muted">before enrolment</span> : c.stages.filter((st) => !profile || profile.stages.includes(st)).map((st) => label(st)).join(', ')}</td>
+                    <td className="mp-emits">{c.emits.map((e) => <span key={e}>{e.replace(/_/g, ' ')}</span>)}</td>
+                    <td>{c.description}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </details>
 
       <details id="timers" className="mp-sec">

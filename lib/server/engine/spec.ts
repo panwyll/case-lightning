@@ -2,11 +2,13 @@
  * The state machine, described in code.
  *
  * Everything the read-only map (/engine/map) shows comes from here, and everything here
- * is either imported from the machine (stages, event types, decision kinds and options,
+ * is either
+imported from the machine (stages, event types, decision kinds and options,
  * SLA numbers, deadline leads, the user-command set, the trigger registry) or declared
  * next to it and checked against it by tests/unit/engine/spec.test.ts — so the picture
  * cannot drift from the code without a test going red.
  */
+import { CASE_SHAPES, SHAPE_SPEC, type CaseShape } from './shapes';
 import crypto from 'node:crypto';
 import { DEFAULT_SLA, DEADLINE_LEAD, type DeadlineKind } from './sla';
 import { OPTIONS_FOR, MIN_EXTRACTION_CONFIDENCE } from './rules';
@@ -87,6 +89,8 @@ export interface MachineSpec {
   generatedFrom: string;
   /** One machine, parameterised by profile (docs/transaction-types.md). */
   transactionTypes: TransactionProfile[];
+  /** Enrolment shapes (shapes.ts): what a case can be beyond its type, and what each adds. */
+  shapes: Array<{ id: CaseShape; label: string; sides: string[]; summary: string; issue: string; gate: string; fundsFrom: string | null }>;
   stages: StageSpec[];
   terminal: Array<{ id: string; label: string; how: string }>;
   subflows: SubflowSpec[];
@@ -248,13 +252,13 @@ export const EVENTUALITIES: EventualitySpec[] = [
   { area: 'shape', scenario: 'Mortgage purchase', handling: 'built', mechanism: 'offer sub-flow; expiry deadline; withdrawal reopens and blocks exchange' },
   { area: 'shape', scenario: 'Chain', handling: 'built', mechanism: 'issue chain_not_ready holds exchange; set_target_dates; mark_issue_fatal → abandoned(chain_collapsed)' },
   { area: 'shape', scenario: 'Two or more buyers', handling: 'built', mechanism: 'issues carry the party they concern; one ID sub-flow per matter still (design: idChecks keyed by party)' },
-  { area: 'shape', scenario: 'Company buyer / buy-to-let', handling: 'manual', mechanism: 'mark_manual_handling by policy' },
+  { area: 'shape', scenario: 'Company buyer / buy-to-let', handling: 'built', mechanism: 'enrolment shapes company_buyer / buy_to_let: a checklist issue from day one holds exchange (Companies House, directors and PSCs, authority, company funds; BTL offer conditions, tenancy, licensing); ID / AML reads as the company and its people' },
   { area: 'shape', scenario: 'Gifted deposit / source of funds', handling: 'built', mechanism: 'proof-of-funds form → statements read line by line → flags draft queries → client answers → sign-off decision; sign-off closes source_of_funds issues and tells the lender of a gift' },
   { area: 'shape', scenario: 'Unusual transactions on a statement (cash, third party, crypto, gambling, overseas, in-and-out)', handling: 'built', mechanism: 'reviewTransactions flags each line and drafts the query; QUERY_UNANSWERED keeps it open; risk rating enhanced' },
   { area: 'exchange', scenario: 'Deposit received before source of funds signed off', handling: 'built', mechanism: 'issue aml_kyc_problem raised automatically, holds exchange' },
   { area: 'pre_contract', scenario: 'Price rises beyond the verified funds', handling: 'built', mechanism: 'issue source_of_funds raised automatically on price_changed' },
-  { area: 'shape', scenario: 'Help to Buy / Lifetime ISA', handling: 'gap', mechanism: 'design: funds_requested fromRole isa_provider' },
-  { area: 'shape', scenario: 'New build / auction', handling: 'manual', mechanism: 'out of v1 scope' },
+  { area: 'shape', scenario: 'Help to Buy / Lifetime ISA', handling: 'built', mechanism: 'enrolment shapes lifetime_isa / help_to_buy_isa: isa_bonus issue holds completion (declarations, limits, the bonus); funds_requested / funds_received fromRole isa_provider; Request The ISA Bonus on the completion lane' },
+  { area: 'shape', scenario: 'New build / auction', handling: 'built', mechanism: 'enrolment shapes new_build / auction: new_build_pack issue (warranty, planning, roads, CIL, completion on notice, the developer\'s deadline) or auction_conditions issue (legal pack, special conditions, deposit at the hammer, completion deadline) holds exchange; an auction needs no recorded exchange authority' },
   { area: 'shape', scenario: 'Leasehold', handling: 'built', mechanism: 'leasehold_purchase: management-pack sub-flow gates pre_contract; lease facts (short lease, ground rent, doubling) flagged on title; notice of assignment after completion; a tenure that does not match the enrolment halts automation' },
   { area: 'shape', scenario: 'Internal counterparty', handling: 'built', mechanism: 'ethical wall; same event pair' },
   { area: 'instruction', scenario: 'ID check refer / fail', handling: 'built', mechanism: 'id_check decision; reject halts automation' },
@@ -334,6 +338,7 @@ export function machineSpec(): MachineSpec {
   const body: Omit<MachineSpec, 'version'> = {
     generatedFrom: 'lib/server/engine/spec.ts (checked against machine.ts, types.ts, rules.ts, sla.ts, triggers.ts, transactions.ts by tests/unit/engine/spec.test.ts)',
     transactionTypes: TRANSACTION_TYPES.map((t) => TRANSACTION_PROFILES[t]),
+    shapes: CASE_SHAPES.map((id) => ({ id, label: SHAPE_SPEC[id].label, sides: SHAPE_SPEC[id].sides, summary: SHAPE_SPEC[id].summary, issue: SHAPE_SPEC[id].issue.title, gate: SHAPE_SPEC[id].issue.gate, fundsFrom: SHAPE_SPEC[id].fundsFrom ?? null })),
     stages: STAGE_SPECS,
     terminal: [
       { id: 'registered', label: 'Registered', how: 'ap1_confirmed at post_completion (purchase, remortgage, transfer of equity)' },
