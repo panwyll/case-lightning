@@ -687,7 +687,7 @@ export interface Payloads {
   /** A person switched shadow mode on or off for this matter (the flag is part of the log, like everything else). */
   shadow_mode_changed: { shadowMode: boolean; reason?: string | null };
   /** PROPOSE level: what the engine wants to do, put in front of a person as a decision. `detail` is everything needed to do it on approval. */
-  action_proposed: { action: EngineAction; detail: Record<string, unknown>; dedupKey: string; decision: DecisionSpec };
+  action_proposed: { action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; decision: DecisionSpec };
   action_approved: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
   action_rejected: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
   /** A person approved it and the doing failed (a send bounced, a provider was down). Visible on the case, never swallowed. */
@@ -851,16 +851,67 @@ export type SubFlow = (typeof SUB_FLOWS)[number];
 export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear'] as const;
 export type EngineAction = (typeof ENGINE_ACTIONS)[number];
 export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
-  acknowledgement: 'Acknowledge what arrives',
-  chase: 'Chase the other side',
-  client_update: 'Update the client',
-  search_order: 'Order searches',
-  auto_clear: 'Clear a document the rules pass',
+  acknowledgement: 'Acknowledgements',
+  chase: 'Chases',
+  client_update: 'Client updates',
+  search_order: 'Search orders',
+  auto_clear: 'Auto-clears',
+};
+/**
+ * The subjects a level can be set on within each action: who is written to, which search,
+ * which template, which sub-flow. A level set on `action:subject` overrides the action's.
+ */
+export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: string; label: string }>> = {
+  acknowledgement: [
+    { key: 'seller_solicitor', label: "Seller's solicitor" },
+    { key: 'client', label: 'Client' },
+  ],
+  chase: [
+    { key: 'seller_solicitor', label: "Seller's solicitor" },
+    { key: 'search_provider', label: 'Search provider' },
+    { key: 'lender', label: 'Lender' },
+    { key: 'client', label: 'Client' },
+    { key: 'id_provider', label: 'ID provider' },
+    { key: 'hmlr', label: 'HM Land Registry' },
+  ],
+  client_update: [
+    { key: 'searches_ordered', label: 'Searches ordered' },
+    { key: 'search_back_all_clear', label: 'Search back, all clear' },
+    { key: 'search_back_under_review', label: 'Search back, under review' },
+    { key: 'enquiries_raised', label: 'Enquiries raised' },
+    { key: 'mortgage_offer_checked', label: 'Mortgage offer checked' },
+    { key: 'report_on_title_sent', label: 'Report on title sent' },
+    { key: 'chase_update', label: 'Chased on their behalf' },
+    { key: 'exchanged', label: 'Exchanged' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'registration_complete', label: 'Registration complete' },
+  ],
+  search_order: [
+    { key: 'LLC1', label: 'LLC1' },
+    { key: 'CON29', label: 'CON29' },
+    { key: 'DRAINAGE_WATER', label: 'Drainage and water' },
+    { key: 'ENVIRONMENTAL', label: 'Environmental' },
+    { key: 'CHANCEL', label: 'Chancel' },
+  ],
+  auto_clear: [
+    { key: 'id_check', label: 'ID / AML result' },
+    { key: 'search', label: 'Search result' },
+    { key: 'enquiry', label: 'Enquiry reply' },
+    { key: 'mortgage', label: 'Mortgage offer' },
+    { key: 'title', label: 'Title' },
+  ],
 };
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
-export type LevelConfig = Record<EngineAction, TrustLevel>;
+/** Keys are an action (`chase`) or an action and subject (`chase:lender`). */
+export type LevelConfig = Record<string, TrustLevel>;
 export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose' };
+export const levelKey = (action: EngineAction, subject?: string | null): string => (subject ? `${action}:${subject}` : action);
+/** The level in force for an action on a subject: the subject's own, else the action's, else propose. */
+export function levelFor(cfg: LevelConfig | null | undefined, action: EngineAction, subject?: string | null): TrustLevel {
+  const c = cfg ?? DEFAULT_LEVELS;
+  return (subject ? c[levelKey(action, subject)] : undefined) ?? c[action] ?? 'propose';
+}
 /** What ASSIST does unasked. Everything else at assist is proposed. */
 export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true };
 /** Whether an action at a level goes ahead without a person. */
@@ -1127,6 +1178,8 @@ export interface MatterState {
 export interface ProposalState {
   eventId: string;
   action: EngineAction;
+  /** Who, which search, which template, which sub-flow — the granular level key. */
+  subject: string | null;
   detail: Record<string, unknown>;
   dedupKey: string;
   status: 'pending' | 'approved' | 'rejected' | 'failed';

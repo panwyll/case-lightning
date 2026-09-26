@@ -42,7 +42,7 @@ const PROPOSED: Record<string, string[]> = {
   management_pack: ['Mark the management pack satisfactory'],
   requisition: ["Accept HM Land Registry's point", 'Send the reply'],
   auto_clear: ["Confirm the engine's reading"],
-  proposal: ['Let the engine do it'],
+  proposal: ['Perform the proposed action'],
 };
 /** These need more than a button: a method, a reason or a pick. */
 const REVIEW_ONLY = new Set(['bank_details', 'note_actions']);

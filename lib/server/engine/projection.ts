@@ -914,7 +914,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'action_proposed': {
       const p = e.payload as Payloads['action_proposed'];
-      s.proposals[e.id] = { eventId: e.id, action: p.action, detail: p.detail, dedupKey: p.dedupKey, status: 'pending', proposedAt: e.createdAt, resolvedAt: null, resolvedBy: null, failure: null };
+      s.proposals[e.id] = { eventId: e.id, action: p.action, subject: p.subject ?? null, detail: p.detail, dedupKey: p.dedupKey, status: 'pending', proposedAt: e.createdAt, resolvedAt: null, resolvedBy: null, failure: null };
       break;
     }
     case 'action_approved':
@@ -972,7 +972,7 @@ function subjectOf(e: EngineEvent): string | null {
   if (e.type === 'action_proposed') {
     // A readable key (a wait, a search type) is worth showing; an event id is not.
     const q = p as Payloads['action_proposed'];
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(q.dedupKey) || /:[0-9a-f]{8}-/i.test(q.dedupKey) ? q.action : `${q.action}:${q.dedupKey}`;
+    return q.subject ? `${q.action}:${q.subject}` : q.action;
   }
   if (e.type === 'escalation_raised') {
     const q = p as Payloads['escalation_raised'];

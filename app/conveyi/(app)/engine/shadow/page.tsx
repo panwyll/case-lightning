@@ -1,14 +1,31 @@
 'use client';
 import { paths } from '@/lib/paths';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
-import { ENGINE_ACTION_LABEL, TRUST_LEVELS, type TrustLevel } from '@/app/shared/engine/types';
+import { TRUST_LEVELS, type TrustLevel } from '@/app/shared/engine/types';
 
-interface Row { action: string; level: TrustLevel; proposed: number; approved: number; rejected: number; pending: number }
-interface Board { levels: Record<string, TrustLevel>; actions: Row[] }
+interface Row { key: string; label: string; level: TrustLevel; overridden: boolean; proposed: number; approved: number; rejected: number; failed: number; pending: number }
+interface Group { action: string; label: string; level: TrustLevel; proposed: number; approved: number; rejected: number; failed: number; pending: number; rows: Row[] }
+interface Board { levels: Record<string, TrustLevel>; groups: Group[] }
 
 const LEVEL_LABEL: Record<TrustLevel, string> = { propose: 'Propose', assist: 'Assist', auto: 'Auto' };
+const LEVEL_HELP: Record<TrustLevel, string> = {
+  propose: 'The engine puts the intended action in Tasks and does nothing until someone approves it.',
+  assist: 'Acknowledgements, chases and search orders are sent without asking. Client updates are still proposed. Documents the rules clear are cleared, then put to a person to confirm.',
+  auto: 'Proceeds without asking. Flagged documents and payments still come to a person.',
+};
+const CSS = `
+.tl-t{width:100%;border-collapse:collapse;font-size:13px}
+.tl-t th{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;text-align:right;padding:8px 12px;border-bottom:1px solid #e8eaf0}
+.tl-t th:first-child,.tl-t td:first-child{text-align:left}
+.tl-t td{padding:9px 12px;border-top:1px solid #f1f5f9;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tl-t tr.g td{font-weight:800;background:#fafafa}
+.tl-t tr.s td:first-child{padding-left:28px;color:#334155}
+.tl-t td.lv{text-align:left}
+.tl-t td.lv .eg-btn{padding:4px 9px;font-size:12px;margin-right:4px}
+.tl-t td.z{color:#cbd5e1}
+`;
 
 export default function TrustLevelsPage() {
   const [b, setB] = useState<Board | null>(null);
@@ -23,10 +40,10 @@ export default function TrustLevelsPage() {
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const set = async (action: string, level: TrustLevel) => {
-    setBusy(action);
+  const set = async (key: string, level: TrustLevel) => {
+    setBusy(key);
     try {
-      await api('/admin/engine/subflows', { method: 'PUT', body: JSON.stringify({ action, level }) });
+      await api('/admin/engine/subflows', { method: 'PUT', body: JSON.stringify({ action: key, level }) });
       await load();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not change the trust level.');
@@ -34,32 +51,62 @@ export default function TrustLevelsPage() {
       setBusy(null);
     }
   };
+  const n = (v: number) => <td className={v ? '' : 'z'}>{v}</td>;
+  const levelButtons = (key: string, current: TrustLevel, scope: string) => (
+    <td className="lv">
+      {TRUST_LEVELS.map((lv) => (
+        <button
+          key={lv}
+          className={`eg-btn${current === lv ? (lv === 'propose' ? ' on' : lv === 'assist' ? ' accent' : ' primary') : ''}`}
+          disabled={busy === key || current === lv}
+          title={`${LEVEL_HELP[lv]} Applies to ${scope}.`}
+          onClick={() => void set(key, lv)}
+        >
+          {LEVEL_LABEL[lv]}
+        </button>
+      ))}
+    </td>
+  );
   return (
-    <div className="eg" style={{ maxWidth: 900 }}>
-      <style>{ENGINE_CSS}</style>
+    <div className="eg" style={{ maxWidth: 1000 }}>
+      <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
         <h1 className="eg-h1">Trust levels</h1>
         <a className="eg-btn" href={paths.integrations}>← Tools</a>
       </div>
       {err && <div className="eg-err">{err}</div>}
       {b && (
-        <div className="eg-card">
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 90px 90px auto', gap: 12, padding: '8px 14px', fontSize: 11, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#94a3b8' }}>
-            <span>Action</span><span style={{ textAlign: 'right' }}>Approved</span><span style={{ textAlign: 'right' }}>Rejected</span><span style={{ textAlign: 'right' }}>Waiting</span><span>Level</span>
-          </div>
-          {b.actions.map((r) => (
-            <div key={r.action} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 90px 90px auto', gap: 12, alignItems: 'center', padding: '12px 14px', borderTop: '1px solid #f1f5f9', fontVariantNumeric: 'tabular-nums' }}>
-              <div style={{ fontWeight: 700 }}>{ENGINE_ACTION_LABEL[r.action] ?? r.action}</div>
-              <div style={{ textAlign: 'right' }}>{r.approved}</div>
-              <div style={{ textAlign: 'right', color: r.rejected ? '#b91c1c' : undefined }}>{r.rejected}</div>
-              <div style={{ textAlign: 'right', color: '#64748b' }}>{r.pending}</div>
-              <div style={{ display: 'flex', gap: 4 }}>
-                {TRUST_LEVELS.map((lv) => (
-                  <button key={lv} className={`eg-btn${r.level === lv ? (lv === 'propose' ? ' on' : lv === 'assist' ? ' accent' : ' primary') : ''}`} style={{ padding: '5px 9px', fontSize: 12 }} disabled={busy === r.action || r.level === lv} onClick={() => void set(r.action, lv)}>{LEVEL_LABEL[lv]}</button>
-                ))}
-              </div>
-            </div>
-          ))}
+        <div className="eg-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="tl-t">
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th style={{ textAlign: 'left' }}>Level</th>
+                <th title="Proposals a person approved">Approved</th>
+                <th title="Proposals a person declined, with a reason">Declined</th>
+                <th title="Approved, but the send or order did not go through">Failed</th>
+                <th title="Proposals waiting in Tasks">Waiting</th>
+              </tr>
+            </thead>
+            <tbody>
+              {b.groups.map((g) => (
+                <Fragment key={g.action}>
+                  <tr className="g">
+                    <td>{g.label}</td>
+                    {levelButtons(g.action, g.level, `every ${g.label.toLowerCase()} row below`)}
+                    {n(g.approved)}{n(g.rejected)}{n(g.failed)}{n(g.pending)}
+                  </tr>
+                  {g.rows.map((r) => (
+                    <tr key={r.key} className="s">
+                      <td>{r.label}</td>
+                      {levelButtons(r.key, r.level, `${g.label.toLowerCase()}: ${r.label.toLowerCase()} only`)}
+                      {n(r.approved)}{n(r.rejected)}{n(r.failed)}{n(r.pending)}
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

@@ -24,7 +24,7 @@ import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
-import { ENGINE_ACTION_LABEL, openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type LevelConfig } from './types';
+import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type LevelConfig } from './types';
 import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
 
 export type Bucket = 'do' | 'waiting' | 'escalate';
@@ -135,6 +135,8 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
  * One matter's work, split into the three buckets. Pure in (state, now, ctx).
  * A closed or abandoned matter produces nothing — there is nothing left to do on it.
  */
+const subjectLabel = (action: string, subject: string): string => ENGINE_ACTION_SUBJECTS[action as keyof typeof ENGINE_ACTION_SUBJECTS]?.find((s) => s.key === subject)?.label ?? subject.replace(/_/g, ' ');
+
 export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkContext = {}, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): MatterWork {
   const health = caseHealth(s, now, sla, cal);
   const out: WorkItem[] = [];
@@ -156,7 +158,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
       : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
       : d.kind === 'proposal'
-        ? `Approve: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'the engine\'s next step'}${s.proposals[d.eventId]?.dedupKey && !/^[0-9a-f]{8}-/i.test(s.proposals[d.eventId].dedupKey) ? ` — ${s.proposals[d.eventId].dedupKey.split(':')[0].replace(/_/g, ' ')}` : ''}`
+        ? `Proposal: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'engine action'}${s.proposals[d.eventId]?.subject ? ` — ${subjectLabel(s.proposals[d.eventId].action, s.proposals[d.eventId].subject!)}` : ''}`
       : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` — ${d.subject}` : ''}`;
     out.push({
       ...base,

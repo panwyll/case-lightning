@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
-import { CLIENT_DECISION_SUBJECTS, NOTE_KINDS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, ENGINE_ACTIONS, TRUST_LEVELS, VERIFICATION_METHODS, type Engagement } from './types';
+import { CLIENT_DECISION_SUBJECTS, NOTE_KINDS, TRANSACTION_TYPES, ISSUE_PAID_BY, ABANDON_REASONS, DECISION_OPTIONS, SEARCH_TYPES, PAYEE_KINDS, SOURCE_CHANNELS, SUB_FLOWS, TRUST_LEVELS, VERIFICATION_METHODS, type Engagement } from './types';
 import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
 import type { Command } from './machine';
 
@@ -161,7 +161,7 @@ export const resolveSchema = z.object({
   selection: z.array(z.string().min(1).max(60)).max(40).nullish(),
 });
 
-export const levelSchema = z.object({ action: z.enum(ENGINE_ACTIONS), level: z.enum(TRUST_LEVELS) });
+export const levelSchema = z.object({ action: z.string().regex(/^(acknowledgement|chase|client_update|search_order|auto_clear)(:[A-Za-z0-9_]{1,40})?$/), level: z.enum(TRUST_LEVELS) });
 export const shadowReviewSchema = z.object({ eventId: z.string().uuid(), agrees: z.boolean(), humanOutcome: z.string().max(2000).nullish(), note: z.string().max(4000).nullish() });
 export const queueQuerySchema = z.object({ sort: z.enum(['oldest_pending', 'target_completion']).default('oldest_pending'), all: z.enum(['0', '1']).default('0'), includeShadow: z.enum(['0', '1']).default('0'), limit: z.coerce.number().int().positive().max(1000).default(300) });
 export { VERIFICATION_METHODS };

@@ -65,6 +65,7 @@ import {
   type TransactionType,
   type Engagement,
   DEFAULT_LEVELS,
+  levelFor,
   type EngineAction,
   type TrustLevel,
   type Actor,
@@ -190,7 +191,7 @@ export type Command =
   | { type: 'raise_escalation'; waitKey: WaitKey; subject: string; reason: string; sourceDocumentId: string; summary?: SummaryOverride | null }
   | { type: 'record_client_update'; update: ClientUpdateSpec }
   /** PROPOSE level: the service asks before acting. `sourceDocumentId` is the generated dossier the person reads. */
-  | { type: 'propose_action'; action: EngineAction; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
+  | { type: 'propose_action'; action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
   | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
 
 export type CommandType = Command['type'];
@@ -670,7 +671,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
         kind: 'id_check',
-        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
+        level: levelFor(ctx.levels, 'auto_clear', 'id_check'),
         subjectLabel: `ID/AML check (${cmd.facts.provider})`,
         sourceDocumentId: cmd.documentId,
         summary: cmd.summary,
@@ -709,7 +710,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'search_cleared',
           flagged: 'search_flagged',
           kind: 'search',
-        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
+        level: levelFor(ctx.levels, 'auto_clear', 'search'),
           subjectLabel: `${cmd.searchType} search`,
           sourceDocumentId: sr.documentId,
           summary: cmd.summary,
@@ -744,7 +745,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'enquiry_reply_cleared',
           flagged: 'enquiry_reply_flagged',
           kind: 'enquiry',
-        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
+        level: levelFor(ctx.levels, 'auto_clear', 'enquiry'),
           subjectLabel: `Reply to enquiry ${cmd.enquiryId} (${q.subject})`,
           sourceDocumentId: cmd.documentId,
           summary: cmd.summary,
@@ -774,7 +775,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           cleared: 'mortgage_offer_cleared',
           flagged: 'mortgage_condition_flagged',
           kind: 'mortgage',
-        level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear,
+        level: levelFor(ctx.levels, 'auto_clear', 'mortgage'),
           subjectLabel: `Mortgage offer (${cmd.facts.lender})`,
           sourceDocumentId: s.mortgage.documentId,
           summary: cmd.summary,
@@ -796,7 +797,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const verdict = evaluateTitle(cmd.facts, expectedTenure);
       const out = [
         extracted,
-        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: (ctx.levels ?? DEFAULT_LEVELS).auto_clear, subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
+        ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
       // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
       if (expectedTenure !== 'any' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
@@ -1620,7 +1621,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: 'template',
       };
       assertDecisionSpec(decision);
-      return [{ type: 'action_proposed', actor: AI, payload: { action: cmd.action, detail: cmd.detail, dedupKey: cmd.dedupKey, decision }, sourceDocumentId: cmd.sourceDocumentId }];
+      return [{ type: 'action_proposed', actor: AI, payload: { action: cmd.action, subject: cmd.subject ?? null, detail: cmd.detail, dedupKey: cmd.dedupKey, decision }, sourceDocumentId: cmd.sourceDocumentId }];
     }
 
     case 'record_action_failed': {

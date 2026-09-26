@@ -3,7 +3,7 @@ import { paths } from '@/lib/paths';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
-import { KIND_LABEL, OPTION_LABEL, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
+import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
 import { Check } from '@/app/shared/icons';
 
 /**
@@ -415,7 +415,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                   key={o}
                   className={`eg-btn${choice === o ? ' on' : o === 'approve' || o === 'verify' ? ' primary' : ''}`}
                   disabled={busy || !engaged || (isBank && o === 'verify' && !method) || (!!noteLines && o === 'approve' && !picked?.size)}
-                  title={!engaged ? 'Read the source section first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size ? 'Tick at least one line, or reject the reading with a reason' : ''}
+                  title={(!engaged ? 'Read the source section first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size ? 'Tick at least one line, or reject the reading with a reason' : '') || (OPTION_HELP[o] ?? '')}
                   onClick={() => setChoice(o)}
                 >
                   {OPTION_LABEL[o] ?? pretty(o)}

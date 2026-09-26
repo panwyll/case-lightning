@@ -30,7 +30,7 @@ import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -120,7 +120,7 @@ export class EngineService {
         const recent = current.acknowledgements.some((a) => a.recipientRole === rule.recipient && this.ports.now().getTime() - new Date(a.at).getTime() < ACK_WINDOW_MS);
         if (recent) continue;
         const detail = { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient, what: rule.what };
-        if (await this.proposeUnless(tenantId, matterId, subflows, 'acknowledgement', e.id, detail, `ACKNOWLEDGEMENT\n\nTo: ${rule.recipient.replace(/_/g, ' ')}\nWhat: ${rule.what}\nFor: ${e.type.replace(/_/g, ' ')} received ${e.createdAt}\n\nA short note that it arrived, so they do not write to ask.`)) continue;
+        if (await this.proposeUnless(tenantId, matterId, subflows, 'acknowledgement', rule.recipient, e.id, detail, `ACKNOWLEDGEMENT\n\nTo: ${rule.recipient.replace(/_/g, ' ')}\nWhat: ${rule.what}\nFor: ${e.type.replace(/_/g, ' ')} received ${e.createdAt}\n\nA short note that it arrived, so they do not write to ask.`)) continue;
         await this.perform(tenantId, matterId, 'acknowledgement', detail);
       } catch (err) {
         this.ports.log(`acknowledgement failed (${e.type})`, err);
@@ -144,8 +144,8 @@ export class EngineService {
    * proposal per key at a time; a rejection keeps the same key quiet for a few days so
    * the timer does not nag.
    */
-  private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, dedupKey: string, detail: Record<string, unknown>, summary: string): Promise<boolean> {
-    if (actsUnasked(levels[action], action)) return false;
+  private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, subject: string | null, dedupKey: string, detail: Record<string, unknown>, summary: string): Promise<boolean> {
+    if (actsUnasked(levelFor(levels, action, subject), action)) return false;
     const state = await this.getState(tenantId, matterId);
     if (pendingProposal(state, action, dedupKey)) return true;
     const quietUntil = this.ports.now().getTime() - REJECTED_QUIET_MS;
@@ -157,7 +157,7 @@ export class EngineService {
       fileName: `proposal-${action}-${dedupKey.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${this.ports.now().toISOString().slice(0, 10)}.txt`,
       content: summary,
     });
-    await this.run(tenantId, matterId, { type: 'propose_action', action, detail, dedupKey, summary, sourceDocumentId: doc.id });
+    await this.run(tenantId, matterId, { type: 'propose_action', action, subject, detail, dedupKey, summary, sourceDocumentId: doc.id });
     return true;
   }
 
@@ -542,7 +542,7 @@ export class EngineService {
           const context = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length };
           const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
           const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
-          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.rule.recipientRole, `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
           await this.perform(tenantId, matterId, 'chase', detail);
           chases += 1;
         } else {
@@ -605,7 +605,7 @@ export class EngineService {
           for (const searchType of state.requiredSearches) {
             if (state.searches[searchType]) continue;
             const detail = { searchType, provider: this.ports.searchProvider.name };
-            if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
+            if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
             try {
               await this.perform(tenantId, matterId, 'search_order', detail);
             } catch (err) {
@@ -673,7 +673,7 @@ export class EngineService {
             const context = { eventType: e.type, payload: e.payload, waitingOn: w.who, waitingFor: w.what, nextChase, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
             const detail = { template: 'chase_update', context, triggeredByEventId: e.id, agentTemplate: 'chase_update_agent' };
             const summary = `CLIENT UPDATE\n\nTo: the client (and the estate agent)\nWhat: we have chased ${w.who} for ${w.what}${nextChase ? `; we will chase again on ${nextChase}` : ''}\nTemplate: chase_update\n\nA short status line so they know it is in hand and nobody has to ask.`;
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', `chase_update:${e.id}`, detail, summary))) {
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'chase_update', `chase_update:${e.id}`, detail, summary))) {
               await this.perform(tenantId, matterId, 'client_update', detail);
             }
           }
@@ -682,7 +682,7 @@ export class EngineService {
         const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
           const detail = { template, context: { eventType: e.type, payload: e.payload }, triggeredByEventId: e.id };
-          if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', `${template}:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${e.type.replace(/_/g, ' ')}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', template, `${template}:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${e.type.replace(/_/g, ' ')}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
           await this.perform(tenantId, matterId, 'client_update', detail);
         }
       } catch (err) {

@@ -122,7 +122,8 @@ export interface EventStore {
   cachedState(tenantId: string, matterId: string): Promise<MatterState | null>;
   /** Trust level per engine action. Missing rows are `propose`. */
   loadLevels(tenantId: string): Promise<LevelConfig>;
-  setLevel(tenantId: string, action: EngineAction, level: TrustLevel, userId: string | null): Promise<LevelConfig>;
+  /** `key` is an action or `action:subject`; setting an action clears its subjects' overrides. */
+  setLevel(tenantId: string, key: string, level: TrustLevel, userId: string | null): Promise<LevelConfig>;
   /** Addendum 3 §3: the handler's queue — one row per matter. */
   listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]>;
   /** Full state per matter, for anything that has to reason over the whole caseload (the work list). */
@@ -278,8 +279,10 @@ export class MemoryEventStore implements EventStore {
     return { ...this.defaultLevels, ...(this.subflows.get(tenantId) ?? {}) };
   }
 
-  async setLevel(tenantId: string, action: EngineAction, level: TrustLevel, _userId: string | null = null): Promise<LevelConfig> {
-    this.subflows.set(tenantId, { ...(await this.loadLevels(tenantId)), [action]: level });
+  async setLevel(tenantId: string, key: string, level: TrustLevel, _userId: string | null = null): Promise<LevelConfig> {
+    const cur = { ...(await this.loadLevels(tenantId)) };
+    if (!key.includes(':')) for (const k of Object.keys(cur)) if (k.startsWith(`${key}:`)) delete cur[k];
+    this.subflows.set(tenantId, { ...cur, [key]: level });
     return this.loadLevels(tenantId);
   }
 
@@ -472,18 +475,20 @@ export class PgEventStore implements EventStore {
   }
 
   async loadLevels(tenantId: string): Promise<LevelConfig> {
-    const rows = await dbQuery<{ action: EngineAction; level: TrustLevel }>(`select action, level from engine_action_level where tenant_id = $1`, [tenantId]).catch(() => []);
+    const rows = await dbQuery<{ action: string; level: TrustLevel }>(`select action, level from engine_action_level where tenant_id = $1`, [tenantId]).catch(() => []);
     const cfg: LevelConfig = { ...DEFAULT_LEVELS };
-    for (const r of rows) if ((ENGINE_ACTIONS as readonly string[]).includes(r.action) && (TRUST_LEVELS as readonly string[]).includes(r.level)) cfg[r.action] = r.level;
+    for (const r of rows) if ((ENGINE_ACTIONS as readonly string[]).includes(r.action.split(':')[0]) && (TRUST_LEVELS as readonly string[]).includes(r.level)) cfg[r.action] = r.level;
     return cfg;
   }
 
-  async setLevel(tenantId: string, action: EngineAction, level: TrustLevel, userId: string | null): Promise<LevelConfig> {
+  async setLevel(tenantId: string, key: string, level: TrustLevel, userId: string | null): Promise<LevelConfig> {
     await dbQuery(
       `insert into engine_action_level (tenant_id, action, level, updated_by, updated_at) values ($1,$2,$3,$4,now())
        on conflict (tenant_id, action) do update set level = excluded.level, updated_by = excluded.updated_by, updated_at = now()`,
-      [tenantId, action, level, userId]
+      [tenantId, key, level, userId]
     );
+    // Setting an action's level clears its subjects' overrides: the action now speaks for all of them.
+    if (!key.includes(':')) await dbQuery(`delete from engine_action_level where tenant_id = $1 and action like $2`, [tenantId, `${key}:%`]);
     return this.loadLevels(tenantId);
   }
 

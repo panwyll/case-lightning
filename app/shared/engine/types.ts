@@ -253,7 +253,7 @@ export interface EngineEvent { id: string; seq: number; type: string; actor: str
 export const STAGES = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
 
 export const KIND_LABEL: Record<string, string> = {
-  proposal: 'Proposed action',
+  proposal: 'Proposal',
   search: 'Search result',
   enquiry: 'Enquiry reply',
   mortgage: 'Mortgage offer',
@@ -281,9 +281,19 @@ export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId:
 
 /** Kind-specific wording where the generic label would mislead. */
 export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
-  proposal: { approve: 'Yes — do it', reject: 'No — do not do this' },
+  proposal: { approve: 'Approve', reject: 'Decline' },
   proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)', reject: 'Reject — stop automation (consider a report)' },
   management_pack: { request_further: 'Request further information from the managing agent' },
+};
+/** What each option does, for the button tooltip. */
+export const OPTION_HELP: Record<string, string> = {
+  approve: 'Records your approval. The item is treated as satisfactory and the case moves on.',
+  refer_to_client: 'Records that the point goes to the client for their instructions. Needs a reason.',
+  request_further: 'Raises a further search or enquiry and keeps this open until it comes back. Needs a reason.',
+  escalate: 'Puts the same source in front of a senior as a new decision. Needs a reason.',
+  reject: 'Records the rejection and its reason. For a proposal, the engine does not perform the action.',
+  verify: 'Records that the bank details were verified out of band, by the method you choose.',
+  indemnity: 'Records that the risk is covered by an indemnity policy rather than resolved.',
 };
 export const OPTION_LABEL: Record<string, string> = {
   approve: 'Approve — proceed as standard',
