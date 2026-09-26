@@ -9,7 +9,7 @@ import { getPersonAccess, setPersonAccess } from '@/lib/server/access';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export const accessSchema = z.object({
+const accessSchema = z.object({
   caseAccess: z.enum(['all', 'selected']),
   mailboxAccess: z.enum(['own', 'all', 'selected']),
   covers: z.array(z.string().uuid()).max(200).default([]),
