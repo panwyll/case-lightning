@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
@@ -37,16 +37,18 @@ export const WORK_CSS = `
 .ep-lane-h b{font-size:12.5px}
 .ep-lane-h .tw{color:#94a3b8;font-size:11px;width:10px}
 .ep-lane-h .sub{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-.ep-flow{display:grid;gap:0 18px;align-items:start;background:#f8fafc;border:1px solid #eef1f5;border-radius:16px;padding:14px 16px 16px;overflow-x:auto}
-.ep-col{position:relative;display:grid;gap:10px;align-content:start;min-width:0}
-.ep-col-h{position:relative;display:flex;align-items:center;gap:8px;height:28px;margin-bottom:4px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
-.ep-col-h .lab{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:4px 11px 4px 8px;color:#334155;position:relative;z-index:1}
-.ep-col-h .lab i{width:8px;height:8px;border-radius:99px;display:inline-block}
-.ep-col-h .lab.done{border-color:#bbf7d0;color:#14532d}
-.ep-col-h .lab.blocked{border-color:#fecaca;color:#7f1d1d}
-.ep-col-h .lab.open{border-color:#fde68a;color:#78350f}
-.ep-col + .ep-col .ep-col-h::before{content:'';position:absolute;right:100%;top:50%;width:18px;height:2px;background:#cbd5e1;margin-right:0}
-.ep-col + .ep-col .ep-col-h::after{content:'';position:absolute;left:-6px;top:50%;width:7px;height:7px;border-top:2px solid #cbd5e1;border-right:2px solid #cbd5e1;transform:translateY(-50%) rotate(45deg)}
+.ep-flow{position:relative;background:#f8fafc;border:1px solid #eef1f5;border-radius:16px;padding:18px 18px 22px 18px}
+.ep-flow > svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0}
+.ep-tier{position:relative;z-index:1;display:grid;grid-template-columns:104px minmax(0,1fr);align-items:start;gap:0 12px}
+.ep-tier + .ep-tier{margin-top:56px}
+.ep-tier-l{position:sticky;top:8px;display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:4px 11px 4px 8px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#334155;white-space:nowrap;margin-top:10px;justify-self:start}
+.ep-tier-l i{width:8px;height:8px;border-radius:99px;display:inline-block}
+.ep-tier-l.done{border-color:#bbf7d0;color:#14532d}
+.ep-tier-l.blocked{border-color:#fecaca;color:#7f1d1d}
+.ep-tier-l.open{border-color:#fde68a;color:#78350f}
+.ep-tier-b{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;align-items:flex-start}
+.ep-tier-b .ep-box{flex:0 1 200px;min-width:150px}
+.ep-tier-b .ep-box.on{flex-basis:300px}
 .ep-box{position:relative;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;background:#fff;min-width:0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .ep-box.done{border-left-color:#16a34a}
 .ep-box.open{border-left-color:#f59e0b}
@@ -154,7 +156,67 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   );
 }
 
-/** The flowchart: instruction first, the investigation strands in parallel, then contract, completion and registration. */
+/** The flowchart: tiers top to bottom, every box in a tier joined by a bus to every box in the next, so fan-out and fan-in read as concurrency. */
+function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[] }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[] }>({ bus: [], drops: [], arrows: [] });
+  const measure = useCallback(() => {
+    const root = ref.current;
+    if (!root) return;
+    const rr = root.getBoundingClientRect();
+    const tierEls = Array.from(root.querySelectorAll<HTMLElement>('[data-tier]'));
+    const bus: string[] = []; const drops: string[] = []; const arrows: string[] = [];
+    const mid = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left - rr.left + r.width / 2, top: r.top - rr.top, bottom: r.bottom - rr.top }; };
+    for (let i = 0; i < tierEls.length - 1; i++) {
+      const a = Array.from(tierEls[i].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
+      const b = Array.from(tierEls[i + 1].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
+      if (!a.length || !b.length) continue;
+      const y = (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2;
+      if (a.length === 1 && b.length === 1 && Math.abs(a[0].x - b[0].x) < 2) {
+        arrows.push(`M${a[0].x},${a[0].bottom} V${b[0].top - 1}`);
+        continue;
+      }
+      const xs = [...a, ...b].map((p) => p.x);
+      bus.push(`M${Math.min(...xs)},${y} H${Math.max(...xs)}`);
+      for (const p of a) drops.push(`M${p.x},${p.bottom} V${y}`);
+      for (const p of b) arrows.push(`M${p.x},${y} V${p.top - 1}`);
+    }
+    setLines({ bus, drops, arrows });
+  }, []);
+  useLayoutEffect(() => {
+    measure();
+    const root = ref.current;
+    if (!root) return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(root);
+    for (const el of Array.from(root.querySelectorAll<HTMLElement>('.ep-box'))) ro.observe(el);
+    window.addEventListener('resize', measure);
+    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+  }, [measure, current, tiers]);
+  return (
+    <div className="ep-flow" ref={ref}>
+      <svg aria-hidden="true">
+        <defs><marker id="ep-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#94a3b8" /></marker></defs>
+        {lines.bus.map((d, i) => <path key={`b${i}`} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" strokeLinecap="round" />)}
+        {lines.drops.map((d, i) => <path key={`d${i}`} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" />)}
+        {lines.arrows.map((d, i) => <path key={`a${i}`} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" markerEnd="url(#ep-arrow)" />)}
+      </svg>
+      {tiers.map((tier) => {
+        const ps = phaseState(tier.items);
+        return (
+          <div key={tier.id} className="ep-tier" data-tier={tier.id}>
+            <span className={`ep-tier-l ${ps}`}><i style={{ background: RAG[ps].dot }} />{tier.label}</span>
+            <div className="ep-tier-b">
+              {tier.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
 const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
   { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'] },
@@ -540,22 +602,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       <style>{WORK_CSS}</style>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
-      {section === 'flow' && (() => {
-        const cols = PHASES.map((ph) => ({ ...ph, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) })).filter((c) => c.items.length);
-        return (
-          <div className="ep-flow" style={{ gridTemplateColumns: `repeat(${cols.length}, minmax(168px, 1fr))` }}>
-            {cols.map((c) => {
-              const ps = phaseState(c.items);
-              return (
-                <div key={c.id} className="ep-col">
-                  <div className="ep-col-h"><span className={`lab ${ps}`}><i style={{ background: RAG[ps].dot }} />{c.label}</span></div>
-                  {c.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })()}
+      {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
 
       {sheetDialog}
 
