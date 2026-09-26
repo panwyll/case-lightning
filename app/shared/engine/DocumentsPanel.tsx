@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { WORK_CSS } from './WorkPanel';
 import { fmtWhen, pretty, type Api, type EngineEvent, type EngineView } from './types';
 
@@ -10,7 +10,7 @@ import { fmtWhen, pretty, type Api, type EngineEvent, type EngineView } from './
  */
 type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'survey' | 'specialist_report';
 
-export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void }) {
+export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged, doc = null }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void; doc?: string | null }) {
   const [role, setRole] = useState<Role>('auto');
   const [search, setSearch] = useState('CON29');
   const [enquiryId, setEnquiryId] = useState('');
@@ -22,6 +22,10 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const buyer = !p || p.side === 'buyer';
   const leasehold = p?.tenure === 'leasehold';
   const filed = useMemo(() => events.filter((e) => e.sourceDocumentId).sort((a, b) => b.seq - a.seq), [events]);
+  useEffect(() => {
+    if (!doc) return;
+    document.getElementById(`doc-${doc}`)?.scrollIntoView({ block: 'center' });
+  }, [doc, filed.length]);
 
   const upload = async () => {
     if (!file) return;
@@ -78,7 +82,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
         {filed.map((e) => (
-          <div key={e.id} className="ep-row">
+          <div key={e.id} id={`doc-${e.sourceDocumentId}`} className="ep-row" style={doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : undefined}>
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
             <b>{pretty(e.type)}</b>
             <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>

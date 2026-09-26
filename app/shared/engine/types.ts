@@ -205,11 +205,11 @@ export interface EngineState {
   lastSeq: number;
   lastEventAt: string | null;
   manualHandling: { required: boolean; reason: string | null };
-  idCheck: { status: string; requestedAt: string | null };
-  searches: Record<string, { searchType: string; status: string; orderedAt: string | null; returnedAt: string | null; flags: Array<{ code: string; severity: string; description: string }>; resolution: string | null }>;
-  enquiries: Record<string, { enquiryId: string; subject: string; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null }>;
-  mortgage: { status: string; facts: { lender?: string } | null };
-  title: { status: string; facts: { titleNumber?: string; tenure?: string } | null };
+  idCheck: { status: string; requestedAt: string | null; documentId?: string | null };
+  searches: Record<string, { searchType: string; status: string; orderedAt: string | null; returnedAt: string | null; flags: Array<{ code: string; severity: string; description: string }>; resolution: string | null; documentId?: string | null }>;
+  enquiries: Record<string, { enquiryId: string; subject: string; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null; documentId?: string | null }>;
+  mortgage: { status: string; facts: { lender?: string } | null; documentId?: string | null };
+  title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null };
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };

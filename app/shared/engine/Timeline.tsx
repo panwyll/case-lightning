@@ -45,9 +45,12 @@ function noteLabel(e: EngineEvent, state: EngineState): string | null {
   return n ? n.id : null;
 }
 
-export function Timeline({ events, state, people = {} }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string> }) {
+/** Does this event belong to the subject a sub-block linked from: its type starts with it, or a payload field names it. */
+const touches = (e: EngineEvent, focus: string) => e.type.startsWith(focus) || Object.values(e.payload as Record<string, unknown>).some((v) => v === focus || (typeof v === 'string' && v.split(':').pop() === focus));
+
+export function Timeline({ events, state, people = {}, focus = null, onClearFocus }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string>; focus?: string | null; onClearFocus?: () => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const ordered = useMemo(() => [...events].sort((a, b) => b.seq - a.seq), [events]);
+  const ordered = useMemo(() => [...events].filter((e) => !focus || touches(e, focus)).sort((a, b) => b.seq - a.seq), [events, focus]);
   const days = useMemo(() => {
     const out: Array<[string, EngineEvent[]]> = [];
     for (const e of ordered) {
@@ -62,6 +65,13 @@ export function Timeline({ events, state, people = {} }: { events: EngineEvent[]
   if (!events.length) return <div className="eg-empty">No events yet.</div>;
   return (
     <div className="tl">
+      {focus && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+          <span className="eg-chip info">{pretty(focus)}</span>
+          <span className="eg-sub">{ordered.length} of {events.length} events</span>
+          {onClearFocus && <button className="eg-btn" style={{ marginLeft: 'auto' }} onClick={onClearFocus}>Show All</button>}
+        </div>
+      )}
       {days.map(([day, list]) => (
         <div key={day}>
           <div className="tl-day">{day}</div>

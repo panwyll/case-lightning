@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
@@ -73,10 +74,16 @@ export const WORK_CSS = `
 .ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
 .ep-sub-a{color:#5A27E0;text-decoration:none}
 .ep-sub-a:hover{text-decoration:underline}
-.ep-i{position:relative;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;border:1px solid #cbd5e1;color:#94a3b8;font-size:9.5px;font-weight:800;font-style:normal;margin-left:6px;vertical-align:1px;cursor:help}
+.ep-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;border:1px solid #cbd5e1;color:#94a3b8;font-size:9.5px;font-weight:800;font-style:normal;margin-left:6px;vertical-align:1px;cursor:help}
 .ep-i:hover,.ep-i:focus{border-color:#5A27E0;color:#5A27E0;outline:none}
-.ep-i::after{content:attr(data-tip);position:absolute;left:0;top:calc(100% + 6px);width:260px;background:#0f172a;color:#fff;font-size:11.5px;font-weight:500;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.2);opacity:0;pointer-events:none;transition:opacity .12s;z-index:5;white-space:normal}
-.ep-i:hover::after,.ep-i:focus::after{opacity:1}
+.ep-tip{position:fixed;width:264px;background:#0f172a;color:#fff;font-size:11.5px;font-weight:500;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.25);z-index:1000;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+.ep-tree{position:relative;padding-left:14px;margin-top:2px}
+.ep-tree::before{content:'';position:absolute;left:4px;top:6px;bottom:14px;width:1px;background:#e2e8f0}
+.ep-sub{position:relative}
+.ep-sub::before{content:'';position:absolute;left:-10px;top:15px;width:8px;height:1px;background:#e2e8f0}
+.ep-sub.d1{margin-left:18px}
+.ep-sub.d1::before{left:-14px;width:12px}
+.ep-sub.d1 b{font-weight:500;color:#334155}
 .ep-box-b .acts{display:grid;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9}
 .ep-box-b .acts .ep-btn{margin:0;width:100%;text-align:center}
 .ep-box-b .acts > span{display:contents}
@@ -131,7 +138,7 @@ const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)',
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
-interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string }
+interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
 /** What each sub-block is and what completes it: the sentence a new starter needs. */
 const ABOUT: Record<string, string> = {
   'ID / AML check': "Identity and anti-money-laundering check on every client through the ID provider. Complete when the provider's result is clear, or a person has reviewed a referred result.",
@@ -170,12 +177,27 @@ const ABOUT: Record<string, string> = {
   Forms: 'TA6 property information, TA10 fittings and contents, and TA7 for leasehold, completed by the client.',
   Enquiry: "A question we put to the seller's solicitor about the title, the searches or the property. Cleared when the reply answers it, or a person accepts the reply.",
 };
+/** Where a sub-block's events live on the timeline, by the first word of its label, when the tile does not say. */
+const FOCUS_BY_WORD: Record<string, string> = { Deposit: 'deposit', Exchange: 'exchange', Completion: 'completion', SDLT: 'sdlt', AP1: 'ap1', Redemption: 'redemption', Redeemed: 'mortgage_redeemed', Discharge: 'discharge', Consent: 'lender_consent', Forms: 'property_forms', Mortgage: 'mortgage_deed', Certificate: 'certificate_of_title', Transfer: 'transfer_deed', Declaration: 'deed_of_trust', Notice: 'notice_of_assignment', Contract: 'contract', Balance: 'payment', Payment: 'payment', File: 'matter_closed', How: 'client_decision', Lender: 'funds', Client: 'funds', Consideration: 'funds' };
 const aboutFor = (x: Tile) => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
 interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
 const STATE_ICON: Record<LaneDef['state'], { Icon: typeof Circle; colour: string }> = { done: { Icon: CheckCircle, colour: '#16a34a' }, open: { Icon: Clock, colour: '#f59e0b' }, blocked: { Icon: AlertTriangle, colour: '#dc2626' }, idle: { Icon: Circle, colour: '#cbd5e1' } };
+
+/** The ⓘ: a description rendered on the top layer, so no box or band can sit over it. */
+function Tip({ text }: { text: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const show = () => { const r = ref.current?.getBoundingClientRect(); if (r) setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom + 6 }); };
+  return (
+    <>
+      <span ref={ref} className="ep-i" tabIndex={0} aria-label={text} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>i</span>
+      {pos && createPortal(<div className="ep-tip" role="tooltip" style={{ left: pos.x, top: pos.y }}>{text}</div>, document.body)}
+    </>
+  );
+}
 
 /** One workstream as a box: state on the edge and the icon, progress as a bar. Open, it grows in place to show the sub-blocks and what a person may record now. */
 function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
@@ -193,17 +215,19 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
       {open && (
         <div className="ep-box-b">
           {lane.note && <div className="ep-note" style={{ padding: '4px 0 6px' }}>{lane.note}</div>}
+          <div className="ep-tree">
           {lane.tiles.map((x) => {
             const about = aboutFor(x);
             const name = x.href ? <a href={x.href} className="ep-sub-a">{titleCase(x.label)}</a> : titleCase(x.label);
             return (
-              <div key={x.label} className="ep-sub">
-                <b>{name}{about && <span className="ep-i" tabIndex={0} aria-label={about} data-tip={about}>i</span>}</b>
+              <div key={x.label} className={`ep-sub${x.depth ? ' d1' : ''}`}>
+                <b>{name}{about && <Tip text={about} />}</b>
                 <Pill s={x.status} />
                 {x.detail && <span className="d">{x.detail}</span>}
               </div>
             );
           })}
+          </div>
           {lane.extra}
           {lane.actions && <div className="acts">{lane.actions}</div>}
           <NoticeBox n={notice ?? null} />
@@ -438,7 +462,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const lane = (l: LaneDef | null | false) => { if (l) lanes.push(l); };
 
   lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
-    tiles: [{ label: 'ID / AML check', status: s.idCheck.status }],
+    tiles: [{ label: 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' }],
     actions: s.stage === 'instruction' && s.idCheck.status === 'not_started' ? <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button> : null });
 
   if (has('source_of_funds')) {
@@ -449,8 +473,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const QCHIP: Record<string, { bg: string; fg: string }> = { draft: { bg: '#fef3c7', fg: '#78350f' }, sent: { bg: '#e0e7ff', fg: '#3730a3' }, answered: { bg: '#dcfce7', fg: '#14532d' }, withdrawn: { bg: '#f1f5f9', fg: '#94a3b8' } };
     lane({ id: 'source_of_funds', title: 'Source of funds', state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
       tiles: [
-        { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'flagged' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
-        ...(qs.length ? [{ label: 'Queries to the client', status: open.length ? 'raised' : 'replied', detail: `${qs.length} raised · ${open.length} open` }] : []),
+        { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'flagged' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
+        ...(qs.length ? [{ label: 'Queries to the client', depth: 1 as const, focus: 'proof_of_funds_query', status: open.length ? 'raised' : 'replied', detail: `${qs.length} raised · ${open.length} open` }] : []),
       ],
       extra: pof && pof.status !== 'not_started' ? (
         <div style={{ marginTop: 8 }}>
@@ -496,8 +520,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   lane({ id: 'title', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
-      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, status: s.title.status, detail: s.title.facts?.tenure ?? 'file the official copy of the register under Documents' },
-      ...(has('report_on_title') ? [{ label: 'Report on title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
+      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? 'file the official copy of the register under Documents' },
+      ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],
     actions: has('report_on_title') ? <>
       {s.stage === 'contract_review' && ['not_started', 'rejected'].includes(s.reportOnTitle.status) && resolved(s.title.status) && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'draft_report_on_title' })}>Draft report on title (AI, needs your approval)</button>}
@@ -505,10 +529,10 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     </> : null });
 
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', note: 'ordered when the case reaches pre-contract',
-    tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
+    tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
 
   if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
-    tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, status: q.status, detail: q.subject })),
+    tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, documentId: q.documentId, focus: q.enquiryId, status: q.status, detail: q.subject })),
     actions: (s.stage === 'pre_contract' || s.stage === 'contract_review') ? <><input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} /><input className="ep-input" placeholder="Subject" value={enquiry.subject} onChange={(e) => setEnquiry({ ...enquiry, subject: e.target.value })} style={{ width: 220 }} /><button className="ep-btn" disabled={busy || !enquiry.id || !enquiry.subject} onClick={() => { void cmd({ type: 'raise_enquiry', enquiryId: enquiry.id.trim(), subject: enquiry.subject.trim() }); setEnquiry({ id: '', subject: '' }); }}>Raise enquiry</button></> : null });
 
   if (has('enquiries') && seller) lane({ id: 'enquiries', title: "Buyer's Enquiries", state: inboundAll.length === 0 ? (s.contractPack?.sentAt ? 'open' : 'idle') : inboundOpen.length ? 'blocked' : 'done', note: inboundAll.length ? `${inboundAll.length} received · ${inboundOpen.length} awaiting our reply` : s.contractPack?.sentAt ? "pack out — awaiting the buyer's enquiries" : 'arrive once the pack is out',
@@ -526,7 +550,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
-      { label: 'Offer', status: s.mortgage.status },
+      { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage' },
       { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : 'not_started', detail: deeds.mortgageDeedAt ? `executed ${fmtDay(deeds.mortgageDeedAt)} (witnessed)` : undefined },
       { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : undefined },
     ],
@@ -577,7 +601,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   if (has('leasehold')) lane({ id: 'leasehold', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
     tiles: [
-      { label: 'Management pack (LPE1)', status: s.managementPack?.status ?? 'not_started' },
+      { label: 'Management pack (LPE1)', status: s.managementPack?.status ?? 'not_started', documentId: s.managementPack?.documentId, focus: 'management_pack' },
       ...(buyer ? [{ label: 'Notice of assignment', status: s.postCompletion.noticeOfAssignmentAt ? 'sent' : 'not_started' }] : []),
     ],
     actions: <>
@@ -655,9 +679,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const linkFor = (x: Tile): string | undefined => {
     const subj = x.key?.startsWith('search:') ? x.key.slice(7) : /^Enquiry (\S+)/.exec(x.label)?.[1] ?? null;
     const kind = x.key?.startsWith('search:') ? 'search' : x.label.startsWith('Enquiry ') ? 'enquiry' : x.label.startsWith('ID / AML') ? 'id_check' : x.label.startsWith('Offer') ? 'mortgage' : x.label.startsWith('Official copies') ? 'title' : x.label.startsWith('Report on title') ? 'report_on_title' : x.label.startsWith('Proof of funds') ? 'proof_of_funds' : x.label.startsWith('Management pack') ? 'management_pack' : null;
-    if (!kind) return undefined;
-    const d = view.pendingDecisions.find((dd) => dd.kind === kind && (!subj || (dd.subject ?? '').split(':').pop() === subj));
-    return d ? `/conveyi/decisions/${d.eventId}` : undefined;
+    const d = kind ? view.pendingDecisions.find((dd) => dd.kind === kind && (!subj || (dd.subject ?? '').split(':').pop() === subj)) : null;
+    if (d) return `/conveyi/decisions/${d.eventId}`;
+    if (x.documentId) return `?tab=documents&doc=${encodeURIComponent(x.documentId)}`;
+    const focus = x.focus ?? FOCUS_BY_WORD[x.label.split(/[\s·(]/)[0]];
+    return focus ? `?tab=timeline&focus=${encodeURIComponent(focus)}` : undefined;
   };
   for (const l of lanes) for (const x of l.tiles) if (!x.href) x.href = linkFor(x);
   const current = openLane === undefined ? (lanes.find((l) => l.state === 'blocked') ?? lanes.find((l) => l.state === 'open'))?.id ?? null : openLane;

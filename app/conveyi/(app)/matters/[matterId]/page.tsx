@@ -83,11 +83,14 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const { matterId } = use(params);
   const search = useSearchParams();
   const wanted = search.get('tab') as Tab | null;
+  const focus = search.get('focus');
+  const doc = search.get('doc');
   const [tab, setTabState] = useState<Tab>(wanted && TABS.includes(wanted) ? wanted : 'overview');
   const setTab = (t: Tab) => {
     setTabState(t);
     const u = new URL(window.location.href);
     if (t === 'overview') u.searchParams.delete('tab'); else u.searchParams.set('tab', t);
+    u.searchParams.delete('focus'); u.searchParams.delete('doc');
     window.history.replaceState(null, '', u.toString());
   };
   const eng = useEngine(matterId, api);
@@ -176,7 +179,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           {tab === 'tasks' && view && enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} section="tasks" />}
           {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
           {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
-          {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
+          {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} doc={doc} />}
           {tab === 'documents' && ((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (
               <div className="mx-sec mx-two">
                 {(emails?.length ?? 0) > 0 && (
@@ -193,7 +196,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 )}
               </div>
           )}
-          {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} />}
+          {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} focus={focus} onClearFocus={() => setTab('timeline')} />}
           {tab === 'diagnostics' && enrolled && (
             <>
               <CaseView matterId={matterId} api={api} view="readiness" model={model} />
