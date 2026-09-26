@@ -76,8 +76,14 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
         </div>
       </div>
       {eng.err && !view && <div className="eg-err">{eng.err}</div>}
+      {eng.notice && (tab !== 'work' || !enrolled) && (
+        <div className={`eg-notice ${eng.notice.kind}`} role={eng.notice.kind === 'err' ? 'alert' : 'status'}>
+          <span>{eng.notice.text}</span>
+          <button type="button" onClick={eng.clearNotice} aria-label="Dismiss">×</button>
+        </div>
+      )}
       {!view && !eng.err && <div className="eg-sub">Loading…</div>}
-      {view && !enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} />}
+      {view && !enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} />}
       {view && enrolled && (
         <>
           <div className="eg-tabs">
@@ -90,9 +96,9 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
             <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')}>Diagnostics</button>
           </div>
           {tab === 'case' && (model ? <CaseIntelligence m={model} events={eng.events} onDiagnostics={() => setTab('diagnostics')} /> : <div className="eg-sub">Loading…</div>)}
-          {tab === 'work' && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} />}
-          {tab === 'issues' && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
-          {tab === 'notes' && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={m?.assignedTo && m.handler ? { [m.assignedTo]: m.handler } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} />{eng.err && <div className="ep-err">{eng.err}</div>}</div>}
+          {tab === 'work' && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} />}
+          {tab === 'issues' && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
+          {tab === 'notes' && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={m?.assignedTo && m.handler ? { [m.assignedTo]: m.handler } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
           {tab === 'documents' && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
           {tab === 'diagnostics' && (
             <>

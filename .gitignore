@@ -15,3 +15,4 @@ test-results/
 # Local Claude tooling
 .claude/
 tsconfig.tsbuildinfo
+.env*.local

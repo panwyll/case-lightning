@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       result = await svc.run(user.tenantId, matterId, cmd);
     }
     await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_COMMAND', actionStatus: 'SUCCESS', payload: { command: input.type, events: result.events.map((e) => ({ seq: e.seq, type: e.type })) } }).catch(() => {});
-    return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
+    return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state), warning: result.warning ?? null });
   } catch (error) {
     return fail(error);
   }

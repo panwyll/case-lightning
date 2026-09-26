@@ -716,7 +716,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     // ── proof of funds ──
     case 'proof_of_funds_requested': {
       const p = e.payload as Payloads['proof_of_funds_requested'];
-      s.proofOfFunds = { ...s.proofOfFunds, status: 'requested', requestId: p.requestId, requestedAt: e.createdAt, formUrl: p.formUrl ?? null, rounds: s.proofOfFunds.rounds + 1 };
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'requested', requestId: p.requestId, requestedAt: e.createdAt, formUrl: p.formUrl ?? null, channel: p.channel ?? null, sendError: p.sendError ?? null, rounds: s.proofOfFunds.rounds + 1 };
       for (const id of p.queryIds ?? []) {
         const q = s.proofOfFunds.queries[id];
         if (q && q.status === 'draft') s.proofOfFunds.queries[id] = { ...q, status: 'sent', sentAt: e.createdAt };

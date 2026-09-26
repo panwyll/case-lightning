@@ -103,7 +103,7 @@ export default function ToolsPage() {
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2><p className="ig-what">Every stage, command and gate the engine knows.</p></a>
         <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Shadow review</h2><p className="ig-what">What the engine would have done, for checking before it is trusted.</p></a>
       </div>
-      <h2 className="ig-h2">Engine case pages</h2>
+      <h2 className="ig-h2">Case files</h2>
       <div className="ig-find">
         <input className="ig-search" placeholder="Find a case by reference, address or client" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="ig-sel" value={status} onChange={(e) => setStatus(e.target.value as 'open' | 'closed' | 'all')}>

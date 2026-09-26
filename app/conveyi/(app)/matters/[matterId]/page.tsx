@@ -121,7 +121,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <option value="">Unassigned</option>
                 {team.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
               </select>
-              <a className="eg-btn" href={paths.engineMatter(matterId)}>Details</a>
+              <a className="eg-btn" href={paths.engineMatter(matterId)}>Case file</a>
             </div>
           </div>
 

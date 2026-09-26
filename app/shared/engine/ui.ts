@@ -22,6 +22,11 @@ export const ENGINE_CSS = `
 .eg-btn.on{background:#0f172a;color:#fff;border-color:#0f172a}
 .eg-sel,.eg-in,.eg-ta{border:1px solid #cbd5e1;border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit;background:#fff;color:#0f172a}
 .eg-ta{width:100%;box-sizing:border-box;resize:vertical}
+.eg-notice{position:sticky;top:8px;z-index:20;display:flex;align-items:center;gap:10px;border-radius:10px;padding:9px 12px;font-size:13px;margin:0 0 10px;box-shadow:0 4px 14px rgba(16,24,40,.12)}
+.eg-notice.ok{background:#f0fdf4;border:1px solid #bbf7d0;color:#14532d}
+.eg-notice.warn{background:#fffbeb;border:1px solid #fde68a;color:#78350f}
+.eg-notice.err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c}
+.eg-notice button{margin-left:auto;border:0;background:none;font-size:16px;cursor:pointer;color:inherit;font-family:inherit}
 .eg-err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12.5px;margin:8px 0}
 .eg-empty{color:#64748b;font-size:14px;padding:30px;text-align:center;border:1px dashed #e2e8f0;border-radius:12px}
 .eg-shadow-banner{position:sticky;top:0;z-index:20;background:#312e81;color:#fff;padding:10px 14px;border-radius:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;box-shadow:0 2px 8px rgba(49,46,129,.25)}

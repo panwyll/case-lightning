@@ -11,6 +11,8 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void) {
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** What the last command came back with — success, a warning (recorded but a side effect failed), or an error. */
+  const [notice, setNotice] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -30,16 +32,21 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void) {
   const cmd = useCallback(async (body: Record<string, unknown>) => {
     setBusy(true);
     setErr(null);
+    setNotice(null);
     try {
-      await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) });
+      const r = await api<{ events?: Array<{ type: string }>; warning?: string | null }>(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify(body) });
       await load();
       onChanged?.();
+      const n = r.events?.length ?? 0;
+      setNotice(r.warning ? { kind: 'warn', text: r.warning, at: Date.now() } : { kind: 'ok', text: n ? `Recorded${n > 1 ? ` (${n} events)` : ''}` : 'Nothing to record', at: Date.now() });
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Command failed.');
+      const text = e instanceof Error ? e.message : 'Command failed.';
+      setErr(text);
+      setNotice({ kind: 'err', text, at: Date.now() });
     } finally {
       setBusy(false);
     }
   }, [api, matterId, load, onChanged]);
 
-  return { view, events, err, setErr, busy, setBusy, load, cmd };
+  return { view, events, err, setErr, busy, setBusy, load, cmd, notice, clearNotice: () => setNotice(null) };
 }

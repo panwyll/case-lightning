@@ -139,7 +139,7 @@ export type Command =
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
   // ── proof of funds (docs/proof-of-funds.md) ──
-  | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null; queryIds?: string[] }
+  | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; queryIds?: string[] }
   | { type: 'proof_of_funds_submitted'; actor: Actor; requestId: string; documentId: string; facts: ProofOfFundsFacts; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> | null; summary?: SummaryOverride | null }
   | { type: 'raise_proof_of_funds_query'; actor: Actor; question: string; documentId?: string | null; transaction?: StatementTransaction | null }
   | { type: 'withdraw_proof_of_funds_query'; actor: Actor; queryId: string; reason: string }
@@ -1275,7 +1275,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.proofOfFunds.status === 'submitted') reject('A proof-of-funds submission is awaiting sign-off; resolve that decision (request further re-opens the form).');
       if (s.proofOfFunds.status === 'reviewed' && s.proofOfFunds.resolution === 'approve' && !cmd.followUpOf) reject('Proof of funds is already approved on this matter. Send a follow-up round only from the decision (request further).');
       const queryIds = (cmd.queryIds ?? []).filter((id) => s.proofOfFunds.queries[id]?.status === 'draft');
-      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, formUrl: cmd.formUrl ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null, queryIds } }];
+      return [{ type: 'proof_of_funds_requested', actor: cmd.actor, payload: { requestId: cmd.requestId, channel: cmd.channel, messageId: cmd.messageId ?? null, formUrl: cmd.formUrl ?? null, sendError: cmd.sendError ?? null, followUpOf: cmd.followUpOf ?? null, noteToClient: cmd.noteToClient ?? null, queryIds } }];
     }
     case 'proof_of_funds_submitted': {
       requireEnrolled(s);

@@ -722,7 +722,7 @@ export interface Payloads {
   signed_contract_held: { note?: string | null };
   // ── proof of funds (docs/proof-of-funds.md) ──
   /** The form link went to the client (recorded after the send). A follow-up carries the request it re-opens. */
-  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
+  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
   /** The client submitted the form: typed facts, the rule flags (declaration AND transaction level), the statements read, the risk rating, and ALWAYS a decision for the conveyancer citing the declaration document. */
   proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; statements: TransactionReview['statements']; risk: PofRiskRating; decision: DecisionSpec };
   proof_of_funds_reviewed: { requestId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
@@ -1013,6 +1013,9 @@ export interface MatterState {
     decisionEventId: string | null;
     resolution: DecisionOption | null;
     formUrl: string | null;
+    /** How the latest request reached the client — or 'unsent' when it could not, with the reason in sendError. */
+    channel: string | null;
+    sendError: string | null;
     /** How many times the form has gone out (1 = first request; more = "request further"). */
     rounds: number;
     /** The latest submission's flags (declaration + transactions), statements read, and risk rating. */
@@ -1121,7 +1124,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, confirmedAt: null },
     postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
-    proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
+    proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, channel: null, sendError: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
     managementPack: { status: 'not_required', requestedAt: null, documentId: null, facts: null, decisionEventId: null },
     survey: { status: 'not_started', reports: [] },
     clientDecisions: {},

@@ -53,6 +53,8 @@ import { openPofQueries } from './types';
 export interface RunResult {
   events: EngineEvent[];
   state: MatterState;
+  /** The command was recorded, but a side effect (a send, an order) did not happen. Shown to the person; never swallowed. */
+  warning?: string;
 }
 
 /** Client status updates fired automatically by event (the safe half of #5). Template names only; the port renders. */
@@ -207,8 +209,20 @@ export class EngineService {
     // Drafted queries go out with this round; the client answers them in the form.
     const queryIds = openPofQueries(state).filter((q) => q.status === 'draft').map((q) => q.id);
     const template = opts.followUpOf ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
-    const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId, queryCount: queryIds.length } });
-    return this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
+    // The form exists whether or not the message gets out. A send failure (no client email on
+    // the case, the mailbox not connected, a provider down) must not lose the request: record
+    // it as unsent with the reason and the link, so the conveyancer can send it themselves.
+    let sent: { channel: string; messageId: string | null };
+    let sendError: string | null = null;
+    try {
+      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId, queryCount: queryIds.length } });
+    } catch (err) {
+      sendError = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
+      this.ports.log('proof-of-funds form could not be sent; recorded as unsent', err);
+      sent = { channel: 'unsent', messageId: null };
+    }
+    const result = await this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, sendError, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
+    return sendError ? { ...result, warning: `Recorded, but the form was not sent: ${sendError}` } : result;
   }
 
   /**

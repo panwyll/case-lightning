@@ -31,7 +31,10 @@ export function fail(error: unknown) {
     );
   }
   if (error instanceof ZodError) {
-    return NextResponse.json({ error: 'Invalid request.', details: error.issues }, { status: 400 });
+    // Say which field and what is wrong: "Invalid request." on its own leaves a person
+    // clicking the same button again. The raw issues stay on the body for the client.
+    const first = error.issues.slice(0, 3).map((i) => `${i.path.length ? i.path.join('.') + ': ' : ''}${i.message}`).join('; ');
+    return NextResponse.json({ error: first ? `Invalid request — ${first}.` : 'Invalid request.', details: error.issues }, { status: 400 });
   }
   // Microsoft Graph failures are upstream errors, not server bugs. The SDK's
   // GraphError often has an EMPTY `.message` (e.g. a body-less 401 from a

@@ -27,6 +27,8 @@ export const WORK_CSS = `
 .ep-btn:disabled{opacity:.45;cursor:not-allowed}
 .ep-block{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;font-size:12.5px}
 .ep-err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:8px}
+.ep-ok{color:#14532d;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:8px}
+.ep-warn{color:#78350f;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:8px}
 .ep-input{border:1px solid #cbd5e1;border-radius:8px;padding:6px 8px;font-size:12.5px;font-family:inherit;margin-right:6px}
 .ep-lane{border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-top:10px;overflow:hidden}
 .ep-lane-h{display:flex;gap:10px;align-items:center;padding:8px 12px;background:#fafafa;border:0;border-bottom:1px solid #f1f5f9;width:100%;text-align:left;cursor:pointer;font-family:inherit;color:inherit;flex-wrap:wrap}
@@ -83,15 +85,17 @@ const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).t
 
 interface Tile { label: string; status: string; detail?: string }
 interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
+export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
+const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
 /**
  * One macro block. Collapsed: the title, its rolled-up status and each sub-block as a chip.
  * Expanded: the sub-blocks as tiles with their own status, any detail, and the commands a
  * person may record now.
  */
-function Lane({ lane, open, onToggle }: { lane: LaneDef; open: boolean; onToggle: () => void }) {
+function Lane({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
   return (
-    <div className="ep-lane" id={`lane-${lane.id}`}>
+    <div className="ep-lane" id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-lane-h" onClick={onToggle} aria-expanded={open}>
         <span className="tw">{open ? '▾' : '▸'}</span>
         <b>{lane.title}</b>
@@ -104,6 +108,7 @@ function Lane({ lane, open, onToggle }: { lane: LaneDef; open: boolean; onToggle
           {lane.tiles.length > 0 && <div className="ep-grid">{lane.tiles.map((t) => <div key={t.label} className="ep-tile"><b>{t.label}</b><Pill s={t.status} />{t.detail && <div className="d">{t.detail}</div>}</div>)}</div>}
           {lane.extra}
           {lane.actions && <div className="acts">{lane.actions}</div>}
+          <NoticeBox n={notice ?? null} />
         </div>
       )}
     </div>
@@ -159,7 +164,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void }) {
+export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice }) {
   const [pofNote, setPofNote] = useState('');
   const [pofQuestion, setPofQuestion] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
@@ -169,6 +174,10 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
   const [bd, setBd] = useState({ payeeKind: 'seller_solicitor', payeeRef: '', accountName: '', sortCode: '', accountNumber: '', firmName: '', sourceChannel: 'email' });
   const [payFrom, setPayFrom] = useState<Record<string, string>>({});
   const [openLanes, setOpenLanes] = useState<Record<string, boolean>>({});
+  // The lane whose button was last pressed: the outcome of that press is shown there, not
+  // at the foot of the page. Any click inside a lane (capture phase) sets it.
+  const [activeLane, setActiveLane] = useState<string | null>(null);
+  const noticeFor = (id: string): Notice => (activeLane === id ? (notice ?? (err ? { kind: 'err', text: err, at: 0 } : null)) : null);
   const s = view.state;
   if (!s.enrolled) return <EnrolForm busy={busy} cmd={cmd} err={err} />;
 
@@ -229,6 +238,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
       ],
       extra: pof && pof.status !== 'not_started' ? (
         <div style={{ marginTop: 8 }}>
+          {pof.channel === 'unsent' && pof.formUrl && (
+            <div className="ep-warn" style={{ marginTop: 0, marginBottom: 8 }}>
+              Not sent{pof.sendError ? ` — ${pof.sendError}` : '.'} Send the client this link: <a href={pof.formUrl} target="_blank" rel="noreferrer">{pof.formUrl}</a>
+            </div>
+          )}
           {(pof.statements?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Statements read:</b> {pof.statements!.map((x) => `${x.fileName ?? x.documentId}${x.readable ? ` (${x.holder ?? '?'}, ${x.from ?? '?'}–${x.to ?? '?'}, ${x.transactions} lines)` : ' (unreadable)'}`).join(' · ')}</div>}
           {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Flags:</b> {pof.flags!.map((f) => f.code).join(', ')}</div>}
           {qs.length === 0 && <div className="ep-note">No queries.</div>}
@@ -425,7 +439,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
   const toggle = (l: LaneDef) => setOpenLanes((o) => ({ ...o, [l.id]: !isOpen(l) }));
 
   return (
-    <div className="ep">
+    <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
       <div className="ep-steps">
         {p.stages.map((st, i) => (
@@ -463,11 +477,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
           </button>
         ))}
       </div>
-      {lanes.map((l) => <Lane key={l.id} lane={l} open={isOpen(l)} onToggle={() => toggle(l)} />)}
+      {lanes.map((l) => <Lane key={l.id} lane={l} open={isOpen(l)} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
 
       {/* ── Money: payee bank details ── */}
       <div className="ep-sec">Money · payee bank details (versioned · every change is a hard stop)</div>
-      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }} data-lane="money">
         {Object.values(s.bankDetails).length === 0 && <div className="ep-note">No bank details on file.</div>}
         {Object.values(s.bankDetails).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((b) => (
           <div key={b.id} className="ep-row">
@@ -491,15 +505,17 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged }: { 
           </select>
           <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record details (creates a hard-stop decision)</button>
         </div>
+        <NoticeBox n={noticeFor('money')} />
         {s.payments.length > 0 && <div style={{ marginTop: 8, fontSize: 12.5 }}><b>Payments authorised:</b> {s.payments.map((x) => `${pretty(x.purpose)} → ${pretty(x.payeeKind)}${x.amountPennies ? ` ${gbp(x.amountPennies)}` : ''} (${fmtDay(x.at)})`).join(' · ')}</div>}
       </div>
 
       <div className="ep-sec">Case</div>
-      <div>
+      <div data-lane="case">
         {!s.manualHandling.required && !closed && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Why does this case need manual handling?'); if (reason) void cmd({ type: 'mark_manual_handling', reason }); }}>Take over manually</button>}
         {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Abandonment reason (client_withdrew, seller_withdrew, chain_collapsed, gazumped, survey, finance_failed, conflict, other):', 'client_withdrew'); if (reason) { const detail = ask('Detail (optional):', '') ?? ''; void cmd({ type: 'abandon_matter', reason, detail: detail || null }); } }}>Abandon case</button>}
       </div>
-      {err && <div className="ep-err">{err}</div>}
+      <NoticeBox n={noticeFor('case')} />
+      {err && !activeLane && <div className="ep-err">{err}</div>}
     </div>
   );
 }

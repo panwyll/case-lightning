@@ -21,6 +21,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   return (
     <div className="ep">
       <style>{WORK_CSS}</style>
+      {eng.notice && <div className={eng.notice.kind === 'ok' ? 'ep-ok' : eng.notice.kind === 'warn' ? 'ep-warn' : 'ep-err'} style={{ marginTop: 0, marginBottom: 8 }}>{eng.notice.text}</div>}
       {eng.view.state.enrolled && (
         <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
           {(['work', 'issues', 'notes', 'documents'] as const).map((t) => (
@@ -28,7 +29,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
           ))}
         </div>
       )}
-      {(tab === 'work' || !eng.view.state.enrolled) && <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => { void eng.load(); onChanged?.(); }} />}
+      {(tab === 'work' || !eng.view.state.enrolled) && <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => { void eng.load(); onChanged?.(); }} notice={eng.notice} />}
       {tab === 'issues' && eng.view.state.enrolled && <IssuesPanel api={api} state={eng.view.state} busy={eng.busy} cmd={eng.cmd} />}
       {tab === 'notes' && eng.view.state.enrolled && <NotesPanel api={api} state={eng.view.state} busy={eng.busy} people={eng.view.matter?.assignedTo && eng.view.matter.handler ? { [eng.view.matter.assignedTo]: eng.view.matter.handler } : {}} cmd={async (body) => { await eng.cmd(body); void eng.load(); onChanged?.(); }} />}
       {tab === 'documents' && eng.view.state.enrolled && <DocumentsPanel matterId={matterId} api={api} view={eng.view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={() => { void eng.load(); onChanged?.(); }} />}
