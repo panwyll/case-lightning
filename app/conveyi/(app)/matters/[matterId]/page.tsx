@@ -175,11 +175,37 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
           {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
           {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
+          {tab === 'documents' && ((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (
+              <div className="mx-sec mx-two">
+                {(emails?.length ?? 0) > 0 && (
+                  <div>
+                    <h2 className="mx-h">Emails</h2>
+                    <div className="mx-list">{emails!.slice(0, 12).map((t) => <div key={t.id} className="mx-row"><span className="mx-ellip">{t.subject || '(no subject)'}</span><span className="d">{short(t.lastMessageAt)}</span></div>)}</div>
+                  </div>
+                )}
+                {(files?.length ?? 0) > 0 && (
+                  <div>
+                    <h2 className="mx-h">Files</h2>
+                    <div className="mx-list">{files!.slice(0, 12).map((f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}</div>)}</div>
+                  </div>
+                )}
+              </div>
+          )}
           {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} />}
           {tab === 'diagnostics' && enrolled && (
             <>
               <CaseView matterId={matterId} api={api} view="readiness" model={model} />
               <CaseView matterId={matterId} api={api} view="dependencies" model={model} />
+              {(detail?.timeline ?? []).length > 0 && (
+              <div className="mx-sec">
+                <h2 className="mx-h">History</h2>
+                <div className="mx-list">
+                  {detail!.timeline.slice(0, 25).map((e) => (
+                    <div key={e.id} className="mx-row" style={{ justifyContent: 'flex-start' }}><span className="d" style={{ width: 70 }}>{short(e.event_at ?? e.created_at)}</span><span>{e.title.replace(/^Engine:\s*/, '').replace(/_/g, ' ')}</span></div>
+                  ))}
+                </div>
+              </div>
+              )}
             </>
           )}
 
@@ -202,10 +228,10 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <Field k="Handler" v={nameOf(row.assignedTo)} />
                 <Field k="Reference" v={row.matterRef ?? ''} />
               </div>
-              {(detail?.contacts ?? []).length > 0 && (
+              {(detail?.contacts ?? []).some((c) => c.role && !/unknown/i.test(String(c.role))) && (
                 <>
                   <hr className="mx-hr" />
-                  {detail!.contacts.slice(0, 8).map((c) => (
+                  {detail!.contacts.filter((c) => c.role && !/unknown/i.test(String(c.role))).slice(0, 8).map((c) => (
                     <div key={c.id} className="mx-party">
                       <a href={`mailto:${c.email}`} title={c.email}>{c.name || c.email}</a>
                       <span>{pretty(String(c.role || '').toLowerCase())}</span>
@@ -215,35 +241,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               )}
             </div>
           </div>
-
-
-          {((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (
-            <div className="mx-sec mx-two">
-              {(emails?.length ?? 0) > 0 && (
-                <div>
-                  <h2 className="mx-h">Emails</h2>
-                  <div className="mx-list">{emails!.slice(0, 12).map((t) => <div key={t.id} className="mx-row"><span className="mx-ellip">{t.subject || '(no subject)'}</span><span className="d">{short(t.lastMessageAt)}</span></div>)}</div>
-                </div>
-              )}
-              {(files?.length ?? 0) > 0 && (
-                <div>
-                  <h2 className="mx-h">Files</h2>
-                  <div className="mx-list">{files!.slice(0, 12).map((f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}</div>)}</div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {(detail?.timeline ?? []).length > 0 && (
-            <div className="mx-sec">
-              <h2 className="mx-h">History</h2>
-              <div className="mx-list">
-                {detail!.timeline.slice(0, 25).map((e) => (
-                  <div key={e.id} className="mx-row" style={{ justifyContent: 'flex-start' }}><span className="d" style={{ width: 70 }}>{short(e.event_at ?? e.created_at)}</span><span>{e.title.replace(/^Engine:\s*/, '').replace(/_/g, ' ')}</span></div>
-                ))}
-              </div>
-            </div>
-          )}
           </>)}
         </>
       )}

@@ -32,6 +32,14 @@ export const DECISION_CSS = `
 .dc-quote{font-style:italic;color:#64748b}
 `;
 
+/** "search:CON29" → "CON29"; "id_check:ID/AML check (mock-id)" → "ID/AML check"; a bare id → nothing. */
+const subjectLabel = (s: string | null | undefined): string => {
+  if (!s) return '';
+  const tail = s.includes(':') ? s.slice(s.indexOf(':') + 1) : s;
+  if (/^(rot|bd|pof|draft)?-?[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(tail)) return '';
+  return tail.replace(/\s*\(mock[^)]*\)/i, '').replace(/_/g, ' ');
+};
+
 export function DecisionCard({ decision: d, api, onResolved, compact = false, showMatter = true }: { decision: DecisionRow; api: Api; onResolved?: (d: DecisionRow) => void; compact?: boolean; showMatter?: boolean }) {
   const [opened, setOpened] = useState(!!d.sourceOpenedByMe);
   const [source, setSource] = useState<SourceDoc | null>(null);
@@ -75,10 +83,10 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
     <div className={`dc-card${opened ? ' opened' : ''}${compact ? ' compact' : ''}${isBank ? ' bank' : ''}`}>
       <div className="dc-top" onClick={() => compact && setExpanded((x) => !x)} style={compact ? { cursor: 'pointer' } : undefined}>
         <div>
-          <div className="dc-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject ? ` · ${d.subject}` : ''}</div>
+          <div className="dc-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}</div>
           {showMatter && <div className="dc-ref">{d.matterRef ?? d.matterId}{d.propertyAddress ? ` — ${d.propertyAddress}` : ''}</div>}
         </div>
-        <div className="dc-meta">{pretty(d.stage)} · {fmtWhen(d.createdAt)} · by {d.summarisedBy}</div>
+        <div className="dc-meta">{fmtWhen(d.createdAt)}</div>
       </div>
       {expanded && (
         <>

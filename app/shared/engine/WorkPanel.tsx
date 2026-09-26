@@ -36,11 +36,17 @@ export const WORK_CSS = `
 .ep-lane-h b{font-size:12.5px}
 .ep-lane-h .tw{color:#94a3b8;font-size:11px;width:10px}
 .ep-lane-h .sub{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-.ep-over{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px;margin-top:6px}
-.ep-over button{border:1px solid #e6e8ee;border-radius:10px;background:#fff;padding:8px 10px;text-align:left;cursor:pointer;font-family:inherit;color:inherit}
-.ep-over button.on{border-color:#0f172a}
-.ep-over b{display:block;font-size:12px}
-.ep-over .n{font-size:11px;color:#64748b;margin-top:3px}
+.ep-boxes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
+.ep-box{border:1px solid #e6e8ee;border-radius:12px;background:#fff;padding:10px 12px;text-align:left;cursor:pointer;font-family:inherit;color:inherit;display:grid;gap:6px;align-content:start;min-height:74px}
+.ep-box:hover{border-color:#cbd5e1}
+.ep-box.on{border-color:#5A27E0;box-shadow:0 0 0 2px #ede9fe}
+.ep-box b{font-size:12.5px;line-height:1.3}
+.ep-box .rag{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700}
+.ep-box .rag i{width:9px;height:9px;border-radius:99px;display:inline-block}
+.ep-box .n{font-size:11.5px;color:#64748b;font-variant-numeric:tabular-nums}
+.ep-open{border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-top:8px;overflow:hidden}
+.ep-open-h{display:flex;gap:10px;align-items:center;padding:9px 12px;background:#fafafa;border-bottom:1px solid #f1f5f9}
+.ep-open-h b{font-size:13px}
 .ep-lane-h .st{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:99px;padding:2px 8px}
 .ep-lane-b{padding:10px 12px}
 .ep-lane-b .acts{margin-top:6px}
@@ -79,8 +85,13 @@ const PILL: Record<string, { bg: string; fg: string }> = {
   failed: { bg: '#fee2e2', fg: '#7f1d1d' },
   superseded: { bg: '#f1f5f9', fg: '#94a3b8' },
 };
-const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{pretty(s)}</span>;
-const LANE_STATE: Record<string, { bg: string; fg: string }> = { done: { bg: '#dcfce7', fg: '#14532d' }, open: { bg: '#fef3c7', fg: '#78350f' }, blocked: { bg: '#fee2e2', fg: '#7f1d1d' }, idle: { bg: '#f1f5f9', fg: '#64748b' } };
+const cap = (s: string) => { const w = pretty(s); return w.charAt(0).toUpperCase() + w.slice(1); };
+const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 'of', 'on', 'or', 'the', 'to', 'we', 'with']);
+/** "Source of funds" → "Source of Funds"; words already carrying capitals or digits (ID, TA6, LPE1) are left alone. */
+export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMALL.has(w) ? w : /[A-Z0-9]/.test(w.slice(1)) ? w : w.replace(/^([^A-Za-z]*)([a-z])/, (_m, a: string, b: string) => a + b.toUpperCase()))).join(' ');
+const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
+const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Blocked' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
+const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable']);
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
@@ -89,30 +100,36 @@ interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
-/**
- * One macro block. Collapsed: the title, its rolled-up status and each sub-block as a chip.
- * Expanded: the sub-blocks as tiles with their own status, any detail, and the commands a
- * person may record now.
- */
-function Lane({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
+/** One workstream as a box: its name, its RAG and how many sub-blocks are done. */
+function Box({ lane, open, onToggle }: { lane: LaneDef; open: boolean; onToggle: () => void }) {
+  const r = RAG[lane.state];
+  const done = lane.tiles.filter((x) => DONE_STATUSES.has(x.status)).length;
   return (
-    <div className="ep-lane" id={`lane-${lane.id}`} data-lane={lane.id}>
-      <button type="button" className="ep-lane-h" onClick={onToggle} aria-expanded={open}>
-        <span className="tw">{open ? '▾' : '▸'}</span>
-        <b>{lane.title}</b>
-        <span className="st" style={{ background: LANE_STATE[lane.state].bg, color: LANE_STATE[lane.state].fg }}>{lane.state}</span>
+    <button type="button" className={`ep-box${open ? ' on' : ''}`} onClick={onToggle} aria-expanded={open} aria-controls={`lane-${lane.id}`}>
+      <b>{titleCase(lane.title)}</b>
+      <span className="rag" style={{ color: r.fg }}><i style={{ background: r.dot }} />{r.label}</span>
+      {lane.tiles.length > 0 && <span className="n">{done} of {lane.tiles.length}</span>}
+    </button>
+  );
+}
+
+/** The open workstream: its sub-blocks with their state, any detail, and what a person may record now. */
+function OpenLane({ lane, notice }: { lane: LaneDef; notice?: Notice }) {
+  const r = RAG[lane.state];
+  return (
+    <div className="ep-open" id={`lane-${lane.id}`} data-lane={lane.id}>
+      <div className="ep-open-h">
+        <b>{titleCase(lane.title)}</b>
+        <span className="rag" style={{ color: r.fg, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}><i style={{ background: r.dot, width: 9, height: 9, borderRadius: 99, display: 'inline-block' }} />{r.label}</span>
         {lane.note && <span className="ep-note">{lane.note}</span>}
-        {!open && <span className="sub">{lane.tiles.map((t) => <span key={t.label} className="ep-pill" style={{ background: PILL[t.status]?.bg ?? '#f1f5f9', color: PILL[t.status]?.fg ?? '#475569', marginTop: 0 }}>{t.label} · {pretty(t.status)}</span>)}</span>}
-      </button>
-      {open && (
-        <div className="ep-lane-b">
-          {lane.tiles.length > 0 && <div className="ep-grid">{lane.tiles.map((t) => <div key={t.label} className="ep-tile"><b>{t.label}</b><Pill s={t.status} />{t.detail && <div className="d">{t.detail}</div>}</div>)}</div>}
-          {lane.extra}
-          {lane.actions && <div className="acts">{lane.actions}</div>}
-          {lane.sheet}
-          <NoticeBox n={notice ?? null} />
-        </div>
-      )}
+      </div>
+      <div className="ep-lane-b">
+        {lane.tiles.length > 0 && <div className="ep-grid">{lane.tiles.map((x) => <div key={x.label} className="ep-tile"><b>{titleCase(x.label)}</b><Pill s={x.status} />{x.detail && <div className="d">{x.detail}</div>}</div>)}</div>}
+        {lane.extra}
+        {lane.actions && <div className="acts">{lane.actions}</div>}
+        {lane.sheet}
+        <NoticeBox n={notice ?? null} />
+      </div>
     </div>
   );
 }
@@ -175,7 +192,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const [completionDate, setCompletionDate] = useState('');
   const [bd, setBd] = useState({ payeeKind: 'seller_solicitor', payeeRef: '', accountName: '', sortCode: '', accountNumber: '', firmName: '', sourceChannel: 'email' });
   const [payFrom, setPayFrom] = useState<Record<string, string>>({});
-  const [openLanes, setOpenLanes] = useState<Record<string, boolean>>({});
+  const [openLane, setOpenLane] = useState<string | null | undefined>(undefined);
   // The lane whose button was last pressed: the outcome of that press is shown there, not
   // at the foot of the page. Any click inside a lane (capture phase) sets it.
   const [activeLane, setActiveLane] = useState<string | null>(null);
@@ -335,11 +352,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', note: 'ordered automatically on entry to pre-contract',
     tiles: s.requiredSearches.map((t) => ({ label: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => f.code).join(', ') : undefined })) });
 
-  if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Enquiries (ours, to the other side)', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
+  if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
     tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, status: q.status, detail: q.subject })),
     actions: (s.stage === 'pre_contract' || s.stage === 'contract_review') ? <><input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} /><input className="ep-input" placeholder="Subject" value={enquiry.subject} onChange={(e) => setEnquiry({ ...enquiry, subject: e.target.value })} style={{ width: 220 }} /><button className="ep-btn" disabled={busy || !enquiry.id || !enquiry.subject} onClick={() => { void cmd({ type: 'raise_enquiry', enquiryId: enquiry.id.trim(), subject: enquiry.subject.trim() }); setEnquiry({ id: '', subject: '' }); }}>Raise enquiry</button></> : null });
 
-  if (has('enquiries') && seller) lane({ id: 'enquiries', title: "Buyer's enquiries (replies we owe)", state: inboundAll.length === 0 ? (s.contractPack?.sentAt ? 'open' : 'idle') : inboundOpen.length ? 'blocked' : 'done', note: inboundAll.length ? `${inboundAll.length} received · ${inboundOpen.length} awaiting our reply` : s.contractPack?.sentAt ? "pack out — awaiting the buyer's enquiries" : 'arrive once the pack is out',
+  if (has('enquiries') && seller) lane({ id: 'enquiries', title: "Buyer's Enquiries", state: inboundAll.length === 0 ? (s.contractPack?.sentAt ? 'open' : 'idle') : inboundOpen.length ? 'blocked' : 'done', note: inboundAll.length ? `${inboundAll.length} received · ${inboundOpen.length} awaiting our reply` : s.contractPack?.sentAt ? "pack out — awaiting the buyer's enquiries" : 'arrive once the pack is out',
     tiles: inboundAll.map((q) => ({ label: q.id, status: q.repliedAt ? 'replied' : 'raised', detail: `round ${q.round} · ${fmtDay(q.receivedAt)}${q.repliedAt ? ` · replied ${fmtDay(q.repliedAt)}` : ''}` })),
     extra: inboundAll.length ? <div style={{ marginTop: 8 }}>{inboundAll.map((q) => (
       <div key={q.id} className="ep-row">
@@ -479,42 +496,44 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.stage === 'post_completion' && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close file</button>}
     </> : null });
 
-  const isOpen = (l: LaneDef) => openLanes[l.id] ?? (l.state === 'open' || l.state === 'blocked');
-  const toggle = (l: LaneDef) => setOpenLanes((o) => ({ ...o, [l.id]: !isOpen(l) }));
+  const current = openLane === undefined ? (lanes.find((l) => l.state === 'blocked') ?? lanes.find((l) => l.state === 'open'))?.id ?? null : openLane;
+  const toggle = (l: LaneDef) => setOpenLane(current === l.id ? null : l.id);
 
   return (
     <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
       <div className="ep-steps">
         {p.stages.map((st, i) => (
-          <span key={st} className={`ep-step${i < stageIdx ? ' done' : i === stageIdx ? ' now' : ''}`} title={s.stageHistory.find((h) => h.stage === st) ? `entered ${fmtWhen(s.stageHistory.find((h) => h.stage === st)!.at)}` : ''}>{stageLabel(st, p)}</span>
+          <span key={st} className={`ep-step${i < stageIdx ? ' done' : i === stageIdx ? ' now' : ''}`} title={s.stageHistory.find((h) => h.stage === st) ? `entered ${fmtWhen(s.stageHistory.find((h) => h.stage === st)!.at)}` : ''}>{titleCase(stageLabel(st, p))}</span>
         ))}
         {closed && <span className="ep-step done">Closed</span>}
       </div>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
+      <div className="ep-boxes">
+        {lanes.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} />)}
+      </div>
+      {lanes.filter((l) => l.id === current).map((l) => <OpenLane key={l.id} lane={l} notice={noticeFor(l.id)} />)}
+
+      <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
+      <DecisionFeed api={api} matterId={matterId} compact onResolved={onChanged} />
+
       {openWaits.length > 0 && (
         <>
-          <div className="ep-sec">Waiting on others</div>
+          <div className="ep-sec">Waiting ({openWaits.length})</div>
           <div className="ep-grid">
             {openWaits.map((w) => (
               <div key={`${w.key}:${w.subject}`} className="ep-tile">
-                <b>{pretty(w.key)}{w.subject ? ` · ${w.subject}` : ''}</b>
-                <span className="d">since {fmtDay(w.openedAt)} ({daysAgo(w.openedAt)}d) · chased {w.chasesSentAt.length}× {w.escalations.some((e) => !e.resolvedAt) ? '· escalated' : ''}</span>
+                <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}</b>
+                <span className="d">since {fmtDay(w.openedAt)} ({daysAgo(w.openedAt)}d){w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}×` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
               </div>
             ))}
           </div>
         </>
       )}
 
-      <div className="ep-sec">Decisions waiting on you ({view.pendingDecisions.length})</div>
-      <DecisionFeed api={api} matterId={matterId} compact onResolved={onChanged} />
-
-      <div className="ep-sec">Workstreams</div>
-      {lanes.map((l) => <Lane key={l.id} lane={l} open={isOpen(l)} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
-
       {/* ── Money: payee bank details ── */}
-      <div className="ep-sec">Money · payee bank details (versioned · every change is a hard stop)</div>
+      <div className="ep-sec">Bank Details</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }} data-lane="money">
         {Object.values(s.bankDetails).length === 0 && <div className="ep-note">No bank details on file.</div>}
         {Object.values(s.bankDetails).sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)).map((b) => (
