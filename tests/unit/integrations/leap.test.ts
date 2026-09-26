@@ -138,6 +138,7 @@ const pdfWithFacts = (name: string, facts: unknown, lines: string[]) => {
 
 function harness(leap: LeapApi, opts: { shadow?: boolean } = {}) {
   const ports = mockPorts();
+  ports.autoStartOnEnrol = false; // these tests drive the ID check from what LEAP already holds
   const store = new MemoryEventStore(FIXTURE_LEVELS);
   const svc = new EngineService(store, ports);
   const mirror = new MemoryMirror(ports.documents);

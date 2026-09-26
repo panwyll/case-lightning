@@ -22,8 +22,8 @@ import { paths } from '@/lib/paths';
  * person records), Issues, Notes, Documents, Timeline, and Diagnostics for the engine's
  * own readiness and dependency views. There is no second page for a case.
  */
-type Tab = 'overview' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
-const TABS: Tab[] = ['overview', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
+type Tab = 'overview' | 'tasks' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
+const TABS: Tab[] = ['overview', 'tasks', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
 interface Row { id: string; matterRef: string | null; propertyAddress: string | null; stage: string; assignee: string | null; assignedTo: string | null }
 interface Person { id: string; email: string; display_name: string | null }
 interface Detail {
@@ -63,7 +63,7 @@ a.mx-li:hover{background:#fafafa}
 .mx-row:first-child{border-top:0}
 .mx-row .d{color:#94a3b8;white-space:nowrap;font-size:12px}
 .mx-ellip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:1100px){.mx-top{grid-template-columns:1fr}.mx-two{grid-template-columns:1fr}.mx-li{grid-template-columns:22px 1fr}.mx-li .m{display:none}}
+@media (max-width:1280px){.mx-top{grid-template-columns:1fr}.mx-two{grid-template-columns:1fr}.mx-li{grid-template-columns:22px 1fr}.mx-li .m{display:none}}
 `;
 
 const BAND: Record<HealthBand, { fg: string; bg: string }> = {
@@ -156,7 +156,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
           </div>
 
-          {eng.notice && tab !== 'overview' && (
+          {eng.notice && tab !== 'overview' && tab !== 'tasks' && (
             <div className={`eg-notice ${eng.notice.kind}`} role={eng.notice.kind === 'err' ? 'alert' : 'status'}>
               <span>{eng.notice.text}</span>
               <button type="button" onClick={eng.clearNotice} aria-label="Dismiss">×</button>
@@ -164,7 +164,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           )}
 
           <div className="eg-tabs">
-            <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview{pending ? ` (${pending})` : ''}</button>
+            <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
+            <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending ? ` (${pending})` : ''}</button>
             <button className={`eg-tab${tab === 'issues' ? ' on' : ''}`} onClick={() => setTab('issues')} disabled={!enrolled}>Issues{openIssues ? ` (${openIssues})` : ''}</button>
             <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')} disabled={!enrolled}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
@@ -172,6 +173,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')} disabled={!enrolled}>Diagnostics</button>
           </div>
 
+          {tab === 'tasks' && view && enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} section="tasks" />}
           {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
           {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
           {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}

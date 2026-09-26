@@ -32,6 +32,7 @@ export function harness(start = new Date('2026-09-14T09:00:00Z')): Harness {
   // end to end. levels.test.ts covers the gate itself.
   const store = new MemoryEventStore(FIXTURE_LEVELS);
   const ports = mockPorts(start);
+  ports.autoStartOnEnrol = false;
   const svc = new EngineService(store, ports);
   return {
     svc,

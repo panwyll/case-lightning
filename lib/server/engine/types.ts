@@ -875,6 +875,8 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'hmlr', label: 'HM Land Registry' },
   ],
   client_update: [
+    { key: 'id_check_request', label: 'ID / AML check request' },
+    { key: 'proof_of_funds_request', label: 'Proof-of-funds form' },
     { key: 'searches_ordered', label: 'Searches ordered' },
     { key: 'search_back_all_clear', label: 'Search back, all clear' },
     { key: 'search_back_under_review', label: 'Search back, under review' },

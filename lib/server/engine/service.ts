@@ -172,6 +172,10 @@ export class EngineService {
       const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown> };
       const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context });
       await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
+      await this.requestIdCheck(tenantId, matterId, SYSTEM);
+    } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'proof_of_funds_request') {
+      await this.requestProofOfFunds(tenantId, matterId, SYSTEM);
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: d.context });
@@ -214,6 +218,9 @@ export class EngineService {
 
   /** ID/AML: ask the provider, then record the request. */
   async requestIdCheck(tenantId: string, matterId: string, actor: string): Promise<RunResult> {
+    // Enrolment already asks the provider; a second request while that one is in flight is a no-op, not an error.
+    const before = await this.getState(tenantId, matterId);
+    if (before.idCheck.status === 'requested') return { state: before, events: [] };
     // A person asked for this: their click is the approval, whatever the trust levels say.
     const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId });
     return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference });
@@ -597,6 +604,25 @@ export class EngineService {
             const reason = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
             this.ports.log(`approved ${p.action} could not be done`, err);
             await this.run(tenantId, matterId, { type: 'record_action_failed', proposalEventId: p.proposalEventId, action: p.action, detail: p.detail, reason }).catch(() => {});
+          }
+        }
+        // Enrolment → the two things every instruction starts with: the ID / AML check with
+        // the provider and, on a purchase that needs one, the proof-of-funds form to the client.
+        // Nobody should have to press a button for either; the trust level decides whether a
+        // person is asked first.
+        if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false) {
+          const state = await this.getState(tenantId, matterId);
+          if (state.idCheck.status === 'not_started') {
+            const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${e.id}`, detail, `ID / AML CHECK\n\nTo: the client, via ${this.ports.idCheckProvider.name}\nWhy: every instruction starts with identity and AML.\n\nThe check costs the firm a fee.`))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); }
+            }
+          }
+          if (state.requireProofOfFunds && state.proofOfFunds.status === 'not_started' && this.ports.pofForms) {
+            const detail = { kind: 'proof_of_funds_request' };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, 'PROOF OF FUNDS\n\nTo: the client\nWhy: the firm requires source of funds signed off before exchange; the form goes out at instruction so the statements arrive in time.'))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); }
+            }
           }
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).

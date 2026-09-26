@@ -36,17 +36,26 @@ export const WORK_CSS = `
 .ep-lane-h b{font-size:12.5px}
 .ep-lane-h .tw{color:#94a3b8;font-size:11px;width:10px}
 .ep-lane-h .sub{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-.ep-boxes{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px}
-.ep-box{border:1px solid #e6e8ee;border-radius:12px;background:#fff;padding:10px 12px;text-align:left;cursor:pointer;font-family:inherit;color:inherit;display:grid;gap:6px;align-content:start;min-height:74px}
-.ep-box:hover{border-color:#cbd5e1}
+.ep-flow{display:grid;gap:0;align-items:start;margin-top:4px;overflow-x:auto}
+.ep-col{position:relative;padding:0 14px 0 0;display:grid;gap:8px;align-content:start;min-width:0}
+.ep-col + .ep-col{padding-left:14px}
+.ep-col + .ep-col::before{content:'';position:absolute;left:-1px;top:34px;width:12px;height:12px;border-top:2px solid #cbd5e1;border-right:2px solid #cbd5e1;transform:translateX(-7px) rotate(45deg)}
+.ep-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#64748b;padding:0 0 2px;height:20px;display:flex;align-items:center;gap:6px}
+.ep-col-h i{width:8px;height:8px;border-radius:99px;display:inline-block}
+.ep-box{border:1px solid #e6e8ee;border-radius:12px;background:#fff;text-align:left;font-family:inherit;color:inherit;min-width:0}
+.ep-box-h{display:grid;gap:5px;padding:10px 12px;cursor:pointer;border:0;background:none;width:100%;text-align:left;font-family:inherit;color:inherit}
+.ep-box-h:hover{background:#fafafa;border-radius:12px}
 .ep-box.on{border-color:#5A27E0;box-shadow:0 0 0 2px #ede9fe}
 .ep-box b{font-size:12.5px;line-height:1.3}
 .ep-box .rag{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700}
 .ep-box .rag i{width:9px;height:9px;border-radius:99px;display:inline-block}
 .ep-box .n{font-size:11.5px;color:#64748b;font-variant-numeric:tabular-nums}
-.ep-open{border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-top:8px;overflow:hidden}
-.ep-open-h{display:flex;gap:10px;align-items:center;padding:9px 12px;background:#fafafa;border-bottom:1px solid #f1f5f9}
-.ep-open-h b{font-size:13px}
+.ep-box-b{border-top:1px solid #f1f5f9;padding:8px 12px 12px}
+.ep-sub{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f8fafc;font-size:12.5px}
+.ep-sub:first-child{border-top:0}
+.ep-sub b{font-weight:600;font-size:12.5px}
+.ep-sub .ep-pill{margin-top:0}
+.ep-sub .d{flex-basis:100%;font-size:11.5px;color:#64748b}
 .ep-lane-h .st{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:99px;padding:2px 8px}
 .ep-lane-b{padding:10px 12px}
 .ep-lane-b .acts{margin-top:6px}
@@ -100,39 +109,40 @@ interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
-/** One workstream as a box: its name, its RAG and how many sub-blocks are done. */
-function Box({ lane, open, onToggle }: { lane: LaneDef; open: boolean; onToggle: () => void }) {
+/** One workstream as a box: its name, its RAG and how many sub-blocks are done. Open, it grows to show the sub-blocks and what a person may record now. */
+function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
   const r = RAG[lane.state];
   const done = lane.tiles.filter((x) => DONE_STATUSES.has(x.status)).length;
   return (
-    <button type="button" className={`ep-box${open ? ' on' : ''}`} onClick={onToggle} aria-expanded={open} aria-controls={`lane-${lane.id}`}>
-      <b>{titleCase(lane.title)}</b>
-      <span className="rag" style={{ color: r.fg }}><i style={{ background: r.dot }} />{r.label}</span>
-      {lane.tiles.length > 0 && <span className="n">{done} of {lane.tiles.length}</span>}
-    </button>
-  );
-}
-
-/** The open workstream: its sub-blocks with their state, any detail, and what a person may record now. */
-function OpenLane({ lane, notice }: { lane: LaneDef; notice?: Notice }) {
-  const r = RAG[lane.state];
-  return (
-    <div className="ep-open" id={`lane-${lane.id}`} data-lane={lane.id}>
-      <div className="ep-open-h">
+    <div className={`ep-box${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
+      <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
         <b>{titleCase(lane.title)}</b>
-        <span className="rag" style={{ color: r.fg, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700 }}><i style={{ background: r.dot, width: 9, height: 9, borderRadius: 99, display: 'inline-block' }} />{r.label}</span>
-        {lane.note && <span className="ep-note">{lane.note}</span>}
-      </div>
-      <div className="ep-lane-b">
-        {lane.tiles.length > 0 && <div className="ep-grid">{lane.tiles.map((x) => <div key={x.label} className="ep-tile"><b>{titleCase(x.label)}</b><Pill s={x.status} />{x.detail && <div className="d">{x.detail}</div>}</div>)}</div>}
-        {lane.extra}
-        {lane.actions && <div className="acts">{lane.actions}</div>}
-        {lane.sheet}
-        <NoticeBox n={notice ?? null} />
-      </div>
+        <span className="rag" style={{ color: r.fg }}><i style={{ background: r.dot }} />{r.label}</span>
+        {lane.tiles.length > 0 && <span className="n">{done} of {lane.tiles.length}</span>}
+      </button>
+      {open && (
+        <div className="ep-box-b">
+          {lane.note && <div className="ep-note" style={{ marginBottom: 4 }}>{lane.note}</div>}
+          {lane.tiles.map((x) => <div key={x.label} className="ep-sub"><b>{titleCase(x.label)}</b><Pill s={x.status} />{x.detail && <span className="d">{x.detail}</span>}</div>)}
+          {lane.extra}
+          {lane.actions && <div className="acts">{lane.actions}</div>}
+          {lane.sheet}
+          <NoticeBox n={notice ?? null} />
+        </div>
+      )}
     </div>
   );
 }
+
+/** The flowchart: instruction first, the investigation strands in parallel, then contract, completion and registration. */
+const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[] }> = [
+  { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
+  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'] },
+  { id: 'contract', label: 'Contract', lanes: ['exchange', 'transfer_deed'] },
+  { id: 'completion', label: 'Completion', lanes: ['completion'] },
+  { id: 'registration', label: 'Registration', lanes: ['registration'] },
+];
+const phaseState = (ls: LaneDef[]): LaneDef['state'] => (ls.some((l) => l.state === 'blocked') ? 'blocked' : ls.some((l) => l.state === 'open') ? 'open' : ls.length && ls.every((l) => l.state === 'done') ? 'done' : 'idle');
 
 type Cmd = (body: Record<string, unknown>) => Promise<void>;
 
@@ -183,7 +193,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice }) {
+export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow' }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' }) {
   const [pofNote, setPofNote] = useState('');
   const [pofQuestion, setPofQuestion] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
@@ -503,11 +513,24 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       <style>{WORK_CSS}</style>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
-      <div className="ep-boxes">
-        {lanes.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} />)}
-      </div>
-      {lanes.filter((l) => l.id === current).map((l) => <OpenLane key={l.id} lane={l} notice={noticeFor(l.id)} />)}
+      {section === 'flow' && (() => {
+        const cols = PHASES.map((ph) => ({ ...ph, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) })).filter((c) => c.items.length);
+        return (
+          <div className="ep-flow" style={{ gridTemplateColumns: cols.map((c) => (c.items.some((l) => l.id === current) ? 'minmax(280px,2.4fr)' : 'minmax(118px,1fr)')).join(' ') }}>
+            {cols.map((c) => {
+              const r = RAG[phaseState(c.items)];
+              return (
+                <div key={c.id} className="ep-col">
+                  <div className="ep-col-h"><i style={{ background: r.dot }} />{c.label}</div>
+                  {c.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
+      {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
       <DecisionFeed api={api} matterId={matterId} compact onResolved={onChanged} />
 
@@ -561,6 +584,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Abandonment reason (client_withdrew, seller_withdrew, chain_collapsed, gazumped, survey, finance_failed, conflict, other):', 'client_withdrew'); if (reason) { const detail = ask('Detail (optional):', '') ?? ''; void cmd({ type: 'abandon_matter', reason, detail: detail || null }); } }}>Abandon case</button>}
       </div>
       <NoticeBox n={noticeFor('case')} />
+      </>)}
       {err && !activeLane && <div className="ep-err">{err}</div>}
     </div>
   );

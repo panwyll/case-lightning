@@ -170,6 +170,8 @@ export interface LinkedMatterNotifier {
 }
 
 export interface EnginePorts {
+  /** Enrolment fires the ID / AML check and the proof-of-funds form unasked (subject to trust levels). Default on; flow fixtures turn it off to drive each step by hand. */
+  autoStartOnEnrol?: boolean;
   /** Optional; only used when a matter's counterparty is internal. */
   linked?: LinkedMatterNotifier | null;
   documents: DocumentRepository;
