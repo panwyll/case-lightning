@@ -15,7 +15,7 @@ const CSS = `
 .ig-what{font-size:13px;color:#64748b;margin:0 0 12px}
 .ig-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px}
 .ig-state i{width:8px;height:8px;border-radius:999px;display:inline-block}
-.ig-h2{font-size:13px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin:26px 0 10px}
+.ig-h2{font-size:13px;font-weight:800;color:#0f172a;margin:18px 0 8px;line-height:1.3}
 `;
 
 /** `firmOwned`: the firm enters its own credentials, so unconfigured just means not connected yet. */

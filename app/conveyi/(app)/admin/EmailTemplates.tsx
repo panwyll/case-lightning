@@ -84,10 +84,10 @@ export default function EmailTemplates() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <strong style={{ fontSize: 15, color: '#0f172a' }}>Email templates</strong>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 36, marginBottom: 2 }}>
+        <h1 style={{ fontSize: 20, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>Email Templates</h1>
         <span style={{ flex: 1 }} />
-        <button onClick={create} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ New template</button>
+        <button onClick={create} style={{ ...btn, height: 34, padding: '0 14px', fontSize: 13, fontWeight: 700, background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 9, display: 'inline-flex', alignItems: 'center' }}>New Template</button>
       </div>
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
 

@@ -19,7 +19,7 @@ export const WORK_CSS = `
 .ep-step{padding:5px 9px;border-radius:999px;font-size:11.5px;font-weight:700;border:1px solid #e2e8f0;color:#94a3b8;background:#fff}
 .ep-step.done{background:#f0fdf4;border-color:#86efac;color:#14532d}
 .ep-step.now{background:#0f172a;border-color:#0f172a;color:#fff}
-.ep-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#94a3b8;margin:16px 0 6px}
+.ep-sec{font-size:13px;font-weight:800;color:#0f172a;margin:14px 0 6px;line-height:1.3}
 .ep-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .ep-tile{border:1px solid #e6e8ee;border-radius:10px;padding:8px 10px;background:#fff}
 .ep-tile b{display:block;font-size:12px}

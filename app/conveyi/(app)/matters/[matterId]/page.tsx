@@ -51,7 +51,7 @@ const CSS = `
 .mx-party a{color:#5A27E0;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mx-party span{color:#94a3b8;font-size:12px;white-space:nowrap}
 .mx-sec{margin-top:22px}
-.mx-h{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#64748b;margin:0 0 8px}
+.mx-h{font-size:13px;font-weight:800;color:#0f172a;margin:0 0 6px;line-height:1.3}
 .mx-list{background:#fff;border:1px solid #e6e8ee;border-radius:14px;overflow:hidden}
 .mx-li{display:grid;grid-template-columns:22px 1fr 190px 150px;gap:12px;align-items:center;padding:9px 14px;border-top:1px solid #f1f5f9;font-size:13px}
 .mx-li:first-child{border-top:0}

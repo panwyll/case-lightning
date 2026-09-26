@@ -1000,8 +1000,12 @@ function AdminPageInner() {
         ::-webkit-scrollbar-track{background:transparent}
       `}</style>
         <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-          <h1 style={{ fontSize: 20, margin: 0 }}>{TAB_META[tab].label}</h1>
+        {tab !== 'templates' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
+          <h1 style={{ fontSize: 20, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>{TAB_META[tab].label}</h1>
+          {tab === 'team' && (<>
+            <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
+            <button style={{ ...btnPrimary, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
+          </>)}
           {tab === 'mywork' && (
             <>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
@@ -1014,7 +1018,7 @@ function AdminPageInner() {
               <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New case</button>
             </>
           )}
-        </div>
+        </div>}
 
         {status && <div style={{ ...card, background: '#fef2f2', borderColor: '#fecaca', color: '#b91c1c' }}>{status}</div>}
 
@@ -1321,7 +1325,7 @@ function AdminPageInner() {
             <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ color: '#6d28d9', display: 'flex' }}><Sparkles size={18} /></span>
-                <h2 style={{ margin: 0, fontSize: 18 }}>Create a template with AI</h2>
+                <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Create a Template With AI</h2>
                 <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>Beta</span>
               </div>
 
@@ -1359,7 +1363,7 @@ function AdminPageInner() {
             {/* How it works */}
             <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                <h3 style={{ marginTop: 0, fontSize: 15 }}>Placeholders</h3>
+                <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Placeholders</h3>
               </div>
               <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
                 <tbody>
@@ -1393,7 +1397,7 @@ function AdminPageInner() {
 
             {/* Upload form */}
             <div style={card}>
-              <h3 style={{ marginTop: 0 }}>Upload template</h3>
+              <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Upload Template</h3>
               <input
                 ref={docFileRef}
                 type="file"
@@ -1459,11 +1463,6 @@ function AdminPageInner() {
 
         {tab === 'team' && (
           <div style={card}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Team</h3>
-              <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
-              <button style={{ ...btnPrimary, marginLeft: 'auto', padding: '7px 14px', fontSize: 13 }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
-            </div>
             {editing === 'new' && (
               <PersonPanel person={person} setPerson={setPerson} users={users} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} />
             )}

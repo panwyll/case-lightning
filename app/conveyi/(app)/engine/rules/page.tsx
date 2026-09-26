@@ -26,7 +26,7 @@ const CSS = `
 .ru-nav a:hover{background:#eef1f6}
 .ru-nav a.on{background:#ede9fe;color:#4c1d95;border-color:#ddd6fe}
 .ru-sec{margin:22px 0 0;scroll-margin-top:110px}
-.ru-h{font-size:15px;font-weight:800;margin:0 0 10px}
+.ru-h{font-size:13px;font-weight:800;color:#0f172a;margin:0 0 6px;line-height:1.3}
 .ru-t{width:100%;border-collapse:collapse;font-size:13px}
 .ru-t th{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;text-align:left;padding:8px 12px;border-bottom:1px solid #e8eaf0;white-space:nowrap}
 .ru-t td{padding:9px 12px;border-top:1px solid #f1f5f9;vertical-align:middle}

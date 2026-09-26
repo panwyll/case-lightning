@@ -2,9 +2,11 @@
 export const ENGINE_CSS = `
 .eg{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;font-size:13.5px;line-height:1.45}
 .eg a{color:#5A27E0;text-decoration:none}
-.eg-h1{font-size:20px;font-weight:800;margin:0}
+.eg-h1{font-size:20px;font-weight:800;margin:0;line-height:1.2;color:#0f172a}
+.eg-sec{font-size:13px;font-weight:800;color:#0f172a;margin:14px 0 6px;line-height:1.3}
 .eg-sub{color:#64748b;font-size:12.5px;margin:2px 0 0}
-.eg-top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.eg-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;min-height:36px}
+.eg-top .eg-btn,.eg-top button,.eg-top select,.eg-top a.eg-btn{height:34px;box-sizing:border-box;display:inline-flex;align-items:center}
 .eg-chip{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;border-radius:999px;padding:3px 9px;background:#f1f5f9;color:#475569;white-space:nowrap}
 .eg-chip.stage{background:#0f172a;color:#fff}
 .eg-chip.pending{background:#fef3c7;color:#92400e}

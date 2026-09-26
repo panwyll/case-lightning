@@ -116,7 +116,7 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
 const CSS = `
 .cs-sep{border-top:1px solid #ddd6fe;margin:12px 0}
 .cs{margin-top:10px;border:1px solid #c4b5fd;background:#faf8ff;border-radius:10px;padding:12px 14px}
-.cs-h{font-size:13px;font-weight:800;margin-bottom:8px}
+.cs-h{font-size:13px;font-weight:800;color:#0f172a;margin-bottom:8px;line-height:1.3}
 .cs-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:8px 12px;align-items:center;padding:4px 0}
 .cs-k{font-size:12.5px;color:#334155;font-weight:600}
 .cs-v .ep-input{margin:0}

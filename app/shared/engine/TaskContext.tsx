@@ -25,7 +25,7 @@ export const TASK_CONTEXT_CSS = `
 .tc-head{font-size:14px;font-weight:800;margin:0 0 8px;line-height:1.4}
 .tc-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px 18px;margin-top:10px}
 @media (max-width:760px){.tc-grid{grid-template-columns:1fr}}
-.tc-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin:0 0 5px}
+.tc-h{font-size:12.5px;font-weight:800;color:#0f172a;margin:0 0 5px;line-height:1.3}
 .tc-checks{list-style:none;margin:0;padding:0;display:grid;gap:3px}
 .tc-checks label{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.4;cursor:pointer;color:#0f172a}
 .tc-checks label.done{color:#94a3b8;text-decoration:line-through}
