@@ -23,7 +23,7 @@ const CSS = `
 .tl-t tr.g td{font-weight:800;background:#fafafa}
 .tl-t tr.s td:first-child{padding-left:28px;color:#334155}
 .tl-t td.lv{text-align:left}
-.tl-t td.lv .eg-btn{padding:4px 9px;font-size:12px;margin-right:4px}
+.tl-t td.lv .eg-btn{display:inline-flex;align-items:center;justify-content:center;width:76px;height:28px;padding:0;font-size:12px;margin:0 4px 0 0;box-sizing:border-box}
 .tl-t td.z{color:#cbd5e1}
 `;
 
