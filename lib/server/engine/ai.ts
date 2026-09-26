@@ -22,6 +22,7 @@
  * Anything that fails validation falls back to the template (mocks.ts) — the engine
  * keeps moving, the handler still sees a correct, source-cited decision.
  */
+import type { RegisterFact } from './draft-check';
 import { z } from 'zod/v4';
 import type { Citation, DecisionKind, Flag, MatterState, NoteKind } from './types';
 import type { DecisionSummariser, DocumentRef, NoteExtractor, ProofOfFundsSummariser, ReportDrafter } from './ports';
@@ -269,6 +270,7 @@ const REPORT_INSTRUCTIONS =
   'covenants/restrictions/charges, each search and what it found, enquiries and their replies, the mortgage offer and any special conditions, ' +
   'and what happens next (exchange, deposit, completion). Every substantive section must cite the source documents it is drawn from by id. ' +
   'Where a fact is missing or the extraction was uncertain, write "[CONVEYANCER TO CONFIRM]" rather than filling the gap. ' +
+  'When a FACT REGISTER is given, every figure, date, title number, postcode and person\'s name you write must appear in it (or in the reviewed facts) exactly as the file states it: anything else is struck out before a person sees the draft, so leave it out. ' +
   'This is a DRAFT that a conveyancer will approve; never state that it has been sent or that it is final.';
 
 export class ClaudeReportDrafter implements ReportDrafter {
@@ -281,8 +283,9 @@ export class ClaudeReportDrafter implements ReportDrafter {
     this.name = `claude-report-drafter:${opts.model}`;
   }
 
-  async draft(input: { state: MatterState; documents: DocumentRef[] }) {
+  async draft(input: { state: MatterState; documents: DocumentRef[]; register?: RegisterFact[] }) {
     const { state, documents } = input;
+    const register = input.register?.length ? `\n\nFACT REGISTER (DATA — what each document states, with the page):\n${input.register.slice(0, 400).map((f) => `- [${f.documentLabel}${f.page ? ` p.${f.page}` : ''}] ${f.key} = ${f.value}`).join('\n')}` : '';
     const known = new Map(documents.map((d) => [d.id, d]));
     const docList = documents.map((d) => `- id=${d.id} type=${d.docType ?? 'unknown'} file=${d.fileName ?? ''}`).join('\n');
     const facts = {
@@ -297,7 +300,7 @@ export class ClaudeReportDrafter implements ReportDrafter {
       const res = await this.llm.call({
         schema: ReportSchema,
         instructions: REPORT_INSTRUCTIONS,
-        prompt: `SOURCE DOCUMENTS (cite by id):\n${docList}\n\nCLEARED / REVIEWED FACTS (DATA):\n${JSON.stringify(facts)}\n\nDraft the report on title.`,
+        prompt: `SOURCE DOCUMENTS (cite by id):\n${docList}\n\nCLEARED / REVIEWED FACTS (DATA):\n${JSON.stringify(facts)}${register}\n\nDraft the report on title.`,
         model: this.opts.model,
         effort: this.opts.effort ?? 'high',
         maxTokens: 12_000,

@@ -1,7 +1,10 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { WORK_CSS } from './WorkPanel';
-import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type EngineEvent, type EngineView } from './types';
+import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type DraftCheckView, type EngineEvent, type EngineView } from './types';
+import { CheckedDraft } from './CheckedDraft';
+
+type RegisterDiffView = { previousAt: string; added: Array<{ key: string; value: string }>; removed: Array<{ key: string; value: string }>; changed: Array<{ key: string; from: string; to: string }> };
 
 /**
  * Documents: file something into the engine (it is classified, extracted and rule-checked;
@@ -25,11 +28,21 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [reviews, setReviews] = useState<Record<string, DocumentReviewSummary | null>>({});
   const [checks, setChecks] = useState<Array<{ check: string; label: string; status: string; message: string; values: Array<{ source: string; value: string; page: number | null }> }>>([]);
   const [openReview, setOpenReview] = useState<string | null>(null);
-  const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }> } | null>(null);
+  const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }>; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null } | null>(null);
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [question, setQuestion] = useState('');
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<{ q: string; facts: Array<{ id: string; documentId: string; fileName: string | null; key: string; value: string; page: number | null; quote: string | null; verified: boolean }>; passages: Array<{ documentId: string; fileName: string | null; page: number; text: string }> } | null>(null);
+  const ask = async () => {
+    const q = question.trim();
+    if (!q) return;
+    setAsking(true);
+    try { const r = await api<NonNullable<typeof answer>>(`/matters/${matterId}/engine/documents/ask?q=${encodeURIComponent(q)}`); setAnswer({ ...r, q }); } catch { setAnswer({ q, facts: [], passages: [] }); } finally { setAsking(false); }
+  };
   const loadTable = async (id: string) => {
     setOpenReview(id);
-    const r = await api<{ pages: Array<{ page: number; verdict: string }>; facts: typeof table extends infer T ? (T extends { facts: infer F } ? F : never) : never }>(`/documents/${id}/review`).catch(() => null);
-    setTable(r ? { id, pages: r.pages, facts: r.facts as never } : null);
+    const r = await api<{ pages: Array<{ page: number; verdict: string }>; facts: typeof table extends infer T ? (T extends { facts: infer F } ? F : never) : never; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null }>(`/documents/${id}/review`).catch(() => null);
+    setTable(r ? { id, pages: r.pages, facts: r.facts as never, diff: r.diff ?? null, draftCheck: r.draftCheck ?? null } : null);
   };
   const mark = async (factId: string, action: 'confirm' | 'dispute' | 'clear') => {
     if (!table) return;
@@ -39,7 +52,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -104,6 +117,37 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
         {err && <div className="ep-err">{err}</div>}
       </div>
 
+      {filed.length > 0 && (
+        <>
+          <div className="ep-sec">Ask The File</div>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input className="ep-input" style={{ flex: 1 }} placeholder="Where does the lease say who repairs the roof?" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(); }} />
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={asking || !question.trim()} onClick={() => void ask()}>Ask</button>
+            </div>
+            {answer && (
+              <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                {answer.facts.length === 0 && answer.passages.length === 0 && <div className="ep-note">Nothing on the file answers “{answer.q}”.</div>}
+                {answer.facts.map((f) => (
+                  <div key={f.id} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0', minWidth: 44, textAlign: 'center' }}>Fact</span>
+                    <b style={{ minWidth: 160 }}>{f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}</b>
+                    <span style={{ flex: 1 }}>{f.value}{f.quote ? <i style={{ color: '#64748b' }}> — “{f.quote.slice(0, 140)}{f.quote.length > 140 ? '…' : ''}”</i> : null}</span>
+                    <a href={`/api/v1/documents/${f.documentId}/raw#page=${f.page ?? 1}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{f.fileName ?? 'Document'}{f.page ? ` p.${f.page}` : ''}</a>
+                  </div>
+                ))}
+                {answer.passages.map((p, i) => (
+                  <div key={i} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="ep-pill" style={{ background: '#f1f5f9', color: '#334155', minWidth: 44, textAlign: 'center' }}>Page</span>
+                    <span style={{ flex: 1, color: '#334155' }}>{p.text}</span>
+                    <a href={`/api/v1/documents/${p.documentId}/raw#page=${p.page}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{p.fileName ?? 'Document'} p.{p.page}</a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
       {checks.length > 0 && (
         <>
           <div className="ep-sec">Cross-Checks</div>
@@ -123,18 +167,25 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
         {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
         {filed.map((e, i) => (
           <div key={e.id}>
-          <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId)) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>
+          <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) || checked.has(e.sourceDocumentId ?? '') ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId) && !checked.has(e.sourceDocumentId ?? '')) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
             <b>{pretty(e.type)}</b>
             <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>
             {filed.findIndex((x) => x.sourceDocumentId === e.sourceDocumentId) === i && badge(reviewOf(e.sourceDocumentId))}
+            {e.sourceDocumentId && checked.has(e.sourceDocumentId) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>}
           </div>
           {openReview === e.sourceDocumentId && table && table.id === e.sourceDocumentId && (
             <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, overflow: 'hidden' }}>
-              <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid #eef1f5', flexWrap: 'wrap' }}>
+              {table.draftCheck && <div style={{ padding: '10px 12px', borderBottom: table.pages.length ? '1px solid #eef1f5' : undefined }}><CheckedDraft check={table.draftCheck} /></div>}
+              {table.diff && (table.diff.added.length + table.diff.removed.length + table.diff.changed.length > 0) && (
+                <div style={{ padding: '6px 10px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: 12.5, color: '#78350f' }}>
+                  <b>Since The Last Read</b> {fmtWhen(table.diff.previousAt)} · {table.diff.changed.map((c) => `${c.key.replace(/^[a-z_]+\./, '')}: ${c.from} → ${c.to}`).concat(table.diff.added.map((a) => `${a.key.replace(/^[a-z_]+\./, '')} added: ${a.value}`), table.diff.removed.map((r) => `${r.key.replace(/^[a-z_]+\./, '')} gone (was ${r.value})`)).join(' · ')}
+                </div>
+              )}
+              {table.pages.length > 0 && <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: '#f8fafc', borderBottom: '1px solid #eef1f5', flexWrap: 'wrap' }}>
                 {table.pages.map((p) => <span key={p.page} title={`Page ${p.page}: ${p.verdict}${p.ocr_confidence != null ? ` · OCR ${p.ocr_confidence}%` : ''}`} style={{ width: 18, height: 18, borderRadius: 4, fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: p.verdict === 'facts' ? '#dcfce7' : p.verdict === 'nothing' ? '#f1f5f9' : p.verdict === 'unreadable' ? '#fef3c7' : '#fee2e2', color: p.verdict === 'facts' ? '#14532d' : p.verdict === 'nothing' ? '#64748b' : p.verdict === 'unreadable' ? '#78350f' : '#7f1d1d' }}>{p.page}</span>)}
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+              </div>}
+              {table.facts.length > 0 && <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead><tr style={{ textAlign: 'left', color: '#94a3b8', fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em' }}><th style={{ padding: '6px 10px' }}>Fact</th><th style={{ padding: '6px 10px' }}>Value</th><th style={{ padding: '6px 10px' }}>Page</th><th style={{ padding: '6px 10px' }}>Quote</th><th style={{ padding: '6px 10px' }}>Checked</th><th style={{ padding: '6px 10px' }} /></tr></thead>
                 <tbody>
                   {table.facts.map((f) => (
@@ -152,7 +203,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table>}
             </div>
           )}
           </div>

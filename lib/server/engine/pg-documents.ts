@@ -10,8 +10,11 @@ import { downloadDriveItem } from '../graph';
 import { driveUserFor } from '../matter-drive';
 import type { DocumentRef, DocumentRepository } from './ports';
 import type { EngineDocumentInput } from './llm';
+import type { DraftCheck, RegisterFact } from './draft-check';
+import { indexDocumentPages } from './file-index';
+import { loadCaseRecord } from './crosscheck-run';
 import type { DocumentBytesLoader, DocumentFactsWriter } from './extraction';
-import type { DocumentReview } from './review';
+import { diffRegister, type DocumentReview, type PageTexts } from './review';
 import { runCrossChecks } from './crosscheck-run';
 
 interface DocRow {
@@ -57,6 +60,20 @@ export class PgDocumentRepository implements DocumentRepository {
     );
     return toRef(row as DocRow);
   }
+
+  async loadRegister(tenantId: string, matterId: string): Promise<{ facts: RegisterFact[]; allowed: string[] }> {
+    const rows = await query<{ id: string; document_id: string; key: string; value: string; page: number | null; quote: string | null; file_name: string | null; doc_type: string | null }>(
+      `select f.id, f.document_id, f.key, f.value, f.page, f.quote, d.file_name, d.doc_type from document_fact f join document d on d.id = f.document_id where f.tenant_id = $1 and f.matter_id = $2 and d.superseded_at is null and f.disputed_note is null`,
+      [tenantId, matterId]
+    );
+    const record = await loadCaseRecord(tenantId, matterId).catch(() => null);
+    const allowed = record ? [record.propertyAddress ?? '', record.purchasePricePennies != null ? `£${(record.purchasePricePennies / 100).toFixed(2)}` : '', ...record.buyerNames, ...record.sellerNames, record.lender ?? ''] : [];
+    return { facts: rows.map((r) => ({ id: r.id, documentId: r.document_id, documentLabel: r.file_name ?? r.doc_type ?? r.document_id.slice(0, 8), key: r.key, value: r.value, page: r.page, quote: r.quote })), allowed: allowed.filter(Boolean) };
+  }
+
+  async writeDraftCheck(tenantId: string, documentId: string, check: DraftCheck): Promise<void> {
+    await query(`update document set draft_check = $3::jsonb where id = $1 and tenant_id = $2`, [documentId, tenantId, JSON.stringify(check)]);
+  }
 }
 
 /** Test/dev helper: attach pipeline-#2-shaped facts to an existing document row. */
@@ -101,12 +118,18 @@ export class PgDocumentFactsWriter implements DocumentFactsWriter {
   async write(doc: DocumentRef, facts: unknown, confidence: number): Promise<void> {
     await query(`update document set extracted_facts = $3::jsonb, extraction_confidence = $4 where id = $1 and tenant_id = $2`, [doc.id, doc.tenantId, JSON.stringify(facts), confidence]);
   }
-  /** Replace the ledger and this role's facts for the document (a re-read is a new projection, not an append). */
-  async writeReview(doc: DocumentRef, review: DocumentReview, extractor: string): Promise<void> {
+  /** Replace the ledger and this role's facts for the document (a re-read is a new projection, not an append), keep what changed since the last read, and index the pages. */
+  async writeReview(doc: DocumentRef, review: DocumentReview, extractor: string, texts?: PageTexts): Promise<void> {
+    const prev = await query<{ key: string; value: string; extractor: string | null; created_at: string }>(`select key, value, extractor, created_at from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
     await query(`delete from document_page where document_id = $1 and tenant_id = $2`, [doc.id, doc.tenantId]);
     for (const pg of review.pages) await query(`insert into document_page (document_id, tenant_id, page, verdict, text_chars, ocr_confidence) values ($1, $2, $3, $4, $5, $6)`, [doc.id, doc.tenantId, pg.page, pg.verdict, pg.textChars, pg.ocr ?? null]);
     await query(`delete from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
-    for (const f of review.facts) await query(`insert into document_fact (document_id, tenant_id, matter_id, role, key, value, page, quote, confidence, verified, note, extractor) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [doc.id, doc.tenantId, doc.matterId, review.role, f.key, f.value.slice(0, 4000), f.page, f.quote?.slice(0, 2000) ?? null, f.confidence, f.verified, f.note, extractor]);
+    for (const f of review.facts) await query(`insert into document_fact (document_id, tenant_id, matter_id, role, key, value, page, quote, confidence, verified, note, extractor) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, [doc.id, doc.tenantId, doc.matterId, review.role, f.key, f.value, f.page, f.quote, f.confidence, f.verified, f.note, extractor]);
+    if (prev.length) {
+      const diff = diffRegister(prev, review.facts);
+      await query(`update document set review_diff = $3::jsonb where id = $1 and tenant_id = $2`, [doc.id, doc.tenantId, JSON.stringify({ role: review.role, at: new Date().toISOString(), previousExtractor: prev[0].extractor, previousAt: prev[0].created_at, extractor, ...diff })]).catch(() => {});
+    }
+    if (texts) await indexDocumentPages(doc, texts).catch(() => {});
     await runCrossChecks(doc.tenantId, doc.matterId).catch(() => {});
   }
 }

@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { project } from './projection';
@@ -527,10 +528,23 @@ export class EngineService {
     if (state.title.documentId) docIds.add(state.title.documentId);
     if (state.mortgage.documentId) docIds.add(state.mortgage.documentId);
     const documents = (await Promise.all([...docIds].map((id) => this.ports.documents.get(tenantId, id)))).filter((d): d is DocumentRef => !!d);
-    const draft = await this.ports.reportDrafter.draft({ state, documents });
+    // The drafter sees the fact register (what the file says, with page and quote) and nothing it writes escapes the check against it.
+    const register = this.ports.documents.loadRegister ? await this.ports.documents.loadRegister(tenantId, matterId).catch(() => null) : null;
+    const draft = await this.ports.reportDrafter.draft({ state, documents, register: register?.facts });
     const draftId = `rot-${this.ports.newId()}`;
-    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'REPORT_ON_TITLE_DRAFT', fileName: `${draftId}.txt`, content: draft.content });
-    return this.run(tenantId, matterId, { type: 'draft_report_on_title', draftId, draftDocumentId: doc.id, model: draft.model, summary: draft.summary, citations: draft.citations, basedOn: draft.basedOn });
+    let content = draft.content;
+    let summary = draft.summary;
+    let check: DraftCheck | null = null;
+    if (register) {
+      check = checkDraft(draft.content, register.facts, { allowed: [...register.allowed, state.targetExchangeDate ?? '', state.targetCompletionDate ?? '', state.exchange.completionDate ?? ''] });
+      content = renderChecked(draft.content, check);
+      summary = `${draft.summary}\n${draftCheckLine(check)}${check.notFromFile.length ? `\nNot from the file: ${check.notFromFile.map((n) => n.text).join('; ')}.` : ''}`;
+    }
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'REPORT_ON_TITLE_DRAFT', fileName: `${draftId}.txt`, content });
+    if (check && this.ports.documents.writeDraftCheck) await this.ports.documents.writeDraftCheck(tenantId, doc.id, check).catch(() => {});
+    const citations = [...draft.citations];
+    for (const f of check?.cited ?? []) if (!citations.some((c) => c.documentId === f.documentId && c.locator?.quote === (f.quote ?? undefined))) citations.push({ documentId: f.documentId, label: `${f.documentLabel}${f.page ? ` p.${f.page}` : ''} — ${f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}: ${f.value}`, locator: { page: f.page ?? undefined, quote: f.quote ?? undefined } });
+    return this.run(tenantId, matterId, { type: 'draft_report_on_title', draftId, draftDocumentId: doc.id, model: draft.model, summary, citations, basedOn: draft.basedOn });
   }
 
   /** Send the APPROVED report. The machine's invariant is checked before any I/O and again when recording. */

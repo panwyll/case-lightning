@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     assertFeature('auth');
     const user = await requireUser();
     const { documentId } = z.object({ documentId: z.string().uuid() }).parse(await params);
-    const doc = await queryOne<{ matter_id: string; file_name: string | null; doc_type: string | null }>(`select matter_id, file_name, doc_type from document where id = $1 and tenant_id = $2`, [documentId, user.tenantId]);
+    const doc = await queryOne<{ matter_id: string; file_name: string | null; doc_type: string | null; review_diff: unknown; draft_check: unknown }>(`select matter_id, file_name, doc_type, review_diff, draft_check from document where id = $1 and tenant_id = $2`, [documentId, user.tenantId]);
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
     await assertMatterAccess(user, doc.matter_id);
     const [pages, facts] = await Promise.all([
@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
         [documentId, user.tenantId]
       ),
     ]);
-    return ok({ document: { id: documentId, fileName: doc.file_name, docType: doc.doc_type }, pages, facts: facts.map((f) => ({ id: f.id, role: f.role, key: f.key, value: f.value, page: f.page, quote: f.quote, verified: f.verified, note: f.note, confirmedAt: f.confirmed_at, confirmedBy: f.confirmed_name, disputedNote: f.disputed_note })) });
+    return ok({ document: { id: documentId, fileName: doc.file_name, docType: doc.doc_type }, diff: doc.review_diff ?? null, draftCheck: doc.draft_check ?? null, pages, facts: facts.map((f) => ({ id: f.id, role: f.role, key: f.key, value: f.value, page: f.page, quote: f.quote, verified: f.verified, note: f.note, confirmedAt: f.confirmed_at, confirmedBy: f.confirmed_name, disputedNote: f.disputed_note })) });
   } catch (error) {
     return fail(error);
   }

@@ -16,6 +16,7 @@
  *   #7 audit        → the event log itself
  *   #8 Outlook      → out of scope for this phase
  */
+import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
 import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts } from './types';
 import type { SummaryOverride } from './machine';
@@ -38,6 +39,10 @@ export interface DocumentRepository {
   get(tenantId: string, documentId: string): Promise<DocumentRef | null>;
   /** Persist an engine-generated artefact (a report draft, an escalation dossier) as a document so decisions can cite it. */
   createGenerated(input: { tenantId: string; matterId: string; docType: string; fileName: string; content: string; createdBy?: string | null }): Promise<DocumentRef>;
+  /** The fact register for a matter (every verified-or-not fact with its page and quote) and what the case record itself says; the drafter may use nothing else. */
+  loadRegister?(tenantId: string, matterId: string): Promise<{ facts: RegisterFact[]; allowed: string[] }>;
+  /** Keep the check of a drafted document against the register, for the reader. */
+  writeDraftCheck?(tenantId: string, documentId: string, check: DraftCheck): Promise<void>;
 }
 
 /** Component #2. Every method returns typed facts WITH a confidence; the rule layer routes low confidence to a human. */
@@ -87,7 +92,7 @@ export interface ProofOfFundsForms {
 /** Component #3 (drafting). Assembles the client-facing report on title from cleared facts. Always goes through a human approval decision. */
 export interface ReportDrafter {
   readonly name: string;
-  draft(input: { state: MatterState; documents: DocumentRef[] }): Promise<{ content: string; summary: string; citations: Citation[]; model: string; basedOn: string[] }>;
+  draft(input: { state: MatterState; documents: DocumentRef[]; register?: RegisterFact[] }): Promise<{ content: string; summary: string; citations: Citation[]; model: string; basedOn: string[] }>;
 }
 
 /** Component #4. Placing an order is I/O; the engine records `search_ordered` only after the provider accepts. */

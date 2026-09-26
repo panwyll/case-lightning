@@ -32,9 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
     await writeAudit({ tenantId: user.tenantId, matterId: d.matterId, actorUserId: user.userId, actionType: 'ENGINE_DECISION_SOURCE_OPENED', actionStatus: 'SUCCESS', payload: { decisionEventId: eventId, documentId: document.id } }).catch(() => {});
     const content = (document.extractedFacts as { content?: string } | null)?.content ?? null;
     // Bytes we can serve inline: held locally (document_blob) or in LEAP (fetched on demand by the /raw route).
-    const blob = await queryOne<{ ok: boolean }>(`select (exists (select 1 from document_blob b where b.document_id = d.id) or d.leap_document_id is not null) as ok from document d where d.id = $1`, [document.id]).catch(() => null);
+    const blob = await queryOne<{ ok: boolean; draft_check: unknown }>(`select (exists (select 1 from document_blob b where b.document_id = d.id) or d.leap_document_id is not null) as ok, d.draft_check from document d where d.id = $1`, [document.id]).catch(() => null);
     const rawUrl = blob?.ok ? `/api/v1/documents/${document.id}/raw` : null;
-    return ok({ document: { id: document.id, fileName: document.fileName, webUrl: document.webUrl, docType: document.docType, content, rawUrl }, locator: d.sourceLocator ?? null });
+    return ok({ document: { id: document.id, fileName: document.fileName, webUrl: document.webUrl, docType: document.docType, content, rawUrl, draftCheck: blob?.draft_check ?? null }, locator: d.sourceLocator ?? null });
   } catch (error) {
     return fail(error);
   }

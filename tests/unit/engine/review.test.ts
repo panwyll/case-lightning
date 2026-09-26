@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLedger, buildReview, coverageLine, flattenFacts, verifyQuote } from '../../../lib/server/engine/review';
+import { buildLedger, buildReview, coverageLine, flattenFacts, verifyQuote, diffRegister, diffLine } from '../../../lib/server/engine/review';
 import type { TitleFacts } from '../../../lib/server/engine/types';
 
 const texts = { textLayer: true, pages: ['Title number ON123456. Freehold.', 'C: Charges register. 1 (12.03.2019) REGISTERED CHARGE dated 1 March 2019 in favour of Mock Building Society.', 'Nothing here.'] };
@@ -39,4 +39,13 @@ test('title facts flatten to keyed rows and are verified against the page text',
   assert.equal(review.summary.verified, 1, 'the charge has a quote on the page; the number and tenure were stated without one');
   assert.equal(review.facts.find((f) => f.key === 'title.number')?.note, 'stated without a quote');
   assert.equal(coverageLine(review.summary), '3 of 3 pages read · 2 with facts');
+});
+
+test('a re-read is diffed against the previous register by key', () => {
+  const d = diffRegister(
+    [{ key: 'offer.price_pennies', value: '38500000' }, { key: 'offer.lender', value: 'Mock BS' }, { key: 'offer.expiry_date', value: '2026-12-31' }],
+    [{ key: 'offer.price_pennies', value: '38000000' }, { key: 'offer.lender', value: 'mock bs' }, { key: 'offer.rate', value: '4.25' }]
+  );
+  assert.deepEqual(d, { added: [{ key: 'offer.rate', value: '4.25' }], removed: [{ key: 'offer.expiry_date', value: '2026-12-31' }], changed: [{ key: 'offer.price_pennies', from: '38500000', to: '38000000' }] });
+  assert.equal(diffLine(d), 'Since the last read: 1 changed, 1 added, 1 gone.');
 });

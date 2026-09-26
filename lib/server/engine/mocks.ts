@@ -1,3 +1,4 @@
+import type { DraftCheck, RegisterFact } from './draft-check';
 import { DeterministicNoteReader } from './notes';
 import type { StatementFacts } from './proof-of-funds';
 /**
@@ -47,6 +48,17 @@ export class MemoryDocumentRepository implements DocumentRepository {
 
   all(): DocumentRef[] {
     return [...this.docs.values()];
+  }
+
+  /** Test helper: the fact register the drafter is checked against (set it to exercise the check; leave it unset and the draft is filed as written). */
+  register: { facts: RegisterFact[]; allowed: string[] } | null = null;
+  draftChecks = new Map<string, DraftCheck>();
+  async loadRegister(): Promise<{ facts: RegisterFact[]; allowed: string[] }> {
+    if (!this.register) throw new Error('no register');
+    return this.register;
+  }
+  async writeDraftCheck(_tenantId: string, documentId: string, check: DraftCheck): Promise<void> {
+    this.draftChecks.set(documentId, check);
   }
 }
 

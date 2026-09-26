@@ -43,12 +43,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     const ids = Array.from(new Set([d.resolvedBy, resolving?.actor, ...opens.map((o) => o.by)].filter((x): x is string => !!x && /^[0-9a-f-]{36}$/i.test(x))));
     const people = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
     const shadowed = null;
-    let source: { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl: string | null } | null = null;
+    let source: { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl: string | null; draftCheck?: unknown } | null = null;
     if (d.status !== 'pending') {
       const doc = await svc.getDocument(user.tenantId, d.matterId, d.sourceDocumentId);
       if (doc) {
-        const blob = await queryOne<{ ok: boolean }>(`select (exists (select 1 from document_blob b where b.document_id = d.id) or d.leap_document_id is not null) as ok from document d where d.id = $1`, [doc.id]).catch(() => null);
-        source = { id: doc.id, fileName: doc.fileName, webUrl: doc.webUrl, docType: doc.docType, content: (doc.extractedFacts as { content?: string } | null)?.content ?? null, rawUrl: blob?.ok ? `/api/v1/documents/${doc.id}/raw` : null };
+        const blob = await queryOne<{ ok: boolean; draft_check: unknown }>(`select (exists (select 1 from document_blob b where b.document_id = d.id) or d.leap_document_id is not null) as ok, d.draft_check from document d where d.id = $1`, [doc.id]).catch(() => null);
+        source = { id: doc.id, fileName: doc.fileName, webUrl: doc.webUrl, docType: doc.docType, content: (doc.extractedFacts as { content?: string } | null)?.content ?? null, rawUrl: blob?.ok ? `/api/v1/documents/${doc.id}/raw` : null, draftCheck: blob?.draft_check ?? null };
       }
     }
     // A note's decision is a list of lines, not one verdict: the panel needs each

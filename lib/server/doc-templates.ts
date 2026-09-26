@@ -10,6 +10,8 @@
  * sequential passes with different delimiters so both syntaxes coexist cleanly.
  */
 
+import { checkDraft, markUnsupported, type RegisterFact } from './engine/draft-check';
+import { PgDocumentRepository } from './engine/pg-documents';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { query, queryOne } from './db';
@@ -87,7 +89,8 @@ async function callForDocFill(
   prompt: string,
   matterVars: Record<string, string>,
   userId: string,
-  tenantId: string
+  tenantId: string,
+  facts: RegisterFact[] = []
 ): Promise<string> {
   // Inline import to avoid pulling AI deps into non-AI paths.
   const { recordAiUsage } = await import('./usage');
@@ -111,6 +114,7 @@ async function callForDocFill(
     .filter(([, v]) => v)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
+  const factLines = facts.slice(0, 300).map((f) => `- [${f.documentLabel}${f.page ? ` p.${f.page}` : ''}] ${f.key} = ${f.value}`).join('\n');
 
   const startedAt = Date.now();
   let resp: any;
@@ -121,11 +125,12 @@ async function callForDocFill(
       system:
         'You are filling in a section of a UK conveyancing document on behalf of the solicitor firm. ' +
         'Write professional, concise, legally appropriate text based on the matter details provided. ' +
+        'Every figure, date, title number, postcode and name you write must come from the matter details or the facts on the file below; anything else is marked "not on file" before the document is used, so leave it out. ' +
         'Return ONLY the text to insert — no preamble, no quotes, no explanation.',
       messages: [
         {
           role: 'user',
-          content: `Matter details:\n${contextLines}\n\nDocument section to fill:\n${prompt}`,
+          content: `Matter details:\n${contextLines}${factLines ? `\n\nFacts on the file (DATA, with the document and page each comes from):\n${factLines}` : ''}\n\nDocument section to fill:\n${prompt}`,
         },
       ],
     });
@@ -170,10 +175,12 @@ export interface FillOptions {
   isPremium: boolean;
   userId: string;
   tenantId: string;
+  /** The fact register for the matter: what the AI fill may state, and what its output is checked against. */
+  facts?: RegisterFact[];
 }
 
 export async function fillTemplate(templateBytes: Buffer, opts: FillOptions): Promise<Buffer> {
-  const { vars, isPremium, userId, tenantId } = opts;
+  const { vars, isPremium, userId, tenantId, facts = [] } = opts;
 
   // ── Pass 1: collect and fill [[LLM prompt]] blocks ────────────────────────
   // Probe pass: enumerate every [[...]] tag in the template (docxtemplater
@@ -193,7 +200,9 @@ export async function fillTemplate(templateBytes: Buffer, opts: FillOptions): Pr
     try { probeDoc.render(probe as any); } catch { /* expected: unresolved vars → ignore */ }
 
     for (const prompt of llmTags) {
-      llmValues[prompt] = await callForDocFill(prompt, vars, userId, tenantId);
+      const text = await callForDocFill(prompt, vars, userId, tenantId, facts);
+      // Nothing the model wrote escapes the register: a figure, date or name that is neither on the file nor on the case record is marked.
+      llmValues[prompt] = markUnsupported(text, checkDraft(text, facts, { allowed: Object.values(vars) }));
     }
   }
 
@@ -279,11 +288,13 @@ export async function generateTemplateForMatter(
   if (!tpl) throw new Error('Template not found.');
 
   const { vars } = await loadMatterVars(user, matterId);
+  const facts = isPremium ? await new PgDocumentRepository().loadRegister(user.tenantId, matterId).then((r) => r.facts).catch(() => []) : [];
   const buffer = await fillTemplate(Buffer.from(tpl.file_content), {
     vars,
     isPremium,
     userId: user.userId,
     tenantId: user.tenantId,
+    facts,
   });
   return { buffer, fileName: templateOutputName(tpl.name) };
 }

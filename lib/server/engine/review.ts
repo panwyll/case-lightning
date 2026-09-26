@@ -211,3 +211,16 @@ export function coverageLine(s: DocumentReview['summary']): string {
   if (!s.textLayer) bits.push('no text layer');
   return bits.join(' · ');
 }
+
+export interface RegisterDiff { added: Array<{ key: string; value: string }>; removed: Array<{ key: string; value: string }>; changed: Array<{ key: string; from: string; to: string }> }
+/** What a re-read changed: facts by key, before and after. Empty lists mean the two reads agree. */
+export function diffRegister(prev: Array<{ key: string; value: string }>, next: Array<{ key: string; value: string }>): RegisterDiff {
+  const a = new Map(prev.map((f) => [f.key, f.value]));
+  const b = new Map(next.map((f) => [f.key, f.value]));
+  const same = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  const out: RegisterDiff = { added: [], removed: [], changed: [] };
+  for (const [key, value] of b) { const was = a.get(key); if (was == null) out.added.push({ key, value }); else if (!same(was, value)) out.changed.push({ key, from: was, to: value }); }
+  for (const [key, value] of a) if (!b.has(key)) out.removed.push({ key, value });
+  return out;
+}
+export const diffLine = (d: RegisterDiff): string => { const bits = []; if (d.changed.length) bits.push(`${d.changed.length} changed`); if (d.added.length) bits.push(`${d.added.length} added`); if (d.removed.length) bits.push(`${d.removed.length} gone`); return bits.length ? `Since the last read: ${bits.join(', ')}.` : 'Same facts as the last read.'; };

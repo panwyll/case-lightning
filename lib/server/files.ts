@@ -545,7 +545,7 @@ export async function supersedePriorVersions(
       const ids = prior.map((r) => r.id);
       // Remove the superseded versions' chunks from the searchable index.
       await query(
-        `delete from kb_chunk where tenant_id = $1 and source_kind = 'DOCUMENT' and source_id = any($2)`,
+        `delete from kb_chunk where tenant_id = $1 and source_kind in ('DOCUMENT', 'DOCUMENT_PAGE') and source_id = any($2)`,
         [tenantId, ids]
       ).catch(() => {});
     }

@@ -109,7 +109,14 @@ export const SUBFLOW_LABEL: Record<string, string> = { id_check: 'ID / AML', sea
 /** Event types that carry a DecisionSpec (mirrors the server's DECISION_EVENT_TYPES). */
 export const DECISION_EVENT_TYPES = new Set(['id_check_flagged', 'search_flagged', 'enquiry_reply_flagged', 'mortgage_condition_flagged', 'title_flagged', 'report_on_title_drafted', 'escalation_raised', 'bank_details_change_flagged', 'auto_clear_review_raised', 'note_extracted']);
 
-export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl?: string | null }
+export interface SourceDoc { id: string; fileName: string | null; webUrl: string | null; docType: string | null; content: string | null; rawUrl?: string | null; draftCheck?: DraftCheckView | null }
+/** The check of a drafted document against the fact register (lib/server/engine/draft-check.ts). */
+export interface DraftCheckView {
+  sentences: Array<{ text: string; start: number; end: number; para?: number; factIds: string[]; struck: Array<{ text: string; kind: string; start: number; end: number }> }>;
+  notFromFile: Array<{ text: string; kind: string; sentence: string }>;
+  cited: Array<{ id: string; documentId: string; documentLabel: string; key: string; value: string; page: number | null; quote: string | null }>;
+  summary: { sentences: number; claims: number; matched: number; struck: number; cited: number };
+}
 
 export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }
 

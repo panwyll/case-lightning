@@ -1,5 +1,6 @@
 'use client';
 import { paths } from '@/lib/paths';
+import { CheckedDraft } from './CheckedDraft';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
@@ -315,12 +316,13 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
         <div className="dp-srcbody" style={pdfSrc ? { height: 'calc(100% - 44px)', padding: 8 } : undefined}>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {pdfSrc && <iframe key={pdfSrc} className="dp-frame" title="Source document" src={pdfSrc} onLoad={() => { /* the PDF plugin swallows scroll events: dwell is the gate here */ }} />}
-          {source && !pdfSrc && highlighted && (
+          {source && !pdfSrc && source.draftCheck && <CheckedDraft check={source.draftCheck} />}
+          {source && !pdfSrc && !source.draftCheck && highlighted && (
             <pre className="dp-pre" ref={preRef}>
               {highlighted.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} data-cite={p.cite}>{p.text}</mark>))}
             </pre>
           )}
-          {source && !pdfSrc && !highlighted && (source.webUrl ? <iframe className="dp-frame" title="Source document" src={source.webUrl} /> : <div className="dp-lock">No inline preview is available for this document. Open the file itself before deciding.</div>)}
+          {source && !pdfSrc && !source.draftCheck && !highlighted && (source.webUrl ? <iframe className="dp-frame" title="Source document" src={source.webUrl} /> : <div className="dp-lock">No inline preview is available for this document. Open the file itself before deciding.</div>)}
         </div>
       </section>
 

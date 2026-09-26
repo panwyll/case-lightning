@@ -377,7 +377,7 @@ export interface DocumentFactsWriter {
   /** Persist extraction output on the document (document.extracted_facts) for reuse and audit. */
   write(doc: DocumentRef, facts: unknown, confidence: number, meta: { role: string; model: string; promptHash: string; contentHash: string }): Promise<void>;
   /** Persist the coverage ledger and the fact register for this read (document_page, document_fact). */
-  writeReview?(doc: DocumentRef, review: DocumentReview, extractor: string): Promise<void>;
+  writeReview?(doc: DocumentRef, review: DocumentReview, extractor: string, texts?: PageTexts): Promise<void>;
 }
 
 /** Facts already persisted by a previous run of THIS pipeline (not a hand-seeded fixture). */
@@ -445,7 +445,7 @@ export class ClaudeExtractor implements DocumentExtractor {
       try {
         const input = await this.loader.load(doc);
         const texts = input ? await this.pageTexts(input, meta.contentHash) : { pages: [], textLayer: false };
-        await this.writer.writeReview(doc, buildReview({ role, facts, ledger, texts, raw }), this.name);
+        await this.writer.writeReview(doc, buildReview({ role, facts, ledger, texts, raw }), this.name, texts);
       } catch {
         /* the review is a projection; a failure here never fails the read */
       }
