@@ -863,11 +863,11 @@ export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
  */
 export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: string; label: string }>> = {
   acknowledgement: [
-    { key: 'seller_solicitor', label: "Seller's solicitor" },
+    { key: 'seller_solicitor', label: "Other side's solicitor" },
     { key: 'client', label: 'Client' },
   ],
   chase: [
-    { key: 'seller_solicitor', label: "Seller's solicitor" },
+    { key: 'seller_solicitor', label: "Other side's solicitor" },
     { key: 'search_provider', label: 'Search provider' },
     { key: 'lender', label: 'Lender' },
     { key: 'client', label: 'Client' },
