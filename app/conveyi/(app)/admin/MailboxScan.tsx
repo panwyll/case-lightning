@@ -1,4 +1,5 @@
 'use client';
+import { paths } from '@/lib/paths';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -354,7 +355,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
             Every email in those threads is now filed against the right case, with the property,
             parties and key dates already pulled out.
           </div>
-          <a href="/conveyi/admin?tab=board" style={{ ...primaryLink, marginTop: 12 }}>See your case board →</a>
+          <a href={paths.cases} style={{ ...primaryLink, marginTop: 12 }}>See your case board →</a>
         </div>
       )}
     </div>

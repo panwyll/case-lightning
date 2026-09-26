@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
+import { paths } from '@/lib/paths';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { STAGE_LABEL, ago, fmtWhen } from '@/app/shared/engine/types';
@@ -62,7 +63,7 @@ export default function LeapPage() {
           {connected && <button className="eg-btn primary" disabled={busy} onClick={() => sync(false)}>{busy ? 'Syncing…' : 'Sync now'}</button>}
           {connected && <button className="eg-btn" disabled={busy} onClick={() => sync(true)}>Full sync</button>}
           {connected && <button className="eg-btn danger" disabled={busy} onClick={disconnect}>Disconnect</button>}
-          <a className="eg-btn" href="/conveyi/decisions">Queue</a>
+          <a className="eg-btn" href={paths.tasks}>Tasks</a>
         </div>
       </div>
       {err && <div className="eg-err">{err}</div>}

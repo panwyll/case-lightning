@@ -1,4 +1,5 @@
 'use client';
+import { paths } from '@/lib/paths';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
@@ -429,7 +430,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             </div>
           </>
         )}
-        {done && <div className="dp-out" style={{ marginTop: 8 }}>Recorded. <a href={`/conveyi/engine/${d.matterId}`}>Back to the timeline →</a> · <a href="/conveyi/decisions">Queue →</a></div>}
+        {done && <div className="dp-out" style={{ marginTop: 8 }}>Recorded. <a href={`${paths.matter(d.matterId)}?tab=timeline`}>Back to the case →</a> · <a href={paths.tasks}>Tasks →</a></div>}
       </section>
     </div>
   );

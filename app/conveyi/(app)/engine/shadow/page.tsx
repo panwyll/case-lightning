@@ -1,4 +1,5 @@
 'use client';
+import { paths } from '@/lib/paths';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -56,7 +57,7 @@ export default function RolloutPage() {
         <div>
           <h1 className="eg-h1">Rollout</h1>
         </div>
-        <a className="eg-btn" href="/conveyi/decisions">← Queue</a>
+        <a className="eg-btn" href={paths.tasks}>← Tasks</a>
       </div>
       {err && <div className="eg-err">{err}</div>}
       {b && (
