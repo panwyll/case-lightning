@@ -1001,7 +1001,7 @@ function AdminPageInner() {
       `}</style>
         <div>
         {tab !== 'templates' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
-          <h1 style={{ fontSize: 20, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>{TAB_META[tab].label}</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>{TAB_META[tab].label}</h1>
           {tab === 'team' && (<>
             <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
             <button style={{ ...btnPrimary, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>

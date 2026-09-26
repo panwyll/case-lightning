@@ -16,7 +16,7 @@ const CSS = `
 .wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px;align-items:start;margin-bottom:12px}
 .wk-col{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
 .wk-head{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:baseline;gap:8px}
-.wk-head b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.wk-head b{font-size:13px;font-weight:800;color:#0f172a;line-height:1.3}
 .wk-head .n{margin-left:auto;font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
 .wk-item{display:block;padding:9px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
 .wk-item:first-of-type{border-top:0}
@@ -28,7 +28,7 @@ const CSS = `
 .wk-more{display:block;width:100%;border:0;border-top:1px solid #f1f5f9;background:#fafafa;padding:8px 14px;font-size:12.5px;font-weight:700;color:#5A27E0;cursor:pointer;font-family:inherit;text-align:left}
 .wk-wait{background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:14px;overflow:hidden}
 .wk-wait-hd{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border:0;background:none;font-family:inherit;cursor:pointer;text-align:left;color:#0f172a}
-.wk-wait-hd > b{font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}
+.wk-wait-hd > b{font-size:13px;font-weight:800;color:#0f172a;line-height:1.3}
 .wk-wait-hd .n{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
 .wk-wait-hd .sum{margin-left:auto;font-size:12px;color:#64748b;display:flex;gap:10px}
 .wk-wait-hd .chev{color:#94a3b8;display:inline-flex;transition:transform .12s}
@@ -183,7 +183,7 @@ export default function EngineWork({ who }: { who: string }) {
       <style>{CSS}</style>
       <div className="wk-cols">
         {/* "All clear" only when nothing at all needs them, decisions in the tray included. */}
-        <Column title="To do" items={doItems} checkedAt={data.do.length === 0 ? checkedAt ?? undefined : undefined} />
+        <Column title="To Do" items={doItems} checkedAt={data.do.length === 0 ? checkedAt ?? undefined : undefined} />
         {data.escalate.length > 0 && <Column title="Escalate" items={data.escalate} />}
       </div>
       {data.waiting.length > 0 && <Waiting items={data.waiting} />}
