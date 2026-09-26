@@ -17,6 +17,7 @@
  *   - every command is either automation (system/ai/external) or a human decision.
  */
 import { applyEvent } from './projection';
+import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
@@ -100,7 +101,9 @@ export interface SummaryOverride {
   by: string;
 }
 
-export type Command =
+export type Command = CommandBody & { completion?: Completion | null };
+
+type CommandBody =
   | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
@@ -194,7 +197,7 @@ export type Command =
   | { type: 'propose_action'; action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
   | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
 
-export type CommandType = Command['type'];
+export type CommandType = CommandBody['type'];
 
 /** Commands a human may issue from the dashboard/API. Everything else is automation-only. */
 export const USER_COMMANDS: ReadonlyArray<CommandType> = [
@@ -616,7 +619,22 @@ const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', 
 // ───────────────────────────── decide ─────────────────────────────
 
 export function decide(state: MatterState, cmd: Command, ctx: DecideContext): Decision {
-  const events = decideCore(state, cmd, ctx);
+  // A milestone recorded by hand must carry what its contract asks for (completion.ts).
+  // `completion` is set (even empty) by the HTTP route — the path a person's click takes —
+  // so automation, ingestion and scripts are not asked for a sheet they cannot fill.
+  if (cmd.completion !== undefined) {
+    try {
+      assertCompletion(cmd.type, cmd as unknown as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof CompletionError) reject(err.message, 400);
+      throw err;
+    }
+  }
+  const raw = decideCore(state, cmd, ctx);
+  // The evidence rides on the event: the document as its source, the rest in the payload.
+  const events = cmd.completion && raw.length
+    ? [{ ...raw[0], sourceDocumentId: raw[0].sourceDocumentId ?? cmd.completion.documentId ?? null, payload: { ...(raw[0].payload as object), completion: cmd.completion } } as unknown as NewEvent, ...raw.slice(1)]
+    : raw;
   const mid = applyNew(state, events, ctx.now);
   const auto = automatic(mid, ctx.now);
   const all = [...events, ...auto];

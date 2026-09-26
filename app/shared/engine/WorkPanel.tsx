@@ -1,7 +1,8 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import { DecisionFeed } from './DecisionFeed';
-import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type EngineState, type EngineView, type ProfileView, type TransactionType } from './types';
+import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TransactionType } from './types';
+import { CompletionSheet } from './CompletionSheet';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -84,7 +85,7 @@ const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime(
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
 interface Tile { label: string; status: string; detail?: string }
-interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
+interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; sheet?: ReactNode }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
@@ -108,6 +109,7 @@ function Lane({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; 
           {lane.tiles.length > 0 && <div className="ep-grid">{lane.tiles.map((t) => <div key={t.label} className="ep-tile"><b>{t.label}</b><Pill s={t.status} />{t.detail && <div className="d">{t.detail}</div>}</div>)}</div>}
           {lane.extra}
           {lane.actions && <div className="acts">{lane.actions}</div>}
+          {lane.sheet}
           <NoticeBox n={notice ?? null} />
         </div>
       )}
@@ -210,6 +212,36 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     return <span>{pickAccount(kind, list)}<button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</button></span>;
   };
   const ask = (q: string, dflt = '') => window.prompt(q, dflt);
+  // A contracted milestone opens its completion sheet in the lane; the sheet gathers the
+  // evidence the contract asks for and records the command with it.
+  const contracts = view.contracts ?? {};
+  const [sheet, setSheet] = useState<{ laneId: string; type: string; extra: Record<string, unknown> } | null>(null);
+  const [docs, setDocs] = useState<CaseDocument[] | null>(null);
+  const openSheet = (laneId: string, type: string, extra: Record<string, unknown>) => {
+    setSheet({ laneId, type, extra });
+    if (!docs) api<{ documents: CaseDocument[] }>(`/matters/${matterId}/engine/documents`).then((r) => setDocs(r.documents)).catch(() => setDocs([]));
+  };
+  const act = (laneId: string, type: string, label: string, extra: Record<string, unknown> = {}, opts: { primary?: boolean; disabled?: boolean; title?: string } = {}) => {
+    const c: CompletionContract | undefined = contracts[type];
+    return (
+      <button className={`ep-btn${opts.primary ? ' primary' : ''}`} disabled={busy || opts.disabled} title={opts.title ?? c?.effect} onClick={() => (c ? openSheet(laneId, type, extra) : void cmd({ type, ...extra }))}>
+        {label}
+      </button>
+    );
+  };
+  const sheetFor = (laneId: string) =>
+    sheet && sheet.laneId === laneId && contracts[sheet.type] ? (
+      <CompletionSheet
+        contract={contracts[sheet.type]}
+        docs={docs}
+        busy={busy}
+        onCancel={() => setSheet(null)}
+        onSubmit={async (body) => {
+          await cmd({ type: sheet.type, ...sheet.extra, ...body });
+          setSheet(null);
+        }}
+      />
+    ) : null;
   const inboundOpen = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt);
   const inboundAll = Object.values(s.inboundEnquiries ?? {}).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
   const red = s.redemption ?? { status: 'not_applicable' as const, lender: null, redemptionPennies: null, validUntil: null, dailyInterestPennies: null, requestedAt: null, receivedAt: null, redeemedAt: null, dischargedAt: null };
@@ -219,7 +251,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   const resolved = (st: string) => st === 'cleared' || st === 'reviewed';
   const lanes: LaneDef[] = [];
-  const lane = (l: LaneDef | null | false) => { if (l) lanes.push(l); };
+  const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, sheet: sheetFor(l.id) }); };
 
   lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
     tiles: [{ label: 'ID / AML check', status: s.idCheck.status }],
@@ -275,7 +307,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)} · the client is chased on the SLA` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
     actions: <>
       {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send the forms to the client</button>}
-      {forms.status !== 'received' && forms.status !== 'not_applicable' && <button className="ep-btn" disabled={busy} onClick={() => { const f = ask('Which forms came back? (comma-separated)', leasehold ? 'TA6, TA10, TA7' : 'TA6, TA10'); if (f) void cmd({ type: 'property_forms_received', forms: f.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean) }); }}>Forms received</button>}
+      {forms.status !== 'received' && forms.status !== 'not_applicable' && act('property_forms', 'property_forms_received', 'Forms Received', { forms: leasehold ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'] })}
     </> });
 
   lane({ id: 'title', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
@@ -305,7 +337,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ))}</div> : null,
     actions: <>
       {s.contractPack?.sentAt && !exchanged && <span><input className="ep-input" placeholder="Enquiries received, one per line" value={inbound} onChange={(e) => setInbound(e.target.value)} style={{ width: 360, maxWidth: '100%' }} /><button className="ep-btn" disabled={busy || !inbound.trim()} onClick={() => { const qs = inbound.split(/\n|;/).map((x) => x.trim()).filter(Boolean).map((question) => ({ question })); void cmd({ type: 'buyer_enquiries_received', enquiries: qs }); setInbound(''); }}>Record buyer&apos;s enquiries</button></span>}
-      {inboundOpen.length > 0 && <button className="ep-btn primary" disabled={busy || !Object.values(replySel).some(Boolean)} onClick={() => { const ids = Object.keys(replySel).filter((k) => replySel[k]); void cmd({ type: 'enquiry_replies_sent', enquiryIds: ids }); setReplySel({}); }}>Replies sent ({Object.values(replySel).filter(Boolean).length})</button>}
+      {inboundOpen.length > 0 && act('enquiries', 'enquiry_replies_sent', `Replies Sent (${Object.values(replySel).filter(Boolean).length})`, { enquiryIds: Object.keys(replySel).filter((k) => replySel[k]) }, { primary: true, disabled: !Object.values(replySel).some(Boolean) })}
     </> });
 
   if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
@@ -315,8 +347,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : undefined },
     ],
     actions: <>
-      {!deeds.mortgageDeedAt && resolved(s.mortgage.status) && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('The client has signed the mortgage deed in the presence of a witness?')) void cmd({ type: 'mortgage_deed_executed', witnessed: true }); }}>Mortgage deed executed</button>}
-      {!deeds.certificateOfTitleAt && resolved(s.mortgage.status) && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('Completion date on the certificate (YYYY-MM-DD):', s.exchange.completionDate ?? s.targetCompletionDate ?? ''); if (d !== null) void cmd({ type: 'certificate_of_title_sent', completionDate: d || undefined }); }}>Certificate of title sent</button>}
+      {!deeds.mortgageDeedAt && resolved(s.mortgage.status) && act('mortgage', 'mortgage_deed_executed', 'Mortgage Deed Executed', { witnessed: true })}
+      {!deeds.certificateOfTitleAt && resolved(s.mortgage.status) && act('mortgage', 'certificate_of_title_sent', 'Certificate of Title Sent')}
       {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && resolved(s.mortgage.status) && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why was the offer withdrawn / lapsed?'); if (r) void cmd({ type: 'mortgage_offer_withdrawn', reason: r }); }}>Offer withdrawn</button>}
     </> });
 
@@ -328,16 +360,16 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ],
     actions: <>
       {red.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const l = ask('Lender?', red.lender ?? ''); if (l !== null) void cmd({ type: 'request_redemption_statement', lender: l || undefined }); }}>Request redemption statement</button>}
-      {(red.status === 'not_started' || red.status === 'requested') && <button className="ep-btn" disabled={busy} onClick={() => { const amt = ask('Redemption figure (£):'); if (amt === null) return; const until = ask('Valid until (YYYY-MM-DD, optional):', '') ?? ''; void cmd({ type: 'redemption_statement_received', redemptionPennies: Math.round(Number(amt) * 100) || undefined, validUntil: until || undefined }); }}>Statement received</button>}
+      {(red.status === 'not_started' || red.status === 'requested') && act('redemption', 'redemption_statement_received', 'Statement Received')}
       {red.status === 'received' && atLeast('pre_completion') && !paidTo('lender') && authorise('lender', 'other', 'Authorise redemption payment', red.redemptionPennies)}
-      {red.status === 'received' && completed && paidTo('lender') && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'mortgage_redeemed' })}>Mortgage redeemed</button>}
+      {red.status === 'received' && completed && paidTo('lender') && act('redemption', 'mortgage_redeemed', 'Mortgage Redeemed', {}, { primary: true })}
     </> });
 
   if (has('lender_consent') && s.hasExistingMortgage) lane({ id: 'lender_consent', title: "Lender's consent to the transfer", state: consent.status === 'received' ? 'done' : consent.status === 'requested' ? 'open' : 'blocked', note: consent.lender ?? undefined,
     tiles: [{ label: 'Consent', status: consent.status, detail: consent.conditions ?? undefined }],
     actions: <>
       {consent.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const l = ask('Lender?'); if (l !== null) void cmd({ type: 'request_lender_consent', lender: l || undefined }); }}>Request consent</button>}
-      {consent.status !== 'received' && consent.status !== 'not_applicable' && <button className="ep-btn" disabled={busy} onClick={() => { const c = ask('Conditions of consent (optional):', ''); if (c !== null) void cmd({ type: 'lender_consent_received', conditions: c || undefined }); }}>Consent received</button>}
+      {consent.status !== 'received' && consent.status !== 'not_applicable' && act('lender_consent', 'lender_consent_received', 'Consent Received')}
     </> });
 
   if (has('co_ownership') && parties > 1) lane({ id: 'co_ownership', title: `Co-ownership · ${parties} clients`, state: !s.clientDecisions?.ownership_basis ? 'blocked' : tic && !deeds.deedOfTrustAt ? 'open' : 'done', note: "the clients' decision, advised separately where their interests differ",
@@ -347,16 +379,16 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ],
     actions: <>
       {!completed && ['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'].map((d) => (
-        <button key={d} className={`ep-btn${!s.clientDecisions?.ownership_basis ? ' primary' : ''}`} disabled={busy || s.clientDecisions?.ownership_basis?.decision === d} onClick={() => { const n = ask(`Record the clients' instruction to hold as ${pretty(d)} (how / when):`); if (n !== null) void cmd({ type: 'client_decision_recorded', subject: 'ownership_basis', decision: d, note: n || null }); }}>{pretty(d)}</button>
+        <span key={d}>{act('co_ownership', 'client_decision_recorded', pretty(d), { subject: 'ownership_basis', decision: d }, { primary: !s.clientDecisions?.ownership_basis, disabled: s.clientDecisions?.ownership_basis?.decision === d })}</span>
       ))}
-      {tic && !deeds.deedOfTrustAt && <button className="ep-btn primary" disabled={busy} onClick={() => { const names = ask('Parties who signed (comma-separated):'); if (!names) return; const shares = ask('Shares (e.g. 60/40, optional):', '') ?? ''; void cmd({ type: 'deed_of_trust_executed', parties: names.split(',').map((x) => x.trim()).filter(Boolean), shares: shares || undefined }); }}>Declaration of trust executed</button>}
+      {tic && !deeds.deedOfTrustAt && act('co_ownership', 'deed_of_trust_executed', 'Declaration of Trust Executed', {}, { primary: true })}
     </> });
 
   if (has('survey') && s.survey && s.survey.status !== 'not_started') lane({ id: 'survey', title: 'Survey / physical condition', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
     tiles: [{ label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
     actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
-      <button className="ep-btn primary" disabled={busy || s.survey.status === 'further_investigation'} title={s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : ''} onClick={() => { const n = ask('The client confirms they are satisfied with the physical condition — record their instruction (date / channel):'); if (n !== null) void cmd({ type: 'client_decision_recorded', subject: 'physical_condition', decision: 'satisfied', note: n || null }); }}>Client satisfied with the property</button>
-      <button className="ep-btn" disabled={busy} onClick={() => { const n = ask('The client wants to renegotiate — what did they say?'); if (n) void cmd({ type: 'client_decision_recorded', subject: 'physical_condition', decision: 'renegotiate', note: n }); }}>Client wants to renegotiate</button>
+      {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: true, disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
+      {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
     </> : null });
 
   if (has('leasehold')) lane({ id: 'leasehold', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
@@ -366,7 +398,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ],
     actions: <>
       {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && s.managementPack?.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const from = ask('Requested from?', seller ? 'Freeholder / managing agent' : "Seller's solicitor"); if (from) void cmd({ type: 'management_pack_requested', from }); }}>Management pack requested</button>}
-      {buyer && completed && !s.postCompletion.noticeOfAssignmentAt && <button className="ep-btn" disabled={busy} onClick={() => { const on = ask('Notice of assignment served on?', 'Landlord / managing agent'); if (on) void cmd({ type: 'notice_of_assignment_served', servedOn: on }); }}>Notice of assignment served</button>}
+      {buyer && completed && !s.postCompletion.noticeOfAssignmentAt && act('leasehold', 'notice_of_assignment_served', 'Notice of Assignment Served')}
     </> });
 
   if (p.hasExchange) lane({ id: 'exchange', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
@@ -379,19 +411,19 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ...(exchanged ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started' }] : []),
     ],
     actions: <>
-      {seller && !s.contractPack?.sentAt && atLeast('pre_contract') && <button className="ep-btn primary" disabled={busy || forms.status !== 'received' || s.title.status === 'awaiting'} title={forms.status !== 'received' ? 'The property forms are not in' : s.title.status === 'awaiting' ? 'Official copies are not on file' : ''} onClick={() => cmd({ type: 'contract_pack_sent' })}>Contract pack sent</button>}
-      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.contractApprovedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'contract_approved' })}>Contract approved</button>}
-      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.signedContractHeldAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'signed_contract_held' })}>Signed contract held</button>}
-      {buyer && ['contract_review', 'pre_exchange'].includes(s.stage) && !s.deposit.received && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'deposit_received' })}>Deposit received</button>}
-      {!exchanged && s.requireExchangeAuthority && s.clientDecisions?.exchange_authority?.decision !== 'authorised' && ['contract_review', 'pre_exchange'].includes(s.stage) && <button className="ep-btn primary" disabled={busy} onClick={() => { const n = ask("Record the client's authority to exchange (how and when they instructed you):"); if (n !== null) void cmd({ type: 'client_decision_recorded', subject: 'exchange_authority', decision: 'authorised', note: n || null }); }}>Client authorises exchange</button>}
-      {s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged && <span><input className="ep-input" type="date" value={completionDate} onChange={(e) => setCompletionDate(e.target.value)} /><button className="ep-btn primary" disabled={busy || !completionDate} onClick={() => cmd({ type: 'contracts_exchanged', completionDate })}>Contracts exchanged</button></span>}
-      {s.stage === 'exchanged' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'completion_statement_generated' })}>Completion statement generated</button>}
+      {seller && !s.contractPack?.sentAt && atLeast('pre_contract') && act('exchange', 'contract_pack_sent', 'Contract Pack Sent', {}, { primary: true, disabled: forms.status !== 'received' || s.title.status === 'awaiting', title: forms.status !== 'received' ? 'The property forms are not in' : s.title.status === 'awaiting' ? 'Official copies are not on file' : undefined })}
+      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.contractApprovedAt && act('exchange', 'contract_approved', 'Contract Approved')}
+      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.signedContractHeldAt && act('exchange', 'signed_contract_held', 'Signed Contract Held')}
+      {buyer && ['contract_review', 'pre_exchange'].includes(s.stage) && !s.deposit.received && act('exchange', 'deposit_received', 'Deposit Received')}
+      {!exchanged && s.requireExchangeAuthority && s.clientDecisions?.exchange_authority?.decision !== 'authorised' && ['contract_review', 'pre_exchange'].includes(s.stage) && act('exchange', 'client_decision_recorded', 'Client Authorises Exchange', { subject: 'exchange_authority', decision: 'authorised' }, { primary: true })}
+      {s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged && act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true })}
+      {s.stage === 'exchanged' && act('exchange', 'completion_statement_generated', 'Completion Statement Produced', {}, { primary: true })}
       {exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('New contractual completion date (YYYY-MM-DD):', s.exchange.completionDate ?? ''); if (d) { const r = ask('Reason?'); if (r) void cmd({ type: 'change_completion_date', completionDate: d, reason: r }); } }}>Change completion date</button>}
     </> });
 
   if (toe || buyer) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', state: deeds.transferDeedAt ? 'done' : toe && s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'advisory on a purchase: signed with the contract in practice' : 'every party signs, witnessed',
     tiles: [{ label: 'Transfer deed', status: deeds.transferDeedAt ? 'done' : 'not_started', detail: deeds.transferDeedAt ? `executed ${fmtDay(deeds.transferDeedAt)}` : undefined }],
-    actions: !deeds.transferDeedAt && !completed ? <button className={`ep-btn${toe ? ' primary' : ''}`} disabled={busy} onClick={() => { const names = ask('Parties who signed (comma-separated):'); if (names) void cmd({ type: 'transfer_deed_executed', parties: names.split(',').map((x) => x.trim()).filter(Boolean), witnessed: true }); }}>Transfer deed executed</button> : null });
+    actions: !deeds.transferDeedAt && !completed ? act('transfer_deed', 'transfer_deed_executed', 'Transfer Deed Executed', { witnessed: true }, { primary: toe }) : null });
 
   {
     const firm = verified('firm_client_account');
@@ -411,11 +443,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {needsRequest && firm.length > 0 && !s.completion.fundsReceivedAt && pickAccount('firm_client_account', firm)}
         {p.fundsFrom.includes('lender') && firm.length > 0 && s.hasLender && !openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request {remo ? 'the advance' : 'lender funds'}</button>}
         {p.fundsFrom.includes('client') && firm.length > 0 && !openWaits.some((w) => w.key === 'funds' && w.subject === 'client') && !s.completion.fundsReceivedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: 'client', bankDetailsId: payFrom.firm_client_account ?? firm[0].id })}>Request client funds</button>}
-        {openWaits.filter((w) => w.key === 'funds').map((w) => <button key={w.subject} className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'funds_received', fromRole: w.subject })}>{pretty(w.subject)} funds received</button>)}
-        {p.fundsFrom.includes('buyer_solicitor') && !s.completion.fundsReceivedAt && <button className="ep-btn primary" disabled={busy} onClick={() => { const amt = ask('Amount received (£):'); if (amt !== null) void cmd({ type: 'funds_received', fromRole: 'buyer_solicitor', amountPennies: Math.round(Number(amt) * 100) || undefined }); }}>Completion monies received from the buyer&apos;s solicitor</button>}
-        {p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'funds_received', fromRole: 'incoming_owner', amountPennies: s.considerationPennies })}>Consideration received</button>}
+        {openWaits.filter((w) => w.key === 'funds').map((w) => <span key={w.subject}>{act('completion', 'funds_received', `${pretty(w.subject)} Funds Received`, { fromRole: w.subject })}</span>)}
+        {p.fundsFrom.includes('buyer_solicitor') && !s.completion.fundsReceivedAt && act('completion', 'funds_received', "Completion Monies Received from the Buyer's Solicitor", { fromRole: 'buyer_solicitor' }, { primary: true })}
+        {p.fundsFrom.includes('incoming_owner') && (s.considerationPennies ?? 0) > 0 && !s.completion.fundsReceivedAt && act('completion', 'funds_received', 'Consideration Received', { fromRole: 'incoming_owner' }, { primary: true })}
         {buyer && !paidTo('seller_solicitor', 'completion_monies') && authorise('seller_solicitor', 'completion_monies', 'Authorise completion payment')}
-        <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'completion_confirmed' })}>Completion confirmed</button>
+        {act('completion', 'completion_confirmed', 'Completion Confirmed', {}, { primary: true })}
       </> : seller && completed && !paidTo('client') ? authorise('client', 'other', 'Authorise balance to the client') : null });
   }
 
@@ -427,11 +459,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       { label: 'File', status: closed ? 'done' : 'not_started', detail: closed ? `closed ${fmtDay(s.closedAt)}` : undefined },
     ],
     actions: atLeast('completed') && !closed ? <>
-      {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'sdlt_submitted' })}>SDLT submitted</button>}
+      {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && act('registration', 'sdlt_submitted', 'SDLT Return Filed')}
       {p.registration === 'ap1' && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why is no SDLT return due? (recorded as your determination)'); if (r) void cmd({ type: 'sdlt_not_required', reason: r }); }}>No SDLT return due</button>}
-      {p.registration === 'ap1' && !s.postCompletion.ap1SubmittedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'ap1_submitted' })}>AP1 submitted</button>}
-      {p.registration === 'ap1' && s.postCompletion.ap1SubmittedAt && !s.postCompletion.ap1ConfirmedAt && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'ap1_confirmed' })}>Registration confirmed</button>}
-      {redemptionApplies && red.status === 'redeemed' && <button className="ep-btn primary" disabled={busy} onClick={() => { const ref = ask('Lender reference (optional):', '') ?? ''; void cmd({ type: 'discharge_confirmed', reference: ref || undefined }); }}>Discharge confirmed</button>}
+      {p.registration === 'ap1' && !s.postCompletion.ap1SubmittedAt && act('registration', 'ap1_submitted', 'AP1 Lodged')}
+      {p.registration === 'ap1' && s.postCompletion.ap1SubmittedAt && !s.postCompletion.ap1ConfirmedAt && act('registration', 'ap1_confirmed', 'Registration Confirmed', {}, { primary: true })}
+      {redemptionApplies && red.status === 'redeemed' && act('registration', 'discharge_confirmed', 'Discharge Confirmed', {}, { primary: true })}
       {s.stage === 'post_completion' && <button className="ep-btn" disabled={busy} onClick={() => { if (window.confirm('Close the file? Nothing further can be recorded except corrections.')) void cmd({ type: 'close_matter' }); }}>Close file</button>}
     </> : null });
 

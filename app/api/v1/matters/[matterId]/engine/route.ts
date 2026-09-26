@@ -8,7 +8,8 @@ import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions, openWaits, surfacedDecisions } from '@/lib/server/engine/types';
 import { queryOne } from '@/lib/server/db';
-import { requireWriter, requireDecider, toCommand, userCommandSchema } from '@/lib/server/engine/http';
+import { requireWriter, requireDecider, toCommand, userCommandSchema, completionSchema } from '@/lib/server/engine/http';
+import { COMPLETION_CONTRACTS, type CompletionContract } from '@/lib/server/engine/completion';
 import { writeAudit } from '@/lib/server/audit';
 import { counterpartyTypeOf } from '@/lib/server/engine/counterparty';
 import { profileOf } from '@/lib/server/engine/transactions';
@@ -51,6 +52,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       // … and what a person may act on (addendum 3 §2).
       surfacedDecisions: surfacedDecisions(state),
       levels: subflows,
+      contracts: COMPLETION_CONTRACTS,
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler } : null,
     });
   } catch (error) {
@@ -66,7 +68,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     requireWriter(user);
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
-    const input = userCommandSchema.parse(await req.json());
+    const raw = await req.json();
+    const input = userCommandSchema.parse(raw);
+    const completion = completionSchema.nullish().parse(raw?.completion) ?? null;
+    // The document a completion cites must be this case's, and of a kind the contract accepts.
+    const contract: CompletionContract | undefined = COMPLETION_CONTRACTS[input.type as keyof typeof COMPLETION_CONTRACTS];
+    if (contract && completion?.documentId) {
+      const doc = await engine().getDocument(user.tenantId, matterId, completion.documentId);
+      if (!doc) throw Object.assign(new Error('That document is not on this case.'), { status: 400 });
+      const roles = contract.documentRoles ?? [];
+      const type = (doc.docType ?? '').toLowerCase();
+      if (roles.length && !roles.some((r) => r.toLowerCase() === type)) throw Object.assign(new Error(`${contract.label} needs ${contract.documentLabel ?? 'a document of the right kind'}; "${doc.fileName ?? doc.id}" is filed as ${doc.docType ?? 'unknown'}.`), { status: 400 });
+    }
     // Addendum: the audit trail records whether the other side is walled-off internal or external.
     if (input.type === 'enrol' && input.counterpartyType == null) input.counterpartyType = await counterpartyTypeOf(user.tenantId, matterId);
     const svc = engine();
@@ -88,11 +101,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       requireDecider(user); // money moves only on a conveyancer's say-so
       const cmd = toCommand(input, user.userId);
       if (!cmd) throw new Error('Unsupported command.');
-      result = await svc.run(user.tenantId, matterId, cmd);
+      result = await svc.run(user.tenantId, matterId, { ...cmd, completion: completion ?? {} });
     } else {
       const cmd = toCommand(input, user.userId);
       if (!cmd) throw new Error('Unsupported command.');
-      result = await svc.run(user.tenantId, matterId, cmd);
+      result = await svc.run(user.tenantId, matterId, { ...cmd, completion: completion ?? {} });
     }
     await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_COMMAND', actionStatus: 'SUCCESS', payload: { command: input.type, events: result.events.map((e) => ({ seq: e.seq, type: e.type })) } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state), warning: result.warning ?? null });

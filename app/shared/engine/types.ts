@@ -246,7 +246,10 @@ export interface NoteRow {
   refusedActions: Array<{ id: string; reason: string }>;
 }
 
-export interface EngineView { state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
+export interface CompletionField { key: string; label: string; kind: 'money' | 'date' | 'datetime' | 'text' | 'names'; required?: boolean; hint?: string }
+export interface CompletionContract { label: string; documentRoles?: string[]; documentLabel?: string; documentRequired?: boolean; fields?: CompletionField[]; checklist?: Array<{ key: string; label: string }>; party?: { label: string }; effect: string }
+export interface CaseDocument { id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string }
+export interface EngineView { contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 

@@ -106,6 +106,15 @@ export const userCommandSchema = z.discriminatedUnion('type', [
 ]);
 export type UserCommandInput = z.infer<typeof userCommandSchema>;
 
+/** The evidence a completion sheet gathers (engine/completion.ts). Accepted on any command; required by contract. */
+export const completionSchema = z.object({
+  documentId: z.string().uuid().nullish(),
+  checklist: z.record(z.string().max(60), z.boolean()).nullish(),
+  party: z.object({ who: z.string().max(200), channel: z.string().max(60), at: z.string().max(40) }).nullish(),
+  note: z.string().max(2000).nullish(),
+  readDocument: z.boolean().nullish(),
+});
+
 /** Turn validated input into a machine Command (attaching the acting user). Service-level commands return null. */
 export function toCommand(input: UserCommandInput, userId: string): Command | null {
   switch (input.type) {
