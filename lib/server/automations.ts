@@ -108,7 +108,7 @@ export interface AutoExecOpts {
 export const DEFAULT_AUTOMATIONS: Array<{ name: string; description: string; steps: AutomationStep[] }> = [
   {
     name: 'Onboard client',
-    description: 'New instruction → create the matter, open first tasks, and acknowledge by email.',
+    description: 'New instruction → create the case, open first tasks, and acknowledge by email.',
     steps: [
       { type: 'CREATE_MATTER', config: {} },
       { type: 'CREATE_TASK', config: { detail: 'Open file & run conflict check', dueOffsetDays: 1 } },
@@ -118,7 +118,7 @@ export const DEFAULT_AUTOMATIONS: Array<{ name: string; description: string; ste
   },
   {
     name: 'Archive case',
-    description: 'Completion/closure → log a final file check, archive the matter, and confirm.',
+    description: 'Completion/closure → log a final file check, archive the case, and confirm.',
     steps: [
       { type: 'CREATE_TASK', config: { detail: 'Final file check, account & store/destroy per policy', dueOffsetDays: 7 } },
       { type: 'ARCHIVE_MATTER', config: {} },
@@ -222,13 +222,13 @@ export async function executeSteps(
     try {
       if (step.type === 'CREATE_MATTER') {
         if (matterId) {
-          results.push({ type: step.type, ok: true, detail: 'A matter is already linked — skipped.' });
+          results.push({ type: step.type, ok: true, detail: 'A case is already linked — skipped.' });
           continue;
         }
         const prop = await proposeMatter({ userId: user.userId, tenantId: user.tenantId, threadDigest: threadText || ctx.subject || '' });
         const created = await createMatter(user, {
           matterRef: isMeaningfulRef(prop.suggestedRef) ? prop.suggestedRef!.trim() : '',
-          propertyAddress: prop.propertyAddress || ctx.subject || 'New matter',
+          propertyAddress: prop.propertyAddress || ctx.subject || 'New case',
           buyerNames: prop.buyerNames ?? [],
           sellerNames: prop.sellerNames ?? [],
           counterpartySolicitor: prop.counterpartySolicitor,
@@ -243,9 +243,9 @@ export async function executeSteps(
             [user.tenantId, matterId, ctx.conversationId, ctx.conversationId, ctx.subject ?? null]
           ).catch(() => {});
         }
-        results.push({ type: step.type, ok: true, detail: `Created matter ${created.matterRef}` });
+        results.push({ type: step.type, ok: true, detail: `Created case ${created.matterRef}` });
       } else if (step.type === 'GENERATE_DOCS') {
-        if (!matterId) throw new Error('no matter to generate documents for');
+        if (!matterId) throw new Error('no case to generate documents for');
         const templateIds: string[] = step.config.templateIds ?? [];
         if (!templateIds.length) throw new Error('no templates configured');
         const isPremium = await isPremiumTenant(user.tenantId);
@@ -263,7 +263,7 @@ export async function executeSteps(
         }
         results.push({ type: step.type, ok: true, detail: `Generated ${made} document(s) into Case files` });
       } else if (step.type === 'CREATE_TASK') {
-        if (!matterId) throw new Error('no matter to add a task to');
+        if (!matterId) throw new Error('no case to add a task to');
         const detail: string = (step.config.detail ?? '').trim();
         if (!detail) throw new Error('task has no detail');
         const due = step.config.dueOffsetDays != null ? addDays(Number(step.config.dueOffsetDays)) : null;
@@ -330,16 +330,16 @@ export async function executeSteps(
           results.push({ type: step.type, ok: true, detail: 'Draft reply created in Outlook' });
         }
       } else if (step.type === 'ARCHIVE_MATTER') {
-        if (!matterId) throw new Error('no matter to archive');
+        if (!matterId) throw new Error('no case to archive');
         await query(`update matter set status = 'CLOSED', updated_at = now() where id = $1 and tenant_id = $2`, [matterId, user.tenantId]);
         await query(
           `insert into matter_timeline_event (tenant_id, matter_id, event_at, event_type, title)
-           values ($1, $2, now(), 'MATTER_ARCHIVED', 'Matter archived')`,
+           values ($1, $2, now(), 'MATTER_ARCHIVED', 'Case archived')`,
           [user.tenantId, matterId]
         ).catch(() => {});
-        results.push({ type: step.type, ok: true, detail: 'Matter archived (closed)' });
+        results.push({ type: step.type, ok: true, detail: 'Case archived (closed)' });
       } else if (step.type === 'DELEGATE') {
-        if (!matterId) throw new Error('no matter to delegate');
+        if (!matterId) throw new Error('no case to delegate');
         const uid = inputs.delegateToUserId || step.config.assigneeUserId;
         const email = inputs.delegateToEmail || step.config.email;
         if (!email) throw new Error('no team member chosen');
@@ -347,7 +347,7 @@ export async function executeSteps(
         if (ctx.messageId) await createForwardDraft(user.userId, ctx.messageId, email, step.config.note || '');
         results.push({ type: step.type, ok: true, detail: `Assigned to ${inputs.delegateToName || email}${ctx.messageId ? ' and forwarded' : ''}` });
       } else if (step.type === 'NOTIFY') {
-        if (!matterId) throw new Error('no matter for the notification');
+        if (!matterId) throw new Error('no case for the notification');
         const email = inputs.notifyEmail || step.config.email;
         if (!email) throw new Error('no recipient chosen');
         const name = inputs.notifyName || email;
@@ -367,7 +367,7 @@ export async function executeSteps(
         // Retired: the Excel tracker was removed. Old recipes that still carry the step skip it.
         results.push({ type: step.type, ok: true, detail: 'Skipped — the Excel tracker step has been retired' });
       } else if (step.type === 'ASSIGN') {
-        if (!matterId) throw new Error('no matter to assign');
+        if (!matterId) throw new Error('no case to assign');
         const uid = step.config.assigneeUserId;
         if (!uid) throw new Error('no person chosen to assign to');
         await query(`update matter set assigned_to = $1, updated_at = now() where id = $2 and tenant_id = $3`, [uid, matterId, user.tenantId]);
@@ -376,7 +376,7 @@ export async function executeSteps(
            values ($1,$2,'ASSIGNED','Assigned by automation')`,
           [user.tenantId, matterId]
         ).catch(() => {});
-        results.push({ type: step.type, ok: true, detail: 'Matter assigned' });
+        results.push({ type: step.type, ok: true, detail: 'Case assigned' });
       }
     } catch (e) {
       results.push({ type: step.type, ok: false, detail: (e as Error).message });

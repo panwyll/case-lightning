@@ -43,7 +43,7 @@ export default function TermsPage() {
         <H2>1. The Service</H2>
         <P>
           CaseLightning is an Outlook add-in and web application that helps UK conveyancing firms triage
-          email, draft replies, generate documents and manage matters. It requires a Microsoft 365
+          email, draft replies, generate documents and manage cases. It requires a Microsoft 365
           account and the permissions requested at sign-in. Specific paid features depend on your
           subscription plan.
         </P>

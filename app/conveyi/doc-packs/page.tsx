@@ -4,13 +4,13 @@ import { NavHeader, SiteFooter, ctaHref, ROUTES } from '../../_components/shared
 export const metadata: Metadata = {
   title: 'Document templates — CONVEYi',
   description:
-    'How to set up and use document templates in CONVEYi: upload your firm’s Word documents, drop in {{placeholders}}, and generate ready-to-send client documents from any matter — with optional AI-written sections on the Pro plan.',
+    'How to set up and use document templates in CONVEYi: upload your firm’s Word documents, drop in {{placeholders}}, and generate ready-to-send client documents from any case — with optional AI-written sections on the Pro plan.',
 };
 
 const PAGE_SOURCE = 'doc_packs_guide';
 
 const VARS: Array<[string, string]> = [
-  ['{{matter_ref}}', 'Matter reference, e.g. CL-0042'],
+  ['{{matter_ref}}', 'Case reference, e.g. CL-0042'],
   ['{{property_address}}', 'Full property address'],
   ['{{buyer_names}}', 'Buyer name(s), comma-separated'],
   ['{{seller_names}}', 'Seller name(s), comma-separated'],
@@ -20,10 +20,10 @@ const VARS: Array<[string, string]> = [
   ['{{counterparty_agent}}', 'Estate agent'],
   ['{{lender}}', 'Lender name'],
   ['{{track}}', 'Purchase, Sale or Remortgage'],
-  ['{{stage}}', 'Current stage of the matter'],
+  ['{{stage}}', 'Current stage of the case'],
   ['{{today}}', 'Today’s date'],
   ['{{firm_name}}', 'Your firm’s name'],
-  ['{{assigned_to}}', 'The conveyancer handling the matter'],
+  ['{{assigned_to}}', 'The conveyancer handling the case'],
 ];
 
 function Mono({ children }: { children: React.ReactNode }) {
@@ -44,7 +44,7 @@ export default function DocPacksGuidePage() {
         <h1 className="mt-2 text-3xl font-bold md:text-4xl">Document templates</h1>
         <p className="mt-4 text-lg text-ink/70">
           Upload your firm’s standard documents once. From then on, anyone can generate a
-          filled-in copy for any matter in a single click — the client care letter, completion
+          filled-in copy for any case in a single click — the client care letter, completion
           statement, report on title and anything else you send regularly.
         </p>
 
@@ -54,17 +54,17 @@ export default function DocPacksGuidePage() {
           <li>
             <span className="font-semibold">1. Upload your templates.</span> In{' '}
             <Mono>Admin → Doc packs</Mono>, upload your existing Word (<Mono>.docx</Mono>) documents.
-            Anywhere a matter detail should appear, write a placeholder like{' '}
+            Anywhere a case detail should appear, write a placeholder like{' '}
             <Mono>{'{{property_address}}'}</Mono>.
           </li>
           <li>
-            <span className="font-semibold">2. Open a matter in Outlook.</span> In the CONVEYi
+            <span className="font-semibold">2. Open a case in Outlook.</span> In the CONVEYi
             sidebar, go to the <span className="font-semibold">Files</span> tab. Your templates are
             listed under <span className="font-semibold">Templates</span>.
           </li>
           <li>
             <span className="font-semibold">3. Click Generate.</span> CONVEYi fills the template with
-            that matter’s data and saves the finished document into the case’s OneDrive folder, where
+            that case’s data and saves the finished document into the case’s OneDrive folder, where
             it appears under <span className="font-semibold">Case files</span> — ready to review and send.
           </li>
         </ol>
@@ -73,7 +73,7 @@ export default function DocPacksGuidePage() {
         <h2 className="mt-12 text-2xl font-semibold">Placeholders</h2>
         <p className="mt-3 text-ink/70">
           Type these anywhere in your document — in a sentence, a heading, a table cell. They’re
-          replaced with the matter’s details instantly, with no AI involved.
+          replaced with the case’s details instantly, with no AI involved.
         </p>
         <div className="mt-4 overflow-hidden rounded-xl border border-ink/10">
           <table className="w-full text-sm">
@@ -90,7 +90,7 @@ export default function DocPacksGuidePage() {
           </table>
         </div>
         <p className="mt-3 text-sm text-ink/50">
-          If a detail isn’t recorded on the matter yet, its placeholder is simply left blank — the
+          If a detail isn’t recorded on the case yet, its placeholder is simply left blank — the
           document still generates.
         </p>
 
@@ -99,7 +99,7 @@ export default function DocPacksGuidePage() {
           AI-written sections <span className="align-middle text-sm font-medium text-violet">Pro plan</span>
         </h2>
         <p className="mt-3 text-ink/70">
-          For the parts of a document that change with each matter — a tailored summary, a paragraph
+          For the parts of a document that change with each case — a tailored summary, a paragraph
           explaining the next steps — you can ask Claude to write them. Use double square brackets and
           write the instruction in plain English:
         </p>
@@ -110,7 +110,7 @@ will be in touch with next steps shortly.]]`}
         </pre>
         <p className="mt-3 text-ink/70">
           When the template is generated, each <Mono>[[ … ]]</Mono> block is replaced with text Claude
-          writes from that matter’s details. You can mix <Mono>{'{{placeholders}}'}</Mono> inside an AI
+          writes from that case’s details. You can mix <Mono>{'{{placeholders}}'}</Mono> inside an AI
           instruction, as above.
         </p>
         <ul className="mt-4 space-y-2 text-sm text-ink/70">

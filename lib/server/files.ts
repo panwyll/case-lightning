@@ -43,7 +43,7 @@ export async function processMatterFile(
     `select folder_path, matter_ref, property_address from matter where id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
-  if (!matter) throw new Error('Matter not found');
+  if (!matter) throw new Error('Case not found');
 
   const buffer = opts.bytes ?? (await downloadDriveItem(user.userId, opts.itemId));
   const isPdf = opts.mimeType === 'application/pdf' || /\.pdf$/i.test(opts.fileName);
@@ -128,7 +128,7 @@ export async function processMatterFile(
     draftSubject = `${matter.matter_ref} — ${documentType} received`;
     const bodyHtml =
       `<p>Dear Sir or Madam,</p>` +
-      `<p>We confirm that we now hold the following document on the above matter${escapeHtml(where)}: ` +
+      `<p>We confirm that we now hold the following document on the above case${escapeHtml(where)}: ` +
       `<strong>${escapeHtml(documentType)}</strong> (${escapeHtml(opts.fileName)}).</p>` +
       `<p>We are updating our file accordingly and will revert with any further requirements.</p>` +
       `<p>Kind regards</p>`;
@@ -235,11 +235,11 @@ export async function summarizeAttachments(
         .filter((c: { status: string }) => c.status === 'MISMATCH' || c.status === 'MISSING')
         .map((c: { field: string; status: string }) => `${c.field} (${c.status})`)
         .join('; ');
-      if (review.summary) documents.push({ name, docType: review.documentType ?? 'Document', summary: [review.summary, risks ? `⚠ ${risks}` : '', checks ? `Doesn’t match the matter: ${checks}` : ''].filter(Boolean).join(' ') });
+      if (review.summary) documents.push({ name, docType: review.documentType ?? 'Document', summary: [review.summary, risks ? `⚠ ${risks}` : '', checks ? `Doesn’t match the case: ${checks}` : ''].filter(Boolean).join(' ') });
       parts.push(
         `ATTACHED DOCUMENT — ${name} [${review.documentType ?? 'document'}]: ${review.summary ?? ''}` +
           (risks ? ` Risks: ${risks}.` : '') +
-          (checks ? ` Discrepancies vs matter: ${checks}.` : '')
+          (checks ? ` Discrepancies vs case: ${checks}.` : '')
       );
     } catch {
       /* unreadable / provider can't read this type — skip */
@@ -446,7 +446,7 @@ export async function saveEmailAttachmentsToMatter(
       notify: {
         kind: 'DOC_RECEIVED',
         headline: `New document${saved > 1 ? 's' : ''} received: ${nameList}`,
-        did: 'Filed it to the matter folder and indexed it for the drafter',
+        did: 'Filed it to the case folder and indexed it for the drafter',
         action: 'Review it and update the client if needed',
         dedupKey: `doc:${matterId}:${messageId}`,
       },

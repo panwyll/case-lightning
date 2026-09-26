@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     await assertMatterAccess(user, matterId);
 
     const summary = await getMatterSummary(matterId, user.tenantId);
-    if (!summary) return fail(new Error('Matter not found'));
+    if (!summary) return fail(new Error('Case not found'));
 
     const outstanding = (summary.summary.outstanding_items as string[] | undefined) ?? [];
     const content = [

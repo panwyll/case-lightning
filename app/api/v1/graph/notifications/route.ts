@@ -183,8 +183,8 @@ export async function POST(req: NextRequest) {
           await notifyMatter(user.tenantId, triage.top.matterId, {
             kind: 'EMAIL_TRIAGED',
             headline: `New email from ${fromName}${message.subject ? ` — “${String(message.subject).slice(0, 80)}”` : ''}`,
-            did: worthPrecomputing ? 'Read it and drafted a suggested reply for you to review' : 'Triaged it and matched it to this matter',
-            action: 'Open the matter to review and reply',
+            did: worthPrecomputing ? 'Read it and drafted a suggested reply for you to review' : 'Triaged it and matched it to this case',
+            action: 'Open the case to review and reply',
             dedupKey: `email:${triage.top.matterId}`,
           }).catch(() => {});
         }

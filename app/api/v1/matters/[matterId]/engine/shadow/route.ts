@@ -73,7 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const svc = engine();
     const events = await svc.listEvents(user.tenantId, matterId);
     const target = events.find((e) => e.id === input.eventId);
-    if (!target) return fail(Object.assign(new Error('That event is not on this matter.'), { status: 404 }));
+    if (!target) return fail(Object.assign(new Error('That event is not on this case.'), { status: 404 }));
     const state = await svc.getState(user.tenantId, matterId);
     const d = state.decisions[input.eventId];
     const subFlow = d ? (SUBFLOW_OF_KIND[d.kind as DecisionKind] ?? d.kind) : target.type.replace(/_(cleared|flagged)$/, '').replace(/^(search|enquiry_reply|mortgage_offer|mortgage_condition|title|id_check).*/, (m) => (m.startsWith('enquiry') ? 'enquiry' : m.startsWith('mortgage') ? 'mortgage' : m));

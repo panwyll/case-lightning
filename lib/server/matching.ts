@@ -359,7 +359,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     const mIdents = identsByMatter.get(m.id) ?? [];
 
     if (linkedSet.has(m.id)) {
-      signalsHit.push({ kind: 'LINKED_THREAD', detail: 'Thread already linked to this matter', weight: 1.0 });
+      signalsHit.push({ kind: 'LINKED_THREAD', detail: 'Thread already linked to this case', weight: 1.0 });
     }
     if (m.case_ref_token && tokens.includes(m.case_ref_token.toUpperCase())) {
       signalsHit.push({ kind: 'CASE_REF_TOKEN', detail: `Subject/body carries [#${m.case_ref_token}]`, weight: 0.9, value: m.case_ref_token });
@@ -410,7 +410,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     const domainMatch =
       senderDomain && !self.domains.has(senderDomain) && mIdents.some((i) => i.kind === 'DOMAIN' && i.value === senderDomain);
     if (domainMatch && !emailMatches.length && !asContact && !signalsHit.some((x) => x.kind === 'CONTACT_FIRM')) {
-      signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this matter`, weight: 0.1, value: senderDomain ?? undefined });
+      signalsHit.push({ kind: 'SENDER_DOMAIN', detail: `Sender domain ${senderDomain} seen on this case`, weight: 0.1, value: senderDomain ?? undefined });
     }
 
     const score = Math.min(1, signalsHit.reduce((s, x) => s + x.weight, 0));

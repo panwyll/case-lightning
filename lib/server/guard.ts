@@ -18,7 +18,7 @@ export async function assertMatterAccess(user: SessionUser, matterId: string): P
     [matterId, user.tenantId]
   );
   if (!row) {
-    throw new Error('Matter not found or inaccessible');
+    throw new Error('Case not found or inaccessible');
   }
 }
 
@@ -31,7 +31,7 @@ export function assertRiskApproval(headers: Headers): void {
 
 export function assertCrossMatterAllowed(headers: Headers): void {
   if (headers.get('x-cross-matter') !== 'true') {
-    throw new Error('Cross-matter retrieval blocked');
+    throw new Error('Cross-case retrieval blocked');
   }
   assertRiskApproval(headers);
 }

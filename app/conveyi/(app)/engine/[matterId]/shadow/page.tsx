@@ -68,7 +68,7 @@ export default function ShadowComparisonPage({ params }: { params: Promise<{ mat
     }
   };
   const toggleShadow = async (on: boolean) => {
-    const reason = window.prompt(on ? 'Why put this matter back into shadow mode?' : 'Why take this matter out of shadow mode? (recorded on the log)') ?? '';
+    const reason = window.prompt(on ? 'Why put this case back into shadow mode?' : 'Why take this case out of shadow mode? (recorded on the log)') ?? '';
     if (!on && !reason.trim()) return;
     setBusy('shadow');
     try {

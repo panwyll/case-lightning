@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       : null;
 
     const lead = body.instructions?.trim();
-    const ctx = matterRow ? ` (matter ${matterRow.matter_ref})` : '';
+    const ctx = matterRow ? ` (case ${matterRow.matter_ref})` : '';
     const comment = lead
       ? `${lead}${ctx ? `\n\n${ctx.trim()}` : ''}`
       : `Please handle the forwarded email${ctx}.`;

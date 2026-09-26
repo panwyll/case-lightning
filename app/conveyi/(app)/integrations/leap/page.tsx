@@ -43,7 +43,7 @@ export default function LeapPage() {
     }
   };
   const disconnect = async () => {
-    if (!window.confirm('Disconnect LEAP? Mirrored matters stay; nothing is deleted.')) return;
+    if (!window.confirm('Disconnect LEAP? Mirrored cases stay; nothing is deleted.')) return;
     await api('/integrations/leap/disconnect', { method: 'POST' }).catch(() => {});
     await load();
   };
@@ -81,7 +81,7 @@ export default function LeapPage() {
           </div>
           {s.counts && (
             <div className="eg-tiles">
-              <div className="eg-tile"><b>{s.counts.matters}</b><span>matters mirrored</span></div>
+              <div className="eg-tile"><b>{s.counts.matters}</b><span>cases mirrored</span></div>
               <div className="eg-tile"><b>{s.counts.enrolled}</b><span>in the engine</span></div>
               <div className="eg-tile"><b>{s.counts.shadow}</b><span>in shadow mode</span></div>
               <div className="eg-tile"><b>{s.counts.documents}</b><span>documents (bytes in LEAP)</span></div>
@@ -94,12 +94,12 @@ export default function LeapPage() {
             <div className="eg-card" style={{ padding: '12px 14px', marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Last sync · {fmtWhen(d.at)}</div>
               <div style={{ fontSize: 13 }}>
-                Matters: {d.matters.seen} seen · {d.matters.created} new · {d.matters.enrolled} enrolled · {d.matters.closed} closed. Documents: {d.documents.seen} seen · {d.documents.created} new · {d.documents.ingested} handed to the engine. Parties: {d.contacts}.
+                Cases: {d.matters.seen} seen · {d.matters.created} new · {d.matters.enrolled} enrolled · {d.matters.closed} closed. Documents: {d.documents.seen} seen · {d.documents.created} new · {d.documents.ingested} handed to the engine. Parties: {d.contacts}.
               </div>
               {d.errors.length > 0 && <div className="eg-err">{d.errors.slice(0, 5).join(' · ')}{d.errors.length > 5 ? ` · +${d.errors.length - 5} more` : ''}</div>}
             </div>
           )}
-          <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Mirrored matters</h2>
+          <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Mirrored cases</h2>
           {s.matters.length === 0 && <div className="eg-empty">Nothing mirrored yet. Connect LEAP, or run a full sync.</div>}
           {s.matters.length > 0 && (
             <div className="eg-card">

@@ -25,7 +25,7 @@ const PAGE_SOURCE = 'landing';
 const panels: Array<{ src: string; alt: string }> = [
   {
     src: '/product/pane-1.png',
-    alt: 'The CONVEYi pane beside an email: the thread has been matched to matter SMITH-X at 12 Oak Lane, tagged “Reply needed”, with a summary of what the sender is asking for and a Draft reply button.',
+    alt: 'The CONVEYi pane beside an email: the thread has been matched to case SMITH-X at 12 Oak Lane, tagged “Reply needed”, with a summary of what the sender is asking for and a Draft reply button.',
   },
   {
     src: '/product/pane-2.png',
@@ -33,15 +33,15 @@ const panels: Array<{ src: string; alt: string }> = [
   },
   {
     src: '/product/pane-3.png',
-    alt: 'A list of live matters — SMITH-X, JONES-P, PATEL-K, OKAFOR-D — each showing its stage, how long it has sat there as a coloured age dot, and what is outstanding, including one marked “Chase needed”.',
+    alt: 'A list of live cases — SMITH-X, JONES-P, PATEL-K, OKAFOR-D — each showing its stage, how long it has sat there as a coloured age dot, and what is outstanding, including one marked “Chase needed”.',
   },
   {
     src: '/product/pane-4.png',
-    alt: 'Document generation in the pane: a client care letter template filled from the matter file with the property, price and completion terms highlighted, noting six fields filled from the matter.',
+    alt: 'Document generation in the pane: a client care letter template filled from the case file with the property, price and completion terms highlighted, noting six fields filled from the case.',
   },
   {
     src: '/product/pane-5.png',
-    alt: 'The matter’s files in the firm’s own OneDrive — the draft contract, EPC and TA10 form filed from email, and a generated client care letter.',
+    alt: 'The case’s files in the firm’s own OneDrive — the draft contract, EPC and TA10 form filed from email, and a generated client care letter.',
   },
 ];
 
@@ -267,7 +267,7 @@ export default function Page() {
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Seats</div>
               <div className="mt-3 font-serif text-5xl font-semibold">£0<span className="text-lg font-sans font-normal text-ink-soft">/seat</span></div>
-              <p className="mt-3 text-ink-soft">Everyone in the firm, no per-user fee. Matter board, workload and assignment included.</p>
+              <p className="mt-3 text-ink-soft">Everyone in the firm, no per-user fee. Case board, workload and assignment included.</p>
             </div>
             <div className="rounded-2xl border border-line bg-paper-soft p-8">
               <div className="text-sm font-semibold uppercase tracking-widest text-ink-soft">Monthly fee</div>

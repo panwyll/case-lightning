@@ -174,7 +174,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         events.push(['ASSIGNED', title, null]);
       }
       if (body.status !== undefined && body.status !== before?.status) {
-        events.push(['STATUS', body.status === 'CLOSED' ? 'Matter completed' : body.status === 'OPEN' ? 'Reopened' : `Status: ${body.status}`, null]);
+        events.push(['STATUS', body.status === 'CLOSED' ? 'Case completed' : body.status === 'OPEN' ? 'Reopened' : `Status: ${body.status}`, null]);
       }
       for (const [type, title, details] of events) {
         await query(

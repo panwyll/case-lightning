@@ -308,7 +308,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
           )}
         </div>
         <div className="dp-srcbody" style={pdfSrc ? { height: 'calc(100% - 44px)', padding: 8 } : undefined}>
-          {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this matter or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
+          {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {pdfSrc && <iframe key={pdfSrc} className="dp-frame" title="Source document" src={pdfSrc} onLoad={() => { /* the PDF plugin swallows scroll events: dwell is the gate here */ }} />}
           {source && !pdfSrc && highlighted && (
             <pre className="dp-pre" ref={preRef}>
@@ -322,7 +322,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
       {/* ── 3. Actions ── */}
       <section className="dp-part actions" aria-label="Actions">
         {err && <div className="eg-err" style={{ marginTop: 0 }}>{err}</div>}
-        {detail.shadowed && <div className="dp-shadow">Shadow mode ({detail.shadowed === 'matter' ? 'this matter' : 'this sub-flow'}): the engine's conclusion is logged for comparison only. Nothing to action here. <a href={`/conveyi/engine/${d.matterId}/shadow`} style={{ color: '#c7d2fe' }}>Comparison view →</a></div>}
+        {detail.shadowed && <div className="dp-shadow">Shadow mode ({detail.shadowed === 'matter' ? 'this case' : 'this sub-flow'}): the engine's conclusion is logged for comparison only. Nothing to action here. <a href={`/conveyi/engine/${d.matterId}/shadow`} style={{ color: '#c7d2fe' }}>Comparison view →</a></div>}
         {!detail.shadowed && !pending && (
           <div className="dp-out">
             {res ? (

@@ -62,8 +62,8 @@ export default function RolloutPage() {
       {b && (
         <>
           <div className="eg-tiles">
-            <div className="eg-tile"><b>{b.shadowMatters.length}</b><span>matters in shadow</span></div>
-            <div className="eg-tile"><b>{b.liveMatters}</b><span>live matters</span></div>
+            <div className="eg-tile"><b>{b.shadowMatters.length}</b><span>cases in shadow</span></div>
+            <div className="eg-tile"><b>{b.liveMatters}</b><span>live cases</span></div>
             <div className="eg-tile"><b>{b.totals.reviewed}</b><span>conclusions reviewed</span></div>
             <div className="eg-tile"><b>{b.totals.reviewed ? `${Math.round((b.totals.agreed / b.totals.reviewed) * 100)}%` : '—'}</b><span>agreement overall</span></div>
           </div>
@@ -89,8 +89,8 @@ export default function RolloutPage() {
               );
             })}
           </div>
-          <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Matters in shadow mode</h2>
-          {b.shadowMatters.length === 0 && <div className="eg-empty">No matters in shadow mode.</div>}
+          <h2 style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Cases in shadow mode</h2>
+          {b.shadowMatters.length === 0 && <div className="eg-empty">No cases in shadow mode.</div>}
           {b.shadowMatters.length > 0 && (
             <div className="eg-card">
               {b.shadowMatters.map((r) => (

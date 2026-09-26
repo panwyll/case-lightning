@@ -90,7 +90,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     api<{ threads: any[] }>(`/matters/${matterId}/emails`).then((x) => setEmails(x.threads ?? [])).catch(() => setEmails([]));
     api<{ files: any[] }>(`/matters/${matterId}/files`).then((x) => setFiles(x.files ?? [])).catch(() => setFiles([]));
   }, [matterId]);
-  useEffect(() => { load().catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not open the matter.')); }, [load]);
+  useEffect(() => { load().catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not open the case.')); }, [load]);
 
   const setOwner = async (assignedTo: string | null) => {
     try { await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify({ assignedTo }) }); await load(); }

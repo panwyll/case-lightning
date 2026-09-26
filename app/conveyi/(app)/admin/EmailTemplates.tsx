@@ -84,7 +84,7 @@ export default function EmailTemplates() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ ...card, display: 'flex', alignItems: 'center', gap: 10 }}>
         <strong style={{ fontSize: 15, color: '#0f172a' }}>Email templates</strong>
-        <span style={{ fontSize: 12.5, color: '#64748b', flex: 1 }}>Reusable emails the reply drafter and workflow send from. Insert <code>{'{{placeholders}}'}</code> that fill with each matter's data.</span>
+        <span style={{ fontSize: 12.5, color: '#64748b', flex: 1 }}>Reusable emails the reply drafter and workflow send from. Insert <code>{'{{placeholders}}'}</code> that fill with each case's data.</span>
         <button onClick={create} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>+ New template</button>
       </div>
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
@@ -148,7 +148,7 @@ export default function EmailTemplates() {
                 );
               })()}
               {(cur.attachDocTemplateIds?.length ?? 0) > 0
-                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}><Paperclip size={11} /> Generated from the matter and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
+                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}><Paperclip size={11} /> Generated from the case and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
                 : docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '6px 0 0' }}>No document templates yet — add one in Doc packs to attach it here.</p>}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
@@ -158,7 +158,7 @@ export default function EmailTemplates() {
             </div>
             {/* Live preview with sample data */}
             <div style={{ ...card, background: '#fbfbfe' }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 }}>Preview (sample matter)</div>
+              <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 }}>Preview (sample case)</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{fill(cur.subjectTemplate || '(no subject)')}</div>
               <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{fill(cur.bodyTemplate)}</div>
             </div>

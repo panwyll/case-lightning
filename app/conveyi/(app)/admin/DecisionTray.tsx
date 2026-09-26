@@ -122,7 +122,7 @@ function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
     <div className={`dt-card${going ? ' going' : ''}`}>
       <div className="dt-main">
         <div className="dt-top">
-          <span className="dt-addr">{d.propertyAddress ?? d.matterRef ?? 'Matter'}</span>
+          <span className="dt-addr">{d.propertyAddress ?? d.matterRef ?? 'Case'}</span>
           <span className="dt-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{subjectLabel(d.subject)}</span>
         </div>
         <p className="dt-sum">{headline(d.summary)}</p>

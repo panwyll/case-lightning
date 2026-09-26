@@ -17,7 +17,7 @@ const steps = [
   },
   {
     n: '02',
-    title: 'It finds the matter',
+    title: 'It finds the case',
     body: 'CONVEYi matches the email to the right case using the thread, the people on it and the property — robustly, so a counterparty firm or repeat investor is never confused for the wrong file.',
   },
   {

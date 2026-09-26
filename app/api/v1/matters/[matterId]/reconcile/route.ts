@@ -25,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     await assertMatterAccess(user, matterId);
 
     if (!(await isPremiumTenant(user.tenantId))) {
-      return fail(Object.assign(new Error('Matter reconciliation needs an active subscription or trial.'), { status: 402 }));
+      return fail(Object.assign(new Error('Case reconciliation needs an active subscription or trial.'), { status: 402 }));
     }
     const gate = await canUseExpensiveFeature(user.tenantId, 'RECONCILE');
     if (!gate.allowed) {

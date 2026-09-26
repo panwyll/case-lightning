@@ -126,7 +126,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                   {i.gate !== 'none' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt(`Release the hold on ${i.gate}? Say why (the client accepts the risk, the lender is content…). The issue stays open.`); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, gate: 'none', note: n }); }}>Release hold</button>}
                   {i.gate === 'none' && !exchanged && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Hold exchange again? Say why.'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, gate: 'exchange', note: n }); }}>Hold exchange</button>}
                   <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Withdraw the issue (raised in error / overtaken)? Say why.'); if (n) void cmd({ type: 'withdraw_issue', issueId: i.id, reason: n }); }}>Withdraw</button>
-                  <button className="ep-btn" style={{ color: '#b91c1c' }} disabled={busy} onClick={() => { const n = window.prompt('This ends the transaction: the issue is marked fatal and the matter abandoned. Say why.'); if (n && window.confirm('Abandon the matter over this issue?')) void cmd({ type: 'mark_issue_fatal', issueId: i.id, reason: n }); }}>Fatal — abandon</button>
+                  <button className="ep-btn" style={{ color: '#b91c1c' }} disabled={busy} onClick={() => { const n = window.prompt('This ends the transaction: the issue is marked fatal and the case abandoned. Say why.'); if (n && window.confirm('Abandon the case over this issue?')) void cmd({ type: 'mark_issue_fatal', issueId: i.id, reason: n }); }}>Fatal — abandon</button>
                 </div>
               )}
             </div>
@@ -146,7 +146,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
             </select>
             <input className="ep-input" placeholder="What is wrong (one line)" value={title} onChange={(e) => setTitle(e.target.value)} style={{ width: 300 }} />
             <input className="ep-input" placeholder="Detail (optional)" value={detail} onChange={(e) => setDetail(e.target.value)} style={{ width: 220 }} />
-            <input className="ep-input" placeholder="Who it concerns (optional)" value={party} onChange={(e) => setParty(e.target.value)} style={{ width: 170 }} title="When a matter has more than one buyer or party" />
+            <input className="ep-input" placeholder="Who it concerns (optional)" value={party} onChange={(e) => setParty(e.target.value)} style={{ width: 170 }} title="When a case has more than one buyer or party" />
             <select className="ep-input" value={gate} onChange={(e) => setGate(e.target.value as typeof gate)}>
               <option value="default">{sel ? `holds ${exchanged && sel.gate === 'exchange' ? 'completion' : sel.gate === 'none' ? 'nothing' : sel.gate} (default)` : 'default hold'}</option>
               {!exchanged && <option value="exchange">holds exchange</option>}

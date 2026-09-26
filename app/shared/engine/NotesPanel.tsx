@@ -63,7 +63,7 @@ export function NotesPanel({
         {text.trim().length > 0 && text.trim().length < 10 && <span style={{ color: '#94a3b8', fontSize: 12 }}>A little more than that.</span>}
       </div>
 
-      {notes.length === 0 && <div style={{ color: '#94a3b8', marginTop: 12, fontSize: 12.5 }}>No notes on this matter yet.</div>}
+      {notes.length === 0 && <div style={{ color: '#94a3b8', marginTop: 12, fontSize: 12.5 }}>No notes on this case yet.</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
         {notes.map((n) => <Note key={n.id} n={n} open={open === n.id} onToggle={() => setOpen(open === n.id ? null : n.id)} who={who} />)}
       </div>

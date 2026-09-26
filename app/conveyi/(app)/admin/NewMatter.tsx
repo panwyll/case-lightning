@@ -75,8 +75,8 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
       onCreated(created.id);
     } catch (e: any) {
       setErr(e?.message?.includes('graph') || e?.message?.toLowerCase?.().includes('token')
-        ? 'Creating a matter provisions its OneDrive folder, so you need Outlook connected first (open the CONVEYi add-in once to connect).'
-        : (e?.message || 'Could not create the matter.'));
+        ? 'Creating a case provisions its OneDrive folder, so you need Outlook connected first (open the CONVEYi add-in once to connect).'
+        : (e?.message || 'Could not create the case.'));
     } finally { setBusy(false); }
   };
 
@@ -84,7 +84,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
     <div style={S.overlay} onClick={onClose}>
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-          <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New matter</strong>
+          <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New case</strong>
           <button onClick={onClose} style={S.x} aria-label="Close"><X size={14} /></button>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -125,7 +125,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
             <select value={track} onChange={(e) => setTrack(e.target.value)} style={S.input}>{TRACKS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </div>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}>
-            <label style={S.lbl}>Matter ref</label>
+            <label style={S.lbl}>Case ref</label>
             <input value={shownRef} onChange={(e) => { setRef(e.target.value); setRefTouched(true); }} placeholder="auto" style={S.input} />
           </div>
         </div>
@@ -147,7 +147,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         {err && <div style={{ fontSize: 12, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', margin: '10px 0 0' }}>{err}</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button onClick={create} disabled={!addrOk || busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: !addrOk || busy ? 0.5 : 1 }}>{busy ? 'Creating…' : 'Create matter'}</button>
+          <button onClick={create} disabled={!addrOk || busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: !addrOk || busy ? 0.5 : 1 }}>{busy ? 'Creating…' : 'Create case'}</button>
           <button onClick={onClose} style={S.btn}>Cancel</button>
         </div>
       </div>

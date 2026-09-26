@@ -20,11 +20,11 @@ const DB_REGION = 'EU';
 // memory: ai.ts (Anthropic + Groq), embeddings.ts (Voyage/OpenAI), graph.ts (Microsoft),
 // billing.ts (Stripe), db.ts (Supabase), the waitlist route (Resend) and Vercel hosting.
 const subProcessors: Array<[string, string, string, string]> = [
-  ['Anthropic (Claude)', 'Drafting, summarising, triage classification', 'Email content and matter facts for the message being worked on', 'USA'],
+  ['Anthropic (Claude)', 'Drafting, summarising, triage classification', 'Email content and case facts for the message being worked on', 'USA'],
   ['Groq', 'Call-note transcription; AI failover if Anthropic is unavailable', 'Call audio you record; email content only when failover is active', 'USA'],
-  ['Voyage AI or OpenAI', 'Embeddings for case-file search', 'Chunks of matter documents and emails', 'USA'],
+  ['Voyage AI or OpenAI', 'Embeddings for case-file search', 'Chunks of case documents and emails', 'USA'],
   ['Microsoft', 'Outlook and OneDrive via Microsoft Graph', 'Stays inside your own Microsoft 365 tenant', 'Your tenant’s region'],
-  ['Supabase', 'Application database (Postgres)', 'Matter records, extracted facts, audit log', DB_REGION],
+  ['Supabase', 'Application database (Postgres)', 'Case records, extracted facts, audit log', DB_REGION],
   ['Vercel', 'Application hosting', 'Request data in transit', 'EU/US edge'],
   ['Stripe', 'Subscription billing', 'Billing contact and payment details — we never see card numbers', 'USA / EU'],
   ['Resend', 'Transactional and waitlist email', 'Email address and message content we send you', 'USA'],
@@ -34,9 +34,9 @@ const permissions: Array<[string, string]> = [
   ['Mail.ReadWrite', 'Read the thread you have open and create a draft reply. There is no permission that lets CONVEYi send on its own.'],
   ['Mail.Send', 'Only used when a human clicks Send in the pane, or for a rule your firm has explicitly switched on.'],
   ['MailboxSettings.ReadWrite', 'Create and colour the triage categories (Reply / Action / Delegate) in your mailbox.'],
-  ['Files.ReadWrite', 'Your own OneDrive — the matter folder. Scoped to /me only.'],
+  ['Files.ReadWrite', 'Your own OneDrive — the case folder. Scoped to /me only.'],
   ['User.Read', 'Your name and email, to sign you in.'],
-  ['Team.ReadBasic.All, ChannelMessage.Send', 'Optional: post a matter summary to a Teams channel. Unused unless you turn it on.'],
+  ['Team.ReadBasic.All, ChannelMessage.Send', 'Optional: post a case summary to a Teams channel. Unused unless you turn it on.'],
 ];
 
 const notRequested = [
@@ -99,9 +99,9 @@ export default function SecurityPage() {
           </p>
           <p>What we <em>do</em> store, in our own database, is the case record that makes matching work:</p>
           <ul className="ml-5 list-disc space-y-1">
-            <li>Matter records — reference, address, parties, stage, key dates and figures</li>
-            <li>Email metadata and extracted facts for messages matched to a matter</li>
-            <li>Search index chunks derived from matter documents and emails</li>
+            <li>Case records — reference, address, parties, stage, key dates and figures</li>
+            <li>Email metadata and extracted facts for messages matched to a case</li>
+            <li>Search index chunks derived from case documents and emails</li>
             <li>An audit log of every action taken, for your own accountability trail</li>
             <li>Your Microsoft sign-in tokens, so the add-in can act on your behalf</li>
           </ul>
@@ -176,7 +176,7 @@ export default function SecurityPage() {
         <Section id="tenancy" title="Separation between firms">
           <p>
             Every record carries the firm it belongs to, and every query is scoped to the signed-in
-            user’s firm. One firm cannot see another firm’s matters, documents or audit trail. AI
+            user’s firm. One firm cannot see another firm’s cases, documents or audit trail. AI
             prompts are built from a single firm’s data at a time — your files are never used to train
             a model, and never form part of another firm’s answer.
           </p>
@@ -185,12 +185,12 @@ export default function SecurityPage() {
         <Section id="exit" title="Leaving, and getting your data out">
           <p>
             The awkward question first: if you stop paying, what happens to your files? Very little,
-            because the files were never ours. Your matter folders, saved emails and drafts are already in your OneDrive and
+            because the files were never ours. Your case folders, saved emails and drafts are already in your OneDrive and
             stay exactly where they are.
           </p>
           <p>
             Ask us to delete your account and we remove your firm’s records from our database —
-            matters, extracted facts, search index and audit log. Deleting a single matter cascades to
+            cases, extracted facts, search index and audit log. Deleting a single case cascades to
             its documents, facts and triage records the same way.
           </p>
         </Section>

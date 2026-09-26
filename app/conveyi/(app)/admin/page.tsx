@@ -89,7 +89,7 @@ const AUDIT_CATEGORY: Record<string, string> = {
   ONBOARDING_CASE_PROVISIONED: 'admin', ONBOARDING_CANCELLED: 'admin',
 };
 const AUDIT_FILTERS: Array<[string, string]> = [
-  ['', 'Everything'], ['email', 'Email'], ['matter', 'Matter & status'], ['tasks', 'Tasks'],
+  ['', 'Everything'], ['email', 'Email'], ['matter', 'Case & status'], ['tasks', 'Tasks'],
   ['docs', 'Documents'], ['automation', 'Automation'], ['admin', 'Admin & access'], ['other', 'Other'],
 ];
 const auditCategory = (row: any) => AUDIT_CATEGORY[String(row.action_type)] ?? 'other';
@@ -113,7 +113,7 @@ function describeAudit(row: any): string {
     case 'EMAIL_SAVED_TO_MATTER':
       return `Filed ${p.count ?? 'some'} document${p.count === 1 ? '' : 's'} from an email${p.auto ? ' automatically' : ''}`;
     case 'EMAIL_FILED':
-      return `Filed an email to the matter${p.moved ? ' and moved it out of the inbox' : ''}`;
+      return `Filed an email to the case${p.moved ? ' and moved it out of the inbox' : ''}`;
     case 'FILE_PROCESSED':
       return `Processed ${q(p.fileName) || 'a file'}${p.substantive === false ? ' (not substantive — skipped)' : p.drafted ? ' and drafted an acknowledgement' : ''}`;
     case 'DOCUMENT_UPLOADED':
@@ -121,17 +121,17 @@ function describeAudit(row: any): string {
     case 'DOCUMENT_REVIEWED':
       return `Reviewed a document${p.fileName ? ` ${q(p.fileName)}` : ''}`;
     case 'STAGE_CHANGED':
-      return `Moved the matter${p.from ? ` from ${String(p.from).toLowerCase().replace(/_/g, ' ')}` : ''} to ${String(p.to || '').toLowerCase().replace(/_/g, ' ')}`;
+      return `Moved the case${p.from ? ` from ${String(p.from).toLowerCase().replace(/_/g, ' ')}` : ''} to ${String(p.to || '').toLowerCase().replace(/_/g, ' ')}`;
     case 'WORKFLOW_TASKS_CREATED':
       return `Case Flow raised ${p.count ?? 'some'} task${p.count === 1 ? '' : 's'} for the ${String(p.stage || '').toLowerCase().replace(/_/g, ' ')} stage`;
     case 'MATTER_CREATED':
-      return `Created a new matter`;
+      return `Created a new case`;
     case 'MATTER_MERGED':
-      return `Merged matter ${p.mergedRef || ''} into ${p.keepRef || ''}`.replace(/\s+/g, ' ').trim();
+      return `Merged case ${p.mergedRef || ''} into ${p.keepRef || ''}`.replace(/\s+/g, ' ').trim();
     case 'MATCH_CONFIRMED':
-      return `Confirmed an email belongs to this matter${p.band ? ` (${String(p.band).toLowerCase()})` : ''}`;
+      return `Confirmed an email belongs to this case${p.band ? ` (${String(p.band).toLowerCase()})` : ''}`;
     case 'THREAD_LINKED':
-      return 'Linked an email thread to the matter';
+      return 'Linked an email thread to the case';
     case 'THREAD_SUMMARISED':
       return 'Summarised an email thread';
     case 'FACTS_EXTRACTED':
@@ -153,7 +153,7 @@ function describeAudit(row: any): string {
     case 'AI_KEY_REMOVED':
       return 'Removed the personal AI key';
     case 'TEAMS_SUMMARY_POSTED':
-      return 'Posted a matter summary to Teams';
+      return 'Posted a case summary to Teams';
     case 'ONBOARDING_STARTED':
       return 'Started importing existing cases';
     case 'ONBOARDING_CONFIRMED':
@@ -463,7 +463,7 @@ function AdminPageInner() {
       setBoard(b.matters);
       setDoneTotal(b.doneTotal ?? 0);
     } catch (e: any) {
-      setStatus(e?.message || 'Could not create the matter.');
+      setStatus(e?.message || 'Could not create the case.');
     } finally {
       setCreatingMatter(false);
     }
@@ -660,7 +660,7 @@ function AdminPageInner() {
 
   async function mergeCases() {
     if (!mergeKeep || !mergeAway) return;
-    if (mergeKeep.id === mergeAway.id) { setStatus('Pick two different matters.'); return; }
+    if (mergeKeep.id === mergeAway.id) { setStatus('Pick two different cases.'); return; }
     if (!window.confirm(`Merge ${mergeAway.matterRef} into ${mergeKeep.matterRef}? All of ${mergeAway.matterRef}’s emails, documents, tasks and contacts move to ${mergeKeep.matterRef}, and ${mergeAway.matterRef} is archived. This can’t be undone automatically.`)) return;
     setMergeBusy(true);
     try {
@@ -741,7 +741,7 @@ function AdminPageInner() {
             </p>
             <ul style={{ margin: '0 0 18px', paddingLeft: 0, listStyle: 'none' }}>
               {([
-                [Inbox, 'Incoming email matched to the right matter and tagged'],
+                [Inbox, 'Incoming email matched to the right case and tagged'],
                 [PenLine, 'Replies drafted into your Outlook Drafts — nothing sends itself'],
                 [FolderKanban, 'Every case on the caseload, chases never forgotten'],
               ] as Array<[typeof Inbox, string]>).map(([Ic, txt]) => (
@@ -794,7 +794,7 @@ function AdminPageInner() {
                   {members.map((u) => (<option key={u.id} value={u.id}>{u.display_name || u.email}{u.id === me?.userId ? ' (me)' : ''}</option>))}
                 </select>
               </label>
-              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New matter</button>
+              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New case</button>
             </>
           )}
         </div>
@@ -955,9 +955,9 @@ function AdminPageInner() {
                 {[
                   ['Does CONVEYi ever send email on my behalf?', 'Yes, for the routine admin: acknowledgements that something arrived, chases when a response is overdue, and the status note to the client and agent that says we chased. Anything with a professional judgement in it — a report on title, a reply on a legal point — is a decision for you first.'],
                   ['What does auto-triage do?', 'On each incoming email it matches the message to a case, tags it in Outlook, and pre-analyses it (thread summary + a drafted reply) so the email opens ready. It’s always on and never sends.'],
-                  ['How are emails matched to a matter?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
-                  ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for matter data and, on premium plans, [[AI sections]]. On any matter, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
-                  ['How is billing handled?', 'You pay per case — £100 the first time CONVEYi does work on a matter, invoiced monthly. The card, invoices and cancellation are handled securely by Stripe via “Manage subscription”.'],
+                  ['How are emails matched to a case?', 'By hard signals first — a thread already linked to a case, or your case-ref token in the subject — then corroborating ones like the property postcode, party names and known participants. A match needs more than one signal to be confident.'],
+                  ['How do document templates work?', 'Upload (or AI-generate) Word .docx templates in Automation → Doc packs using {{placeholders}} for case data and, on premium plans, [[AI sections]]. On any case, a conveyancer clicks Generate and the file is filled and saved to the case folder.'],
+                  ['How is billing handled?', 'You pay per case — £100 the first time CONVEYi does work on a case, invoiced monthly. The card, invoices and cancellation are handled securely by Stripe via “Manage subscription”.'],
                   ['Where is our data stored?', 'Case data lives in your firm’s own Microsoft 365 (OneDrive) plus CONVEYi’s database for matching and analysis. AI drafting uses Claude; nothing is sent to third parties beyond what’s needed to draft and never auto-sent.'],
                 ].map(([q, a]) => (
                   <details key={q} style={{ borderTop: '1px solid #f1f5f9', padding: '10px 0' }}>
@@ -998,16 +998,16 @@ function AdminPageInner() {
         {tab === 'workload' && (
           <div style={card}>
             <p style={{ fontSize: 13, color: '#475569', margin: '0 0 12px', lineHeight: 1.5 }}>
-              Who’s carrying what right now. Assign matters from the board or a matter’s drawer; anything without an owner shows in its own row so nothing slips.
+              Who’s carrying what right now. Assign cases from the board or a case’s drawer; anything without an owner shows in its own row so nothing slips.
             </p>
             {workload.length === 0 ? (
-              <p style={{ fontSize: 13, color: '#64748b' }}>No open matters yet.</p>
+              <p style={{ fontSize: 13, color: '#64748b' }}>No open cases yet.</p>
             ) : (
               <div style={{ overflowX: 'auto', border: '1px solid #e8eaf0', borderRadius: 10 }}>
                 <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc' }}>
-                      {['Fee-earner', 'Open matters', 'Needs attention', 'Overdue chases', 'Drafts waiting'].map((h, i) => (
+                      {['Fee-earner', 'Open cases', 'Needs attention', 'Overdue chases', 'Drafts waiting'].map((h, i) => (
                         <th key={h} style={{ padding: '8px 12px', textAlign: i === 0 ? 'left' : 'center', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -1070,7 +1070,7 @@ function AdminPageInner() {
               </div>
               <p style={{ fontSize: 13, color: '#475569', margin: '8px 0 14px' }}>
                 Two ways: <strong>upload an existing Word document</strong> and we’ll turn it into a fillable
-                template — keeping your wording and swapping the client/property/date details for matter
+                template — keeping your wording and swapping the client/property/date details for case
                 placeholders automatically — <strong>or describe</strong> the document and we’ll draft it from
                 scratch. Nothing is sent; the template is saved here to download and review first.
               </p>
@@ -1118,7 +1118,7 @@ function AdminPageInner() {
               <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
                 <tbody>
                   {[
-                    ['{{matter_ref}}', 'Matter reference, e.g. CL-0042'],
+                    ['{{matter_ref}}', 'Case reference, e.g. CL-0042'],
                     ['{{property_address}}', 'Full property address'],
                     ['{{buyer_names}}', 'Comma-separated buyer names'],
                     ['{{seller_names}}', 'Comma-separated seller names'],
@@ -1131,7 +1131,7 @@ function AdminPageInner() {
                     ['{{stage}}', 'Current stage name'],
                     ['{{today}}', 'Today\'s date (formatted)'],
                     ['{{firm_name}}', 'Your firm name'],
-                    ['{{assigned_to}}', 'Conveyancer handling the matter'],
+                    ['{{assigned_to}}', 'Conveyancer handling the case'],
                   ].map(([placeholder, desc]) => (
                     <tr key={placeholder} style={{ borderTop: '1px solid #e0f2fe' }}>
                       <td style={{ padding: '3px 8px 3px 0', fontFamily: 'monospace', color: '#0369a1', whiteSpace: 'nowrap' }}>{placeholder}</td>
@@ -1264,7 +1264,7 @@ function AdminPageInner() {
                 style={{ marginTop: 2 }}
               />
               <span>
-                <strong>Per-matter Inbox subfolders.</strong> Give each matter its own Outlook Inbox subfolder and
+                <strong>Per-case Inbox subfolders.</strong> Give each case its own Outlook Inbox subfolder and
                 move matched emails into it as they’re actioned. Off keeps your inbox untouched (matched mail is still
                 tagged, just not moved).
               </span>
@@ -1302,7 +1302,7 @@ function AdminPageInner() {
         {tab === 'actions' && (
           <>
             <div style={card}>
-              <label style={{ fontSize: 13, fontWeight: 600 }}>Keep this matter</label>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>Keep this case</label>
               <div style={{ marginTop: 4, marginBottom: 12 }}>
                 <MatterPicker selected={mergeKeep} onSelect={setMergeKeep} />
               </div>
@@ -1394,7 +1394,7 @@ function AdminPageInner() {
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 18px', fontSize: 12 }}>
                               <span style={{ color: '#94a3b8' }}>Event <code style={{ color: '#475569' }}>{row.action_type}</code></span>
                               <span style={{ color: '#94a3b8' }}>When <span style={{ color: '#475569' }}>{when.toLocaleString()}</span></span>
-                              {row.matter_ref && <span style={{ color: '#94a3b8' }}>Matter <span style={{ color: '#475569' }}>{row.matter_ref}</span></span>}
+                              {row.matter_ref && <span style={{ color: '#94a3b8' }}>Case <span style={{ color: '#475569' }}>{row.matter_ref}</span></span>}
                               {row.trace_id && <span style={{ color: '#94a3b8' }}>Trace <code style={{ color: '#475569' }}>{row.trace_id}</code></span>}
                               {row.request_id && <span style={{ color: '#94a3b8' }}>Request <code style={{ color: '#475569' }}>{row.request_id}</code></span>}
                             </div>
@@ -1437,7 +1437,7 @@ function AdminPageInner() {
           onClose={() => setShowNewMatter(false)}
           onCreated={async (id) => {
             setShowNewMatter(false);
-            setStatus('Matter created — OneDrive folder provisioned.');
+            setStatus('Case created — OneDrive folder provisioned.');
             router.push(paths.matter(id));
           }}
         />

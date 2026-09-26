@@ -17,24 +17,33 @@ export async function GET(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireUser();
-    const q = (new URL(req.url).searchParams.get('q') ?? '').trim();
+    const sp = new URL(req.url).searchParams;
+    const q = (sp.get('q') ?? '').trim();
     const like = `%${q}%`;
-    const rows = await query<{ id: string; matter_ref: string; property_address: string }>(
-      `select id, matter_ref, property_address
-         from matter
-        where tenant_id = $1
+    // status: open (default for pickers that pass it) | closed | all. limit: up to 100.
+    const status = z.enum(['open', 'closed', 'all']).catch('all').parse(sp.get('status') ?? 'all');
+    const limit = z.coerce.number().int().min(1).max(100).catch(20).parse(sp.get('limit') ?? 20);
+    const where = `tenant_id = $1
           and ($2 = ''
                or matter_ref ilike $3
                or property_address ilike $3
                or array_to_string(buyer_names, ' ') ilike $3
                or array_to_string(seller_names, ' ') ilike $3)
-        order by created_at desc
-        limit 20`,
-      [user.tenantId, q, like]
-    );
+          and ($4 = 'all' or ($4 = 'closed') = (status = 'CLOSED'))`;
+    const [rows, totalRow] = await Promise.all([
+      query<{ id: string; matter_ref: string; property_address: string; status: string }>(
+        `select id, matter_ref, property_address, status from matter where ${where} order by created_at desc limit $5`,
+        [user.tenantId, q, like, status, limit]
+      ),
+      query<{ n: number }>(`select count(*)::int as n from matter where ${where}`, [user.tenantId, q, like, status]),
+    ]);
+    const total = totalRow[0]?.n ?? rows.length;
     // With each, the case as a person recognises it (client, type, stage, handler).
     const cards = await caseCards(user.tenantId, rows.map((m) => m.id)).catch(() => new Map());
-    return ok({ matters: rows.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, case: cards.get(m.id) ?? null })) });
+    return ok({
+      matters: rows.map((m) => ({ id: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, status: m.status, case: cards.get(m.id) ?? null })),
+      total,
+    });
   } catch (error) {
     return fail(error);
   }

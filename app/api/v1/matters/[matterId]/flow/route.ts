@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       `select id, matter_ref, property_address, stage from matter where id = $1 and tenant_id = $2`,
       [matterId, user.tenantId]
     );
-    if (!matter) throw new Error('Matter not found.');
+    if (!matter) throw new Error('Case not found.');
 
     // A firm that has never opened Case Flow still gets the standard steps here — the
     // matter page reads them, and an empty stage tells nobody anything.

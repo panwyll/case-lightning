@@ -74,9 +74,9 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
         {err && <div className="ep-err">{err}</div>}
       </div>
 
-      <div className="ep-sec">Filed on this matter ({filed.length})</div>
+      <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-        {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the matter first'}.</div>}
+        {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
         {filed.map((e) => (
           <div key={e.id} className="ep-row">
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>

@@ -403,7 +403,7 @@ async function proposeCluster(
     }
 
     const isCase = !!proposal && proposal.isConveyancingCase && (proposal.confidence ?? 0) >= MIN_CONFIDENCE;
-    const rationale = proposal?.rationale ?? (proposeError ? `AI proposal failed — ${proposeError}` : 'Not recognised as a conveyancing matter.');
+    const rationale = proposal?.rationale ?? (proposeError ? `AI proposal failed — ${proposeError}` : 'Not recognised as a conveyancing case.');
 
     await query(
       `insert into onboarding_case

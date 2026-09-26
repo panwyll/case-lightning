@@ -58,7 +58,7 @@ export default function EngineMatterPage({ params }: { params: Promise<{ matterI
       <div className="eg-top">
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <h1 className="eg-h1">{m?.propertyAddress ?? 'Matter'}</h1>
+            <h1 className="eg-h1">{m?.propertyAddress ?? 'Case'}</h1>
             {view?.state.transactionType && <span className="eg-chip muted">{TRANSACTION_LABEL[view.state.transactionType] ?? view.state.transactionType}</span>}
             {view && enrolled && <span className="eg-chip stage">{view.state.closedAt ? 'Closed' : view.state.abandoned ? 'Abandoned' : stageLabel(view.state.stage, view.profile)}</span>}
             {view && !enrolled && <span className="eg-chip muted">not enrolled</span>}

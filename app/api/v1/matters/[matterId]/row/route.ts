@@ -30,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       // matter_task not present on this install — the drawer still opens without badges.
       matter = await queryOne<BoardMatter>(`${boardSelect(false)} where m.tenant_id = $1 and m.id = $2`, [user.tenantId, matterId]);
     }
-    if (!matter) return fail(Object.assign(new Error('Matter not found.'), { status: 404 }));
+    if (!matter) return fail(Object.assign(new Error('Case not found.'), { status: 404 }));
     const assignees = await listAssignees(user.tenantId).catch(() => [] as Awaited<ReturnType<typeof listAssignees>>);
     return ok({ matter, assignees });
   } catch (error) {

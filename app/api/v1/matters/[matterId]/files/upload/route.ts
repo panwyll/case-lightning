@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       `select folder_path from matter where id = $1 and tenant_id = $2`,
       [matterId, user.tenantId]
     );
-    if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned'));
+    if (!matter?.folder_path) return fail(new Error('Case folder not provisioned'));
 
     const buffer = Buffer.from(body.contentBase64, 'base64');
     const uploaded = await uploadToMatterFolder(await driveUserFor(user.tenantId, matterId, user.userId), matter.folder_path, body.fileName, buffer);

@@ -46,7 +46,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
       <style>{DECISION_CSS}</style>
       {err && <div className="dc-err">{err}</div>}
       {rows === null && !err && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Loading…</div>}
-      {rows && rows.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: compact ? 12 : 30, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>Nothing waiting on you{matterId ? ' for this matter' : ''}.</div>}
+      {rows && rows.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: compact ? 12 : 30, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>Nothing waiting on you{matterId ? ' for this case' : ''}.</div>}
       {rows && rows.length > 0 && kinds.length > 1 && !compact && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {['all', ...kinds].map((k) => (

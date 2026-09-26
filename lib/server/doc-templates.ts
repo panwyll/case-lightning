@@ -244,7 +244,7 @@ async function loadMatterVars(
       [matterId, user.tenantId]
     ),
   ]);
-  if (!matterRow) throw new Error('Matter not found.');
+  if (!matterRow) throw new Error('Case not found.');
   const firmName = tenantRow?.name ?? 'Your firm';
   const assigneeName = assigneeRow?.display_name ?? assigneeRow?.email ?? '';
   return {
@@ -463,7 +463,7 @@ export interface ExampleTemplate {
 export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
   {
     name: 'Client care letter',
-    description: 'Introductory letter sent to clients at the start of a matter.',
+    description: 'Introductory letter sent to clients at the start of a case.',
     fileName: 'client-care-letter.docx',
     hasLlmPrompts: false,
     paragraphs: [
@@ -478,7 +478,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       'Thank you for instructing us on your {{track}} of the above property. ' +
         'We are pleased to act on your behalf and write to confirm the terms of our retainer.',
       '',
-      'Your matter is being handled by {{assigned_to}}. ' +
+      'Your case is being handled by {{assigned_to}}. ' +
         'We aim to complete by {{completion_date}}, with exchange targeted for {{exchange_date}}.',
       '',
       'Please do not hesitate to contact us should you have any questions.',
@@ -499,7 +499,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '',
       'COMPLETION STATEMENT',
       '',
-      'Matter:     {{matter_ref}}',
+      'Case:       {{matter_ref}}',
       'Property:   {{property_address}}',
       'Client(s):  {{buyer_names}}',
       'Completion: {{completion_date}}',
@@ -535,7 +535,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '',
       'REPORT ON TITLE',
       '',
-      'Matter:    {{matter_ref}}',
+      'Case:      {{matter_ref}}',
       'Property:  {{property_address}}',
       'Client(s): {{buyer_names}}',
       'Date:      {{today}}',

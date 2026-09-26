@@ -24,7 +24,7 @@ const faqs = [
   },
   {
     q: 'Where do the case files actually live?',
-    a: 'Each matter gets its own folder in your OneDrive for its documents, and a live case record in CONVEYi for parties, key dates and outstanding tasks. You can open and edit the files like any other — CONVEYi just keeps the record current for you.',
+    a: 'Each case gets its own folder in your OneDrive for its documents, and a live case record in CONVEYi for parties, key dates and outstanding tasks. You can open and edit the files like any other — CONVEYi just keeps the record current for you.',
   },
   {
     q: 'Will it send emails to clients on its own?',
@@ -36,7 +36,7 @@ const faqs = [
   },
   {
     q: 'How does £100 per case work?',
-    a: 'There is one plan and one price. Everyone in the firm gets the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, AI document packs, the OneDrive knowledge base, the case board and the team layer (matter board, workload dashboard, assignment, admin oversight). A case is charged once, the first time CONVEYi drafts a reply, reviews or generates a document, or reconciles that matter: £100 goes on that month’s invoice and that case is never charged again. Triage, matching and summaries run free on every email, so a case you never draft on costs nothing, and cases you open during the free trial are never charged. There are no seats, no monthly fee and no tiers.',
+    a: 'There is one plan and one price. Everyone in the firm gets the whole product — the Outlook add-in, case-aware drafting, auto-triage, auto-rules, AI document packs, the OneDrive knowledge base, the case board and the team layer (workload dashboard, assignment, admin oversight). A case is charged once, the first time CONVEYi drafts a reply, reviews or generates a document, or reconciles that matter: £100 goes on that month’s invoice and that case is never charged again. Triage, matching and summaries run free on every email, so a case you never draft on costs nothing, and cases you open during the free trial are never charged. There are no seats, no monthly fee and no tiers.',
   },
   {
     q: 'What if it doesn’t work for us?',

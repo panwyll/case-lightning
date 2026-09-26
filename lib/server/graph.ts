@@ -72,7 +72,7 @@ export function describeGraphError(error: unknown): string {
     // the tenant has no SharePoint Online licence — Graph returns a 400 whose body
     // says "Tenant does not have a SPO license." Give the same actionable hint.
     if (/SPO license|SharePoint/i.test(detail)) {
-      return `Couldn't provision the matter's OneDrive folder${status}. This account's tenant has no SharePoint Online / OneDrive licence, which CaseLightning needs to store matter files.`;
+      return `Couldn't provision the case's OneDrive folder${status}. This account's tenant has no SharePoint Online / OneDrive licence, which CaseLightning needs to store case files.`;
     }
     return `Microsoft Graph request failed${status}${detail ? `: ${detail}` : '.'}`;
   }

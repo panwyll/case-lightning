@@ -33,7 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
       `select folder_path from matter where id = $1 and tenant_id = $2`,
       [body.matterId, user.tenantId]
     );
-    if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned'));
+    if (!matter?.folder_path) return fail(new Error('Case folder not provisioned'));
 
     const message = await getMessage(user.userId, body.messageId);
     const attachments = body.includeAttachments ? await listMessageAttachments(user.userId, body.messageId) : [];

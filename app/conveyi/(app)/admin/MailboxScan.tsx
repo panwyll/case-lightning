@@ -65,7 +65,7 @@ const PROGRESS_COPY: Record<string, string> = {
   SCANNING: 'Reading your recent mail…',
   CLUSTERING: 'Grouping emails into transactions…',
   PROPOSING: 'Working out the property, parties and stage…',
-  PROVISIONING: 'Creating your matters…',
+  PROVISIONING: 'Creating your cases…',
 };
 
 export default function MailboxScan({ onImported }: { onImported?: (count: number) => void }) {
@@ -177,7 +177,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
       await refresh();
       void drive();
     } catch (e) {
-      setErr((e as Error).message || 'Could not import those matters.');
+      setErr((e as Error).message || 'Could not import those cases.');
     } finally {
       setBusy(false);
     }
@@ -233,7 +233,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
       {(!job || ['COMPLETED', 'FAILED', 'CANCELLED'].includes(status ?? '')) && (
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
-            {onboarded.length ? 'Scan your mailbox again' : 'Find your live matters'}
+            {onboarded.length ? 'Scan your mailbox again' : 'Find your live cases'}
           </div>
           <div style={{ fontSize: 13.5, color: '#475569', marginTop: 4, lineHeight: 1.5 }}>
             CONVEYi reads your recent mail and works out which threads belong to the same
@@ -261,7 +261,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
           <div style={{ display: 'flex', gap: 18, marginTop: 12, flexWrap: 'wrap' }}>
             <Stat label="Emails read" value={job?.messages_scanned ?? 0} />
             <Stat label="Threads" value={job?.threads_found ?? 0} />
-            <Stat label="Matters found" value={job?.cases_proposed ?? 0} />
+            <Stat label="Cases found" value={job?.cases_proposed ?? 0} />
           </div>
           <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 12 }}>
             This can take a few minutes on a busy mailbox. You can leave this page — the scan picks
@@ -275,12 +275,12 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
         <div style={card}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
             {proposed.length === 0
-              ? 'No matters found in that window'
-              : `We found ${proposed.length} live ${proposed.length === 1 ? 'matter' : 'matters'}`}
+              ? 'No cases found in that window'
+              : `We found ${proposed.length} live ${proposed.length === 1 ? 'case' : 'cases'}`}
           </div>
           <div style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>
             {proposed.length === 0
-              ? 'Nothing in your recent mail looked like an active conveyance. If your matters are older than the scanned window, subscribing lifts the limit on how far back we look.'
+              ? 'Nothing in your recent mail looked like an active conveyance. If your cases are older than the scanned window, subscribing lifts the limit on how far back we look.'
               : 'Untick anything that isn’t a real case. You can edit a reference before importing.'}
           </div>
 
@@ -322,7 +322,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
                         value={refEdit[c.id] ?? c.proposed_matter_ref ?? ''}
                         onChange={(e) => setRefEdit((p) => ({ ...p, [c.id]: e.target.value }))}
                         onClick={(e) => e.preventDefault()}
-                        placeholder="Matter reference"
+                        placeholder="Case reference"
                         style={{ ...input, marginTop: 7, width: 220 }}
                       />
                     </div>
@@ -331,7 +331,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                 <button onClick={confirm} disabled={busy || chosen === 0} style={{ ...primary, opacity: chosen === 0 ? 0.5 : 1 }}>
-                  {busy ? 'Importing…' : `Import ${chosen} matter${chosen === 1 ? '' : 's'}`}
+                  {busy ? 'Importing…' : `Import ${chosen} case${chosen === 1 ? '' : 's'}`}
                 </button>
                 <button onClick={() => setSel(Object.fromEntries(proposed.map((c) => [c.id, true])))} style={link}>
                   Select all
@@ -348,7 +348,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
       {status === 'COMPLETED' && onboarded.length > 0 && (
         <div style={{ ...card, background: '#f6fdf9', border: '1px solid #bbf7d0' }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: '#065f46' }}>
-            {onboarded.length} matter{onboarded.length === 1 ? '' : 's'} imported from your mailbox
+            {onboarded.length} case{onboarded.length === 1 ? '' : 's'} imported from your mailbox
           </div>
           <div style={{ fontSize: 13, color: '#047857', marginTop: 3 }}>
             Every email in those threads is now filed against the right case, with the property,

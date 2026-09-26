@@ -97,7 +97,7 @@ function Item({ i }: { i: WorkItem }) {
       <div className="wk-what">{i.what}</div>
       <div className="wk-where">
         <House band={i.urgency} size={16} />
-        <span>{i.propertyAddress ?? i.matterRef ?? 'Matter'}</span>
+        <span>{i.propertyAddress ?? i.matterRef ?? 'Case'}</span>
         {i.unblocks && <span>· unblocks {i.unblocks.toLowerCase()}</span>}
       </div>
       {i.bucket === 'escalate' && i.chasesSent > 0 && <div className="wk-clock"><span className="over">{i.chasesSent} chase{i.chasesSent === 1 ? '' : 's'} unanswered</span></div>}
@@ -150,7 +150,7 @@ function Waiting({ items }: { items: WorkItem[] }) {
             <House band={i.urgency} size={18} />
             <span>
               <span className="line">Waiting on <b>{who}</b> to {i.what}{i.dueBy ? <> by <b>{day(i.dueBy)}</b></> : null}</span>
-              <div className="meta">{i.propertyAddress ?? i.matterRef ?? 'Matter'}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
+              <div className="meta">{i.propertyAddress ?? i.matterRef ?? 'Case'}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
             </span>
             <span className="right">
               <Left i={i} />

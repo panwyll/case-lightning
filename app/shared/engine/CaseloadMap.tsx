@@ -156,7 +156,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions }: {
                     onMouseEnter={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
                     onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
                     onMouseLeave={() => setTip(null)}
-                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Matter'} — ${HEALTH_LABEL[t.health.band]}`}
+                    aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Case'} — ${HEALTH_LABEL[t.health.band]}`}
                   >
                     <House band={t.health.band} size={28} title={t.propertyAddress ?? t.matterRef ?? undefined} />
                   </button>
@@ -169,7 +169,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions }: {
 
       {tip && (
         <div className="cm-tip" style={{ left: Math.min(tip.x + 14, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 310), top: tip.y + 16 }}>
-          <b>{tip.t.propertyAddress ?? tip.t.matterRef ?? 'Matter'}</b>
+          <b>{tip.t.propertyAddress ?? tip.t.matterRef ?? 'Case'}</b>
           <div className="m">{tip.t.matterRef ?? ''} · day {tip.t.dayOfCase} · {HEALTH_LABEL[tip.t.health.band]}</div>
           <div style={{ marginTop: 4 }}>{line(tip.t)}</div>
         </div>

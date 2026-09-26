@@ -22,8 +22,8 @@ const HOURS = 'Monday to Friday, 9am–6pm UK time, excluding English bank holid
 
 /** What we aim to respond in. Deliberately modest and honest — a target we can hold to. */
 const TARGETS: Array<[string, string, string]> = [
-  ['Urgent', 'Nobody at the firm can sign in, matters are not syncing, or a decision cannot be actioned.', 'Same working day'],
-  ['High', 'One matter or one person is affected; there is a workaround.', 'Next working day'],
+  ['Urgent', 'Nobody at the firm can sign in, cases are not syncing, or a decision cannot be actioned.', 'Same working day'],
+  ['High', 'One case or one person is affected; there is a workaround.', 'Next working day'],
   ['Normal', 'A question, a document read wrongly, a change you would like.', 'Two working days'],
   ['Security', 'A suspected vulnerability or a data incident.', 'Within 24 hours, any day'],
 ];
@@ -49,7 +49,7 @@ export default function SupportPage() {
       <section className="mx-auto max-w-3xl px-6 pt-16 pb-16 md:pt-24">
         <h1 className="text-3xl font-bold md:text-4xl">Support</h1>
         <P>
-          A real person reads every message. Tell us the matter reference and what you expected to
+          A real person reads every message. Tell us the case reference and what you expected to
           happen, and we can usually see the rest for ourselves — every conclusion CONVEYi reaches is
           recorded with the document it came from, so we can replay what it did rather than guess.
         </P>
@@ -63,13 +63,13 @@ export default function SupportPage() {
         <H2>What to send</H2>
         <P>Four things get you an answer in one round rather than three:</P>
         <ul className="mt-3 space-y-2 text-ink/75">
-          <li>• <strong>The matter reference</strong> (and the LEAP matter number, if you use LEAP).</li>
+          <li>• <strong>The case reference</strong> (and the LEAP case number, if you use LEAP).</li>
           <li>• <strong>What you expected, and what happened instead.</strong> “It read the CON29 as clear but there is an enforcement notice on page 4” tells us more than “the search is wrong”.</li>
           <li>• <strong>When</strong>, roughly — the day and the hour is enough to find it in the log.</li>
           <li>• <strong>A screenshot</strong>, if something looked wrong on screen.</li>
         </ul>
         <P>
-          Please do not email client documents or bank details to us. We can see the matter from our
+          Please do not email client documents or bank details to us. We can see the case from our
           side once you give us the reference, and anything we need beyond that we will ask for
           through a channel your firm is comfortable with.
         </P>
@@ -107,14 +107,14 @@ export default function SupportPage() {
         <P>
           Two deliberate gates can do that. The <strong>source gate</strong>: the buttons unlock once
           you have scrolled the document or spent a few seconds on it, because a decision you have not
-          read is not a decision. And <strong>shadow mode</strong>: a matter being observed shows the
+          read is not a decision. And <strong>shadow mode</strong>: a case being observed shows the
           engine’s conclusions for comparison but nothing is actionable. The banner at the top of the
-          matter says which one applies.
+          case says which one applies.
         </P>
 
         <H3>It read a document wrongly</H3>
         <P>
-          Tell us the matter and the document. Every extracted fact carries the page and the words it
+          Tell us the case and the document. Every extracted fact carries the page and the words it
           came from, so we can see exactly what it read and why. Nothing a reader gets wrong can enter
           the case on its own — a person approves it first — but a reader that is wrong often is a bug
           and we want it.
@@ -128,10 +128,10 @@ export default function SupportPage() {
           system that is deliberately inconvenient.
         </P>
 
-        <H3>Something is missing from a matter</H3>
+        <H3>Something is missing from a case</H3>
         <P>
           A document CONVEYi cannot place yet is held and retried rather than dropped. If it has been
-          in LEAP or OneDrive for more than an hour and still is not on the matter, send us the
+          in LEAP or OneDrive for more than an hour and still is not on the case, send us the
           reference — that usually means the classifier is unsure and a person needs to file it.
         </P>
 
@@ -140,14 +140,14 @@ export default function SupportPage() {
         <H3>LEAP</H3>
         <P>
           A partner or administrator connects LEAP once, from Settings → Integrations, and consents on
-          LEAP’s own screen. CONVEYi then reads conveyancing matters, the parties on them and the
+          LEAP’s own screen. CONVEYi then reads conveyancing cases, the parties on them and the
           documents filed to them, and writes back tasks, file notes and clearly-labelled DRAFT
           documents into a CONVEYi folder. It never edits or deletes anything your firm created, and it
           does not touch accounting, trust or client money.
         </P>
         <P>
-          New matters start in <strong>shadow mode</strong>: CONVEYi forms its conclusions and logs
-          them, and writes nothing into LEAP until you promote the matter. To disconnect entirely,
+          New cases start in <strong>shadow mode</strong>: CONVEYi forms its conclusions and logs
+          them, and writes nothing into LEAP until you promote the case. To disconnect entirely,
           revoke the connection in LEAP or ask us — either stops all reading and all write-back
           immediately. What is already in your LEAP file stays in your LEAP file.
         </P>
@@ -170,7 +170,7 @@ export default function SupportPage() {
 
         <H2>Data requests, DPAs and account changes</H2>
         <P>
-          Your firm is the controller of its own matter data and we are its processor, so a client’s
+          Your firm is the controller of its own case data and we are its processor, so a client’s
           access or erasure request comes to you — we will help you answer it. For a data processing
           agreement, a sub-processor list, or a question about how we hold data, write to{' '}
           <Mail address={PRIVACY_EMAIL} />. Billing, seats and cancellation: <Mail address={SUPPORT_EMAIL} />.

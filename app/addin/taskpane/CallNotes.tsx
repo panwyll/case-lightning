@@ -228,9 +228,9 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                     </div>
                   </div>
                   {n.matter_ref ? (
-                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} title="Move to another matter" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' }}>{n.matter_ref} <PenLine size={10} /></button>
+                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} title="Move to another case" style={{ flex: 'none', fontSize: 10.5, fontWeight: 700, color: '#5A27E0', background: '#EDE7FB', border: 'none', borderRadius: 999, padding: '3px 9px', cursor: 'pointer' }}>{n.matter_ref} <PenLine size={10} /></button>
                   ) : (
-                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} style={{ ...S.miniBtn, color: '#5A27E0', borderColor: '#D9D2EC' }}>+ Assign to matter</button>
+                    <button onClick={() => { setAssignId(assignId === n.id ? null : n.id); setMq(''); setMResults([]); }} style={{ ...S.miniBtn, color: '#5A27E0', borderColor: '#D9D2EC' }}>+ Assign to case</button>
                   )}
                 </div>
 
@@ -246,7 +246,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
 
                 {assignId === n.id && (
                   <div style={{ marginTop: 8, border: '1px solid #E7E2F3', borderRadius: 8, padding: 8, background: '#fff' }}>
-                    <input autoFocus value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search matters (ref, address, name)…" style={S.input} />
+                    <input autoFocus value={mq} onChange={(e) => setMq(e.target.value)} placeholder="Search cases (ref, address, name)…" style={S.input} />
                     {/* Default to the matter that's open in the pane, until the user starts filtering. */}
                     {!mq.trim() && currentMatter?.ref && (
                       <button onClick={() => assign(n.id, currentMatter.id)} style={{ ...S.result, background: '#F7F5FD' }}>
@@ -279,7 +279,7 @@ export default function CallNotes({ onClose, currentMatter }: { onClose: () => v
                 {/* Add follow-up tasks for the matter this call was assigned to. */}
                 {taskFor === n.id && n.matter_id && (
                   <div style={{ display: 'flex', gap: 6, marginTop: 8, alignItems: 'center' }}>
-                    <input autoFocus value={taskText} onChange={(e) => setTaskText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTask(n.matter_id!); }} placeholder={`New task for ${n.matter_ref || 'this matter'}…`} style={S.input} />
+                    <input autoFocus value={taskText} onChange={(e) => setTaskText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTask(n.matter_id!); }} placeholder={`New task for ${n.matter_ref || 'this case'}…`} style={S.input} />
                     <button onClick={() => addTask(n.matter_id!)} disabled={!taskText.trim()} style={{ ...S.miniBtn, background: '#5A27E0', color: '#fff', borderColor: '#5A27E0', opacity: taskText.trim() ? 1 : 0.5 }}>Add</button>
                   </div>
                 )}

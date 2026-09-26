@@ -20,7 +20,11 @@ const CSS = `
 .ig-row:hover{border-color:#c4b5fd}
 .ig-row b{font-size:13px}
 .ig-row span{font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ig-search{width:100%;max-width:420px;border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;margin-bottom:10px}
+.ig-find{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.ig-search{flex:1;min-width:220px;max-width:420px;border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
+.ig-sel{border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff}
+.ig-count{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
+.ig-row .st{margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:99px;padding:1px 8px;flex:0 0 auto}
 `;
 
 /** `firmOwned`: the firm enters its own credentials, so unconfigured just means not connected yet. */
@@ -33,25 +37,32 @@ function state(s: Status | null | undefined, firmOwned = false) {
   return { label: 'Not connected', bg: '#fef3c7', fg: '#78350f', dot: '#d97706' };
 }
 
-interface MatterRow { id: string; matter_ref: string; property_address: string }
+interface MatterRow { id: string; matter_ref: string; property_address: string; status: string }
 
 export default function ToolsPage() {
   const [leap, setLeap] = useState<Status | null | undefined>(undefined);
   const [intouch, setIntouch] = useState<Status | null | undefined>(undefined);
   const [q, setQ] = useState('');
+  const [status, setStatus] = useState<'open' | 'closed' | 'all'>('open');
   const [matters, setMatters] = useState<MatterRow[]>([]);
+  const [total, setTotal] = useState(0);
   useEffect(() => {
     api<Status>('/integrations/leap/status').then(setLeap).catch(() => setLeap(null));
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
   }, []);
   useEffect(() => {
     const t = setTimeout(() => {
-      api<{ matters?: Array<{ id: string; matterRef: string; propertyAddress: string }> }>(`/matters?q=${encodeURIComponent(q)}`)
-        .then((r) => setMatters((r.matters ?? []).map((m) => ({ id: m.id, matter_ref: m.matterRef, property_address: m.propertyAddress }))))
-        .catch(() => setMatters([]));
+      api<{ matters?: Array<{ id: string; matterRef: string; propertyAddress: string; status: string }>; total?: number }>(
+        `/matters?q=${encodeURIComponent(q)}&status=${status}&limit=25`
+      )
+        .then((r) => {
+          setMatters((r.matters ?? []).map((m) => ({ id: m.id, matter_ref: m.matterRef, property_address: m.propertyAddress, status: m.status })));
+          setTotal(r.total ?? 0);
+        })
+        .catch(() => { setMatters([]); setTotal(0); });
     }, 200);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, status]);
   const cards = [
     { name: 'LEAP', href: paths.leap, s: leap, firmOwned: false },
     { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch, firmOwned: true },
@@ -82,15 +93,25 @@ export default function ToolsPage() {
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2><p className="ig-what">Every stage, command and gate the engine knows.</p></a>
         <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Shadow review</h2><p className="ig-what">What the engine would have done, for checking before it is trusted.</p></a>
       </div>
-      <h2 className="ig-h2">Engine matter pages</h2>
-      <input className="ig-search" placeholder="Find a matter by reference or address" value={q} onChange={(e) => setQ(e.target.value)} />
+      <h2 className="ig-h2">Engine case pages</h2>
+      <div className="ig-find">
+        <input className="ig-search" placeholder="Find a case by reference, address or client" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select className="ig-sel" value={status} onChange={(e) => setStatus(e.target.value as 'open' | 'closed' | 'all')}>
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+          <option value="all">All</option>
+        </select>
+        <span className="ig-count">{total > matters.length ? `${matters.length} of ${total}` : `${total}`}</span>
+      </div>
       {matters.map((m) => (
         <a key={m.id} className="ig-row" href={paths.engineMatter(m.id)}>
           <b>{m.matter_ref}</b>
           <span>{m.property_address}</span>
+          {status === 'all' && <span className="st">{m.status === 'CLOSED' ? 'Closed' : 'Open'}</span>}
         </a>
       ))}
-      {matters.length === 0 && <p className="ig-what">No matters match.</p>}
+      {matters.length === 0 && <p className="ig-what">No cases match.</p>}
+      {total > matters.length && <p className="ig-what">Showing the newest {matters.length}. Narrow it with a search.</p>}
     </div>
   );
 }

@@ -301,7 +301,7 @@ export async function onStageAdvanced(
         kind: 'STATUS_CHANGED',
         headline: `Moved to the ${label} stage`,
         did: 'Raised a task and lined up this checkpoint’s workflow',
-        action: `Update the client — matter now at the ${label} stage`,
+        action: `Update the client — case now at the ${label} stage`,
         dedupKey: `stage:${matterId}:${stage}`,
       }).catch(() => {});
       return;

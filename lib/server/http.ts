@@ -44,7 +44,7 @@ export function fail(error: unknown) {
   // internally-linked matters (42501) and the shared-handler conflict check (23514).
   const pgCode = (error as { code?: unknown } | null)?.code;
   if (pgCode === '42501' && error instanceof Error && /ethical wall/.test(error.message)) {
-    return NextResponse.json({ error: 'You act for the other side of this transaction; this matter is walled off from you.', action: 'Ask the assigned handler or compliance.' }, { status: 403 });
+    return NextResponse.json({ error: 'You act for the other side of this transaction; this case is walled off from you.', action: 'Ask the assigned handler or compliance.' }, { status: 403 });
   }
   if (pgCode === '23514' && error instanceof Error && /conflict of interest/.test(error.message)) {
     return NextResponse.json({ error: error.message, action: 'A handler cannot act for both sides of a linked chain. Use the documented-consent process outside this system.' }, { status: 409 });

@@ -119,7 +119,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
     <div style={card}>
       <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>Already using a case management system?</div>
       <div style={{ fontSize: 13, color: '#475569', marginTop: 3, lineHeight: 1.5 }}>
-        Export your matter list from LEAP, Osprey, Proclaim or whatever you run, and drop the CSV
+        Export your case list from LEAP, Osprey, Proclaim or whatever you run, and drop the CSV
         here. CONVEYi keeps your own references, so its records line up with your files.
       </div>
 
@@ -151,7 +151,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
 
       {preview && !preview.usable && (
         <div style={{ marginTop: 10, fontSize: 13, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: 10 }}>
-          None of the columns looked like matter data. Check it's the right export — we look for a
+          None of the columns looked like case data. Check it's the right export — we look for a
           reference and a property address, plus buyer, seller, other side and key dates if present.
           {preview.unmapped.length > 0 && <div style={{ marginTop: 4, color: '#a16207' }}>Found: {preview.unmapped.join(', ')}</div>}
         </div>
@@ -174,7 +174,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginTop: 10 }}>
-            {preview.importable} matter{preview.importable === 1 ? '' : 's'} to import
+            {preview.importable} case{preview.importable === 1 ? '' : 's'} to import
             {preview.skipped > 0 && <span style={{ fontWeight: 400, color: '#64748b' }}> · {preview.skipped} skipped</span>}
           </div>
 
@@ -205,7 +205,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
               ? progress
                 ? `Importing ${progress.done}/${progress.total}…`
                 : 'Importing…'
-              : `Import ${preview.importable} matter${preview.importable === 1 ? '' : 's'}`}
+              : `Import ${preview.importable} case${preview.importable === 1 ? '' : 's'}`}
           </button>
           <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 6 }}>
             Each one gets its own OneDrive folder, so this takes a moment.
@@ -215,7 +215,7 @@ export default function MatterImport({ onImported }: { onImported?: (n: number) 
 
       {result && (
         <div style={{ marginTop: 12, fontSize: 13, color: '#065f46', background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 8, padding: 10 }}>
-          Imported {result.created} matter{result.created === 1 ? '' : 's'}.
+          Imported {result.created} case{result.created === 1 ? '' : 's'}.
           {result.failed > 0 && <span style={{ color: '#92400e' }}> {result.failed} could not be created.</span>}
         </div>
       )}

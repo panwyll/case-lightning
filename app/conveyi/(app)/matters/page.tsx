@@ -60,7 +60,7 @@ export default function CaseViewPage() {
         <a key={r.matterId} className="cv-row" href={paths.matter(r.matterId)}>
           <House band={r.health?.band ?? 'normal'} size={24} />
           <span style={{ minWidth: 0 }}>
-            <div className="cv-addr">{r.propertyAddress ?? r.matterRef ?? 'Matter'}</div>
+            <div className="cv-addr">{r.propertyAddress ?? r.matterRef ?? 'Case'}</div>
             <div className="cv-ref">{r.matterRef}{r.dayOfCase ? ` · day ${r.dayOfCase}` : ''}</div>
           </span>
           <span className="cv-cell">{LIFECYCLE_LABEL[r.lifecycle] ?? r.lifecycle}</span>

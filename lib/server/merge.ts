@@ -39,7 +39,7 @@ export interface MergeResult {
 }
 
 export async function mergeMatters(user: SessionUser, keepId: string, mergeId: string): Promise<MergeResult> {
-  if (keepId === mergeId) throw new Error('Pick two different matters to merge.');
+  if (keepId === mergeId) throw new Error('Pick two different cases to merge.');
 
   const tenantId = user.tenantId;
   const keep = await queryOne<MatterLite>(
@@ -52,8 +52,8 @@ export async function mergeMatters(user: SessionUser, keepId: string, mergeId: s
      where id = $1 and tenant_id = $2 and status <> 'MERGED'`,
     [mergeId, tenantId]
   );
-  if (!keep) throw new Error('The matter to keep was not found.');
-  if (!merge) throw new Error('The matter to merge was not found (it may already be merged).');
+  if (!keep) throw new Error('The case to keep was not found.');
+  if (!merge) throw new Error('The case to merge was not found (it may already be merged).');
 
   await transaction(async (c) => {
     // Identifiers — drop any on the merge matter that the survivor already has,
@@ -99,7 +99,7 @@ export async function mergeMatters(user: SessionUser, keepId: string, mergeId: s
         tenantId,
         keepId,
         `Merged in ${merge.matter_ref}`,
-        `${merge.matter_ref} was merged into this matter. Its previous folder: ${merge.folder_web_url ?? '(none)'}`,
+        `${merge.matter_ref} was merged into this case. Its previous folder: ${merge.folder_web_url ?? '(none)'}`,
         JSON.stringify({ mergedFrom: mergeId, mergedRef: merge.matter_ref, folderWebUrl: merge.folder_web_url }),
       ]
     );

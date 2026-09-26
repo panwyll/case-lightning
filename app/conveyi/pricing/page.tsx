@@ -19,12 +19,12 @@ const included = [
   'Per-case OneDrive knowledge base & live case board',
   'Unlimited email volume & onboarding lookback',
   'Unlimited seats — the whole firm, no per-user fee',
-  'Matter board, workload dashboard & assignment',
+  'Case board, workload dashboard & assignment',
   'Team roles & admin oversight',
 ];
 
 const whatCounts = [
-  ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a matter, that case is opened and £100 goes on the month’s invoice. Never again for that case.'],
+  ['Charged once per case', 'The first time CONVEYi drafts a reply, reviews or generates a document, or reconciles a case, that case is opened and £100 goes on the month’s invoice. Never again for that case.'],
   ['Free: everything before that', 'Triage, matching, summaries and the knowledge base run on every email at no charge. A case you never draft on costs nothing.'],
   ['Free: your trial', 'Cases you open during the free trial are never charged — not then, and not when you subscribe.'],
 ];
@@ -110,7 +110,7 @@ export default function PricingPage() {
       <section className="bg-ink px-6 py-20 text-paper md:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="font-serif text-4xl font-semibold tracking-tight md:text-5xl">One case at a time.</h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Try it on a live matter for free. Add the whole team when you’re ready — it costs nothing until they open a case.</p>
+          <p className="mx-auto mt-4 max-w-xl text-lg text-paper/70">Try it on a live case for free. Add the whole team when you’re ready — it costs nothing until they open a case.</p>
           <div className="mt-8 flex justify-center">
             <Cta label="Get started" href={ctaHref(ROUTES.signup, PAGE_SOURCE, 'cta_signup')} dataCta="cta_signup" size="lg" />
           </div>

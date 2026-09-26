@@ -51,7 +51,7 @@ const KIND_ICON: Record<string, string> = { STATUS_CHANGED: '📌', DOC_RECEIVED
 /** The "I'm on top of it" briefing: grouped by matter, each item = what came up · what I did · your action. */
 function composeDigest(rows: Row[]): { subject: string; html: string } {
   const n = rows.length;
-  const subject = n === 1 ? `Your matters — ${rows[0].matter_ref ?? 'an update'} needs a look` : `Your matters — ${n} updates need a look`;
+  const subject = n === 1 ? `Your cases — ${rows[0].matter_ref ?? 'an update'} needs a look` : `Your cases — ${n} updates need a look`;
 
   const byMatter = new Map<string, Row[]>();
   for (const r of rows) {
@@ -59,7 +59,7 @@ function composeDigest(rows: Row[]): { subject: string; html: string } {
     (byMatter.get(k) ?? byMatter.set(k, []).get(k)!).push(r);
   }
 
-  let body = `<p style="font-size:15px">Here's what's come up across your matters. I've handled what I can — a few need you.</p>`;
+  let body = `<p style="font-size:15px">Here's what's come up across your cases. I've handled what I can — a few need you.</p>`;
   for (const [ref, items] of byMatter) {
     body += `<div style="margin:14px 0"><div style="font-weight:700;font-size:14px;color:#0f172a;border-bottom:1px solid #e5e7eb;padding-bottom:4px">${esc(ref)}</div>`;
     for (const it of items) {

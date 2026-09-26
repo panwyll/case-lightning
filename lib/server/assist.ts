@@ -280,7 +280,7 @@ async function buildFast(user: SessionUser, input: AssistInput): Promise<{ fast:
           propertyAddress: matter!.propertyAddress ?? '',
           score: 1,
           band: 'AUTO' as const,
-          signals: [{ kind: 'LINKED_THREAD' as const, detail: 'Linked to this matter', weight: 1 }],
+          signals: [{ kind: 'LINKED_THREAD' as const, detail: 'Linked to this case', weight: 1 }],
         },
         ...triage.candidates.filter((c) => c.matterId !== matter!.id),
       ]

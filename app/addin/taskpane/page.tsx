@@ -242,10 +242,10 @@ export default function Taskpane() {
     { target: '[data-tour="worklist"]', title: 'What needs you', body: 'Chases and drafts waiting.' },
     { target: '[data-tour="tab-email"]', title: 'Email', body: 'The situation, and a reply ready to approve.', before: () => { setHomeView(false); setTab('email'); } },
     { target: '[data-tour="tab-house"]', title: 'House', body: 'The property record.', before: () => { setHomeView(false); setTab('house'); } },
-    { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The matter’s OneDrive folder.', before: () => { setHomeView(false); setTab('paperclip'); } },
+    { target: '[data-tour="tab-paperclip"]', title: 'Files', body: 'The case’s OneDrive folder.', before: () => { setHomeView(false); setTab('paperclip'); } },
     { target: '[data-tour="tab-log"]', title: 'Log', body: 'Everything that’s happened.', before: () => { setHomeView(false); setTab('log'); } },
     { target: '[data-tour="callnotes"]', title: 'Call notes', body: 'Record a call — transcribed and filed.' },
-    { target: '[data-tour="newmatter"]', title: 'New matter', body: 'Matter and OneDrive folder in one go.' },
+    { target: '[data-tour="newmatter"]', title: 'New case', body: 'Case and OneDrive folder in one go.' },
     { target: '[data-tour="admin"]', title: 'Admin centre', body: 'The full web app.' },
     { target: '[data-tour="account"]', title: 'Account', body: 'Plan, usage and firm setup.' },
   ];
@@ -851,7 +851,7 @@ export default function Taskpane() {
           edits: obRefEdit[c.id]?.trim() ? { matterRef: obRefEdit[c.id].trim() } : undefined,
         }));
       await api('/onboarding/confirm', { method: 'POST', body: JSON.stringify({ selections }) });
-      setStatus('Provisioning matters…');
+      setStatus('Provisioning cases…');
       await refreshOnboarding();
       return true;
     });
@@ -983,7 +983,7 @@ export default function Taskpane() {
     if (!conversationId) throw new Error('Open an email so CONVEYi can read the thread.');
   };
   const requireMatter = () => {
-    if (!matterId) throw new Error('Link or create a matter first.');
+    if (!matterId) throw new Error('Link or create a case first.');
   };
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -1101,7 +1101,7 @@ export default function Taskpane() {
   }
 
   async function createMatter() {
-    await run('Creating matter', async () => {
+    await run('Creating case', async () => {
       const body = {
         matterRef: form.matterRef.trim() || suggestedRef(),
         propertyAddress: form.propertyAddress,
@@ -1126,14 +1126,14 @@ export default function Taskpane() {
           body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, messageId: messageId || undefined, subject }),
         });
       }
-      setStatus('Matter created — OneDrive folder provisioned.');
+      setStatus('Case created — OneDrive folder provisioned.');
       await loadMatter(created.id);
     });
   }
 
   async function loadMatter(id = matterId) {
-    await run('Loading matter', async () => {
-      if (!id) throw new Error('No matter id');
+    await run('Loading case', async () => {
+      if (!id) throw new Error('No case id');
       setMatterInfo(await api(`/matters/${id}`));
     });
   }
@@ -1141,7 +1141,7 @@ export default function Taskpane() {
   // Update a matter field (stage / status) and refresh the panel.
   async function updateMatterField(patch: Record<string, unknown>) {
     if (!matterId) return;
-    await run('Updating matter', async () => {
+    await run('Updating case', async () => {
       await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify(patch) });
       await loadMatter();
       return true;
@@ -1178,8 +1178,8 @@ export default function Taskpane() {
   // Link this email's thread to a matter the user picked from search (rather than
   // an AI candidate). link-thread is the direct association; no triage to apply.
   async function linkExistingMatter(m: { id: string; matterRef: string; propertyAddress: string }) {
-    await run('Linking matter', async () => {
-      if (!conversationId) throw new Error('Open an email to link it to a matter.');
+    await run('Linking case', async () => {
+      if (!conversationId) throw new Error('Open an email to link it to a case.');
       await api(`/matters/${m.id}/link-thread`, {
         method: 'POST',
         body: JSON.stringify({ graphThreadId: conversationId, graphConversationId: conversationId, messageId: messageId || undefined, subject }),
@@ -1809,7 +1809,7 @@ export default function Taskpane() {
   const boxedMsg =
     plan?.status === 'past_due'
       ? 'Your last payment failed. Update your card to keep using CONVEYi.'
-      : 'Your trial has ended. Subscribe to keep using CONVEYi — your matters and data are safe.';
+      : 'Your trial has ended. Subscribe to keep using CONVEYi — your cases and data are safe.';
 
   return (
     <div style={S.page}>
@@ -1855,8 +1855,8 @@ export default function Taskpane() {
               style={{ ...S.iconBtn, color: '#5A27E0' }}
               data-tour="newmatter"
               onClick={() => setShowCreateMatter(true)}
-              title="New matter"
-              aria-label="New matter"
+              title="New case"
+              aria-label="New case"
             >
               <Icon name="housePlus" size={19} />
             </button>
@@ -1914,10 +1914,10 @@ export default function Taskpane() {
                   add-in to say what it does and why it's worth signing in BEFORE asking. */}
               <p style={{ fontSize: 13.5, lineHeight: 1.5, color: '#1e293b', margin: '0 0 6px' }}>
                 CONVEYi reads the email you have open, matches it to the right conveyancing
-                matter, and prepares a reply for you to approve — without leaving Outlook.
+                case, and prepares a reply for you to approve — without leaving Outlook.
               </p>
               <p style={{ fontSize: 12, lineHeight: 1.5, color: '#64748b', margin: '0 0 12px' }}>
-                It files documents to your firm’s own OneDrive and keeps every matter’s tasks and status in one place.
+                It files documents to your firm’s own OneDrive and keeps every case’s tasks and status in one place.
                 Built for UK conveyancing teams — sign in with your work Microsoft account.
               </p>
               <button style={S.primary} onClick={() => connect()}>
@@ -1945,9 +1945,9 @@ export default function Taskpane() {
           {!homeView && (() => {
             const ref = matterInfo?.matter?.matter_ref ?? assist?.matter?.matterRef ?? topCandidate?.matterRef ?? null;
             const meta: Record<typeof matchKind, { icon: React.ReactNode; dot: string; name: string; style: React.CSSProperties }> = {
-              found: { icon: <Check size={16} />, dot: '#16a34a', name: ref || 'Matter found', style: S.heroFound },
+              found: { icon: <Check size={16} />, dot: '#16a34a', name: ref || 'Case found', style: S.heroFound },
               partial: { icon: '!', dot: '#f59e0b', name: ref || 'Unconfirmed match', style: S.heroPartial },
-              none: { icon: '!', dot: '#dc2626', name: 'No matter found', style: S.heroNone },
+              none: { icon: '!', dot: '#dc2626', name: 'No case found', style: S.heroNone },
               pending: assistError
                 ? { icon: '!', dot: '#dc2626', name: 'Couldn’t read this email', style: S.heroNone }
                 : { icon: '', dot: '#94a3b8', name: messageId ? 'Reading this email…' : 'Open an email', style: S.heroPending },
@@ -1958,7 +1958,7 @@ export default function Taskpane() {
               <button
                 style={{ ...S.hero, ...m.style, ...(drawerOpen ? S.heroOpen : null) }}
                 onClick={() => setLinkOpen((o) => !o)}
-                title="Show matter options"
+                title="Show case options"
                 aria-expanded={drawerOpen}
               >
                 <span style={{ ...S.statusDot, background: m.dot }}>
@@ -2019,7 +2019,7 @@ export default function Taskpane() {
                     value={wlMeta.assignee}
                     onChange={(e) => reloadWorklist(e.target.value)}
                     style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, padding: '6px 8px', borderRadius: 8, border: '1px solid #D9D2EC', background: '#fff', color: '#1C1530', cursor: 'pointer' }}
-                    title="Filter the worklist by who owns the matter"
+                    title="Filter the worklist by who owns the case"
                   >
                     <option value="">Anyone</option>
                     {teamMembers.map((m) => (
@@ -2154,7 +2154,7 @@ export default function Taskpane() {
                   const parties = [...(m.buyer_names ?? []), ...(m.seller_names ?? [])].filter(Boolean) as string[];
                   const events = tl.timeline ?? [];
                   const bits: string[] = [];
-                  bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Matter'}${m.property_address ? ` of ${m.property_address}` : ''}`);
+                  bits.push(`${m.track ? String(m.track)[0].toUpperCase() + String(m.track).slice(1).toLowerCase() : 'Case'}${m.property_address ? ` of ${m.property_address}` : ''}`);
                   if (parties.length) bits.push(`for ${parties.slice(0, 3).join(' & ')}`);
                   if (price) bits.push(`at ${price}`);
                   let execSummary = bits.join(' ').trim();
@@ -2242,7 +2242,7 @@ export default function Taskpane() {
                         >
                           <option value="smart">Smart order</option>
                           <option value="due">By due date</option>
-                          <option value="matter">By matter</option>
+                          <option value="matter">By case</option>
                         </select>
                       </div>
                       {(() => {
@@ -2328,12 +2328,12 @@ export default function Taskpane() {
               {matterId && !changing ? (
                 // Linked: show the matter, one way to change it.
                 <>
-                  <Label>Linked Matter</Label>
+                  <Label>Linked Case</Label>
                   <div style={S.candidate}>
-                    <strong style={{ fontSize: 13 }}>{linkedRef || 'This matter'}</strong>
+                    <strong style={{ fontSize: 13 }}>{linkedRef || 'This case'}</strong>
                     {linkedAddr && <div style={{ fontSize: 12, color: '#475569' }}>{linkedAddr}</div>}
                   </div>
-                  <button style={S.secondary} onClick={() => setChanging(true)}>Change matter</button>
+                  <button style={S.secondary} onClick={() => setChanging(true)}>Change case</button>
                 </>
               ) : (
                 // Chooser: candidates to pick from, or create a new matter.
@@ -2344,7 +2344,7 @@ export default function Taskpane() {
                   {showNewMatter ? (
                     <div style={{ ...S.candidate, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                       <div>
-                        <strong style={{ fontSize: 13 }}>New matter</strong>
+                        <strong style={{ fontSize: 13 }}>New case</strong>
                         <div style={{ fontSize: 12, color: '#64748b' }}>Complete the form below to create it.</div>
                       </div>
                       <button style={S.secondary} onClick={openNewMatter}>Cancel</button>
@@ -2353,7 +2353,7 @@ export default function Taskpane() {
                   <>
                   {candidates.length > 0 ? (
                     <>
-                      <Label>Likely Matters</Label>
+                      <Label>Likely Cases</Label>
                       {candidates.map((c: any) => {
                         const pct = Math.round((c.score ?? 0) * 100);
                         const auto = c.band === 'AUTO';
@@ -2393,7 +2393,7 @@ export default function Taskpane() {
                        blank form. Everything here is still confirmed by the user. */
                     <div style={{ ...S.candidate, background: '#faf7ff', borderColor: '#ddd0fb', marginBottom: 8 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 700, color: '#5A27E0', marginBottom: 4 }}>
-                        Looks like a new matter
+                        Looks like a new case
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
                         {assist.proposal.propertyAddress || 'Property not identified'}
@@ -2412,12 +2412,12 @@ export default function Taskpane() {
                       </div>
                     </div>
                   ) : (
-                    <p style={{ ...S.muted, marginBottom: 8 }}>No suggested matter for this email.</p>
+                    <p style={{ ...S.muted, marginBottom: 8 }}>No suggested case for this email.</p>
                   )}
 
                   <div style={S.rowWrap}>
                     <button style={!matterId ? S.primary : S.secondary} onClick={openNewMatter}>
-                      {assist?.proposal && !matterId ? 'Create this matter' : '+ New matter'}
+                      {assist?.proposal && !matterId ? 'Create this case' : '+ New case'}
                     </button>
                     {matterId && (
                       <button style={S.secondary} onClick={() => setChanging(false)}>Keep current</button>
@@ -2431,7 +2431,7 @@ export default function Taskpane() {
                     );
                     return (
                       <>
-                        <SubLabel>Link a Different Matter</SubLabel>
+                        <SubLabel>Link a Different Case</SubLabel>
                         <input
                           style={S.input}
                           placeholder="Search by reference or address…"
@@ -2459,7 +2459,7 @@ export default function Taskpane() {
                           ))}
                         </div>
                         {matterSearch.trim() && others.length === 0 && (
-                          <p style={S.muted}>No matters match “{matterSearch.trim()}”.</p>
+                          <p style={S.muted}>No cases match “{matterSearch.trim()}”.</p>
                         )}
                       </>
                     );
@@ -2492,7 +2492,7 @@ export default function Taskpane() {
                   style={{ ...S.tabBtn, ...(active ? S.tabBtnActive : {}), ...(locked ? S.tabBtnLocked : {}) }}
                   onClick={() => { if (!locked) setTab(key); }}
                   disabled={locked}
-                  title={locked ? 'Link a matter first' : lbl}
+                  title={locked ? 'Link a case first' : lbl}
                   aria-label={lbl}
                   aria-selected={active}
                 >
@@ -2831,7 +2831,7 @@ export default function Taskpane() {
 
           {tab === 'email' && showNewMatter && (
             <Card>
-              <Label>New Matter</Label>
+              <Label>New Case</Label>
               <Field label="Your reference (optional)" value={form.matterRef} onChange={(v) => setForm({ ...form, matterRef: v })} placeholder={`auto: ${suggestedRef()}`} />
               <Field label="Property address" value={form.propertyAddress} onChange={(v) => setForm({ ...form, propertyAddress: v })} placeholder="14 Oak Street, London SW1A 1AA" />
               <TagInput label="Buyers" values={form.buyerNames} onChange={(v) => setForm({ ...form, buyerNames: v })} placeholder="type a name, press Enter" />
@@ -2895,7 +2895,7 @@ export default function Taskpane() {
                     <textarea
                       key={matterId}
                       defaultValue={savedNotes}
-                      placeholder="Notes on this matter…"
+                      placeholder="Notes on this case…"
                       onBlur={(e) => { if (e.target.value !== savedNotes) updateMatterField({ notes: e.target.value }); }}
                       style={{ width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', border: '1px solid #e2e8f0', borderRadius: 8, minHeight: 60, resize: 'vertical', fontFamily: 'inherit', color: '#0f172a', lineHeight: 1.45 }}
                     />
@@ -3074,7 +3074,7 @@ export default function Taskpane() {
                           <thead>
                             <tr style={{ background: '#f8fafc' }}>
                               <th style={reconTh}>Fact</th>
-                              <th style={reconTh}>Matter</th>
+                              <th style={reconTh}>Case</th>
                               <th style={reconTh}>Documents</th>
                             </tr>
                           </thead>
@@ -3244,7 +3244,7 @@ export default function Taskpane() {
                             style={{ ...S.pillBtn, opacity: busy ? 0.6 : 1 }}
                             onClick={() => generateTemplate(tpl)}
                             disabled={busy || !!genTemplateId}
-                            title="Fill this template with the matter's data and save it to Case files"
+                            title="Fill this template with the case's data and save it to Case files"
                           >
                             {busy ? 'Generating…' : 'Generate'}
                           </button>
@@ -3290,7 +3290,7 @@ export default function Taskpane() {
 
             {(!obJob || ['COMPLETED', 'CANCELLED', 'FAILED'].includes(obJob.status)) && (
               <>
-                <p style={S.muted}>Find live cases in your mailbox and import them as matters — you pick which to keep.</p>
+                <p style={S.muted}>Find live cases in your mailbox and import them — you pick which to keep.</p>
                 <SubLabel>How Far Back</SubLabel>
                 <select style={S.input} value={obLookback} onChange={(e) => setObLookback(e.target.value as '3' | 'unlimited')}>
                   <option value="3">Last 3 months</option>
@@ -3300,9 +3300,9 @@ export default function Taskpane() {
                 {/* One-time nudge: per-matter Inbox subfolders are opt-in. */}
                 {subfolderPref && !subfolderPref.prompted && me?.role === 'ADMIN' && (
                   <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 12px', margin: '4px 0 10px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#075985', marginBottom: 4 }}>Tidy matched mail into matter folders?</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#075985', marginBottom: 4 }}>Tidy matched mail into case folders?</div>
                     <p style={{ fontSize: 12, color: '#334155', margin: '0 0 8px', lineHeight: 1.45 }}>
-                      CONVEYi can give each matter its own Inbox subfolder and move matched emails into it as you
+                      CONVEYi can give each case its own Inbox subfolder and move matched emails into it as you
                       action them. Off by default — change it any time in <strong>Admin → Policy</strong>.
                     </p>
                     <div style={{ display: 'flex', gap: 6 }}>
@@ -3330,7 +3330,7 @@ export default function Taskpane() {
                   {obJob.status === 'SCANNING' && `Scanning mailbox — ${obJob.messages_scanned} emails read…`}
                   {obJob.status === 'CLUSTERING' && `Grouping ${obJob.messages_scanned} emails into cases…`}
                   {obJob.status === 'PROPOSING' && `Identifying cases — ${obJob.cases_proposed} found so far…`}
-                  {obJob.status === 'PROVISIONING' && `Provisioning matters — ${obJob.cases_onboarded} done…`}
+                  {obJob.status === 'PROVISIONING' && `Provisioning cases — ${obJob.cases_onboarded} done…`}
                 </p>
                 <button style={S.secondary} onClick={cancelOnboarding}>
                   Cancel
@@ -3384,7 +3384,7 @@ export default function Taskpane() {
                               {c.rationale && <div style={{ fontSize: 11, color: '#64748b' }}>{c.rationale}</div>}
                               <input
                                 style={{ ...S.input, marginTop: 4 }}
-                                placeholder={`Matter ref (default: ${c.proposed_matter_ref || 'auto'})`}
+                                placeholder={`Case ref (default: ${c.proposed_matter_ref || 'auto'})`}
                                 value={obRefEdit[c.id] ?? ''}
                                 onChange={(e) => setObRefEdit((r) => ({ ...r, [c.id]: e.target.value }))}
                               />

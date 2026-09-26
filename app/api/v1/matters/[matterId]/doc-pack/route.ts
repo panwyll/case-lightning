@@ -64,7 +64,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       `select folder_path from matter where id = $1 and tenant_id = $2`,
       [matterId, user.tenantId]
     );
-    if (!matter?.folder_path) return fail(new Error('Matter folder not provisioned.'));
+    if (!matter?.folder_path) return fail(new Error('Case folder not provisioned.'));
 
     // Look up the output filename before generating, so a conflict short-circuits
     // the (potentially AI-billed) fill.
