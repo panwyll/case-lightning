@@ -21,7 +21,14 @@ export async function GET() {
       engine().eventStore.listPendingDecisions(user.tenantId, { limit: 500 })
         .then((rows) => rows.filter((d) => d.kind !== 'auto_clear' && (!d.assignedTo || d.assignedTo === user.userId)).length)
         .catch(() => 0),
-      missingFor('graph').length === 0 ? toFileCount(user).catch(() => 0) : Promise.resolve(0),
+      missingFor('graph').length === 0
+        ? toFileCount(user).catch((e) => {
+            // Fail soft to zero, but say why in the log: a missing email_queue table (migration
+            // 081 not applied) looks exactly like an empty queue from the sidebar.
+            console.warn('[nav counts] email count failed:', (e as Error).message);
+            return 0;
+          })
+        : Promise.resolve(0),
     ]);
     return ok({ tasks, email });
   } catch (error) {

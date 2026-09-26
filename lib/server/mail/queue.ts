@@ -183,9 +183,9 @@ async function selfAddress(userId: string): Promise<string> {
  * mailbox is seen, then one page of the newest mail every time — the subscription should
  * have delivered it, but a lapsed subscription must not mean a silent hole.
  */
-export async function sweepForRead(user: QueueUser): Promise<void> {
-  const s = await queryOne<{ full_swept_at: string | null }>(
-    `select full_swept_at from email_queue_sweep where tenant_id = $1 and user_id = $2`,
+export async function sweepForRead(user: QueueUser, opts: { throttleMs?: number } = {}): Promise<void> {
+  const s = await queryOne<{ full_swept_at: string | null; recent_swept_at: string | null }>(
+    `select full_swept_at, recent_swept_at from email_queue_sweep where tenant_id = $1 and user_id = $2`,
     [user.tenantId, user.userId]
   ).catch(() => null);
   if (!s?.full_swept_at) {
@@ -197,6 +197,8 @@ export async function sweepForRead(user: QueueUser): Promise<void> {
     );
     return;
   }
+  // The badge asks on every shell load; one Graph page every few minutes is plenty there.
+  if (opts.throttleMs && s.recent_swept_at && Date.now() - new Date(s.recent_swept_at).getTime() < opts.throttleMs) return;
   await sweepInbox(user, { pages: 1 });
   await query(`update email_queue_sweep set recent_swept_at = now() where tenant_id = $1 and user_id = $2`, [user.tenantId, user.userId]);
 }

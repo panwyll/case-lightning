@@ -55,7 +55,13 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
   return { items, nextCursor, toFile: counts.toFile, bulk: counts.bulk };
 }
 
-/** What the sidebar shows: case mail to file, the whole queue, not a page of it. */
+/**
+ * What the sidebar shows: case mail to file, the whole queue, not a page of it. The
+ * badge also keeps the queue filled — the backlog sweep the first time a mailbox is
+ * seen, then one page of the newest mail at most every five minutes — so a firm that
+ * never opens the Email page still sees the number climb as mail arrives.
+ */
 export async function toFileCount(user: QueueUser): Promise<number> {
+  await sweepForRead(user, { throttleMs: 5 * 60_000 }).catch((e) => console.warn('[nav counts] sweep failed', (e as Error).message));
   return (await queueCounts(user)).toFile;
 }
