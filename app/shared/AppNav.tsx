@@ -2,9 +2,9 @@
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import { paths } from '@/lib/paths';
+import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Plug, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -57,7 +57,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
       { key: 'policy', label: 'Policy', icon: Shield, href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
-      { key: 'integrations', label: 'Integrations', icon: Plug, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) },
+      { key: 'developer', label: 'Developer', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`) },
     ],
   },
   {
