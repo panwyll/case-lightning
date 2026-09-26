@@ -235,14 +235,14 @@ function Tip({ text, label, icon, href }: { text: ReactNode; label: string; icon
 function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
   const r = RAG[lane.state];
   const { Icon, colour } = STATE_ICON[lane.state];
-  const done = lane.tiles.filter((x) => DONE_STATUSES.has(x.status)).length;
-  const pct = lane.tiles.length ? Math.round((done / lane.tiles.length) * 100) : lane.state === 'done' ? 100 : 0;
   const steps = lane.tiles.filter((x) => !x.depth);
+  const done = steps.filter((x) => DONE_STATUSES.has(x.status)).length;
+  const pct = steps.length ? Math.round((done / steps.length) * 100) : lane.state === 'done' ? 100 : 0;
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
         <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}</span>
-        {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{lane.tiles.length}</span></span>}
+        {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
       {open && (
@@ -481,10 +481,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const contracts = view.contracts ?? {};
   const [sheet, setSheet] = useState<{ laneId: string; type: string; extra: Record<string, unknown> } | null>(null);
   const [docs, setDocs] = useState<CaseDocument[] | null>(null);
-  const openSheet = (laneId: string, type: string, extra: Record<string, unknown>) => {
-    setSheet({ laneId, type, extra });
-    if (!docs) api<{ documents: CaseDocument[] }>(`/matters/${matterId}/engine/documents`).then((r) => setDocs(r.documents)).catch(() => setDocs([]));
-  };
+  // The documents (with what the engine read of each) feed the Document Review steps and the completion sheets; refreshed whenever the log moves.
+  useEffect(() => {
+    let live = true;
+    api<{ documents: CaseDocument[] }>(`/matters/${matterId}/engine/documents`).then((r) => { if (live) setDocs(r.documents); }).catch(() => { if (live) setDocs([]); });
+    return () => { live = false; };
+  }, [api, matterId, view.state.stage, view.pendingDecisions.length, view.blockers.length]);
+  const openSheet = (laneId: string, type: string, extra: Record<string, unknown>) => setSheet({ laneId, type, extra });
   const act = (laneId: string, type: string, label: string, extra: Record<string, unknown> = {}, opts: { primary?: boolean; disabled?: boolean; title?: string } = {}) => {
     const c: CompletionContract | undefined = contracts[type];
     return (
