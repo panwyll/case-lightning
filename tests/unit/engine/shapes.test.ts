@@ -42,3 +42,11 @@ test('an auction needs no recorded exchange authority; a seller cannot take a bu
   await assert.rejects(h3.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'isa_provider', bankDetailsId: 'x' }), /No ISA on this matter/);
   assert.ok(stageBlockers(await h3.svc.getState(TENANT, MATTER)).length >= 0);
 });
+
+test('a case is counted for billing the moment its ID / AML check comes back resolved, and not before', async () => {
+  const { opensCase } = await import('../../../lib/server/engine/billing-reaction');
+  assert.equal(opensCase([{ type: 'matter_created' }, { type: 'id_check_requested' }]), false);
+  assert.equal(opensCase([{ type: 'id_check_result' }, { type: 'id_check_cleared' }]), true);
+  assert.equal(opensCase([{ type: 'id_check_reviewed' }]), true);
+  assert.equal(opensCase([{ type: 'search_returned' }, { type: 'search_cleared' }]), false);
+});

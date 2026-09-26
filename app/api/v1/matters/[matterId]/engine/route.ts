@@ -40,6 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
         [matterId, user.tenantId]
       ).catch(() => null),
     ]);
+    const charge = await queryOne<{ charged_at: string; billed: boolean; unbilled_reason: string | null; amount_pennies: number }>(`select charged_at, billed, unbilled_reason, amount_pennies from matter_charge where tenant_id = $1 and matter_id = $2`, [user.tenantId, matterId]).catch(() => null);
     const profile = profileOf(state.transactionType);
     return ok({
       state,
@@ -54,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       surfacedDecisions: surfacedDecisions(state),
       levels: subflows,
       contracts: COMPLETION_CONTRACTS,
-      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler } : null,
+      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, charge: charge ? { chargedAt: charge.charged_at, billed: charge.billed, reason: charge.unbilled_reason, amountPennies: charge.amount_pennies } : null } : null,
     });
   } catch (error) {
     return fail(error);

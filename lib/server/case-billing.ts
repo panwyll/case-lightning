@@ -29,7 +29,11 @@ import { stripe } from './stripe';
 import { getTenantBilling } from './plan';
 import type { UsageFeature } from './usage';
 
-/** Features whose first successful run on a matter opens (charges) the case. */
+/**
+ * Features whose first successful run on a matter opens (charges) the case. The engine
+ * also opens a case the moment its ID / AML check comes back (lib/server/engine/billing-reaction.ts),
+ * which on an engine-run case is usually first.
+ */
 export const CHARGEABLE_FEATURES: ReadonlySet<UsageFeature> = new Set<UsageFeature>([
   'DRAFT_REPLY',
   'DRAFT_UPDATE',

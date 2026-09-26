@@ -15,6 +15,7 @@
  *   clientComms    → ProductionClientComms when WhatsApp/Resend/Graph is configured (component #5); mock otherwise
  *   chaser         → ProductionChaser (draft-by-default template chases from the fee-earner mailbox); mock otherwise
  */
+import { billOnIdResolved } from './billing-reaction';
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
 import { config } from '../config';
@@ -158,7 +159,11 @@ export function productionPorts(): EnginePorts {
     _ports = {
       linked: new PgLinkedMatterNotifier(),
       documents: be.documents,
-      onEvents: be.conclusions ? (input) => be.conclusions!.onEvents(input) : undefined,
+      onEvents: async (input) => {
+        // The case is counted when its ID / AML check comes back; then whatever the backend does with conclusions.
+        await billOnIdResolved(input).catch((err) => console.warn('[case-billing] reaction failed', (err as Error).message));
+        if (be.conclusions) await be.conclusions.onEvents(input);
+      },
       extractor,
       classifier,
       summariser,

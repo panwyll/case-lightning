@@ -138,6 +138,9 @@ const PILL: Record<string, { bg: string; fg: string }> = {
   drafted: { bg: '#fef3c7', fg: '#78350f' },
   approved: { bg: '#e0e7ff', fg: '#3730a3' },
   sent: { bg: '#dcfce7', fg: '#14532d' },
+  read: { bg: '#dcfce7', fg: '#14532d' },
+  partly_read: { bg: '#fef3c7', fg: '#78350f' },
+  not_read: { bg: '#f1f5f9', fg: '#94a3b8' },
   done: { bg: '#dcfce7', fg: '#14532d' },
   redeemed: { bg: '#e0e7ff', fg: '#3730a3' },
   discharged: { bg: '#dcfce7', fg: '#14532d' },
@@ -156,7 +159,7 @@ const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 
 export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMALL.has(w) ? w : /[A-Z0-9]/.test(w.slice(1)) ? w : w.replace(/^([^A-Za-z]*)([a-z])/, (_m, a: string, b: string) => a + b.toUpperCase()))).join(' ');
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
 const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Blocked' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
-const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable']);
+const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read']);
 const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
@@ -196,6 +199,8 @@ const ABOUT: Record<string, About> = {
   'Declaration of trust': { starts: 'When the clients hold as tenants in common.', done: 'Signed by every co-owner, witnessed, shares as instructed.' },
   'How they hold': { starts: 'Asked of the clients where there is more than one.', done: 'Joint tenants or tenants in common, recorded from their instruction.' },
   'Lease': { starts: 'The lease is filed under Documents on a leasehold case, before or after the official copy.', done: 'Read into the review table: term, ground rent and its review, service charge proportion, repairs, assignment, alterations, use, insurance, notices and fees, forfeiture, every clause quoted with its page.', note: 'A short term, an escalating rent or an absolute bar on assignment raises the title decision; the lease and the official copy are one review.', via: 'Claude reads the lease; the rules test the term and the rent.', creates: 'A title decision when anything needs a person; otherwise the lease facts on the case.' },
+  case_counted: { starts: 'The moment the ID / AML check comes back resolved: cleared by the rules or reviewed by a person. Enrolment and triage never count.', done: 'The case is counted once. A firm on a paid plan is billed £100 for it that month; a trial or comped firm sees the count and no bill.', via: 'Stripe Billing Meter, one event per case; a failed report is retried.', creates: 'A line on the Billing page.' },
+  'Document review': { starts: 'The moment a document is filed into a sub-block: Claude reads every page and returns a fact for each thing it relies on, with the page and a quote.', done: 'Every page attested (read, nothing on it, or unreadable), every quote found on its page, cross-checks run against the other documents and the case record.', note: 'A page that could not be read, or a quote that is not on the page, shows here as partly read; the review table under Documents says which.', via: 'Claude reads; the engine verifies against the page text (OCR for scans).', creates: 'The review table under Documents.' },
   'Management pack (LPE1)': { starts: 'Requested from the freeholder or agent on a leasehold; chased on the SLA.', done: 'Read by the rules: service charge, ground rent, arrears, major works and insurance; anything off goes to a conveyancer.' },
   'Notice of assignment': { starts: 'After completion on a leasehold.', done: 'Served on the landlord with the fee; notice of charge where there is a lender.' },
   SDLT: { starts: 'On completion.', done: 'Return filed and paid within 14 days; UTRN on file.', note: 'The deadline is tracked and escalated.' },
@@ -232,11 +237,12 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   const { Icon, colour } = STATE_ICON[lane.state];
   const done = lane.tiles.filter((x) => DONE_STATUSES.has(x.status)).length;
   const pct = lane.tiles.length ? Math.round((done / lane.tiles.length) * 100) : lane.state === 'done' ? 100 : 0;
+  const steps = lane.tiles.filter((x) => !x.depth);
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
         <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}</span>
-        {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span>{lane.tiles.length > 0 && <span className="n">{done}/{lane.tiles.length}</span>}</span>}
+        {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{lane.tiles.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
       {open && (
@@ -247,11 +253,12 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
             const about = aboutFor(x);
             const who = personFor(x.label);
             const done = DONE_STATUSES.has(x.status);
-            const last = lane.order === 'sequence' && n === lane.tiles.length - 1;
+            const last = lane.order === 'sequence' && !x.depth && steps[steps.length - 1] === x;
+            const stepNo = steps.indexOf(x) + 1;
             const name = x.href ? <a href={x.href} className="ep-sub-a">{titleCase(x.label)}</a> : titleCase(x.label);
             return (
               <div key={x.label} className={`ep-sub${x.depth ? ' d1' : ''}${last ? ' gate' : ''}${done ? ' done' : ''}`}>
-                {lane.order === 'sequence' && <span className="ep-n">{done ? <Check size={10} /> : n + 1}</span>}
+                {lane.order === 'sequence' && !x.depth && <span className="ep-n">{done ? <Check size={10} /> : stepNo}</span>}
                 <b>
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
@@ -527,10 +534,22 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   const resolved = (st: string) => st === 'cleared' || st === 'reviewed';
   const lanes: LaneDef[] = [];
-  const lane = (l: LaneDef | null | false) => { if (l) lanes.push(l); };
+  const reviewOf = (id: string | null | undefined) => (id ? docs?.find((d) => d.id === id)?.review ?? null : null);
+  /** Reading a document is a step of its own: under every tile that has a document, what the engine read and verified. */
+  const withReview = (tiles: Tile[]): Tile[] => tiles.flatMap((t) => {
+    if (!t.documentId || t.depth) return [t];
+    const r = reviewOf(t.documentId);
+    const status = !r ? 'not_read' : r.complete && r.unreadable === 0 ? 'read' : 'partly_read';
+    const detail = r ? `${r.read}/${r.pages} pages · ${r.verified}/${r.facts} facts verified${r.unreadable ? ` · ${r.unreadable} unreadable` : ''}` : docs ? 'no review on file' : undefined;
+    return [t, { label: 'Document review', key: 'Document review', status, detail, documentId: t.documentId, depth: 1 as const }];
+  });
+  const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, tiles: withReview(l.tiles) }); };
 
   lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
-    tiles: [{ label: s.shapes?.includes('company_buyer') ? 'ID / AML check (company, directors and PSCs)' : 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' }],
+    tiles: [
+      { label: s.shapes?.includes('company_buyer') ? 'ID / AML check (company, directors and PSCs)' : 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' },
+      { label: 'Case counted for billing', key: 'case_counted', status: view.matter?.charge ? 'done' : 'not_started', detail: view.matter?.charge ? `${fmtDay(view.matter.charge.chargedAt)} · ${view.matter.charge.billed ? `£${Math.round(view.matter.charge.amountPennies / 100)} billed` : view.matter.charge.reason === 'TRIAL' ? 'free on trial' : view.matter.charge.reason === 'COMP' || view.matter.charge.reason === 'PILOT' ? 'not billed (comped)' : view.matter.charge.reason === 'ERROR' ? 'billing retry pending' : 'no subscription'}` : undefined },
+    ],
     actions: s.stage === 'instruction' && s.idCheck.status === 'not_started' ? <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button> : null });
 
   if (has('source_of_funds')) {
@@ -599,7 +618,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', 
     tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
 
-  if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open',
+  if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open', note: Object.values(s.enquiries).length === 0 ? 'None raised yet — the engine raises them from search and title flags, or you add them below' : `${Object.values(s.enquiries).filter((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)).length} of ${Object.values(s.enquiries).length} resolved`,
     tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, documentId: q.documentId, focus: q.enquiryId, status: q.status, detail: q.subject })),
     actions: (s.stage === 'pre_contract' || s.stage === 'contract_review') ? <><input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} /><input className="ep-input" placeholder="Subject" value={enquiry.subject} onChange={(e) => setEnquiry({ ...enquiry, subject: e.target.value })} style={{ width: 220 }} /><button className="ep-btn" disabled={busy || !enquiry.id || !enquiry.subject} onClick={() => { void cmd({ type: 'raise_enquiry', enquiryId: enquiry.id.trim(), subject: enquiry.subject.trim() }); setEnquiry({ id: '', subject: '' }); }}>Raise enquiry</button></> : null });
 
