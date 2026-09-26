@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { paths } from '@/lib/paths';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { assertFeature, config } from '@/lib/server/config';
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
     await setPersonAccess(admin.tenantId, userId, admin.userId, { caseAccess: input.caseAccess, mailboxAccess: input.mailboxAccess, covers: input.covers, mailboxes: input.mailboxes });
     await writeAudit({ tenantId: admin.tenantId, actorUserId: admin.userId, actionType: 'USER_CREATED', actionStatus: 'SUCCESS', payload: { userId, email, role: input.role } }).catch(() => {});
     // Best-effort: the link is how they get in; if mail is not configured the account still exists.
-    const link = await requestSignInLink(email, { next: '/conveyi/cases' }).catch(() => null);
+    const link = await requestSignInLink(email, { next: paths.matters }).catch(() => null);
     return ok({ userId, signInLinkSent: !!link });
   } catch (error) {
     return fail(error);

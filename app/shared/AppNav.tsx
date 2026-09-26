@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -43,7 +43,6 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
   {
     label: 'Cases',
     items: [
-      { key: 'cases', label: 'Caseload', icon: Building, href: paths.cases, match: (p) => p.startsWith(paths.cases) },
       { key: 'matters', label: 'Case View', icon: Home, href: paths.matters, match: (p) => p.startsWith(paths.matters) || /\/engine\/[0-9a-f-]{36}/i.test(p) },
     ],
   },
@@ -58,8 +57,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     label: 'Firm',
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
-      { key: 'policy', label: 'Policy', icon: Shield, href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
-      { key: 'tools', label: 'Tools', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`), adminTabs: ['actions', 'audit'] },
+      { key: 'tools', label: 'Tools', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`), adminTabs: ['actions', 'audit', 'policy'] },
     ],
   },
   {

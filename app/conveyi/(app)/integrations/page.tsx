@@ -46,6 +46,8 @@ export default function ToolsPage() {
       <div className="ig-grid" style={{ marginBottom: 4 }}>
         <a className="ig-card" href={`${paths.admin}?tab=audit`}><h2 className="ig-name">Audit log</h2><p className="ig-what">Every action the app took or a person took in it.</p></a>
         <a className="ig-card" href={`${paths.admin}?tab=actions`}><h2 className="ig-name">Actions</h2><p className="ig-what">One-off maintenance a firm admin can run.</p></a>
+        <a className="ig-card" href={paths.rules}><h2 className="ig-name">Rules</h2><p className="ig-what">Sign-offs, timers, messages and document rules.</p></a>
+        <a className="ig-card" href={`${paths.admin}?tab=policy`}><h2 className="ig-name">Policy</h2><p className="ig-what">Disclaimer, folder naming, allowed domains.</p></a>
       </div>
       <h2 className="ig-h2">Integrations</h2>
       <div className="ig-grid">
@@ -63,7 +65,6 @@ export default function ToolsPage() {
       <h2 className="ig-h2">Engine</h2>
       <div className="ig-grid" style={{ marginBottom: 18 }}>
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2><p className="ig-what">Every stage, command and gate the engine knows.</p></a>
-        <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Trust levels</h2><p className="ig-what">Per action: propose, assist or auto, with the approvals that earn a promotion.</p></a>
       </div>
     </div>
   );

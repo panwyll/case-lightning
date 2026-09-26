@@ -37,7 +37,7 @@ import type { DocumentRef, EnginePorts } from './ports';
 const REJECTED_QUIET_MS = 5 * 86_400_000;
 
 /** What gets acknowledged, to whom, in their words. Anything not here is not a delivery from a party. */
-const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicitor' | 'client'; what: string }>> = {
+export const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicitor' | 'client'; what: string }>> = {
   enquiry_reply_received: { recipient: 'seller_solicitor', what: 'your replies to our enquiries' },
   buyer_enquiries_received: { recipient: 'seller_solicitor', what: 'your enquiries' },
   survey_received: { recipient: 'client', what: 'the survey report' },
@@ -61,7 +61,7 @@ export interface RunResult {
 }
 
 /** Client status updates fired automatically by event (the safe half of #5). Template names only; the port renders. */
-const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
+export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   search_ordered: 'searches_ordered',
   search_cleared: 'search_back_all_clear',
   search_flagged: 'search_back_under_review',

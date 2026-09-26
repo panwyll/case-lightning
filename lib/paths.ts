@@ -12,7 +12,8 @@ export const APP_BASE = '/conveyi';
 
 export const paths = {
   // ── the conveyancer's app (behind sign-in) ──
-  cases: `${APP_BASE}/cases`,
+  /** The caseload board and the list under it: one page. */
+  cases: `${APP_BASE}/matters`,
   /** The one work list: tasks, drafts, chases, decisions. */
   tasks: `${APP_BASE}/admin?tab=mywork`,
   integrations: `${APP_BASE}/integrations`,
@@ -26,8 +27,9 @@ export const paths = {
   engineMatter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
   matterShadow: (matterId: string) => `${APP_BASE}/engine/${matterId}/shadow`,
   machineMap: `${APP_BASE}/engine/map`,
-  /** Trust levels per engine action (admins). */
-  shadowQueue: `${APP_BASE}/engine/shadow`,
+  /** The firm's rules: sign-offs, timers, messages, document rules (admins). */
+  rules: `${APP_BASE}/engine/rules`,
+  shadowQueue: `${APP_BASE}/engine/rules`,
   account: `${APP_BASE}/account`,
   admin: `${APP_BASE}/admin`,
   leap: `${APP_BASE}/integrations/leap`,
@@ -40,7 +42,7 @@ export const paths = {
    * Where a person lands once signed in: their caseload — every open matter the firm has,
    * whether or not the engine is following it yet. Not Today, which only knows tracked ones.
    */
-  afterSignIn: `${APP_BASE}/cases`,
+  afterSignIn: `${APP_BASE}/matters`,
 
   // ── public: marketing, signup, and the client-facing form ──
   home: '/',

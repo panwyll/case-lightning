@@ -1,0 +1,104 @@
+import { NextRequest } from 'next/server';
+import { z } from 'zod';
+import { assertFeature } from '@/lib/server/config';
+import { requireRole } from '@/lib/server/session';
+import { ok, fail } from '@/lib/server/http';
+import { query } from '@/lib/server/db';
+import { engine } from '@/lib/server/engine/adapters';
+import { writeAudit } from '@/lib/server/audit';
+import { ACKNOWLEDGE, CLIENT_UPDATE_TEMPLATES } from '@/lib/server/engine/service';
+import { DEFAULT_SLA } from '@/lib/server/engine/sla';
+import { WAIT_KEYS, levelFor, levelKey, type LevelConfig, type WaitKey } from '@/lib/server/engine/types';
+import { ACKS, CHASES, CLIENT_UPDATES } from '@/lib/server/comms/templates';
+import { GROUND_RENT_FLAG_PENNIES_PA, MIN_EXTRACTION_CONFIDENCE, OFFER_EXPIRY_WARNING_DAYS, SHORT_LEASE_YEARS } from '@/lib/server/engine/rules';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+/**
+ * The firm's rules as one page reads them: the timers (per wait, in working days, with the
+ * firm's overrides), every message the engine sends (what triggers it, to whom, its subject
+ * and the trust level that governs it), and the document rules with their thresholds.
+ * Sign-offs come from /engine/shadow, which already tallies them.
+ */
+const RECIPIENT: Record<string, string> = { seller_solicitor: "Other side's solicitor", search_provider: 'Search provider', lender: 'Lender', client: 'Client', id_provider: 'ID provider', hmlr: 'HM Land Registry', estate_agent: 'Estate agent' };
+const WAIT_LABEL: Record<WaitKey, string> = { id_check: 'ID documents from the client', search: 'Search result from the provider', enquiry: "Replies from the other side's solicitor", funds: 'Completion funds', registration: 'Registration at HM Land Registry', proof_of_funds: 'Proof-of-funds form from the client', management_pack: 'Management pack', property_forms: 'Property forms from the client', redemption: 'Redemption statement from the lender', lender_consent: "Lender's consent", discharge: 'Discharge from the lender' };
+const EVENT_LABEL: Record<string, string> = {
+  enquiry_reply_received: 'Replies to our enquiries arrive', buyer_enquiries_received: "The buyer's enquiries arrive", survey_received: 'A survey arrives', specialist_report_received: 'A specialist report arrives', property_forms_received: 'The property forms come back', proof_of_funds_submitted: 'The proof-of-funds form is submitted', mortgage_offer_received: 'The mortgage offer arrives',
+  search_ordered: 'Searches are ordered', search_cleared: 'A search comes back clear', search_flagged: 'A search comes back and needs review', enquiry_raised: 'Enquiries are raised', mortgage_offer_cleared: 'The offer is checked and clear', report_on_title_sent: 'The report on title is sent', contracts_exchanged: 'Contracts are exchanged', completion_confirmed: 'Completion happens', ap1_confirmed: 'Registration is confirmed',
+};
+
+function messages(levels: LevelConfig) {
+  const rows: Array<{ id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: string }> = [];
+  for (const [ev, r] of Object.entries(ACKNOWLEDGE)) {
+    if (!r) continue;
+    const t = r.recipient === 'client' ? ACKS.ack_client : ACKS.ack_counterparty;
+    rows.push({ id: `ack:${ev}`, kind: 'acknowledgement', when: EVENT_LABEL[ev] ?? ev.replace(/_/g, ' '), to: RECIPIENT[r.recipient], subject: t.subject, template: t.key, levelKey: levelKey('acknowledgement', r.recipient), level: levelFor(levels, 'acknowledgement', r.recipient) });
+  }
+  rows.push({ id: 'req:id_check', kind: 'request', when: 'A case is enrolled', to: 'Client, via the ID provider', subject: 'Identity check request', template: 'id_check_request', levelKey: levelKey('client_update', 'id_check_request'), level: levelFor(levels, 'client_update', 'id_check_request') });
+  rows.push({ id: 'req:proof_of_funds', kind: 'request', when: 'A purchase is enrolled and firm policy requires proof of funds', to: 'Client', subject: CLIENT_UPDATES.proof_of_funds_request.subject, template: 'proof_of_funds_request', levelKey: levelKey('client_update', 'proof_of_funds_request'), level: levelFor(levels, 'client_update', 'proof_of_funds_request') });
+  for (const [ev, tpl] of Object.entries(CLIENT_UPDATE_TEMPLATES)) {
+    if (!tpl) continue;
+    const t = CLIENT_UPDATES[tpl];
+    rows.push({ id: `update:${ev}`, kind: 'update', when: EVENT_LABEL[ev] ?? ev.replace(/_/g, ' '), to: 'Client', subject: t?.subject ?? tpl, template: tpl, levelKey: levelKey('client_update', tpl), level: levelFor(levels, 'client_update', tpl) });
+  }
+  rows.push({ id: 'update:chase_update', kind: 'update', when: 'We chase someone on their behalf', to: 'Client (and the agent)', subject: CLIENT_UPDATES.chase_update.subject, template: 'chase_update', levelKey: levelKey('client_update', 'chase_update'), level: levelFor(levels, 'client_update', 'chase_update') });
+  for (const k of WAIT_KEYS) {
+    const r = DEFAULT_SLA[k];
+    const t = CHASES[r.template];
+    rows.push({ id: `chase:${k}`, kind: 'chase', when: `${WAIT_LABEL[k]} is overdue (timer)`, to: RECIPIENT[r.recipientRole], subject: t?.subject ?? r.template, template: r.template, levelKey: levelKey('chase', r.recipientRole), level: levelFor(levels, 'chase', r.recipientRole) });
+  }
+  return rows;
+}
+
+const DOCUMENT_RULES = [
+  { id: 'extraction_confidence', document: 'Every document', rule: 'Read with less confidence than the threshold goes to a person, never guessed.', value: `${Math.round(MIN_EXTRACTION_CONFIDENCE * 100)}%` },
+  { id: 'flag_severity', document: 'Every document', rule: 'Any flag at or above the severity floor turns a clear into a decision for a person.', value: 'low' },
+  { id: 'search_flags', document: 'Search results', rule: 'Enforcement or contravention notices, unadopted roads, proposed schemes, contaminated land, radon, flood risk, conservation area, listing, TPOs, chancel liability, no public sewer or a sewer within 3m are flagged.', value: 'flag' },
+  { id: 'enquiry_reply', document: 'Enquiry replies', rule: 'A reply that fully answers the enquiry clears it; a partial, evasive or "not known" reply goes to a person.', value: 'flag' },
+  { id: 'offer_conditions', document: 'Mortgage offer', rule: 'Standard lender conditions clear; special conditions, a retention or a down-valuation go to a person.', value: 'flag' },
+  { id: 'offer_expiry', document: 'Mortgage offer', rule: 'An offer expiring within this many days of the target exchange is flagged.', value: `${OFFER_EXPIRY_WARNING_DAYS} days` },
+  { id: 'title_entries', document: 'Official copies', rule: 'Restrictions, charges to be discharged and restrictive covenants go to a person; a tenure that does not match the instruction is flagged.', value: 'flag' },
+  { id: 'lease_short', document: 'Official copies (leasehold)', rule: 'A lease with fewer unexpired years than this is flagged.', value: `${SHORT_LEASE_YEARS.flag} years` },
+  { id: 'lease_serious', document: 'Official copies (leasehold)', rule: 'Fewer than this many years is a serious flag (lender and marketability).', value: `${SHORT_LEASE_YEARS.serious} years` },
+  { id: 'ground_rent', document: 'Official copies (leasehold)', rule: 'Ground rent above this a year, or a doubling or RPI review clause, is flagged.', value: `£${(GROUND_RENT_FLAG_PENNIES_PA / 100).toLocaleString('en-GB')}` },
+  { id: 'id_outcome', document: 'ID / AML report', rule: 'Clear passes; referred goes to a person with the report; a fail halts the case. A PEP or sanctions hit is never cleared by rule.', value: 'refer / fail' },
+  { id: 'pof', document: 'Proof of funds', rule: 'A shortfall against price less mortgage, a gift, an overseas source, or large or unexplained credits on the statements draft a query to the client. Sign-off is always a person.', value: 'query' },
+];
+
+const timerSchema = z.object({ waitKey: z.enum(WAIT_KEYS), chaseAfter: z.number().int().min(0).max(365), chaseEvery: z.number().int().min(1).max(365).nullable(), escalateAfter: z.number().int().min(0).max(365), reEscalateAfter: z.number().int().min(0).max(365) });
+
+export async function GET() {
+  try {
+    assertFeature('auth');
+    const user = await requireRole(['ADMIN']);
+    const svc = engine();
+    const [levels, sla] = await Promise.all([svc.levels(user.tenantId), svc.eventStore.loadSla(user.tenantId)]);
+    const timers = WAIT_KEYS.map((k) => ({ waitKey: k, label: WAIT_LABEL[k], to: RECIPIENT[sla[k].recipientRole], chaseAfter: sla[k].chaseAfter, chaseEvery: sla[k].chaseEvery, escalateAfter: sla[k].escalateAfter, reEscalateAfter: sla[k].reEscalateAfter, overridden: JSON.stringify([sla[k].chaseAfter, sla[k].chaseEvery, sla[k].escalateAfter, sla[k].reEscalateAfter]) !== JSON.stringify([DEFAULT_SLA[k].chaseAfter, DEFAULT_SLA[k].chaseEvery, DEFAULT_SLA[k].escalateAfter, DEFAULT_SLA[k].reEscalateAfter]) }));
+    return ok({ timers, messages: messages(levels), documentRules: DOCUMENT_RULES });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** Timers: one wait's numbers, in working days. Matching the default removes the override. */
+export async function PUT(req: NextRequest) {
+  try {
+    assertFeature('auth');
+    const user = await requireRole(['ADMIN']);
+    const t = timerSchema.parse(await req.json());
+    const d = DEFAULT_SLA[t.waitKey];
+    const same = t.chaseAfter === d.chaseAfter && t.chaseEvery === d.chaseEvery && t.escalateAfter === d.escalateAfter && t.reEscalateAfter === d.reEscalateAfter;
+    if (same) await query(`delete from engine_sla_override where tenant_id = $1 and wait_key = $2`, [user.tenantId, t.waitKey]);
+    else
+      await query(
+        `insert into engine_sla_override (tenant_id, wait_key, chase_after, chase_every, escalate_after, re_escalate_after) values ($1, $2, $3, $4, $5, $6)
+         on conflict (tenant_id, wait_key) do update set chase_after = excluded.chase_after, chase_every = excluded.chase_every, escalate_after = excluded.escalate_after, re_escalate_after = excluded.re_escalate_after`,
+        [user.tenantId, t.waitKey, t.chaseAfter, t.chaseEvery, t.escalateAfter, t.reEscalateAfter]
+      );
+    await writeAudit({ tenantId: user.tenantId, matterId: null, actorUserId: user.userId, actionType: 'ENGINE_SLA', actionStatus: 'SUCCESS', payload: t }).catch(() => {});
+    return ok({ saved: true });
+  } catch (error) {
+    return fail(error);
+  }
+}

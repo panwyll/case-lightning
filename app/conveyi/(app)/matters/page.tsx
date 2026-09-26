@@ -2,15 +2,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
-import { House } from '@/app/shared/engine/CaseloadMap';
-import { HEALTH_LABEL, LIFECYCLE_LABEL, type CaseToken } from '@/app/shared/engine/types';
+import { CaseloadMap, House } from '@/app/shared/engine/CaseloadMap';
+import { HEALTH_LABEL, LIFECYCLE_LABEL, type CaseToken, type CaseloadRollup } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 
 /** Every open case as a list: find one by reference, address or handler, open it. */
 const CSS = `
 .cv-search{width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px}
-.cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:calc(100vh - 212px)}
+.cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:60vh}
 .cv-row{display:grid;grid-template-columns:28px 1fr 150px 150px 130px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
 .cv-row:first-child{border-top:0}
 .cv-row:hover{background:#faf8ff}
@@ -25,13 +25,20 @@ const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, atte
 
 export default function CaseViewPage() {
   const [rows, setRows] = useState<CaseToken[] | null>(null);
+  const [rollup, setRollup] = useState<CaseloadRollup | null>(null);
   const [scope, setScope] = useState<Scope>('all');
   const [q, setQ] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
     try {
-      const r = await api<{ rows: CaseToken[] }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      let r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      // Every open case is tracked. One that is not gets enrolled now, then the board re-reads.
+      if ((r.rollup.untracked ?? 0) > 0) {
+        await api('/admin/enrol-all', { method: 'POST', body: '{}' }).catch(() => {});
+        r = await api<{ rows: CaseToken[]; rollup: CaseloadRollup }>(`/engine/caseload?mine=${scope === 'mine' ? 1 : 0}`);
+      }
       setRows(r.rows);
+      setRollup(r.rollup);
       setErr(null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not load the cases.');
@@ -49,11 +56,12 @@ export default function CaseViewPage() {
   return (
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
-      <div className="eg-top">
-        <h1 className="eg-h1">Case View</h1>
-        <ScopeSelect value={scope} onChange={setScope} />
-      </div>
-      <input className="cv-search" placeholder="Reference, address or handler" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      {rows && rollup ? (
+        <CaseloadMap title="Case View" actions={<ScopeSelect value={scope} onChange={setScope} />} rows={rows} rollup={rollup} onOpen={(id) => { window.location.href = paths.matter(id); }} />
+      ) : (
+        <div className="eg-top"><h1 className="eg-h1">Case View</h1><ScopeSelect value={scope} onChange={setScope} /></div>
+      )}
+      <input className="cv-search" style={{ marginTop: 16 }} placeholder="Reference, address or handler" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       {err && <div className="eg-err">{err}</div>}
       {!rows && !err && <div className="eg-sub">Loading…</div>}
       {list.length > 0 && <div className="cv-list">{list.map((r) => (
