@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { paths } from '@/lib/paths';
-import { Paperclip, Check, X, Mail, ChevronRight, AlertTriangle, Home } from '@/app/shared/icons';
+import { Paperclip, Check, X, Mail, AlertTriangle, Home } from '@/app/shared/icons';
 
 /**
  * Filing email to cases (docs/email-filing.md).
@@ -31,11 +31,13 @@ const CSS = `
 .ef-li .warn{color:#dc2626;display:inline-flex}
 .ef-more{display:block;width:100%;border:0;border-top:1px solid #f1f5f9;background:#fff;padding:10px;font-family:inherit;font-size:12px;font-weight:700;color:#5A27E0;cursor:pointer}
 .ef-more:disabled{color:#94a3b8;cursor:default}
-.ef-grp{display:flex;align-items:center;gap:8px;border-bottom:1px solid #f1f5f9;background:#f8fafc;padding:7px 12px}
-.ef-grp .tog{display:flex;align-items:center;gap:8px;border:0;background:none;padding:2px 0;font-family:inherit;cursor:pointer;color:#475569;font-size:12px;font-weight:700}
-.ef-grp .chev{display:inline-flex;transition:transform .12s}
-.ef-grp .chev.open{transform:rotate(90deg)}
-.ef-grp .aside{margin-left:auto;border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;font-family:inherit}
+.ef-tabs{display:flex;align-items:center;gap:2px;border-bottom:1px solid #e8eaf0;background:#fff;padding:0 8px;position:sticky;top:0;z-index:1}
+.ef-tabs .tab{display:flex;align-items:center;gap:7px;border:0;background:none;padding:10px 10px 9px;margin-bottom:-1px;border-bottom:2px solid transparent;font-family:inherit;cursor:pointer;color:#64748b;font-size:13px;font-weight:700}
+.ef-tabs .tab.on{color:#0f172a;border-bottom-color:#5A27E0}
+.ef-tabs .tab .c{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;color:#475569;background:#f1f5f9;border-radius:99px;padding:1px 7px}
+.ef-tabs .tab.on .c{color:#5A27E0;background:#ede9fe}
+.ef-tabs .aside{margin-left:auto;border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;font-family:inherit}
+.ef-empty{padding:28px 14px;color:#94a3b8;font-size:13px;text-align:center}
 .ef-li.muted .l1 b,.ef-li.muted .l2{color:#64748b}
 .ef-pane{background:#fff;border:1px solid #e6e8ee;border-radius:14px;overflow:auto;display:flex;flex-direction:column}
 .ef-top{padding:14px 18px 12px;border-bottom:1px solid #f1f5f9}
@@ -138,7 +140,7 @@ export default function EmailToFile() {
   const [noMailbox, setNoMailbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
-  const [showBulk, setShowBulk] = useState(false);
+  const [tab, setTab] = useState<'cases' | 'bulk'>('cases');
   const [totals, setTotals] = useState<{ toFile: number; bulk: number } | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -176,7 +178,7 @@ export default function EmailToFile() {
 
   const caseMail = useMemo(() => (items ?? []).filter((i) => !i.notCaseMail), [items]);
   const bulk = useMemo(() => (items ?? []).filter((i) => i.notCaseMail), [items]);
-  const order = useMemo(() => [...caseMail, ...(showBulk ? bulk : [])], [caseMail, bulk, showBulk]);
+  const order = useMemo(() => (tab === 'cases' ? caseMail : bulk), [caseMail, bulk, tab]);
   const current = (items ?? []).find((i) => i.id === sel) ?? null;
 
   /** Take an email off the list and move on to the next one. */
@@ -232,7 +234,6 @@ export default function EmailToFile() {
       <style>{CSS}</style>
       <div className="ef-head">
         <h1 className="eg-h1" style={{ margin: 0 }}>Email</h1>
-        {items && <span className="n">{totals?.toFile ?? caseMail.length} to file</span>}
       </div>
       {err && <div className="eg-err">{err}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
@@ -245,22 +246,20 @@ export default function EmailToFile() {
           </div>
         </div>
       )}
-      {items && items.length > 0 && (
+      {items && !noMailbox && (
         <div className="ef">
           <div className="ef-list" role="listbox" aria-label="Email to file">
-            {caseMail.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} />)}
-            {bulk.length > 0 && (
-              <>
-                <div className="ef-grp">
-                  <button className="tog" onClick={() => setShowBulk((v) => !v)} aria-expanded={showBulk}>
-                    <span className={`chev${showBulk ? ' open' : ''}`}><ChevronRight size={13} /></span>
-                    Probably not case mail {totals?.bulk ?? bulk.length}
-                  </button>
-                  <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set all aside</button>
-                </div>
-                {showBulk && bulk.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} muted />)}
-              </>
-            )}
+            <div className="ef-tabs" role="tablist">
+              <button className={`tab${tab === 'cases' ? ' on' : ''}`} role="tab" aria-selected={tab === 'cases'} onClick={() => { setTab('cases'); setSel(caseMail[0]?.id ?? null); }}>
+                Cases <span className="c">{totals?.toFile ?? caseMail.length}</span>
+              </button>
+              <button className={`tab${tab === 'bulk' ? ' on' : ''}`} role="tab" aria-selected={tab === 'bulk'} onClick={() => { setTab('bulk'); setSel(bulk[0]?.id ?? null); }}>
+                Bulk <span className="c">{totals?.bulk ?? bulk.length}</span>
+              </button>
+              {tab === 'bulk' && bulk.length > 0 && <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set all aside</button>}
+            </div>
+            {order.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} muted={tab === 'bulk'} />)}
+            {order.length === 0 && <div className="ef-empty">{tab === 'cases' ? 'Nothing to file.' : 'No bulk mail.'}</div>}
             {nextCursor && (
               <button className="ef-more" disabled={loadingMore} onClick={() => void loadMore()}>
                 {loadingMore ? 'Loading…' : 'Load more'}
