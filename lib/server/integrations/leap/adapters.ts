@@ -374,7 +374,13 @@ export async function leapOnEvents(input: { tenantId: string; matterId: string; 
   const conn = await leapConnection(input.tenantId).catch(() => null);
   if (!apiFactory && conn?.status !== 'CONNECTED') return;
   const { engine } = await engineModule();
-  await writeBack({ leap: leapApi(input.tenantId), store: new PgLeapWritebackStore(), appUrl: config.appUrl, levels: (t) => engine().levels(t), log: (m, d) => console.warn(`[leap] ${m}`, d instanceof Error ? d.message : d ?? '') }, input.tenantId, input.matterId, input.events, input.state);
+  await writeBack({ leap: leapApi(input.tenantId), store: new PgLeapWritebackStore(), appUrl: config.appUrl, levels: (t) => engine().levels(t),
+    emailFile: async (tenantId, matterId, internetMessageId) => {
+      const m = await queryOne<{ user_id: string | null }>(`select coalesce(assigned_to, created_by) as user_id from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]).catch(() => null);
+      if (!m?.user_id) return null;
+      const { getSentMessageMime } = await import('../../graph');
+      return getSentMessageMime(m.user_id, internetMessageId).catch(() => null);
+    }, log: (m, d) => console.warn(`[leap] ${m}`, d instanceof Error ? d.message : d ?? '') }, input.tenantId, input.matterId, input.events, input.state);
 }
 
 // ───────────────────────────── sync deps ─────────────────────────────

@@ -341,6 +341,8 @@ export interface ResultFiler {
 }
 
 export interface ResultRouter {
+  /** True when the case already holds this result (it arrived first through the firm's CRM mirror, or an earlier webhook). */
+  alreadyHave(tenantId: string, matterId: string, kind: IntegrationOrder['kind'], subject: string | null): Promise<boolean>;
   searchReturned(tenantId: string, matterId: string, searchType: SearchType, documentId: string): Promise<unknown>;
   titleReceived(tenantId: string, matterId: string, documentId: string): Promise<unknown>;
   idCheckResultReceived(tenantId: string, matterId: string, documentId: string): Promise<unknown>;
@@ -363,6 +365,13 @@ export async function handleInfoTrackResult(deps: { client: InfoTrackClient; ord
   }
   if (event.event !== 'order.completed' && event.status !== 'COMPLETED') return { status: 'IGNORED', reason: `not a completion event (${event.event}${event.status ? `/${event.status}` : ''})` };
 
+  // De-duplication: with the firm's InfoTrack account linked to their CRM, InfoTrack files the
+  // result into the CRM too, and our CRM mirror hands it to the engine. Whichever copy lands
+  // first is the one; the second is recorded against the order and goes no further.
+  if (await deps.router.alreadyHave(order.tenantId, order.matterId, order.kind, order.subject)) {
+    await deps.orders.update('infotrack', event.reference, 'RETURNED', { duplicate: true, at: new Date().toISOString(), note: 'result already on the case (arrived via the CRM mirror)' });
+    return { status: 'IGNORED', reason: 'result already on the case — arrived via the CRM mirror first' };
+  }
   const bytes = await deps.client.downloadDocument(event.reference, event.documentUrl);
   const docType = order.kind === 'search' ? `SEARCH_${order.subject}` : order.kind === 'official_copies' ? 'TITLE_REGISTER' : 'ID_CHECK_REPORT';
   const fileName = event.documentName ?? `${docType.toLowerCase()}-${event.reference}.pdf`;

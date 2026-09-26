@@ -34,16 +34,25 @@ export interface LeapWritebackStore {
   userName(tenantId: string, userId: string): Promise<string | null>;
 }
 
-export type WritebackKind = 'task' | 'note' | 'status';
+export type WritebackKind = 'task' | 'note' | 'status' | 'email';
 
 export interface WritebackDeps {
   leap: LeapApi;
   store: LeapWritebackStore;
   appUrl: string;
   levels: (tenantId: string) => Promise<LevelConfig>;
-  options?: { tasks?: boolean; notes?: boolean };
+  options?: { tasks?: boolean; notes?: boolean; emails?: boolean };
+  /** The sent email as .eml, from the handler's mailbox, by Internet Message-ID; null when it cannot be fetched. */
+  emailFile?: (tenantId: string, matterId: string, internetMessageId: string) => Promise<{ bytes: Buffer; subject: string | null } | null>;
   log: (msg: string, detail?: unknown) => void;
 }
+
+/** Events that are an email leaving the firm, with where the message id and template live in the payload. */
+const EMAIL_TYPES: Record<string, (p: Record<string, unknown>) => { messageId: string | null; channel: string | null; template: string | null; to: string | null }> = {
+  client_update_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: (p.template as string) ?? null, to: (p.recipientRole as string) ?? 'client' }),
+  chase_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: (p.template as string) ?? null, to: (p.recipientRole as string) ?? null }),
+  acknowledgement_sent: (p) => ({ messageId: (p.messageId as string) ?? null, channel: (p.channel as string) ?? null, template: 'acknowledgement', to: (p.recipientRole as string) ?? null }),
+};
 
 const RESOLVING_TYPES = new Set(['id_check_reviewed', 'search_reviewed', 'enquiry_reply_reviewed', 'mortgage_condition_reviewed', 'title_reviewed', 'report_on_title_approved', 'report_on_title_rejected', 'bank_details_verified', 'bank_details_verification_failed', 'auto_clear_confirmed', 'escalation_resolved']);
 const NOTE_TYPES: Record<string, (p: Record<string, unknown>) => string> = {
@@ -122,6 +131,18 @@ export async function writeBack(deps: WritebackDeps, tenantId: string, matterId:
         await deps.store.record({ tenantId, matterId, eventId: e.id, kind: 'note', leapId: n.id, status: 'WRITTEN' });
         out.notes += 1;
         continue;
+      }
+      // An email that left the firm → the message itself, filed on the LEAP matter as correspondence.
+      const em = EMAIL_TYPES[e.type]?.(p);
+      if (em && em.channel === 'email' && em.messageId && deps.emailFile && deps.options?.emails !== false && !(await deps.store.find(e.id, 'email'))) {
+        const file = await deps.emailFile(tenantId, matterId, em.messageId);
+        if (file) {
+          const name = `${(file.subject ?? em.template ?? 'email').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 120)}.eml`;
+          const d = await deps.leap.uploadDocument(leapMatterId, { fileName: name, mimeType: 'message/rfc822', bytes: file.bytes, folder: 'Correspondence', category: 'Correspondence' });
+          await deps.store.record({ tenantId, matterId, eventId: e.id, kind: 'email', leapId: d.id, status: 'WRITTEN' });
+        } else {
+          await deps.store.record({ tenantId, matterId, eventId: e.id, kind: 'email', leapId: null, status: 'FAILED', detail: 'sent message not found in the mailbox yet' });
+        }
       }
       // Everything else worth a line in the file.
       const render = NOTE_TYPES[e.type];

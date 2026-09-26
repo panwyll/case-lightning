@@ -6,7 +6,7 @@
 import { Resend } from 'resend';
 import { config, missingFor } from '../config';
 import { query, queryOne } from '../db';
-import { createDraftMessage, sendMail } from '../graph';
+import { createDraftMessage, sendMailTracked } from '../graph';
 import { createTask } from '../tasks';
 import { emitMatterEvent } from '../events';
 import { addDraftReady } from '../worklist';
@@ -85,8 +85,8 @@ export function productionCommsDeps(): CommsDeps {
     mailbox: graphOk
       ? {
           send: async (userId, to, subject, bodyHtml) => {
-            await sendMail(userId, to, subject, bodyHtml);
-            return { messageId: null };
+            const r = await sendMailTracked(userId, to, subject, bodyHtml);
+            return { messageId: r.internetMessageId };
           },
           draft: async (userId, to, subject, bodyHtml) => {
             const d = await createDraftMessage(userId, subject, bodyHtml, [to]);

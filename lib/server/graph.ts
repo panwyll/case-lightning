@@ -4,7 +4,7 @@
  * thread, creating draft-only replies, and the per-case OneDrive folder. No send
  * endpoint exists by design.
  */
-import { Client, GraphError } from '@microsoft/microsoft-graph-client';
+import { Client, GraphError, ResponseType } from '@microsoft/microsoft-graph-client';
 import { queryOne, query } from './db';
 import { tenantSelfAddresses } from './matching';
 import { refreshAccessToken } from './oauth';
@@ -459,6 +459,32 @@ export async function setMessageCategory(userId: string, messageId: string, cate
 }
 
 /** Send an email immediately on the user's behalf (no draft). Used for team invites. */
+/**
+ * Send from the user's mailbox in a way we can find afterwards: create the draft (Graph assigns
+ * the Internet Message-ID at that point), send it, and hand back that id. Sent Items keeps it,
+ * so the CRM write-back can fetch the exact message as it went.
+ */
+export async function sendMailTracked(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ internetMessageId: string | null }> {
+  const client = await graphClientForUser(userId);
+  const draft = await client.api('/me/messages').post({ subject, body: { contentType: 'HTML', content: bodyHtml }, toRecipients: [{ emailAddress: { address: to } }] });
+  const id = String(draft?.id ?? '');
+  let internetMessageId: string | null = draft?.internetMessageId ?? null;
+  if (!internetMessageId && id) internetMessageId = (await client.api(`/me/messages/${id}`).select('internetMessageId').get().catch(() => null))?.internetMessageId ?? null;
+  await client.api(`/me/messages/${id}/send`).post({});
+  return { internetMessageId };
+}
+
+/** The sent message, by Internet Message-ID, as MIME (.eml) — what a CRM files as correspondence. */
+export async function getSentMessageMime(userId: string, internetMessageId: string): Promise<{ bytes: Buffer; subject: string | null } | null> {
+  const client = await graphClientForUser(userId);
+  const found = await client.api('/me/messages').filter(`internetMessageId eq '${internetMessageId.replace(/'/g, "''")}'`).select('id,subject').top(1).get().catch(() => null);
+  const m = found?.value?.[0];
+  if (!m?.id) return null;
+  const raw = await client.api(`/me/messages/${m.id}/$value`).responseType(ResponseType.ARRAYBUFFER).get().catch(() => null);
+  if (!raw) return null;
+  return { bytes: Buffer.from(raw as ArrayBuffer), subject: m.subject ?? null };
+}
+
 export async function sendMail(userId: string, to: string, subject: string, bodyHtml: string): Promise<void> {
   const client = await graphClientForUser(userId);
   await client.api('/me/sendMail').post({

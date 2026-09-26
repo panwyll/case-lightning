@@ -338,6 +338,10 @@ export class EngineService {
 
   /** ID/AML result landed (webhook / upload): extract → rule → cleared or flagged. */
   async idCheckResultReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    if (await this.alreadyHave(tenantId, matterId, 'id_check', null)) {
+      this.ports.log('ID check result already on the case; duplicate ignored', { matterId, documentId });
+      return { state: await this.getState(tenantId, matterId), events: [], warning: 'The ID check result is already on the case; this copy was filed but not read again.' };
+    }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractIdCheck(doc).catch((err) => {
       this.ports.log('id check extraction failed — routing to human', err);
@@ -348,7 +352,24 @@ export class EngineService {
   }
 
   /** Spec 2.4 steps 3–5: a search PDF is back. Record it, extract, rule-check, clear or flag. */
+  /**
+   * Does the case already hold this provider result? Used by the InfoTrack webhook and the
+   * CRM mirror so a result that arrives twice (InfoTrack files into the CRM as well as
+   * calling us) is ingested once. A search is "held" once it is past ordered in its
+   * current cycle; a title once anything is extracted; an ID check once a result is in.
+   */
+  async alreadyHave(tenantId: string, matterId: string, kind: 'search' | 'official_copies' | 'id_check', subject: string | null): Promise<boolean> {
+    const s = await this.getState(tenantId, matterId);
+    if (kind === 'search') { const sr = subject ? s.searches[subject] : null; return !!sr && sr.status !== 'ordered'; }
+    if (kind === 'official_copies') return s.title.status !== 'awaiting';
+    return s.idCheck.status !== 'not_started' && s.idCheck.status !== 'requested';
+  }
+
   async searchReturned(tenantId: string, matterId: string, searchType: SearchType, documentId: string, provider?: string | null): Promise<RunResult> {
+    if (await this.alreadyHave(tenantId, matterId, 'search', searchType)) {
+      this.ports.log(`${searchType} search result already on the case; duplicate ignored`, { matterId, documentId });
+      return { state: await this.getState(tenantId, matterId), events: [], warning: `The ${searchType} result is already on the case; this copy was filed but not read again.` };
+    }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     await this.run(tenantId, matterId, { type: 'search_returned', actor: EXTERNAL, searchType, documentId, provider: provider ?? null });
     const facts: SearchFacts = await this.ports.extractor.extractSearch(doc, searchType).catch((err) => {
@@ -385,6 +406,10 @@ export class EngineService {
   }
 
   async titleReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    if (await this.alreadyHave(tenantId, matterId, 'official_copies', null)) {
+      this.ports.log('official copies already on the case; duplicate ignored', { matterId, documentId });
+      return { state: await this.getState(tenantId, matterId), events: [], warning: 'Official copies are already on the case; this copy was filed but not read again.' };
+    }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractTitle(doc).catch((err) => {
       this.ports.log('title extraction failed — routing to human', err);

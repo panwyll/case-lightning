@@ -83,6 +83,7 @@ test('handleInfoTrackResult: unknown refs ignored; completed orders are download
     orders,
     filer: { file: async (i: { fileName: string; docType: string }) => { filed.push(i); return 'doc-1'; } },
     router: {
+      alreadyHave: async () => false,
       searchReturned: async (_t: string, _m: string, st: string, d: string) => routed.push(`search:${st}:${d}`),
       titleReceived: async (_t: string, _m: string, d: string) => routed.push(`title:${d}`),
       idCheckResultReceived: async (_t: string, _m: string, d: string) => routed.push(`id:${d}`),
@@ -107,7 +108,22 @@ test('handleInfoTrackResult: unknown refs ignored; completed orders are download
 test('handleInfoTrackResult: a failed order is recorded, not routed', async () => {
   const orders = new MemoryOrderStore();
   await orders.record({ tenantId: 't', matterId: 'm', provider: 'infotrack', kind: 'id_check', subject: 'A', providerRef: 'O2', status: 'ORDERED' }, {});
-  const out = await handleInfoTrackResult({ client: new InfoTrackClient(cfg, fakeTransport([]).t), orders, filer: { file: async () => 'x' }, router: { searchReturned: async () => {}, titleReceived: async () => {}, idCheckResultReceived: async () => {} } }, { deliveryId: 'e', reference: 'O2', event: 'order.failed', raw: {} });
+  const out = await handleInfoTrackResult({ client: new InfoTrackClient(cfg, fakeTransport([]).t), orders, filer: { file: async () => 'x' }, router: { alreadyHave: async () => false, searchReturned: async () => {}, titleReceived: async () => {}, idCheckResultReceived: async () => {} } }, { deliveryId: 'e', reference: 'O2', event: 'order.failed', raw: {} });
   assert.equal(out.status, 'FAILED');
   assert.equal((await orders.find('infotrack', 'O2'))?.status, 'FAILED');
+});
+
+test('handleInfoTrackResult: a result the case already holds is recorded as a duplicate and not filed again', async () => {
+  const orders = new MemoryOrderStore();
+  await orders.record({ tenantId: 't', matterId: 'm', provider: 'infotrack', kind: 'search', subject: 'CON29', providerRef: 'O3', status: 'ORDERED' }, {});
+  let filed = 0;
+  let routed = 0;
+  const out = await handleInfoTrackResult(
+    { client: new InfoTrackClient(cfg, fakeTransport([]).t), orders, filer: { file: async () => { filed += 1; return 'x'; } }, router: { alreadyHave: async () => true, searchReturned: async () => { routed += 1; }, titleReceived: async () => {}, idCheckResultReceived: async () => {} } },
+    { event: 'order.completed', reference: 'O3', status: 'COMPLETED', documentUrl: 'https://x/doc.pdf', raw: {} } as never
+  );
+  assert.equal(out.status, 'IGNORED');
+  assert.equal(filed, 0);
+  assert.equal(routed, 0);
+  assert.equal((await orders.find('infotrack', 'O3'))?.status, 'RETURNED');
 });
