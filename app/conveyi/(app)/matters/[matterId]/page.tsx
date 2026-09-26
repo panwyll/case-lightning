@@ -1,18 +1,29 @@
 'use client';
 import { use, useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { CaseHud, HUD_LOOK, type CaseHudData, type HudStatus } from '@/app/shared/engine/CaseHud';
 import { House } from '@/app/shared/engine/CaseloadMap';
-import { HEALTH_LABEL, pretty, type HealthBand, type WorkItem } from '@/app/shared/engine/types';
+import { HEALTH_LABEL, TRANSACTION_LABEL, pretty, stageLabel, type HealthBand, type WorkItem } from '@/app/shared/engine/types';
+import { WorkPanel, WORK_CSS } from '@/app/shared/engine/WorkPanel';
+import { IssuesPanel } from '@/app/shared/engine/IssuesPanel';
+import { NotesPanel } from '@/app/shared/engine/NotesPanel';
+import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
+import { Timeline } from '@/app/shared/engine/Timeline';
+import { CaseView, type CaseModel } from '@/app/shared/engine/CaseView';
+import { useEngine } from '@/app/shared/engine/useEngine';
 import { paths } from '@/lib/paths';
 
 /**
- * One case. The top of the page is where it is: the stages, what is running inside each
- * and what each is waiting on — with the facts of the case beside it. Below the fold is
- * the detail a conveyancer goes looking for: who has what to do, the emails, the files,
- * the history.
+ * One case, whole. The Overview tab is where it is: the stages, what is running inside
+ * each and what each is waiting on, with the facts of the case beside it and the tasks,
+ * emails, files and history below. The other tabs are the doing: Work (every action a
+ * person records), Issues, Notes, Documents, Timeline, and Diagnostics for the engine's
+ * own readiness and dependency views. There is no second page for a case.
  */
+type Tab = 'overview' | 'work' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
+const TABS: Tab[] = ['overview', 'work', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
 interface Row { id: string; matterRef: string | null; propertyAddress: string | null; stage: string; assignee: string | null; assignedTo: string | null }
 interface Person { id: string; email: string; display_name: string | null }
 interface Detail {
@@ -20,7 +31,7 @@ interface Detail {
   contacts: Array<{ id: string; email: string; name: string | null; role: string | null }>;
   timeline: Array<{ id: string; event_at: string | null; created_at: string; event_type: string; title: string; details: string | null }>;
 }
-interface Model { profile?: { label: string; side: string }; health?: { band: HealthBand; headline?: string | null }; hud?: CaseHudData; work?: WorkItem[] }
+type Model = CaseModel & { profile?: { label: string; side: string }; health?: { band: HealthBand; headline?: string | null }; hud?: CaseHudData; work?: WorkItem[] };
 
 const CSS = `
 .mx-head{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
@@ -72,6 +83,22 @@ function Field({ k, v }: { k: string; v: string }) {
 
 export default function MatterPage({ params }: { params: Promise<{ matterId: string }> }) {
   const { matterId } = use(params);
+  const search = useSearchParams();
+  const wanted = search.get('tab') as Tab | null;
+  const [tab, setTabState] = useState<Tab>(wanted && TABS.includes(wanted) ? wanted : 'overview');
+  const setTab = (t: Tab) => {
+    setTabState(t);
+    const u = new URL(window.location.href);
+    if (t === 'overview') u.searchParams.delete('tab'); else u.searchParams.set('tab', t);
+    window.history.replaceState(null, '', u.toString());
+  };
+  const eng = useEngine(matterId, api);
+  const view = eng.view;
+  const enrolled = !!view?.state.enrolled;
+  const shadow = !!view?.state.shadowMode;
+  const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
+  const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => i.status === 'open' || i.status === 'negotiating').length;
+  const unreadNotes = Object.values(view?.state.notes ?? {}).filter((n) => n.status === 'proposed').length;
   const [row, setRow] = useState<Row | null>(null);
   const [team, setTeam] = useState<Person[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -91,6 +118,9 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     api<{ files: any[] }>(`/matters/${matterId}/files`).then((x) => setFiles(x.files ?? [])).catch(() => setFiles([]));
   }, [matterId]);
   useEffect(() => { load().catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not open the case.')); }, [load]);
+  // An engine command changes the model (health, HUD, tasks) too — reload it when the log grows.
+  useEffect(() => { if (eng.events.length) api<Model>(`/matters/${matterId}/engine/graph`).then(setModel).catch(() => {}); }, [eng.events.length, matterId]);
+  const refresh = () => { void eng.load(); void load().catch(() => {}); };
 
   const setOwner = async (assignedTo: string | null) => {
     try { await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify({ assignedTo }) }); await load(); }
@@ -106,14 +136,27 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
   return (
     <div className="eg">
-      <style>{ENGINE_CSS + CSS}</style>
+      <style>{ENGINE_CSS + WORK_CSS + CSS}</style>
       {err && <div className="eg-err">{err}</div>}
+      {shadow && (
+        <div className="eg-shadow-banner" role="status" aria-live="polite">
+          <b>Shadow mode</b>
+          <span>Observing only. Nothing is sent or actioned.</span>
+          <a href={paths.matterShadow(matterId)}>Compare with the human record →</a>
+        </div>
+      )}
       {row && (
         <>
           <div className="mx-head">
             <div style={{ minWidth: 0 }}>
-              <h1 className="mx-title">{band && <House band={band} size={28} />}{row.propertyAddress ?? row.matterRef}</h1>
-              <p className="mx-sub">{[row.matterRef, model?.profile?.label, clients].filter(Boolean).join(' · ')}</p>
+              <h1 className="mx-title">
+                {band && <House band={band} size={28} />}{row.propertyAddress ?? row.matterRef}
+                {view?.state.transactionType && <span className="eg-chip muted">{TRANSACTION_LABEL[view.state.transactionType] ?? view.state.transactionType}</span>}
+                {view && enrolled && <span className="eg-chip stage">{view.state.closedAt ? 'Closed' : view.state.abandoned ? 'Abandoned' : stageLabel(view.state.stage, view.profile)}</span>}
+                {view && !enrolled && <span className="eg-chip muted">not enrolled</span>}
+                {view?.state.manualHandling.required && <span className="eg-chip bad">manual handling</span>}
+              </h1>
+              <p className="mx-sub">{[row.matterRef, model?.profile?.label, clients, view?.lifecycle?.label].filter(Boolean).join(' · ')}</p>
             </div>
             <div className="mx-ctl">
               {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
@@ -121,10 +164,39 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <option value="">Unassigned</option>
                 {team.map((u) => <option key={u.id} value={u.id}>{u.display_name || u.email}</option>)}
               </select>
-              <a className="eg-btn" href={paths.engineMatter(matterId)}>Case file</a>
             </div>
           </div>
 
+          {eng.notice && tab !== 'work' && (
+            <div className={`eg-notice ${eng.notice.kind}`} role={eng.notice.kind === 'err' ? 'alert' : 'status'}>
+              <span>{eng.notice.text}</span>
+              <button type="button" onClick={eng.clearNotice} aria-label="Dismiss">×</button>
+            </div>
+          )}
+
+          <div className="eg-tabs">
+            <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
+            <button className={`eg-tab${tab === 'work' ? ' on' : ''}`} onClick={() => setTab('work')}>Work{pending ? ` (${pending})` : ''}</button>
+            <button className={`eg-tab${tab === 'issues' ? ' on' : ''}`} onClick={() => setTab('issues')} disabled={!enrolled}>Issues{openIssues ? ` (${openIssues})` : ''}</button>
+            <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')} disabled={!enrolled}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
+            <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
+            <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')} disabled={!enrolled}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
+            <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')} disabled={!enrolled}>Diagnostics</button>
+          </div>
+
+          {tab === 'work' && (view ? <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} /> : <div className="eg-sub">{eng.err ?? 'Loading…'}</div>)}
+          {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
+          {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
+          {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
+          {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} />}
+          {tab === 'diagnostics' && enrolled && (
+            <>
+              <CaseView matterId={matterId} api={api} view="readiness" model={model} />
+              <CaseView matterId={matterId} api={api} view="dependencies" model={model} />
+            </>
+          )}
+
+          {tab === 'overview' && (<>
           <div className="mx-top">
             <div>{model?.hud && <CaseHud hud={model.hud} />}</div>
             <div className="mx-card">
@@ -166,7 +238,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                   const l = HUD_LOOK[st];
                   const due = w.dueBy ? `by ${short(w.dueBy)}` : w.chaseInWorkingDays != null ? (w.chaseInWorkingDays <= 0 ? 'chase due' : `chase in ${w.chaseInWorkingDays}d`) : '';
                   return (
-                    <a key={w.id} className="mx-li" href={w.ref?.type === 'decision' ? paths.decision(w.ref.id) : paths.engineMatter(matterId)}>
+                    <a key={w.id} className="mx-li" href={w.ref?.type === 'decision' ? paths.decision(w.ref.id) : `?tab=work`} onClick={w.ref?.type === 'decision' ? undefined : (e) => { e.preventDefault(); setTab('work'); }}>
                       <span style={{ color: l.colour, display: 'flex' }}><l.Icon size={16} /></span>
                       <span>{w.bucket === 'waiting' ? `Waiting on ${(OWNER[w.actionOwner] ?? pretty(w.actionOwner)).toLowerCase()} to ${w.what}` : w.what}</span>
                       <span className="m">{w.bucket === 'waiting' ? OWNER[w.actionOwner] ?? pretty(w.actionOwner) : nameOf(w.responsibilityOwner ?? row.assignedTo) || 'Unassigned'}</span>
@@ -205,6 +277,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               </div>
             </div>
           )}
+          </>)}
         </>
       )}
     </div>

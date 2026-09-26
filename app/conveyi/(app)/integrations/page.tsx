@@ -16,21 +16,6 @@ const CSS = `
 .ig-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;border-radius:999px;padding:3px 10px}
 .ig-state i{width:8px;height:8px;border-radius:999px;display:inline-block}
 .ig-h2{font-size:13px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin:26px 0 10px}
-.ig-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e6e8ee;border-radius:10px;padding:10px 14px;margin-bottom:8px;text-decoration:none;color:inherit}
-.ig-row:hover{border-color:#c4b5fd}
-.ig-row b{font-size:13px}
-.ig-row span{font-size:12px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ig-find{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.ig-search{flex:1;min-width:220px;max-width:420px;border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px}
-.ig-sel{border:1px solid #d0d5dd;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;background:#fff}
-.ig-count{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
-.ig-scroll{max-height:420px;overflow-y:auto;border:1px solid #e6e8ee;border-radius:10px;background:#fff}
-.ig-scroll .ig-row{border:0;border-bottom:1px solid #f1f5f9;border-radius:0;margin:0}
-.ig-scroll .ig-row:last-child{border-bottom:0}
-.ig-pager{display:flex;align-items:center;gap:8px;justify-content:flex-end;margin-top:8px;font-size:12px;color:#64748b;font-variant-numeric:tabular-nums}
-.ig-pager button{border:1px solid #d0d5dd;background:#fff;border-radius:8px;padding:4px 10px;font:inherit;font-size:12px;font-weight:700;color:#334155;cursor:pointer}
-.ig-pager button:disabled{color:#cbd5e1;cursor:default}
-.ig-row .st{margin-left:auto;font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:99px;padding:1px 8px;flex:0 0 auto}
 `;
 
 /** `firmOwned`: the firm enters its own credentials, so unconfigured just means not connected yet. */
@@ -43,36 +28,13 @@ function state(s: Status | null | undefined, firmOwned = false) {
   return { label: 'Not connected', bg: '#fef3c7', fg: '#78350f', dot: '#d97706' };
 }
 
-interface MatterRow { id: string; matter_ref: string; property_address: string; status: string }
-
 export default function ToolsPage() {
   const [leap, setLeap] = useState<Status | null | undefined>(undefined);
   const [intouch, setIntouch] = useState<Status | null | undefined>(undefined);
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState<'open' | 'closed' | 'all'>('open');
-  const [matters, setMatters] = useState<MatterRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const PAGE = 25;
-  const pages = Math.max(1, Math.ceil(total / PAGE));
   useEffect(() => {
     api<Status>('/integrations/leap/status').then(setLeap).catch(() => setLeap(null));
     api<Status>('/integrations/intouch/status').then(setIntouch).catch(() => setIntouch(null));
   }, []);
-  useEffect(() => {
-    const t = setTimeout(() => {
-      api<{ matters?: Array<{ id: string; matterRef: string; propertyAddress: string; status: string }>; total?: number }>(
-        `/matters?q=${encodeURIComponent(q)}&status=${status}&limit=${PAGE}&offset=${page * PAGE}`
-      )
-        .then((r) => {
-          setMatters((r.matters ?? []).map((m) => ({ id: m.id, matter_ref: m.matterRef, property_address: m.propertyAddress, status: m.status })));
-          setTotal(r.total ?? 0);
-        })
-        .catch(() => { setMatters([]); setTotal(0); });
-    }, 200);
-    return () => clearTimeout(t);
-  }, [q, status, page]);
-  useEffect(() => { setPage(0); }, [q, status]);
   const cards = [
     { name: 'LEAP', href: paths.leap, s: leap, firmOwned: false },
     { name: 'InTouch', href: `${paths.integrations}/intouch`, s: intouch, firmOwned: true },
@@ -103,32 +65,6 @@ export default function ToolsPage() {
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2><p className="ig-what">Every stage, command and gate the engine knows.</p></a>
         <a className="ig-card" href={paths.shadowQueue}><h2 className="ig-name">Shadow review</h2><p className="ig-what">What the engine would have done, for checking before it is trusted.</p></a>
       </div>
-      <h2 className="ig-h2">Case files</h2>
-      <div className="ig-find">
-        <input className="ig-search" placeholder="Find a case by reference, address or client" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="ig-sel" value={status} onChange={(e) => setStatus(e.target.value as 'open' | 'closed' | 'all')}>
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
-        </select>
-        <span className="ig-count">{total}</span>
-      </div>
-      <div className="ig-scroll">
-        {matters.map((m) => (
-          <a key={m.id} className="ig-row" href={paths.engineMatter(m.id)}>
-            <b>{m.matter_ref}</b>
-            <span>{m.property_address}</span>
-            {status === 'all' && <span className="st">{m.status === 'CLOSED' ? 'Closed' : 'Open'}</span>}
-          </a>
-        ))}
-      </div>
-      {pages > 1 && (
-        <div className="ig-pager">
-          <button disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</button>
-          <span>{page + 1} / {pages}</span>
-          <button disabled={page + 1 >= pages} onClick={() => setPage((p) => p + 1)}>Next</button>
-        </div>
-      )}
     </div>
   );
 }
