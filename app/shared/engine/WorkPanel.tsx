@@ -207,7 +207,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const remo = p.type === 'remortgage';
   const toe = p.type === 'transfer_of_equity';
   const leasehold = p.tenure === 'leasehold';
-  const stageIdx = p.stages.indexOf(s.stage);
   const atLeast = (st: string) => p.stages.indexOf(s.stage) >= p.stages.indexOf(st);
   const openWaits = view.waits;
   const completed = !!s.completion.confirmedAt;
@@ -502,12 +501,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   return (
     <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
-      <div className="ep-steps">
-        {p.stages.map((st, i) => (
-          <span key={st} className={`ep-step${i < stageIdx ? ' done' : i === stageIdx ? ' now' : ''}`} title={s.stageHistory.find((h) => h.stage === st) ? `entered ${fmtWhen(s.stageHistory.find((h) => h.stage === st)!.at)}` : ''}>{titleCase(stageLabel(st, p))}</span>
-        ))}
-        {closed && <span className="ep-step done">Closed</span>}
-      </div>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
       <div className="ep-boxes">
