@@ -10,10 +10,8 @@ import { CLIENT_DECISION_SUBJECTS, NOTE_KINDS, TRANSACTION_TYPES, ISSUE_PAID_BY,
 import { ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_SEVERITIES } from './issues';
 import type { Command } from './machine';
 
-/** Read-only users can look but never move a matter. */
-export function requireWriter(user: SessionUser): void {
-  if (user.role === 'READ_ONLY') throw new ForbiddenError();
-}
+/** Every role may move a matter; decisions are narrower (below). Kept as the one place a write gate would go. */
+export function requireWriter(_user: SessionUser): void {}
 
 /** Decisions are a conveyancer's call (spec: "surfaces genuine decision points to a human conveyancer"). */
 export function requireDecider(user: SessionUser): void {

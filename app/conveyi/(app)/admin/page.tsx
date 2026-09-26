@@ -307,7 +307,7 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
           )}
           <div className="pp-set">
             <label>Role</label>
-            {seg(person.role, [['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'], ['READ_ONLY', 'Read Only', 'Looks, changes nothing.']], (v) => setPerson({ ...person, role: v }))}
+            {seg(person.role, [['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.']], (v) => setPerson({ ...person, role: v }))}
           </div>
           <div className="pp-set">
             <label>Cases</label>

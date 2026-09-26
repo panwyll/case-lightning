@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'CONVEYANCER' | 'ASSISTANT' | 'READ_ONLY';
+export type Role = 'ADMIN' | 'CONVEYANCER' | 'ASSISTANT';
 
 export interface SessionUser {
   userId: string;

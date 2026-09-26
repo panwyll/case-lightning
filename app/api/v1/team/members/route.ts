@@ -20,7 +20,7 @@ export async function GET() {
     const members = await query<{ id: string; display_name: string | null; email: string; role: string }>(
       `select id, display_name, email, role
          from app_user
-        where tenant_id = $1 and role <> 'READ_ONLY'
+        where tenant_id = $1
         order by (id = $2) desc, coalesce(display_name, email) asc`,
       [user.tenantId, user.userId]
     );

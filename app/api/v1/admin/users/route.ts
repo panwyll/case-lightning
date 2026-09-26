@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       .object({
         name: z.string().trim().min(1).max(140),
         email: z.string().trim().email().max(320),
-        role: z.enum(['ADMIN', 'CONVEYANCER', 'ASSISTANT', 'READ_ONLY']),
+        role: z.enum(['ADMIN', 'CONVEYANCER', 'ASSISTANT']),
         caseAccess: z.enum(['all', 'selected']),
         mailboxAccess: z.enum(['own', 'all', 'selected']),
         covers: z.array(z.string().uuid()).max(200).default([]),

@@ -52,7 +52,7 @@ export async function GET() {
         left join matter mm on mm.id = m.id
         left join email_thread t on t.matter_id = m.id and t.tenant_id = $1
         left join worklist_item w on w.matter_id = m.id and w.tenant_id = $1
-       where u.tenant_id = $1 and u.role <> 'READ_ONLY'
+       where u.tenant_id = $1
        group by u.id, name, u.role
       union all
       select null as id, 'Unassigned' as name, null as role,
@@ -84,7 +84,7 @@ export async function GET() {
                 0 as overdue_chases, 0 as drafts_waiting
            from app_user u
            left join matter m on m.assigned_to = u.id and m.tenant_id = $1 and m.status = 'OPEN'
-          where u.tenant_id = $1 and u.role <> 'READ_ONLY'
+          where u.tenant_id = $1
           group by u.id, name, u.role
           order by open_matters desc, name asc`,
         [admin.tenantId]

@@ -6,7 +6,6 @@
  *                  cases granted to them, and every case of anyone they are covering.
  *   Assistant    — only cases granted to them (a filing they made grants the case), and
  *                  only mailboxes granted to them. Either mode.
- *   Read only    — as a conveyancer, without the writes the role already blocks.
  *
  * Grants are rows a firm admin adds and removes on the Team tab; every change is audited
  * by the route. A covering conveyancer acts as themselves.

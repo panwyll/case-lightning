@@ -14,7 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
     assertFeature('auth');
     const admin = await requireRole(['ADMIN']);
     const { userId } = z.object({ userId: z.string().uuid() }).parse(await params);
-    const { role } = z.object({ role: z.enum(['ADMIN', 'CONVEYANCER', 'ASSISTANT', 'READ_ONLY']) }).parse(await req.json());
+    const { role } = z.object({ role: z.enum(['ADMIN', 'CONVEYANCER', 'ASSISTANT']) }).parse(await req.json());
 
     // Don't allow removing the last admin in a tenant.
     if (role !== 'ADMIN') {
