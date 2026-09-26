@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
-import { AlertTriangle, CheckCircle, Circle, Clock } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, User, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -77,6 +77,24 @@ export const WORK_CSS = `
 .ep-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;border:1px solid #cbd5e1;color:#94a3b8;font-size:9.5px;font-weight:800;font-style:normal;margin-left:6px;vertical-align:1px;cursor:help}
 .ep-i:hover,.ep-i:focus{border-color:#5A27E0;color:#5A27E0;outline:none}
 .ep-tip{position:fixed;width:264px;background:#0f172a;color:#fff;font-size:11.5px;font-weight:500;line-height:1.45;padding:8px 10px;border-radius:8px;box-shadow:0 8px 24px rgba(15,23,42,.25);z-index:1000;pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+.ep-seq{position:relative;padding-left:22px;margin-top:2px}
+.ep-seq::before{content:'';position:absolute;left:8px;top:10px;bottom:16px;width:2px;background:#e2e8f0}
+.ep-seq .ep-sub{padding:7px 0 7px 4px}
+.ep-seq .ep-sub::before{display:none}
+.ep-n{position:absolute;left:-22px;top:9px;width:18px;height:18px;border-radius:99px;background:#fff;border:2px solid #cbd5e1;color:#64748b;font-size:10px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.ep-sub.done .ep-n{border-color:#16a34a;background:#16a34a;color:#fff}
+.ep-sub.gate{margin-top:6px;padding-top:9px;border-top:1px dashed #ddd6fe;background:linear-gradient(90deg,#faf8ff,transparent);border-radius:6px}
+.ep-sub.gate > b{color:#4c1d95;font-weight:800}
+.ep-sub.gate .ep-n{border-color:#5A27E0;color:#5A27E0}
+.ep-sub.gate.done .ep-n{background:#5A27E0;color:#fff}
+.ep-who{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:99px;background:#ede9fe;color:#5A27E0;margin-left:6px;vertical-align:-3px;cursor:help}
+.ep-who:hover,.ep-who:focus{background:#5A27E0;color:#fff;outline:none}
+.ep-tip .k{display:inline-block;min-width:44px;font-weight:800;color:#c4b5fd;margin-right:4px}
+.ep-junction{position:absolute;z-index:2;transform:translate(-50%,-50%);display:flex}
+.ep-junction .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #5A27E0;color:#5A27E0;box-shadow:0 1px 3px rgba(15,23,42,.12)}
+.ep-junction.auto .ep-who{border-color:#94a3b8;color:#64748b}
+.ep-junction .ep-who:hover,.ep-junction .ep-who:focus{background:#5A27E0;color:#fff}
+.ep-junction.auto .ep-who:hover,.ep-junction.auto .ep-who:focus{background:#64748b;border-color:#64748b;color:#fff}
 .ep-tree{position:relative;padding-left:14px;margin-top:2px}
 .ep-tree::before{content:'';position:absolute;left:4px;top:6px;bottom:14px;width:1px;background:#e2e8f0}
 .ep-sub{position:relative}
@@ -139,61 +157,64 @@ const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime(
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
 interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
-/** What each sub-block is and what completes it: the sentence a new starter needs. */
-const ABOUT: Record<string, string> = {
-  'ID / AML check': "Identity and anti-money-laundering check on every client through the ID provider. Complete when the provider's result is clear, or a person has reviewed a referred result.",
-  'Proof of funds': 'The client declares where the purchase money comes from and provides statements. Complete when a conveyancer signs it off; exchange is held until then.',
-  'Queries to the client': 'Questions raised on the proof-of-funds submission. Each is answered through the form or withdrawn with a reason.',
-  'Official copies': 'The register and plan from HM Land Registry. Read by the rules; restrictions, charges and covenants go to a person.',
-  'Report on title': 'Our report to the client on the title, searches and enquiries. Drafted from the file, approved by a conveyancer, then sent.',
-  'search:LLC1': 'Local land charges register: financial charges, conservation areas, listing, tree preservation orders.',
-  'search:CON29': 'Local authority enquiries: planning history, building regulations, roads, proposed schemes, contaminated land.',
-  'search:DRAINAGE_WATER': 'Water company search: sewer and water connections, sewers within 3m, build-over agreements.',
-  'search:ENVIRONMENTAL': 'Environmental report: flooding, contaminated land, subsidence, mining, landfill.',
-  'search:CHANCEL': 'Whether the property carries a liability to repair the parish church chancel.',
-  Offer: "The lender's mortgage offer. Standard conditions clear by rule; special conditions and a short expiry go to a person.",
-  'Mortgage deed': 'Signed by every borrower and witnessed, held undated until completion.',
-  'Certificate of title': 'Our confirmation to the lender that the title is good, requesting the advance for completion.',
-  Deposit: 'The exchange deposit, usually 10%, received into client account before exchange.',
-  'Contract approved / signed': 'The contract as agreed with the other side, approved by the conveyancer, then signed by the client and held ready.',
-  Exchange: 'Contracts exchanged with the other side and the completion date fixed. Needs every item above and the client\'s authority.',
-  'Contract pack': 'Draft contract, official copies, plan and the property forms, sent to the buyer\'s solicitor.',
-  'Completion statement': 'The figures for completion: price, deposit, advance, redemption, fees and SDLT, sent to the client with the balance due.',
-  Completion: 'Completion monies sent and received, keys released. Starts the clocks for SDLT and registration.',
-  'Balance to the client': 'What is left after redemption and fees, paid to the client\'s verified account.',
-  'Payment to the lender': 'Redemption of the existing mortgage on completion.',
-  'Redemption statement': "The existing lender's figure to redeem, with the daily rate and the date it holds to.",
-  Redeemed: 'The redemption paid and the lender\'s confirmation received.',
-  'Discharge (DS1 / e-DS1)': 'The lender\'s release of its charge, lodged so the charge comes off the register.',
-  Consent: "The existing lender's consent to the transfer, with any conditions.",
-  'Transfer deed': 'The TR1 transferring the property, signed by every party and witnessed.',
-  'Declaration of trust': 'How co-owners hold their shares, where they hold as tenants in common.',
-  'How they hold': 'Joint tenants or tenants in common: the clients\' decision, recorded from their instruction.',
-  'Management pack (LPE1)': "The freeholder's or managing agent's pack: service charge, ground rent, arrears, works, insurance.",
-  'Notice of assignment': 'Notice to the landlord that the lease has changed hands, and of any charge, with the fee.',
-  SDLT: 'The Stamp Duty Land Tax return and payment, due within 14 days of completion.',
-  AP1: 'The application to HM Land Registry to register the transfer and any charge, within the priority period.',
-  File: 'The case closed once registration is confirmed and the client sent the completed register.',
-  Forms: 'TA6 property information, TA10 fittings and contents, and TA7 for leasehold, completed by the client.',
-  Enquiry: "A question we put to the seller's solicitor about the title, the searches or the property. Cleared when the reply answers it, or a person accepts the reply.",
+/** When each sub-block starts, when it is done, and what it talks to. Written for the conveyancer, not the client. */
+interface About { starts: string; done: string; note?: string; via?: string }
+const ABOUT: Record<string, About> = {
+  'ID / AML check': { starts: 'On enrolment, for every client.', done: 'Provider result clear. A referred result goes to a conveyancer with the report; a fail halts the case.', via: 'InfoTrack ID (or the mock until InfoTrack is connected). At Propose you approve the request first.' },
+  'Proof of funds': { starts: 'On enrolment on a purchase, when firm policy requires it. The form link goes to the client.', done: 'A conveyancer signs off the declaration and statements. Exchange is held until then.', note: 'The rules read the statements, draft queries on large or unexplained credits and rate the risk; sign-off is never automated.', via: 'Client comms (email / WhatsApp). At Propose you approve the send first.' },
+  'Queries to the client': { starts: 'Drafted by the rules from the submission, or added by you.', done: 'Each query answered through the form or withdrawn with a reason. Sign-off is refused while any is open.' },
+  'Official copies': { starts: 'When the register and plan are filed, however they arrive.', done: 'Read by the rules: a clean title clears; restrictions, charges, covenants and a short lease go to a conveyancer.', via: 'Extraction of the official copy. HMLR ordering through InfoTrack is planned, not live.' },
+  'Report on title': { starts: 'Drafted once title, searches and enquiries are resolved.', done: 'A conveyancer approves the draft; it is then sent to the client and recorded as sent.', via: 'AI drafts from the file; a person approves; client comms sends.' },
+  'search:LLC1': { starts: 'Ordered when the case reaches pre-contract.', done: 'Result read by the rules; clear, or flagged to a conveyancer on financial charges, listing, conservation area or TPOs.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
+  'search:CON29': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on enforcement, contravention, unadopted road, proposed schemes, contaminated land or radon.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
+  'search:DRAINAGE_WATER': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on no public sewer connection, a sewer within 3m or under the building without a build-over agreement.', via: 'InfoTrack order and webhook result.' },
+  'search:ENVIRONMENTAL': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on flood risk, contaminated land, subsidence, mining or landfill, or a further-action recommendation.', via: 'InfoTrack order and webhook result.' },
+  'search:CHANCEL': { starts: 'Ordered when the case reaches pre-contract, where on the list.', done: 'Clear, or flagged where liability is registered; an indemnity is the usual answer.', via: 'InfoTrack order and webhook result.' },
+  Enquiry: { starts: "Raised by you or from an issue; sent to the seller's solicitor and chased on the SLA.", done: 'The reply is read by the rules: an answer that fully addresses it clears; a partial or evasive one goes to a conveyancer.', via: 'Chaser emails the other side; the reply is filed by email match or upload.' },
+  Offer: { starts: 'When the offer is filed.', done: 'Standard conditions clear by rule. Special conditions, a retention, a down-valuation or an expiry within 28 days of target exchange go to a conveyancer.' },
+  'Mortgage deed': { starts: 'Sent for signature after the report on title.', done: 'Every borrower has signed, witnessed; held undated until completion.' },
+  'Certificate of title': { starts: 'After exchange, once the deed is held and the offer conditions are met.', done: 'Sent to the lender with the completion date; the advance is requested for the working day before.' },
+  Deposit: { starts: 'Requested from the client once the contract is approved.', done: 'Cleared funds on client account, matching the contract, from a source covered by the proof of funds.', note: 'A deposit received before proof of funds is signed off raises an AML issue.' },
+  'Contract approved / signed': { starts: 'When the contract pack arrives from the other side.', done: 'Approved by a conveyancer, then signed by the client and held ready for exchange.' },
+  "Client's authority to exchange": { starts: 'Asked for once the report on title has gone and the deposit is held.', done: "The client's instruction to exchange, in writing, recorded on the case." },
+  Exchange: { starts: 'Only when every item above is done: contract signed, deposit held, source of funds signed off, report sent, offer valid, and the client has authorised it.', done: 'Contracts exchanged with the other side and the completion date fixed. The client and agent are told.', note: 'Exchange is the gate. The engine will not record it while anything above is open; a conveyancer records it with the completion date.' },
+  'Contract pack': { starts: 'Assembled once the property forms and official copies are in.', done: "Draft contract, official copies, plan and forms sent to the buyer's solicitor." },
+  'Completion statement': { starts: 'After exchange.', done: 'Figures reconciled and sent to the client with the balance due.' },
+  Completion: { starts: 'On the completion date, once funds are received.', done: 'Completion monies sent to verified details and receipt confirmed; keys released. Starts the SDLT and AP1 clocks.' },
+  'Balance to the client': { starts: 'After completion on a sale.', done: "Paid to the client's verified account, authorised by a person." },
+  'Payment to the lender': { starts: 'On completion where there is a charge to redeem.', done: "Redemption sent to the lender's verified details, authorised by a person; the lender's confirmation received." },
+  'Redemption statement': { starts: 'Requested from the existing lender once a completion date is in view; chased on the SLA.', done: 'Figure, daily rate and validity date on file.', via: 'Chaser emails the lender.' },
+  Redeemed: { starts: 'On completion.', done: "Redemption paid; the lender's confirmation received." },
+  'Discharge (DS1 / e-DS1)': { starts: 'After redemption.', done: 'The release lodged and the charge removed from the register.' },
+  Consent: { starts: 'Requested from the existing lender on enrolment of a transfer.', done: 'Consent received covering this transfer and these parties, with any conditions noted.' },
+  'Transfer deed': { starts: 'Sent for signature with the contract.', done: 'The TR1 signed by every party and witnessed.' },
+  'Declaration of trust': { starts: 'When the clients hold as tenants in common.', done: 'Signed by every co-owner, witnessed, shares as instructed.' },
+  'How they hold': { starts: 'Asked of the clients where there is more than one.', done: 'Joint tenants or tenants in common, recorded from their instruction.' },
+  'Management pack (LPE1)': { starts: 'Requested from the freeholder or agent on a leasehold; chased on the SLA.', done: 'Read by the rules: service charge, ground rent, arrears, major works and insurance; anything off goes to a conveyancer.' },
+  'Notice of assignment': { starts: 'After completion on a leasehold.', done: 'Served on the landlord with the fee; notice of charge where there is a lender.' },
+  SDLT: { starts: 'On completion.', done: 'Return filed and paid within 14 days; UTRN on file.', note: 'The deadline is tracked and escalated.' },
+  AP1: { starts: 'On completion, with the SDLT5.', done: 'Lodged within the priority period; registration confirmed by HMLR; requisitions answered.' },
+  File: { starts: 'Once registration is confirmed.', done: 'Client sent the completed register; the file closed.' },
+  Forms: { starts: 'Sent to the client on enrolment of a sale.', done: 'TA6, TA10 (and TA7) completed and returned; chased on the SLA.', via: 'Client comms.' },
 };
-/** Where a sub-block's events live on the timeline, by the first word of its label, when the tile does not say. */
-const FOCUS_BY_WORD: Record<string, string> = { Deposit: 'deposit', Exchange: 'exchange', Completion: 'completion', SDLT: 'sdlt', AP1: 'ap1', Redemption: 'redemption', Redeemed: 'mortgage_redeemed', Discharge: 'discharge', Consent: 'lender_consent', Forms: 'property_forms', Mortgage: 'mortgage_deed', Certificate: 'certificate_of_title', Transfer: 'transfer_deed', Declaration: 'deed_of_trust', Notice: 'notice_of_assignment', Contract: 'contract', Balance: 'payment', Payment: 'payment', File: 'matter_closed', How: 'client_decision', Lender: 'funds', Client: 'funds', Consideration: 'funds' };
-const aboutFor = (x: Tile) => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
-interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
+const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
+/** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
+const PERSON: Array<[RegExp, 'conveyancer' | 'client']> = [[/^Contract approved/, 'conveyancer'], [/^Client's authority/, 'client'], [/^Exchange$/, 'conveyancer'], [/^Report on title/, 'conveyancer'], [/^Proof of funds/, 'conveyancer'], [/^Mortgage deed/, 'client'], [/^Certificate of title/, 'conveyancer'], [/^Completion payment/, 'conveyancer'], [/^Balance to the client/, 'conveyancer'], [/^Payment to the lender/, 'conveyancer'], [/^AP1/, 'conveyancer'], [/^SDLT/, 'conveyancer'], [/^Transfer deed/, 'client'], [/^Declaration of trust/, 'client'], [/^How they hold/, 'client'], [/^Forms/, 'client'], [/^Completion$/, 'conveyancer']];
+const personFor = (label: string) => PERSON.find(([re]) => re.test(label))?.[1] ?? null;
+interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
 const STATE_ICON: Record<LaneDef['state'], { Icon: typeof Circle; colour: string }> = { done: { Icon: CheckCircle, colour: '#16a34a' }, open: { Icon: Clock, colour: '#f59e0b' }, blocked: { Icon: AlertTriangle, colour: '#dc2626' }, idle: { Icon: Circle, colour: '#cbd5e1' } };
 
 /** The ⓘ: a description rendered on the top layer, so no box or band can sit over it. */
-function Tip({ text }: { text: string }) {
+function Tip({ text, label, icon }: { text: ReactNode; label: string; icon?: ReactNode }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const show = () => { const r = ref.current?.getBoundingClientRect(); if (r) setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom + 6 }); };
   return (
     <>
-      <span ref={ref} className="ep-i" tabIndex={0} aria-label={text} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>i</span>
+      <span ref={ref} className={icon ? 'ep-who' : 'ep-i'} tabIndex={0} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon ?? 'i'}</span>
       {pos && createPortal(<div className="ep-tip" role="tooltip" style={{ left: pos.x, top: pos.y }}>{text}</div>, document.body)}
     </>
   );
@@ -215,13 +236,21 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
       {open && (
         <div className="ep-box-b">
           {lane.note && <div className="ep-note" style={{ padding: '4px 0 6px' }}>{lane.note}</div>}
-          <div className="ep-tree">
-          {lane.tiles.map((x) => {
+          <div className={lane.order === 'sequence' ? 'ep-seq' : 'ep-tree'}>
+          {lane.tiles.map((x, n) => {
             const about = aboutFor(x);
+            const who = personFor(x.label);
+            const done = DONE_STATUSES.has(x.status);
+            const last = lane.order === 'sequence' && n === lane.tiles.length - 1;
             const name = x.href ? <a href={x.href} className="ep-sub-a">{titleCase(x.label)}</a> : titleCase(x.label);
             return (
-              <div key={x.label} className={`ep-sub${x.depth ? ' d1' : ''}`}>
-                <b>{name}{about && <Tip text={about} />}</b>
+              <div key={x.label} className={`ep-sub${x.depth ? ' d1' : ''}${last ? ' gate' : ''}${done ? ' done' : ''}`}>
+                {lane.order === 'sequence' && <span className="ep-n">{done ? <Check size={10} /> : n + 1}</span>}
+                <b>
+                  {name}
+                  {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
+                  {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}</>} />}
+                </b>
                 <Pill s={x.status} />
                 {x.detail && <span className="d">{x.detail}</span>}
               </div>
@@ -237,32 +266,43 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   );
 }
 
+/** What sits between two phases: an automatic hand-off, or a person who has to sign. */
+const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: string }> = {
+  'instruction->investigation': { kind: 'auto', label: 'Automatic', text: 'Once the ID check clears the case moves to pre-contract and every search on its list is ordered from InfoTrack. At Propose each order is put to you first.' },
+  'investigation->contract': { kind: 'person', label: 'Conveyancer', text: 'Nothing exchanges until each strand above is cleared by the rules or accepted by a conveyancer, the report on title has gone and source of funds is signed off.' },
+  'contract->completion': { kind: 'person', label: 'Conveyancer and client', text: 'Exchange. The client authorises it in writing; a conveyancer exchanges with the signed contract and deposit held, and records the completion date.' },
+  'completion->registration': { kind: 'person', label: 'Conveyancer', text: 'Completion. Every payment out is authorised by a person against bank details verified out of band; the rules never move money.' },
+};
+
 /** The flowchart: tiers top to bottom, every box in a tier joined by a bus to every box in the next, so fan-out and fan-in read as concurrency. */
 function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[] }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[] }>({ bus: [], drops: [], arrows: [] });
+  const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[]; junctions: Array<{ x: number; y: number; from: string; to: string }> }>({ bus: [], drops: [], arrows: [], junctions: [] });
   const measure = useCallback(() => {
     const root = ref.current;
     if (!root) return;
     const rr = root.getBoundingClientRect();
     const tierEls = Array.from(root.querySelectorAll<HTMLElement>('[data-tier]'));
-    const bus: string[] = []; const drops: string[] = []; const arrows: string[] = [];
+    const bus: string[] = []; const drops: string[] = []; const arrows: string[] = []; const junctions: Array<{ x: number; y: number; from: string; to: string }> = [];
     const mid = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left - rr.left + r.width / 2, top: r.top - rr.top, bottom: r.bottom - rr.top }; };
     for (let i = 0; i < tierEls.length - 1; i++) {
       const a = Array.from(tierEls[i].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
       const b = Array.from(tierEls[i + 1].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
       if (!a.length || !b.length) continue;
       const y = (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2;
+      const from = tierEls[i].dataset.tier ?? ''; const to = tierEls[i + 1].dataset.tier ?? '';
       if (a.length === 1 && b.length === 1 && Math.abs(a[0].x - b[0].x) < 2) {
         arrows.push(`M${a[0].x},${a[0].bottom} V${b[0].top - 1}`);
+        junctions.push({ x: a[0].x, y: (a[0].bottom + b[0].top) / 2, from, to });
         continue;
       }
       const xs = [...a, ...b].map((p) => p.x);
       bus.push(`M${Math.min(...xs)},${y} H${Math.max(...xs)}`);
+      junctions.push({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y, from, to });
       for (const p of a) drops.push(`M${p.x},${p.bottom} V${y}`);
       for (const p of b) arrows.push(`M${p.x},${y} V${p.top - 1}`);
     }
-    setLines({ bus, drops, arrows });
+    setLines({ bus, drops, arrows, junctions });
   }, []);
   useLayoutEffect(() => {
     measure();
@@ -282,6 +322,15 @@ function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string
         {lines.drops.map((d, i) => <path key={`d${i}`} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" />)}
         {lines.arrows.map((d, i) => <path key={`a${i}`} d={d} stroke="#cbd5e1" strokeWidth={2} fill="none" markerEnd="url(#ep-arrow)" />)}
       </svg>
+      {lines.junctions.map((j) => {
+        const g = JUNCTION[`${j.from}->${j.to}`];
+        if (!g) return null;
+        return (
+          <div key={`${j.from}-${j.to}`} className={`ep-junction ${g.kind}`} style={{ left: j.x, top: j.y }}>
+            <Tip label={g.label} icon={g.kind === 'person' ? <User size={12} /> : <Zap size={12} />} text={<><span className="k">{g.label}</span> {g.text}</>} />
+          </div>
+        );
+      })}
       {tiers.map((tier) => {
         const ps = phaseState(tier.items);
         return (
@@ -511,14 +560,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ) : null });
   }
 
-  if (has('property_forms')) lane({ id: 'property_forms', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', note: 'completed by the client; sent out with the contract pack',
+  if (has('property_forms')) lane({ id: 'property_forms', order: 'sequence', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', note: 'completed by the client; sent out with the contract pack',
     tiles: [{ label: `Forms${forms.forms.length ? ` · ${forms.forms.join(', ')}` : ''}`, status: forms.status, detail: forms.requestedAt && !forms.receivedAt ? `requested ${fmtDay(forms.requestedAt)} · the client is chased on the SLA` : forms.receivedAt ? `received ${fmtDay(forms.receivedAt)}` : undefined }],
     actions: <>
       {forms.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_property_forms' })}>Send the forms to the client</button>}
       {forms.status !== 'received' && forms.status !== 'not_applicable' && act('property_forms', 'property_forms_received', 'Forms Received', { forms: leasehold ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'] })}
     </> });
 
-  lane({ id: 'title', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
+  lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
       { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? 'file the official copy of the register under Documents' },
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
@@ -548,7 +597,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {inboundOpen.length > 0 && act('enquiries', 'enquiry_replies_sent', `Replies Sent (${Object.values(replySel).filter(Boolean).length})`, { enquiryIds: Object.keys(replySel).filter((k) => replySel[k]) }, { primary: true, disabled: !Object.values(replySel).some(Boolean) })}
     </> });
 
-  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
+  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
       { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage' },
       { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : 'not_started', detail: deeds.mortgageDeedAt ? `executed ${fmtDay(deeds.mortgageDeedAt)} (witnessed)` : undefined },
@@ -560,7 +609,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && resolved(s.mortgage.status) && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why was the offer withdrawn / lapsed?'); if (r) void cmd({ type: 'mortgage_offer_withdrawn', reason: r }); }}>Offer withdrawn</button>}
     </> });
 
-  if (has('redemption') && redemptionApplies) lane({ id: 'redemption', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
+  if (has('redemption') && redemptionApplies) lane({ id: 'redemption', order: 'sequence', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
     tiles: [
       { label: 'Redemption statement', status: red.status, detail: red.redemptionPennies != null ? `${gbp(red.redemptionPennies)}${red.validUntil ? ` · valid to ${red.validUntil}` : ''}${red.dailyInterestPennies ? ` · ${gbp(red.dailyInterestPennies)}/day` : ''}` : undefined },
       { label: 'Payment to the lender', status: paidTo('lender') ? 'approved' : 'not_started', detail: 'a person authorises this against verified lender details' },
@@ -573,7 +622,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {red.status === 'received' && completed && paidTo('lender') && act('redemption', 'mortgage_redeemed', 'Mortgage Redeemed', {}, { primary: true })}
     </> });
 
-  if (has('lender_consent') && s.hasExistingMortgage) lane({ id: 'lender_consent', title: "Lender's consent to the transfer", state: consent.status === 'received' ? 'done' : consent.status === 'requested' ? 'open' : 'blocked', note: consent.lender ?? undefined,
+  if (has('lender_consent') && s.hasExistingMortgage) lane({ id: 'lender_consent', order: 'sequence', title: "Lender's consent to the transfer", state: consent.status === 'received' ? 'done' : consent.status === 'requested' ? 'open' : 'blocked', note: consent.lender ?? undefined,
     tiles: [{ label: 'Consent', status: consent.status, detail: consent.conditions ?? undefined }],
     actions: <>
       {consent.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => { const l = ask('Lender?'); if (l !== null) void cmd({ type: 'request_lender_consent', lender: l || undefined }); }}>Request consent</button>}
@@ -599,7 +648,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
     </> : null });
 
-  if (has('leasehold')) lane({ id: 'leasehold', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
+  if (has('leasehold')) lane({ id: 'leasehold', order: 'sequence', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
     tiles: [
       { label: 'Management pack (LPE1)', status: s.managementPack?.status ?? 'not_started', documentId: s.managementPack?.documentId, focus: 'management_pack' },
       ...(buyer ? [{ label: 'Notice of assignment', status: s.postCompletion.noticeOfAssignmentAt ? 'sent' : 'not_started' }] : []),
@@ -609,11 +658,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {buyer && completed && !s.postCompletion.noticeOfAssignmentAt && act('leasehold', 'notice_of_assignment_served', 'Notice of Assignment Served')}
     </> });
 
-  if (p.hasExchange) lane({ id: 'exchange', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
+  if (p.hasExchange) lane({ id: 'exchange', order: 'sequence', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
     tiles: [
       ...(seller ? [{ label: 'Contract pack', status: s.contractPack?.sentAt ? 'sent' : 'not_started', detail: s.contractPack?.sentAt ? `sent ${fmtDay(s.contractPack.sentAt)}` : undefined }] : []),
-      ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting' }] : []),
       { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started', detail: 'approved, then signed and held ready for exchange' },
+      ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting' }] : []),
       ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started' }] : []),
       { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead' },
       ...(exchanged ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started' }] : []),
@@ -636,7 +685,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   {
     const firm = verified('firm_client_account');
     const needsRequest = p.fundsFrom.includes('lender') || p.fundsFrom.includes('client');
-    lane({ id: 'completion', title: 'Completion & money', state: completed ? (seller && !paidTo('client') ? 'open' : 'done') : s.stage === 'pre_completion' ? 'open' : 'idle', note: completed ? `completed ${fmtDay(s.completion.confirmedAt)}` : p.fundsFrom.length ? `money from: ${p.fundsFrom.map((f) => pretty(f)).join(', ')}` : undefined,
+    lane({ id: 'completion', order: 'sequence', title: 'Completion & money', state: completed ? (seller && !paidTo('client') ? 'open' : 'done') : s.stage === 'pre_completion' ? 'open' : 'idle', note: completed ? `completed ${fmtDay(s.completion.confirmedAt)}` : p.fundsFrom.length ? `money from: ${p.fundsFrom.map((f) => pretty(f)).join(', ')}` : undefined,
       tiles: [
         ...(p.fundsFrom.includes('lender') ? [{ label: remo ? 'Advance from the new lender' : 'Lender funds', status: s.completion.fundsReceivedAt ? 'received' : openWaits.some((w) => w.key === 'funds' && w.subject === 'lender') ? 'requested' : 'not_started' }] : []),
         ...(p.fundsFrom.includes('client') ? [{ label: "Client's balance", status: s.completion.fundsReceivedAt ? 'received' : openWaits.some((w) => w.key === 'funds' && w.subject === 'client') ? 'requested' : 'not_started' }] : []),
@@ -659,7 +708,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </> : seller && completed && !paidTo('client') ? authorise('client', 'other', 'Authorise balance to the client') : null });
   }
 
-  lane({ id: 'registration', title: p.registration === 'ap1' ? 'Registration' : 'Discharge & close', state: closed ? 'done' : atLeast('completed') ? 'open' : 'idle', note: p.registration === 'ap1' ? 'SDLT within 14 days; AP1 within the priority period' : "the buyer's solicitor registers; we see the charge discharged and close",
+  lane({ id: 'registration', order: 'sequence', title: p.registration === 'ap1' ? 'Registration' : 'Discharge & close', state: closed ? 'done' : atLeast('completed') ? 'open' : 'idle', note: p.registration === 'ap1' ? 'SDLT within 14 days; AP1 within the priority period' : "the buyer's solicitor registers; we see the charge discharged and close",
     tiles: [
       ...(p.registration === 'ap1' && (buyer || toe) ? [{ label: 'SDLT', status: s.postCompletion.sdltSubmittedAt ? 'sent' : s.sdltNotRequiredAt ? 'not_required' : 'not_started' }] : []),
       ...(p.registration === 'ap1' ? [{ label: 'AP1', status: s.postCompletion.ap1ConfirmedAt ? 'done' : s.postCompletion.ap1SubmittedAt ? 'requested' : 'not_started', detail: s.postCompletion.ap1ConfirmedAt ? `registered ${fmtDay(s.postCompletion.ap1ConfirmedAt)}` : undefined }] : []),
@@ -680,10 +729,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const subj = x.key?.startsWith('search:') ? x.key.slice(7) : /^Enquiry (\S+)/.exec(x.label)?.[1] ?? null;
     const kind = x.key?.startsWith('search:') ? 'search' : x.label.startsWith('Enquiry ') ? 'enquiry' : x.label.startsWith('ID / AML') ? 'id_check' : x.label.startsWith('Offer') ? 'mortgage' : x.label.startsWith('Official copies') ? 'title' : x.label.startsWith('Report on title') ? 'report_on_title' : x.label.startsWith('Proof of funds') ? 'proof_of_funds' : x.label.startsWith('Management pack') ? 'management_pack' : null;
     const d = kind ? view.pendingDecisions.find((dd) => dd.kind === kind && (!subj || (dd.subject ?? '').split(':').pop() === subj)) : null;
-    if (d) return `/conveyi/decisions/${d.eventId}`;
-    if (x.documentId) return `?tab=documents&doc=${encodeURIComponent(x.documentId)}`;
-    const focus = x.focus ?? FOCUS_BY_WORD[x.label.split(/[\s·(]/)[0]];
-    return focus ? `?tab=timeline&focus=${encodeURIComponent(focus)}` : undefined;
+    return d ? `/conveyi/decisions/${d.eventId}` : undefined;
   };
   for (const l of lanes) for (const x of l.tiles) if (!x.href) x.href = linkFor(x);
   const current = openLane === undefined ? (lanes.find((l) => l.state === 'blocked') ?? lanes.find((l) => l.state === 'open'))?.id ?? null : openLane;
