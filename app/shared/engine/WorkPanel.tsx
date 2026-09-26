@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
+import { AlertTriangle, CheckCircle, Circle, Clock } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -36,26 +37,42 @@ export const WORK_CSS = `
 .ep-lane-h b{font-size:12.5px}
 .ep-lane-h .tw{color:#94a3b8;font-size:11px;width:10px}
 .ep-lane-h .sub{display:flex;gap:4px;flex-wrap:wrap;margin-left:auto}
-.ep-flow{display:grid;gap:0;align-items:start;margin-top:4px;overflow-x:auto}
-.ep-col{position:relative;padding:0 14px 0 0;display:grid;gap:8px;align-content:start;min-width:0}
-.ep-col + .ep-col{padding-left:14px}
-.ep-col + .ep-col::before{content:'';position:absolute;left:-1px;top:34px;width:12px;height:12px;border-top:2px solid #cbd5e1;border-right:2px solid #cbd5e1;transform:translateX(-7px) rotate(45deg)}
-.ep-col-h{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#64748b;padding:0 0 2px;height:20px;display:flex;align-items:center;gap:6px}
-.ep-col-h i{width:8px;height:8px;border-radius:99px;display:inline-block}
-.ep-box{border:1px solid #e6e8ee;border-radius:12px;background:#fff;text-align:left;font-family:inherit;color:inherit;min-width:0}
-.ep-box-h{display:grid;gap:5px;padding:10px 12px;cursor:pointer;border:0;background:none;width:100%;text-align:left;font-family:inherit;color:inherit}
-.ep-box-h:hover{background:#fafafa;border-radius:12px}
-.ep-box.on{border-color:#5A27E0;box-shadow:0 0 0 2px #ede9fe}
-.ep-box b{font-size:12.5px;line-height:1.3}
-.ep-box .rag{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700}
-.ep-box .rag i{width:9px;height:9px;border-radius:99px;display:inline-block}
-.ep-box .n{font-size:11.5px;color:#64748b;font-variant-numeric:tabular-nums}
-.ep-box-b{border-top:1px solid #f1f5f9;padding:8px 12px 12px}
-.ep-sub{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:6px 0;border-top:1px solid #f8fafc;font-size:12.5px}
+.ep-flow{display:grid;gap:0 18px;align-items:start;background:#f8fafc;border:1px solid #eef1f5;border-radius:16px;padding:14px 16px 16px;overflow-x:auto}
+.ep-col{position:relative;display:grid;gap:10px;align-content:start;min-width:0}
+.ep-col-h{position:relative;display:flex;align-items:center;gap:8px;height:28px;margin-bottom:4px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.ep-col-h .lab{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:4px 11px 4px 8px;color:#334155;position:relative;z-index:1}
+.ep-col-h .lab i{width:8px;height:8px;border-radius:99px;display:inline-block}
+.ep-col-h .lab.done{border-color:#bbf7d0;color:#14532d}
+.ep-col-h .lab.blocked{border-color:#fecaca;color:#7f1d1d}
+.ep-col-h .lab.open{border-color:#fde68a;color:#78350f}
+.ep-col + .ep-col .ep-col-h::before{content:'';position:absolute;right:100%;top:50%;width:18px;height:2px;background:#cbd5e1;margin-right:0}
+.ep-col + .ep-col .ep-col-h::after{content:'';position:absolute;left:-6px;top:50%;width:7px;height:7px;border-top:2px solid #cbd5e1;border-right:2px solid #cbd5e1;transform:translateY(-50%) rotate(45deg)}
+.ep-box{position:relative;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;background:#fff;min-width:0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.ep-box.done{border-left-color:#16a34a}
+.ep-box.open{border-left-color:#f59e0b}
+.ep-box.blocked{border-left-color:#dc2626}
+.ep-box.idle{border-left-color:#cbd5e1;background:#fcfcfd}
+.ep-box.idle .ep-box-t{color:#64748b}
+.ep-box.on{border-color:#5A27E0;border-left-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe,0 6px 20px rgba(15,23,42,.08)}
+.ep-box-h{display:grid;gap:8px;padding:11px 12px 11px 11px;cursor:pointer;border:0;background:none;width:100%;text-align:left;font-family:inherit;color:inherit;border-radius:12px}
+.ep-box-h:hover{background:#fafafa}
+.ep-box-t{display:flex;align-items:flex-start;gap:8px;font-size:13px;font-weight:700;line-height:1.3;color:#0f172a}
+.ep-box-t .ic{flex-shrink:0;display:flex;margin-top:1px}
+.ep-box-m{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.ep-box-m .n{color:#64748b;font-variant-numeric:tabular-nums;font-weight:600}
+.ep-bar{height:4px;border-radius:99px;background:#eef1f5;overflow:hidden}
+.ep-bar i{display:block;height:100%;border-radius:99px}
+.ep-box-b{border-top:1px solid #f1f5f9;padding:6px 12px 12px 11px}
+.ep-sub{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;padding:7px 0;border-top:1px solid #f8fafc;font-size:12.5px}
 .ep-sub:first-child{border-top:0}
-.ep-sub b{font-weight:600;font-size:12.5px}
-.ep-sub .ep-pill{margin-top:0}
-.ep-sub .d{flex-basis:100%;font-size:11.5px;color:#64748b}
+.ep-sub b{font-weight:600;font-size:12.5px;min-width:0}
+.ep-sub .ep-pill{margin-top:0;justify-self:end}
+.ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
+.ep-box-b .acts{display:grid;gap:6px;margin-top:8px;padding-top:8px;border-top:1px solid #f1f5f9}
+.ep-box-b .acts .ep-btn{margin:0;width:100%;text-align:center}
+.ep-box-b .acts > span{display:contents}
+.ep-veil{position:fixed;inset:0;background:rgba(15,23,42,.38);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding:64px 16px 16px;overflow-y:auto}
+.ep-veil .cs{margin:0;width:100%;max-width:680px;background:#fff;border-color:#e6e8ee;border-radius:14px;padding:18px 22px;box-shadow:0 24px 64px rgba(15,23,42,.24)}
 .ep-lane-h .st{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;border-radius:99px;padding:2px 8px}
 .ep-lane-b{padding:10px 12px}
 .ep-lane-b .acts{margin-top:6px}
@@ -105,28 +122,31 @@ const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime(
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
 interface Tile { label: string; status: string; detail?: string }
-interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; sheet?: ReactNode }
+interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
-/** One workstream as a box: its name, its RAG and how many sub-blocks are done. Open, it grows to show the sub-blocks and what a person may record now. */
+const STATE_ICON: Record<LaneDef['state'], { Icon: typeof Circle; colour: string }> = { done: { Icon: CheckCircle, colour: '#16a34a' }, open: { Icon: Clock, colour: '#f59e0b' }, blocked: { Icon: AlertTriangle, colour: '#dc2626' }, idle: { Icon: Circle, colour: '#cbd5e1' } };
+
+/** One workstream as a box: state on the edge and the icon, progress as a bar. Open, it grows in place to show the sub-blocks and what a person may record now. */
 function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
   const r = RAG[lane.state];
+  const { Icon, colour } = STATE_ICON[lane.state];
   const done = lane.tiles.filter((x) => DONE_STATUSES.has(x.status)).length;
+  const pct = lane.tiles.length ? Math.round((done / lane.tiles.length) * 100) : lane.state === 'done' ? 100 : 0;
   return (
-    <div className={`ep-box${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
+    <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <b>{titleCase(lane.title)}</b>
-        <span className="rag" style={{ color: r.fg }}><i style={{ background: r.dot }} />{r.label}</span>
-        {lane.tiles.length > 0 && <span className="n">{done} of {lane.tiles.length}</span>}
+        <span className="ep-box-t"><span className="ic" style={{ color: colour }}><Icon size={16} /></span>{titleCase(lane.title)}</span>
+        <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span>{lane.tiles.length > 0 && <span className="n">{done}/{lane.tiles.length}</span>}</span>
+        <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>
       </button>
       {open && (
         <div className="ep-box-b">
-          {lane.note && <div className="ep-note" style={{ marginBottom: 4 }}>{lane.note}</div>}
+          {lane.note && <div className="ep-note" style={{ padding: '4px 0 6px' }}>{lane.note}</div>}
           {lane.tiles.map((x) => <div key={x.label} className="ep-sub"><b>{titleCase(x.label)}</b><Pill s={x.status} />{x.detail && <span className="d">{x.detail}</span>}</div>)}
           {lane.extra}
           {lane.actions && <div className="acts">{lane.actions}</div>}
-          {lane.sheet}
           <NoticeBox n={notice ?? null} />
         </div>
       )}
@@ -257,6 +277,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   };
   const [sheetContext, setSheetContext] = useState<TaskContextView | null>(null);
   useEffect(() => {
+    if (!sheet) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !busy) setSheet(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [sheet, busy]);
+  useEffect(() => {
     setSheetContext(null);
     if (!sheet) return;
     let live = true;
@@ -266,8 +292,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       .catch(() => {});
     return () => { live = false; };
   }, [sheet, api, matterId]);
-  const sheetFor = (laneId: string) =>
-    sheet && sheet.laneId === laneId && contracts[sheet.type] ? (
+  const sheetDialog = sheet && contracts[sheet.type] ? (
+    <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
       <CompletionSheet
         contract={contracts[sheet.type]}
         docs={docs}
@@ -279,7 +305,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           setSheet(null);
         }}
       />
-    ) : null;
+    </div>
+  ) : null;
   const inboundOpen = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt);
   const inboundAll = Object.values(s.inboundEnquiries ?? {}).sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
   const red = s.redemption ?? { status: 'not_applicable' as const, lender: null, redemptionPennies: null, validUntil: null, dailyInterestPennies: null, requestedAt: null, receivedAt: null, redeemedAt: null, dischargedAt: null };
@@ -289,7 +316,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   const resolved = (st: string) => st === 'cleared' || st === 'reviewed';
   const lanes: LaneDef[] = [];
-  const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, sheet: sheetFor(l.id) }); };
+  const lane = (l: LaneDef | null | false) => { if (l) lanes.push(l); };
 
   lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
     tiles: [{ label: 'ID / AML check', status: s.idCheck.status }],
@@ -516,12 +543,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {section === 'flow' && (() => {
         const cols = PHASES.map((ph) => ({ ...ph, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) })).filter((c) => c.items.length);
         return (
-          <div className="ep-flow" style={{ gridTemplateColumns: cols.map((c) => (c.items.some((l) => l.id === current) ? 'minmax(280px,2.4fr)' : 'minmax(118px,1fr)')).join(' ') }}>
+          <div className="ep-flow" style={{ gridTemplateColumns: `repeat(${cols.length}, minmax(168px, 1fr))` }}>
             {cols.map((c) => {
-              const r = RAG[phaseState(c.items)];
+              const ps = phaseState(c.items);
               return (
                 <div key={c.id} className="ep-col">
-                  <div className="ep-col-h"><i style={{ background: r.dot }} />{c.label}</div>
+                  <div className="ep-col-h"><span className={`lab ${ps}`}><i style={{ background: RAG[ps].dot }} />{c.label}</span></div>
                   {c.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
                 </div>
               );
@@ -529,6 +556,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           </div>
         );
       })()}
+
+      {sheetDialog}
 
       {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>

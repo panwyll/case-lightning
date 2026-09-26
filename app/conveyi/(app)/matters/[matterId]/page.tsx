@@ -63,7 +63,7 @@ a.mx-li:hover{background:#fafafa}
 .mx-row:first-child{border-top:0}
 .mx-row .d{color:#94a3b8;white-space:nowrap;font-size:12px}
 .mx-ellip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-@media (max-width:1280px){.mx-top{grid-template-columns:1fr}.mx-two{grid-template-columns:1fr}.mx-li{grid-template-columns:22px 1fr}.mx-li .m{display:none}}
+@media (max-width:1560px){.mx-top{grid-template-columns:1fr}.mx-two{grid-template-columns:1fr}.mx-li{grid-template-columns:22px 1fr}.mx-li .m{display:none}}
 `;
 
 const BAND: Record<HealthBand, { fg: string; bg: string }> = {
