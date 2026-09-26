@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Wrench, History, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Building, Home, MailPlus, FileText, Users, Shield, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -24,6 +24,8 @@ interface NavItem {
   icon: ComponentType<{ size?: number }>;
   href: string;
   adminTab?: AdminTab;
+  /** Admin tabs reached from this item's page rather than the sidebar; the item lights up on them. */
+  adminTabs?: AdminTab[];
   adminOnly?: boolean;
   match?: (path: string) => boolean;
   /** Which count sits on the item as a badge. */
@@ -57,14 +59,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
       { key: 'policy', label: 'Policy', icon: Shield, href: `${paths.admin}?tab=policy`, adminTab: 'policy', adminOnly: true },
-      { key: 'developer', label: 'Developer', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`) },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { key: 'actions', label: 'Tools', icon: Wrench, href: `${paths.admin}?tab=actions`, adminTab: 'actions', adminOnly: true },
-      { key: 'audit', label: 'Audit Log', icon: History, href: `${paths.admin}?tab=audit`, adminTab: 'audit', adminOnly: true },
+      { key: 'tools', label: 'Tools', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`), adminTabs: ['actions', 'audit'] },
     ],
   },
   {
@@ -77,7 +72,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
 ];
 
 /** The admin tabs reachable from the nav — the admin page validates ?tab against this (plus its own hidden ones). */
-export const ADMIN_TABS_IN_NAV: AdminTab[] = GROUPS.flatMap((g) => g.items).map((i) => i.adminTab).filter((t): t is AdminTab => !!t);
+export const ADMIN_TABS_IN_NAV: AdminTab[] = GROUPS.flatMap((g) => g.items).flatMap((i) => [i.adminTab, ...(i.adminTabs ?? [])]).filter((t): t is AdminTab => !!t);
 
 const TOP = 56;
 const SIDE = 228;
@@ -124,7 +119,7 @@ function Items({ isAdmin }: { isAdmin: boolean }) {
   const counts = useCounts();
   const tab = useSearchParams()?.get('tab') ?? null;
   const onAdmin = path.startsWith(paths.admin);
-  const active = (i: NavItem) => (onAdmin ? !!i.adminTab && i.adminTab === (tab ?? 'mywork') : !!i.match && i.match(path));
+  const active = (i: NavItem) => (onAdmin ? (!!i.adminTab && i.adminTab === (tab ?? 'mywork')) || !!i.adminTabs?.includes((tab ?? 'mywork') as AdminTab) : !!i.match && i.match(path));
   // A decision page is a task being done; the nav says so.
   return (
     <>

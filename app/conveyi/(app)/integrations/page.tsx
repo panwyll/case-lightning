@@ -35,7 +35,7 @@ function state(s: Status | null | undefined, firmOwned = false) {
 
 interface MatterRow { id: string; matter_ref: string; property_address: string }
 
-export default function DeveloperPage() {
+export default function ToolsPage() {
   const [leap, setLeap] = useState<Status | null | undefined>(undefined);
   const [intouch, setIntouch] = useState<Status | null | undefined>(undefined);
   const [q, setQ] = useState('');
@@ -59,7 +59,11 @@ export default function DeveloperPage() {
   return (
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
-      <div className="eg-top"><h1 className="eg-h1">Developer</h1></div>
+      <div className="eg-top"><h1 className="eg-h1">Tools</h1></div>
+      <div className="ig-grid" style={{ marginBottom: 4 }}>
+        <a className="ig-card" href={`${paths.admin}?tab=audit`}><h2 className="ig-name">Audit log</h2><p className="ig-what">Every action the app took or a person took in it.</p></a>
+        <a className="ig-card" href={`${paths.admin}?tab=actions`}><h2 className="ig-name">Actions</h2><p className="ig-what">One-off maintenance a firm admin can run.</p></a>
+      </div>
       <h2 className="ig-h2">Integrations</h2>
       <div className="ig-grid">
         {cards.map((c) => {
