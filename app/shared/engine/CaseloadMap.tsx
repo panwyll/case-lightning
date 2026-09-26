@@ -39,8 +39,11 @@ const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> =
 };
 
 export const CASELOAD_CSS = `
-.cm-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.cm-head{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px;min-width:0}
+.cm-head > *{flex-shrink:0}
+.cm-head .cm-chips{flex:1 1 auto;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
 .cm-chips{display:flex;gap:6px;flex-wrap:wrap}
+.cm-chip{white-space:nowrap}
 .cm-chip{display:inline-flex;align-items:center;gap:7px;border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:4px 12px 4px 6px;cursor:pointer;font-family:inherit;font-size:12.5px;color:#334155;line-height:1}
 .cm-chip b{font-weight:800;font-variant-numeric:tabular-nums;color:#0f172a}
 .cm-chip:hover{border-color:#cbd5e1;background:#f8fafc}
