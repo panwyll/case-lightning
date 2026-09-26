@@ -5,6 +5,8 @@ import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
 
+import { EXAMPLE_TEMPLATES, createMinimalDocx } from '@/lib/server/doc-templates';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,14 @@ export async function GET() {
        from doc_template where tenant_id = $1 order by sort_order, created_at`,
       [user.tenantId]
     );
+    if (rows.length === 0) {
+      // A new firm starts with the standard set; they replace any with their own.
+      for (const tpl of EXAMPLE_TEMPLATES) {
+        const content = createMinimalDocx(tpl.paragraphs);
+        await query(`insert into doc_template (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, sort_order, created_by) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [user.tenantId, tpl.name, tpl.description, tpl.fileName, content, content.length, tpl.hasLlmPrompts, EXAMPLE_TEMPLATES.indexOf(tpl), user.userId]).catch(() => {});
+      }
+      return GET();
+    }
     return ok({ templates: rows });
   } catch (error) {
     return fail(error);

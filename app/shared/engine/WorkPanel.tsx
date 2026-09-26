@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
-import { AlertTriangle, Check, CheckCircle, Circle, Clock, User, Zap } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, User, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -89,6 +89,8 @@ export const WORK_CSS = `
 .ep-sub.gate.done .ep-n{background:#5A27E0;color:#fff}
 .ep-who{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:99px;background:#ede9fe;color:#5A27E0;margin-left:6px;vertical-align:-3px;cursor:help}
 .ep-who:hover,.ep-who:focus{background:#5A27E0;color:#fff;outline:none}
+.ep-who.doc{background:#e0e7ff;color:#3730a3}
+.ep-who.doc:hover,.ep-who.doc:focus{background:#3730a3;color:#fff}
 .ep-tip .k{display:inline-block;min-width:44px;font-weight:800;color:#c4b5fd;margin-right:4px}
 .ep-junction{position:absolute;z-index:2;transform:translate(-50%,-50%);display:flex}
 .ep-junction .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #5A27E0;color:#5A27E0;box-shadow:0 1px 3px rgba(15,23,42,.12)}
@@ -158,13 +160,13 @@ const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).t
 
 interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
 /** When each sub-block starts, when it is done, and what it talks to. Written for the conveyancer, not the client. */
-interface About { starts: string; done: string; note?: string; via?: string }
+interface About { starts: string; done: string; note?: string; via?: string; /** the document this step produces, from the firm's Doc Packs */ creates?: string }
 const ABOUT: Record<string, About> = {
-  'ID / AML check': { starts: 'On enrolment, for every client.', done: 'Provider result clear. A referred result goes to a conveyancer with the report; a fail halts the case.', via: 'InfoTrack ID (or the mock until InfoTrack is connected). At Propose you approve the request first.' },
+  'ID / AML check': { creates: 'Client care letter (.docx)', starts: 'On enrolment, for every client.', done: 'Provider result clear. A referred result goes to a conveyancer with the report; a fail halts the case.', via: 'InfoTrack ID (or the mock until InfoTrack is connected). At Propose you approve the request first.' },
   'Proof of funds': { starts: 'On enrolment on a purchase, when firm policy requires it. The form link goes to the client.', done: 'A conveyancer signs off the declaration and statements. Exchange is held until then.', note: 'The rules read the statements, draft queries on large or unexplained credits and rate the risk; sign-off is never automated.', via: 'Client comms (email / WhatsApp). At Propose you approve the send first.' },
   'Queries to the client': { starts: 'Drafted by the rules from the submission, or added by you.', done: 'Each query answered through the form or withdrawn with a reason. Sign-off is refused while any is open.' },
   'Official copies': { starts: 'When the register and plan are filed, however they arrive.', done: 'Read by the rules: a clean title clears; restrictions, charges, covenants and a short lease go to a conveyancer.', via: 'Extraction of the official copy. HMLR ordering through InfoTrack is planned, not live.' },
-  'Report on title': { starts: 'Drafted once title, searches and enquiries are resolved.', done: 'A conveyancer approves the draft; it is then sent to the client and recorded as sent.', via: 'AI drafts from the file; a person approves; client comms sends.' },
+  'Report on title': { starts: 'Drafted once title, searches and enquiries are resolved.', done: 'A conveyancer approves the draft; it is then sent to the client and recorded as sent.', via: 'AI drafts from the file; a person approves; client comms sends.', creates: 'Report on title (.docx, from the Report on title doc pack)' },
   'search:LLC1': { starts: 'Ordered when the case reaches pre-contract.', done: 'Result read by the rules; clear, or flagged to a conveyancer on financial charges, listing, conservation area or TPOs.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
   'search:CON29': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on enforcement, contravention, unadopted road, proposed schemes, contaminated land or radon.', via: 'InfoTrack order and webhook result. At Propose you approve the order first.' },
   'search:DRAINAGE_WATER': { starts: 'Ordered when the case reaches pre-contract.', done: 'Clear, or flagged on no public sewer connection, a sewer within 3m or under the building without a build-over agreement.', via: 'InfoTrack order and webhook result.' },
@@ -174,13 +176,13 @@ const ABOUT: Record<string, About> = {
   Offer: { starts: 'When the offer is filed.', done: 'Standard conditions clear by rule. Special conditions, a retention, a down-valuation or an expiry within 28 days of target exchange go to a conveyancer.' },
   'Mortgage deed': { starts: 'Sent for signature after the report on title.', done: 'Every borrower has signed, witnessed; held undated until completion.' },
   'Certificate of title': { starts: 'After exchange, once the deed is held and the offer conditions are met.', done: 'Sent to the lender with the completion date; the advance is requested for the working day before.' },
-  Deposit: { starts: 'Requested from the client once the contract is approved.', done: 'Cleared funds on client account, matching the contract, from a source covered by the proof of funds.', note: 'A deposit received before proof of funds is signed off raises an AML issue.' },
+  Deposit: { creates: 'Deposit request letter (.docx)', starts: 'Requested from the client once the contract is approved.', done: 'Cleared funds on client account, matching the contract, from a source covered by the proof of funds.', note: 'A deposit received before proof of funds is signed off raises an AML issue.' },
   'Contract approved / signed': { starts: 'When the contract pack arrives from the other side.', done: 'Approved by a conveyancer, then signed by the client and held ready for exchange.' },
   "Client's authority to exchange": { starts: 'Asked for once the report on title has gone and the deposit is held.', done: "The client's instruction to exchange, in writing, recorded on the case." },
-  Exchange: { starts: 'Only when every item above is done: contract signed, deposit held, source of funds signed off, report sent, offer valid, and the client has authorised it.', done: 'Contracts exchanged with the other side and the completion date fixed. The client and agent are told.', note: 'Exchange is the gate. The engine will not record it while anything above is open; a conveyancer records it with the completion date.' },
-  'Contract pack': { starts: 'Assembled once the property forms and official copies are in.', done: "Draft contract, official copies, plan and forms sent to the buyer's solicitor." },
-  'Completion statement': { starts: 'After exchange.', done: 'Figures reconciled and sent to the client with the balance due.' },
-  Completion: { starts: 'On the completion date, once funds are received.', done: 'Completion monies sent to verified details and receipt confirmed; keys released. Starts the SDLT and AP1 clocks.' },
+  Exchange: { creates: 'Exchange confirmation letter (.docx)', starts: 'Only when every item above is done: contract signed, deposit held, source of funds signed off, report sent, offer valid, and the client has authorised it.', done: 'Contracts exchanged with the other side and the completion date fixed. The client and agent are told.', note: 'Exchange is the gate. The engine will not record it while anything above is open; a conveyancer records it with the completion date.' },
+  'Contract pack': { starts: 'Assembled once the property forms and official copies are in.', done: "Draft contract, official copies, plan and forms sent to the buyer's solicitor.", creates: 'Contract pack covering letter (.docx)' },
+  'Completion statement': { starts: 'After exchange.', done: 'Figures reconciled and sent to the client with the balance due.', creates: 'Completion statement (.docx)' },
+  Completion: { creates: 'Completion letter (.docx)', starts: 'On the completion date, once funds are received.', done: 'Completion monies sent to verified details and receipt confirmed; keys released. Starts the SDLT and AP1 clocks.' },
   'Balance to the client': { starts: 'After completion on a sale.', done: "Paid to the client's verified account, authorised by a person." },
   'Payment to the lender': { starts: 'On completion where there is a charge to redeem.', done: "Redemption sent to the lender's verified details, authorised by a person; the lender's confirmation received." },
   'Redemption statement': { starts: 'Requested from the existing lender once a completion date is in view; chased on the SLA.', done: 'Figure, daily rate and validity date on file.', via: 'Chaser emails the lender.' },
@@ -249,7 +251,8 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
                 <b>
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
-                  {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}</>} />}
+                  {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents; the wording is the firm's own under Doc Packs.</>} />}
+                  {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
                 <Pill s={x.status} />
                 {x.detail && <span className="d">{x.detail}</span>}

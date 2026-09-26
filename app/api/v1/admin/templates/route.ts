@@ -7,6 +7,18 @@ import { upsertChunks } from '@/lib/server/ai';
 import { rowToSafeTemplate, uniqueName } from '@/lib/server/text';
 import { ok, fail } from '@/lib/server/http';
 
+import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES } from '@/lib/server/comms/templates';
+
+/** Every message the engine can send, as a row the firm can rewrite. Keyed by the template key; the engine reads the firm's version when one exists. */
+async function ensureEngineTemplates(tenantId: string, userId: string): Promise<void> {
+  const have = new Set((await query<{ name: string }>(`select name from template where tenant_id = $1 and category = 'Engine'`, [tenantId]).catch(() => [])).map((r) => r.name));
+  const all = [...Object.values(CLIENT_UPDATES), ...Object.values(CHASES), ...Object.values(PARTY_NOTICES), ...Object.values(ACKS)];
+  for (const t of all) {
+    if (have.has(t.key)) continue;
+    await query(`insert into template (tenant_id, name, category, subject_template, body_template, style_tag, policy_tags, created_by) values ($1, $2, 'Engine', $3, $4, 'NEUTRAL', '{}', $5) on conflict do nothing`, [tenantId, t.key, t.subject, t.body, userId]).catch(() => {});
+  }
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +26,7 @@ export async function GET() {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
+    await ensureEngineTemplates(user.tenantId, user.userId);
     const rows = await query<any>(`select * from template where tenant_id = $1 order by updated_at desc`, [
       user.tenantId,
     ]);

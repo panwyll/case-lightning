@@ -18,7 +18,7 @@
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
-import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES, SEARCH_NAMES, render } from './templates';
+import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES, SEARCH_NAMES, render, type Template } from './templates';
 import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry, isStatusQuestion } from './guard';
 import { clientStatusAnswer, type CaseBrief } from '../engine/brief';
 
@@ -53,6 +53,8 @@ export interface CommsDeps {
   /** Tenant for an inbound address when the webhook is shared across firms. */
   tenantForAddress(address: string): Promise<string | null>;
   chaseMode: 'draft' | 'send';
+  /** The firm's own wording for a built-in template (Email Templates, by key); null = use the built-in. */
+  templateOverride?(tenantId: string, key: string): Promise<{ subject: string; body: string } | null>;
   /** Acknowledgements go out at once or not at all; a drafted one defeats its purpose. */
   ackMode?: 'send' | 'off';
   /** The engine's account of a matter, for answering "any update?" from the case itself. */
@@ -64,6 +66,12 @@ const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<
 const toHtml = (text: string) => `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5">${escapeHtml(text).replace(/\n/g, '<br>')}</div>`;
 
 // ───────────────────────────── status updates ─────────────────────────────
+
+/** The built-in template, unless the firm has rewritten it under Email Templates. */
+async function resolveTemplate(deps: CommsDeps, tenantId: string, t: Template): Promise<Template> {
+  const o = deps.templateOverride ? await deps.templateOverride(tenantId, t.key).catch(() => null) : null;
+  return o ? { ...t, subject: o.subject || t.subject, body: o.body || t.body } : t;
+}
 
 export class ProductionClientComms implements ClientComms {
   readonly name = 'client-comms';
@@ -116,8 +124,9 @@ export class ProductionClientComms implements ClientComms {
   }
 
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }) {
-    const t = CLIENT_UPDATES[input.template];
-    if (!t) throw new Error(`Unknown client update template ${input.template}`);
+    const base = CLIENT_UPDATES[input.template];
+    if (!base) throw new Error(`Unknown client update template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, base);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.vars(info, input.context));
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
@@ -148,8 +157,9 @@ export class ProductionChaser implements ThirdPartyChaser {
   constructor(private deps: CommsDeps) {}
 
   async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown> }) {
-    const t = CHASES[input.template];
-    if (!t) throw new Error(`Unknown chase template ${input.template}`);
+    const baseChase = CHASES[input.template];
+    if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const ctx = input.context;
     const subject = typeof ctx.subject === 'string' ? ctx.subject : '';
@@ -194,8 +204,9 @@ export class ProductionChaser implements ThirdPartyChaser {
   }
 
   async sendPartyNotice(input: { tenantId: string; matterId: string; recipientRole: 'estate_agent'; template: string; context: Record<string, unknown> }) {
-    const t = PARTY_NOTICES[input.template];
-    if (!t) throw new Error(`Unknown notice template ${input.template}`);
+    const baseNotice = PARTY_NOTICES[input.template];
+    if (!baseNotice) throw new Error(`Unknown notice template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, baseNotice);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const agent = info.contacts.estate_agent;
     if (!agent?.email || !this.deps.mailbox || !info.feeEarnerUserId) return null;
@@ -218,7 +229,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what };
     if (input.recipientRole === 'client') {
-      const r = render(ACKS.ack_client, vars);
+      const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_client), vars);
       if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
       if (!info.clientEmail && !(info.clientPhone && info.clientWhatsAppOptIn)) return null;
       const sent = await new ProductionClientComms(this.deps)['deliver'](input.tenantId, input.matterId, info, ACKS.ack_client.key, r.subject, r.body);
@@ -226,7 +237,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     }
     const to = info.contacts.seller_solicitor?.email ?? null;
     if (!to || !this.deps.mailbox || !info.feeEarnerUserId) return null;
-    const r = render(ACKS.ack_counterparty, vars);
+    const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_counterparty), vars);
     if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
     const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });

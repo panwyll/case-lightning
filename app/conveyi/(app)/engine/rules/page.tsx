@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { paths } from '@/lib/paths';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -14,9 +14,10 @@ import type { TrustLevel } from '@/app/shared/engine/types';
 interface Timer { waitKey: string; label: string; to: string; chaseAfter: number; chaseEvery: number | null; escalateAfter: number; reEscalateAfter: number; overridden: boolean }
 interface Message { id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: TrustLevel }
 interface DocRule { id: string; document: string; rule: string; value: string }
-interface Rules { timers: Timer[]; messages: Message[]; documentRules: DocRule[] }
+interface CaseRule { id: string; group: string; when: string; then: string; holds?: string; tells?: string; source: string }
+interface Rules { timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
 
-const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['documents', 'Document Rules']] as const;
+const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['cases', 'Case Rules'], ['documents', 'Document Rules']] as const;
 const KIND_LABEL: Record<Message['kind'], string> = { acknowledgement: 'Acknowledgement', update: 'Client update', chase: 'Chase', request: 'Request' };
 
 const CSS = `
@@ -40,6 +41,15 @@ const CSS = `
 .ru-kind.request{background:#ede9fe;color:#4c1d95}
 .ru-sub{color:#64748b;font-size:12.5px}
 .ru-val{font-weight:800;color:#0f172a;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ru-t tr.grp td{background:#ede9fe;color:#3b1d8f;font-weight:800;border-top:1px solid #ddd6fe;font-size:12px;letter-spacing:.03em}
+.ru-sign{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ru-sign .eg-btn{padding:4px 10px;font-size:12px;margin:0}
+.ru-signed{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#14532d;font-weight:700}
+.ru-signed i{width:16px;height:16px;border-radius:99px;background:#16a34a;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:10px}
+.ru-signed small{font-weight:500;color:#64748b}
+.ru-holds{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#7f1d1d;background:#fee2e2;border-radius:999px;padding:2px 8px;white-space:nowrap}
+.ru-tells{font-size:12px;color:#3730a3;white-space:nowrap;vertical-align:top}
+.ru-progress{font-size:12.5px;color:#64748b;margin:-4px 0 10px;font-variant-numeric:tabular-nums}
 `;
 
 export default function RulesPage() {
@@ -80,6 +90,30 @@ export default function RulesPage() {
       setBusy(null);
     }
   };
+  const sign = async (ruleId: string, signed: boolean) => {
+    setBusy(ruleId);
+    try {
+      await api('/admin/rules', { method: 'POST', body: JSON.stringify({ ruleId, signed }) });
+      await load();
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Could not record the sign-off.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const signCell = (id: string) => {
+    const s = r?.signoffs?.[id];
+    return (
+      <td className="ru-sign">
+        {s ? (
+          <span className="ru-signed"><i>✓</i>Signed <small>{s.by ?? ''} · {new Date(s.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</small><button className="eg-btn" disabled={busy === id} onClick={() => void sign(id, false)} title="Withdraw this sign-off">Undo</button></span>
+        ) : (
+          <button className="eg-btn primary" disabled={busy === id} onClick={() => void sign(id, true)}>Sign Off</button>
+        )}
+      </td>
+    );
+  };
+  const signedCount = (ids: string[]) => ids.filter((id) => r?.signoffs?.[id]).length;
   const pickLevel = async (m: Message, lv: TrustLevel) => {
     setBusy(m.id);
     try {
@@ -177,8 +211,43 @@ export default function RulesPage() {
         <div className="ru-sub" style={{ marginTop: 6 }}>Wording is under <a href={`${paths.admin}?tab=templates`}>Email Templates</a>.</div>
       </section>
 
+      <section id="cases" className="ru-sec">
+        <h2 className="ru-h">Case Rules</h2>
+        {r && <div className="ru-progress">{signedCount(r.caseRules.map((x) => x.id))} of {r.caseRules.length} signed off</div>}
+        <div className="eg-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table className="ru-t">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Then</th>
+                <th>Holds</th>
+                <th>Tells</th>
+                <th>Signed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from(new Set((r?.caseRules ?? []).map((x) => x.group))).map((g) => (
+                <Fragment key={g}>
+                  <tr className="grp"><td colSpan={5}>{g}</td></tr>
+                  {(r?.caseRules ?? []).filter((x) => x.group === g).map((x) => (
+                    <tr key={x.id} title={x.source}>
+                      <td style={{ fontWeight: 600, width: '22%', verticalAlign: 'top' }}>{x.when}</td>
+                      <td style={{ width: '48%', verticalAlign: 'top', lineHeight: 1.45 }}>{x.then}</td>
+                      <td>{x.holds && <span className="ru-holds">{x.holds}</span>}</td>
+                      <td className="ru-tells">{x.tells ?? ''}</td>
+                      {signCell(x.id)}
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section id="documents" className="ru-sec">
         <h2 className="ru-h">Document Rules</h2>
+        {r && <div className="ru-progress">{signedCount(r.documentRules.map((x) => x.id))} of {r.documentRules.length} signed off</div>}
         <div className="eg-card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="ru-t">
             <thead>
@@ -186,6 +255,7 @@ export default function RulesPage() {
                 <th>Document</th>
                 <th>Rule</th>
                 <th>Value</th>
+                <th>Signed</th>
               </tr>
             </thead>
             <tbody>
@@ -194,6 +264,7 @@ export default function RulesPage() {
                   <td style={{ whiteSpace: 'nowrap' }}>{d.document}</td>
                   <td>{d.rule}</td>
                   <td className="ru-val">{d.value}</td>
+                  {signCell(d.id)}
                 </tr>
               ))}
             </tbody>

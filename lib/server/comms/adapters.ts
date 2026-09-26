@@ -127,6 +127,10 @@ export function productionCommsDeps(): CommsDeps {
       return r?.tenant_id ?? null;
     },
     chaseMode: config.chaseMode,
+    templateOverride: async (tenantId, key) => {
+      const r = await query<{ subject_template: string | null; body_template: string }>(`select subject_template, body_template from template where tenant_id = $1 and name = $2 and category = 'Engine' and is_active = true limit 1`, [tenantId, key]).catch(() => []);
+      return r[0] ? { subject: r[0].subject_template ?? '', body: r[0].body_template } : null;
+    },
     ackMode: config.ackMode,
     briefFor,
     onChaseDrafted: async (i) => {

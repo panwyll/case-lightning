@@ -549,7 +549,7 @@ export class EngineService {
           const context = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length };
           const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
           const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
-          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.rule.recipientRole, `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.wait.key, `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
           await this.perform(tenantId, matterId, 'chase', detail);
           chases += 1;
         } else {

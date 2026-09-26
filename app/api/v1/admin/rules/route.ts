@@ -11,6 +11,7 @@ import { DEFAULT_SLA } from '@/lib/server/engine/sla';
 import { WAIT_KEYS, levelFor, levelKey, type LevelConfig, type WaitKey } from '@/lib/server/engine/types';
 import { ACKS, CHASES, CLIENT_UPDATES } from '@/lib/server/comms/templates';
 import { GROUND_RENT_FLAG_PENNIES_PA, MIN_EXTRACTION_CONFIDENCE, OFFER_EXPIRY_WARNING_DAYS, SHORT_LEASE_YEARS } from '@/lib/server/engine/rules';
+import { CASE_RULES } from '@/lib/server/engine/rulebook';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,7 +47,7 @@ function messages(levels: LevelConfig) {
   for (const k of WAIT_KEYS) {
     const r = DEFAULT_SLA[k];
     const t = CHASES[r.template];
-    rows.push({ id: `chase:${k}`, kind: 'chase', when: `${WAIT_LABEL[k]} is overdue (timer)`, to: RECIPIENT[r.recipientRole], subject: t?.subject ?? r.template, template: r.template, levelKey: levelKey('chase', r.recipientRole), level: levelFor(levels, 'chase', r.recipientRole) });
+    rows.push({ id: `chase:${k}`, kind: 'chase', when: `${WAIT_LABEL[k]} is overdue (timer)`, to: RECIPIENT[r.recipientRole], subject: t?.subject ?? r.template, template: r.template, levelKey: levelKey('chase', k), level: levelFor(levels, 'chase', k) });
   }
   return rows;
 }
@@ -75,7 +76,8 @@ export async function GET() {
     const svc = engine();
     const [levels, sla] = await Promise.all([svc.levels(user.tenantId), svc.eventStore.loadSla(user.tenantId)]);
     const timers = WAIT_KEYS.map((k) => ({ waitKey: k, label: WAIT_LABEL[k], to: RECIPIENT[sla[k].recipientRole], chaseAfter: sla[k].chaseAfter, chaseEvery: sla[k].chaseEvery, escalateAfter: sla[k].escalateAfter, reEscalateAfter: sla[k].reEscalateAfter, overridden: JSON.stringify([sla[k].chaseAfter, sla[k].chaseEvery, sla[k].escalateAfter, sla[k].reEscalateAfter]) !== JSON.stringify([DEFAULT_SLA[k].chaseAfter, DEFAULT_SLA[k].chaseEvery, DEFAULT_SLA[k].escalateAfter, DEFAULT_SLA[k].reEscalateAfter]) }));
-    return ok({ timers, messages: messages(levels), documentRules: DOCUMENT_RULES });
+    const signoffs = await query<{ rule_id: string; signed_at: string; name: string | null }>(`select s.rule_id, s.signed_at, coalesce(u.display_name, u.email) as name from rule_signoff s left join app_user u on u.id = s.signed_by where s.tenant_id = $1`, [user.tenantId]).catch(() => []);
+    return ok({ timers, messages: messages(levels), documentRules: DOCUMENT_RULES, caseRules: CASE_RULES, signoffs: Object.fromEntries(signoffs.map((s) => [s.rule_id, { at: s.signed_at, by: s.name }])) });
   } catch (error) {
     return fail(error);
   }
@@ -97,6 +99,25 @@ export async function PUT(req: NextRequest) {
         [user.tenantId, t.waitKey, t.chaseAfter, t.chaseEvery, t.escalateAfter, t.reEscalateAfter]
       );
     await writeAudit({ tenantId: user.tenantId, matterId: null, actorUserId: user.userId, actionType: 'ENGINE_SLA', actionStatus: 'SUCCESS', payload: t }).catch(() => {});
+    return ok({ saved: true });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+const signoffSchema = z.object({ ruleId: z.string().min(1).max(80), signed: z.boolean() });
+
+/** Sign a rule off for the firm, or withdraw the signature. Who and when are kept; both are audited. */
+export async function POST(req: NextRequest) {
+  try {
+    assertFeature('auth');
+    const user = await requireRole(['ADMIN']);
+    const s = signoffSchema.parse(await req.json());
+    const known = CASE_RULES.some((r) => r.id === s.ruleId) || DOCUMENT_RULES.some((r) => r.id === s.ruleId);
+    if (!known) return fail(Object.assign(new Error('Unknown rule.'), { status: 404 }));
+    if (s.signed) await query(`insert into rule_signoff (tenant_id, rule_id, signed_by) values ($1, $2, $3) on conflict (tenant_id, rule_id) do update set signed_by = excluded.signed_by, signed_at = now()`, [user.tenantId, s.ruleId, user.userId]);
+    else await query(`delete from rule_signoff where tenant_id = $1 and rule_id = $2`, [user.tenantId, s.ruleId]);
+    await writeAudit({ tenantId: user.tenantId, matterId: null, actorUserId: user.userId, actionType: 'RULE_SIGNOFF', actionStatus: 'SUCCESS', payload: s }).catch(() => {});
     return ok({ saved: true });
   } catch (error) {
     return fail(error);
