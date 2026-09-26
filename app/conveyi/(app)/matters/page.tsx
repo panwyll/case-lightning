@@ -10,10 +10,8 @@ import { ScopeSelect, type Scope } from '@/app/shared/engine/ScopeSelect';
 /** Every open case as a list: find one by reference, address or handler, open it. */
 const CSS = `
 .cv-cols{display:flex;gap:12px;overflow-x:auto;align-items:flex-start;padding:2px 2px 10px}
-.cv-col{flex:0 0 360px;min-width:300px}
+.cv-col{flex:0 0 300px;min-width:240px}
 .cv-col .cm-board{min-width:0}
-.cv-col .cm-row{grid-template-columns:108px 1fr}
-.cv-col .cm-lab{padding:0 8px;font-size:9.5px;letter-spacing:.08em}
 .cv-seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;background:#fff}
 .cv-seg button{padding:6px 12px;border:0;border-left:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .cv-seg button:first-child{border-left:0}

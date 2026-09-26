@@ -53,6 +53,10 @@ export const CASELOAD_CSS = `
 .cm-lab{padding:0 14px;font-size:10.5px;font-weight:800;letter-spacing:.12em;color:#8f8878;text-transform:uppercase;display:flex;gap:6px;border-right:1px solid #ece7da;align-self:stretch;align-items:center;white-space:nowrap}
 .cm-lab .n{font-weight:600;letter-spacing:0;color:#b8b1a0;font-variant-numeric:tabular-nums}
 .cm-houses{display:flex;flex-wrap:wrap;gap:4px;align-items:flex-end;padding:8px 12px}
+.cm-compact .cm-board{background:#fff}
+.cm-compact .cm-row{display:block;min-height:0;padding:8px 10px 6px}
+.cm-compact .cm-lab{border-right:0;padding:0 0 4px;font-size:9.5px;letter-spacing:.08em;align-self:auto}
+.cm-compact .cm-houses{padding:0;gap:3px}
 .cm-house{background:none;border:0;padding:0;cursor:pointer;line-height:0;border-radius:4px;transition:transform .08s ease}
 .cm-house:hover,.cm-house:focus-visible{transform:translateY(-3px);outline:none}
 .cm-house.dim{opacity:.18}
@@ -130,7 +134,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
   );
 
   return (
-    <div onMouseLeave={() => setTip(null)}>
+    <div onMouseLeave={() => setTip(null)} className={compact ? 'cm-compact' : undefined}>
       <style>{CASELOAD_CSS}</style>
       <div className="cm-head">
         {compact ? <h2 className="eg-h1" style={{ fontSize: 15 }}>{title}<span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>{rows.length}</span></h2> : <h1 className="eg-h1">{title}</h1>}
@@ -145,7 +149,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
         {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
       </div>
       {!hideBoard && <div className="cm-board">
-        {BANDS.map((b) => {
+        {BANDS.filter((b) => !compact || (byBand.get(b)?.length ?? 0) > 0).map((b) => {
           const list = byBand.get(b) ?? [];
           return (
             <div key={b} className="cm-row">
