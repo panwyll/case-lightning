@@ -140,7 +140,7 @@ export default function EmailToFile() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ items: Item[] }>('/mail/unfiled?top=25');
+      const r = await api<{ items: Item[] }>('/mail/unfiled');
       setItems(r.items);
       setSel((cur) => cur ?? r.items.find((i) => !i.notCaseMail)?.id ?? r.items[0]?.id ?? null);
       setErr(null);
