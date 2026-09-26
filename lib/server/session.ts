@@ -11,8 +11,8 @@ import type { SessionUser } from './types';
 export const SESSION_COOKIE = 'cl_session';
 
 // Small cache so the per-query user resolution (db.ts) does not re-verify the JWT each time.
-const tokenUserCache = new Map<string, string | null>();
-async function userIdFromRequest(): Promise<string | null> {
+const tokenUserCache = new Map<string, { userId: string; actorId: string | null } | null>();
+async function sessionFromRequest(): Promise<{ userId: string; actorId: string | null } | null> {
   let token: string | undefined;
   try {
     token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -27,11 +27,13 @@ async function userIdFromRequest(): Promise<string | null> {
   const hit = tokenUserCache.get(token);
   if (hit !== undefined) return hit;
   const verified = await verifySession(token);
-  const userId = verified?.userId ?? null;
   if (tokenUserCache.size > 500) tokenUserCache.clear();
-  tokenUserCache.set(token, userId);
-  return userId;
+  tokenUserCache.set(token, verified);
+  return verified;
 }
+const userIdFromRequest = async (): Promise<string | null> => (await sessionFromRequest())?.userId ?? null;
+/** The admin behind a view-as session on the current request, from the token alone (no database read). */
+export const actingUserFromRequest = async (): Promise<string | null> => (await sessionFromRequest())?.actorId ?? null;
 // Every query made while handling a request now carries the signed-in user for the
 // database's ethical-wall check (migration 068) — no route has to remember to do it.
 registerRequestUserResolver(userIdFromRequest);

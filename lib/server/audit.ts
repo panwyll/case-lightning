@@ -1,4 +1,5 @@
 import { query, currentActingUser } from './db';
+import { actingUserFromRequest } from './session';
 
 interface AuditInput {
   tenantId: string;
@@ -12,6 +13,9 @@ interface AuditInput {
 }
 
 export async function writeAudit(input: AuditInput): Promise<void> {
+  // The bound context does not reach a route's continuation (see db.ts), so fall back to the request's token.
+  const actingRaw = currentActingUser() ?? (await actingUserFromRequest().catch(() => null));
+  const acting = actingRaw && actingRaw !== input.actorUserId ? actingRaw : null;
   await query(
     `insert into audit_log
       (tenant_id, matter_id, actor_user_id, action_type, action_status, request_id, trace_id, payload, acting_user_id)
@@ -26,7 +30,7 @@ export async function writeAudit(input: AuditInput): Promise<void> {
       input.traceId ?? null,
       JSON.stringify(input.payload ?? {}),
       // An admin viewing the app as this person: the row reads "admin on behalf of person".
-      currentActingUser(),
+      acting,
     ]
   );
 }
