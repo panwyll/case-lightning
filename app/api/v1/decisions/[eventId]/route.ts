@@ -8,6 +8,9 @@ import { engine } from '@/lib/server/engine/adapters';
 import { query, queryOne } from '@/lib/server/db';
 import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
 import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
+import { taskContext } from '@/lib/server/engine/context';
+
+type MatterRow = { matter_ref: string; property_address: string; shadow_mode: boolean | null; buyer_names: string[] | null; seller_names: string[] | null; purchase_price: string | null; lender: string | null; counterparty_solicitor: string | null; counterparty_agent: string | null; exchange_target_date: string | null; completion_target_date: string | null };
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,7 +33,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     const [events, subflows, matter] = await Promise.all([
       svc.listEvents(user.tenantId, d.matterId),
       svc.levels(user.tenantId),
-      queryOne<{ matter_ref: string; property_address: string; shadow_mode: boolean | null }>(`select matter_ref, property_address, shadow_mode from matter where id = $1 and tenant_id = $2`, [d.matterId, user.tenantId]).catch(() => null),
+      queryOne<MatterRow>(`select matter_ref, property_address, shadow_mode, buyer_names, seller_names, purchase_price::text, lender, counterparty_solicitor, counterparty_agent, exchange_target_date::text, completion_target_date::text from matter where id = $1 and tenant_id = $2`, [d.matterId, user.tenantId]).catch(() => null),
     ]);
     const raised = events.find((e) => e.id === eventId) ?? null;
     const resolving = events.find((e) => e.type !== 'decision_source_opened' && (e.payload as { decisionEventId?: string }).decisionEventId === eventId) ?? null;
@@ -75,7 +78,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
         refused: note?.refusedActions ?? [],
       };
     }
+    const stateForContext = await svc.getState(user.tenantId, d.matterId);
+    const live = stateForContext.decisions[eventId];
+    const context = live
+      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
+      : null;
     return ok({
+      context,
       noteActions,
       decision: { ...d, sourceOpenedByMe: d.openedBy.includes(user.userId) },
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, shadowMode: !!matter.shadow_mode } : null,

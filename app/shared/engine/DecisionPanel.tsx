@@ -21,7 +21,9 @@ import { Check } from '@/app/shared/icons';
  * and checked again server-side (412). Opening the panel on a pending decision logs
  * decision_source_opened (the source IS shown); a resolved decision is read-only.
  */
-const CSS = `
+import { TASK_CONTEXT_CSS, TaskContextBody, TaskContextFacts } from './TaskContext';
+
+const CSS = TASK_CONTEXT_CSS + `
 .dp{display:grid;grid-template-rows:auto minmax(0,1fr) auto;height:100dvh;height:100vh;box-sizing:border-box}
 .dp-part{padding:12px 16px;border-bottom:1px solid #e6e8ee;background:#fff}
 .dp-part.summary{max-height:42vh;overflow:auto}
@@ -267,6 +269,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             <span className={`eg-chip ${d.status === 'pending' ? 'pending' : d.status === 'actioned' ? 'ok' : 'info'}`}>{d.status}</span>
           </span>
         </div>
+        {detail.context && <TaskContextFacts ctx={detail.context} />}
         <div className="dp-sum">
           {lines.map(({ line, marks }, i) => (
             <span key={i}>
@@ -287,6 +290,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             ))}
           </div>
         )}
+        {detail.context && <TaskContextBody ctx={detail.context} headline={false} />}
       </section>
 
       {/* ── 2. Source, inline ── */}

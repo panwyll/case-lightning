@@ -54,7 +54,18 @@ export interface QueueRow {
 
 export interface MatterMeta { matterRef: string; propertyAddress: string; legacyStage?: string | null; shadowMode: boolean; assignedTo?: string | null; handler?: string | null }
 
+export interface TaskContextView {
+  headline: string;
+  facts: Array<{ k: string; v: string }>;
+  checks: string[];
+  history: Array<{ at: string; what: string }>;
+  related: string[];
+  unblocks: string | null;
+}
+
 export interface DecisionDetail {
+  /** What a person needs to take this decision from cold (lib/server/engine/context.ts). */
+  context: TaskContextView | null;
   decision: DecisionRow;
   matter: MatterMeta | null;
   raised: { seq: number; type: string; actor: string; createdAt: string; confidenceScore: number | null } | null;

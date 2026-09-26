@@ -1,7 +1,7 @@
 'use client';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { DecisionFeed } from './DecisionFeed';
-import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TransactionType } from './types';
+import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 
 /**
@@ -229,11 +229,23 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </button>
     );
   };
+  const [sheetContext, setSheetContext] = useState<TaskContextView | null>(null);
+  useEffect(() => {
+    setSheetContext(null);
+    if (!sheet) return;
+    let live = true;
+    const subject = typeof sheet.extra?.subject === 'string' ? sheet.extra.subject : typeof sheet.extra?.searchType === 'string' ? sheet.extra.searchType : null;
+    api<{ context: TaskContextView }>(`/matters/${matterId}/engine/context?command=${encodeURIComponent(sheet.type)}${subject ? `&subject=${encodeURIComponent(subject)}` : ''}`)
+      .then((r) => { if (live) setSheetContext(r.context); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [sheet, api, matterId]);
   const sheetFor = (laneId: string) =>
     sheet && sheet.laneId === laneId && contracts[sheet.type] ? (
       <CompletionSheet
         contract={contracts[sheet.type]}
         docs={docs}
+        context={sheetContext}
         busy={busy}
         onCancel={() => setSheet(null)}
         onSubmit={async (body) => {

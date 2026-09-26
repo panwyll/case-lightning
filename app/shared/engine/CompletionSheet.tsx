@@ -1,14 +1,16 @@
 'use client';
 import { useMemo, useState } from 'react';
-import type { CaseDocument, CompletionContract } from './types';
+import type { CaseDocument, CompletionContract, TaskContextView } from './types';
+import { TASK_CONTEXT_CSS, TaskContextBody, TaskContextFacts } from './TaskContext';
 
 /**
  * The completion sheet: gathers what a milestone's contract asks for — the document, the
  * figures and dates, the checklist, who confirmed — and hands one body back to record.
  * Field keys are the command's own fields; `completion` carries the rest.
  */
-export function CompletionSheet({ contract, docs, busy, onSubmit, onCancel }: {
+export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCancel }: {
   contract: CompletionContract;
+  context: TaskContextView | null;
   docs: CaseDocument[] | null;
   busy: boolean;
   onSubmit: (body: Record<string, unknown>) => Promise<void>;
@@ -55,14 +57,15 @@ export function CompletionSheet({ contract, docs, busy, onSubmit, onCancel }: {
     await onSubmit(body);
   };
 
-  const row = (label: string, control: React.ReactNode) => (
-    <div className="cs-row"><div className="cs-k">{label}</div><div className="cs-v">{control}</div></div>
+  const row = (label: string, control: React.ReactNode, key?: string) => (
+    <div key={key ?? label} className="cs-row"><div className="cs-k">{label}</div><div className="cs-v">{control}</div></div>
   );
 
   return (
     <div className="cs" role="dialog" aria-label={contract.label}>
-      <style>{CSS}</style>
+      <style>{TASK_CONTEXT_CSS + CSS}</style>
       <div className="cs-h">{contract.label}</div>
+      {context && <><TaskContextFacts ctx={context} /><TaskContextBody ctx={context} headline={false} /><div className="cs-sep" /></>}
       {(contract.documentRequired || contract.documentLabel) && row(contract.documentLabel ?? 'Document', (
         <div>
           <select className="ep-input" value={documentId} onChange={(e) => { setDocumentId(e.target.value); setRead(false); }} style={{ maxWidth: 420 }} title={roles.length ? `Filed as ${roles.join(', ')}` : 'Any document on the case'}>
@@ -88,10 +91,10 @@ export function CompletionSheet({ contract, docs, busy, onSubmit, onCancel }: {
           title={f.hint}
           style={{ width: f.kind === 'names' ? 360 : 200, maxWidth: '100%' }}
         />
-      )))}
+      ), f.key))}
       {contract.checklist?.map((c) => row('', (
         <label className="cs-tick"><input type="checkbox" checked={!!ticks[c.key]} onChange={(e) => setTicks({ ...ticks, [c.key]: e.target.checked })} />{c.label}</label>
-      )))}
+      ), c.key))}
       {contract.party && row(contract.party.label, (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <input className="ep-input" placeholder="Who" value={party.who} onChange={(e) => setParty({ ...party, who: e.target.value })} style={{ width: 200 }} />
@@ -111,6 +114,7 @@ export function CompletionSheet({ contract, docs, busy, onSubmit, onCancel }: {
 }
 
 const CSS = `
+.cs-sep{border-top:1px solid #ddd6fe;margin:12px 0}
 .cs{margin-top:10px;border:1px solid #c4b5fd;background:#faf8ff;border-radius:10px;padding:12px 14px}
 .cs-h{font-size:13px;font-weight:800;margin-bottom:8px}
 .cs-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:8px 12px;align-items:center;padding:4px 0}
