@@ -3234,9 +3234,9 @@ export default function Taskpane() {
                             {tpl.has_llm_prompts && (
                               <span
                                 style={{ marginLeft: 6, fontSize: 10, color: aiLocked ? '#94a3b8' : '#6d28d9', fontWeight: 700 }}
-                                title={aiLocked ? 'Contains AI-written sections — Pro plan and up. They’ll be left blank on your plan.' : 'Contains AI-written sections'}
+                                title={aiLocked ? 'Contains AI-written sections; the trial has ended, so they will be left blank.' : 'Contains AI-written sections'}
                               >
-                                AI{aiLocked ? ' · Pro' : ''}
+                                AI{aiLocked ? ' · off' : ''}
                               </span>
                             )}
                           </span>

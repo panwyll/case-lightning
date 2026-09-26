@@ -6,10 +6,9 @@ import { ok, fail } from '@/lib/server/http';
 import { query } from '@/lib/server/db';
 import { engine } from '@/lib/server/engine/adapters';
 import { writeAudit } from '@/lib/server/audit';
-import { ACKNOWLEDGE, CLIENT_UPDATE_TEMPLATES } from '@/lib/server/engine/service';
 import { DEFAULT_SLA } from '@/lib/server/engine/sla';
-import { WAIT_KEYS, levelFor, levelKey, type LevelConfig, type WaitKey } from '@/lib/server/engine/types';
-import { ACKS, CHASES, CLIENT_UPDATES } from '@/lib/server/comms/templates';
+import { WAIT_KEYS } from '@/lib/server/engine/types';
+import { RECIPIENT, WAIT_LABEL, engineMessages } from '@/lib/server/engine/messages';
 import { GROUND_RENT_FLAG_PENNIES_PA, MIN_EXTRACTION_CONFIDENCE, OFFER_EXPIRY_WARNING_DAYS, SHORT_LEASE_YEARS } from '@/lib/server/engine/rules';
 import { CASE_RULES } from '@/lib/server/engine/rulebook';
 
@@ -22,36 +21,6 @@ export const dynamic = 'force-dynamic';
  * and the trust level that governs it), and the document rules with their thresholds.
  * Sign-offs come from /engine/shadow, which already tallies them.
  */
-const RECIPIENT: Record<string, string> = { seller_solicitor: "Other side's solicitor", search_provider: 'Search provider', lender: 'Lender', client: 'Client', id_provider: 'ID provider', hmlr: 'HM Land Registry', estate_agent: 'Estate agent' };
-const WAIT_LABEL: Record<WaitKey, string> = { id_check: 'ID documents from the client', search: 'Search result from the provider', enquiry: "Replies from the other side's solicitor", funds: 'Completion funds', registration: 'Registration at HM Land Registry', proof_of_funds: 'Proof-of-funds form from the client', management_pack: 'Management pack', property_forms: 'Property forms from the client', redemption: 'Redemption statement from the lender', lender_consent: "Lender's consent", discharge: 'Discharge from the lender' };
-const EVENT_LABEL: Record<string, string> = {
-  enquiry_reply_received: 'Replies to our enquiries arrive', buyer_enquiries_received: "The buyer's enquiries arrive", survey_received: 'A survey arrives', specialist_report_received: 'A specialist report arrives', property_forms_received: 'The property forms come back', proof_of_funds_submitted: 'The proof-of-funds form is submitted', mortgage_offer_received: 'The mortgage offer arrives',
-  search_ordered: 'Searches are ordered', search_cleared: 'A search comes back clear', search_flagged: 'A search comes back and needs review', enquiry_raised: 'Enquiries are raised', mortgage_offer_cleared: 'The offer is checked and clear', report_on_title_sent: 'The report on title is sent', contracts_exchanged: 'Contracts are exchanged', completion_confirmed: 'Completion happens', ap1_confirmed: 'Registration is confirmed',
-};
-
-function messages(levels: LevelConfig) {
-  const rows: Array<{ id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: string }> = [];
-  for (const [ev, r] of Object.entries(ACKNOWLEDGE)) {
-    if (!r) continue;
-    const t = r.recipient === 'client' ? ACKS.ack_client : ACKS.ack_counterparty;
-    rows.push({ id: `ack:${ev}`, kind: 'acknowledgement', when: EVENT_LABEL[ev] ?? ev.replace(/_/g, ' '), to: RECIPIENT[r.recipient], subject: t.subject, template: t.key, levelKey: levelKey('acknowledgement', r.recipient), level: levelFor(levels, 'acknowledgement', r.recipient) });
-  }
-  rows.push({ id: 'req:id_check', kind: 'request', when: 'A case is enrolled', to: 'Client, via the ID provider', subject: 'Identity check request', template: 'id_check_request', levelKey: levelKey('client_update', 'id_check_request'), level: levelFor(levels, 'client_update', 'id_check_request') });
-  rows.push({ id: 'req:proof_of_funds', kind: 'request', when: 'A purchase is enrolled and firm policy requires proof of funds', to: 'Client', subject: CLIENT_UPDATES.proof_of_funds_request.subject, template: 'proof_of_funds_request', levelKey: levelKey('client_update', 'proof_of_funds_request'), level: levelFor(levels, 'client_update', 'proof_of_funds_request') });
-  for (const [ev, tpl] of Object.entries(CLIENT_UPDATE_TEMPLATES)) {
-    if (!tpl) continue;
-    const t = CLIENT_UPDATES[tpl];
-    rows.push({ id: `update:${ev}`, kind: 'update', when: EVENT_LABEL[ev] ?? ev.replace(/_/g, ' '), to: 'Client', subject: t?.subject ?? tpl, template: tpl, levelKey: levelKey('client_update', tpl), level: levelFor(levels, 'client_update', tpl) });
-  }
-  rows.push({ id: 'update:chase_update', kind: 'update', when: 'We chase someone on their behalf', to: 'Client (and the agent)', subject: CLIENT_UPDATES.chase_update.subject, template: 'chase_update', levelKey: levelKey('client_update', 'chase_update'), level: levelFor(levels, 'client_update', 'chase_update') });
-  for (const k of WAIT_KEYS) {
-    const r = DEFAULT_SLA[k];
-    const t = CHASES[r.template];
-    rows.push({ id: `chase:${k}`, kind: 'chase', when: `${WAIT_LABEL[k]} is overdue (timer)`, to: RECIPIENT[r.recipientRole], subject: t?.subject ?? r.template, template: r.template, levelKey: levelKey('chase', k), level: levelFor(levels, 'chase', k) });
-  }
-  return rows;
-}
-
 const DOCUMENT_RULES = [
   { id: 'extraction_confidence', document: 'Every document', rule: 'Read with less confidence than the threshold goes to a person, never guessed.', value: `${Math.round(MIN_EXTRACTION_CONFIDENCE * 100)}%` },
   { id: 'flag_severity', document: 'Every document', rule: 'Any flag at or above the severity floor turns a clear into a decision for a person.', value: 'low' },
@@ -77,7 +46,7 @@ export async function GET() {
     const [levels, sla] = await Promise.all([svc.levels(user.tenantId), svc.eventStore.loadSla(user.tenantId)]);
     const timers = WAIT_KEYS.map((k) => ({ waitKey: k, label: WAIT_LABEL[k], to: RECIPIENT[sla[k].recipientRole], chaseAfter: sla[k].chaseAfter, chaseEvery: sla[k].chaseEvery, escalateAfter: sla[k].escalateAfter, reEscalateAfter: sla[k].reEscalateAfter, overridden: JSON.stringify([sla[k].chaseAfter, sla[k].chaseEvery, sla[k].escalateAfter, sla[k].reEscalateAfter]) !== JSON.stringify([DEFAULT_SLA[k].chaseAfter, DEFAULT_SLA[k].chaseEvery, DEFAULT_SLA[k].escalateAfter, DEFAULT_SLA[k].reEscalateAfter]) }));
     const signoffs = await query<{ rule_id: string; signed_at: string; name: string | null }>(`select s.rule_id, s.signed_at, coalesce(u.display_name, u.email) as name from rule_signoff s left join app_user u on u.id = s.signed_by where s.tenant_id = $1`, [user.tenantId]).catch(() => []);
-    return ok({ timers, messages: messages(levels), documentRules: DOCUMENT_RULES, caseRules: CASE_RULES, signoffs: Object.fromEntries(signoffs.map((s) => [s.rule_id, { at: s.signed_at, by: s.name }])) });
+    return ok({ timers, messages: engineMessages(levels), documentRules: DOCUMENT_RULES, caseRules: CASE_RULES, signoffs: Object.fromEntries(signoffs.map((s) => [s.rule_id, { at: s.signed_at, by: s.name }])) });
   } catch (error) {
     return fail(error);
   }

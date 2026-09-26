@@ -5,7 +5,7 @@ import { requireRole } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
 
-import { EXAMPLE_TEMPLATES, createMinimalDocx } from '@/lib/server/doc-templates';
+import { DOC_USAGE, EXAMPLE_TEMPLATES, createMinimalDocx } from '@/lib/server/doc-templates';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,7 +36,7 @@ export async function GET() {
       }
       return GET();
     }
-    return ok({ templates: rows });
+    return ok({ templates: rows.map((r) => ({ ...r, usage: DOC_USAGE[r.name] ?? null })) });
   } catch (error) {
     return fail(error);
   }

@@ -3,7 +3,7 @@
  *
  * Two placeholder notations:
  *   {{variable}}    — replaced with matter data (no AI, instant, always available)
- *   [[LLM prompt]]  — replaced with Claude-generated text (premium tenants only)
+ *   [[LLM prompt]]  — replaced with AI-written text
  *
  * docxtemplater handles the OOXML run-splitting problem (where Word may break a
  * tag like `{{buyer` / `_names}}` across multiple XML text runs). We run two
@@ -81,7 +81,7 @@ export function buildMatterVars(
   };
 }
 
-// ── LLM prompt fill (premium) ─────────────────────────────────────────────────
+// ── LLM prompt fill ─────────────────────────────────────────────────
 
 async function callForDocFill(
   prompt: string,
@@ -197,7 +197,7 @@ export async function fillTemplate(templateBytes: Buffer, opts: FillOptions): Pr
     }
   }
 
-  // Actual LLM fill (or no-op if not premium — leaves [[...]] as empty strings).
+  // Actual LLM fill (leaves [[...]] as empty strings when AI is off).
   const doc1 = new Docxtemplater(new PizZip(templateBytes), {
     delimiters: { start: '[[', end: ']]' },
     paragraphLoop: true,
@@ -525,9 +525,8 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
     ],
   },
   {
-    name: 'Report on title (premium AI)',
-    description:
-      'Report summarising title and searches — uses [[LLM prompt]] blocks to draft narrative sections (Team plan only).',
+    name: 'Report on title',
+    description: 'Report to the client on the title and searches; the narrative sections are written by the AI from the file.',
     fileName: 'report-on-title.docx',
     hasLlmPrompts: true,
     paragraphs: [
@@ -617,3 +616,14 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
     ],
   }
 ];
+
+/** Where each standard document is produced in the flow and who receives it. Matched by name; a firm's own upload with the same name inherits it. */
+export const DOC_USAGE: Record<string, { step: string; to: string }> = {
+  'Client care letter': { step: 'Instruction, once the case is enrolled', to: 'Client' },
+  'Deposit request letter': { step: 'Contract & Exchange, once the contract is approved', to: 'Client' },
+  'Exchange confirmation letter': { step: 'Contract & Exchange, on exchange', to: 'Client' },
+  'Completion statement': { step: 'Completion, after exchange', to: 'Client' },
+  'Completion letter': { step: 'Completion, when completion is confirmed', to: 'Client' },
+  'Contract pack covering letter': { step: 'Contract, when the pack goes out on a sale', to: "Buyer's solicitor" },
+  'Report on title': { step: 'Title, once title, searches and enquiries are resolved; a conveyancer approves it', to: 'Client' },
+};

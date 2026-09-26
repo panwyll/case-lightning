@@ -6,6 +6,8 @@ import { query, queryOne } from '@/lib/server/db';
 import { rowToSafeTemplate, uniqueName } from '@/lib/server/text';
 import { ok, fail } from '@/lib/server/http';
 
+import { messageInfo } from '@/lib/server/engine/messages';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -26,6 +28,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ te
         isActive: z.boolean().optional(),
       })
       .parse(await req.json());
+
+    // An Engine template is the wording of a message the engine sends: the firm may rewrite
+    // it, but not rename, recategorise or retire it, and every placeholder the send needs must stay.
+    const existing = await queryOne<{ name: string; category: string; subject_template: string | null; body_template: string }>(`select name, category, subject_template, body_template from template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
+    if (existing?.category === 'Engine') {
+      if ((body.name !== undefined && body.name !== existing.name) || (body.category !== undefined && body.category !== 'Engine') || body.isActive === false) {
+        return fail(Object.assign(new Error('This message is sent by the engine. Change its wording, not its name; it cannot be archived.'), { status: 400 }));
+      }
+      const info = messageInfo()[existing.name];
+      if (info && (body.bodyTemplate !== undefined || body.subjectTemplate !== undefined)) {
+        const text = `${body.subjectTemplate ?? existing.subject_template ?? ''}\n${body.bodyTemplate ?? existing.body_template}`;
+        const missing = info.requires.filter((k) => !text.includes(`{{${k}}}`));
+        if (missing.length) return fail(Object.assign(new Error(`The engine fills ${missing.map((k) => `{{${k}}}`).join(', ')} when it sends this; keep ${missing.length === 1 ? 'it' : 'them'} in the text.`), { status: 400 }));
+      }
+    }
 
     // Keep names unique within the firm (macOS-style suffix), ignoring this template's own row.
     let name = body.name;

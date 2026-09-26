@@ -29,6 +29,7 @@ interface Template {
 }
 
 interface DocTemplate {
+  usage?: { step: string; to: string } | null;
   id: string;
   name: string;
   description: string | null;
@@ -1219,6 +1220,58 @@ function AdminPageInner() {
 
         {tab === 'docpacks' && (
           <>
+            {/* Template list */}
+
+            {docTemplates.map((tpl) => (
+              <div key={tpl.id} style={card}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                  <div>
+                    <strong>{tpl.name}</strong>
+                    {tpl.has_llm_prompts && (
+                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
+                        AI-written sections
+                      </span>
+                    )}
+                    {tpl.usage && (
+                      <div style={{ fontSize: 12.5, color: '#3730a3', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                        <span><strong style={{ color: '#94a3b8', fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>Created</strong>{tpl.usage.step}</span>
+                        <span><strong style={{ color: '#94a3b8', fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>Sent to</strong>{tpl.usage.to}</span>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                      {tpl.file_name} · {(tpl.file_size_bytes / 1024).toFixed(0)} KB
+                    </div>
+                    {tpl.description && (
+                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{tpl.description}</div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <a
+                      href={`/api/v1/admin/doc-templates/${tpl.id}`}
+                      download={tpl.file_name}
+                      style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Download
+                    </a>
+                    <button
+                      style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                      onClick={() => deleteDocTemplate(tpl.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {docTemplates.length > 0 && (
+              <button
+                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
+                onClick={loadExampleTemplates}
+              >
+                + Add example templates
+              </button>
+            )}
             {/* Create with AI — the headline feature, up top */}
             <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1299,13 +1352,7 @@ function AdminPageInner() {
                 </tbody>
               </table>
               <p style={{ fontSize: 12, color: '#64748b', marginTop: 10, marginBottom: 0 }}>
-                <strong>Pro plan and up:</strong> use{' '}
-                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>
-                  [[Write a short welcome paragraph for the client]]
-                </code>{' '}
-                to have Claude generate that section. Write any natural-language instruction between{' '}
-                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>[[</code> and{' '}
-                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>]]</code>.
+                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>[[Write a short welcome paragraph for the client]]</code> asks the AI to write that section from the case.
               </p>
             </div>
 
@@ -1349,56 +1396,6 @@ function AdminPageInner() {
               </div>
             </div>
 
-            {/* Template list */}
-            {docTemplates.length === 0 && (
-              <div style={{ ...card, textAlign: 'center', color: '#94a3b8' }}>
-                No templates yet. Upload your first .docx or load the examples above.
-              </div>
-            )}
-            {docTemplates.map((tpl) => (
-              <div key={tpl.id} style={card}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div>
-                    <strong>{tpl.name}</strong>
-                    {tpl.has_llm_prompts && (
-                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
-                        AI prompts · Team only
-                      </span>
-                    )}
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                      {tpl.file_name} · {(tpl.file_size_bytes / 1024).toFixed(0)} KB
-                    </div>
-                    {tpl.description && (
-                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{tpl.description}</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <a
-                      href={`/api/v1/admin/doc-templates/${tpl.id}`}
-                      download={tpl.file_name}
-                      style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}
-                    >
-                      Download
-                    </a>
-                    <button
-                      style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                      onClick={() => deleteDocTemplate(tpl.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-
-            {docTemplates.length > 0 && (
-              <button
-                style={{ padding: '6px 12px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                onClick={loadExampleTemplates}
-              >
-                + Add example templates
-              </button>
-            )}
           </>
         )}
 

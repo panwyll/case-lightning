@@ -8,6 +8,7 @@ import { rowToSafeTemplate, uniqueName } from '@/lib/server/text';
 import { ok, fail } from '@/lib/server/http';
 
 import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES } from '@/lib/server/comms/templates';
+import { messageInfo } from '@/lib/server/engine/messages';
 
 /** Every message the engine can send, as a row the firm can rewrite. Keyed by the template key; the engine reads the firm's version when one exists. */
 async function ensureEngineTemplates(tenantId: string, userId: string): Promise<void> {
@@ -35,7 +36,7 @@ export async function GET() {
       `select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`,
       [user.tenantId]
     ).catch(() => []);
-    return ok({ templates: rows.map(rowToSafeTemplate), docTemplates });
+    return ok({ templates: rows.map(rowToSafeTemplate), docTemplates, engine: messageInfo() });
   } catch (error) {
     return fail(error);
   }

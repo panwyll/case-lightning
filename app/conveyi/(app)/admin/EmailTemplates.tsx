@@ -31,6 +31,7 @@ const fill = (s: string) => (s || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) =>
 export default function EmailTemplates() {
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [docTemplates, setDocTemplates] = useState<DocTpl[]>([]);
+  const [engine, setEngine] = useState<Record<string, { when: string; to: string; requires: string[]; vars: string[] }>>({});
   const [sel, setSel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -38,9 +39,10 @@ export default function EmailTemplates() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ templates: Tpl[]; docTemplates: DocTpl[] }>('/admin/templates');
+      const r = await api<{ templates: Tpl[]; docTemplates: DocTpl[]; engine?: Record<string, { when: string; to: string; requires: string[]; vars: string[] }> }>('/admin/templates');
       setTemplates(r.templates ?? []);
       setDocTemplates(r.docTemplates ?? []);
+      setEngine(r.engine ?? {});
     }
     catch (e: any) { setErr(e?.message || 'Could not load templates.'); }
   }, []);
@@ -95,8 +97,8 @@ export default function EmailTemplates() {
           {templates.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>No templates yet.</div>}
           {templates.map((t) => (
             <button key={t.id} onClick={() => setSel(t.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: sel === t.id ? '#F2EEFC' : 'transparent', cursor: 'pointer', marginBottom: 2 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{t.name}</div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category} · {t.styleTag}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{t.category === 'Engine' ? t.name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : t.name}</div>
+              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category === 'Engine' ? (engine[t.name]?.to ?? 'Engine') : `${t.category} · ${t.styleTag}`}</div>
             </button>
           ))}
         </div>
@@ -105,9 +107,20 @@ export default function EmailTemplates() {
         {cur ? (
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={card}>
+              {cur.category === 'Engine' && engine[cur.name] ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginBottom: 8, alignItems: 'baseline' }}>
+                  <strong style={{ fontSize: 14, gridColumn: '1 / -1' }}>{cur.name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</strong>
+                  <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>Sent when</span><span>{engine[cur.name].when}</span>
+                  <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>To</span><span>{engine[cur.name].to}</span>
+                  {engine[cur.name].requires.length > 0 && (<>
+                    <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>Must keep</span>
+                    <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{engine[cur.name].requires.map((k) => <code key={k} style={{ fontSize: 11, background: cur.bodyTemplate.includes(`{{${k}}}`) || (cur.subjectTemplate ?? '').includes(`{{${k}}}`) ? '#F2EEFC' : '#fee2e2', color: cur.bodyTemplate.includes(`{{${k}}}`) || (cur.subjectTemplate ?? '').includes(`{{${k}}}`) ? '#5A27E0' : '#b91c1c', borderRadius: 5, padding: '2px 6px' }}>{`{{${k}}}`}</code>)}</span>
+                  </>)}
+                </div>
+              ) : null}
               <div style={{ display: 'flex', gap: 8 }}>
-                <input value={cur.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => save(cur)} placeholder="Name" style={{ ...input, fontWeight: 700, flex: 2 }} />
-                <input value={cur.category} onChange={(e) => set({ category: e.target.value })} onBlur={() => save(cur)} placeholder="Category" style={{ ...input, flex: 1 }} />
+                {cur.category !== 'Engine' && <input value={cur.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => save(cur)} placeholder="Name" style={{ ...input, fontWeight: 700, flex: 2 }} />}
+                {cur.category !== 'Engine' && <input value={cur.category} onChange={(e) => set({ category: e.target.value })} onBlur={() => save(cur)} placeholder="Category" style={{ ...input, flex: 1 }} />}
                 <select value={cur.styleTag} onChange={(e) => { set({ styleTag: e.target.value }); save({ ...cur, styleTag: e.target.value }); }} style={{ ...input, width: 120, flex: 'none' }}>
                   {STYLES.map((s) => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
                 </select>
@@ -118,8 +131,8 @@ export default function EmailTemplates() {
               <textarea ref={bodyRef} value={cur.bodyTemplate} onChange={(e) => set({ bodyTemplate: e.target.value })} onBlur={() => save(cur)} rows={12} style={{ ...input, fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' }} />
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                 <span style={{ fontSize: 11, color: '#94a3b8', marginRight: 4 }}>Insert:</span>
-                {PLACEHOLDERS.map((k) => (
-                  <button key={k} onClick={() => insertPlaceholder(k)} title={`Sample: ${SAMPLE[k]}`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
+                {(cur.category === 'Engine' && engine[cur.name] ? engine[cur.name].vars : PLACEHOLDERS).map((k) => (
+                  <button key={k} onClick={() => insertPlaceholder(k)} title={SAMPLE[k] ? `Sample: ${SAMPLE[k]}` : `{{${k}}} is filled by the engine`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
                 ))}
               </div>
               <label style={lbl}>Attach documents</label>
@@ -153,7 +166,7 @@ export default function EmailTemplates() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
                 {saved && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}><Check size={12} /> Saved</span>}
-                <button onClick={() => archive(cur)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', marginLeft: 'auto' }}>Archive</button>
+                {cur.category !== 'Engine' && <button onClick={() => archive(cur)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', marginLeft: 'auto' }}>Archive</button>}
               </div>
             </div>
             {/* Live preview with sample data */}
