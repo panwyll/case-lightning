@@ -29,6 +29,8 @@ const CSS = `
 .ef-li .l3 span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ef-li .dot{width:7px;height:7px;border-radius:99px;flex:0 0 auto}
 .ef-li .warn{color:#dc2626;display:inline-flex}
+.ef-more{display:block;width:100%;border:0;border-top:1px solid #f1f5f9;background:#fff;padding:10px;font-family:inherit;font-size:12px;font-weight:700;color:#5A27E0;cursor:pointer}
+.ef-more:disabled{color:#94a3b8;cursor:default}
 .ef-grp{display:flex;align-items:center;gap:8px;border-bottom:1px solid #f1f5f9;background:#f8fafc;padding:7px 12px}
 .ef-grp .tog{display:flex;align-items:center;gap:8px;border:0;background:none;padding:2px 0;font-family:inherit;cursor:pointer;color:#475569;font-size:12px;font-weight:700}
 .ef-grp .chev{display:inline-flex;transition:transform .12s}
@@ -137,11 +139,16 @@ export default function EmailToFile() {
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
   const [showBulk, setShowBulk] = useState(false);
+  const [totals, setTotals] = useState<{ toFile: number; bulk: number } | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ items: Item[] }>('/mail/unfiled');
+      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>('/mail/unfiled');
       setItems(r.items);
+      setNextCursor(r.nextCursor);
+      setTotals({ toFile: r.toFile, bulk: r.bulk });
       setSel((cur) => cur ?? r.items.find((i) => !i.notCaseMail)?.id ?? r.items[0]?.id ?? null);
       setErr(null);
     } catch (e: unknown) {
@@ -151,6 +158,22 @@ export default function EmailToFile() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  /** The next page of the queue, appended. */
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await api<{ items: Item[]; nextCursor: string | null; toFile: number; bulk: number }>(`/mail/unfiled?cursor=${encodeURIComponent(nextCursor)}`);
+      setItems((cur) => [...(cur ?? []), ...r.items.filter((i) => !(cur ?? []).some((c) => c.id === i.id))]);
+      setNextCursor(r.nextCursor);
+      setTotals({ toFile: r.toFile, bulk: r.bulk });
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : 'Could not load more.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore]);
+
   const caseMail = useMemo(() => (items ?? []).filter((i) => !i.notCaseMail), [items]);
   const bulk = useMemo(() => (items ?? []).filter((i) => i.notCaseMail), [items]);
   const order = useMemo(() => [...caseMail, ...(showBulk ? bulk : [])], [caseMail, bulk, showBulk]);
@@ -159,6 +182,8 @@ export default function EmailToFile() {
   /** Take an email off the list and move on to the next one. */
   const retire = (ids: string[]) => {
     setItems((cur) => {
+      const gone = (cur ?? []).filter((i) => ids.includes(i.id));
+      setTotals((t) => t && { toFile: Math.max(0, t.toFile - gone.filter((i) => !i.notCaseMail).length), bulk: Math.max(0, t.bulk - gone.filter((i) => i.notCaseMail).length) });
       const next = (cur ?? []).filter((i) => !ids.includes(i.id));
       setSel((s) => {
         if (s && !ids.includes(s)) return s;
@@ -207,7 +232,7 @@ export default function EmailToFile() {
       <style>{CSS}</style>
       <div className="ef-head">
         <h1 className="eg-h1" style={{ margin: 0 }}>Email</h1>
-        {items && <span className="n">{caseMail.length} to file</span>}
+        {items && <span className="n">{totals?.toFile ?? caseMail.length} to file</span>}
       </div>
       {err && <div className="eg-err">{err}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
@@ -229,12 +254,17 @@ export default function EmailToFile() {
                 <div className="ef-grp">
                   <button className="tog" onClick={() => setShowBulk((v) => !v)} aria-expanded={showBulk}>
                     <span className={`chev${showBulk ? ' open' : ''}`}><ChevronRight size={13} /></span>
-                    Probably not case mail {bulk.length}
+                    Probably not case mail {totals?.bulk ?? bulk.length}
                   </button>
                   <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set all aside</button>
                 </div>
                 {showBulk && bulk.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} muted />)}
               </>
+            )}
+            {nextCursor && (
+              <button className="ef-more" disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
             )}
           </div>
           {current ? (

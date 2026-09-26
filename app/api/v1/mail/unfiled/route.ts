@@ -24,8 +24,9 @@ export const dynamic = 'force-dynamic';
  * postcode, names — not AI. The sender is checked first (mail/sender-check.ts): a forged
  * or look-alike sender does not count as evidence, and the row says so. Scrolling a queue
  * must not cost a model call or burn the firm's monthly cap, which is the same rule
- * /api/v1/mail follows. The queue itself is built in lib/server/mail/filing-queue.ts,
- * shared with the sidebar count so the badge is the number of rows this page shows.
+ * /api/v1/mail follows. The queue is a table (email_queue, mail/queue.ts) fed by triage
+ * and a mailbox sweep, so nothing is lost on a busy mailbox and the sidebar badge is a
+ * count of the same rows.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -35,10 +36,12 @@ export async function GET(req: NextRequest) {
     await assertEntitled(user.tenantId);
 
     const q = z
-      .object({ nextLink: z.string().nullish(), search: z.string().max(200).nullish(), top: z.coerce.number().int().min(5).max(100).optional() })
-      .parse({ nextLink: req.nextUrl.searchParams.get('nextLink'), search: req.nextUrl.searchParams.get('search'), top: req.nextUrl.searchParams.get('top') ?? undefined });
+      .object({ cursor: z.string().max(200).nullish(), limit: z.coerce.number().int().min(5).max(200).optional() })
+      .parse({ cursor: req.nextUrl.searchParams.get('cursor'), limit: req.nextUrl.searchParams.get('limit') ?? undefined });
 
-    return ok(await filingQueue(user, q));
+    // The sweep (backlog once, then one page of the newest mail) runs on the first page
+    // only; a "load more" is a plain table read.
+    return ok(await filingQueue(user, { ...q, sweep: !q.cursor }));
   } catch (error) {
     return fail(error);
   }

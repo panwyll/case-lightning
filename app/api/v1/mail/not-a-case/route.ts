@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/server/session';
 import { query } from '@/lib/server/db';
 import { ok, fail } from '@/lib/server/http';
 import { writeAudit } from '@/lib/server/audit';
+import { resolveConversation, reopenConversation } from '@/lib/server/mail/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
        values ($1,$2,$3,$4,$5) on conflict (tenant_id, graph_conversation_id) do nothing`,
       [user.tenantId, input.conversationId, input.subject ?? null, user.userId, input.reason ?? null]
     );
+    await resolveConversation(user.tenantId, input.conversationId, 'SET_ASIDE').catch(() => {});
     await writeAudit({ tenantId: user.tenantId, actorUserId: user.userId, actionType: 'EMAIL_SET_ASIDE', actionStatus: 'SUCCESS', payload: { conversationId: input.conversationId } }).catch(() => {});
     return ok({ setAside: true });
   } catch (error) {
@@ -41,6 +43,7 @@ export async function DELETE(req: NextRequest) {
     const user = await requireUser();
     const conversationId = z.string().min(1).parse(req.nextUrl.searchParams.get('conversationId'));
     await query(`delete from email_not_filed where tenant_id = $1 and graph_conversation_id = $2`, [user.tenantId, conversationId]);
+    await reopenConversation(user.tenantId, conversationId).catch(() => {});
     return ok({ restored: true });
   } catch (error) {
     return fail(error);

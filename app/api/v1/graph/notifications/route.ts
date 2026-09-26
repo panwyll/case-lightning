@@ -11,6 +11,7 @@ import { learnFirmRef } from '@/lib/server/contacts';
 import { assistOnMessage } from '@/lib/server/assist';
 import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
+import { enqueueMessage } from '@/lib/server/mail/queue';
 import type { SessionUser } from '@/lib/server/types';
 
 export const runtime = 'nodejs';
@@ -107,6 +108,18 @@ export async function POST(req: NextRequest) {
 
         await applyTriageTags(user, message, triage);
         await runAutoAutomations(user, message, triage);
+
+        // Not on a case yet → onto the filing queue, with the matching and the sender
+        // check the triage just did. A trusted link means it IS on a case. Best-effort.
+        if (!(triage.top && hasTrustedLink(triage.top))) {
+          const cls = triage.classification as { caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; sender?: typeof triage.classification.sender };
+          await enqueueMessage(user, message, {
+            candidates: triage.candidates,
+            sender: cls.sender,
+            caseMail: cls.caseMail ?? null,
+            caseMailWhat: cls.caseMailWhat ?? null,
+          }).catch((e) => console.error('[graph notification] enqueue failed', (e as Error).message));
+        }
 
         // Auto-file attachments into a case's knowledge base ONLY on a trusted link
         // the firm created — never a case-ref token (attacker-injectable) or fuzzy

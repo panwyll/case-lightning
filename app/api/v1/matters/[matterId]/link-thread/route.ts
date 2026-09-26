@@ -9,6 +9,7 @@ import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/se
 import { matterColor } from '@/lib/server/colors';
 import { writeAudit } from '@/lib/server/audit';
 import { ok, fail } from '@/lib/server/http';
+import { resolveConversation } from '@/lib/server/mail/queue';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         label,
       ]
     );
+
+    // The thread is on a case: its rows leave the filing queue.
+    await resolveConversation(user.tenantId, conversationId, 'FILED', matterId).catch(() => {});
 
     // Stamp the matter-name category onto the actual Outlook message (best-effort).
     if (body.messageId) {

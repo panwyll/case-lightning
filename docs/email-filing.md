@@ -152,3 +152,20 @@ automated path (migration 079, `docs/conveyance-engine.md`):
 
 New bank details arriving by email are recorded as unverified and stop payments until a
 person checks them by phone on a number already on file, or with Lawyer Checker.
+
+## Where the list comes from
+
+The list is a table, `email_queue` (migration 081), not a live read of the mailbox. A
+conveyancer receives 200–300 emails a day; reading "the newest 25 from Graph" on each load
+covered about an hour and silently dropped the rest.
+
+- **Triage writes it.** Every inbound message the Graph subscription delivers is triaged;
+  if it is not on a trusted link to a case it goes on the queue with the sender check,
+  its best deterministic matches and whether it is bulk mail. Nothing is recomputed on read.
+- **A sweep fills the gaps.** The first time a mailbox is seen, twelve inbox pages are
+  swept into the queue (the backlog from before the subscription). Every first-page load
+  also sweeps one page of the newest mail, so a lapsed subscription never leaves a hole.
+- **Filing resolves it.** Linking a thread to a case or setting it aside marks its rows
+  resolved; undoing a set-aside puts them back.
+- **The badge is a count** of open rows that are case mail, the same rows the page shows,
+  and the page loads more with a cursor.
