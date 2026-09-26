@@ -56,6 +56,7 @@ export interface MatterMeta { matterRef: string; propertyAddress: string; legacy
 
 export interface TaskContextView {
   headline: string;
+  task: Array<{ k: string; v: string; warn?: boolean }>;
   facts: Array<{ k: string; v: string }>;
   checks: string[];
   history: Array<{ at: string; what: string }>;

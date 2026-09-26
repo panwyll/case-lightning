@@ -10,6 +10,12 @@ import type { TaskContextView } from './types';
  * doing it unblocks. Checks tick locally so the eye can keep its place; nothing is saved.
  */
 export const TASK_CONTEXT_CSS = `
+.tc-task{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;margin:0 0 12px;padding:10px 12px;border:1px solid #e6e8ee;border-left:3px solid #5A27E0;border-radius:0 10px 10px 0;background:#faf8ff;font-size:13px}
+.tc-task > div{display:contents}
+.tc-task dt{font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#64748b;padding-top:2px;white-space:nowrap}
+.tc-task dd{margin:0;color:#0f172a;line-height:1.45;overflow-wrap:anywhere}
+.tc-task > div.warn dd{color:#92400e;font-weight:600}
+.tc-task > div.warn dt{color:#b45309}
 .tc-facts{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 10px}
 .tc-fact{display:inline-flex;align-items:baseline;gap:5px;border:1px solid #e6e8ee;background:#f8fafc;border-radius:8px;padding:3px 8px;font-size:12.5px;line-height:1.35;max-width:100%}
 .tc-fact b{font-weight:700;color:#64748b;font-size:11px;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
@@ -34,13 +40,20 @@ export const TASK_CONTEXT_CSS = `
 const HOT = /^(Offer expires|Target exchange|Completion|Open issues|Arrears)$/;
 
 export function TaskContextFacts({ ctx }: { ctx: TaskContextView }) {
-  if (!ctx.facts.length) return null;
+  if (!ctx.facts.length && !ctx.task?.length) return null;
   return (
+    <>
+    {ctx.task?.length > 0 && (
+      <dl className="tc-task" aria-label="This task">
+        {ctx.task.map((f) => (<div key={f.k} className={f.warn ? 'warn' : ''}><dt>{f.k}</dt><dd>{f.v}</dd></div>))}
+      </dl>
+    )}
     <div className="tc-facts" aria-label="Case facts">
       {ctx.facts.map((f) => (
         <span key={f.k} className={`tc-fact${HOT.test(f.k) && /\(|issue|has passed|expired/.test(f.v) ? ' hot' : ''}`}><b>{f.k}</b><span>{f.v}</span></span>
       ))}
     </div>
+    </>
   );
 }
 

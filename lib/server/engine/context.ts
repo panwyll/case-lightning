@@ -11,10 +11,13 @@
  */
 import { profileOf } from './transactions';
 import { whyNot, gate, type GateId } from './graph';
-import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type IdCheckFacts, type MatterState, type SearchType } from './types';
+import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type IdCheckFacts, type MatterState, type Payloads, type SearchType } from './types';
 
 export interface TaskContext {
   headline: string;
+  /** The facts of this task, first: the enquiry and its reply, the offer and its conditions, the payee and the change. */
+  task: Array<{ k: string; v: string; warn?: boolean }>;
+  /** The case at a glance, trimmed to what this kind of task needs. */
   facts: Array<{ k: string; v: string }>;
   checks: string[];
   history: Array<{ at: string; what: string }>;
@@ -119,6 +122,14 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
   const p = profileOf(s.transactionType);
   const facts: TaskContext['facts'] = [];
   const add = (k: string, v: string | null | undefined) => { if (v) facts.push({ k, v }); };
+  const task: TaskContext['task'] = [];
+  const addT = (k: string, v: string | null | undefined, warn = false) => { if (v) task.push({ k, v, warn }); };
+  const kind = target.kind === 'decision' ? target.decision.kind : target.type;
+  const wantsTitle = /title|report_on_title|management_pack|mortgage|contract|exchange|transfer|deed/.test(kind);
+  const wantsMoney = /proof_of_funds|bank_details|deposit|funds|completion|payment|redemption/.test(kind);
+  const raised = target.kind === 'decision' ? events.find((e) => e.id === target.decision.eventId) ?? null : null;
+  const flagLines = (flags: Flag[] | undefined) => (flags ?? []).map((f) => `${f.severity === 'high' ? '‼ ' : f.severity === 'medium' ? '! ' : ''}${f.description || f.code.replace(/_/g, ' ').toLowerCase()}`).join(' · ');
+  const mask = (d: { sortCode: string; accountNumber: string; accountName: string; firmName: string | null }) => `${d.accountName}${d.firmName ? ` (${d.firmName})` : ''} · ${d.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3')} ····${d.accountNumber.slice(-4)}`;
 
   // ── The case at a glance: always ──
   const clients = p.side === 'seller' ? m.sellerNames : m.buyerNames;
@@ -129,7 +140,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
   const priceFromMatter = m.purchasePrice != null && m.purchasePrice !== '' ? Math.round(Number(String(m.purchasePrice).replace(/[£,\s]/g, '')) * 100) : null;
   add('Price', gbp(s.purchasePricePennies ?? (Number.isFinite(priceFromMatter) ? priceFromMatter : null)));
   add(p.counterparty.replace(/^./, (c) => c.toUpperCase()), m.counterpartySolicitor || null);
-  add('Stage', pretty(s.stage));
+  add('Stage', pretty(s.stage).replace(/^./, (c) => c.toUpperCase()));
   // ── Dates: contractual once exchanged, targets before ──
   if (s.exchange.exchangedAt) {
     add('Exchanged', day(s.exchange.exchangedAt));
@@ -148,8 +159,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     if (f?.expiryDate) add('Offer expires', withClock(f.expiryDate, now));
     else if (s.mortgage.status !== 'not_required') add('Mortgage offer', pretty(s.mortgage.status));
   }
-  if (s.title.facts?.titleNumber) add('Title', `${s.title.facts.titleNumber} · ${s.title.facts.tenure}`);
-  if (p.tenure === 'leasehold' || s.title.facts?.tenure === 'leasehold') {
+  if (wantsTitle && s.title.facts?.titleNumber) add('Title', `${s.title.facts.titleNumber} · ${s.title.facts.tenure}`);
+  if (wantsTitle && (p.tenure === 'leasehold' || s.title.facts?.tenure === 'leasehold')) {
     const l = s.title.facts?.lease;
     if (l?.unexpiredYears != null) add('Lease term left', n(l.unexpiredYears, 'year'));
     if (l?.groundRentPenniesPa != null) add('Ground rent', `${gbp(l.groundRentPenniesPa)} a year${l.groundRentReview ? ` · ${l.groundRentReview}` : ''}`);
@@ -157,7 +168,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     if (mp?.serviceChargePenniesPa != null) add('Service charge', `${gbp(mp.serviceChargePenniesPa)} a year`);
     if (mp?.arrearsPennies) add('Arrears', gbp(mp.arrearsPennies));
   }
-  if (s.requireProofOfFunds && s.proofOfFunds.status !== 'not_started') add('Proof of funds', s.proofOfFunds.approvedAt ? 'signed off' : pretty(s.proofOfFunds.status));
+  if (wantsMoney && s.requireProofOfFunds && s.proofOfFunds.status !== 'not_started') add('Proof of funds', s.proofOfFunds.approvedAt ? 'signed off' : pretty(s.proofOfFunds.status));
   const issues = openIssues(s);
   if (issues.length) add('Open issues', issues.slice(0, 3).map((i) => i.title).join('; ') + (issues.length > 3 ? ` +${issues.length - 3}` : ''));
 
@@ -171,33 +182,138 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     const d = target.decision;
     subjectKey = d.subject ? d.subject.split(':').pop() ?? null : null;
     prefix = KIND_PREFIX[d.kind] ?? null;
+    const rp = (raised?.payload ?? {}) as Record<string, unknown>;
     if (d.kind === 'search') {
       const st = subjectKey as SearchType;
-      const flags = s.searches[st]?.flags ?? [];
+      const sr = s.searches[st];
+      const flags = (raised?.type === 'search_flagged' ? (rp as Payloads['search_flagged']).flags : sr?.flags) ?? [];
       headline = `${SEARCH_LABEL[st] ?? st} came back ${flags.length ? `with ${n(flags.length, 'point')}: ${flagWords(flags)}` : 'clear'}.`;
+      addT('Search', SEARCH_LABEL[st] ?? st);
+      addT('Ordered', day(sr?.orderedAt));
+      addT('Returned', day(sr?.returnedAt));
+      addT('Points', flagLines(flags), flags.some((f) => f.severity === 'high'));
+      const sf = sr?.facts?.summaryFields ?? {};
+      const keyEntries = Object.entries(sf).filter(([, v]) => v !== null && v !== '' && v !== false).slice(0, 6).map(([k, v]) => `${pretty(k)}: ${String(v)}`).join(' · ');
+      addT('Key entries', keyEntries || null);
+      if (sr && sr.cycle > 1) addT('Cycle', `re-ordered (cycle ${sr.cycle})`);
       checks = SEARCH_CHECKS[st] ?? [];
     } else if (d.kind === 'enquiry') {
       const q = s.enquiries[subjectKey ?? ''];
-      headline = q ? `Reply to enquiry ${q.enquiryId}: ${q.subject}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
+      const raisedEv = events.find((e) => e.type === 'enquiry_raised' && (e.payload as { enquiryId?: string }).enquiryId === subjectKey);
+      const replyEv = [...events].reverse().find((e) => e.type === 'enquiry_reply_received' && (e.payload as { enquiryId?: string }).enquiryId === subjectKey);
+      const rf = replyEv ? (replyEv.payload as Payloads['enquiry_reply_received']).facts : null;
+      const origin = raisedEv ? (raisedEv.payload as Payloads['enquiry_raised']).origin : null;
+      const flags = raised?.type === 'enquiry_reply_flagged' ? (rp as Payloads['enquiry_reply_flagged']).flags : [];
+      headline = q ? `Reply to enquiry ${q.enquiryId}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
+      addT('Enquiry', q ? `${q.enquiryId} · ${q.subject}` : subjectKey);
+      addT('Raised', raisedEv ? `${day(raisedEv.createdAt)}${raisedEv.actor === 'system' ? ' by the rules' : ' by a person'}${origin?.issueId ? ` from issue ${origin.issueId}` : origin?.followUpOf ? ` as a follow-up to ${origin.followUpOf}` : ''}` : null);
+      addT('Reply received', day(replyEv?.createdAt ?? q?.repliedAt));
+      addT('Reply reads as', rf ? `${rf.status}${rf.confidence < 0.85 ? ` (read with ${Math.round(rf.confidence * 100)}% confidence)` : ''}` : null, rf?.status === 'refused' || rf?.status === 'unclear');
+      addT('Points', flagLines(flags.length ? flags : rf?.issues), flags.some((f) => f.severity === 'high'));
+      const others = Object.values(s.enquiries).filter((e) => e.enquiryId !== subjectKey && (e.status === 'raised' || e.status === 'flagged'));
+      addT('Other enquiries open', others.length ? others.map((e) => `${e.enquiryId} ${e.status === 'flagged' ? '(reply in)' : '(awaiting reply)'}`).join(', ') : null);
       checks = KIND_CHECKS.enquiry;
     } else if (d.kind === 'mortgage') {
       const f = s.mortgage.facts;
-      const flagged = (f?.conditions ?? []).filter((c) => !c.standard);
-      headline = `${f?.lender ?? 'The lender'}'s offer${f?.amountPennies ? ` of ${gbp(f.amountPennies)}` : ''} has ${n(flagged.length, 'condition')} the rules could not clear.`;
+      const flags = raised?.type === 'mortgage_condition_flagged' ? (rp as Payloads['mortgage_condition_flagged']).flags : [];
+      const flagged = flags.length ? flags.length : (f?.conditions ?? []).filter((c) => !c.standard).length;
+      headline = `${f?.lender ?? m.lender ?? 'The lender'}'s offer${f?.amountPennies ? ` of ${gbp(f.amountPennies)}` : ''}: ${n(flagged, 'point')} the rules could not clear.`;
+      addT('Lender', f?.lender ?? m.lender ?? null);
+      addT('Advance', gbp(f?.amountPennies));
+      if (f?.expiryDate) {
+        const te = s.targetExchangeDate ?? m.exchangeTargetDate;
+        const dte = te ? Math.ceil((new Date(f.expiryDate).getTime() - new Date(te).getTime()) / 86_400_000) : null;
+        addT('Expires', `${withClock(f.expiryDate, now)}${dte != null ? dte < 0 ? ` · ${-dte} days BEFORE target exchange` : ` · ${dte} days after target exchange` : ''}`, dte != null && dte < 28);
+      }
+      addT('Conditions flagged', flagLines(flags) || (f?.conditions ?? []).filter((c) => !c.standard).map((c) => c.text).join(' · ') || null, flags.some((x) => x.severity === 'high'));
+      addT('Standard conditions cleared', f ? String(f.conditions.filter((c) => c.standard).length) : null);
+      if (s.mortgage.status === 'awaiting' || s.mortgage.status === 'not_required') addT('Offer now', 'withdrawn or replaced since this was raised — check the current offer before deciding', true);
       checks = KIND_CHECKS.mortgage;
     } else if (d.kind === 'title') {
       const f = s.title.facts;
+      const flags = raised?.type === 'title_flagged' ? (rp as Payloads['title_flagged']).flags : [];
       headline = f ? `Title ${f.titleNumber} (${f.tenure}): ${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}.` : 'The title needs a person.';
+      addT('Title', f ? `${f.titleNumber} · ${f.tenure}${p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure ? ` (instruction says ${p.tenure})` : ''}` : null, !!f && p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure);
+      addT('Restrictions', f?.restrictions.length ? f.restrictions.map((r) => r.text).join(' · ') : null);
+      addT('Charges', f?.charges.length ? f.charges.map((r) => r.text).join(' · ') : null);
+      addT('Covenants', f?.covenants.length ? f.covenants.map((r) => r.text).join(' · ') : null);
+      if (f?.lease) addT('Lease', [f.lease.unexpiredYears != null ? `${f.lease.unexpiredYears} years left` : null, f.lease.groundRentPenniesPa != null ? `ground rent ${gbp(f.lease.groundRentPenniesPa)} a year` : null, f.lease.groundRentReview, f.lease.landlord ? `landlord ${f.lease.landlord}` : null].filter(Boolean).join(' · '), (f.lease.unexpiredYears ?? 99) < 85);
+      addT('Points', flagLines(flags), flags.some((x) => x.severity === 'high'));
       checks = KIND_CHECKS.title;
     } else if (d.kind === 'id_check') {
-      const raised = events.find((e) => e.id === d.eventId);
-      const f = raised && raised.type === 'id_check_flagged' ? (raised.payload as { facts: IdCheckFacts }).facts : null;
+      const f = raised?.type === 'id_check_flagged' ? (rp as Payloads['id_check_flagged']).facts : null;
       headline = `ID and AML check: ${f?.outcome ?? 'referred'}${f?.flags?.length ? ` — ${flagWords(f.flags)}` : ''}${f?.provider ? ` (${f.provider})` : ''}.`;
+      addT('Provider', f?.provider ?? null);
+      addT('Outcome', f?.outcome ?? null, f?.outcome === 'fail');
+      addT('Points', flagLines(f?.flags), (f?.flags ?? []).some((x) => x.severity === 'high'));
+      addT('Clients', (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || null);
       checks = KIND_CHECKS.id_check;
     } else if (d.kind === 'proof_of_funds') {
       const f = s.proofOfFunds.facts;
       headline = f ? `Declared ${gbp(f.totalDeclaredPennies)}${f.requiredPennies != null ? ` against ${gbp(f.requiredPennies)} needed` : ''}${f.shortfallPennies ? `; shortfall ${gbp(f.shortfallPennies)}` : ''}${f.giftedPennies ? `; ${gbp(f.giftedPennies)} gifted` : ''}${s.proofOfFunds.risk ? ` · ${s.proofOfFunds.risk} risk` : ''}.` : 'Proof of funds submitted.';
+      addT('Declared by', f?.declarantName ?? null);
+      addT('Needed', f?.requiredPennies != null ? `${gbp(f.requiredPennies)} (price ${gbp(f.purchasePricePennies)} less mortgage ${gbp(f.mortgageAdvancePennies ?? 0)})` : null);
+      addT('Declared', gbp(f?.totalDeclaredPennies));
+      addT('Shortfall', f?.shortfallPennies ? gbp(f.shortfallPennies) : null, !!f?.shortfallPennies);
+      addT('Sources', f?.sources?.length ? f.sources.map((x) => `${pretty(x.kind)} ${gbp(x.amountPennies)}${x.gift ? ' (gift)' : ''}${x.overseas ? ' (overseas)' : ''}${x.evidenceCount ? '' : ' — no evidence'}`).join(' · ') : null);
+      addT('Risk', s.proofOfFunds.risk ?? null, s.proofOfFunds.risk === 'enhanced');
+      const oq = Object.values(s.proofOfFunds.queries ?? {}).filter((q) => q.status === 'draft' || q.status === 'sent');
+      addT('Open queries', oq.length ? oq.map((q) => `${q.id} (${q.status})`).join(', ') : null, oq.length > 0);
+      addT('Round', String(s.proofOfFunds.rounds || 1));
       checks = KIND_CHECKS.proof_of_funds;
+    } else if (d.kind === 'bank_details') {
+      const b = s.bankDetails[subjectKey ?? ''] ?? Object.values(s.bankDetails).find((x) => x.decisionEventId === d.eventId) ?? null;
+      const prev = b?.supersedesId ? s.bankDetails[b.supersedesId] : null;
+      headline = b ? `${prev ? 'Change of' : 'New'} bank details for ${pretty(b.payeeKind)}${b.payeeRef ? ` (${b.payeeRef})` : ''}, arrived by ${pretty(b.sourceChannel)}.` : d.summary.split('\n')[0].slice(0, 200);
+      addT('Payee', b ? `${pretty(b.payeeKind)}${b.payeeRef ? ` · ${b.payeeRef}` : ''}` : null);
+      addT('New details', b ? mask(b.details) : null);
+      addT('Previously on file', prev ? `${mask(prev.details)} · ${prev.verifiedAt ? `verified ${day(prev.verifiedAt)}` : prev.status === 'superseded' ? 'never verified' : prev.status}` : b ? 'nothing for this payee' : null, !!prev);
+      addT('Arrived by', b ? `${pretty(b.sourceChannel)} on ${day(b.recordedAt)}${b.recordedBy === 'external' ? ', from outside' : b.recordedBy === 'system' || b.recordedBy === 'ai' ? ', read by the engine' : ', recorded by a person'}` : null);
+      addT('Payments due to this payee', b ? (b.payeeKind === 'seller_solicitor' && p.side === 'buyer' ? 'completion monies' : b.payeeKind === 'lender' ? 'redemption' : b.payeeKind === 'client' ? 'balance after completion' : 'none tracked') : null);
+      checks = KIND_CHECKS.bank_details;
+    } else if (d.kind === 'report_on_title') {
+      const basedOn = raised?.type === 'report_on_title_drafted' ? (rp as Payloads['report_on_title_drafted']).basedOn : [];
+      const pendingBits = [
+        ...Object.values(s.enquiries).filter((e) => e.status === 'raised' || e.status === 'flagged').map((e) => `enquiry ${e.enquiryId}`),
+        ...Object.values(s.searches).filter((x) => x.status === 'ordered' || x.status === 'flagged').map((x) => `${x.searchType} search`),
+        ...(s.hasLender && s.mortgage.status !== 'cleared' && s.mortgage.status !== 'reviewed' ? ['mortgage offer'] : []),
+        ...(s.requireProofOfFunds && !s.proofOfFunds.approvedAt ? ['proof of funds'] : []),
+      ];
+      headline = `Draft report on title from ${n(basedOn.length, 'source document')}${pendingBits.length ? `; ${n(pendingBits.length, 'thing')} still open that it cannot yet cover` : ''}.`;
+      addT('Drafted', raised ? `${day(raised.createdAt)} by ${(rp as { model?: string }).model ?? 'the drafter'}` : null);
+      addT('Based on', basedOn.length ? `${basedOn.length} documents (title, searches, replies filed to date)` : null);
+      addT('Still open, not in the report', pendingBits.length ? pendingBits.join(', ') : null, pendingBits.length > 0);
+      checks = KIND_CHECKS.report_on_title;
+    } else if (d.kind === 'proposal') {
+      const pr = s.proposals[d.eventId] ?? Object.values(s.proposals).find((x) => x.eventId === d.eventId) ?? null;
+      const det = (pr?.detail ?? (rp as { detail?: Record<string, unknown> }).detail ?? {}) as Record<string, unknown>;
+      const action = pr?.action ?? (rp as { action?: string }).action ?? d.subject ?? '';
+      const to = (det.recipientRole as string) ?? (det.kind === 'proof_of_funds_request' || det.kind === 'id_check_request' ? 'client' : action === 'client_update' ? 'client' : null);
+      const hasDetail = Object.keys(det).length > 0;
+      headline = hasDetail
+        ? `The engine wants to ${action === 'chase' ? `chase ${pretty(String(to ?? 'the party'))}` : action === 'acknowledgement' ? `acknowledge to ${pretty(String(to ?? 'the sender'))}` : action === 'search_order' ? `order the ${det.searchType ?? ''} search` : action === 'client_update' ? 'update the client' : pretty(action)}.`
+        : `The engine proposed ${pretty(action)}: ${d.summary.split('\n')[0].slice(0, 160)}`;
+      if (hasDetail) addT('Would send', action === 'chase' ? `chase for ${pretty(String(det.waitKey ?? ''))}${det.subject ? ` ${det.subject}` : ''}${det.template ? ` (${det.template})` : ''}` : action === 'acknowledgement' ? `acknowledgement of ${det.what ?? 'a delivery'}` : action === 'client_update' ? `client update: ${pretty(String(det.template ?? det.kind ?? ''))}` : action === 'search_order' ? `order for ${det.searchType} from ${det.provider ?? 'the provider'}` : pretty(action));
+      addT('To', to ? pretty(String(to)) : null);
+      if (action === 'chase') {
+        const w = openWaits(s).find((x) => x.key === det.waitKey && (!det.subject || x.subject === det.subject));
+        if (w) addT('Outstanding since', `${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}`);
+      }
+      addT('Proposed', day(pr?.proposedAt ?? raised?.createdAt));
+      checks = KIND_CHECKS.proposal;
+    } else if (d.kind === 'auto_clear') {
+      const ac = raised?.type === 'auto_clear_review_raised' ? (rp as Payloads['auto_clear_review_raised']) : null;
+      headline = `The rules cleared ${ac ? pretty(ac.subFlow) : pretty(d.subject ?? '')}${ac?.subject ? ` (${ac.subject.split(':').pop()})` : ''}; confirm or send it back.`;
+      addT('Cleared', ac ? `${pretty(ac.subFlow)} · ${ac.subject.split(':').pop()}` : null);
+      addT('Because', ac?.reasons?.length ? ac.reasons.join(' · ') : null);
+      checks = KIND_CHECKS.auto_clear;
+    } else if (d.kind === 'escalation') {
+      const es = raised?.type === 'escalation_raised' ? (rp as Record<string, unknown>) : {};
+      headline = `Escalated: ${pretty(String(es.waitKey ?? es.kind ?? d.subject ?? ''))}${es.subject ? ` ${es.subject}` : ''}.`;
+      addT('Why', (es.reason as string) ?? d.summary.split('\n')[0]);
+      const w = openWaits(s).find((x) => x.key === es.waitKey && (!es.subject || x.subject === es.subject));
+      if (w) addT('Outstanding since', `${day(w.openedAt)} · chased ${w.chasesSentAt.length}×`, true);
+      checks = KIND_CHECKS.escalation;
     } else {
       headline = d.summary.split('\n')[0].slice(0, 200);
       checks = KIND_CHECKS[d.kind] ?? [];
@@ -216,7 +332,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     if (subjectKey && [pl.searchType, pl.enquiryId, pl.subject, pl.requestId, pl.bankDetailsId, pl.draftId].includes(subjectKey)) return true;
     return !!prefix && e.type.startsWith(prefix);
   };
-  const who = (a: string) => (a === 'system' || a === 'ai' ? '' : a === 'external' ? ' · received' : ' · by a person');
+  const who = (a: string) => (a === 'system' || a === 'ai' ? '' : a === 'external' ? ' · from outside' : ' · by a person');
   const history = events.filter(touches).slice(-8).map((e) => ({ at: e.createdAt, what: `${pretty(e.type)}${who(e.actor)}` }));
 
   // ── Related: the rest of the case that bears on this ──
@@ -229,7 +345,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     const subj = dd.subject ? dd.subject.split(':').pop() ?? '' : '';
     related.push(`Also waiting on you: ${pretty(dd.kind)}${subj && subj.length <= 16 ? ` ${subj}` : ''}`);
   }
-  for (const w of openWaits(s)) related.push(`Waiting on ${pretty(w.key)}${w.subject ? ` ${w.subject}` : ''} since ${day(w.openedAt)}${w.chasesSentAt.length ? `, chased ${w.chasesSentAt.length}×` : ''}`);
+  for (const w of openWaits(s)) related.push(`Waiting on ${pretty(w.key)}${w.subject && !/^[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(w.subject) ? ` ${w.subject}` : ''} since ${day(w.openedAt)}${w.chasesSentAt.length ? `, chased ${w.chasesSentAt.length}×` : ''}`);
 
   // ── What this unblocks ──
   let unblocks: string | null = null;
@@ -246,5 +362,5 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     unblocks = g.ready ? `${g.label}: ready.` : rest.length === 0 ? `This is the last thing before ${g.label.toLowerCase()}.` : `${g.label} still needs ${n(rest.length, 'other thing')}: ${rest.slice(0, 4).join('; ')}${rest.length > 4 ? '…' : ''}`;
   }
 
-  return { headline, facts, checks, history, related: related.slice(0, 6), unblocks };
+  return { headline, task, facts, checks, history, related: related.slice(0, 6), unblocks };
 }
