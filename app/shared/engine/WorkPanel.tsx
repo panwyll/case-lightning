@@ -492,7 +492,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {closed && <span className="ep-step done">Closed</span>}
       </div>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
-      {view.blockers.length > 0 && <div className="ep-block"><b>Before the next phase:</b> {view.blockers.join(' · ')}</div>}
 
       {openWaits.length > 0 && (
         <>
@@ -511,16 +510,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       <div className="ep-sec">Decisions waiting on you ({view.pendingDecisions.length})</div>
       <DecisionFeed api={api} matterId={matterId} compact onResolved={onChanged} />
 
-      <div className="ep-sec">Work by workstream · {p.label}{p.counterparty ? ` · other side: ${p.counterparty}` : ''}</div>
-      <div className="ep-over">
-        {lanes.map((l) => (
-          <button key={l.id} type="button" className={isOpen(l) ? 'on' : ''} onClick={() => { toggle(l); document.getElementById(`lane-${l.id}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }}>
-            <b>{l.title}</b>
-            <span className="st ep-pill" style={{ background: LANE_STATE[l.state].bg, color: LANE_STATE[l.state].fg }}>{l.state}</span>
-            <div className="n">{l.tiles.filter((t) => ['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved'].includes(t.status)).length} of {l.tiles.length} sub-blocks done</div>
-          </button>
-        ))}
-      </div>
+      <div className="ep-sec">Workstreams</div>
       {lanes.map((l) => <Lane key={l.id} lane={l} open={isOpen(l)} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
 
       {/* ── Money: payee bank details ── */}

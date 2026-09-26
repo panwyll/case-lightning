@@ -5,6 +5,6 @@ import { paths } from '@/lib/paths';
 export default async function EngineMatterRedirect({ params, searchParams }: { params: Promise<{ matterId: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { matterId } = await params;
   const sp = await searchParams;
-  const tab = typeof sp.tab === 'string' ? sp.tab : 'work';
-  redirect(`${paths.matter(matterId)}?tab=${encodeURIComponent(tab)}`);
+  const tab = typeof sp.tab === 'string' && sp.tab !== 'work' ? sp.tab : null;
+  redirect(tab ? `${paths.matter(matterId)}?tab=${encodeURIComponent(tab)}` : paths.matter(matterId));
 }

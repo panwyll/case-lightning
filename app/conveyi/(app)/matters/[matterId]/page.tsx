@@ -3,7 +3,7 @@ import { use, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
-import { CaseHud, HUD_LOOK, type CaseHudData, type HudStatus } from '@/app/shared/engine/CaseHud';
+import type { CaseHudData } from '@/app/shared/engine/CaseHud';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { HEALTH_LABEL, TRANSACTION_LABEL, pretty, stageLabel, type HealthBand, type WorkItem } from '@/app/shared/engine/types';
 import { WorkPanel, WORK_CSS } from '@/app/shared/engine/WorkPanel';
@@ -22,8 +22,8 @@ import { paths } from '@/lib/paths';
  * person records), Issues, Notes, Documents, Timeline, and Diagnostics for the engine's
  * own readiness and dependency views. There is no second page for a case.
  */
-type Tab = 'overview' | 'work' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
-const TABS: Tab[] = ['overview', 'work', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
+type Tab = 'overview' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
+const TABS: Tab[] = ['overview', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
 interface Row { id: string; matterRef: string | null; propertyAddress: string | null; stage: string; assignee: string | null; assignedTo: string | null }
 interface Person { id: string; email: string; display_name: string | null }
 interface Detail {
@@ -69,12 +69,10 @@ a.mx-li:hover{background:#fafafa}
 const BAND: Record<HealthBand, { fg: string; bg: string }> = {
   normal: { fg: '#166534', bg: '#dcfce7' }, attention: { fg: '#92400e', bg: '#fef3c7' }, delayed: { fg: '#9a3412', bg: '#ffedd5' }, blocked: { fg: '#1e293b', bg: '#e2e8f0' }, critical: { fg: '#991b1b', bg: '#fee2e2' },
 };
-const OWNER: Record<string, string> = { conveyancer: 'Us', client: 'Client', seller_side: "Other side's solicitor", lender: 'Lender', third_party: 'Third party', mlro: 'MLRO', hmlr: 'HM Land Registry', search_provider: 'Search provider', id_provider: 'ID provider' };
 const money = (v: unknown) => { const n = Number(String(v ?? '').replace(/[£,\s]/g, '')); return Number.isFinite(n) && n > 0 ? `£${n.toLocaleString('en-GB')}` : ''; };
 const day = (iso: unknown) => (iso ? new Date(String(iso)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 const short = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const names = (v: unknown) => (Array.isArray(v) ? v.filter(Boolean).join(', ') : typeof v === 'string' ? v : '');
-const workStatus = (w: WorkItem): HudStatus => (w.bucket === 'escalate' ? 'blocked' : w.bucket === 'waiting' ? (w.chasesSent > 0 ? 'at_risk' : 'waiting') : 'todo');
 
 function Field({ k, v }: { k: string; v: string }) {
   if (!v) return null;
@@ -131,7 +129,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const band = model?.health?.band;
   const side = model?.profile?.side ?? (m.track === 'SALE' ? 'seller' : 'buyer');
   const clients = names(side === 'seller' ? m.seller_names : m.buyer_names) || names(m.buyer_names) || names(m.seller_names);
-  const work = (model?.work ?? []).slice().sort((a, b) => ({ escalate: 0, do: 1, waiting: 2 }[a.bucket] ?? 3) - ({ escalate: 0, do: 1, waiting: 2 }[b.bucket] ?? 3));
 
   return (
     <div className="eg">
@@ -159,7 +156,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
           </div>
 
-          {eng.notice && tab !== 'work' && (
+          {eng.notice && tab !== 'overview' && (
             <div className={`eg-notice ${eng.notice.kind}`} role={eng.notice.kind === 'err' ? 'alert' : 'status'}>
               <span>{eng.notice.text}</span>
               <button type="button" onClick={eng.clearNotice} aria-label="Dismiss">×</button>
@@ -167,8 +164,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           )}
 
           <div className="eg-tabs">
-            <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
-            <button className={`eg-tab${tab === 'work' ? ' on' : ''}`} onClick={() => setTab('work')}>Work{pending ? ` (${pending})` : ''}</button>
+            <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview{pending ? ` (${pending})` : ''}</button>
             <button className={`eg-tab${tab === 'issues' ? ' on' : ''}`} onClick={() => setTab('issues')} disabled={!enrolled}>Issues{openIssues ? ` (${openIssues})` : ''}</button>
             <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')} disabled={!enrolled}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
@@ -176,7 +172,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')} disabled={!enrolled}>Diagnostics</button>
           </div>
 
-          {tab === 'work' && (view ? <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} /> : <div className="eg-sub">{eng.err ?? 'Loading…'}</div>)}
           {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
           {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
           {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} />}
@@ -190,7 +185,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
           {tab === 'overview' && (<>
           <div className="mx-top">
-            <div>{model?.hud && <CaseHud hud={model.hud} />}</div>
+            <div style={{ minWidth: 0 }}>{view ? <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} /> : <div className="eg-sub">{eng.err ?? 'Loading…'}</div>}</div>
             <div className="mx-card">
               <div className="mx-kv">
                 <Field k="Property" v={row.propertyAddress ?? String(m.property_address ?? '')} />
@@ -221,26 +216,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
           </div>
 
-          {work.length > 0 && (
-            <div className="mx-sec">
-              <h2 className="mx-h">Tasks</h2>
-              <div className="mx-list">
-                {work.map((w) => {
-                  const st = workStatus(w);
-                  const l = HUD_LOOK[st];
-                  const due = w.dueBy ? `by ${short(w.dueBy)}` : w.chaseInWorkingDays != null ? (w.chaseInWorkingDays <= 0 ? 'chase due' : `chase in ${w.chaseInWorkingDays}d`) : '';
-                  return (
-                    <a key={w.id} className="mx-li" href={w.ref?.type === 'decision' ? paths.decision(w.ref.id) : `?tab=work`} onClick={w.ref?.type === 'decision' ? undefined : (e) => { e.preventDefault(); setTab('work'); }}>
-                      <span style={{ color: l.colour, display: 'flex' }}><l.Icon size={16} /></span>
-                      <span>{w.bucket === 'waiting' ? `Waiting on ${(OWNER[w.actionOwner] ?? pretty(w.actionOwner)).toLowerCase()} to ${w.what}` : w.what}</span>
-                      <span className="m">{w.bucket === 'waiting' ? OWNER[w.actionOwner] ?? pretty(w.actionOwner) : nameOf(w.responsibilityOwner ?? row.assignedTo) || 'Unassigned'}</span>
-                      <span className="m">{[due, w.chasesSent ? `chased ${w.chasesSent}×` : ''].filter(Boolean).join(' · ')}</span>
-                    </a>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (
             <div className="mx-sec mx-two">
