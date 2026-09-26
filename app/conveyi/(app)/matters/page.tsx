@@ -60,7 +60,7 @@ export default function CaseViewPage() {
   }, [rows, q]);
 
   return (
-    <div className="eg" style={{ maxWidth: 1100 }}>
+    <div className="eg">
       <style>{ENGINE_CSS + CSS}</style>
       {rows && rollup ? (
         <CaseloadMap
