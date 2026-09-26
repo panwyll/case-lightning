@@ -183,7 +183,7 @@ export function AppShell({ me, children }: { me: Me | null; children: React.Reac
           <div className="sh-me">
             <span>{me.displayName || me.email}</span>
             <span className="sh-av" title={me.email}>{initials(me.displayName || me.email)}</span>
-            <button className="sh-out" onClick={() => { window.location.href = '/api/v1/auth/logout'; }}>Sign out</button>
+            <button className="sh-out" onClick={() => { window.location.href = '/api/v1/auth/logout'; }}>Sign Out</button>
           </div>
         )}
       </header>

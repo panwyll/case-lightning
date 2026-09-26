@@ -288,7 +288,7 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, i
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button style={btnPrimary} disabled={busy || (isNew && (!person.name.trim() || !person.email.trim()))} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create and send sign-in link' : 'Save'}</button>
+        <button style={btnPrimary} disabled={busy || (isNew && (!person.name.trim() || !person.email.trim()))} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create and Send Sign-In Link' : 'Save'}</button>
         <button style={btnGhost} disabled={busy} onClick={onClose}>Cancel</button>
       </div>
     </div>
@@ -1422,9 +1422,9 @@ function AdminPageInner() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     {u.email !== me?.email && (
-                      <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void viewAs(u.id)} title="See the app exactly as this person does. A banner at the top brings you back. Both ends are logged.">View as</button>
+                      <button style={{ ...btnGhost, padding: '6px 12px', fontSize: 13 }} onClick={() => void viewAs(u.id)} title="See the app exactly as this person does. A banner at the top brings you back. Both ends are logged.">View As</button>
                     )}
-                    <button style={{ ...btnGhost, padding: '6px 10px', fontSize: 13 }} onClick={() => (editing === u.id ? setEditing(null) : void openPerson(u))} title="Role, cases and inboxes for this person" aria-label={`Settings for ${u.display_name || u.email}`}>⚙</button>
+                    <button style={{ ...btnGhost, padding: '6px 9px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={() => (editing === u.id ? setEditing(null) : void openPerson(u))} title="Role, cases and inboxes for this person" aria-label={`Settings for ${u.display_name || u.email}`}><Settings size={16} /></button>
                   </div>
                 </div>
                 {editing === u.id && (

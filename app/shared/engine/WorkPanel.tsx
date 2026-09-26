@@ -267,7 +267,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         </div>
       ) : null,
       actions: !exchanged && (pof?.status === 'not_started' || (pof?.status === 'reviewed' && pof.resolution !== 'approve')) ? (
-        <span><input className="ep-input" placeholder="Note to the client (optional)" value={pofNote} onChange={(e) => setPofNote(e.target.value)} style={{ width: 260 }} /><button className="ep-btn primary" disabled={busy} onClick={() => { void cmd({ type: 'request_proof_of_funds', noteToClient: pofNote.trim() || null }); setPofNote(''); }}>Send proof-of-funds form</button></span>
+        <span><input className="ep-input" placeholder="Note to the client (optional)" value={pofNote} onChange={(e) => setPofNote(e.target.value)} style={{ width: 260 }} /><button className="ep-btn primary" disabled={busy} onClick={() => { void cmd({ type: 'request_proof_of_funds', noteToClient: pofNote.trim() || null }); setPofNote(''); }}>Send Proof-of-Funds Form</button></span>
       ) : null });
   }
 

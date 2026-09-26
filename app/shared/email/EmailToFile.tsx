@@ -265,13 +265,13 @@ export default function EmailToFile() {
               <button className={`tab${tab === 'bulk' ? ' on' : ''}`} role="tab" aria-selected={tab === 'bulk'} onClick={() => { setTab('bulk'); setSel(bulk[0]?.id ?? null); }}>
                 Bulk <span className="c">{totals?.bulk ?? bulk.length}</span>
               </button>
-              {tab === 'bulk' && bulk.length > 0 && <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set all aside</button>}
+              {tab === 'bulk' && bulk.length > 0 && <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set All Aside</button>}
             </div>
             {order.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} muted={tab === 'bulk'} />)}
             {order.length === 0 && <div className="ef-empty">{tab === 'cases' ? 'Nothing to file.' : 'No bulk mail.'}</div>}
             {nextCursor && (
               <button className="ef-more" disabled={loadingMore} onClick={() => void loadMore()}>
-                {loadingMore ? 'Loading…' : 'Load more'}
+                {loadingMore ? 'Loading…' : 'Load More'}
               </button>
             )}
           </div>
