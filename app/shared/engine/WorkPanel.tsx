@@ -158,7 +158,7 @@ const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)',
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
-interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
+export interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
 /** When each sub-block starts, when it is done, and what it talks to. Written for the conveyancer, not the client. */
 interface About { starts: string; done: string; note?: string; via?: string; /** the document this step produces, from the firm's Doc Packs */ creates?: string }
 const ABOUT: Record<string, About> = {
@@ -204,7 +204,7 @@ const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.
 /** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
 const PERSON: Array<[RegExp, 'conveyancer' | 'client']> = [[/^Contract approved/, 'conveyancer'], [/^Client's authority/, 'client'], [/^Exchange$/, 'conveyancer'], [/^Report on title/, 'conveyancer'], [/^Proof of funds/, 'conveyancer'], [/^Mortgage deed/, 'client'], [/^Certificate of title/, 'conveyancer'], [/^Completion payment/, 'conveyancer'], [/^Balance to the client/, 'conveyancer'], [/^Payment to the lender/, 'conveyancer'], [/^AP1/, 'conveyancer'], [/^SDLT/, 'conveyancer'], [/^Transfer deed/, 'client'], [/^Declaration of trust/, 'client'], [/^How they hold/, 'client'], [/^Forms/, 'client'], [/^Completion$/, 'conveyancer']];
 const personFor = (label: string) => PERSON.find(([re]) => re.test(label))?.[1] ?? null;
-interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
+export interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** a map, not a case: no state label, no progress bar, no status pills */ plain?: boolean; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
@@ -232,9 +232,9 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t"><span className="ic" style={{ color: colour }}><Icon size={16} /></span>{titleCase(lane.title)}</span>
-        <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span>{lane.tiles.length > 0 && <span className="n">{done}/{lane.tiles.length}</span>}</span>
-        <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}</span>
+        {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span>{lane.tiles.length > 0 && <span className="n">{done}/{lane.tiles.length}</span>}</span>}
+        {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
       {open && (
         <div className="ep-box-b">
@@ -255,7 +255,7 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
                   {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
-                <Pill s={x.status} />
+                {!lane.plain && <Pill s={x.status} />}
                 {x.detail && <span className="d">{x.detail}</span>}
               </div>
             );
@@ -279,7 +279,7 @@ const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: s
 };
 
 /** The flowchart: tiers top to bottom, every box in a tier joined by a bus to every box in the next, so fan-out and fan-in read as concurrency. */
-function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[] }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
+export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[] }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
   const ref = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[]; junctions: Array<{ x: number; y: number; from: string; to: string }> }>({ bus: [], drops: [], arrows: [], junctions: [] });
   const measure = useCallback(() => {

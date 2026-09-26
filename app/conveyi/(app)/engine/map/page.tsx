@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { STAGE_LABEL, type IssueCatalogue } from '@/app/shared/engine/types';
+import { Flow, WORK_CSS, type LaneDef } from '@/app/shared/engine/WorkPanel';
+import { ChevronRight } from '@/app/shared/icons';
 
 /**
  * The state machine, drawn from code. Read-only. Everything on this page comes from
@@ -36,16 +38,12 @@ const CSS = `
 .mp th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;border-top:0;background:#fafafa}
 .mp code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:#f1f5f9;border-radius:4px;padding:1px 4px}
 .mp .muted{color:#94a3b8}
-.mp-nav{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 14px}
-.mp-nav a{font-size:12px;font-weight:700;color:#0f172a;text-decoration:none;border:1px solid #e6e8ee;border-radius:999px;padding:4px 10px;background:#fff}
-.mp-nav a:hover{background:#f3efff;border-color:#c7b8f5}
 .mp-sec{border:1px solid #e6e8ee;border-radius:12px;background:#fafafa;margin:0 0 10px;padding:0 12px}
 .mp-sec[open]{background:#fff}
-.mp-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;padding:12px 0;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0f172a}
+.mp-sec>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:14px 0;font-size:13px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#0f172a}
 .mp-sec>summary::-webkit-details-marker{display:none}
-.mp-sec>summary::before{content:'▸';font-size:11px;color:#94a3b8;transition:transform .12s}
-.mp-sec[open]>summary::before{transform:rotate(90deg)}
-.mp-count{font-size:11px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:1px 8px;letter-spacing:0;text-transform:none}
+.mp-chev{color:#64748b;transition:transform .12s;flex:none}
+.mp-sec[open]>summary .mp-chev{transform:rotate(90deg)}
 .mp-sec>*:not(summary){margin-bottom:12px}
 .mp .filters{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .mp .inv{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
@@ -64,6 +62,7 @@ export default function MapPage() {
   const [backend, setBackend] = useState('all');
   const [issueGroup, setIssueGroup] = useState('all');
   const [txType, setTxType] = useState('freehold_purchase');
+  const [current, setCurrent] = useState<string | null>(null);
   useEffect(() => {
     api<Spec>('/engine/spec').then(setSpec).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the spec.'));
   }, []);
@@ -81,18 +80,30 @@ export default function MapPage() {
       </div>
     );
   }
-  // ── stage spine geometry ──
-  const W = 150, GAP = 22, X0 = 20, Y = 40, H = 54;
-  const stageX = (i: number) => X0 + i * (W + GAP);
   const gatesOf = (st: { id: string; gates: string[] }) => profile?.stageGates[st.id] ?? st.gates;
   const subflowsOf = (st: { id: string; subflows: string[] }) => (profile ? st.subflows.filter((sf) => profile.subflows.includes(sf)) : st.subflows);
-  const gateLines = stagesShown.map((s) => gatesOf(s).length);
   const label = (id: string) => profile?.stageLabels[id] ?? STAGE_LABEL[id] ?? id;
-  const spineH = Y + H + 30 + Math.max(...gateLines) * 15 + 70;
+  const step = (text: string | null | undefined) => (text ? [{ label: text.replace(/_/g, ' ').replace(/\bid\b/gi, 'ID').replace(/\baml\b/gi, 'AML').replace(/\bsdlt\b/gi, 'SDLT').replace(/\bap1\b/gi, 'AP1'), status: 'not_started' }] : []);
+  // Every stage a band; in it each sub-flow as a box (its event pair as steps) and the gates to leave the stage as the last box.
+  const tiers = [
+    ...stagesShown.map((st) => {
+      const items: LaneDef[] = subflowsOf(st).map((id) => {
+        const sf = spec.subflows.find((x) => x.id === id);
+        const dk = sf ? spec.decisions.find((d) => d.kind === sf.decisionKind) : null;
+        return {
+          id: `${st.id}-${id}`, title: sf?.label ?? id.replace(/_/g, ' '), state: 'idle' as const, plain: true, order: 'sequence' as const, note: sf?.rule,
+          tiles: sf ? [...step(sf.start[sf.start.length - 1]), ...step(sf.cleared), ...step(sf.flagged), ...step(sf.reviewed ? `${sf.reviewed} — a person${dk ? `: ${dk.options.join(' · ')}` : ''}` : null)] : [],
+        };
+      });
+      items.push({ id: `${st.id}-gates`, title: 'Gates To Leave', state: 'idle', plain: true, order: 'sequence', note: st.purpose, tiles: gatesOf(st).map((g) => ({ label: g, status: 'not_started' })) });
+      return { id: st.id, label: label(st.id), items };
+    }),
+    { id: 'exits', label: 'Exits', items: spec.terminal.map((t) => ({ id: `exit-${t.id}`, title: t.label, state: 'idle' as const, plain: true, tiles: [{ label: t.how, status: 'not_started' }] })) },
+  ];
 
   return (
     <div className="eg mp" style={{ maxWidth: 1100 }}>
-      <style>{ENGINE_CSS + CSS}</style>
+      <style>{ENGINE_CSS + WORK_CSS + CSS}</style>
       <div className="eg-top">
         <div>
           <h1 className="eg-h1">Machine Map</h1>
@@ -103,10 +114,9 @@ export default function MapPage() {
           <a className="eg-btn" href="/api/v1/engine/spec" target="_blank" rel="noreferrer">JSON</a>
         </div>
       </div>
-      <nav className="mp-nav"><a href="#transaction-types">Transaction Types</a><a href="#stages">Stages</a><a href="#sub-flows">Sub-flows</a><a href="#commands">Commands</a><a href="#timers">Timers</a><a href="#triggers">Triggers</a><a href="#eventualities">Eventualities</a><a href="#issues">Issues</a><a href="#invariants">Invariants</a><a href="#decision-kinds">Decision Kinds</a></nav>
 
       <details id="transaction-types" className="mp-sec" open>
-        <summary><span>Transaction Types</span><span className="mp-count">{spec.transactionTypes.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Transaction Types</span></summary>
       <div className="filters">
         <button className={`eg-btn${txType === 'all' ? ' on' : ''}`} onClick={() => setTxType('all')}>All types</button>
         {spec.transactionTypes.map((t) => <button key={t.type} className={`eg-btn${txType === t.type ? ' on' : ''}`} onClick={() => setTxType(t.type)}>{t.label}</button>)}
@@ -132,72 +142,14 @@ export default function MapPage() {
       </details>
 
       <details id="stages" className="mp-sec" open>
-        <summary><span>Stages{profile ? ` — ${profile.label}` : ''}</span><span className="mp-count">{stagesShown.length}</span></summary>
-      <figure>
-        <svg viewBox={`0 0 ${X0 * 2 + stagesShown.length * (W + GAP)} ${spineH}`} role="img" aria-label="Eight stages left to right; under each, the gates that must be true to leave it; abandonment and manual handling can leave from any stage.">
-          <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#0f172a" /></marker></defs>
-          {stagesShown.map((s, i) => (
-            <g key={s.id}>
-              <rect x={stageX(i)} y={Y} width={W} height={H} rx="10" fill={i === stagesShown.length - 1 ? '#0f172a' : '#fff'} stroke="#0f172a" strokeWidth="1.5" />
-              <text x={stageX(i) + W / 2} y={Y + 23} textAnchor="middle" fontSize="12" fontWeight="700" fill={i === stagesShown.length - 1 ? '#fff' : '#0f172a'}>{label(s.id)}</text>
-              <text x={stageX(i) + W / 2} y={Y + 41} textAnchor="middle" fontSize="10" fill={i === spec.stages.length - 1 ? '#c7d2fe' : '#64748b'}>{subflowsOf(s).length ? subflowsOf(s).join(' · ') : 'milestones'}</text>
-              {i < stagesShown.length - 1 && <line x1={stageX(i) + W} y1={Y + H / 2} x2={stageX(i + 1) - 2} y2={Y + H / 2} stroke="#0f172a" strokeWidth="1.4" markerEnd="url(#arr)" />}
-              <text x={stageX(i) + 6} y={Y + H + 22} fontSize="10" fontWeight="800" fill="#94a3b8" letterSpacing=".06em">GATES</text>
-              {gatesOf(s).map((g, j) => (
-                <foreignObject key={j} x={stageX(i)} y={Y + H + 26 + j * 15} width={W} height={16}>
-                  <div style={{ fontSize: 10, lineHeight: '15px', color: '#334155', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={g}>· {g}</div>
-                </foreignObject>
-              ))}
-            </g>
-          ))}
-          {/* terminal exits */}
-          <g>
-            <rect x={X0} y={spineH - 58} width={220} height={40} rx="10" fill="#fee2e2" stroke="#b91c1c" />
-            <text x={X0 + 110} y={spineH - 41} textAnchor="middle" fontSize="12" fontWeight="700" fill="#7f1d1d">abandoned (any stage)</text>
-            <text x={X0 + 110} y={spineH - 26} textAnchor="middle" fontSize="10" fill="#7f1d1d">waits close · timers stop · corrections only</text>
-            <rect x={X0 + 240} y={spineH - 58} width={240} height={40} rx="10" fill="#fef3c7" stroke="#b45309" />
-            <text x={X0 + 360} y={spineH - 41} textAnchor="middle" fontSize="12" fontWeight="700" fill="#78350f">manual handling (any stage)</text>
-            <text x={X0 + 360} y={spineH - 26} textAnchor="middle" fontSize="10" fill="#78350f">automation stops · the log continues</text>
-            <rect x={X0 + 500} y={spineH - 58} width={200} height={40} rx="10" fill="#dcfce7" stroke="#15803d" />
-            <text x={X0 + 600} y={spineH - 41} textAnchor="middle" fontSize="12" fontWeight="700" fill="#14532d">registered</text>
-            <text x={X0 + 600} y={spineH - 26} textAnchor="middle" fontSize="10" fill="#14532d">ap1_confirmed · the last wait closes</text>
-          </g>
-        </svg>
-      </figure>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Stages{profile ? ` — ${profile.label}` : ''}</span></summary>
+        <div className="ep">
+          <Flow tiers={tiers} current={current} toggle={(l) => setCurrent((c) => (c === l.id ? null : l.id))} noticeFor={() => null} />
+        </div>
       </details>
 
       <details id="sub-flows" className="mp-sec">
-        <summary><span>Sub-flows</span><span className="mp-count">{spec.subflows.length}</span></summary>
-      <figure>
-        <svg viewBox={`0 0 1180 ${40 + spec.subflows.length * 78}`} role="img" aria-label="Each sub-flow: something arrives, the rule layer clears it or flags it, a flagged item is a decision a person resolves; chasing and escalation sit alongside.">
-          <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#64748b" /></marker></defs>
-          {spec.subflows.map((sf, i) => {
-            const y = 20 + i * 78;
-            const box = (x: number, w: number, text: string, fill: string, stroke: string, color = '#0f172a') => (
-              <g><rect x={x} y={y} width={w} height={34} rx="8" fill={fill} stroke={stroke} /><text x={x + w / 2} y={y + 21} textAnchor="middle" fontSize="11" fontFamily="ui-monospace, Menlo, monospace" fill={color}>{text}</text></g>
-            );
-            const arrow = (x1: number, x2: number, dy = 17, label?: string) => (
-              <g><line x1={x1} y1={y + dy} x2={x2} y2={y + dy} stroke="#64748b" strokeWidth="1.2" markerEnd="url(#arr2)" />{label && <text x={(x1 + x2) / 2} y={y + dy - 5} textAnchor="middle" fontSize="9" fill="#64748b">{label}</text>}</g>
-            );
-            const dk = spec.decisions.find((d) => d.kind === sf.decisionKind);
-            return (
-              <g key={sf.id}>
-                <text x={0} y={y + 14} fontSize="12" fontWeight="800" fill="#0f172a">{sf.label}</text>
-                <text x={0} y={y + 29} fontSize="10" fill="#94a3b8">{sf.stage}{sf.waitKey ? ` · wait: ${sf.waitKey}` : ''}</text>
-                {box(150, 150, sf.start[sf.start.length - 1], '#e2f3ef', '#137a6a')}
-                {arrow(300, 340)}
-                {sf.cleared ? box(340, 150, sf.cleared, '#e6eef9', '#2f5f9e') : box(340, 150, 'always a decision', '#fff', '#cbd5e1', '#64748b')}
-                {sf.flagged && <g>{arrow(300, 340, 17)}<line x1={415} y1={y + 34} x2={415} y2={y + 52} stroke="#64748b" strokeDasharray="3 3" /></g>}
-                {sf.flagged && box(520, 190, sf.flagged, '#efe8fb', '#6e42c1')}
-                {sf.flagged && arrow(490, 520, 17, sf.cleared ? 'or' : '')}
-                {sf.reviewed && arrow(710, 750, 17, 'person')}
-                {sf.reviewed && box(750, 190, sf.reviewed, '#fbeedd', '#b8690f')}
-                {dk && <foreignObject x={955} y={y - 4} width={225} height={44}><div style={{ fontSize: 10, color: '#475569', lineHeight: '13px' }}>options: {dk.options.join(' · ')}</div></foreignObject>}
-              </g>
-            );
-          })}
-        </svg>
-      </figure>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Sub-flows</span></summary>
       <table>
         <thead><tr><th>Sub-flow</th><th>Rule</th></tr></thead>
         <tbody>{spec.subflows.map((sf) => <tr key={sf.id}><td><b>{sf.label}</b></td><td>{sf.rule}</td></tr>)}</tbody>
@@ -205,7 +157,7 @@ export default function MapPage() {
       </details>
 
       <details id="commands" className="mp-sec">
-        <summary><span>Commands{profile ? ` — ${profile.label}` : ''}</span><span className="mp-count">{commandsShown.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Commands{profile ? ` — ${profile.label}` : ''}</span></summary>
       <table>
         <thead><tr><th>Command</th><th>Actor</th><th>Accepted at</th><th>Emits</th><th>Meaning</th></tr></thead>
         <tbody>
@@ -223,7 +175,7 @@ export default function MapPage() {
       </details>
 
       <details id="timers" className="mp-sec">
-        <summary><span>Timers</span><span className="mp-count">{spec.timers.waits.length + spec.timers.deadlines.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Timers</span></summary>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(420px,1fr))', gap: 12 }}>
         <table>
           <thead><tr><th>Wait</th><th>Chase after</th><th>Every</th><th>Escalate</th><th>Again after</th><th>Who is chased</th></tr></thead>
@@ -237,7 +189,7 @@ export default function MapPage() {
       </details>
 
       <details id="triggers" className="mp-sec">
-        <summary><span>Triggers</span><span className="mp-count">{spec.triggers.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Triggers</span></summary>
       <div className="filters">
         {['all', 'native', 'leap'].map((b) => <button key={b} className={`eg-btn${backend === b ? ' on' : ''}`} onClick={() => setBackend(b)}>{b === 'all' ? 'Both backends' : b === 'native' ? 'Own app (CaseLightning)' : 'LEAP'}</button>)}
       </div>
@@ -259,7 +211,7 @@ export default function MapPage() {
       </details>
 
       <details id="eventualities" className="mp-sec">
-        <summary><span>Eventualities</span><span className="mp-count">{spec.eventualities.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Eventualities</span></summary>
       <div className="filters">
         {['all', ...areas].map((a) => <button key={a} className={`eg-btn${area === a ? ' on' : ''}`} onClick={() => setArea(a)}>{a === 'all' ? 'All areas' : a.replace(/_/g, ' ')}</button>)}
         <span style={{ width: 12 }} />
@@ -276,7 +228,7 @@ export default function MapPage() {
       </details>
 
       <details id="issues" className="mp-sec">
-        <summary><span>Issues</span><span className="mp-count">{spec.issues.kinds.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Issues</span></summary>
       <div className="filters">
         {['all', ...spec.issues.groups.map((g) => g.id)].map((g) => <button key={g} className={`eg-btn${issueGroup === g ? ' on' : ''}`} onClick={() => setIssueGroup(g)}>{g === 'all' ? 'All groups' : spec.issues.groups.find((x) => x.id === g)?.label}</button>)}
       </div>
@@ -301,12 +253,12 @@ export default function MapPage() {
       </details>
 
       <details id="invariants" className="mp-sec">
-        <summary><span>Invariants</span><span className="mp-count">{spec.invariants.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Invariants</span></summary>
       <div className="inv">{spec.invariants.map((v) => <div key={v.id}><b>{v.title}</b>{v.rule}<div className="muted" style={{ marginTop: 4 }}>{v.enforcedBy.join(' · ')}</div></div>)}</div>
       </details>
 
       <details id="decision-kinds" className="mp-sec">
-        <summary><span>Decision Kinds</span><span className="mp-count">{spec.decisions.length}</span></summary>
+        <summary><ChevronRight size={18} className="mp-chev" /><span>Decision Kinds</span></summary>
       <table>
         <thead><tr><th>Kind</th><th>Options</th><th>Its source</th></tr></thead>
         <tbody>{spec.decisions.map((d) => <tr key={d.kind}><td><b>{d.label}</b></td><td>{d.options.join(' · ')}</td><td>{d.source}</td></tr>)}</tbody>
