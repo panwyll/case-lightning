@@ -225,71 +225,105 @@ const STATUS_STYLE: Record<string, { label: string; bg: string; color: string }>
 
 // A matter search box with a results dropdown; calls onSelect with the chosen matter.
 
-/** One person's account and access: role, whose cases they may see, whose inboxes they may file from. */
-function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, input, btnPrimary, btnGhost, toggleIn }: {
-  person: { name: string; email: string; role: string; caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] };
+const PERSON_CSS = `
+.pp-veil{position:fixed;inset:0;background:rgba(15,23,42,.38);z-index:60;display:flex;align-items:flex-start;justify-content:center;padding:72px 16px 16px;overflow-y:auto}
+.pp{background:#fff;border-radius:14px;width:100%;max-width:600px;box-shadow:0 24px 64px rgba(15,23,42,.24);overflow:hidden}
+.pp-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px 14px;border-bottom:1px solid #eef1f5}
+.pp-head h2{margin:0;font-size:17px;font-weight:800}
+.pp-head span{font-size:13px;color:#64748b}
+.pp-body{padding:18px 22px;display:grid;gap:18px}
+.pp-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pp-field{display:grid;gap:6px}
+.pp-field label,.pp-set > label{font-size:12px;font-weight:700;color:#475569;letter-spacing:.02em;text-transform:uppercase}
+.pp-field input{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:9px;font-size:14px;font-family:inherit;box-sizing:border-box;background:#fff}
+.pp-field input:focus{outline:none;border-color:#5A27E0;box-shadow:0 0 0 3px rgba(90,39,224,.15)}
+.pp-set{display:grid;gap:8px;justify-items:start}
+.pp-chips{justify-self:stretch}
+.pp-seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:9px;overflow:hidden;background:#fff}
+.pp-seg button{padding:8px 16px;border:0;border-left:1px solid #cbd5e1;background:#fff;color:#334155;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;line-height:1.2}
+.pp-seg button:first-child{border-left:0}
+.pp-seg button.on{background:#5A27E0;color:#fff}
+.pp-chips{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;border:1px dashed #cbd5e1;border-radius:9px;background:#f8fafc}
+.pp-chips button{padding:5px 12px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.pp-chips button.on{background:#ede9fe;border-color:#5A27E0;color:#4c1d95}
+.pp-chips i{font-size:12.5px;color:#94a3b8;font-style:normal;padding:5px 0}
+.pp-foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px;background:#f8fafc;border-top:1px solid #eef1f5}
+.pp-btn{padding:9px 16px;border-radius:9px;font-weight:700;font-size:14px;cursor:pointer;font-family:inherit;border:1px solid #cbd5e1;background:#fff;color:#334155}
+.pp-btn.primary{background:#5A27E0;border-color:#5A27E0;color:#fff}
+.pp-btn:disabled{opacity:.5;cursor:default}
+@media (max-width:640px){.pp-row{grid-template-columns:1fr}.pp-veil{padding-top:24px}}
+`;
+
+/** One person's account and access, in a dialog: role, whose cases they may see, whose inboxes they may file from. */
+function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, toggleIn }: {
+  person: PersonPanelProps;
   setPerson: (p: PersonPanelProps) => void;
   users: any[];
   isNew: boolean;
   busy: boolean;
   onSave: () => void;
   onClose: () => void;
-  input: React.CSSProperties;
-  btnPrimary: React.CSSProperties;
-  btnGhost: React.CSSProperties;
   toggleIn: (list: string[], id: string) => string[];
 }) {
-  const seg = (on: boolean): React.CSSProperties => ({ ...(on ? btnPrimary : btnGhost), padding: '5px 12px', fontSize: 13 });
   const colleagues = users.filter((u) => u.email !== person.email);
-  const list = (which: 'covers' | 'mailboxes') => (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-      {colleagues.map((u) => {
-        const on = person[which].includes(u.id);
-        return (
-          <button key={u.id} style={{ ...(on ? btnPrimary : btnGhost), padding: '4px 10px', fontSize: 12.5 }} onClick={() => setPerson({ ...person, [which]: toggleIn(person[which], u.id) })} title={which === 'covers' ? `Every case ${u.display_name || u.email} handles` : `${u.display_name || u.email}'s inbox, to file from`}>
-            {u.display_name || u.email}
-          </button>
-        );
-      })}
-      {colleagues.length === 0 && <span style={{ fontSize: 12, color: '#94a3b8' }}>No colleagues yet</span>}
+  const chips = (which: 'covers' | 'mailboxes') => (
+    <div className="pp-chips">
+      {colleagues.map((u) => (
+        <button key={u.id} type="button" className={person[which].includes(u.id) ? 'on' : ''} onClick={() => setPerson({ ...person, [which]: toggleIn(person[which], u.id) })} title={which === 'covers' ? `Every case ${u.display_name || u.email} handles` : `${u.display_name || u.email}'s inbox, to file from`}>
+          {u.display_name || u.email}
+        </button>
+      ))}
+      {colleagues.length === 0 && <i>No colleagues yet</i>}
     </div>
   );
+  const seg = <T extends string>(value: T, options: Array<[T, string, string]>, set: (v: T) => void) => (
+    <div className="pp-seg" role="radiogroup">
+      {options.map(([v, l, h]) => (
+        <button key={v} type="button" role="radio" aria-checked={value === v} className={value === v ? 'on' : ''} onClick={() => set(v)} title={h}>{l}</button>
+      ))}
+    </div>
+  );
+  const canSave = !busy && (!isNew || (person.name.trim().length > 0 && /\S+@\S+\.\S+/.test(person.email)));
   return (
-    <div style={{ background: '#f8fafc', border: '1px solid #e6e8ee', borderRadius: 10, padding: 14, margin: '0 0 10px' }}>
-      {isNew && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-          <input value={person.name} onChange={(e) => setPerson({ ...person, name: e.target.value })} placeholder="Full name" style={{ ...input, flex: 1, minWidth: 180, marginBottom: 0 }} />
-          <input value={person.email} onChange={(e) => setPerson({ ...person, email: e.target.value })} placeholder="Email" type="email" style={{ ...input, flex: 1, minWidth: 220, marginBottom: 0 }} />
+    <div className="pp-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
+      <style>{PERSON_CSS}</style>
+      <div className="pp" role="dialog" aria-modal="true" aria-labelledby="pp-title">
+        <div className="pp-head">
+          <h2 id="pp-title">{isNew ? 'New Team Member' : person.name || person.email}</h2>
+          {!isNew && <span>{person.email}</span>}
         </div>
-      )}
-      <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '12px 14px', alignItems: 'start' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Role</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'], ['READ_ONLY', 'Read only', 'Looks, changes nothing.']].map(([v, l, h]) => (
-            <button key={v} style={seg(person.role === v)} onClick={() => setPerson({ ...person, role: v })} title={h}>{l}</button>
-          ))}
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Cases</div>
-        <div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button style={seg(person.caseAccess === 'all')} onClick={() => setPerson({ ...person, caseAccess: 'all' })} title="Every case in the firm, including those of people who join later.">All</button>
-            <button style={seg(person.caseAccess === 'selected')} onClick={() => setPerson({ ...person, caseAccess: 'selected' })} title="Their own cases, plus the cases of the colleagues picked below.">Selected</button>
+        <div className="pp-body">
+          {isNew && (
+            <div className="pp-row">
+              <div className="pp-field">
+                <label htmlFor="pp-name">Name</label>
+                <input id="pp-name" autoFocus value={person.name} onChange={(e) => setPerson({ ...person, name: e.target.value })} autoComplete="off" />
+              </div>
+              <div className="pp-field">
+                <label htmlFor="pp-email">Email</label>
+                <input id="pp-email" type="email" value={person.email} onChange={(e) => setPerson({ ...person, email: e.target.value })} autoComplete="off" />
+              </div>
+            </div>
+          )}
+          <div className="pp-set">
+            <label>Role</label>
+            {seg(person.role, [['ADMIN', 'Admin', 'Everything, including this page.'], ['CONVEYANCER', 'Conveyancer', 'Cases and decisions.'], ['ASSISTANT', 'Assistant', 'Files email and works cases; no decisions on money or reports.'], ['READ_ONLY', 'Read Only', 'Looks, changes nothing.']], (v) => setPerson({ ...person, role: v }))}
           </div>
-          {person.caseAccess === 'selected' && list('covers')}
-        </div>
-        <div style={{ fontSize: 13, fontWeight: 700, paddingTop: 6 }}>Inboxes</div>
-        <div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button style={seg(person.mailboxAccess === 'own')} onClick={() => setPerson({ ...person, mailboxAccess: 'own' })} title="Only their own email.">Own</button>
-            <button style={seg(person.mailboxAccess === 'all')} onClick={() => setPerson({ ...person, mailboxAccess: 'all' })} title="Every colleague's email, including people who join later. Filing only; nothing is sent from it.">All</button>
-            <button style={seg(person.mailboxAccess === 'selected')} onClick={() => setPerson({ ...person, mailboxAccess: 'selected' })} title="Their own, plus the colleagues picked below.">Selected</button>
+          <div className="pp-set">
+            <label>Cases</label>
+            {seg(person.caseAccess, [['all', 'All', 'Every case in the firm, including those of people who join later.'], ['selected', 'Selected', 'Their own cases, plus the cases of the colleagues picked below.']], (v) => setPerson({ ...person, caseAccess: v }))}
+            {person.caseAccess === 'selected' && chips('covers')}
           </div>
-          {person.mailboxAccess === 'selected' && list('mailboxes')}
+          <div className="pp-set">
+            <label>Inboxes</label>
+            {seg(person.mailboxAccess, [['own', 'Own', 'Only their own email.'], ['all', 'All', "Every colleague's email, including people who join later. Filing only; nothing is sent from it."], ['selected', 'Selected', 'Their own, plus the colleagues picked below.']], (v) => setPerson({ ...person, mailboxAccess: v }))}
+            {person.mailboxAccess === 'selected' && chips('mailboxes')}
+          </div>
         </div>
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <button style={btnPrimary} disabled={busy || (isNew && (!person.name.trim() || !person.email.trim()))} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create and Send Sign-In Link' : 'Save'}</button>
-        <button style={btnGhost} disabled={busy} onClick={onClose}>Cancel</button>
+        <div className="pp-foot">
+          <button type="button" className="pp-btn" disabled={busy} onClick={onClose}>Cancel</button>
+          <button type="button" className="pp-btn primary" disabled={!canSave} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create Account' : 'Save'}</button>
+        </div>
       </div>
     </div>
   );
@@ -1407,7 +1441,7 @@ function AdminPageInner() {
               <button style={{ ...btnPrimary, marginLeft: 'auto', padding: '7px 14px', fontSize: 13 }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
             </div>
             {editing === 'new' && (
-              <PersonPanel person={person} setPerson={setPerson} users={users} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} input={input} btnPrimary={btnPrimary} btnGhost={btnGhost} toggleIn={toggleIn} />
+              <PersonPanel person={person} setPerson={setPerson} users={users} isNew busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} />
             )}
             {users.map((u) => (
               <div key={u.id} style={{ borderTop: '1px solid #e2e8f0' }}>
@@ -1428,7 +1462,7 @@ function AdminPageInner() {
                   </div>
                 </div>
                 {editing === u.id && (
-                  <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => x.id !== u.id)} isNew={false} busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} input={input} btnPrimary={btnPrimary} btnGhost={btnGhost} toggleIn={toggleIn} />
+                  <PersonPanel person={person} setPerson={setPerson} users={users.filter((x) => x.id !== u.id)} isNew={false} busy={personBusy} onSave={() => void savePerson()} onClose={() => setEditing(null)} toggleIn={toggleIn} />
                 )}
               </div>
             ))}
