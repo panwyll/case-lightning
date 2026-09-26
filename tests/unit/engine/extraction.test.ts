@@ -28,7 +28,7 @@ test('overallConfidence: minimum of all, capped by scan quality', () => {
 });
 
 test('toSearchFacts: a mismatched search type is itself a flag', () => {
-  const out = SearchExtractionSchema.parse({ searchType: 'LLC1', provider: 'X', searchDate: '', propertyAddressAsSearched: '1 Test St', flags: [], summaryFields: [{ label: 'Road', value: 'Adopted', locator: loc }], scanQuality: 'good', confidence: 0.95 });
+  const out = SearchExtractionSchema.parse({ searchType: 'LLC1', provider: 'X', searchDate: '', propertyAddressAsSearched: '1 Test St', flags: [], summaryFields: [{ label: 'Road', value: 'Adopted', locator: loc }], pages: [], scanQuality: 'good', confidence: 0.95 });
   const facts = toSearchFacts(out, 'CON29');
   assert.equal(facts.searchType, 'CON29');
   assert.equal(facts.flags[0].code, 'SEARCH_TYPE_MISMATCH');
@@ -36,17 +36,17 @@ test('toSearchFacts: a mismatched search type is itself a flag', () => {
 });
 
 test('toMortgageFacts / toTitleFacts / toEnquiryReplyFacts shape the engine types', () => {
-  const m = toMortgageFacts({ lender: ' Big Bank ', borrowerNames: [], propertyAddress: '', amountPennies: 0, expiryDate: '', conditions: [{ code: 'sc 4', text: 'Retention £5,000', standard: false, locator: loc, confidence: 0.9 }], scanQuality: 'fair', confidence: 0.97 });
+  const m = toMortgageFacts({ lender: ' Big Bank ', borrowerNames: [], propertyAddress: '', amountPennies: 0, expiryDate: '', conditions: [{ code: 'sc 4', text: 'Retention £5,000', standard: false, locator: loc, confidence: 0.9 }], pages: [], scanQuality: 'fair', confidence: 0.97 });
   assert.equal(m.lender, 'Big Bank');
   assert.equal(m.conditions[0].code, 'SC_4');
   assert.equal(m.confidence, 0.9);
   assert.equal(m.amountPennies, undefined);
-  const t = toTitleFacts({ titleNumber: 'ab123', tenure: 'freehold', editionDate: '', registeredProprietors: [], propertyDescription: '', restrictions: [], charges: [{ code: 'C1', text: 'Charge', register: 'C', locator: loc, confidence: 0.8 }], covenants: [], scanQuality: 'good', confidence: 0.99 });
+  const t = toTitleFacts({ titleNumber: 'ab123', tenure: 'freehold', editionDate: '', registeredProprietors: [], propertyDescription: '', restrictions: [], charges: [{ code: 'C1', text: 'Charge', register: 'C', locator: loc, confidence: 0.8 }], covenants: [], pages: [], scanQuality: 'good', confidence: 0.99 });
   assert.equal(t.titleNumber, 'AB123');
   assert.equal(t.confidence, 0.8);
-  const e = toEnquiryReplyFacts({ replies: [{ enquiryReference: 'Enquiry 2', status: 'partial', replyText: '…', issues: [], locator: loc, confidence: 0.9 }, { enquiryReference: '1', status: 'answered', replyText: '…', issues: [], locator: loc, confidence: 0.95 }], scanQuality: 'good', confidence: 0.95 }, 'E1');
+  const e = toEnquiryReplyFacts({ replies: [{ enquiryReference: 'Enquiry 2', status: 'partial', replyText: '…', issues: [], locator: loc, confidence: 0.9 }, { enquiryReference: '1', status: 'answered', replyText: '…', issues: [], locator: loc, confidence: 0.95 }], pages: [], scanQuality: 'good', confidence: 0.95 }, 'E1');
   assert.equal(e?.status, 'answered');
-  assert.equal(toEnquiryReplyFacts({ replies: [], scanQuality: 'good', confidence: 1 }, 'E1'), null);
+  assert.equal(toEnquiryReplyFacts({ replies: [], pages: [], scanQuality: 'good', confidence: 1 }, 'E1'), null);
 });
 
 test('referencesMatch tolerates the ways solicitors write enquiry numbers', () => {
@@ -58,7 +58,7 @@ test('referencesMatch tolerates the ways solicitors write enquiry numbers', () =
 });
 
 test('ClaudeExtractor: reads the document once, persists, and reuses the cached facts on the same bytes', async () => {
-  const llm = new FakeLlm(() => ({ searchType: 'CON29', provider: 'LA', searchDate: '2026-09-01', propertyAddressAsSearched: '1 Test St', flags: [{ code: 'PLANNING_ENFORCEMENT', severity: 'high', description: 'Notice', locator: loc, confidence: 0.93 }], summaryFields: [], scanQuality: 'good', confidence: 0.96 }));
+  const llm = new FakeLlm(() => ({ searchType: 'CON29', provider: 'LA', searchDate: '2026-09-01', propertyAddressAsSearched: '1 Test St', flags: [{ code: 'PLANNING_ENFORCEMENT', severity: 'high', description: 'Notice', locator: loc, confidence: 0.93 }], summaryFields: [], pages: [], scanQuality: 'good', confidence: 0.96 }));
   const writes: unknown[] = [];
   const doc: DocumentRef = { id: 'd1', tenantId: TENANT, matterId: MATTER, docType: null, fileName: 'con29.pdf', webUrl: null, extractedFacts: null, extractionConfidence: null };
   const ex = new ClaudeExtractor(llm, { load: async () => ({ kind: 'pdf', data: 'QUJD' }) }, { write: async (_d, facts, confidence) => { writes.push({ facts, confidence }); } }, { model: 'fake-model' });
@@ -130,4 +130,19 @@ test('ingestDocument end to end: a classified search result flows into the engin
 test('ClassificationSchema accepts the shape the classifier prompt asks for', () => {
   const c = ClassificationSchema.parse({ role: 'search', searchType: 'CON29', enquiryReferences: [], titleNumber: '', lender: '', scanQuality: 'good', pageCount: 12, confidence: 0.9, reason: 'CON29 header' });
   assert.equal(c.searchType, 'CON29');
+});
+
+test('ClaudeExtractor: every read writes a coverage ledger and a fact register, with quotes verified against the page text', async () => {
+  const { textPdf } = await import('../../../lib/server/engine/text-pdf');
+  const pdf = textPdf(['LOCAL AUTHORITY SEARCH CON29', 'Property: 1 Test St', '1.1 Planning: ENFORCEMENT NOTICE served 12/03/2024 under s.172 TCPA 1990', 'Road: adopted and maintained at public expense'], { linesPerPage: 2 });
+  const llm = new FakeLlm(() => ({ searchType: 'CON29', provider: 'LA', searchDate: '2026-09-01', propertyAddressAsSearched: '1 Test St', pages: [{ page: 1, verdict: 'nothing' }, { page: 2, verdict: 'facts' }], flags: [{ code: 'PLANNING_ENFORCEMENT', severity: 'high', description: 'Notice', locator: { page: 2, section: '1.1', quote: 'ENFORCEMENT NOTICE served 12/03/2024' }, confidence: 0.93 }, { code: 'MADE_UP', severity: 'low', description: 'Invented', locator: { page: 2, section: '', quote: 'a sentence that is not in the document' }, confidence: 0.9 }], summaryFields: [], scanQuality: 'good', confidence: 0.96 }));
+  const reviews: Array<{ role: string; pages: number; unattested: number; facts: number; verified: number }> = [];
+  const doc: DocumentRef = { id: 'd2', tenantId: TENANT, matterId: MATTER, docType: null, fileName: 'con29.pdf', webUrl: null, extractedFacts: null, extractionConfidence: null };
+  const ex = new ClaudeExtractor(llm, { load: async () => ({ kind: 'pdf', data: pdf.toString('base64') }) }, { write: async () => {}, writeReview: async (_d, r) => { reviews.push({ role: r.role, pages: r.summary.pages, unattested: r.summary.unattested, facts: r.summary.facts, verified: r.summary.verified }); } }, { model: 'fake-model' });
+  await ex.extractSearch(doc, 'CON29');
+  assert.equal(reviews.length, 1);
+  assert.equal(reviews[0].pages, 2, 'pdf.js counted the pages');
+  assert.equal(reviews[0].unattested, 0);
+  assert.equal(reviews[0].facts, 3, 'search type plus two flags');
+  assert.equal(reviews[0].verified, 1, 'the real quote is found on page 2; the invented one is not');
 });

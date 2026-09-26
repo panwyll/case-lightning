@@ -8,6 +8,7 @@ import { APP_BASE, PROTECTED_SEGMENTS } from './lib/paths';
  * that was written before the move working, permanently.
  */
 const nextConfig: NextConfig = {
+  serverExternalPackages: ['pdfjs-dist'],
   async redirects() {
     return PROTECTED_SEGMENTS.flatMap((seg) => [
       { source: `/${seg}`, destination: `${APP_BASE}/${seg}`, permanent: true },

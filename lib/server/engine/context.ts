@@ -38,6 +38,9 @@ export interface MatterFacts {
   completionTargetDate?: string | null;
 }
 
+/** The read of the decision's source document: the ledger summary and any fact the page text could not confirm. */
+export interface SourceReview { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number; textLayer: boolean; unverified: Array<{ key: string; value: string; note: string | null }> }
+
 export type ContextTarget =
   | { kind: 'decision'; decision: DecisionState }
   | { kind: 'command'; type: string; subject?: string | null };
@@ -116,7 +119,7 @@ const KIND_PREFIX: Record<string, string> = { id_check: 'id_check', mortgage: 'm
 
 const flagWords = (flags: Array<{ code: string }>) => flags.map((f) => f.code.replace(/_/g, ' ').toLowerCase()).join(', ');
 
-export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date }): TaskContext {
+export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null }): TaskContext {
   const { state: s, matter: m, events, target } = input;
   const now = input.now ?? new Date();
   const p = profileOf(s.transactionType);
@@ -323,6 +326,18 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     prefix = target.type.replace(/_(received|sent|executed|submitted|confirmed|generated|held|approved|exchanged|redeemed|served|recorded)$/, '');
     checks = COMMAND_CHECKS[target.type] ?? [];
     headline = `Recording ${pretty(target.type)} at ${pretty(s.stage)}.`;
+  }
+
+  // ── The read of the source: was every page read, and which facts the page text could not confirm ──
+  const rv = input.review;
+  if (rv && rv.pages > 0) {
+    const bits = [`${rv.read} of ${rv.pages} page${rv.pages === 1 ? '' : 's'} read`];
+    if (rv.withFacts) bits.push(`${rv.withFacts} with facts`);
+    if (rv.unreadable) bits.push(`${rv.unreadable} unreadable`);
+    if (rv.unattested) bits.push(`${rv.unattested} not attested`);
+    if (!rv.textLayer) bits.push('no text layer, quotes unchecked');
+    task.unshift({ k: 'Read', v: bits.join(' · '), warn: !rv.complete || rv.unreadable > 0 });
+    if (rv.facts) task.push({ k: 'Facts checked', v: `${rv.verified} of ${rv.facts} quotes found on the page${rv.unverified.length ? ` · unconfirmed: ${rv.unverified.slice(0, 4).map((u) => `${u.key.split('.').slice(-1)[0]} (${u.note ?? 'no quote'})`).join(', ')}${rv.unverified.length > 4 ? ` +${rv.unverified.length - 4}` : ''}` : ''}`, warn: rv.verified < rv.facts && rv.textLayer });
   }
 
   // ── History: what already happened on this subject ──

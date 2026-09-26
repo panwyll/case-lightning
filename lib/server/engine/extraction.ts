@@ -27,6 +27,7 @@ import { SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
 import { MIN_EXTRACTION_CONFIDENCE } from './rules';
+import { PageLedgerSchema, buildReview, pdfPageTexts, type DocumentReview, type PageTexts } from './review';
 import type { StatementFacts } from './proof-of-funds';
 
 // ───────────────────────────── schemas (what the model must return) ─────────────────────────────
@@ -66,12 +67,14 @@ export const SearchExtractionSchema = z.object({
   searchDate: z.string().describe('ISO date the search was compiled, or empty string.'),
   propertyAddressAsSearched: z.string(),
   flags: z.array(flagSchema).describe('Every adverse or notable entry. Use severity "info" for routine entries (adopted road, no entries) so the handler sees they were checked.'),
+  pages: PageLedgerSchema,
   summaryFields: z.array(z.object({ label: z.string(), value: z.string(), locator })).describe('Headline facts a conveyancer expects (e.g. planning history count, road status, drainage connection).'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf.describe('Document-level confidence that nothing material was missed.'),
 });
 
 export const EnquiryReplyExtractionSchema = z.object({
+  pages: PageLedgerSchema,
   replies: z.array(
     z.object({
       enquiryReference: z.string().describe('The enquiry number/identifier as written in the reply.'),
@@ -87,6 +90,7 @@ export const EnquiryReplyExtractionSchema = z.object({
 });
 
 export const MortgageOfferExtractionSchema = z.object({
+  pages: PageLedgerSchema,
   lender: z.string(),
   borrowerNames: z.array(z.string()),
   propertyAddress: z.string(),
@@ -113,6 +117,7 @@ const titleEntry = z.object({
   confidence: conf,
 });
 export const TitleExtractionSchema = z.object({
+  pages: PageLedgerSchema,
   titleNumber: z.string(),
   tenure: z.enum(['freehold', 'leasehold', 'unknown']),
   editionDate: z.string().describe('Edition/official copy date, ISO or empty.'),
@@ -151,6 +156,7 @@ export const SurveyExtractionSchema = z.object({
 });
 
 export const IdCheckExtractionSchema = z.object({
+  pages: PageLedgerSchema,
   provider: z.string(),
   subjectNames: z.array(z.string()),
   outcome: z.enum(['clear', 'refer', 'fail']),
@@ -323,6 +329,8 @@ export interface DocumentBytesLoader {
 export interface DocumentFactsWriter {
   /** Persist extraction output on the document (document.extracted_facts) for reuse and audit. */
   write(doc: DocumentRef, facts: unknown, confidence: number, meta: { role: string; model: string; promptHash: string; contentHash: string }): Promise<void>;
+  /** Persist the coverage ledger and the fact register for this read (document_page, document_fact). */
+  writeReview?(doc: DocumentRef, review: DocumentReview, extractor: string): Promise<void>;
 }
 
 /** Facts already persisted by a previous run of THIS pipeline (not a hand-seeded fixture). */
@@ -372,9 +380,31 @@ export class ClaudeExtractor implements DocumentExtractor {
     return { out: res.output, contentHash, model: res.model, promptHash: res.promptHash };
   }
 
-  private async persist(doc: DocumentRef, role: string, facts: unknown, confidence: number, meta: { model: string; promptHash: string; contentHash: string }) {
+  private texts = new Map<string, Promise<PageTexts>>();
+  /** The document's own page text, for verifying quotes; cached per content hash. Text documents are one page; images have no text layer. */
+  private pageTexts(input: EngineDocumentInput, contentHash: string): Promise<PageTexts> {
+    let p = this.texts.get(contentHash);
+    if (!p) {
+      p = input.kind === 'pdf'
+        ? pdfPageTexts(Buffer.from(input.data, 'base64')).catch(() => ({ pages: [], textLayer: false }))
+        : Promise.resolve(input.kind === 'text' ? { pages: [input.data], textLayer: true } : { pages: [], textLayer: false });
+      this.texts.set(contentHash, p);
+    }
+    return p;
+  }
+
+  private async persist(doc: DocumentRef, role: string, facts: unknown, confidence: number, meta: { model: string; promptHash: string; contentHash: string }, ledger?: z.infer<typeof PageLedgerSchema> | null) {
     if (!this.writer) return;
     await this.writer.write(doc, { _pipeline: { role, ...meta, at: new Date().toISOString() }, facts }, confidence, { role, ...meta }).catch(() => {});
+    if (this.writer.writeReview && ledger !== undefined) {
+      try {
+        const input = await this.loader.load(doc);
+        const texts = input ? await this.pageTexts(input, meta.contentHash) : { pages: [], textLayer: false };
+        await this.writer.writeReview(doc, buildReview({ role, facts, ledger, texts }), this.name);
+      } catch {
+        /* the review is a projection; a failure here never fails the read */
+      }
+    }
   }
 
   async classify(doc: DocumentRef): Promise<Classification> {
@@ -388,7 +418,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'search', SearchExtractionSchema, PROMPTS.search, `Expected search type: ${searchType}. Extract this search result.`, 'DOC_EXTRACT');
     const facts = toSearchFacts(out, searchType);
-    await this.persist(doc, `search:${searchType}`, facts, facts.confidence, { model, promptHash, contentHash });
+    await this.persist(doc, `search:${searchType}`, facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
     return facts;
   }
 
@@ -398,7 +428,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'enquiry', EnquiryReplyExtractionSchema, PROMPTS.enquiry, `We raised enquiry "${enquiryId}". Extract every reply in the document; the engine will match the one for "${enquiryId}".`, 'DOC_EXTRACT');
     const facts = toEnquiryReplyFacts(out, enquiryId);
-    if (facts) await this.persist(doc, `enquiry:${enquiryId}`, facts, facts.confidence, { model, promptHash, contentHash });
+    if (facts) await this.persist(doc, `enquiry:${enquiryId}`, facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
     return facts;
   }
 
@@ -408,7 +438,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'mortgage', MortgageOfferExtractionSchema, PROMPTS.mortgage, 'Extract this mortgage offer.', 'DOC_EXTRACT');
     const facts = toMortgageFacts(out);
-    await this.persist(doc, 'mortgage', facts, facts.confidence, { model, promptHash, contentHash });
+    await this.persist(doc, 'mortgage', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
     return facts;
   }
 
@@ -418,7 +448,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
-    await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash });
+    await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
     return facts;
   }
 
@@ -464,7 +494,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     if (hit) return hit;
     const { out, model, promptHash } = await this.run(doc, 'id_check', IdCheckExtractionSchema, PROMPTS.idCheck, 'Extract this ID/AML check report.', 'DOC_EXTRACT');
     const facts = toIdCheckFacts(out);
-    await this.persist(doc, 'id_check', facts, facts.confidence, { model, promptHash, contentHash });
+    await this.persist(doc, 'id_check', facts, facts.confidence, { model, promptHash, contentHash }, out.pages);
     return facts;
   }
 }

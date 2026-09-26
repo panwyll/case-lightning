@@ -78,10 +78,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
         refused: note?.refusedActions ?? [],
       };
     }
+    const [pageRow, factRows] = await Promise.all([
+      queryOne<{ pages: string; read: string; with_facts: string; unreadable: string; unattested: string; text_chars: string }>(`select count(*)::text as pages, count(*) filter (where verdict <> 'unattested')::text as read, count(*) filter (where verdict = 'facts')::text as with_facts, count(*) filter (where verdict = 'unreadable')::text as unreadable, count(*) filter (where verdict = 'unattested')::text as unattested, coalesce(sum(text_chars), 0)::text as text_chars from document_page where tenant_id = $1 and document_id = $2`, [user.tenantId, d.sourceDocumentId]).catch(() => null),
+      query<{ key: string; value: string; verified: boolean; note: string | null }>(`select key, value, verified, note from document_fact where tenant_id = $1 and document_id = $2 order by verified, key`, [user.tenantId, d.sourceDocumentId]).catch(() => []),
+    ]);
+    const review = pageRow && Number(pageRow.pages) > 0 ? { pages: Number(pageRow.pages), read: Number(pageRow.read), withFacts: Number(pageRow.with_facts), unreadable: Number(pageRow.unreadable), unattested: Number(pageRow.unattested), complete: Number(pageRow.unattested) === 0, facts: factRows.length, verified: factRows.filter((f) => f.verified).length, textLayer: Number(pageRow.text_chars) > 20, unverified: factRows.filter((f) => !f.verified).map((f) => ({ key: f.key, value: f.value, note: f.note })) } : null;
     const stateForContext = await svc.getState(user.tenantId, d.matterId);
     const live = stateForContext.decisions[eventId];
     const context = live
-      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
+      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
       : null;
     return ok({
       context,

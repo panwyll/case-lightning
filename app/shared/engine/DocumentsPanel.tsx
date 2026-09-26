@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { WORK_CSS } from './WorkPanel';
-import { fmtWhen, pretty, type Api, type EngineEvent, type EngineView } from './types';
+import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type EngineEvent, type EngineView } from './types';
 
 /**
  * Documents: file something into the engine (it is classified, extracted and rule-checked;
@@ -22,6 +22,18 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const buyer = !p || p.side === 'buyer';
   const leasehold = p?.tenure === 'leasehold';
   const filed = useMemo(() => events.filter((e) => e.sourceDocumentId).sort((a, b) => b.seq - a.seq), [events]);
+  const [reviews, setReviews] = useState<Record<string, DocumentReviewSummary | null>>({});
+  useEffect(() => {
+    api<{ documents: Array<{ id: string; review?: DocumentReviewSummary | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null])))).catch(() => {});
+  }, [api, matterId, filed.length]);
+  const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
+  const badge = (r: DocumentReviewSummary | null) => {
+    if (!r) return null;
+    const ok = r.complete && r.unreadable === 0;
+    const bg = ok ? '#dcfce7' : r.complete ? '#fef3c7' : '#fee2e2';
+    const fg = ok ? '#14532d' : r.complete ? '#78350f' : '#7f1d1d';
+    return <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 11, fontWeight: 700, borderRadius: 999, padding: '2px 8px', background: bg, color: fg, whiteSpace: 'nowrap' }} title={`${r.read} of ${r.pages} pages read${r.unreadable ? ` · ${r.unreadable} unreadable` : ''}${r.unattested ? ` · ${r.unattested} not attested` : ''} · ${r.verified} of ${r.facts} facts verified against the page text`}>{r.complete ? 'Read' : 'Partly read'} {r.read}/{r.pages}{r.facts ? ` · ${r.verified}/${r.facts} facts` : ''}</span>;
+  };
   useEffect(() => {
     if (!doc) return;
     document.getElementById(`doc-${doc}`)?.scrollIntoView({ block: 'center' });
@@ -85,7 +97,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
             <b>{pretty(e.type)}</b>
             <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>
-            <span className="ep-note" style={{ fontFamily: 'ui-monospace, Menlo, monospace' }}>{e.sourceDocumentId?.slice(0, 8)}</span>
+            {badge(reviewOf(e.sourceDocumentId))}
           </div>
         ))}
       </div>
