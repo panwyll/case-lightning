@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
-import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, User, Zap } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, User, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -65,7 +65,9 @@ export const WORK_CSS = `
 .ep-box-h:hover{background:#fafafa}
 .ep-box-t{display:flex;align-items:flex-start;gap:8px;font-size:13px;font-weight:700;line-height:1.3;color:#0f172a}
 .ep-box-t .ic{flex-shrink:0;display:flex;margin-top:1px}
-.ep-holds{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#7c3aed;background:#f3efff;border:1px solid #ddd6fe;border-radius:999px;padding:1px 7px;white-space:nowrap}
+.ep-legend{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin:4px 2px 0;font-size:10.5px;color:#94a3b8;white-space:nowrap;overflow:hidden}
+.ep-legend span{display:inline-flex;align-items:center;gap:4px}
+.ep-legend .ep-who{width:16px;height:16px;margin:0;pointer-events:none}
 .ep-box-m{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;font-weight:600;white-space:nowrap}
 .ep-box-m .n{color:#64748b;font-variant-numeric:tabular-nums;font-weight:600}
 .ep-bar{height:4px;border-radius:99px;background:#eef1f5;overflow:hidden}
@@ -242,7 +244,7 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <span className="ep-holds" title="What this box holds: the rest of its band carries on without it">{lane.holds}</span>}</span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
@@ -786,6 +788,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
       {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
+      {section === 'flow' && (
+        <div className="ep-legend" aria-label="Legend">
+          <span><i className="ep-who"><User size={10} /></i>Sign-off</span>
+          <span><i className="ep-who"><Zap size={10} /></i>Automatic</span>
+          <span><i className="ep-who doc"><FileText size={10} /></i>Creates a document</span>
+          <span><i className="ep-who"><Lock size={10} /></i>Holds a later gate</span>
+        </div>
+      )}
 
       {sheetDialog}
 
