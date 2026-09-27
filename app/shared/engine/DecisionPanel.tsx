@@ -4,7 +4,7 @@ import { CheckedDraft } from './CheckedDraft';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
-import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
+import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
 import { Check } from '@/app/shared/icons';
 
 /**
@@ -202,6 +202,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const isBank = d?.kind === 'bank_details';
   const noteLines = detail?.noteActions ?? null;
   const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
+  const optionLabel = (o: string) => (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
   const parsed = useMemo(() => (d ? parseSummary(d.summary) : { intro: [], points: [], rest: [] }), [d]);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const toggleTick = (i: number) => setTicked((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
@@ -486,7 +487,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             <>
               {choice && needsReason(choice) && (
                 <div>
-                  <label style={{ fontSize: 12.5, fontWeight: 700 }}>Reason for “{OPTION_LABEL[choice] ?? pretty(choice)}”</label>
+                  <label style={{ fontSize: 12.5, fontWeight: 700 }}>Reason for “{optionLabel(choice)}”</label>
                   <textarea className="eg-ta" rows={2} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you checked, and why this is the right call…" />
                 </div>
               )}
@@ -500,12 +501,12 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                     title={!engaged ? 'Read the source first' : isBank && o === 'verify' && !method ? 'Choose the verification method first' : noteLines && o === 'approve' && !picked?.size ? 'Tick at least one line, or reject the reading with a reason' : OPTION_HELP[o] ?? ''}
                     onClick={() => setChoice(o)}
                   >
-                    {(OPTION_LABEL[o] ?? pretty(o)).replace(/\s+—.*$/, '')}
+                    {optionLabel(o)}
                   </button>
                 ))}
                 {choice && (
                   <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim())} onClick={() => resolve(choice)}>
-                    {busy ? 'Recording…' : `Confirm ${(OPTION_LABEL[choice] ?? pretty(choice)).replace(/\s+—.*$/, '').toLowerCase()}`}
+                    {busy ? 'Recording…' : `Confirm: ${optionLabel(choice)}`}
                   </button>
                 )}
                 {flagged > 0 && <span className="dp-gate" style={{ marginLeft: 'auto' }}>{flagged} to look at</span>}

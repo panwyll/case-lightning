@@ -315,8 +315,12 @@ export interface PaymentRow { eventId: string; payeeKind: string; bankDetailsId:
 /** Kind-specific wording where the generic label would mislead. */
 export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
   proposal: { approve: 'Approve', reject: 'Decline' },
-  proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)', reject: 'Reject — stop automation (consider a report)' },
+  proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)' },
   management_pack: { request_further: 'Request further information from the managing agent' },
+  // Nothing on a decision is "rejected": a draft goes back for redraft, a bank-details check fails, a note's reading is discarded.
+  report_on_title: { approve: 'Approve — send to the client', reject: 'Send back for redraft' },
+  bank_details: { reject: 'Could not verify' },
+  note_actions: { approve: 'Record the ticked lines', reject: 'Discard the reading' },
 };
 /** What each option does, for the button tooltip. */
 export const OPTION_HELP: Record<string, string> = {
@@ -324,7 +328,7 @@ export const OPTION_HELP: Record<string, string> = {
   refer_to_client: 'Records that the point goes to the client for their instructions. Needs a reason.',
   request_further: 'Raises a further search or enquiry and keeps this open until it comes back. Needs a reason.',
   escalate: 'Puts the same source in front of a senior as a new decision. Needs a reason.',
-  reject: 'Records the rejection and its reason. For a proposal, the engine does not perform the action.',
+  reject: 'Needs a reason. A draft goes back for redraft; a bank-details check is recorded as failed (the hard stop stays); a proposal is declined and not performed.',
   verify: 'Records that the bank details were verified out of band, by the method you choose.',
   indemnity: 'Records that the risk is covered by an indemnity policy rather than resolved.',
 };

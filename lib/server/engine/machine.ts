@@ -2160,10 +2160,6 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   if (option === 'indemnity' && s.hasLender && !s.exchange.exchangedAt && (d.kind === 'search' || d.kind === 'title' || d.kind === 'enquiry')) {
     out.push(lenderApprovalIssue(s, `${d.kind}:${subject || d.eventId}:indemnity:lender`, `Tell the lender: indemnity policy proposed for ${d.kind}${subject ? ` ${subject}` : ''}${note ? ` (${note})` : ''}`, d.sourceDocumentId, null));
   }
-  // Rejecting an ID check is a hard stop: the matter cannot proceed without a human taking over.
-  if (option === 'reject' && d.kind === 'id_check' && !s.manualHandling.required) {
-    out.push({ type: 'manual_handling_required', actor: userId, payload: { reason: 'id_check_rejected', detail: note ?? undefined } });
-  }
   // Proof of funds (docs/proof-of-funds.md): sign-off closes the source-of-funds issues it answers; a gift on a
   // lender-funded purchase must be declared to the lender; rejection is a hard stop like a failed ID check.
   if (d.kind === 'proof_of_funds') {

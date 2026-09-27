@@ -42,7 +42,7 @@ have since been closed by the **issues layer** — see `docs/engine-issues.md`. 
 
 | Eventuality | How the conveyancer acts | Handling | Notes |
 |---|---|---|---|
-| ID check comes back "refer" (PEP, address mismatch) | Ask for more documents or an enhanced check; if unresolvable, decline to act | **built** | `id_check_flagged` decision: approve / request further / escalate / **reject** — reject halts automation (`id_check_rejected`). |
+| ID check comes back "refer" (PEP, address mismatch) | Ask for more documents or an enhanced check; if unresolvable, decline to act | **built** | `id_check_flagged` decision: approve / request further / escalate. There is no reject on any document decision (2026-09-27): what cannot be approved is queried or escalated. |
 | ID check never comes back (client slow) | Chase the client, then escalate | **built** | `id_check` wait: chase at 3 wd, every 2, escalate at 7. |
 | The firm ordered the ID check from LEAP / InfoTrack directly | The result lands in the file before the engine asked for it | **built** | `routeByHint` records `id_check_requested` (actor `external`, "arrived via LEAP") first so the log stays truthful. |
 | Client care letter unsigned, no money on account | Do nothing chargeable | **outside** | A practice-management gate, not an engine gate; enrol when instructed. |

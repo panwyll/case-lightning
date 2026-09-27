@@ -46,7 +46,7 @@ export type Verdict = { outcome: 'clear'; reasons: string[] } | { outcome: 'flag
 
 /** The standard option set per decision kind (spec 2.4 step 5). */
 export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
-  id_check: ['approve', 'request_further', 'escalate', 'reject'],
+  id_check: ['approve', 'request_further', 'escalate'],
   search: ['approve', 'refer_to_client', 'request_further', 'indemnity', 'escalate'],
   enquiry: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   mortgage: ['approve', 'refer_to_client', 'request_further', 'escalate'],
@@ -58,7 +58,7 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   // assist level: confirm the engine's auto-clear was right, or escalate it. Never blocks.
   auto_clear: ['approve', 'escalate'],
   requisition: ['approve', 'escalate'],
-  // AML sign-off is a person's act: approve, send the form back for more, escalate, or reject (manual handling).
+  // AML sign-off is a person's act: approve, send the form back for more, or escalate. Nothing is "rejected": what cannot be signed off goes up.
   proof_of_funds: ['approve', 'request_further', 'escalate'],
   management_pack: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   // A note's proposals: apply what the note actually says (approve), throw them away with
