@@ -59,6 +59,8 @@ import { openPofQueries, openWaits, awayOn, awayNow } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
+import { surveyAdvice, surveyEnquiry, surveyNeedsAdvice } from './survey-review';
+import type { SurveyFacts } from './types';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
 
@@ -194,7 +196,10 @@ export class EngineService {
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text } });
-      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, to: sent.address ?? null, triggeredByEventId: d.triggeredByEventId, mentioned: ov.mentioned } });
+      // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
+      const aboutKey = (d as { about?: unknown }).about;
+      const about = typeof aboutKey === 'string' ? [aboutKey] : [];
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, to: sent.address ?? null, triggeredByEventId: d.triggeredByEventId, mentioned: [...ov.mentioned, ...about] } });
       const partyTemplate = d.agentTemplate ?? (d as { partyTemplate?: string | null }).partyTemplate ?? null;
       const partyRole = ((d as { partyRole?: string | null }).partyRole ?? 'estate_agent') as 'estate_agent' | 'lender';
       if (partyTemplate) {
@@ -781,6 +786,34 @@ export class EngineService {
           const fresh = await this.getState(tenantId, matterId);
           for (const i of Object.values(fresh.issues).filter((x) => x.kind === closes && (x.status === 'open' || x.status === 'negotiating'))) {
             await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: i.id, resolution: 'received', note: `${e.type.replace(/_/g, ' ')}: it arrived.` }).catch((err) => this.ports.log(`arrival could not close ${i.id}`, err));
+          }
+        }
+        // The survey was read: the surveyor's points for the legal adviser become enquiries to the seller's
+        // solicitor, and the client is written to about what the report means for exchange. Proposed or
+        // performed as the trust levels say; a person sees each as a task at Propose.
+        if (e.type === 'survey_received') {
+          const p = e.payload as { facts: SurveyFacts };
+          const fresh = await this.getState(tenantId, matterId);
+          const docKey = e.sourceDocumentId ?? e.id;
+          const raised = new Set(Object.values(fresh.enquiries).map((q) => q.subject));
+          for (const [n, li] of (p.facts.legalIssues ?? []).entries()) {
+            const subject = surveyEnquiry(li);
+            if (raised.has(subject)) continue;
+            const detail = { subject, question: null, origin: 'survey' };
+            const key = `enquiry_draft:survey:${docKey}:${n}`;
+            if (Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) continue;
+            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ENQUIRY FROM THE SURVEY\n\nTo: the seller's solicitor\nThe surveyor's point for the legal adviser: ${li.text}\n\n${subject}`)) continue;
+            try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+          }
+          if (surveyNeedsAdvice(p.facts)) {
+            const blocks = surveyAdvice(p.facts, { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender });
+            const key = `survey_advice:${docKey}`;
+            if (!fresh.clientToldAt?.[key] && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
+              const detail = { template: 'survey_advice', context: { eventType: e.type, ...blocks }, triggeredByEventId: e.id, about: key };
+              if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'survey_advice', key, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: what the survey means for exchange, and a request for their decision\nTemplate: survey_advice'))) {
+                try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('survey advice could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+              }
+            }
           }
         }
         // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.

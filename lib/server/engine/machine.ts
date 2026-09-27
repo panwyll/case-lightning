@@ -1386,8 +1386,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // Objective fact: the surveyor recommends further investigation → one issue per recommendation (holds exchange).
       let n = Object.keys(s.issues).length;
       for (const r of cmd.facts.recommendations.filter((x) => x.furtherInvestigation)) {
+        const title = `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`;
+        if (Object.values(s.issues).some((i) => i.kind === 'survey_further_investigation' && i.title === title)) continue; // read again: already raised
         n += 1;
-        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title: `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.severity === 'high' ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
+        // Critical only for what the surveyor rates urgent (condition rating 3); otherwise it holds exchange as a warning.
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.rating === 3 || (r.rating == null && r.severity === 'high') ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
       }
       return out;
     }

@@ -407,8 +407,12 @@ export interface SurveyRecommendation {
   furtherInvestigation: boolean;
   specialist?: string | null;
   severity: Severity;
+  /** RICS condition rating of the element: 3 serious/urgent (quotes before commitment), 2 repair not urgent, 1 fine. */
+  rating?: 1 | 2 | 3 | null;
   locator?: SourceLocator;
 }
+/** One point from the report's "Issues for your legal advisers": the part of a survey that is the conveyancer's. */
+export interface SurveyLegalIssue { category: 'regulation' | 'guarantee' | 'other'; text: string; locator?: SourceLocator }
 export const SURVEY_TYPES = ['level1', 'level2', 'level3', 'valuation', 'specialist'] as const;
 export type SurveyType = (typeof SURVEY_TYPES)[number];
 export interface SurveyFacts {
@@ -416,6 +420,13 @@ export interface SurveyFacts {
   surveyor?: string | null;
   summary?: string | null;
   recommendations: SurveyRecommendation[];
+  /** "Issues for your legal advisers": planning / building regulations, guarantees, rights, boundaries. Absent on a report read before this was asked. */
+  legalIssues?: SurveyLegalIssue[];
+  /** "Risks" (to the building, the grounds, people). */
+  risks?: string[];
+  marketValuePennies?: number | null;
+  /** Reinstatement cost: the figure for buildings insurance. */
+  reinstatementCostPennies?: number | null;
   confidence: number;
 }
 

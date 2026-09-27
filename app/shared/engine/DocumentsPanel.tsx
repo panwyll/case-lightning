@@ -57,6 +57,14 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     catch (e: unknown) { setUnlockErr((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not unlock.' })); }
     finally { setUnlocking(null); }
   };
+  const [rereading, setRereading] = useState<string | null>(null);
+  const [reread, setReread] = useState<Record<string, string>>({});
+  const readAgain = async (id: string) => {
+    setRereading(id);
+    try { const r = await api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }); setReread((m) => ({ ...m, [id]: r.said })); onChanged?.(); }
+    catch (e: unknown) { setReread((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' })); }
+    finally { setRereading(null); }
+  };
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
   // Every message the case has sent (or drafted, or failed to send), with the address and the provider's reference: the first place to look when someone says they did not get it.
   const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }>>([]);
@@ -294,6 +302,8 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{dd.fileName ?? pretty((dd.docType ?? 'document').toLowerCase())}</b>
             <span className="ep-note">{e ? `${pretty(e.type)}${typeof e.payload.searchType === 'string' ? ` ${e.payload.searchType}` : ''}${typeof e.payload.enquiryId === 'string' ? ` ${e.payload.enquiryId}` : ''}${e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}` : 'Filed'}</span>
             <a className="ep-note" href={`/api/v1/documents/${id}/raw`} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}>Open</a>
+            <button className="ep-btn" style={{ padding: '2px 8px', fontSize: 12 }} disabled={rereading === id} onClick={(ev) => { ev.stopPropagation(); void readAgain(id); }}>{rereading === id ? 'Reading…' : 'Read Again'}</button>
+            {reread[id] && <span className="ep-note">{reread[id]}</span>}
             {badge(reviewOf(id))}
             {checked.has(id) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>}
           </div>

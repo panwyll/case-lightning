@@ -829,6 +829,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'survey_received': {
       const p = e.payload as Payloads['survey_received'];
       const further = p.facts.recommendations.some((r) => r.furtherInvestigation);
+      // Read again (the same document): the new reading replaces the old one.
+      s.survey.reports = s.survey.reports.filter((r) => !(e.sourceDocumentId && r.documentId === e.sourceDocumentId && r.forIssueId === null));
       s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null });
       s.survey.status = further ? 'further_investigation' : 'awaiting_client';
       break;
