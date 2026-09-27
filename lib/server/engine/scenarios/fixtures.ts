@@ -83,6 +83,17 @@ export const pofSubmission = (pricePennies: number, advancePennies: number | nul
   };
 };
 
+/** The statement as printed: one line per transaction, so the brief's links have a line to land on. */
+export const statementBody = (f: StatementFacts): string => body('Bank statement', [
+  `${f.bankName ?? 'Bank'} · ${f.accountHolder ?? ''} · account ending ${f.accountLast4 ?? ''}`,
+  `Period ${f.periodFrom ?? ''} to ${f.periodTo ?? ''}`,
+  `Opening balance £${((f.openingBalancePennies ?? 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
+  '',
+  ...f.transactions.map((t) => `${t.date}  ${t.description.padEnd(34)} ${t.amountPennies >= 0 ? '+' : '-'}£${(Math.abs(t.amountPennies) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`),
+  '',
+  `Closing balance £${((f.closingBalancePennies ?? 0) / 100).toLocaleString('en-GB', { minimumFractionDigits: 2 })}`,
+]);
+
 /** A bank statement the fixture extractor reads: three months of salary in, a balance that covers what it is meant to prove. */
 export const statement = (holder: string, closingPennies: number, employer = 'Sandbox Employer Ltd'): StatementFacts => {
   // A holder line naming two people reads as a joint account, as a real statement prints it.

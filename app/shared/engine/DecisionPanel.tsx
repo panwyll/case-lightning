@@ -58,13 +58,16 @@ const CSS = `
 .dp-ev .links{display:inline-flex;gap:4px;flex-wrap:wrap}
 .dp-ev .links button{border:1px solid #ddd6fe;background:#f5f3ff;border-radius:6px;padding:0 6px;font-size:11.5px;text-decoration:none}
 .dp-ev .links button.on{background:#5A27E0;color:#fff;border-color:#5A27E0}
-.dp-quiet{margin-top:14px;border-top:1px solid #eef2f7;padding-top:10px}
-.dp-quiet > summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:#64748b}
-.dp-quiet > summary::-webkit-details-marker{display:none}
-.dp-quiet ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.dp-quiet{margin-top:16px;border-top:1px solid #eef2f7;padding-top:10px;list-style:none;padding-left:0;display:grid;gap:6px}
 .dp-quiet li{font-size:13px;color:#334155}
-.dp-quiet li b{font-weight:700;color:#15803d}
+.dp-quiet li b{font-weight:700;color:#15803d;margin-right:4px}
 .dp-quiet .dp-ev{margin-left:22px}
+.dp-narr{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:4px}
+.dp-narr li{font-size:13.5px;line-height:1.5;color:#0f172a;display:flex;gap:8px;align-items:baseline;white-space:pre-wrap}
+.dp-narr li.warn{color:#92400e}
+.dp-narr li.sub{color:#475569;font-size:13px}
+.dp-narr li button{border:0;background:none;padding:0;font:inherit;color:#5A27E0;cursor:pointer;text-decoration:underline dotted;white-space:nowrap}
+.dp-narr li button.on{color:#fff;background:#5A27E0;border-radius:6px;padding:0 6px;text-decoration:none}
 .dp-btn{border:1px solid #5A27E0;background:#fff;color:#5A27E0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .dp-btn:hover{background:#f5f3ff}
 .dp-btn.primary{background:#5A27E0;color:#fff}
@@ -344,9 +347,10 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const shownPdf = shownOther ? shownOther.rawUrl : pdfSrc;
   const shownPdfSrc = shownOther?.rawUrl ? `${shownOther.rawUrl}#page=${page ?? 1}&view=FitH` : pdfSrc;
   const flagged = checklist.filter((c) => c.status === 'flag').length;
+  const narrative = ctx?.narrative ?? [];
   const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status !== 'ok');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
-  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null }, label: string) => e.documentId ? <button type="button" onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null)} title={docLabel(e.documentId)}>{label}</button> : null;
+  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null)} title={docLabel(e.documentId)}>{label}</button> : null;
   const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
     <ul className="dp-ev">
       {c.evidence.map((e, j) => (
@@ -378,7 +382,17 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             </div>
           </div>
 
-          {checklist.length > 0 ? (
+          {narrative.length > 0 && (
+            <ul className="dp-narr" aria-label="What was read">
+              {narrative.map((e, j) => (
+                <li key={j} className={`${e.warn ? 'warn' : ''}${/^\s/.test(e.text) ? ' sub' : ''}`}>
+                  <span>{e.text}</span>
+                  {e.documentId && (e.quote || e.page || showing !== e.documentId) && evLink(e, e.quote ? 'show' : e.page ? `p.${e.page}` : 'open')}
+                </li>
+              ))}
+            </ul>
+          )}
+          {checklist.length > 0 || narrative.length > 0 ? (
             <>
               {live.length > 0 && (
                 <ul className="dp-checks" aria-label="Checks">
@@ -392,14 +406,10 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                   ))}
                 </ul>
               )}
-              {live.length === 0 && <p className="dp-prose" style={{ color: '#15803d', fontWeight: 700 }}>Nothing needs looking at.</p>}
               {quiet.length > 0 && (
-                <details className="dp-quiet" open={live.length === 0}>
-                  <summary>{quiet.length === 1 ? 'One thing checked, nothing to do' : `${quiet.length} things checked, nothing to do`}</summary>
-                  <ul>
-                    {quiet.map(({ c, i }) => (<li key={i}><b>✓</b> {c.text}{renderEv(c)}</li>))}
-                  </ul>
-                </details>
+                <ul className="dp-quiet" aria-label="Checked">
+                  {quiet.map(({ c, i }) => (<li key={i}><b>✓</b>{c.text}{renderEv(c)}</li>))}
+                </ul>
               )}
             </>
           ) : (

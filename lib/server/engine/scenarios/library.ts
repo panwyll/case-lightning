@@ -147,8 +147,8 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     if (!s.proofOfFunds.requestId) throw new Error('No proof-of-funds request on the case.');
     const balance = price - (advance ?? 0);
     const gift = c.flagged ? 4_000_000 : 0;
-    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Buyer', 'Three months of salary credits', `Closing balance £${((balance - gift) / 100).toLocaleString('en-GB')}`]) });
-    const donor = c.flagged ? await c.doc({ docType: 'BANK_STATEMENT', fileName: 'donor-statement.txt', facts: F.statement('Sandbox Donor & Sandbox Donor Two', gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Donor & Sandbox Donor Two (joint account)', `Closing balance £${(gift / 100).toLocaleString('en-GB')}`]) }) : null;
+    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.statementBody(F.statement('Sandbox Buyer', balance - gift)) });
+    const donor = c.flagged ? await c.doc({ docType: 'BANK_STATEMENT', fileName: 'donor-statement.txt', facts: F.statement('Sandbox Donor & Sandbox Donor Two', gift), body: F.statementBody(F.statement('Sandbox Donor & Sandbox Donor Two', gift)) }) : null;
     const letter = c.flagged ? await c.doc({ docType: 'GIFT_LETTER', fileName: 'gift-letter.txt', facts: { content: 'sandbox gift letter' }, body: F.body('Gift letter', ['I, Sandbox Donor, gift £40,000 to my child. Not repayable. No interest in the property.']) }) : null;
     await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, s.proofOfFunds.requestId, F.pofSubmission(price, advance, c.flagged, statement, donor, letter), { [statement]: 'savings-statement.txt', ...(donor ? { [donor]: 'donor-statement.txt' } : {}), ...(letter ? { [letter]: 'gift-letter.txt' } : {}) });
   }),
@@ -165,7 +165,7 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     if (!requestId) throw new Error('No follow-up request id.');
     const balance = price - (advance ?? 0);
     const gift = c.flagged ? 4_000_000 : 0;
-    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement-round-2.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Round 2']) });
+    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement-round-2.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.statementBody(F.statement('Sandbox Buyer', balance - gift)) });
     // Round 2 keeps what round 1 attached for the gift (as the client form does): the donors' statement, and the letter again.
     const donorDoc = s.proofOfFunds.facts?.sources.find((x) => x.kind === 'gift')?.gift?.donorEvidenceDocumentIds?.[0] ?? null;
     const letter = c.flagged ? await c.doc({ docType: 'GIFT_LETTER', fileName: 'gift-letter-signed-by-both.txt', facts: { content: 'sandbox gift letter' }, body: F.body('Gift letter', ['We, Sandbox Donor and Sandbox Donor Two, gift £40,000 from our joint account to our child. Not repayable. No interest in the property.']) }) : null;
