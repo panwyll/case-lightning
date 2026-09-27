@@ -366,10 +366,10 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
 }
 
 /** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
-/** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the offer, the survey), not when the tier before is done. */
+/** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the contract pack asked for at enrolment, the offer, the survey), not when the tier before is done. */
 const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
-  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'], unfed: ['mortgage', 'survey'] },
+  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'], unfed: ['title', 'mortgage', 'survey'] },
   { id: 'contract', label: 'Contract & Exchange', lanes: ['exchange', 'transfer_deed'] },
   { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
@@ -666,7 +666,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {forms.status !== 'received' && forms.status !== 'not_applicable' && act('property_forms', 'property_forms_received', 'Forms Received', { forms: leasehold ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10'] })}
     </> });
 
-  lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
+  lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : buyer && s.contractPack?.requestedAt && !s.title.documentId ? 'open' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
       { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? (buyer && s.contractPack?.requestedAt && !s.title.documentId ? `contract pack asked of the seller's solicitor ${fmtDay(s.contractPack.requestedAt)} · chased on the SLA` : undefined) },
       ...(buyer ? [{ label: "Seller's forms (TA6 / TA7 / TA10)", documentId: s.sellerForms?.documentId ?? undefined, status: s.sellerForms?.receivedAt ? 'read' : 'not_started', detail: s.sellerForms?.receivedAt ? `${s.sellerForms.forms.join(', ')} read ${fmtDay(s.sellerForms.receivedAt)}; answers that matter are issues` : 'arrive with the contract pack; upload under Documents' }] : []),
