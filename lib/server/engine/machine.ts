@@ -23,7 +23,7 @@ import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from 
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
-import { evaluateProofOfFunds, gbp, riskRating, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
+import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import {
   EngineError,
@@ -108,7 +108,7 @@ export interface SummaryOverride {
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null; party?: string | null }
@@ -172,7 +172,7 @@ type CommandBody =
   | { type: 'contracts_exchanged'; actor: Actor; completionDate: string; exchangedAt?: string | null }
   | { type: 'completion_statement_generated'; actor: Actor; documentId?: string | null }
   | { type: 'funds_requested'; actor: Actor; fromRole: 'lender' | 'client' | 'isa_provider'; amountPennies?: number | null; bankDetailsId: string }
-  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null }
+  | { type: 'funds_received'; actor: Actor; fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; remitter?: string | null }
   // ── transaction types (docs/transaction-types.md) ──
   | { type: 'request_property_forms'; actor: Actor; forms?: string[] | null }
   | { type: 'property_forms_received'; actor: Actor; forms: string[]; documentId?: string | null; facts?: PropertyFormsFacts | null }
@@ -185,6 +185,10 @@ type CommandBody =
   | { type: 'discharge_confirmed'; actor: Actor; lender?: string | null; reference?: string | null }
   | { type: 'mortgage_deed_executed'; actor: Actor; lender?: string | null; witnessed?: boolean }
   | { type: 'certificate_of_title_sent'; actor: Actor; lender?: string | null; completionDate?: string | null }
+  | { type: 'add_party'; actor: Actor; name: string; role: IdPartyCheck['role'] }
+  | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null }
+  | { type: 'priority_search_made'; actor: Actor; expiresAt: string; documentId?: string | null }
+  | { type: 'bankruptcy_search_clear'; actor: Actor; subjects?: string[] | null; documentId?: string | null }
   | { type: 'request_lender_consent'; actor: Actor; lender?: string | null }
   | { type: 'lender_consent_received'; actor: Actor; lender?: string | null; conditions?: string | null }
   | { type: 'transfer_deed_executed'; actor: Actor; parties: string[]; witnessed?: boolean }
@@ -262,6 +266,10 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'discharge_confirmed',
   'mortgage_deed_executed',
   'certificate_of_title_sent',
+  'add_party',
+  'buildings_insurance_confirmed',
+  'priority_search_made',
+  'bankruptcy_search_clear',
   'request_lender_consent',
   'lender_consent_received',
   'transfer_deed_executed',
@@ -399,6 +407,9 @@ export function stageBlockers(s: MatterState): string[] {
         if (deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) b.push('declaration of trust not executed (tenants in common)');
         if (s.hasLender && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
         if (s.hasLender && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent');
+        if (s.hasLender && !s.preCompletion.bankruptcySearchAt) b.push('bankruptcy search (K16) not recorded');
+        if (s.hasLender && !s.preCompletion.prioritySearchAt) b.push('priority search (OS1) not made');
+        if (s.hasLender && !s.preCompletion.insuranceConfirmedAt) b.push('buildings insurance not confirmed');
         if (s.hasLender && !(s.completion.receivedFrom ?? []).includes('lender')) b.push('mortgage advance not received');
         if (!(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) b.push("client's balance not received");
         if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
@@ -674,6 +685,24 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const roleOf: IdPartyCheck['role'] = side === 'seller' ? 'seller' : side === 'owner' ? 'owner' : 'buyer';
       const names = [...new Set((cmd.partyNames ?? []).map((n) => n.trim()).filter(Boolean))];
       const partyEvents: NewEvent[] = names.slice(1).map((name) => ({ type: 'id_party_added', actor: cmd.actor, payload: { party: partyId(roleOf, name), label: name, role: roleOf } }));
+      // People who are not clients but must be identified like one: attorneys (LSAG 6.14.9), a company's directors and PSCs (6.14.11), executors and trustees (6.14.16).
+      const clean = (xs?: string[] | null) => [...new Set((xs ?? []).map((n) => n.trim()).filter(Boolean))];
+      const attorneys = clean(cmd.attorneys), officers = clean(cmd.officers), executors = clean(cmd.executors), occupiers = clean(cmd.occupiers);
+      const extraParties: NewEvent[] = [
+        ...attorneys.map((n) => ({ type: 'id_party_added' as const, actor: cmd.actor, payload: { party: partyId('attorney', n), label: `${n} (attorney)`, role: 'attorney' as const } })),
+        ...officers.map((n) => ({ type: 'id_party_added' as const, actor: cmd.actor, payload: { party: partyId('director', n), label: `${n} (director / PSC)`, role: 'director' as const } })),
+        ...executors.map((n) => ({ type: 'id_party_added' as const, actor: cmd.actor, payload: { party: partyId('executor', n), label: `${n} (executor / trustee)`, role: 'executor' as const } })),
+      ];
+      // What each of those brings with it is a checklist issue from day one, like a shape's.
+      let issueN = shapes.length;
+      const issue = (kind: IssueKind, title: string, detail: string): NewEvent => ({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `I${++issueN}`, kind, title, detail, gate: ISSUE_KIND_SPEC[kind].gate, stage: 'instruction', sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[kind].severity, causedBy: null } });
+      const conditionIssues: NewEvent[] = [];
+      if (attorneys.length) conditionIssues.push(issue('power_of_attorney_issue', `Client acts through an attorney: ${attorneys.join(', ')}`, 'See the power (a registered LPA, or a general power with the deed): who granted it, whether it is in force, and that it covers this transaction. Written confirmation from the client that the attorney acts for them; the attorney identified like the client (LSAG 6.14.9). Tell the lender: most lenders need the power lodged and some will not lend on a power. HM Land Registry needs a certified copy with the AP1 (PG 9).'));
+      if (officers.length) conditionIssues.push(issue('company_buyer_checks', `Company client: directors and PSCs identified — ${officers.join(', ')}`, 'Each director and person with significant control named here has an ID / AML check of their own (LSAG 6.14.11, 6.16). Check the PSC register at Companies House against the names given and report any discrepancy (reg. 30A). Board minute or resolution authorising the transaction and naming the signatories.'));
+      if (executors.length) conditionIssues.push(issue('probate_issue', `Personal representatives / trustees acting: ${executors.join(', ')}`, 'The grant of probate or letters of administration (or the trust deed) seen and a copy on file; the death certificate. At least two personal representatives verified where there are two or more (LSAG 6.14.16); all of them sign the contract and the transfer. A sale before the grant issues cannot exchange.'));
+      if (occupiers.length && side === 'buyer') conditionIssues.push(issue('occupier_consent', `Adult occupiers not buying: ${occupiers.join(', ')}`, 'The lender wants a signed consent / deed of postponement from every occupier aged 17 or over who is not a borrower, with separate advice, in our hands before the certificate of title (Lenders\' Handbook: occupiers). Tell the lender if any occupier claims an interest.'));
+      const sdlt = cmd.sdlt ?? null;
+      if (sdlt && (sdlt.firstTimeBuyer || sdlt.additionalProperty || sdlt.nonUkResident) && side === 'buyer') conditionIssues.push(issue('sdlt_basis', `SDLT basis declared: ${[sdlt.firstTimeBuyer && 'first-time buyer relief claimed', sdlt.additionalProperty && 'higher rates (additional property)', sdlt.nonUkResident && 'non-UK resident surcharge'].filter(Boolean).join('; ')}`, 'Check the basis against the facts before the return is filed: every buyer must qualify for first-time buyer relief (never owned anywhere in the world); the higher rates apply if any buyer or their spouse owns another dwelling at completion (a replaced main residence may be excepted); the 2% surcharge applies if any buyer was non-UK resident in the year before completion. A wrong basis is a penalty and, if deliberate, evasion (LSAG 18.5.5).'));
       return [
         {
           type: 'matter_created',
@@ -682,6 +711,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
             transactionType: cmd.transactionType ?? 'freehold_purchase',
             shapes,
             partyNames: names,
+            attorneys, officers, executors, occupiers,
+            sdlt,
             // Proof of funds and the client's exchange authority are purchase-side policies; a sale, remortgage or transfer has neither. At auction the hammer is the exchange.
             requireProofOfFunds: side === 'buyer' ? (cmd.requireProofOfFunds ?? true) : false,
             requireExchangeAuthority: profileOf(cmd.transactionType).hasExchange && !shapes.some((sh) => SHAPE_SPEC[sh].skipExchangeAuthority) ? (cmd.requireExchangeAuthority ?? true) : false,
@@ -697,8 +728,40 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           },
         },
         ...shapeIssues,
+        ...conditionIssues,
         ...partyEvents,
+        ...extraParties,
       ];
+    }
+    case 'add_party': {
+      requireEnrolled(s);
+      if (s.completion.confirmedAt) reject('The matter has completed; a party cannot be added now.');
+      const name = cmd.name.trim();
+      if (!name) reject('A party needs a name.', 400);
+      const party = partyId(cmd.role, name);
+      if (s.partyChecks[party]) reject(`${s.partyChecks[party].label} is already a party on this matter.`);
+      const label = cmd.role === 'attorney' ? `${name} (attorney)` : cmd.role === 'director' ? `${name} (director / PSC)` : cmd.role === 'executor' ? `${name} (executor / trustee)` : cmd.role === 'donor' ? `${name} (donor)` : name;
+      return [{ type: 'id_party_added', actor: cmd.actor, payload: { party, label, role: cmd.role } }];
+    }
+    case 'buildings_insurance_confirmed': {
+      requireEnrolled(s);
+      requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage'], 'Buildings insurance');
+      if (s.preCompletion.insuranceConfirmedAt) reject('Buildings insurance is already confirmed.');
+      return [{ type: 'buildings_insurance_confirmed', actor: cmd.actor, payload: { insurer: cmd.insurer?.trim() || null, fromDate: cmd.fromDate ?? null, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'priority_search_made': {
+      requireEnrolled(s);
+      requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage', 'transfer_of_equity'], 'A priority search');
+      if (s.completion.confirmedAt) reject('The matter has completed.');
+      if (Number.isNaN(Date.parse(cmd.expiresAt))) reject('A valid expiry date is required (the end of the priority period).', 400);
+      return [{ type: 'priority_search_made', actor: cmd.actor, payload: { expiresAt: cmd.expiresAt, documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+    }
+    case 'bankruptcy_search_clear': {
+      requireEnrolled(s);
+      requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage', 'transfer_of_equity'], 'A bankruptcy search');
+      if (s.preCompletion.bankruptcySearchAt) reject('The bankruptcy search is already recorded as clear.');
+      const subjects = (cmd.subjects ?? []).map((x) => x.trim()).filter(Boolean);
+      return [{ type: 'bankruptcy_search_clear', actor: cmd.actor, payload: { subjects: subjects.length ? subjects : [...(s.partyNames ?? [])], documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
 
     case 'mark_manual_handling': {
@@ -856,6 +919,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Title ${cmd.facts.titleNumber}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence }),
       ];
+      // Unregistered land: an epitome of title, not a register; first registration on completion. Outside what the engine reads (PG 1).
+      if (cmd.facts.unregistered && !s.manualHandling.required) {
+        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: 'unregistered_land', detail: 'The title is unregistered: an epitome / deeds bundle rather than official copies. Investigate the root of title (15 years), the index map search (SIM) and the land charges searches (K15) by hand; first registration follows completion.' } });
+      }
       // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
       if (expectedTenure !== 'any' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
         out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: cmd.facts.tenure === 'unknown' ? 'tenure_unknown' : 'tenure_mismatch', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}; the matter is a ${txType.replace('_', ' ')}.` } });
@@ -949,6 +1016,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
       if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
       if (exchangeAuthorityHolds(s)) reject('Cannot exchange: the client has not authorised exchange. Record the client\'s decision (exchange_authority).');
+      const unidentified = Object.values(s.partyChecks).filter((pc) => pc.role !== 'donor' && !isResolved(pc.status));
+      if (unidentified.length) reject(`Cannot exchange: ID / AML not resolved for ${unidentified.map((pc) => pc.label).join(', ')}.`);
       const holding = issuesGating(s, 'exchange');
       if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
@@ -983,7 +1052,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         if (!stageAtLeast(s, 'pre_completion')) reject('Completion monies arrive at pre-completion.');
         if (s.completion.fundsReceivedAt) reject('Completion monies already recorded.');
       } else if (!s.waits.some((w) => w.key === 'funds' && w.subject === cmd.fromRole && w.closedAt === null)) reject(`No outstanding funds request to ${cmd.fromRole}.`);
-      return [{ type: 'funds_received', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null } }];
+      const out: NewEvent[] = [{ type: 'funds_received', actor: cmd.actor, payload: { fromRole: cmd.fromRole, amountPennies: cmd.amountPennies ?? null, remitter: cmd.remitter?.trim() || null } }];
+      // The client's money must come from where the source-of-funds evidence said it was (LSAG 6.17.2; red flag 18.4 "the source changes at the last minute").
+      const remitter = cmd.remitter?.trim();
+      if (remitter && cmd.fromRole === 'client') {
+        const known = [...(s.partyNames ?? []), s.proofOfFunds.facts?.declarantName ?? '', ...Object.values(s.partyChecks).map((pc) => pc.label.replace(/\s*\(.*\)$/, '')), ...(s.proofOfFunds.statements ?? []).flatMap((st) => holderNames(st.holder))].filter(Boolean);
+        const strangers = holderNames(remitter).filter((h) => !samePerson(h, known));
+        if (known.length && strangers.length && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Completion money from'))) {
+          out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title: `Completion money from an account not seen in the evidence: ${remitter}`, detail: `The client's balance arrived from "${remitter}". ${strangers.join(' and ')} ${strangers.length === 1 ? 'was' : 'were'} not the declarant, a named party, or a holder of any statement read for the proof of funds. Establish whose account it is and why the money came from there before completing; consider whether the change of source is a reporting matter.`, gate: 'completion', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } });
+        }
+      }
+      return out;
     }
     case 'completion_confirmed': {
       requireEnrolled(s);
@@ -1017,6 +1096,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // Co-owners: how they hold is their decision, recorded before completion; tenants in common execute the declaration of trust.
       if (s.parties > 1 && !s.clientDecisions.ownership_basis) reject('The clients have not decided how they hold (joint tenants or tenants in common); record the ownership_basis decision before completion.');
       if (deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) reject('The clients hold as tenants in common: the declaration of trust must be executed before completion.');
+      // The Lenders' Handbook's pre-completion checks on a lender-funded purchase: bankruptcy search against every borrower, the priority search, insurance from exchange.
+      if (s.hasLender && !s.preCompletion.bankruptcySearchAt) reject('The bankruptcy search (K16) against the borrower has not been recorded as clear; the lender requires it before completion.');
+      if (s.hasLender && !s.preCompletion.prioritySearchAt) reject('No priority search (OS1) has been made; the lender requires completion inside the priority period.');
+      if (s.hasLender && s.preCompletion.prioritySearchExpiresAt && Date.parse(s.preCompletion.prioritySearchExpiresAt) < ctx.now.getTime() - 86_400_000) reject(`The priority period of the OS1 expired on ${s.preCompletion.prioritySearchExpiresAt}; make a fresh priority search before completing.`);
+      if (s.hasLender && !s.preCompletion.insuranceConfirmedAt) reject("Buildings insurance has not been confirmed; the lender requires cover in place from exchange, on its terms.");
       // Then the money: the advance from the lender where there is one, and the client's balance (an ISA bonus counts as the client's).
       const from = s.completion.receivedFrom ?? [];
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
@@ -1030,7 +1114,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!auth) reject('No authorised completion payment: authorise the transfer against verified bank details first.', 412);
       const cur = currentBankDetails(s, 'seller_solicitor');
       if (!cur || cur.id !== auth.bankDetailsId || cur.status !== 'verified') reject('HARD STOP: the bank details the payment was authorised against are no longer the current verified record.', 423);
-      return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
+      const completed: NewEvent[] = [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
+      // Leasehold: what the landlord requires on assignment (deed of covenant, certificate of compliance for a restriction) is owed after completion and before the AP1 can go in clean.
+      const consents = s.managementPack.facts?.consentsRequired?.trim();
+      if (isLeasehold(s) && consents && !Object.values(s.issues).some((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:'))) {
+        completed.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'missing_consent', title: `After completion: ${consents}`, detail: 'The management pack says the landlord or management company requires this on assignment. A deed of covenant or share transfer is signed at or after completion; a certificate of compliance is needed with the AP1 where the register carries a restriction, or HM Land Registry will raise a requisition. Pay the fee quoted in the pack.', gate: 'none', stage: 'completed', sourceDocumentId: s.managementPack.documentId, origin: null, party: null, severity: 'warning', causedBy: null } });
+      }
+      return completed;
     }
 
     // ── Post-completion ──
@@ -1417,6 +1507,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // 3. Queries sent and not answered stay open as a flag of their own.
       for (const q of Object.values(queries)) if (q.status === 'sent') flags.push({ code: 'QUERY_UNANSWERED', severity: 'medium', description: `The client did not answer: "${q.question}"`, locator: { section: `Query ${q.id}` } });
       const risk = riskRating(flags);
+      // Enhanced due diligence brings source of WEALTH with it (LSAG 6.17.3, 6.18.3): one query, asked once, on how the client came to have what they have.
+      if (risk === 'enhanced' && !Object.values(queries).some((q) => q.flagCode === 'SOURCE_OF_WEALTH')) {
+        const id = `Q${Object.keys(queries).length + 1}`;
+        const q: PofQuery = { id, key: `SOURCE_OF_WEALTH:${cmd.requestId}`, flagCode: 'SOURCE_OF_WEALTH', documentId: null, transaction: null, question: 'Because of the nature of some of the money in this purchase we have to ask about your overall financial position, not just these funds. Please describe how you have built up your savings and assets over time (your work and income, any business, property or investments you have sold, inheritances or large gifts received), with rough figures and dates. Anything you can send that shows it (P60s, accounts, a completion statement from a sale) helps.', raisedAt: now, raisedBy: SYSTEM, status: 'draft', sentAt: null, answer: null, answerEvidenceDocumentIds: [], answeredAt: null };
+        queries[id] = q;
+        out.push({ type: 'proof_of_funds_query_raised', actor: SYSTEM, payload: { requestId: cmd.requestId, query: { id, key: q.key, flagCode: q.flagCode, documentId: null, transaction: null, question: q.question } } });
+      }
       // 4. ALWAYS a decision: AML sign-off is a person's act even when nothing is flagged.
       const decision: DecisionSpec = {
         kind: 'proof_of_funds',
@@ -1506,7 +1603,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: cmd.summary?.by ?? 'template',
       };
       assertDecisionSpec(decision);
-      return [{ type: 'management_pack_received', actor: cmd.actor, payload: { facts, decision }, sourceDocumentId: cmd.documentId, confidenceScore: facts?.confidence ?? null }];
+      const packEvents: NewEvent[] = [{ type: 'management_pack_received', actor: cmd.actor, payload: { facts, decision }, sourceDocumentId: cmd.documentId, confidenceScore: facts?.confidence ?? null }];
+      // Building Safety Act 2022: on a relevant building the lender needs the certificate chain; a missing certificate is an issue holding exchange.
+      const bsa = facts?.buildingSafety ?? null;
+      if (bsa?.relevantBuilding && (bsa.leaseholderDeedOfCertificate === false || bsa.landlordCertificate === false) && !Object.values(s.issues).some((i) => i.kind === 'building_safety' && (i.status === 'open' || i.status === 'negotiating'))) {
+        const missing = [bsa.leaseholderDeedOfCertificate === false && 'leaseholder deed of certificate', bsa.landlordCertificate === false && "landlord's certificate"].filter(Boolean).join(' and ');
+        packEvents.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'building_safety', title: `Building Safety Act: no ${missing} for a relevant building`, detail: `The management pack says the building is a relevant building (11 m / 5 storeys or more) and the ${missing} ${missing.includes(' and ') ? 'have' : 'has'} not been given.${bsa.remediation ? ` Remediation position as stated: ${bsa.remediation}.` : ''} The lender will want the certificates (and, depending on its Part 2, an EWS1 or remediation evidence) before it lends, and the buyer's leaseholder protections depend on the certificate chain. Ask the seller's solicitor for them and report to the lender.`, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: 'warning', causedBy: null } });
+      }
+      return packEvents;
     }
     case 'notice_of_assignment_served': {
       requireEnrolled(s);

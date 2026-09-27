@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -57,6 +57,26 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     summary: 'Part of the price comes from a Lifetime ISA: the investor declaration, the eligibility limits and the bonus paid to us by the ISA manager.',
     issue: { kind: 'isa_bonus', title: 'Lifetime ISA: declarations and the withdrawal from the ISA manager', detail: 'Eligibility: first-time buyer, price at or below £450,000, a residential mortgage, the account open at least 12 months, completion within 90 days of the withdrawal. The client signs the investor declaration; we send the conveyancer declaration to the ISA manager, who pays the money to our client account within 30 days — request it in time for completion and never before exchange without checking the 90-day window. Two Lifetime ISAs (two buyers) need two withdrawals.', gate: 'completion' },
     fundsFrom: 'isa_provider',
+  },
+  second_charge: {
+    id: 'second_charge', label: 'Second Charge / Equity Loan', sides: ['buyer'],
+    summary: 'A Help to Buy equity loan, shared-equity or other second lender behind the mortgage: both lenders\' consents, the deed of postponement, the second deed.',
+    issue: { kind: 'second_charge_consent', title: 'Second charge: consents, postponement and the second deed', detail: 'Report the second loan to the first lender under its instructions and obtain its written consent. The second lender\'s own offer, deed and its consent to the first charge; the deed of postponement executed. A Help to Buy equity loan needs the agency\'s authority to proceed and its solicitor\'s form before completion. Both charges registered in order with the AP1.', gate: 'completion' },
+  },
+  shared_ownership: {
+    id: 'shared_ownership', label: 'Shared Ownership', sides: ['buyer'],
+    summary: 'A housing association shared-ownership lease: the share, the rent on the rest, staircasing, the resale nomination, the lender\'s mortgagee protection clause.',
+    issue: { kind: 'shared_ownership_terms', title: 'Shared ownership: lease terms, provider approval, rent and staircasing', detail: 'The lease must be the model form with the mortgagee protection clause the lender requires. The provider approves the buyer (eligibility, affordability) and the lender. Advise on the initial share and price, the rent on the unsold share and its review, the service charge, staircasing, the pre-emption / nomination on resale and any restriction on subletting. The lender\'s Part 2 requirements for shared ownership apply.', gate: 'exchange' },
+  },
+  unrepresented_counterparty: {
+    id: 'unrepresented_counterparty', label: 'Unrepresented Other Side', sides: ['buyer', 'seller'],
+    summary: 'The other party has no solicitor: no undertakings, identity checked against the title, the lender told, no advice to them.',
+    issue: { kind: 'unrepresented_counterparty', title: 'Unrepresented other side: identity, no undertakings, lender told', detail: 'Verify the other party\'s identity and their entitlement against the register (HMLR PG 67 conveyancer\'s confirmation cannot be relied on; use your own checks). Nothing can be done on undertakings: completion money, keys and deeds move only on the day against the executed deed. Tell them in writing that we do not advise them and recommend they instruct a solicitor. Tell the lender.', gate: 'exchange' },
+  },
+  court_order_transfer: {
+    id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'],
+    summary: 'A transfer of equity on divorce, dissolution or separation under a court order: the order seen, no consideration, the SDLT exemption, the outgoing owner released by the lender.',
+    issue: { kind: 'court_order_transfer', title: 'Court order transfer: the order, the lender\'s release, SDLT exemption', detail: 'A sealed copy of the order (or the consent order / financial remedy order) on file and the transfer drawn to give effect to it. The lender releases the outgoing owner from the mortgage covenant and consents to the transfer; if it will not, a remortgage in the remaining owner\'s name is needed. Transfers in connection with divorce or dissolution are exempt from SDLT (FA 2003 Sch 3 para 3): record sdlt_not_required with that reason. The outgoing owner should have independent advice.', gate: 'completion' },
   },
   help_to_buy_isa: {
     id: 'help_to_buy_isa', label: 'Help To Buy ISA', sides: ['buyer'],

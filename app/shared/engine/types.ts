@@ -224,6 +224,7 @@ export interface EngineState {
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  preCompletion?: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
   completion: { statementGeneratedAt: string | null; fundsRequestedAt: string | null; fundsReceivedAt: string | null; confirmedAt: string | null };
   postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; noticeOfAssignmentAt?: string | null };
   /** Issues layer (docs/engine-issues.md). */

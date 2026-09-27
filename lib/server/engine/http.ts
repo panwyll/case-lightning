@@ -25,7 +25,11 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(6).optional(), partyNames: z.array(z.string().min(1).max(120)).max(4).optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(8).optional(), partyNames: z.array(z.string().min(1).max(120)).max(4).optional(), attorneys: z.array(z.string().min(1).max(120)).max(4).optional(), officers: z.array(z.string().min(1).max(120)).max(10).optional(), executors: z.array(z.string().min(1).max(120)).max(6).optional(), occupiers: z.array(z.string().min(1).max(120)).max(6).optional(), sdlt: z.object({ firstTimeBuyer: z.boolean(), additionalProperty: z.boolean(), nonUkResident: z.boolean() }).nullish() }),
+  z.object({ type: z.literal('add_party'), name: z.string().min(1).max(120), role: z.enum(['buyer', 'seller', 'owner', 'donor', 'attorney', 'director', 'executor']) }),
+  z.object({ type: z.literal('buildings_insurance_confirmed'), insurer: z.string().max(120).nullish(), fromDate: isoDate.nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('priority_search_made'), expiresAt: isoDate, documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('bankruptcy_search_clear'), subjects: z.array(z.string().max(120)).max(6).nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
@@ -46,7 +50,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
     note: z.string().max(1000).nullish(),
   }),
   z.object({ type: z.literal('payment_authorised'), payeeKind: z.enum(PAYEE_KINDS), bankDetailsId: z.string().min(1).max(60), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['completion_monies', 'deposit', 'other']) }),
-  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), amountPennies: z.number().int().nonnegative().nullish() }),
+  z.object({ type: z.literal('funds_received'), fromRole: z.enum(['lender', 'client', 'buyer_solicitor', 'incoming_owner', 'isa_provider']), remitter: z.string().max(160).nullish(), amountPennies: z.number().int().nonnegative().nullish() }),
   // transaction types (docs/transaction-types.md)
   z.object({ type: z.literal('request_property_forms'), forms: z.array(z.string().max(10)).min(1).max(6).optional() }),
   z.object({ type: z.literal('property_forms_received'), forms: z.array(z.string().max(10)).min(1).max(6), documentId: z.string().uuid().nullish() }),

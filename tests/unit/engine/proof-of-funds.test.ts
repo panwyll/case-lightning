@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { evaluateProofOfFunds, factsFromSubmission, templateBriefing, type ProofOfFundsSubmission } from '../../../lib/server/engine/proof-of-funds';
 import { validatePofBriefing, renderPofBriefing } from '../../../lib/server/engine/ai';
-import { openIssues, pendingDecisions } from '../../../lib/server/engine/types';
+import { openIssues, openPofQueries, pendingDecisions } from '../../../lib/server/engine/types';
 import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear } from './helpers';
 
 const submission = (over: Partial<ProofOfFundsSubmission> = {}): ProofOfFundsSubmission => ({
@@ -152,6 +152,12 @@ test('flow: fire the form → the client wait opens and is chased → submission
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.partyChecks[donor.party].status, 'cleared');
 
+  // A donor abroad is enhanced due diligence, which brings one source-of-wealth query with it; it has to be sent or withdrawn with a reason before sign-off.
+  const sow = openPofQueries(s).find((q) => q.flagCode === 'SOURCE_OF_WEALTH')!;
+  assert.ok(sow, 'enhanced risk drafts the source-of-wealth query');
+  await assert.rejects(resolve(h, d.eventId, 'approve'), /Sign-off is not available while 1 query is open/);
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: sow.id, reason: 'Source of wealth taken at the instruction meeting: salary and an inheritance in 2019, recorded on the file note' });
+
   // Sign-off.
   await resolve(h, d.eventId, 'approve');
   s = await h.svc.getState(TENANT, MATTER);
@@ -285,7 +291,6 @@ test('issues: party, cost of the fix, and an enquiry raised from an issue', asyn
 // ───────────────────────────── transaction-level review + the query loop ─────────────────────────────
 
 import { reviewTransactions, POF_POLICY, riskRating, type StatementFacts, type EvidenceDocument } from '../../../lib/server/engine/proof-of-funds';
-import { openPofQueries } from '../../../lib/server/engine/types';
 
 const statement = (over: Partial<StatementFacts> = {}): StatementFacts => ({
   accountHolder: 'Priya Shah',
@@ -431,17 +436,18 @@ test('the query loop end to end: submission drafts queries → sign-off refused 
   assert.equal(sub2.events.filter((e) => e.type === 'proof_of_funds_query_answered').length, 1, 'only answers to queries actually sent are recorded');
   assert.equal(s.proofOfFunds.queries.Q1.status, 'answered');
   assert.equal(s.proofOfFunds.queries.Q3.status, 'sent', 'unanswered stays sent');
-  assert.equal(sub2.events.filter((e) => e.type === 'proof_of_funds_query_raised').length, 1, 'the same THIRD_PARTY line is not re-queried; the partner\'s statement (holder mismatch) is');
+  assert.deepEqual(sub2.events.filter((e) => e.type === 'proof_of_funds_query_raised').map((e) => (e.payload as { query: { flagCode: string } }).query.flagCode), ['HOLDER_MISMATCH', 'SOURCE_OF_WEALTH'], 'the same THIRD_PARTY line is not re-queried; the partner\'s statement (holder mismatch) is, and enhanced risk asks about source of wealth');
   const d2 = firstDecision(s, 'proof_of_funds');
   assert.match(d2.summary, /ROUND 2/);
   assert.match(d2.summary, /A: Tom is my partner/);
   assert.ok(s.proofOfFunds.flags.some((f) => f.code === 'QUERY_UNANSWERED' && /salary is paid into/.test(f.description)));
   assert.equal(s.proofOfFunds.risk, 'enhanced', 'a statement in someone else\'s name');
-  await assert.rejects(resolve(h, d2.eventId, 'approve'), /Sign-off is not available while 2 queries are open/);
+  await assert.rejects(resolve(h, d2.eventId, 'approve'), /Sign-off is not available while 3 queries are open/);
   await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q3', reason: 'Salary credits are visible on the Nationwide statement after all' });
   const newQ = openPofQueries(await h.svc.getState(TENANT, MATTER));
-  assert.equal(newQ.length, 1);
-  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ[0].id, reason: 'Partner\'s account: repayment of a holiday, explained in the answer to Q1' });
+  assert.deepEqual(newQ.map((q) => q.flagCode).sort(), ['HOLDER_MISMATCH', 'SOURCE_OF_WEALTH'], 'enhanced risk adds the source-of-wealth query once');
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ.find((q) => q.flagCode === 'HOLDER_MISMATCH')!.id, reason: 'Partner\'s account: repayment of a holiday, explained in the answer to Q1' });
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ.find((q) => q.flagCode === 'SOURCE_OF_WEALTH')!.id, reason: 'Source of wealth: eight years of salary savings, consistent with the P60s on file' });
   await resolve(h, d2.eventId, 'approve');
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.proofOfFunds.status, 'reviewed');

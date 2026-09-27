@@ -40,6 +40,7 @@ const leaseOut = () => LeaseExtractionSchema.parse({
 
 const packOut = () => ManagementPackExtractionSchema.parse({
   pages: [{ page: 1, verdict: 'facts' }, { page: 2, verdict: 'facts' }],
+  bsaRelevantBuilding: 'not_stated', bsaLeaseholderDeedOfCertificate: 'not_stated', bsaLandlordCertificate: 'not_stated', bsaRemediation: '',
   landlord: 'Mill Lane Freeholds Ltd',
   managingAgent: 'Block Managers Ltd',
   serviceChargePenniesPa: 240_000,

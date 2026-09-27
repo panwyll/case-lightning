@@ -110,7 +110,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -126,7 +126,7 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2 };
 
 /**
  * Hard dates a conveyancer must not sail past. Unlike waits (something is owed to us),
@@ -151,6 +151,10 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt) {
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
     push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.`);
+  }
+  if (state.preCompletion?.prioritySearchExpiresAt && !state.completion.confirmedAt) {
+    const exp = state.preCompletion.prioritySearchExpiresAt.slice(0, 10);
+    push('priority_period_expiry', exp, `The OS1 priority period ends on ${exp} and completion has not been confirmed. Complete inside it, or make a fresh priority search now: after it lapses another application could take priority and the lender's charge would not be protected.`);
   }
   if (state.noticeToComplete && !state.completion.confirmedAt) {
     const n = state.noticeToComplete;
@@ -199,6 +203,12 @@ export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCal
   const open = openIssuesOf(state);
   const today = now.toISOString().slice(0, 10);
 
+  // Ongoing monitoring (LSAG 6.21): a client identified more than a year ago on a matter still open is due a refresh. Holds nothing.
+  const identifiedAt = state.idCheck.resolvedAt ?? null;
+  if (identifiedAt && !state.completion.confirmedAt && Date.parse(today) - Date.parse(identifiedAt) > 365 * 86_400_000) {
+    const key = `cdd-refresh:${identifiedAt.slice(0, 10)}`;
+    if (!has(key)) out.push({ kind: 'raise', issueKind: 'cdd_refresh', key, title: `Client due diligence is over a year old (identified ${identifiedAt.slice(0, 10)}) [${key}]`, detail: 'Ongoing monitoring (MLR reg. 28(11), LSAG 6.21): refresh the electronic verification, confirm the address, re-run PEP and sanctions screening and record the review. Anything over a year is a significant gap on a higher-risk client.', severity: 'info' });
+  }
   // Mortgage offer expiry: warning → critical → expired.
   const expiry = state.mortgage.facts?.expiryDate;
   if (state.hasLender && expiry && !state.exchange.exchangedAt && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) {

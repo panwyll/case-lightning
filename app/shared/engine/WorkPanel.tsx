@@ -370,7 +370,7 @@ const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
   { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'] },
   { id: 'contract', label: 'Contract', lanes: ['exchange', 'transfer_deed'] },
-  { id: 'completion', label: 'Completion', lanes: ['completion'] },
+  { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
 ];
 const phaseState = (ls: LaneDef[]): LaneDef['state'] => (ls.some((l) => l.state === 'blocked') ? 'blocked' : ls.some((l) => l.state === 'open') ? 'open' : ls.length && ls.every((l) => l.state === 'done') ? 'done' : 'idle');
@@ -385,6 +385,10 @@ const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: strin
   { id: 'auction', label: 'Auction', sides: ['buyer', 'seller'], summary: 'Legal pack before the auction; the hammer is the exchange; completion to the conditions.' },
   { id: 'lifetime_isa', label: 'Lifetime ISA', sides: ['buyer'], summary: 'Declarations, eligibility limits, the bonus paid to us by the ISA manager.' },
   { id: 'help_to_buy_isa', label: 'Help To Buy ISA', sides: ['buyer'], summary: 'Closing statement, the bonus claim, the bonus paid to us before completion.' },
+  { id: 'second_charge', label: 'Second Charge / Equity Loan', sides: ['buyer'], summary: 'Both lenders\' consents, the deed of postponement, the second deed before completion.' },
+  { id: 'shared_ownership', label: 'Shared Ownership', sides: ['buyer'], summary: 'Model lease with the mortgagee protection clause, provider approval, rent and staircasing.' },
+  { id: 'unrepresented_counterparty', label: 'Unrepresented Other Side', sides: ['buyer', 'seller'], summary: 'No undertakings, identity against the title, the lender told.' },
+  { id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'], summary: 'The sealed order, the lender\'s release of the outgoing owner, the SDLT exemption.' },
 ];
 
 /** Enrolment: the transaction type decides everything that follows. */
@@ -397,6 +401,13 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   const [searches, setSearches] = useState('');
   const [shapes, setShapes] = useState<string[]>([]);
   const [names, setNames] = useState('');
+  const [attorneys, setAttorneys] = useState('');
+  const [officers, setOfficers] = useState('');
+  const [executors, setExecutors] = useState('');
+  const [occupiers, setOccupiers] = useState('');
+  const [ftb, setFtb] = useState(false);
+  const [additional, setAdditional] = useState(false);
+  const [nonRes, setNonRes] = useState(false);
   const buyer = type === 'freehold_purchase' || type === 'leasehold_purchase';
   const seller = type === 'freehold_sale' || type === 'leasehold_sale';
   const remo = type === 'remortgage';
@@ -413,9 +424,20 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         {(buyer || toe) && <label>Clients (co-owners after completion)<input type="number" min={1} max={4} value={parties} onChange={(e) => setParties(Math.max(1, Number(e.target.value) || 1))} /></label>}
         {parties > 1 && <label>Client names (comma-separated; each is identified in their own right)<input value={names} onChange={(e) => setNames(e.target.value)} placeholder="Tomasz Nowak, Ewa Nowak" /></label>}
         {toe && <label>Consideration (£, 0 for none)<input type="number" min={0} value={consideration} onChange={(e) => setConsideration(e.target.value)} placeholder="0" /></label>}
-        {(buyer || seller) && (
+        <label>Attorneys acting for a client (comma-separated)<input value={attorneys} onChange={(e) => setAttorneys(e.target.value)} placeholder="blank if none" /></label>
+        {buyer && shapes.includes('company_buyer') && <label>Directors and PSCs of the company (comma-separated)<input value={officers} onChange={(e) => setOfficers(e.target.value)} /></label>}
+        <label>Executors / trustees acting (comma-separated)<input value={executors} onChange={(e) => setExecutors(e.target.value)} placeholder="blank if none" /></label>
+        {buyer && <label>Adult occupiers who are not buying (comma-separated)<input value={occupiers} onChange={(e) => setOccupiers(e.target.value)} placeholder="blank if none" /></label>}
+        {buyer && (
           <div className="ep-shapes">
-            {SHAPES.filter((sh) => sh.sides.includes(buyer ? 'buyer' : 'seller')).map((sh) => (
+            <label className="ep-shape"><input type="checkbox" checked={ftb} onChange={(e) => setFtb(e.target.checked)} />SDLT: first-time buyer relief</label>
+            <label className="ep-shape"><input type="checkbox" checked={additional} onChange={(e) => setAdditional(e.target.checked)} />SDLT: additional property</label>
+            <label className="ep-shape"><input type="checkbox" checked={nonRes} onChange={(e) => setNonRes(e.target.checked)} />SDLT: non-UK resident</label>
+          </div>
+        )}
+        {(buyer || seller || toe) && (
+          <div className="ep-shapes">
+            {SHAPES.filter((sh) => sh.sides.includes(buyer ? 'buyer' : seller ? 'seller' : 'owner')).map((sh) => (
               <label key={sh.id} className="ep-shape" title={sh.summary}>
                 <input type="checkbox" checked={shapes.includes(sh.id)} onChange={(e) => setShapes((cur) => (e.target.checked ? [...cur, sh.id] : cur.filter((x) => x !== sh.id)))} />
                 {sh.label}
@@ -428,9 +450,15 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
       <button className="ep-btn primary" disabled={busy} onClick={() => {
         const body: Record<string, unknown> = { type: 'enrol', transactionType: type, hasLender: buyer || remo ? hasLender : false, hasExistingMortgage: seller || remo || toe ? hasExistingMortgage : false, parties: buyer || toe ? parties : 1 };
         if (toe) body.considerationPennies = Math.round((Number(consideration) || 0) * 100);
-        if (shapes.length && (buyer || seller)) body.shapes = shapes;
+        if (shapes.length && (buyer || seller || toe)) body.shapes = shapes;
         const partyNames = names.split(',').map((x) => x.trim()).filter(Boolean);
         if (partyNames.length) body.partyNames = partyNames;
+        const split = (v: string) => v.split(',').map((x) => x.trim()).filter(Boolean);
+        if (split(attorneys).length) body.attorneys = split(attorneys);
+        if (buyer && shapes.includes('company_buyer') && split(officers).length) body.officers = split(officers);
+        if (split(executors).length) body.executors = split(executors);
+        if (buyer && split(occupiers).length) body.occupiers = split(occupiers);
+        if (buyer && (ftb || additional || nonRes)) body.sdlt = { firstTimeBuyer: ftb, additionalProperty: additional, nonUkResident: nonRes };
         const list = searches.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
         if (list.length) body.requiredSearches = list;
         void cmd(body);
@@ -566,7 +594,10 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ...clientChecks.map((pc) => ({ label: `ID / AML check · ${pc.label}`, status: pc.status, documentId: pc.documentId, focus: 'id_check' })),
       { label: 'Case counted for billing', key: 'case_counted', status: view.matter?.charge ? 'done' : 'not_started', detail: view.matter?.charge ? `${fmtDay(view.matter.charge.chargedAt)} · ${view.matter.charge.billed ? `£${Math.round(view.matter.charge.amountPennies / 100)} billed` : view.matter.charge.reason === 'TRIAL' ? 'free on trial' : view.matter.charge.reason === 'COMP' || view.matter.charge.reason === 'PILOT' ? 'not billed (comped)' : view.matter.charge.reason === 'ERROR' ? 'billing retry pending' : 'no subscription'}` : undefined },
     ],
-    actions: s.stage === 'instruction' && s.idCheck.status === 'not_started' ? <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button> : null });
+    actions: <>
+      {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button>}
+      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const name = ask('Name of the person to identify:'); if (!name) return; const role = ask('Their role: buyer, seller, owner, donor, attorney, director or executor', buyer ? 'buyer' : seller ? 'seller' : 'owner'); if (role) void cmd({ type: 'add_party', name, role }); }}>Add Party</button>}
+    </> });
 
   if (has('source_of_funds')) {
     const pof = s.proofOfFunds;
@@ -738,6 +769,23 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (toe || buyer || seller) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', holds: 'Holds Completion', state: deeds.transferDeedAt ? 'done' : s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'usually signed with the contract' : seller ? 'signed by the seller, witnessed, held undated until completion' : 'every party signs, witnessed',
     tiles: [{ label: 'Transfer deed', status: deeds.transferDeedAt ? 'done' : 'not_started', detail: deeds.transferDeedAt ? `executed ${fmtDay(deeds.transferDeedAt)}` : undefined }],
     actions: !deeds.transferDeedAt && !completed ? act('transfer_deed', 'transfer_deed_executed', 'Transfer Deed Executed', { witnessed: true }, { primary: toe }) : null });
+
+  if (buyer || remo) {
+    const pc = s.preCompletion ?? { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null };
+    const all = !!(pc.bankruptcySearchAt && pc.prioritySearchAt && pc.insuranceConfirmedAt);
+    const os1Expired = !!(pc.prioritySearchExpiresAt && Date.parse(pc.prioritySearchExpiresAt) < Date.now() && !completed);
+    lane({ id: 'pre_completion_checks', title: "Lender's pre-completion checks", holds: buyer && s.hasLender ? 'Holds Completion' : undefined, state: all && !os1Expired ? 'done' : s.stage === 'pre_completion' ? (buyer && s.hasLender ? 'blocked' : 'open') : 'idle', note: buyer && s.hasLender ? undefined : 'good practice; not a gate without a lender',
+      tiles: [
+        { label: 'Bankruptcy search (K16)', status: pc.bankruptcySearchAt ? 'done' : 'not_started', detail: pc.bankruptcySearchAt ? `clear ${fmtDay(pc.bankruptcySearchAt)}` : undefined },
+        { label: 'Priority search (OS1)', status: pc.prioritySearchAt ? (os1Expired ? 'expired' : 'done') : 'not_started', detail: pc.prioritySearchExpiresAt ? `priority to ${pc.prioritySearchExpiresAt}` : undefined },
+        { label: 'Buildings insurance', status: pc.insuranceConfirmedAt ? 'done' : 'not_started', detail: pc.insurer ?? undefined },
+      ],
+      actions: !completed && atLeast('pre_exchange') ? <>
+        {!pc.bankruptcySearchAt && act('pre_completion_checks', 'bankruptcy_search_clear', 'Bankruptcy Search Clear', {})}
+        {(!pc.prioritySearchAt || os1Expired) && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('Priority period expires on (YYYY-MM-DD):'); if (d) void cmd({ type: 'priority_search_made', expiresAt: d }); }}>Priority Search Made</button>}
+        {!pc.insuranceConfirmedAt && <button className="ep-btn" disabled={busy} onClick={() => { const i = ask('Insurer (as on the policy):'); if (i !== null) void cmd({ type: 'buildings_insurance_confirmed', insurer: i || null }); }}>Buildings Insurance Confirmed</button>}
+      </> : null });
+  }
 
   {
     const firm = verified('firm_client_account');

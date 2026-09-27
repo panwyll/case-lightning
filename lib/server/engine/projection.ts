@@ -119,6 +119,9 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.counterpartyType = p.counterpartyType ?? null;
       s.targetExchangeDate = p.targetExchangeDate ?? null;
       s.targetCompletionDate = p.targetCompletionDate ?? null;
+      s.partyNames = [...(p.partyNames ?? [])];
+      s.occupiers = [...(p.occupiers ?? [])];
+      s.sdltBasis = p.sdlt ?? null;
       s.mortgage.status = p.hasLender ? 'awaiting' : 'not_required';
       s.stage = 'instruction';
       s.stageHistory = [{ stage: 'instruction', at: e.createdAt, seq: e.seq }];
@@ -153,6 +156,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['id_check_cleared'];
       const target = p.party ? s.partyChecks[p.party] : s.idCheck;
       if (target) { target.status = 'cleared'; target.documentId = e.sourceDocumentId ?? target.documentId; }
+      if (!p.party) s.idCheck.resolvedAt = e.createdAt;
       closeWait(s, 'id_check', p.party ?? '', e);
       break;
     }
@@ -168,6 +172,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const target = p.party ? s.partyChecks[p.party] : s.idCheck;
       if (target && p.option !== 'escalate') target.status = 'reviewed';
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
+      if (!(e.payload as Payloads['id_check_reviewed']).party) s.idCheck.resolvedAt = e.createdAt;
       break;
     }
 
@@ -882,6 +887,22 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'mortgage_deed_executed': {
       s.deeds.mortgageDeedAt = e.createdAt;
+      break;
+    }
+    case 'buildings_insurance_confirmed': {
+      const p = e.payload as Payloads['buildings_insurance_confirmed'];
+      s.preCompletion.insuranceConfirmedAt = e.createdAt;
+      s.preCompletion.insurer = p.insurer ?? null;
+      break;
+    }
+    case 'priority_search_made': {
+      const p = e.payload as Payloads['priority_search_made'];
+      s.preCompletion.prioritySearchAt = e.createdAt;
+      s.preCompletion.prioritySearchExpiresAt = p.expiresAt;
+      break;
+    }
+    case 'bankruptcy_search_clear': {
+      s.preCompletion.bankruptcySearchAt = e.createdAt;
       break;
     }
     case 'certificate_of_title_sent': {

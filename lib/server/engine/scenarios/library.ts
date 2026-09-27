@@ -183,6 +183,13 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
   ...(advance != null ? [
     step('mortgage_deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
     step('certificate', 'Certificate of title sent to the lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
+    step('pre_completion_checks', "The lender's pre-completion checks: bankruptcy search clear, priority search made, buildings insurance confirmed", async (c) => {
+      const k16 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'k16-bankruptcy-search.txt', facts: { content: 'sandbox K16' }, body: F.body('K16 bankruptcy search', ['Subject: Sandbox Buyer', 'Result: NO ENTRIES']) });
+      await c.run({ type: 'bankruptcy_search_clear', subjects: ['Sandbox Buyer'], documentId: k16 });
+      const os1 = await c.doc({ docType: 'SEARCH_RESULT', fileName: 'os1-priority-search.txt', facts: { content: 'sandbox OS1' }, body: F.body('OS1 official search with priority', ['Title AB123456', `Priority expires ${F.completionDate(3)}`]) });
+      await c.run({ type: 'priority_search_made', expiresAt: F.completionDate(3), documentId: os1 });
+      await c.run({ type: 'buildings_insurance_confirmed', insurer: 'Sandbox Insurance plc', fromDate: F.exchangeDate() });
+    }),
   ] : []),
   step('transfer_deed', 'Transfer deed (TR1) executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Buyer'] }); }),
   step('funds', advance != null ? 'Advance and the client\'s balance requested and received' : 'The client\'s balance requested and received', async (c) => {
@@ -203,6 +210,12 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
   step('sdlt', 'SDLT return submitted', async (c) => { await c.run({ type: 'sdlt_submitted', reference: 'SDLT-SANDBOX-1' }); }),
   step('ap1', 'AP1 submitted to HM Land Registry', async (c) => { await c.run({ type: 'ap1_submitted', reference: 'AP1-SANDBOX-1' }); }),
   step('registered', 'Registration confirmed', async (c) => { await c.run({ type: 'ap1_confirmed' }); }),
+  step('landlord_consents', "What the landlord required on assignment is done (deed of covenant signed, certificate of compliance obtained)", async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    for (const i of Object.values(s.issues).filter((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:') && (i.status === 'open' || i.status === 'negotiating'))) {
+      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'consent_obtained', note: 'Deed of covenant signed at completion; certificate of compliance received from the management company and lodged with the AP1.' });
+    }
+  }),
   step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
 ];
 

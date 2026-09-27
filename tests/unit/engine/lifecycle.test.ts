@@ -118,6 +118,13 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'funds_requested', actor: 'system', fromRole: 'lender', bankDetailsId: firmId }), /by a person/);
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'lender', bankDetailsId: firmId });
   await svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: firmId });
+  // The Lenders' Handbook's pre-completion checks, each refused until recorded.
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /bankruptcy search \(K16\)/);
+  await svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER, subjects: ['Priya Shah'] });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No priority search \(OS1\)/);
+  await svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2027-01-15' });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /Buildings insurance has not been confirmed/);
+  await svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER, insurer: 'Aviva' });
   await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /Funds have not been received/);
   await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'lender' });
   r = await svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'client' });

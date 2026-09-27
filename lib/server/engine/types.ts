@@ -200,6 +200,9 @@ export const EVENT_TYPES = [
   'discharge_confirmed',
   'mortgage_deed_executed',
   'certificate_of_title_sent',
+  'buildings_insurance_confirmed',
+  'priority_search_made',
+  'bankruptcy_search_clear',
   'lender_consent_requested',
   'lender_consent_received',
   'transfer_deed_executed',
@@ -320,7 +323,8 @@ export interface LeaseClause { code: string; topic: 'term' | 'rent' | 'service_c
 export interface IdPartyCheck {
   party: string;
   label: string;
-  role: 'buyer' | 'seller' | 'owner' | 'donor';
+  /** buyer / seller / owner = a co-client; donor = a contributor of funds; attorney = a person acting for a client (LSAG 6.14.9); director = a director or PSC of a company client (LSAG 6.14.11); executor = a personal representative or trustee (LSAG 6.14.16). */
+  role: 'buyer' | 'seller' | 'owner' | 'donor' | 'attorney' | 'director' | 'executor';
   status: 'not_started' | 'requested' | ReviewStatus;
   requestedAt: string | null;
   documentId: string | null;
@@ -337,6 +341,8 @@ export interface TitleFacts {
   covenants: TitleEntry[];
   /** Present on leasehold titles once extracted. */
   lease?: LeaseFacts | null;
+  /** The document is an epitome / deeds bundle, not an official copy: unregistered land, first registration on completion. */
+  unregistered?: boolean | null;
   confidence: number;
 }
 
@@ -370,6 +376,8 @@ export interface ManagementPackFacts {
   consentsRequired?: string | null;
   /** Disputes, litigation, breaches or forfeiture the pack discloses. */
   disputes?: string | null;
+  /** Building Safety Act 2022 (LPE1 5th edition): a relevant building (over 11 m / 5 storeys), the leaseholder deed of certificate, the landlord's certificate, any EWS1 / remediation position. */
+  buildingSafety?: { relevantBuilding?: boolean | null; leaseholderDeedOfCertificate?: boolean | null; landlordCertificate?: boolean | null; remediation?: string | null } | null;
   /** Which years' accounts and budget the pack includes. */
   accountsProvided?: string | null;
   /** Every answer relied on, verbatim with its page, for the review table. */
@@ -684,6 +692,16 @@ export interface Payloads {
     parties?: number;
     /** The clients by name, when known; every one beyond the first gets an ID / AML check of their own. */
     partyNames?: string[];
+    /** People acting for a client under a power of attorney: identified in their own right, the power seen (LSAG 6.14.9; Lenders' Handbook: powers of attorney). */
+    attorneys?: string[];
+    /** Company client: directors and persons with significant control, each identified (LSAG 6.14.11 / 6.16). */
+    officers?: string[];
+    /** Personal representatives or trustees acting: at least two verified, the grant or trust deed seen (LSAG 6.14.16). */
+    executors?: string[];
+    /** Adult occupiers who are not buying: the lender wants their consent / deed of postponement before completion. */
+    occupiers?: string[];
+    /** The SDLT basis as the client states it; the return is a person's, the basis is on the file from day one. */
+    sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null;
     /** Sale / remortgage / transfer: the property is charged today (redemption and discharge apply). */
     hasExistingMortgage?: boolean;
     /** Transfer of equity: money changing hands (SDLT may apply; funds come from the incoming owner). */
@@ -743,7 +761,7 @@ export interface Payloads {
     bankDetailsId: string;
     approvedBy: string;
   };
-  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null };
+  funds_received: { fromRole: 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider'; amountPennies?: number | null; /** The name on the sending account, as the bank shows it (LSAG 6.17: money must come from where the evidence said). */ remitter?: string | null };
   completion_confirmed: { completedAt?: string | null };
 
   sdlt_submitted: { reference?: string | null };
@@ -880,6 +898,12 @@ export interface Payloads {
   mortgage_deed_executed: { lender: string | null; witnessed: boolean };
   /** Certificate of title / report on title to the lender sent; the advance is requested against it. */
   certificate_of_title_sent: { lender: string | null; completionDate: string | null };
+  /** Lenders' Handbook: buildings insurance in place from exchange, on the lender's terms; confirmed before completion. */
+  buildings_insurance_confirmed: { insurer: string | null; fromDate: string | null; documentId?: string | null };
+  /** The OS1 (or OS2) priority search: registration protected until `expiresAt` (30 working days); completion inside the window. */
+  priority_search_made: { expiresAt: string; documentId?: string | null };
+  /** The K16 bankruptcy search against every borrower (Lenders' Handbook: insolvency): clear, or the hit explained. */
+  bankruptcy_search_clear: { subjects: string[]; documentId?: string | null };
   /** Transfer of equity: the existing lender's consent to the transfer asked; the wait opens. */
   lender_consent_requested: { lender: string | null };
   lender_consent_received: { lender: string | null; conditions?: string | null };
@@ -1159,6 +1183,8 @@ export interface MatterState {
     requestedAt: string | null;
     documentId: string | null;
     decisionEventId: string | null;
+    /** When the first client's check last cleared or was reviewed: the clock for ongoing monitoring (LSAG 6.21). */
+    resolvedAt?: string | null;
   };
   /** Every other person who must be identified: a second buyer, seller or owner (holds Instruction) and a gift donor (holds proof-of-funds sign-off). Keyed by party id. */
   partyChecks: Record<string, IdPartyCheck>;
@@ -1190,6 +1216,14 @@ export interface MatterState {
   };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  /** Pre-completion checks the Lenders' Handbook requires on a lender-funded purchase (and good practice on a cash one). */
+  preCompletion: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
+  /** The clients by name as enrolled (first = the client on `idCheck`). */
+  partyNames: string[];
+  /** Adult occupiers named at enrolment who are not buying. */
+  occupiers: string[];
+  /** The SDLT basis the client declared at enrolment (null = nothing declared). */
+  sdltBasis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null;
   completion: {
     statementGeneratedAt: string | null;
     fundsRequestedAt: string | null;
@@ -1340,6 +1374,10 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     },
     deposit: { received: false, at: null },
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
+    preCompletion: { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null },
+    partyNames: [],
+    occupiers: [],
+    sdltBasis: null,
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, receivedFrom: [], confirmedAt: null },
     postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
     proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, channel: null, sendError: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
@@ -1407,6 +1445,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     deposit: merge('deposit'),
     exchange: merge('exchange'),
     completion: merge('completion'),
+    preCompletion: merge('preCompletion'),
     readiness: merge('readiness'),
     managementPack: merge('managementPack'),
     propertyForms: merge('propertyForms'),

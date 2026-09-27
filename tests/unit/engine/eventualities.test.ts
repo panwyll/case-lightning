@@ -158,6 +158,9 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
   await h.svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
   await h.svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: true });
   await h.svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'bankruptcy_search_clear', actor: USER });
+  await h.svc.run(TENANT, MATTER, { type: 'priority_search_made', actor: USER, expiresAt: '2026-11-10' });
+  await h.svc.run(TENANT, MATTER, { type: 'buildings_insurance_confirmed', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'payment_authorised', actor: USER, payeeKind: 'seller_solicitor', bankDetailsId: solId, purpose: 'completion_monies' });
   h.ports.setNow(new Date('2026-10-02T14:00:00Z'));
   const done = await h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER });

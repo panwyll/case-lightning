@@ -77,6 +77,8 @@ export const EVIDENCE_EXPECTED: Record<FundSourceKind, string> = {
   other: 'Whatever shows where the money came from and that it is now yours.',
 };
 
+/** Close family as the Lenders' Handbook defines it for a gifted deposit (spouse, partner, parent, grandparent, sibling, child, aunt / uncle, in-law, step). Free text from the client, so a loose match. */
+const FAMILY_RE = /\b(mum|mother|dad|father|parent|parents|step[- ]?(mum|mother|dad|father|parent|son|daughter|brother|sister)|grand\s?(ma|mother|pa|father|parent|parents|son|daughter)|nan|nana|gran|grandad|husband|wife|spouse|partner|fianc|civil partner|brother|sister|sibling|son|daughter|child|aunt|auntie|uncle|in[- ]law|mother in law|father in law|cousin)\b/i;
 /** Sources the AML regime treats as higher risk (enhanced due diligence questions follow). */
 export const HIGH_RISK_SOURCES: ReadonlySet<FundSourceKind> = new Set(['crypto', 'overseas', 'loan', 'business_income']);
 
@@ -187,6 +189,7 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts): Verdict {
   if (f.shortfallPennies != null && f.shortfallPennies > 0) {
     flags.push({ code: 'POF_SHORTFALL', severity: 'high', description: `Declared funds (${gbp(f.totalDeclaredPennies)}) fall short of the ${gbp(f.requiredPennies ?? 0)} needed after the mortgage advance by ${gbp(f.shortfallPennies)}.`, locator: { section: 'Totals' } });
   }
+  if (!f.mortgageAdvancePennies && f.purchasePricePennies != null && f.purchasePricePennies > 0) flags.push({ code: 'POF_CASH_PURCHASE', severity: 'medium', description: `No mortgage: the whole price (${gbp(f.purchasePricePennies)}) comes from the client's own resources. A purchase without a lender carries a higher fraud and laundering risk (LSAG 18.5.2) and there is no lender's underwriting behind the money: every source must be traced in full.`, locator: { section: 'Totals' } });
   if (f.requiredPennies == null) flags.push({ code: 'POF_PRICE_UNKNOWN', severity: 'low', description: 'The purchase price is not on file, so the declared total cannot be checked against what is needed.', locator: { section: 'Totals' } });
   f.sources.forEach((s, i) => {
     const where = { section: `Source ${i + 1}: ${FUND_SOURCE_LABEL[s.kind]}` };
@@ -198,6 +201,7 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts): Verdict {
         flags.push({ code: 'POF_GIFT', severity: 'medium', description: `Gifted deposit of ${gbp(s.amountPennies)} from ${g.donorName} (${g.donorRelationship}). Donor ID, a gift letter and the donor's statements are required, and the lender must be told.`, locator: where });
         if (g.repayable) flags.push({ code: 'POF_GIFT_REPAYABLE', severity: 'high', description: `The "gift" from ${g.donorName} is stated to be repayable: it is a loan, which the lender must approve and which may affect affordability.`, locator: where });
         if (g.donorAbroad) flags.push({ code: 'POF_GIFT_DONOR_ABROAD', severity: 'medium', description: `The donor (${g.donorName}) is outside the UK: identity and source of the donor's funds need extra care.`, locator: where });
+        if (!FAMILY_RE.test(g.donorRelationship)) flags.push({ code: 'POF_GIFT_NON_FAMILY', severity: 'high', description: `The donor (${g.donorName}) is described as "${g.donorRelationship}", not a close family member. Most lenders accept gifted deposits only from family (spouse or partner, parent, grandparent, sibling, child, aunt or uncle, in-law or step relation) and refuse gifts from friends or employers: report it to the lender and wait for written instructions.`, locator: where });
         if (g.jointDonorName?.trim()) flags.push({ code: 'POF_GIFT_JOINT_ACCOUNT', severity: 'medium', description: `The gift comes from an account ${g.donorName} holds jointly with ${g.jointDonorName.trim()}: the money is theirs too, so ${g.jointDonorName.trim()} is a donor in their own right — ID / AML check, the gift letter signed by both, and both named to the lender.`, locator: where });
         if (g.donorEvidenceDocumentIds.length === 0) flags.push({ code: 'POF_GIFT_NO_DONOR_EVIDENCE', severity: 'medium', description: `No donor documents (ID, gift letter, statements) attached for the gift from ${g.donorName}.`, locator: where });
       }
@@ -375,7 +379,7 @@ const TITLE_RE = /^(mr|mrs|ms|miss|mx|dr|prof|sir|lady|lord|rev)$/;
  * holders of a family joint account ("MRS A SHAH & MR V SHAH" against a declared donor Anita Shah) are told apart —
  * the loose surname match `looksLike` cannot, and a joint account is usually shared by people with the same surname.
  */
-function samePerson(printed: string, known: string[]): boolean {
+export function samePerson(printed: string, known: string[]): boolean {
   const toks = norm(printed).split(' ').filter((t) => t && !TITLE_RE.test(t));
   if (toks.length === 0) return false;
   const surname = toks[toks.length - 1];
@@ -567,6 +571,9 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   LOAN_CREDIT: 'Borrowed money changes the affordability picture and must be declared to the mortgage lender; an undisclosed loan is a common reason an offer is withdrawn.',
   HOLDER_MISMATCH: 'A statement in someone else\'s name is that person\'s money until shown otherwise: their identity and source of funds are needed.',
   JOINT_ACCOUNT_UNDECLARED: 'Money in a joint account belongs to both holders. The other holder is a contributor: they are identified like a donor, sign the gift letter (or confirm they claim no interest), and the lender is told.',
+  POF_GIFT_NON_FAMILY: 'A gift from someone outside the family is one most lenders will not accept: report it and wait for the lender\'s written instructions before proceeding.',
+  POF_CASH_PURCHASE: 'With no lender the firm is the only check on the money: trace every source in full and record the source of wealth where the sums are large for the client\'s circumstances.',
+  SOURCE_OF_WEALTH: 'Enhanced due diligence asks how the client came to have their overall wealth, not only where these funds sit; record the answer and whether it is plausible against what is known of them.',
   POF_GIFT_JOINT_ACCOUNT: 'Both holders of the donor\'s joint account are donors: an ID / AML check and the gift letter for each, and both named to the lender.',
   POF_JOINT_HOLDER: 'A non-buying joint holder of the client\'s account is a third-party contributor: ID / AML check and a signed confirmation that their share is gifted and they claim no interest; the lender is told.',
   STATEMENT_STALE: 'Source of funds must be current at the point money is received; ask for statements up to date.',
