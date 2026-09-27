@@ -362,6 +362,9 @@ const NoteSchema = z.object({
           z.object({ type: z.literal('client_decision_recorded'), subject: z.string(), decision: z.string(), note: z.string() }),
           z.object({ type: z.literal('raise_issue'), kind: z.string(), title: z.string(), detail: z.string().nullable(), gate: z.enum(['exchange', 'completion', 'none']) }),
           z.object({ type: z.literal('set_target_dates'), targetExchangeDate: z.string().nullable().describe('YYYY-MM-DD or null'), targetCompletionDate: z.string().nullable().describe('YYYY-MM-DD or null'), reason: z.string() }),
+          z.object({ type: z.literal('record_price_change'), toPennies: z.number().int().nullable().describe('the new price in pennies, or null when only a reduction is given'), reductionPennies: z.number().int().nullable(), reason: z.string() }),
+          z.object({ type: z.literal('resolve_issue'), kind: z.string(), resolution: z.string(), note: z.string() }),
+          z.object({ type: z.literal('record_availability'), party: z.enum(['client', 'seller_side', 'agent', 'lender']), from: z.string().describe('YYYY-MM-DD'), until: z.string().describe('YYYY-MM-DD'), note: z.string() }),
         ])
         .nullable(),
     })
@@ -374,6 +377,9 @@ const NOTE_INSTRUCTIONS = [
   'Use `command` only when the note is unambiguous:',
   '  • client_decision_recorded — the CLIENT said something only they can decide. subject is one of: physical_condition (satisfied / renegotiate / further_investigation / withdraw), exchange_authority (authorised / not_yet / withdrawn), accept_risk, accept_terms, completion_date, ownership_basis (joint_tenants / tenants_in_common_equal / tenants_in_common_unequal).',
   '  • raise_issue — a problem or an expectation worth tracking. gate "none" unless the note plainly says it stops exchange or completion. Something expected (replies, the pack, an offer) is seller_delay / mortgage_offer_outstanding / search_delayed; a gift or loan towards the deposit is source_of_funds; a change of name is cdd_refresh; the client being away is buyer_delay.',
+  '  • record_price_change — the price was renegotiated: toPennies for a stated figure, reductionPennies for "£5,000 off". Never for the deposit, fees, a retention or a gift.',
+  '  • resolve_issue — the chain is ready (chain_dependency / chain_ready), or a delay is over (seller_delay, buyer_delay / received). Only for waits and chain positions, never for a defect or a check.',
+  '  • record_availability — someone is away between two dates (party client / seller_side / agent / lender; the writer, unless they say otherwise). "Away until the 20th" runs from TODAY.',
   '  • set_target_dates — a date named for exchange or completion (as YYYY-MM-DD, using TODAY for a missing year). Targets are plans a person sets; the client\'s agreement to a completion date is asked for separately by the system, so do not also record it as a client decision.',
   'Everything else is kind "information" with command null: use it for context, opinions, pleasantries and anything you are unsure about.',
   'Never infer a decision from silence, from the conveyancer\'s own view, or from what someone intends to do later. "The client is thinking about it" is information, not a decision.',

@@ -55,10 +55,10 @@ const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
-import { openPofQueries, openWaits } from './types';
+import { openPofQueries, openWaits, awayOn, awayNow } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
-import { claimText } from './notes';
+import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -193,9 +193,11 @@ export class EngineService {
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text } });
       await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, to: sent.address ?? null, triggeredByEventId: d.triggeredByEventId, mentioned: ov.mentioned } });
-      if (d.agentTemplate) {
-        const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: d.agentTemplate, context: d.context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
-        if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
+      const partyTemplate = d.agentTemplate ?? (d as { partyTemplate?: string | null }).partyTemplate ?? null;
+      const partyRole = ((d as { partyRole?: string | null }).partyRole ?? 'estate_agent') as 'estate_agent' | 'lender';
+      if (partyTemplate) {
+        const party = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: partyRole, template: partyTemplate, context: d.context }).catch((err) => { this.ports.log('party notice failed', err); return null; });
+        if (party) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: partyTemplate, recipientRole: partyRole, channel: party.channel, messageId: party.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
     } else if (action === 'enquiry_draft') {
       const d = detail as { subject: string; question?: string | null; issueId?: string | null };
@@ -690,6 +692,9 @@ export class EngineService {
     for (const a of dueActions(state, now, sla)) {
       try {
         if (a.kind === 'chase') {
+          // Nobody is chased while they are away: the reminder waits for them to be back.
+          const awayParty = a.rule.recipientRole === 'client' ? 'client' : a.rule.recipientRole === 'seller_solicitor' ? 'seller_side' : a.rule.recipientRole === 'lender' ? 'lender' : null;
+          if (awayParty && awayNow(state, awayParty, now)) continue;
           const context = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length };
           const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
           const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
@@ -774,9 +779,14 @@ export class EngineService {
             }
           }
           if (p.kind === 'mortgage_at_risk') {
-            const detail = { template: 'mortgage_change_query', context: { eventType: e.type, quote: p.title.slice(0, 200) }, triggeredByEventId: e.id };
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'mortgage_change_query', `mortgage_change_query:${p.issueId}`, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: a change may affect the mortgage; ask what changed and say the lender must be told\nTemplate: mortgage_change_query'))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('mortgage change query could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            const fromLender = /^Reported by the lender or broker/.test(p.detail ?? '');
+            // Reported by the broker or lender: they are asked to confirm where the offer stands, and the client is told. Otherwise the client is asked what changed.
+            const detail = fromLender
+              ? { template: 'mortgage_status_client', partyTemplate: 'confirm_offer_status', partyRole: 'lender', context: { eventType: e.type, quote: p.title.slice(0, 200) }, triggeredByEventId: e.id }
+              : { template: 'mortgage_change_query', context: { eventType: e.type, quote: p.title.slice(0, 200) }, triggeredByEventId: e.id };
+            const summary = fromLender ? 'CLIENT UPDATE + LENDER\n\nTo: the lender or broker (confirm whether the offer stands) and the client (told what was said)\nTemplate: confirm_offer_status / mortgage_status_client' : 'CLIENT UPDATE\n\nTo: the client\nWhat: a change may affect the mortgage; ask what changed and say the lender must be told\nTemplate: mortgage_change_query';
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', detail.template, `${detail.template}:${p.issueId}`, detail, summary))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('mortgage query could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
             }
           }
           if (p.kind === 'transaction_at_risk') {
@@ -784,6 +794,21 @@ export class EngineService {
             const detail = { subject, issueId: p.issueId };
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'chain', `enquiry_draft:at_risk:${p.issueId}`, detail, `ENQUIRY — IS THE SALE PROCEEDING?\n\nTo: the seller's solicitor\nFor: ${p.title}\n\n${subject}`))) {
               try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('proceeding enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+            }
+          }
+        }
+        // A target date that falls while someone is away, or a new absence over a target date: a delay issue names it before anyone books removals.
+        if (e.type === 'target_dates_changed' || e.type === 'availability_recorded') {
+          const fresh = await this.getState(tenantId, matterId);
+          for (const [label, iso] of [['exchange', fresh.targetExchangeDate], ['completion', fresh.targetCompletionDate]] as Array<[string, string | null]>) {
+            if (!iso) continue;
+            for (const party of ['client', 'seller_side'] as const) {
+              const w = awayOn(fresh, party, iso);
+              if (!w) continue;
+              const kind = party === 'client' ? 'buyer_delay' : 'seller_delay';
+              const title = `Target ${label} ${prettyDate(iso)} falls while ${AVAILABILITY_PARTY_LABEL[party]} is away (${prettyDate(w.from)} to ${prettyDate(w.until)})`;
+              if (Object.values(fresh.issues).some((i) => i.kind === kind && i.title === title && (i.status === 'open' || i.status === 'negotiating'))) continue;
+              await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind, title, detail: 'Move the target date or plan signing before they go.', gate: 'none' }).catch((err) => this.ports.log('availability clash could not be raised', err));
             }
           }
         }
@@ -936,6 +961,16 @@ export class EngineService {
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'confirm_with_client', `confirm_with_client:${p.noteId}:${id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${c.saidBy} says ${claim}; ask the client to confirm it before it is recorded\nTemplate: confirm_with_client`))) {
                   try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('confirmation request could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
                 }
+              } else if (c.type === 'record_price_change') {
+                const to = c.toPennies ?? (fresh.purchasePricePennies != null && c.reductionPennies ? fresh.purchasePricePennies - c.reductionPennies : null);
+                if (!to || to <= 0) throw new Error('The price on file is not known, so a reduction cannot be applied. Record the new price in full.');
+                await this.run(tenantId, matterId, { type: 'record_price_change', actor: e.actor, toPennies: to, reason: c.reason });
+              } else if (c.type === 'resolve_issue') {
+                const open = Object.values(fresh.issues).find((i) => i.kind === c.kind && (i.status === 'open' || i.status === 'negotiating'));
+                if (!open) throw new Error(`No open ${c.kind.replace(/_/g, ' ')} issue on the case.`);
+                await this.run(tenantId, matterId, { type: 'resolve_issue', actor: e.actor, issueId: open.id, resolution: c.resolution, note: c.note });
+              } else if (c.type === 'record_availability') {
+                await this.run(tenantId, matterId, { type: 'record_availability', actor: e.actor, party: c.party, from: c.from, until: c.until, note: c.note });
               } else {
                 await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
               }

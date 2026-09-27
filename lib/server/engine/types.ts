@@ -215,6 +215,7 @@ export const EVENT_TYPES = [
   'transfer_deed_executed',
   'deed_of_trust_executed',
   'sdlt_not_required',
+  'availability_recorded',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -460,7 +461,22 @@ export type NoteCommand =
   | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }
   /** Dates mentioned for exchange or completion: the case's targets, which a person sets (contractual dates after exchange are not touched by a note). */
   | { type: 'set_target_dates'; targetExchangeDate: string | null; targetCompletionDate: string | null; reason: string }
+  /** The price was renegotiated: to a figure, or by a reduction from the price on file. */
+  | { type: 'record_price_change'; toPennies: number | null; reductionPennies: number | null; reason: string }
+  /** An open issue of a kind a person may close on someone's word (the chain is ready, the delay is over). */
+  | { type: 'resolve_issue'; kind: IssueKind; resolution: IssueResolution; note: string }
+  /** Someone is away between two dates. */
+  | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
+
+export const AVAILABILITY_PARTIES = ['client', 'seller_side', 'agent', 'lender'] as const;
+export type AvailabilityParty = (typeof AVAILABILITY_PARTIES)[number];
+export interface AvailabilityWindow { id: string; party: AvailabilityParty; from: string; until: string; note: string; recordedAt: string }
+/** Windows still to come or in progress, as of now. */
+export const activeAvailability = (s: MatterState, now: Date): AvailabilityWindow[] => (s.availability ?? []).filter((w) => new Date(`${w.until}T23:59:59Z`).getTime() >= now.getTime());
+export const awayNow = (s: MatterState, party: AvailabilityParty, now: Date): AvailabilityWindow | null => activeAvailability(s, now).find((w) => w.party === party && new Date(`${w.from}T00:00:00Z`).getTime() <= now.getTime()) ?? null;
+/** The window a date falls in, if any. */
+export const awayOn = (s: MatterState, party: AvailabilityParty, iso: string): AvailabilityWindow | null => (s.availability ?? []).find((w) => w.party === party && w.from <= iso && iso <= w.until) ?? null;
 
 /**
  * One thing a note appears to say. `quote` must be a verbatim span of the note — the
@@ -690,7 +706,7 @@ export interface AcknowledgementSpec {
 export interface ClientUpdateSpec {
   template: string;
   /** Who heard: the client unless said otherwise (the agent hears that we chased, too). */
-  recipientRole?: 'client' | 'estate_agent';
+  recipientRole?: 'client' | 'estate_agent' | 'lender';
   channel: 'email' | 'whatsapp' | 'mock';
   messageId?: string | null;
   triggeredByEventId?: string | null;
@@ -957,6 +973,8 @@ export interface Payloads {
   deed_of_trust_executed: { parties: string[]; shares?: string | null; documentId?: string | null };
   /** No SDLT return is due (below the threshold / no chargeable consideration) — a person's determination, recorded. */
   sdlt_not_required: { reason: string };
+  /** Someone on the case is away for a period: chases to them wait, updates say so, target dates are checked against it. */
+  availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
 }
 
 /** The seller's protocol forms as the pipeline reads them (facts for disclosure; every "yes" is a client-advice point). */
@@ -1401,6 +1419,8 @@ export interface MatterState {
   clientUpdateLastSentAt: Record<string, string>;
   /** When the client was last told about each open wait (`key:subject`). */
   clientToldAt: Record<string, string>;
+  /** Who is away when (docs: context awareness). */
+  availability: AvailabilityWindow[];
   chasesSent: number;
   /** What we have told the sender we received, so nothing is acknowledged twice. */
   acknowledgements: Array<{ forEventId: string; recipientRole: string; at: string }>;
@@ -1506,6 +1526,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     clientUpdatesSent: 0,
     clientUpdateLastSentAt: {},
     clientToldAt: {},
+    availability: [],
     chasesSent: 0,
     acknowledgements: [],
     bankDetails: {},

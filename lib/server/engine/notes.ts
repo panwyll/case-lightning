@@ -16,7 +16,8 @@
  * The extractor itself is a port. Without a model key the deterministic reader below
  * still catches the unambiguous phrasings, so the feature degrades to "less", not "wrong".
  */
-import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
+import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, AVAILABILITY_PARTIES, type AvailabilityParty, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
+import { ISSUE_RESOLUTIONS, RESOLUTION_LABEL } from './issues';
 import { ISSUE_KIND_SPEC, type IssueGate, type IssueKind } from './issues';
 
 /** What an extractor hands back, before validation. */
@@ -40,6 +41,9 @@ export interface NoteExtractionContext {
   /** Today, so "14 November" gets the right year. */
   now?: string;
 }
+
+/** Issues that word from the right person may close: waits and chain positions, never a defect or a check. */
+export const RESOLVABLE_ON_SOMEONES_WORD: IssueKind[] = ['chain_dependency', 'seller_delay', 'buyer_delay', 'search_delayed', 'enquiry_unanswered', 'mortgage_offer_outstanding', 'freeholder_info_outstanding', 'survey_report_outstanding', 'transaction_at_risk'];
 
 /** Where a note's words come from: decides what they may propose. */
 export interface NoteSource { kind: NoteKind; from?: NoteSender | null }
@@ -76,6 +80,27 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
     }
     const saidBy = source.from?.name || source.from?.address || RELATION_LABEL[relation];
     return [action, { ...action, id: `${action.id}b`, kind: 'confirm_with_client', summary: `${RELATION_LABEL[relation]} says completion on ${when}. Ask the client to confirm the date`, command: { type: 'confirm_with_client', subject, decision: 'agreed', saidBy, quote: action.quote, detail: when } }];
+  }
+  // A renegotiated price: the file is amended (a person approves) and, unless the client said it, the client is asked to confirm the new terms.
+  if (action.command?.type === 'record_price_change' && relation !== 'client') {
+    const c = action.command;
+    const terms = c.toPennies ? `a revised price of ${pounds(c.toPennies)}` : `a price reduction of ${pounds(c.reductionPennies ?? 0)}`;
+    const saidBy = source.from?.name || source.from?.address || RELATION_LABEL[relation];
+    return [action, { ...action, id: `${action.id}b`, kind: 'confirm_with_client', summary: `${RELATION_LABEL[relation]} says ${terms} is agreed. Ask the client to confirm`, command: { type: 'confirm_with_client', subject: 'accept_terms', decision: 'accepted', saidBy, quote: action.quote, detail: terms } }];
+  }
+  // Who is away is who wrote in: the party comes from the sender, and a stranger's plans are not the case's.
+  if (action.command?.type === 'record_availability') {
+    const party: AvailabilityParty | null = relation === 'client' ? 'client' : relation === 'other_side' ? 'seller_side' : relation === 'agent' ? 'agent' : relation === 'lender' ? 'lender' : null;
+    if (!party) return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}; not recorded)` }];
+    return [{ ...action, summary: action.summary.replace(/^The client/, party === 'client' ? 'The client' : AVAILABILITY_PARTY_LABEL[party].replace(/^the /, 'The ')), command: { ...action.command, party } }];
+  }
+  // The lender or broker reporting a problem with the offer: the confirmation goes back to them, and the client hears.
+  if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
+    return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
+  }
+  // Only the client or the other side closes a wait on their word; an agent's "the chain is ready" is a claim to check.
+  if (action.command?.type === 'resolve_issue' && relation !== 'client' && relation !== 'other_side' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}; confirm with the solicitors before closing it)` }];
   }
   if (action.command?.type === 'client_decision_recorded' && relation !== 'client') {
     // Hearsay about the client is not dropped: the client is asked, and their own answer is what gets recorded.
@@ -121,7 +146,45 @@ export function datesIn(text: string, now: Date): Array<{ iso: string; index: nu
   for (const m of text.matchAll(dm)) { seen.add(m.index!); settle(Number(m[1]), month(m[2]), m[3] ? Number(m[3]) : null, m.index!); }
   for (const m of text.matchAll(md)) { if (![...seen].some((i) => Math.abs(i - m.index!) < 12)) { seen.add(m.index!); settle(Number(m[2]), month(m[1]), m[3] ? Number(m[3]) : null, m.index!); } }
   for (const m of text.matchAll(num)) settle(Number(m[1]), Number(m[2]) - 1, Number(m[3]), m.index!);
-  return out.sort((a, b) => a.index - b.index);
+  out.sort((a, b) => a.index - b.index);
+  // "from 10 October until the 20th": a bare day after a dated one is in the same month.
+  if (out.length) {
+    const bare = /\b(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b(?!\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))/gi;
+    for (const m of text.matchAll(bare)) {
+      if (out.some((d) => Math.abs(d.index - m.index!) < 3)) continue;
+      const prev = [...out].reverse().find((d) => d.index < m.index!);
+      if (!prev) continue;
+      const [y, mo] = prev.iso.split('-').map(Number);
+      const day = Number(m[1]);
+      const d = new Date(Date.UTC(y, mo - 1, day));
+      if (d.getUTCMonth() !== mo - 1) continue;
+      out.push({ iso: `${y}-${pad(mo)}-${pad(day)}`, index: m.index! });
+    }
+    out.sort((a, b) => a.index - b.index);
+  }
+  return out;
+}
+
+/** A UK sort code and account number in the text, with the account name if one is given beside them. */
+export function bankDetailsIn(text: string): { sortCode: string; accountNumber: string; accountName: string | null } | null {
+  const sort = text.match(/\b(\d{2})[-\s]?(\d{2})[-\s]?(\d{2})\b(?![-\s]?\d)/);
+  const acct = text.match(/\b(\d{8})\b/);
+  if (!sort || !acct) return null;
+  const name = text.match(/(?:account name|a\/c name|name on the account|payee)\s*[:\-]?\s*([^\n,]{2,80})/i);
+  return { sortCode: `${sort[1]}${sort[2]}${sort[3]}`, accountNumber: acct[1], accountName: name ? name[1].trim() : null };
+}
+
+/** "£245,000", "£245k", "245,000 pounds" → pennies. */
+export function poundsIn(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/£\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{2}))?\s?(k|K)?\b|\b(\d{1,3}(?:,\d{3})+|\d+)\s?(k|K)?\s+(?:pounds|quid)\b/g)) {
+    const whole = (m[1] ?? m[4] ?? '').replace(/,/g, '');
+    const k = m[3] ?? m[5];
+    if (!whole) continue;
+    const pennies = Math.round(Number(whole) * (k ? 1000 : 1) * 100 + Number(m[2] ?? 0));
+    if (pennies > 0) out.push(pennies);
+  }
+  return out;
 }
 
 /** "exchange on 7 Nov and complete on 14 Nov": each date belongs to the nearest exchange/completion word before it. */
@@ -157,11 +220,28 @@ export function issueConsequence(kind: string): string | null {
   }
 }
 
+export const pounds = (pennies: number): string => `£${(pennies / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
+export const AVAILABILITY_PARTY_LABEL: Record<AvailabilityParty, string> = { client: 'the client', seller_side: "the seller's side", agent: 'the estate agent', lender: 'the lender or broker' };
+
+/** What applying this command does, as the person sees it before they tick the line. */
+export function effectText(c: NoteCommand): string {
+  switch (c.type) {
+    case 'client_decision_recorded': return `Records the client's decision: ${c.subject.replace(/_/g, ' ')}, ${c.decision.replace(/_/g, ' ')}`;
+    case 'confirm_with_client': return `Asks the client to confirm that ${claimText(c.subject, c.decision, c.detail)}; recorded only when they say so`;
+    case 'set_target_dates': return `Sets the target dates: ${[c.targetExchangeDate ? `exchange ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `completion ${prettyDate(c.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`;
+    case 'record_price_change': return c.toPennies ? `Records the price as ${pounds(c.toPennies)}${c.reductionPennies ? '' : ''} and tells the lender if there is one` : `Records a price reduction of ${pounds(c.reductionPennies ?? 0)} and tells the lender if there is one`;
+    case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
+    case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
+    case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
+  }
+}
+
 /** The claim put to the client, in their terms: "you are happy with the survey and want to proceed". */
 export function claimText(subject: ClientDecisionSubject, decision: string, detail?: string | null): string {
   const k = `${subject}:${decision}`;
   if (k === 'completion_date:agreed') return `you are happy to complete on ${detail ?? 'the date proposed'}`;
   if (k === 'completion_date:declined') return `the completion date proposed does not work for you`;
+  if (k === 'accept_terms:accepted' && detail) return `you have agreed ${detail}`;
   const known: Record<string, string> = {
     'physical_condition:satisfied': 'you are happy with the survey and want to proceed',
     'physical_condition:renegotiate': 'you want to renegotiate the price following the survey',
@@ -245,6 +325,24 @@ export function commandProblem(c: NoteCommand): string | null {
     for (const d of [c.targetExchangeDate, c.targetCompletionDate]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return `"${d}" is not a date (YYYY-MM-DD)`;
     return null;
   }
+  if (c.type === 'record_price_change') {
+    if (!c.toPennies && !c.reductionPennies) return 'no price was given';
+    for (const v of [c.toPennies, c.reductionPennies]) if (v != null && (!Number.isInteger(v) || v <= 0)) return 'the price must be a positive whole number of pennies';
+    if (!c.reason?.trim()) return 'a price change needs a reason';
+    return null;
+  }
+  if (c.type === 'resolve_issue') {
+    if (!RESOLVABLE_ON_SOMEONES_WORD.includes(c.kind)) return `a "${c.kind}" issue is not closed on someone's word`;
+    if (!(ISSUE_RESOLUTIONS as readonly string[]).includes(c.resolution)) return `"${c.resolution}" is not a resolution`;
+    if (!ISSUE_KIND_SPEC[c.kind].resolutions.includes(c.resolution)) return `"${ISSUE_KIND_SPEC[c.kind].label}" is not resolved by "${c.resolution}"`;
+    return null;
+  }
+  if (c.type === 'record_availability') {
+    if (!AVAILABILITY_PARTIES.includes(c.party)) return `"${c.party}" is not a party`;
+    for (const d of [c.from, c.until]) if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return `"${d}" is not a date (YYYY-MM-DD)`;
+    if (c.until < c.from) return 'the period ends before it starts';
+    return null;
+  }
   if (c.type === 'raise_issue') {
     if (!ISSUE_KIND_SPEC[c.kind as IssueKind]) return `"${c.kind}" is not an issue kind`;
     if (!c.title?.trim()) return 'the issue has no title';
@@ -262,15 +360,7 @@ export function summariseNoteActions(input: { kind: NoteKind; text: string; acti
   L.push(`${source} on this matter appears to record ${input.actions.length} thing${input.actions.length === 1 ? '' : 's'} the case should know about. Nothing has been applied — approve to apply, or reject with a reason.`);
   L.push('');
   for (const a of input.actions) {
-    const effect = !a.command
-      ? 'For information only — nothing to record.'
-      : a.command.type === 'client_decision_recorded'
-      ? `Would record the client's decision: ${a.command.subject.replace(/_/g, ' ')} = ${a.command.decision.replace(/_/g, ' ')}.`
-      : a.command.type === 'confirm_with_client'
-      ? `Would ask the client to confirm that ${claimText(a.command.subject, a.command.decision, a.command.detail)}. Recorded only when they say so themselves.`
-      : a.command.type === 'set_target_dates'
-      ? `Would set the target dates: ${[a.command.targetExchangeDate ? `exchange ${prettyDate(a.command.targetExchangeDate)}` : null, a.command.targetCompletionDate ? `completion ${prettyDate(a.command.targetCompletionDate)}` : null].filter(Boolean).join(', ')}.`
-      : `Would raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? '' : `, holding ${a.command.gate}`}${issueConsequence(a.command.kind) ? `, and ${issueConsequence(a.command.kind)}` : ''}.`;
+    const effect = !a.command ? 'For information only — nothing to record.' : `${effectText(a.command)}.`;
     L.push(`${a.id}. ${a.summary}`);
     L.push(`    “${a.quote}”`);
     L.push(`    ${effect}`);
@@ -374,7 +464,7 @@ const RULES: Rule[] = [
   },
   {
     // "I've lost my job so the mortgage may be a problem" — a change the lender must hear about before exchange.
-    test: /\b(lost (my|his|her|their) job|redundan\w*|job (has )?changed|chang\w* (my|his|her|their) job|new job|(mortgage|offer|application) (is|may be|might be|could be|will be) (a problem|in doubt|at risk|affected)|(mortgage|offer|application)( has been| was)? (declined|refused|withdrawn|rejected|pulled)|(income|salary|pay) (has )?(dropped|changed|reduced|gone down|fallen))\b/i,
+    test: /\b(lost (my|his|her|their) job|redundan\w*|job (has )?changed|chang\w* (my|his|her|their) job|new job|(mortgage|offer|application) (is|may be|might be|could be|will be) (a problem|in doubt|at risk|affected)|(mortgage|offer|application) (may|might|could|will|is going to|is to) (be )?(withdrawn|declined|refused|pulled|rejected)|(mortgage|offer|application)( has been| was)? (declined|refused|withdrawn|rejected|pulled)|(income|salary|pay) (has )?(dropped|changed|reduced|gone down|fallen))\b/i,
     build: (sentence) => ({
       kind: 'issue',
       summary: 'The mortgage may be at risk',
@@ -419,6 +509,31 @@ const RULES: Rule[] = [
     }),
   },
   {
+    // "the chain is now complete / everyone is ready" — closes the chain wait, on the right person's word.
+    test: /\b(chain (is|are) (now )?(complete|ready|in place|all set)|top of the chain is (now )?ready|everyone (in the chain )?is (now )?ready|no (onward )?chain|chain[- ]free)\b/i,
+    not: /\b(not|isn'?t|aren'?t|still|hope|hopefully|should be|once|when)\b/i,
+    build: (sentence) => ({
+      kind: 'information',
+      summary: 'The chain is reported ready',
+      quote: sentence,
+      confidence: 0.65,
+      command: { type: 'resolve_issue', kind: 'chain_dependency', resolution: 'chain_ready', note: sentence.trim().slice(0, 300) },
+    }),
+  },
+  {
+    // "we've agreed £5,000 off" / "the price is now £245,000" — the file's price, once a person approves; the client confirms unless they said it.
+    test: /\b(agreed|accepted|reduc\w*|knock\w*|price (is|will be) now|new price|revised price|come down|drop\w*|off the (price|asking))\b/i,
+    also: /£\s?\d|\d\s?(k|K)\b|\bpounds\b/,
+    not: /\b(deposit|gift|fee|fees|retention|stamp duty|sdlt|rent|service charge|ground rent|survey cost|quote)\b/i,
+    build: (sentence) => {
+      const amounts = poundsIn(sentence);
+      const off = /\b(off|reduction of|reduce\w* by|knock\w*|down by|drop\w* by)\b/i.test(sentence);
+      const amount = amounts[0] ?? 0;
+      const command: NoteCommand = off ? { type: 'record_price_change', toPennies: null, reductionPennies: amount, reason: sentence.trim().slice(0, 200) } : { type: 'record_price_change', toPennies: amount, reductionPennies: null, reason: sentence.trim().slice(0, 200) };
+      return { kind: 'information', summary: off ? `A price reduction of ${pounds(amount)} was mentioned` : `A revised price of ${pounds(amount)} was mentioned`, quote: sentence, confidence: 0.65, command };
+    },
+  },
+  {
     // a problem mentioned in passing — raised as an issue for a person to classify properly.
     test: /\b(boundary|dispute|japanese knotweed|knotweed|subsidence|flying freehold|unregistered|no building regs?|without (planning|building)|damp problem|leak)\b/i,
     build: (sentence) => ({
@@ -457,6 +572,24 @@ export class DeterministicNoteReader {
     const used = new Set<string>();
     const now = input.now ? new Date(input.now) : new Date();
     for (const sentence of sentences) {
+      // "we are away from 10 October until the 20th" — a window, when both ends are there.
+      if (/\b(away|on holiday|abroad|out of the country|unavailable|not around|off grid|on leave|out of (the )?office)\b/i.test(sentence)) {
+        const ds = datesIn(sentence, now);
+        if (ds.length >= 2) {
+          const from = ds[0].iso < ds[1].iso ? ds[0].iso : ds[1].iso;
+          const until = ds[0].iso < ds[1].iso ? ds[1].iso : ds[0].iso;
+          out.push({ kind: 'information', summary: `The client is away ${prettyDate(from)} to ${prettyDate(until)}`, quote: sentence, confidence: 0.7, command: { type: 'record_availability', party: 'client', from, until, note: sentence.trim().slice(0, 200) } });
+          used.add(`issue:The client will be unavailable for a period`);
+          continue;
+        }
+        if (ds.length === 1 && /\b(until|till|back on|return\w* on|through)\b/i.test(sentence)) {
+          const until = ds[0].iso;
+          const from = now.toISOString().slice(0, 10) < until ? now.toISOString().slice(0, 10) : until;
+          out.push({ kind: 'information', summary: `The client is away until ${prettyDate(until)}`, quote: sentence, confidence: 0.65, command: { type: 'record_availability', party: 'client', from, until, note: sentence.trim().slice(0, 200) } });
+          used.add(`issue:The client will be unavailable for a period`);
+          continue;
+        }
+      }
       if (!DATE_RULE.test.test(sentence) || !DATE_RULE.also!.test(sentence) || DATE_RULE.not!.test(sentence)) continue;
       const dates = targetDatesIn(sentence, now);
       if (!dates) continue;

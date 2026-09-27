@@ -605,6 +605,11 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
       break;
     }
+    case 'availability_recorded': {
+      const p = e.payload as Payloads['availability_recorded'];
+      s.availability = [...(s.availability ?? []).filter((w) => w.id !== p.id), { id: p.id, party: p.party, from: p.from, until: p.until, note: p.note, recordedAt: e.createdAt }];
+      break;
+    }
     case 'target_dates_changed': {
       const p = e.payload as Payloads['target_dates_changed'];
       s.targetExchangeDate = p.targetExchangeDate;

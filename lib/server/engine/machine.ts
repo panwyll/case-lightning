@@ -99,6 +99,8 @@ import {
   NOTE_KINDS,
   type NoteKind,
   type NoteSender,
+  type AvailabilityParty,
+  AVAILABILITY_PARTIES,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -134,6 +136,7 @@ type CommandBody =
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
+  | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
   | { type: 'mortgage_offer_withdrawn'; actor: Actor; reason: string; lender?: string | null }
   | { type: 'withdraw_enquiry'; actor: Actor; enquiryId: string; reason: string }
@@ -244,6 +247,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'abandon_matter',
   'set_target_dates',
   'change_completion_date',
+  'record_availability',
   'notice_to_complete_served',
   'mortgage_offer_withdrawn',
   'withdraw_enquiry',
@@ -1255,6 +1259,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (targetExchangeDate === s.targetExchangeDate && targetCompletionDate === s.targetCompletionDate) reject('Target dates are unchanged.');
       return [{ type: 'target_dates_changed', actor: cmd.actor, payload: { targetExchangeDate, targetCompletionDate, reason: cmd.reason ?? null, previous: { targetExchangeDate: s.targetExchangeDate, targetCompletionDate: s.targetCompletionDate } } }];
     }
+    case 'record_availability': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('Availability is recorded by a person.', 403);
+      if (!AVAILABILITY_PARTIES.includes(cmd.party)) reject(`Unknown party "${cmd.party}".`, 400);
+      for (const d of [cmd.from, cmd.until]) if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(d))) reject('Dates must be YYYY-MM-DD.', 400);
+      if (cmd.until < cmd.from) reject('The end of the period is before its start.', 400);
+      const id = `AV-${String((s.availability ?? []).length + 1).padStart(3, '0')}`;
+      return [{ type: 'availability_recorded', actor: cmd.actor, payload: { id, party: cmd.party, from: cmd.from, until: cmd.until, note: cmd.note?.trim() || '' } }];
+    }
     case 'change_completion_date': {
       requireEnrolled(s);
       if (!s.exchange.exchangedAt) reject('Contracts are not exchanged; set target dates instead.');
@@ -1896,6 +1909,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           confidence: 1,
           command: { type: 'raise_issue', kind: 'unknown_correspondent', title: `${who} wrote in; not on the file`, detail: firstLine.slice(0, 400), gate: 'none' },
         });
+      }
+      for (const a of actions) {
+        const c = a.command;
+        if (c?.type === 'resolve_issue' && !Object.values(s.issues).some((i) => i.kind === c.kind && (i.status === 'open' || i.status === 'negotiating'))) {
+          a.summary = `${a.summary} (no open ${ISSUE_KIND_SPEC[c.kind]?.label.toLowerCase() ?? c.kind} issue on the case; noted for information)`;
+          a.kind = 'information';
+          a.command = null;
+        }
       }
       const actionable = actions.filter((a) => a.command);
       const events: NewEvent[] = [];

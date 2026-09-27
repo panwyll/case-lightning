@@ -213,7 +213,107 @@ test('a gift, a change of name and being away are read as the issues they are', 
   const kinds = async (t: string) => (await r.extract({ tenantId: TENANT, matterId: MATTER, text: t, kind: 'email', now: '2026-09-27' })).map((x) => (x.command as { kind?: string } | null)?.kind ?? x.command?.type);
   assert.ok((await kinds('My dad is giving us £20,000 towards the deposit.')).includes('source_of_funds'));
   assert.ok((await kinds('Also I got married in June so my name has changed to Okafor-Reid.')).includes('cdd_refresh'));
-  assert.ok((await kinds('We are away from 10 October until the 20th, so nothing can be signed then.')).includes('buyer_delay'));
+  assert.ok((await kinds('We are away from 10 October until the 20th, so nothing can be signed then.')).includes('record_availability'), 'a dated absence is a window, not a delay');
+  assert.ok((await kinds('We are away for a couple of weeks from next Friday.')).includes('buyer_delay'), 'an undated one is a delay to plan around');
   assert.ok((await kinds('The seller says the replies to enquiries should be with you next week.')).includes('seller_delay'));
   assert.ok((await kinds('The broker expects the offer on Friday.')).includes('mortgage_offer_outstanding'));
+});
+
+// ───────────────────────────── context: who is away ─────────────────────────────
+
+test('"we are away 10 to 20 October" is remembered: no chase while away, the update says so, and a target date in the window is flagged', async () => {
+  const { clientOverview } = await import('../../../lib/server/engine/client-overview');
+  const h = await enrolled();
+  // Something is waiting on the client: the proof-of-funds form.
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER, {});
+  const res = await email(h, 'Hi, just to let you know we are away from 10 October until the 20th, so nothing can be signed then.', CLIENT);
+  const note = Object.values(res.state.notes)[0];
+  const cmd = note.actions.find((a) => a.command?.type === 'record_availability')?.command as { party: string; from: string; until: string } | undefined;
+  assert.deepEqual(cmd && { party: cmd.party, from: cmd.from, until: cmd.until }, { party: 'client', from: '2026-10-10', until: '2026-10-20' });
+  const after = await approve(h);
+  assert.equal(after.state.availability.length, 1);
+
+  // Before they go: the update asks for what is outstanding before the date.
+  const before = clientOverview(after.state, new Date('2026-10-01T09:00:00Z'));
+  assert.match(before.text, /before you go away on Saturday, 10 October 2026/i);
+
+  // While away: no chase to the client, and the update says nothing is needed from them.
+  h.ports.setNow(new Date('2026-10-14T09:00:00Z'));
+  const chasesBefore = h.ports.chaser.chases.filter((c) => c.recipientRole === 'client').length;
+  await h.svc.tick(TENANT, MATTER);
+  assert.equal(h.ports.chaser.chases.filter((c) => c.recipientRole === 'client').length, chasesBefore, 'nobody is chased while away');
+  const during = clientOverview(after.state, new Date('2026-10-14T09:00:00Z'));
+  assert.match(during.text, /away until Tuesday, 20 October 2026; nothing here needs you before you are back/);
+  assert.match(during.text, /When you are back we will still need/);
+  // A message that already said so does not say it again for a few days, and still asks nothing of them.
+  const quiet = clientOverview(await h.svc.getState(TENANT, MATTER), new Date('2026-10-14T09:00:00Z'));
+  assert.doesNotMatch(quiet.text, /waiting on you|before you go away/i);
+
+  // Back: chased as normal.
+  h.ports.setNow(new Date('2026-10-26T09:00:00Z'));
+  await h.svc.tick(TENANT, MATTER);
+  assert.ok(h.ports.chaser.chases.filter((c) => c.recipientRole === 'client').length > chasesBefore, 'chased once back');
+
+  // A target completion inside the window raises a delay issue naming it.
+  await h.svc.run(TENANT, MATTER, { type: 'set_target_dates', actor: USER, targetCompletionDate: '2026-10-15' });
+  const s = await h.svc.getState(TENANT, MATTER);
+  const clash = Object.values(s.issues).find((i) => i.kind === 'buyer_delay' && /falls while the client is away/.test(i.title));
+  assert.ok(clash, 'the clash is named');
+});
+
+test('the brief lists who is away, for the Q&A and the case view', async () => {
+  const { caseBrief } = await import('../../../lib/server/engine/brief');
+  const h = await enrolled();
+  await h.svc.run(TENANT, MATTER, { type: 'record_availability', actor: USER, party: 'seller_side', from: '2026-10-01', until: '2026-10-08', note: 'Seller\'s solicitor on leave' });
+  const b = caseBrief(await h.svc.getState(TENANT, MATTER), new Date('2026-09-28T09:00:00Z'));
+  assert.deepEqual(b.away, [{ who: "the seller's side", from: '2026-10-01', until: '2026-10-08' }]);
+  const gone = caseBrief(await h.svc.getState(TENANT, MATTER), new Date('2026-11-01T09:00:00Z'));
+  assert.deepEqual(gone.away, [], 'a past window is forgotten');
+});
+
+// ───────────────────────────── price, chain, bank details, the broker ─────────────────────────────
+
+test('the agent reporting "£5,000 off" amends the price once approved, tells the lender, and asks the client to confirm the terms', async () => {
+  const h = await enrolled();
+  await h.svc.run(TENANT, MATTER, { type: 'record_price_change', actor: USER, toPennies: 25_000_000, reason: 'agreed price' });
+  const res = await email(h, 'Good news, the seller has agreed £5,000 off following the survey.', AGENT);
+  const types = Object.values(res.state.notes)[0].actions.map((a) => a.command?.type);
+  assert.ok(types.includes('record_price_change') && types.includes('confirm_with_client'), types.join(','));
+  const after = await approve(h);
+  assert.equal(after.state.purchasePricePennies, 24_500_000);
+  assert.ok(Object.values(after.state.issues).some((i) => i.kind === 'lender_approval'), 'the lender must hear of a price change');
+  const ask = h.ports.clientComms.sent.find((m) => m.template === 'confirm_with_client');
+  assert.match(String(ask?.context.claim), /you have agreed a price reduction of £5,000/);
+});
+
+test('"the chain is now complete" closes the chain wait on the other side\'s word, but an agent saying it is a claim to check', async () => {
+  const h = await enrolled();
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'chain_dependency', title: 'Top of the chain not ready', detail: null });
+  const OTHER: NoteSender = { address: 'sol@otherside.example', name: 'Other Side LLP', relation: 'other_side' };
+  const fromAgent = await email(h, 'Great news, the chain is now complete and everyone is ready to go.', AGENT);
+  const agentCmds = Object.values(fromAgent.state.notes).at(-1)!.actions.map((a) => a.command?.type ?? 'none');
+  assert.ok(!agentCmds.includes('resolve_issue'), 'an agent does not close the chain wait');
+  const fromOther = await email(h, 'We confirm the chain is now complete and our client is ready to exchange.', OTHER);
+  const otherCmds = Object.values(fromOther.state.notes).at(-1)!.actions.map((a) => a.command?.type ?? 'none');
+  assert.ok(otherCmds.includes('resolve_issue'), otherCmds.join(','));
+  const after = await approve(h);
+  assert.equal(Object.values(after.state.issues).find((i) => i.kind === 'chain_dependency')?.status, 'resolved');
+});
+
+test('bank details in an email are found, with the name beside them', async () => {
+  const { bankDetailsIn } = await import('../../../lib/server/engine/notes');
+  assert.deepEqual(bankDetailsIn('Please send the deposit to sort code 20-45-67, account number 12345678. Account name: Other Side LLP Client Account.'), { sortCode: '204567', accountNumber: '12345678', accountName: 'Other Side LLP Client Account.' });
+  assert.equal(bankDetailsIn('Our ref 12345678 and the survey is on 14/11/2026.'), null, 'a reference and a date are not a sort code');
+  assert.equal(bankDetailsIn('Call me on 07700 900123.'), null);
+});
+
+test('the broker reporting a problem with the offer: the broker is asked to confirm, the client is told', async () => {
+  const h = await enrolled();
+  const BROKER: NoteSender = { address: 'broker@mortgages.example', name: 'Best Broker', relation: 'lender' };
+  const res = await email(h, "Just a heads up, the lender has said the offer may be withdrawn following the valuation.", BROKER);
+  const cmd = Object.values(res.state.notes)[0].actions.find((a) => (a.command as { kind?: string } | null)?.kind === 'mortgage_at_risk')?.command as { detail: string } | undefined;
+  assert.match(cmd?.detail ?? '', /^Reported by the lender or broker/);
+  await approve(h);
+  assert.ok(h.ports.chaser.notices.some((n) => n.recipientRole === 'lender' && n.template === 'confirm_offer_status'), 'the broker is asked');
+  assert.ok(h.ports.clientComms.sent.some((m) => m.template === 'mortgage_status_client'), 'the client is told');
 });

@@ -15,6 +15,7 @@
  * Pure in (state, now).
  */
 import { ISSUE_KIND_SPEC, type Workstream } from './issues';
+import { activeAvailability } from './types';
 import { caseHealth, type CaseHealth, type HealthBand } from './health';
 import { lifecycle, workstreams, nextActions, LIFECYCLE_LABEL, type Lifecycle, type WorkstreamStatus } from './graph';
 import { openIssues, openWaits, pendingDecisions, type MatterState } from './types';
@@ -79,6 +80,8 @@ export interface CaseBrief {
   workstreams: Array<{ id: Workstream; label: string; status: WorkstreamStatus; detail: string }>;
   /** Everything outstanding with someone else, with its clock. */
   waiting: BriefWait[];
+  /** Who is away when, from what they told us. */
+  away: Array<{ who: string; from: string; until: string }>;
   /** Open issues — the legal problems. NEVER shown to a client by the automated channel. */
   issues: Array<{ id: string; kind: string; label: string; title: string; gate: string; severity: string }>;
   decisionsPending: Array<{ kind: string; subject: string | null }>;
@@ -135,6 +138,7 @@ export function caseBrief(s: MatterState, now: Date = new Date(), cal: WorkingCa
     health: { band: health.band, headline: health.reasons[0]?.headline ?? null },
     workstreams: workstreams(s, now).map((w) => ({ id: w.id, label: w.label, status: w.status, detail: w.detail })),
     waiting,
+    away: activeAvailability(s, now).map((w) => ({ who: w.party === 'client' ? 'you' : w.party === 'seller_side' ? "the seller's side" : w.party === 'agent' ? 'the estate agent' : 'your lender', from: w.from, until: w.until })),
     issues: openIssues(s).map((i) => ({ id: i.id, kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title, gate: i.gate, severity: i.severity })),
     decisionsPending: pendingDecisions(s).filter((d) => d.kind !== 'auto_clear').map((d) => ({ kind: d.kind, subject: d.subject })),
     nextActions: nextActions(s, now).slice(0, 6).map((a) => ({ what: a.what, who: a.who, unblocks: a.unblocks })),

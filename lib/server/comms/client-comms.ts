@@ -269,17 +269,18 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { channel: 'email' as const, messageId: draft.messageId };
   }
 
-  async sendPartyNotice(input: { tenantId: string; matterId: string; recipientRole: 'estate_agent'; template: string; context: Record<string, unknown> }) {
+  async sendPartyNotice(input: { tenantId: string; matterId: string; recipientRole: 'estate_agent' | 'lender'; template: string; context: Record<string, unknown> }) {
     const baseNotice = PARTY_NOTICES[input.template];
     if (!baseNotice) throw new Error(`Unknown notice template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseNotice);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
-    const agent = info.contacts.estate_agent;
+    const agent = input.recipientRole === 'lender' ? info.contacts.lender : info.contacts.estate_agent;
     if (!agent?.email || !this.deps.mailbox || !info.feeEarnerUserId) return null;
     const ctx = input.context;
     const vars = {
       matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName,
       agentName: agent.name || 'Sirs',
+      quote: typeof ctx.quote === 'string' ? ctx.quote : '',
       waitingOn: typeof ctx.waitingOn === 'string' ? ctx.waitingOn : '', waitingFor: typeof ctx.waitingFor === 'string' ? ctx.waitingFor : '',
       nextChaseNote: typeof ctx.nextChase === 'string' && ctx.nextChase ? ` and will chase again on ${ctx.nextChase} if we have not heard` : ' and will keep following it up',
     };

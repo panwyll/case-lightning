@@ -84,7 +84,7 @@ test('the summary a person reads quotes every line and says what each would do',
   assert.match(s, /A call on this matter/);
   assert.match(s, /Nothing has been applied/);
   assert.match(s, /“She is happy with the damp report”/);
-  assert.match(s, /Would record the client's decision: physical condition = satisfied/);
+  assert.match(s, /Records the client's decision: physical condition, satisfied/);
   assert.match(s, /For information only/);
 });
 

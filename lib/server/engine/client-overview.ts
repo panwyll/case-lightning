@@ -8,7 +8,8 @@
  * sent ten minutes after the form went out does not say "we are still waiting on your form".
  */
 import { caseBrief, type BriefWait } from './brief';
-import type { MatterState } from './types';
+import { activeAvailability, awayNow, type MatterState } from './types';
+import { prettyDate } from './notes';
 
 const TOLD_QUIET_MS = 3 * 24 * 3_600_000;
 const JUST_RAISED_MS = 24 * 60 * 60_000;
@@ -44,11 +45,29 @@ export function clientOverview(s: MatterState, now: Date): ClientOverview {
     keep.push(w);
     mentioned.push(key);
   }
-  if (!keep.length) return { text: '', mentioned: [] };
   const onYou = keep.filter((w) => w.role === 'client');
   const others = keep.filter((w) => w.role !== 'client');
   const parts: string[] = [];
-  if (onYou.length) parts.push(`Still waiting on you: ${list(onYou.map((w) => `${w.what} (asked ${since(w)})`))}.`);
+  // What the client told us about their time shapes what we say: nothing is asked of someone
+  // who is away, and something needed before they go is said before they go.
+  const away = awayNow(s, 'client', now);
+  const saidRecently = !!away && !!told[`away:${away.id}`] && now.getTime() - new Date(told[`away:${away.id}`]).getTime() < TOLD_QUIET_MS;
+  const soon = away ? null : activeAvailability(s, now).find((w) => w.party === 'client' && new Date(`${w.from}T00:00:00Z`).getTime() > now.getTime() && new Date(`${w.from}T00:00:00Z`).getTime() - now.getTime() < 21 * 86_400_000) ?? null;
+  const allOnYou = brief.waiting.filter((w) => w.role === 'client');
+  if (away) {
+    // Nothing is asked of someone who is away; the absence itself is mentioned once every few days, not in every message.
+    if (!saidRecently) {
+      parts.push(allOnYou.length
+        ? `You mentioned you are away until ${prettyDate(away.until)}; nothing here needs you before you are back, and we will not chase you while you are away. When you are back we will still need ${list(allOnYou.map((w) => w.what))}.`
+        : `You mentioned you are away until ${prettyDate(away.until)}; nothing here needs you before you are back.`);
+      mentioned.push(`away:${away.id}`);
+    }
+  } else if (onYou.length) {
+    parts.push(`Still waiting on you: ${list(onYou.map((w) => `${w.what} (asked ${since(w)})`))}${soon ? `; if you can, before you go away on ${prettyDate(soon.from)}` : ''}.`);
+  } else if (soon && allOnYou.length) {
+    parts.push(`Before you go away on ${prettyDate(soon.from)} we still need ${list(allOnYou.map((w) => w.what))}.`);
+  }
+  if (!keep.length && !parts.length) return { text: '', mentioned: [] };
   if (others.length) {
     const byWho = new Map<string, BriefWait[]>();
     for (const w of others) byWho.set(w.who, [...(byWho.get(w.who) ?? []), w]);

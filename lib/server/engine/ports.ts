@@ -139,7 +139,7 @@ export interface ThirdPartyChaser {
   sendPartyNotice(input: {
     tenantId: string;
     matterId: string;
-    recipientRole: 'estate_agent';
+    recipientRole: 'estate_agent' | 'lender';
     template: string;
     context: Record<string, unknown>;
   }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
