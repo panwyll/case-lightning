@@ -33,7 +33,9 @@ const PARTY: Record<string, string> = {
 };
 /** What we are waiting FOR, in the same register. */
 const SUBJECT: Record<string, string> = {
-  search: 'a property search',
+  search: 'the property searches',
+  contract_pack: 'the draft contract papers',
+  mortgage_offer: 'your mortgage offer',
   enquiry: 'replies to our enquiries',
   id_check: 'your identity check',
   funds: 'completion funds',

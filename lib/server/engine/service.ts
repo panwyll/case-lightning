@@ -835,10 +835,8 @@ export class EngineService {
           // In the client's words: a plain state per strand (never the file's internal detail), and who we are waiting for.
           const plain: Record<string, string> = { complete: 'complete', in_progress: 'in hand', awaiting: 'waiting on someone else', blocked: 'being looked into', not_started: 'not started yet' };
           const status = brief.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => `• ${w.label}: ${plain[w.status] ?? w.status.replace(/_/g, ' ')}`).join('\n');
-          const byWho = new Map<string, string[]>();
-          for (const w of brief.waiting) byWho.set(w.who, [...(byWho.get(w.who) ?? []), w.what]);
-          const waits = [...byWho.entries()].map(([who, whats]) => `${who} to come back to us on ${[...new Set(whats)].join(', ')}`);
-          const next = waits.length ? `we are waiting for ${waits.join('; and for ')}.` : 'we will be in touch as the next piece comes in.';
+          // The outstanding items are listed once, in the "where things stand" tail every client update carries.
+          const next = brief.waiting.length ? 'we chase everything outstanding on its due date and let you know as each piece comes in.' : 'we will be in touch as the next piece comes in.';
           const target = brief.milestones.targetExchangeDate;
           const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
           const context = { eventType: e.type, payload: e.payload, done, doneLine, status, next, targetNote, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
