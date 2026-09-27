@@ -994,7 +994,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isUserActor(cmd.userId)) reject('Decisions are resolved by people, not automation.', 403);
       if (!offeredOptions(d.kind, d.options).includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${offeredOptions(d.kind, d.options).join(', ')}).`, 400);
       requireSurfaced(s, d, ctx);
-      if (!d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
+      // A proposal or a held clear is the system's own text: the message shown is the whole of it, there is no document to open first.
+      if (d.kind !== 'proposal' && d.kind !== 'auto_clear' && !d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
       if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
       return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null);
