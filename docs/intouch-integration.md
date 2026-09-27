@@ -73,7 +73,7 @@ learn their purchase fell through.
 **Bytes are kept.** A decision must be able to show a client's own document, and InTouch
 is not guaranteed to still hold it when someone opens the panel next year.
 
-## Saving received files down (pencilled in, not started)
+## Saving received files down (parked until InTouch API access)
 
 Every file that lands on a case in CONVEYi is saved down into each practice system the
 firm has connected: LEAP and InTouch today. That covers email attachments, the text of a

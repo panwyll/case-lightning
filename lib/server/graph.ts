@@ -197,7 +197,19 @@ export async function listInboxMessages(
 export async function listMessageAttachments(userId: string, messageId: string): Promise<any[]> {
   const client = await graphClientForUser(userId);
   const result = await client.api(`/me/messages/${messageId}/attachments`).get();
-  return result.value ?? [];
+  const list: any[] = result.value ?? [];
+  // A large file comes back in the list without its bytes: fetch those one at a time, raw,
+  // so a 12 MB survey is filed like a one-page letter instead of being skipped.
+  for (const a of list) {
+    if (a.contentBytes || a['@odata.type'] !== '#microsoft.graph.fileAttachment' || !a.id) continue;
+    try {
+      const raw = await client.api(`/me/messages/${messageId}/attachments/${a.id}/$value`).responseType(ResponseType.ARRAYBUFFER).get();
+      if (raw) a.contentBytes = Buffer.from(raw as ArrayBuffer).toString('base64');
+    } catch (e) {
+      a.fetchError = (e as Error).message;
+    }
+  }
+  return list;
 }
 
 /** Attachment metadata only (no bytes) — used to list reviewable files cheaply. */
@@ -229,7 +241,8 @@ export async function downloadDriveItem(userId: string, itemId: string): Promise
 
 export async function getMessage(userId: string, messageId: string): Promise<any> {
   const client = await graphClientForUser(userId);
-  const base = 'id,subject,body,bodyPreview,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments,replyTo,webLink';
+  // uniqueBody is the part of a reply that is new in this message: the quoted history is left out by Exchange itself.
+  const base = 'id,subject,body,uniqueBody,bodyPreview,from,toRecipients,ccRecipients,sentDateTime,receivedDateTime,internetMessageId,conversationId,hasAttachments,replyTo,webLink';
   // The headers carry the sender-authentication verdict (mail/sender-check.ts). A mailbox
   // that will not return them still gets its message; the sender then reads as unverified.
   try {

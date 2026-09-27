@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
+import { emitMatterEvent } from '@/lib/server/events';
 import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink, hasDefinitiveSignal } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { fileEmailBodyAsDocument, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { describeFiling, fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
 import { learnFirmRef } from '@/lib/server/contacts';
 import { assistOnMessage } from '@/lib/server/assist';
@@ -127,13 +128,20 @@ export async function POST(req: NextRequest) {
         // client's case. Token/fuzzy matches wait for the user to confirm. Best-effort.
         if (triage.top && hasTrustedLink(triage.top)) {
           const mId = triage.top.matterId;
-          if (message.hasAttachments) {
-            await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch((e) =>
-              console.error('[graph notification] auto-save attachments failed', (e as Error).message)
-            );
-          }
+          // Attachments are listed whatever hasAttachments says: Outlook sets it false when a file is marked inline.
+          const problems: string[] = [];
+          const filed = await fileEmailAttachments(user, mId, messageId, message.subject).catch((e) => {
+            console.error('[graph notification] auto-save attachments failed', (e as Error).message);
+            problems.push(`attachments could not be filed: ${(e as Error).message}`);
+            return { saved: 0, files: [] };
+          });
           // The email itself is read into the case too: a reply in the body is a reply.
-          await fileEmailBodyAsDocument(user, mId, message).catch((e) => console.error('[graph notification] email body read failed', (e as Error).message));
+          const read = await fileEmailBodyAsDocument(user, mId, message).catch((e) => {
+            console.error('[graph notification] email body read failed', (e as Error).message);
+            problems.push(`the email could not be read: ${(e as Error).message}`);
+            return null;
+          });
+          await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email filed: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: describeFiling(read, filed.files, problems).join('\n') }).catch(() => {});
           // ...and the message text itself, so the case record is genuinely shared.
           // listThreadMessages reads the CALLING user's mailbox, so without this a
           // colleague asked for an update can't see what an email in someone else's

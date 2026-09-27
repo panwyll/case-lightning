@@ -14,7 +14,7 @@ import { query, queryOne } from './db';
 import { downloadDriveItem, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
-import { stripHtml, stripQuotedReply } from './text';
+import { stripHtml, htmlToText, newWordsOf } from './text';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { isLockedPdf, passwordCandidates } from './pdf-lock';
@@ -381,8 +381,33 @@ export async function saveEmailAttachmentsToMatter(
   return (await fileEmailAttachments(user, matterId, messageId, subject)).saved;
 }
 
+/** One line per thing that happened to an email and its files, in plain words, for the case log. */
+export function describeFiling(
+  email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null,
+  files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
+  problems: string[]
+): string[] {
+  const role = (as: string | null) => (as ? ` as ${as.replace(/_/g, ' ')}` : '');
+  const lines: string[] = [];
+  if (email) {
+    if (email.outcome === 'read') lines.push(`The email was read${role(email.as)}`);
+    else if (email.outcome === 'noted') lines.push(email.proposals ? `The email was read: ${email.proposals} thing${email.proposals === 1 ? '' : 's'} to confirm (a task asks you)` : 'The email was read; nothing in it for the case to act on');
+    else if (email.outcome === 'duplicate') lines.push('The email was already on the case');
+    else if (email.outcome === 'skipped') lines.push('The email has no body to read');
+    else lines.push(`The email was filed but not acted on${email.reason ? `: ${email.reason}` : ''}`);
+  }
+  for (const f of files) {
+    if (f.outcome === 'read') lines.push(`${f.name} read${role(f.as)}`);
+    else if (f.outcome === 'locked') lines.push(`${f.name} is password-protected (a task asks for the password)`);
+    else if (f.outcome === 'duplicate') lines.push(`${f.name} was already on the case`);
+    else if (f.outcome === 'skipped') lines.push(`${f.name} was not filed: ${f.reason ?? 'unknown reason'}`);
+    else lines.push(`${f.name} filed but not acted on${f.reason ? `: ${f.reason}` : ''}`);
+  }
+  return [...lines, ...problems];
+}
+
 /** What became of each attachment: filed and read into the case, filed but locked, or already there. */
-export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate'; as: string | null; reason: string | null }
+export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null }
 
 export async function fileEmailAttachments(
   user: { userId: string; tenantId: string },
@@ -406,7 +431,13 @@ export async function fileEmailAttachments(
   let saved = 0;
   const savedNames: string[] = [];
   for (const att of attachments) {
-    if (!att.contentBytes || !att.name || att.isInline) continue;
+    const kind = String(att['@odata.type'] ?? '');
+    const isImage = /^image\//i.test(att.contentType ?? '');
+    // Signature logos and pasted pictures are inline images: not files anyone sent.
+    if (att.isInline && isImage) continue;
+    if (kind === '#microsoft.graph.referenceAttachment') { files.push({ name: att.name ?? 'a linked file', outcome: 'skipped', as: null, reason: 'it is a link to a file in someone\'s OneDrive, not the file itself; ask for it as an attachment' }); continue; }
+    if (kind === '#microsoft.graph.itemAttachment') { files.push({ name: att.name ?? 'an attached email', outcome: 'skipped', as: null, reason: 'it is an email attached inside the email; open it in Outlook and file its attachments from there' }); continue; }
+    if (!att.contentBytes || !att.name) { files.push({ name: att.name ?? 'an attachment', outcome: 'skipped', as: null, reason: att.fetchError ? `it could not be downloaded: ${att.fetchError}` : 'its contents could not be downloaded' }); continue; }
     const buffer = Buffer.from(att.contentBytes, 'base64');
     // Content-address by SHA-256: dedup on the bytes, not the filename — so a
     // renamed duplicate is skipped, while a changed file sharing a name is treated
@@ -612,7 +643,8 @@ export async function fileEmailBodyAsDocument(
   matterId: string,
   message: any
 ): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number }> {
-  const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  const body = htmlToText(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  const fresh = newWordsOf(message ?? {});
   // Any words at all are read: "surveys are all complete" is a signal, not noise.
   if (!body.trim()) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
   const from = message?.from?.emailAddress?.address ?? 'unknown';
@@ -636,16 +668,15 @@ export async function fileEmailBodyAsDocument(
   // Whatever they appear to say becomes a proposal for a person, gated by who sent it
   // (notes.ts senderPolicy); the case itself does not move until someone approves.
   const enrolled = report?.action.kind === 'skip' && !/not enrolled/.test(report.action.reason);
-  if (enrolled && (!role || role === 'other') && body.trim().length >= 10) {
+  if (enrolled && (!role || role === 'other') && (fresh || body).trim().length >= 2) {
     const { engine } = await import('./engine/adapters');
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
-    const fresh = stripQuotedReply(body);
-    const res = await engine().recordNote(user.tenantId, matterId, { text: fresh.length >= 10 ? fresh.slice(0, 20_000) : body.slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
+    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details
     // decision, with who sent them and how the case knows them, never into the notes.
-    const bank = bankDetailsIn(fresh.length >= 10 ? fresh : body);
+    const bank = bankDetailsIn(fresh.length >= 2 ? fresh : body);
     if (bank) {
       const payeeKind = sender.relation === 'other_side' ? 'seller_solicitor' : sender.relation === 'client' ? 'client' : sender.relation === 'lender' ? 'lender' : sender.relation === 'agent' ? 'estate_agent' : 'other';
       await engine().recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind, payeeRef: sender.name || sender.address, details: { sortCode: bank.sortCode, accountNumber: bank.accountNumber, accountName: bank.accountName ?? sender.name ?? sender.address, firmName: null }, sourceChannel: 'email', sourceDocumentId: doc.id, note: `Found in an email from ${sender.name ? `${sender.name} <${sender.address}>` : sender.address} (${sender.relation.replace(/_/g, ' ')}). Verify by phone on a known number before any payment.` });

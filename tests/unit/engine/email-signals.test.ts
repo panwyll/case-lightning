@@ -341,3 +341,20 @@ test('the survey arriving closes "survey done, report not on file" by itself', a
   assert.equal(s.issues[issue.id].status, 'resolved');
   assert.notEqual(s.survey.status, 'not_started', 'the survey workstream has started');
 });
+
+test('the reply in the screenshot: only "Hi, survey attached" is read, from Outlook\'s HTML or the text fallback', async () => {
+  const { htmlToText, newWordsOf } = await import('../../../lib/server/text');
+  // Outlook on the web: the new words, then divRplyFwdMsg and the quoted request.
+  const outlook = '<html><body><div dir="ltr">Hi, survey attached&nbsp;</div><div>Thanks, Pete</div><div id="appendonsend"></div><hr style="display:inline-block;width:98%" tabindex="-1"><div id="divRplyFwdMsg" dir="ltr"><font face="Calibri"><b>From:</b> Peter Anwyll &lt;pete@killerdotdev.onmicrosoft.com&gt;<br><b>Sent:</b> 27 September 2026 23:16<br><b>To:</b> peteranwyll@hotmail.com<br><b>Subject:</b> Your purchase — your survey report</font></div><div>Hello Peter, We understand your survey of 9 Arthur Road has been carried out.</div></body></html>';
+  assert.equal(newWordsOf({ body: { content: outlook } }), 'Hi, survey attached\nThanks, Pete');
+  // Exchange's own cut wins when it is there.
+  assert.equal(newWordsOf({ uniqueBody: { content: '<div>Hi, survey attached</div>' }, body: { content: outlook } }), 'Hi, survey attached');
+  // Gmail and Apple Mail.
+  assert.equal(newWordsOf({ body: { content: '<div>Yes, fine.</div><div class="gmail_quote"><div>On Mon, Jo wrote:</div><blockquote>complete on 14 November?</blockquote></div>' } }), 'Yes, fine.');
+  assert.equal(newWordsOf({ body: { content: '<div>Agreed.</div><blockquote type="cite">exchange on 7 November</blockquote>' } }), 'Agreed.');
+  // The filed copy keeps the email's shape and reads as text, not entities.
+  const doc = htmlToText(outlook);
+  assert.match(doc, /^Hi, survey attached\nThanks, Pete/);
+  assert.match(doc, /From: Peter Anwyll <pete@killerdotdev\.onmicrosoft\.com>\nSent: 27 September 2026 23:16/);
+  assert.doesNotMatch(doc, /&nbsp;|&lt;|&gt;/);
+});

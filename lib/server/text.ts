@@ -1,3 +1,42 @@
+const ENTITIES: Record<string, string> = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', ndash: '–', mdash: '—', hellip: '…', pound: '£', euro: '€' };
+const decodeEntities = (s: string): string =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    if (e[0] === '#') { const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : m; }
+    return ENTITIES[e.toLowerCase()] ?? m;
+  });
+
+/** An email's HTML as a person would read it: paragraphs and line breaks kept, entities decoded. */
+export function htmlToText(html?: string): string {
+  if (!html) return '';
+  if (!/<[a-z][\s\S]*>/i.test(html)) return decodeEntities(html).replace(/\r\n/g, '\n').trim();
+  return decodeEntities(
+    html
+      .replace(/<(style|script|head)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|tr|li|h[1-6]|blockquote|table)>/gi, '\n')
+      .replace(/<hr[^>]*>/gi, '\n________________\n')
+      .replace(/<[^>]+>/g, '')
+  )
+    .replace(/[ \t\u00a0]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * The words this email adds, as text: Exchange's uniqueBody when it gave one, otherwise the
+ * HTML cut at the reply markers Outlook, Gmail and Apple Mail put in, then the text markers.
+ */
+export function newWordsOf(message: { uniqueBody?: { content?: string } | null; body?: { content?: string } | null; bodyPreview?: string | null }): string {
+  const unique = htmlToText(message.uniqueBody?.content ?? '');
+  if (unique.trim()) return unique.trim();
+  let html = message.body?.content ?? '';
+  const cut = html.search(/<div[^>]+id=["']?(divRplyFwdMsg|appendonsend)|<div[^>]+class=["'][^"']*gmail_quote|<blockquote[^>]+type=["']?cite|<hr[^>]+id=["']?stopSpelling/i);
+  if (cut > 0) html = html.slice(0, cut);
+  const text = stripQuotedReply(htmlToText(html));
+  return text.trim() || (message.bodyPreview ?? '').trim();
+}
+
 /** Strip HTML to plain text for AI consumption and email-body persistence. */
 export function stripHtml(html?: string): string {
   if (!html) return '';

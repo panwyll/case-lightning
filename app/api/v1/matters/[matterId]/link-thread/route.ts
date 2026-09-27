@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter } from '@/lib/server/files';
+import { describeFiling, fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter } from '@/lib/server/files';
 import { recordContactsFromMessage } from '@/lib/server/contacts';
 import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
 import { matterColor } from '@/lib/server/colors';
@@ -16,30 +16,6 @@ import { resolveMailbox, grantCaseIfAssistant } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-/** One line per thing that happened to the email and its files, in plain words. */
-function describeFiling(
-  email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null,
-  files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
-  problems: string[]
-): string[] {
-  const role = (as: string | null) => (as ? ` as ${as.replace(/_/g, ' ')}` : '');
-  const lines: string[] = [];
-  if (email) {
-    if (email.outcome === 'read') lines.push(`The email was read${role(email.as)}`);
-    else if (email.outcome === 'noted') lines.push(email.proposals ? `The email was read: ${email.proposals} thing${email.proposals === 1 ? '' : 's'} to confirm (a task asks you)` : 'The email was read; nothing in it for the case to act on');
-    else if (email.outcome === 'duplicate') lines.push('The email was already on the case');
-    else if (email.outcome === 'skipped') lines.push('The email has no body to read');
-    else lines.push(`The email was filed but not acted on${email.reason ? `: ${email.reason}` : ''}`);
-  }
-  for (const f of files) {
-    if (f.outcome === 'read') lines.push(`${f.name} read${role(f.as)}`);
-    else if (f.outcome === 'locked') lines.push(`${f.name} is password-protected (a task asks for the password)`);
-    else if (f.outcome === 'duplicate') lines.push(`${f.name} was already on the case`);
-    else lines.push(`${f.name} filed but not acted on${f.reason ? `: ${f.reason}` : ''}`);
-  }
-  return [...lines, ...problems];
-}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
