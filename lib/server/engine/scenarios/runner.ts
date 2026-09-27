@@ -144,7 +144,9 @@ export async function stepScenario(input: { tenantId: string; userId: string; ma
       await record(index + 1, step.label);
       continue;
     }
-    if (pending.length) return { done: false, index, total, next: step.label, blocked: `The engine is waiting on you: ${pending.length} decision${pending.length === 1 ? '' : 's'} under Tasks (${[...new Set(pending.map((d) => d.kind.replace(/_/g, ' ')))].join(', ')}). Decide, then Next Step.` };
+    // The engine's own asks (a proposal, a clear held for approval) stop the script: the person answers them first. A document-backed decision does not — the world keeps arriving while a person reviews.
+    const asks = pending.filter((d) => d.kind === 'proposal' || d.kind === 'auto_clear');
+    if (asks.length) return { done: false, index, total, next: step.label, blocked: `The engine is waiting on you: ${asks.length} ${asks.length === 1 ? 'proposal' : 'proposals'} under Tasks (${[...new Set(asks.map((d) => (d.kind === 'auto_clear' ? 'approve the clear' : `${String(d.subject ?? '').split(':')[0].replace(/_/g, ' ')}`)))].join(', ')}). Decide, then Next Step.` };
     try {
       await step.run(ctx);
     } catch (err) {

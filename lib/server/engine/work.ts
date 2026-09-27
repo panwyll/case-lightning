@@ -166,7 +166,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       : d.kind === 'auto_clear'
         ? `Approve the clear: ${(d.subject ?? '').includes(':') ? (d.subject ?? '').slice((d.subject ?? '').indexOf(':') + 1) : d.subject ?? 'the rules found nothing wrong'} (held at Propose)`
       : d.kind === 'proposal'
-        ? `Proposal: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'engine action'}${s.proposals[d.eventId]?.subject ? ` — ${subjectLabel(s.proposals[d.eventId].action, s.proposals[d.eventId].subject!)}` : ''}`
+        ? `Proposal: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'engine action'}${s.proposals[d.eventId]?.subject ? ` — ${subjectLabel(s.proposals[d.eventId].action, s.proposals[d.eventId].subject!)}` : ''}${typeof s.proposals[d.eventId]?.detail?.label === 'string' ? ` for ${s.proposals[d.eventId].detail.label as string}` : ''}`
       : d.kind === 'id_check' && d.subject && s.partyChecks[d.subject]
         ? `Decide: ID / AML check — ${s.partyChecks[d.subject].label}`
       : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` — ${d.subject}` : ''}`;
