@@ -26,7 +26,9 @@ import { Check } from '@/app/shared/icons';
 
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
-.dp.solo{grid-template-columns:minmax(0,1fr)}
+.dp.solo{grid-template-columns:minmax(0,1fr);height:auto}
+.dp.solo .dp-brief{grid-template-rows:auto auto;border-right:0}
+.dp.solo .dp-scroll{overflow:visible;padding-bottom:6px}
 .dp.inline{height:min(72vh,760px);margin:0;border-top:1px solid #e6e8ee;border-radius:0 0 12px 12px;overflow:hidden}
 .dp.inline .dp-scroll{padding:14px 18px 18px}
 .dp.inline .dp-actions{padding-left:18px;padding-right:18px}
