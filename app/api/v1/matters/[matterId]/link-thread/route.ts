@@ -9,12 +9,36 @@ import { recordContactsFromMessage } from '@/lib/server/contacts';
 import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
 import { matterColor } from '@/lib/server/colors';
 import { writeAudit } from '@/lib/server/audit';
+import { emitMatterEvent } from '@/lib/server/events';
 import { ok, fail } from '@/lib/server/http';
 import { resolveConversation } from '@/lib/server/mail/queue';
 import { resolveMailbox, grantCaseIfAssistant } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** One line per thing that happened to the email and its files, in plain words. */
+function describeFiling(
+  email: { outcome: string; as: string | null; reason: string | null } | null,
+  files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
+  problems: string[]
+): string[] {
+  const role = (as: string | null) => (as ? ` as ${as.replace(/_/g, ' ')}` : '');
+  const lines: string[] = [];
+  if (email) {
+    if (email.outcome === 'read') lines.push(`The email was read${role(email.as)}`);
+    else if (email.outcome === 'duplicate') lines.push('The email was already on the case');
+    else if (email.outcome === 'skipped') lines.push('The email has no body to read');
+    else lines.push(`The email was filed but not acted on${email.reason ? `: ${email.reason}` : ''}`);
+  }
+  for (const f of files) {
+    if (f.outcome === 'read') lines.push(`${f.name} read${role(f.as)}`);
+    else if (f.outcome === 'locked') lines.push(`${f.name} is password-protected (a task asks for the password)`);
+    else if (f.outcome === 'duplicate') lines.push(`${f.name} was already on the case`);
+    else lines.push(`${f.name} filed but not acted on${f.reason ? `: ${f.reason}` : ''}`);
+  }
+  return [...lines, ...problems];
+}
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ matterId: string }> }) {
   try {
@@ -94,18 +118,39 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // Linking the email to a matter saves its attachments to the matter folder
     // (best-effort; no-ops when there are none). The email itself stays in the
     // inbox in-tray until the user actually actions it.
-    let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null }> } = { saved: 0, files: [] };
-    let email: { outcome: string; as: string | null } | null = null;
+    // Every step below reports what it did, or why it could not, on the case's log:
+    // a silent failure here looks to the person like the link did nothing.
+    let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }> } = { saved: 0, files: [] };
+    let email: { outcome: string; as: string | null; reason: string | null } | null = null;
+    const problems: string[] = [];
     if (body.messageId) {
-      attachments = await fileEmailAttachments(owner, matterId, body.messageId, body.subject).catch(() => ({ saved: 0, files: [] }));
+      attachments = await fileEmailAttachments(owner, matterId, body.messageId, body.subject).catch((e) => {
+        console.error('[link-thread] attachments failed', (e as Error).message);
+        problems.push(`attachments could not be filed: ${(e as Error).message}`);
+        return { saved: 0, files: [] };
+      });
       if (msg) {
         // The people on the email become contacts (without a role until someone sets it); its words join the case's knowledge;
         // and the email itself is read like a filed document — a reply to enquiries in the body is a reply.
-        await recordContactsFromMessage(user, matterId, msg).catch(() => {});
-        await indexEmailBodyToMatter(owner, matterId, msg).catch(() => {});
-        email = await fileEmailBodyAsDocument(owner, matterId, msg).catch(() => null);
+        await recordContactsFromMessage(user, matterId, msg).catch((e) => problems.push(`contacts not recorded: ${(e as Error).message}`));
+        await indexEmailBodyToMatter(owner, matterId, msg).catch((e) => problems.push(`email not indexed: ${(e as Error).message}`));
+        email = await fileEmailBodyAsDocument(owner, matterId, msg).catch((e) => {
+          console.error('[link-thread] email body read failed', (e as Error).message);
+          problems.push(`the email could not be read: ${(e as Error).message}`);
+          return null;
+        });
+      } else {
+        problems.push('the email could not be fetched from the mailbox, so nothing was read');
       }
     }
+    const said = describeFiling(email, attachments.files, problems);
+    await emitMatterEvent({
+      tenantId: user.tenantId,
+      matterId,
+      eventType: 'EMAIL_FILED',
+      title: `Email filed: ${body.subject?.trim() || '(no subject)'}`,
+      details: said.join('\n'),
+    }).catch(() => {});
 
     await writeAudit({
       tenantId: user.tenantId,
@@ -116,7 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       payload: { graphThreadId: body.graphThreadId },
     });
 
-    return ok({ ok: true, attachments, email });
+    return ok({ ok: true, attachments, email, said });
   } catch (error) {
     return fail(error);
   }

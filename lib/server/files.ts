@@ -379,7 +379,7 @@ export async function saveEmailAttachmentsToMatter(
 }
 
 /** What became of each attachment: filed and read into the case, filed but locked, or already there. */
-export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate'; as: string | null }
+export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate'; as: string | null; reason: string | null }
 
 export async function fileEmailAttachments(
   user: { userId: string; tenantId: string },
@@ -411,7 +411,7 @@ export async function fileEmailAttachments(
       `select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`,
       [matterId, user.tenantId, hash]
     );
-    if (exists) { files.push({ name: att.name, outcome: 'duplicate', as: null }); continue; } // identical content already filed
+    if (exists) { files.push({ name: att.name, outcome: 'duplicate', as: null, reason: null }); continue; } // identical content already filed
     const uploaded = await uploadToMatterKb(driveUser, matter.folder_path, att.name, buffer);
     const doc = await queryOne<{ id: string }>(
       `insert into document
@@ -452,11 +452,12 @@ export async function fileEmailAttachments(
       if (isPdf && (await isLockedPdf(buffer).catch(() => false))) {
         await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, buffer]).catch(() => {});
         await recordLockedDocument(user.tenantId, matterId, doc.id, att.name);
-        files.push({ name: att.name, outcome: 'locked', as: null });
+        files.push({ name: att.name, outcome: 'locked', as: null, reason: null });
       } else {
-        const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => null);
+        const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch((e) => { console.error('[files] ingest failed', att.name, (e as Error).message); return { failed: (e as Error).message } as const; });
+        if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `could not be read: ${report.failed}` }); continue; }
         const role = report?.classification?.role ?? null;
-        files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null });
+        files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role, reason: null } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' });
       }
     }
   }
@@ -604,9 +605,9 @@ export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
   message: any
-): Promise<{ outcome: 'read' | 'filed' | 'duplicate' | 'skipped'; as: string | null }> {
+): Promise<{ outcome: 'read' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null }> {
   const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
-  if (body.trim().length < 80) return { outcome: 'skipped', as: null };
+  if (body.trim().length < 40) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
   const from = message?.from?.emailAddress?.address ?? 'unknown';
   const fromName = message?.from?.emailAddress?.name ?? '';
   const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');
@@ -615,12 +616,14 @@ export async function fileEmailBodyAsDocument(
   const text = `From: ${fromName ? `${fromName} <${from}>` : from}\nTo: ${to}\nDate: ${when}\nSubject: ${subject}\n\n${body}`.slice(0, 60_000);
   const hash = crypto.createHash('sha256').update(text).digest('hex');
   const exists = await queryOne<{ id: string }>(`select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`, [matterId, user.tenantId, hash]).catch(() => null);
-  if (exists) return { outcome: 'duplicate', as: null };
+  if (exists) return { outcome: 'duplicate', as: null, reason: 'already on the case' };
   const { productionPorts } = await import('./engine/adapters');
   const slug = subject.toLowerCase().replace(/^(re|fw|fwd):\s*/i, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'email';
   const doc = await productionPorts().documents.createGenerated({ tenantId: user.tenantId, matterId, docType: 'EMAIL', fileName: `email-${String(when).slice(0, 10)}-${slug}.txt`, content: text, createdBy: user.userId });
   await query(`update document set hash_sha256 = $3, sender_domain = $4 where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, hash, from.split('@')[1] ?? null]).catch(() => {});
-  const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => null);
+  // A failure here must surface, not vanish: the caller records it on the case.
+  const report = await ingestFiledDocument(user.tenantId, matterId, doc.id);
   const role = report?.classification?.role ?? null;
-  return report && report.action.kind !== 'skip' ? { outcome: 'read', as: role } : { outcome: 'filed', as: role && role !== 'other' ? role : null };
+  if (report && report.action.kind !== 'skip') return { outcome: 'read', as: role, reason: null };
+  return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' };
 }
