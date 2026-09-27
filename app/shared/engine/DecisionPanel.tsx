@@ -472,7 +472,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                     <span className="tw">{showing === f.documentId ? 'shown' : <button type="button" style={{ border: 0, background: 'none', padding: 0, font: 'inherit', color: '#5A27E0', cursor: 'pointer' }} onClick={(e) => { e.preventDefault(); void showDoc(f.documentId, null); }}>open</button>}</span>
                     <span className="what">{f.summary}</span>
                   </summary>
-                  {(() => { const said = new Set(live.flatMap(({ c }) => c.evidence.map((e) => e.text))); const lines = f.lines.filter((l) => !said.has(l.text)); return lines.length > 0 ? renderLines(lines) : <p className="dp-narr" style={{ padding: '0 14px 12px 34px', color: '#94a3b8', fontSize: 12.5 }}>{f.lines.length ? 'Its points are under the checks below' : 'Nothing on it worth a look'}</p>; })()}
+                  {(() => { const said = new Set(live.flatMap(({ c }) => c.evidence.map((e) => e.text))); const lines = f.lines.filter((l) => !said.has(l.text)); return lines.length > 0 ? renderLines(lines) : null; })()}
                 </details>
               ))}
             </div>
