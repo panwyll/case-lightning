@@ -51,12 +51,9 @@ export const WORK_CSS = `
 .ep-tier-l.done{color:#15803d}
 .ep-tier-l.blocked{color:#b91c1c}
 .ep-tier-l.open{color:#b45309}
-.ep-tier-b{position:relative;z-index:2;display:flex;flex-wrap:wrap;justify-content:center;gap:14px;align-items:flex-start}
-.ep-tier-b .ep-box{flex:0 1 200px;min-width:150px}
-.ep-aside{position:relative;display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;border:1px dashed #cbd5e1;border-radius:14px;padding:22px 12px 12px;margin-left:10px;background:#fcfcfd}
-.ep-aside .ep-box{flex:0 1 200px;min-width:150px}
-.ep-aside-l{position:absolute;top:-9px;left:12px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#64748b;background:#fff;padding:0 6px;border-radius:999px;border:1px dashed #cbd5e1}
-.ep-tier-b .ep-box.on{flex-basis:300px}
+.ep-tier-b{position:relative;z-index:2;display:flex;flex-wrap:nowrap;justify-content:center;gap:14px;align-items:flex-start}
+.ep-tier-b .ep-box{flex:1 1 200px;min-width:0;max-width:220px}
+.ep-tier-b .ep-box.on{flex:1.6 1 300px;max-width:340px}
 .ep-box{position:relative;border:1px solid #e6e8ee;border-left-width:4px;border-radius:12px;background:#fff;min-width:0;box-shadow:0 1px 2px rgba(15,23,42,.04)}
 .ep-box.done{border-left-color:#16a34a}
 .ep-box.open{border-left-color:#f59e0b}
@@ -240,14 +237,14 @@ function Tip({ text, label, icon, href }: { text: ReactNode; label: string; icon
 }
 
 /** One workstream as a box: state on the edge and the icon, progress as a bar. Open, it grows in place to show the sub-blocks and what a person may record now. */
-function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice }) {
+function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boolean; onToggle: () => void; notice?: Notice; unfed?: boolean }) {
   const r = RAG[lane.state];
   const { Icon, colour } = STATE_ICON[lane.state];
   const steps = lane.tiles.filter((x) => !x.depth);
   const done = steps.filter((x) => DONE_STATUSES.has(x.status)).length;
   const pct = steps.length ? Math.round((done / steps.length) * 100) : lane.state === 'done' ? 100 : 0;
   return (
-    <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
+    <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id} data-unfed={unfed ? '' : undefined}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
         <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
@@ -297,7 +294,7 @@ const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: s
 };
 
 /** The flowchart: tiers top to bottom, every box in a tier joined by a bus to every box in the next, so fan-out and fan-in read as concurrency. */
-export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[]; aside?: { label: string; items: LaneDef[] } }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
+export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[]; unfed?: Set<string> }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
   const ref = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[]; junctions: Array<{ x: number; y: number; from: string; to: string }> }>({ bus: [], drops: [], arrows: [], junctions: [] });
   const measure = useCallback(() => {
@@ -309,7 +306,7 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
     const mid = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left - rr.left + r.width / 2, top: r.top - rr.top, bottom: r.bottom - rr.top }; };
     for (let i = 0; i < tierEls.length - 1; i++) {
       const a = Array.from(tierEls[i].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
-      const b = Array.from(tierEls[i + 1].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
+      const b = Array.from(tierEls[i + 1].querySelectorAll<HTMLElement>('.ep-box:not([data-unfed])')).map(mid);
       if (!a.length || !b.length) continue;
       const y = (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2;
       const from = tierEls[i].dataset.tier ?? ''; const to = tierEls[i + 1].dataset.tier ?? '';
@@ -354,17 +351,11 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
         );
       })}
       {tiers.map((tier) => {
-        const ps = phaseState([...tier.items, ...(tier.aside?.items ?? [])]);
+        const ps = phaseState(tier.items);
         return (
           <div key={tier.id} className="ep-tier" data-tier={tier.id}>
             <div className="ep-tier-b">
-              {tier.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
-              {tier.aside && tier.aside.items.length > 0 && (
-                <div className="ep-aside" aria-label={tier.aside.label}>
-                  <span className="ep-aside-l">{tier.aside.label}</span>
-                  {tier.aside.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} />)}
-                </div>
-              )}
+              {tier.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} unfed={tier.unfed?.has(l.id)} />)}
             </div>
             <span className={`ep-tier-l ${ps}`}><i style={{ background: RAG[ps].dot }} />{tier.label}</span>
           </div>
@@ -375,10 +366,10 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
 }
 
 /** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
-/** Lanes that start when something arrives from someone else, not when we act: drawn as their own block feeding the tier, not as a step after the strand before them. */
-const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; arrives?: { label: string; lanes: string[] } }> = [
+/** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the offer, the survey), not when the tier before is done. */
+const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
-  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'leasehold', 'redemption', 'lender_consent'], arrives: { label: 'Arrives from others', lanes: ['mortgage', 'survey'] } },
+  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'], unfed: ['mortgage', 'survey'] },
   { id: 'contract', label: 'Contract', lanes: ['exchange', 'transfer_deed'] },
   { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
@@ -870,7 +861,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       <style>{WORK_CSS}</style>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
-      {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), aside: ph.arrives ? { label: ph.arrives.label, items: ph.arrives.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l) } : undefined })).filter((c) => c.items.length || c.aside?.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
+      {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []) })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
       {section === 'flow' && (
         <div className="ep-legend" aria-label="Legend">
           <span><i className="ep-who"><User size={10} /></i>Sign-off</span>
