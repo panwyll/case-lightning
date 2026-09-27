@@ -46,7 +46,7 @@ export const WORK_CSS = `
 .ep-tier{position:relative;padding:26px 18px 34px;background:#fff}
 .ep-tier:nth-child(even){background:#f8fafc}
 .ep-tier + .ep-tier{border-top:1px solid #eef1f5}
-.ep-tier-l{position:absolute;right:14px;bottom:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap}
+.ep-tier-l{position:absolute;z-index:6;right:14px;bottom:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap}
 .ep-tier-l i{width:7px;height:7px;border-radius:99px;display:inline-block}
 .ep-tier-l.done{color:#15803d}
 .ep-tier-l.blocked{color:#b91c1c}
@@ -370,7 +370,7 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
 const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
   { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'], unfed: ['mortgage', 'survey'] },
-  { id: 'contract', label: 'Contract', lanes: ['exchange', 'transfer_deed'] },
+  { id: 'contract', label: 'Contract & Exchange', lanes: ['exchange', 'transfer_deed'] },
   { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
 ];
@@ -742,8 +742,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {tic && !deeds.deedOfTrustAt && act('co_ownership', 'deed_of_trust_executed', 'Declaration of Trust Executed', {}, { primary: true })}
     </> });
 
-  if (has('survey') && s.survey && s.survey.status !== 'not_started') lane({ id: 'survey', title: 'Survey / physical condition', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
-    tiles: [{ label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
+  if (has('survey') && s.survey) lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
+    tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started' }, { label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
     actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
       {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: true, disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
       {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
