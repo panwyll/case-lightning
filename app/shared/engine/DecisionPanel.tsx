@@ -209,10 +209,12 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const [pickedDoc, setPickedDoc] = useState<string | null>(null);
   const [other, setOther] = useState<{ id: string; content: string | null; rawUrl: string | null } | null>(null);
   const [focusQuote, setFocusQuote] = useState<string | null>(null);
-  const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null) => {
+  const [focusIndex, setFocusIndex] = useState(0);
+  const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null, index = 0) => {
     setPickedDoc(id);
     setPage(pageNo ?? 1);
     setFocusQuote(quote);
+    setFocusIndex(index);
     if (!source || id === source.id) { setOther(null); return; }
     try {
       const r = await fetch(`/api/v1/documents/${id}/raw`);
@@ -283,16 +285,20 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   // A quoted line: wrap it in a mark and bring it into view, whichever text document is showing.
   const withQuote = useCallback((content: string): Array<string | { text: string; cite: number }> => {
     if (!focusQuote) return [content];
-    const at = content.toLowerCase().indexOf(focusQuote.toLowerCase().slice(0, 100));
+    const needle = focusQuote.toLowerCase().slice(0, 100);
+    const lower = content.toLowerCase();
+    let at = -1;
+    for (let k = 0; k <= focusIndex; k++) { at = lower.indexOf(needle, at + 1); if (at < 0) break; }
+    if (at < 0) at = lower.indexOf(needle);
     if (at < 0) return [content];
     const len = Math.min(focusQuote.length, 100);
     return [content.slice(0, at), { text: content.slice(at, at + len), cite: -2 }, content.slice(at + len)];
-  }, [focusQuote]);
+  }, [focusQuote, focusIndex]);
   useEffect(() => {
     if (!focusQuote) return;
     const t = setTimeout(() => { const el = document.querySelector('.dp-srcbody mark.on') as HTMLElement | null; el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
     return () => clearTimeout(t);
-  }, [focusQuote, other, source]);
+  }, [focusQuote, focusIndex, other, source]);
 
   // On load: auto-scroll to the primary locator (page for PDFs, first mark for text).
   useEffect(() => {
@@ -350,7 +356,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const narrative = ctx?.narrative ?? [];
   const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status !== 'ok');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
-  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null)} title={docLabel(e.documentId)}>{label}</button> : null;
+  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0)} title={docLabel(e.documentId)}>{label}</button> : null;
   const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
     <ul className="dp-ev">
       {c.evidence.map((e, j) => (

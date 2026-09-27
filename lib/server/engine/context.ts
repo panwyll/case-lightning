@@ -35,7 +35,7 @@ export interface TaskContext {
 export interface ChecklistItem {
   text: string;
   status: 'ok' | 'flag' | 'open';
-  evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; /** One link per line the evidence rests on (each salary credit, each gift receipt): the label, and where it is. */ links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }>;
+  evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; /** Which occurrence of the quote in the document this line is (0 = first): three identical salary lines are three different places. */ quoteIndex?: number; warn?: boolean; /** One link per line the evidence rests on (each salary credit, each gift receipt): the label, and where it is. */ links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }>;
 }
 /** A bank statement as the pipeline read it, the parts the brief quotes (proof-of-funds.ts StatementFacts). */
 export interface StatementFactsLite { accountHolder: string | null; periodFrom: string | null; periodTo: string | null; closingBalancePennies: number | null; transactions: Array<{ date: string; description: string; amountPennies: number; counterparty?: string | null }>; salaryCredits: Array<{ date: string; amountPennies: number; payer: string }> }
@@ -652,9 +652,15 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): { c
     if (facts?.salaryCredits?.length) {
       const payers = [...new Set(facts.salaryCredits.map((c) => c.payer))];
       narrative.push({ text: `  Salary from ${payers.join(', ')}:` });
-      for (const c of facts.salaryCredits) {
+      const seen = new Map<string, number>();
+      const ordered = [...facts.transactions];
+      for (const c of [...facts.salaryCredits].sort((a, b) => ordered.findIndex((t) => t.date === a.date && t.amountPennies === a.amountPennies) - ordered.findIndex((t) => t.date === b.date && t.amountPennies === b.amountPennies))) {
         const t = facts.transactions.find((tt) => tt.date === c.date && tt.amountPennies === c.amountPennies);
-        narrative.push({ text: `    ${day(c.date)} · ${gbp(c.amountPennies)}`, documentId: st.documentId, quote: t?.description ?? c.payer });
+        const quote = t?.description ?? c.payer;
+        // The same printed description recurs: count which occurrence this payment is, in the order the statement prints them.
+        const idx = t ? ordered.filter((tt) => tt.description === t.description).findIndex((tt) => tt === t) : (seen.get(quote) ?? 0);
+        seen.set(quote, idx + 1);
+        narrative.push({ text: `    ${day(c.date)} · ${gbp(c.amountPennies)}`, documentId: st.documentId, quote, quoteIndex: Math.max(0, idx) });
       }
     }
     if (facts) {
