@@ -84,8 +84,6 @@ const CSS = `
 .dp-passed > summary::-webkit-details-marker{display:none}
 .dp-passed > summary::before{content:'';width:6px;height:6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin-left:2px}
 .dp-passed[open] > summary::before{transform:rotate(45deg)}
-.dp-passed.todo > summary{color:#475569}
-.dp-passed.todo li::before{content:'○ ';color:#94a3b8}
 .dp-passed ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .dp-passed li{font-size:12.5px;color:#475569}
 .dp-passed li::before{content:'✓ ';color:#15803d;font-weight:800}
@@ -410,7 +408,6 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     </ul>
   );
   const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'flag');
-  const todo = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'open');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
   const evLink = (e: { text?: string; documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0, e.text ? [e.text.replace(/^[\d.]+\s*/, '').split(/[;:—(]/)[0].trim().split(/\s+/).slice(0, 6).join(' ')] : [])} title={docLabel(e.documentId)}>{label}</button> : null;
   const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
@@ -496,12 +493,6 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 <ul className="dp-quiet" aria-label="Checked">
                   {quiet.map(({ c, i }) => (<li key={i}><b>✓</b>{c.text}{renderEv(c)}</li>))}
                 </ul>
-              )}
-              {todo.length > 0 && (
-                <details className="dp-passed todo" open={live.length === 0}>
-                  <summary>{todo.length === 1 ? 'One thing to check yourself' : `${todo.length} things to check yourself`}</summary>
-                  <ul style={{ gridTemplateColumns: '1fr' }}>{todo.map(({ c, i }) => <li key={i}>{c.text}{renderEv(c)}</li>)}</ul>
-                </details>
               )}
               {passed.length > 0 && (
                 <details className="dp-passed">
