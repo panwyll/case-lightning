@@ -22,6 +22,7 @@ async function toPreCompletion(h: ReturnType<typeof harness>) {
   await svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   await svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' });
   await svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
+  await svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
   assert.equal((await svc.getState(TENANT, MATTER)).stage, 'pre_completion');
 }
 

@@ -413,6 +413,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'funds_received': {
       const p = e.payload as Payloads['funds_received'];
       closeWait(s, 'funds', p.fromRole, e);
+      if (!s.completion.receivedFrom) s.completion.receivedFrom = [];
+      if (!s.completion.receivedFrom.includes(p.fromRole)) s.completion.receivedFrom.push(p.fromRole);
       if (!s.waits.some((w) => w.key === 'funds' && w.closedAt === null)) s.completion.fundsReceivedAt = e.createdAt;
       break;
     }

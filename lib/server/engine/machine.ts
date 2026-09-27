@@ -391,7 +391,11 @@ export function stageBlockers(s: MatterState): string[] {
     case 'pre_completion':
       if (!s.completion.confirmedAt) {
         b.push(...issueBlockers(s, 'completion'));
-        if (!s.completion.fundsReceivedAt) b.push('funds not received');
+        if (!s.deeds.transferDeedAt) b.push('transfer deed not executed');
+        if (s.hasLender && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
+        if (s.hasLender && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent');
+        if (s.hasLender && !(s.completion.receivedFrom ?? []).includes('lender')) b.push('mortgage advance not received');
+        if (!(s.completion.receivedFrom ?? []).some((r) => r === 'client' || r === 'isa_provider')) b.push("client's balance not received");
         if (!s.payments.some((p) => p.payeeKind === 'seller_solicitor' && p.purpose === 'completion_monies')) b.push('completion payment not authorised against verified bank details');
         if (pendingBankDetailsDecision(s, 'seller_solicitor')) b.push('bank-details change awaiting out-of-band verification (hard stop)');
         if (s.completion.fundsReceivedAt && s.payments.length) b.push('completion not confirmed');
@@ -980,7 +984,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         }
         return [{ type: 'completion_confirmed', actor: cmd.actor, payload: { completedAt: cmd.completedAt ?? null } }];
       }
+      // A purchase completes on paper first: the transfer deed, and with a lender the mortgage deed and the certificate of title.
+      if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
+      if (s.hasLender && !s.deeds.mortgageDeedAt) reject('The mortgage deed has not been executed (witnessed).');
+      if (s.hasLender && !s.deeds.certificateOfTitleAt) reject('The certificate of title has not been sent to the lender; the advance is released against it.');
+      // Then the money: the advance from the lender where there is one, and the client's balance (an ISA bonus counts as the client's).
+      const from = s.completion.receivedFrom ?? [];
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
+      if (s.hasLender && !from.includes('lender')) reject('The mortgage advance has not been received from the lender.');
+      if (!from.includes('client') && !from.includes('isa_provider')) reject("The client's balance has not been received.");
       // Addendum 2: the completion transfer must have been authorised by a person against
       // verified seller's-solicitor details, and no bank-details change may be pending.
       const pend = pendingBankDetailsDecision(s, 'seller_solicitor');

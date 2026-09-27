@@ -3,6 +3,7 @@
  * sandbox document. Plainly marked as sandbox material; no real person, firm or property.
  */
 import type { EnquiryReplyFacts, IdCheckFacts, LeaseFacts, ManagementPackFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from '../types';
+import type { ProofOfFundsSubmission, StatementFacts } from '../proof-of-funds';
 
 export type SearchTypeLike = SearchType;
 
@@ -46,3 +47,39 @@ export const managementPack = (flagged: boolean): ManagementPackFacts => ({
   fees: { noticeOfAssignmentPennies: 9_000, noticeOfChargePennies: 9_000, deedOfCovenantPennies: 15_000, certificateOfCompliancePennies: null, other: null }, consentsRequired: 'Deed of covenant with the management company', disputes: null, accountsProvided: 'Years ending March 2024 and 2025; budget 2026/27',
   entries: [], flags: flagged ? [{ code: 'MAJOR_WORKS_PLANNED', severity: 'medium', description: 'Roof renewal planned for 2027 at an estimated £48,000', locator: { page: 2 } }] : [], confidence: 0.9,
 });
+
+/** The client's proof-of-funds declaration: savings that cover the balance; the flagged run adds a gift from a donor abroad. */
+export const pofSubmission = (pricePennies: number, advancePennies: number | null, flagged: boolean, statementDocId: string, donorStatementDocId: string | null, giftLetterDocId: string | null): ProofOfFundsSubmission => {
+  const balance = pricePennies - (advancePennies ?? 0);
+  const giftPennies = flagged ? 4_000_000 : 0;
+  return {
+    declarant: { fullName: 'Sandbox Buyer', email: 'sandbox.buyer@example.invalid', phone: null },
+    purchasePricePennies: pricePennies,
+    mortgageAdvancePennies: advancePennies,
+    sources: [
+      { kind: 'savings', amountPennies: balance - giftPennies, description: 'Saved from salary, Sandbox Savings Bank', bankName: 'Sandbox Savings Bank', accountHolder: 'Sandbox Buyer', evidenceDocumentIds: [statementDocId] },
+      ...(flagged ? [{ kind: 'gift' as const, amountPennies: giftPennies, description: 'Gift from my mother', evidenceDocumentIds: giftLetterDocId ? [giftLetterDocId] : [], gift: { donorName: 'Sandbox Donor', donorRelationship: 'mother', donorAddress: 'Barcelona', repayable: false, donorAbroad: true, donorEvidenceDocumentIds: donorStatementDocId ? [donorStatementDocId] : [] } }] : []),
+    ],
+    declarations: { accurate: true, noThirdPartyInterest: true, noUndisclosedBorrowing: true },
+    clientNote: null,
+    submittedAt: new Date().toISOString(),
+  };
+};
+
+/** A bank statement the fixture extractor reads: three months of salary in, a balance that covers what it is meant to prove. */
+export const statement = (holder: string, closingPennies: number, employer = 'Sandbox Employer Ltd'): StatementFacts => {
+  const end = new Date(); end.setUTCDate(1);
+  const days = (n: number) => iso(new Date(end.getTime() - n * 86_400_000));
+  const salary = 320_000;
+  const transactions = [0, 30, 60].flatMap((d) => [
+    { date: days(d + 2), description: `${employer.toUpperCase()} SALARY`, amountPennies: salary, counterparty: employer },
+    { date: days(d + 9), description: 'COUNCIL TAX', amountPennies: -18_000, counterparty: 'Sampletown Council' },
+    { date: days(d + 14), description: 'SUPERMARKET', amountPennies: -12_500, counterparty: null },
+    { date: days(d + 20), description: 'TRANSFER TO SAVINGS', amountPennies: -150_000, counterparty: holder },
+  ]);
+  return {
+    accountHolder: holder, bankName: 'Sandbox Savings Bank', accountLast4: '1234', periodFrom: days(92), periodTo: days(0),
+    openingBalancePennies: closingPennies - 3 * (salary - 18_000 - 12_500 - 150_000), closingBalancePennies: closingPennies,
+    transactions, salaryCredits: [0, 30, 60].map((d) => ({ date: days(d + 2), amountPennies: salary, payer: employer })), confidence: 0.95,
+  };
+};

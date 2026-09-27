@@ -1174,6 +1174,8 @@ export interface MatterState {
     statementGeneratedAt: string | null;
     fundsRequestedAt: string | null;
     fundsReceivedAt: string | null;
+    /** Who the money came from (lender, client, buyer_solicitor, incoming_owner, isa_provider): a purchase completes only with the advance and the client's balance in. */
+    receivedFrom: string[];
     confirmedAt: string | null;
   };
   postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; requisitions: Array<{ eventId: string; receivedAt: string; respondedAt: string | null; deadline: string | null }>; noticeOfAssignmentAt: string | null };
@@ -1317,7 +1319,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     },
     deposit: { received: false, at: null },
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
-    completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, confirmedAt: null },
+    completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, receivedFrom: [], confirmedAt: null },
     postCompletion: { sdltSubmittedAt: null, ap1SubmittedAt: null, ap1ConfirmedAt: null, requisitions: [], noticeOfAssignmentAt: null },
     proofOfFunds: { status: 'not_started', requestId: null, requestedAt: null, submittedAt: null, documentId: null, facts: null, decisionEventId: null, resolution: null, formUrl: null, channel: null, sendError: null, rounds: 0, flags: [], statements: [], risk: null, queries: {}, approvedAt: null, approvedBy: null },
     managementPack: { status: 'not_required', requestedAt: null, documentId: null, facts: null, decisionEventId: null },

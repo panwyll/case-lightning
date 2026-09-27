@@ -100,6 +100,13 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   // ── pre_completion → completed ──
   r = await svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   assert.equal(r.state.stage, 'pre_completion');
+  // The paper first: no completion without the transfer deed, and with a lender the mortgage deed and the certificate of title.
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /transfer deed \(TR1\) has not been executed/);
+  await svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /mortgage deed has not been executed/);
+  await svc.run(TENANT, MATTER, { type: 'mortgage_deed_executed', actor: USER, witnessed: true });
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /certificate of title has not been sent/);
+  await svc.run(TENANT, MATTER, { type: 'certificate_of_title_sent', actor: USER });
   // Addendum 2: bank details are versioned hard-stops — ours (what the client pays into) and the seller's solicitor's (what we pay).
   const firm = await svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', payeeRef: 'Firm LLP client account', details: { sortCode: '401234', accountNumber: '12345678', accountName: 'Firm LLP Client Account', firmName: 'Firm LLP' }, sourceChannel: 'manual' });
   const firmDecision = Object.values(firm.state.decisions).find((d) => d.kind === 'bank_details' && d.status === 'pending')!;

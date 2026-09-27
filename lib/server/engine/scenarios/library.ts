@@ -9,7 +9,7 @@
  */
 import type { EngineService } from '../service';
 import type { CaseShape } from '../shapes';
-import type { DecisionKind, DecisionOption, TransactionType } from '../types';
+import { openPofQueries, type DecisionKind, type DecisionOption, type TransactionType } from '../types';
 import * as F from './fixtures';
 
 export interface ScenarioContext {
@@ -114,7 +114,49 @@ const reportOnTitle = (): ScenarioStep[] => [
   step('report_send', 'Report on title sent to the client', async (c) => { await c.svc.sendReportOnTitle(c.tenantId, c.matterId, c.userId); }),
 ];
 
-const exchangeBuyer = (price: number, deposit: number): ScenarioStep[] => [
+const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => [
+  step('pof_request', 'Proof of funds requested from the client', async (c) => {
+    // The engine sends the form itself when the ID check clears (trust level permitting); the script only asks when nothing has gone out.
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    if (s.proofOfFunds.status !== 'not_started') return;
+    await c.svc.requestProofOfFunds(c.tenantId, c.matterId, c.userId, { noteToClient: 'Please attach three months of statements for each account.' });
+  }),
+  step('pof_submit', 'The client submits the proof-of-funds form', async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    if (!s.proofOfFunds.requestId) throw new Error('No proof-of-funds request on the case.');
+    const balance = price - (advance ?? 0);
+    const gift = c.flagged ? 4_000_000 : 0;
+    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Buyer', 'Three months of salary credits', `Closing balance £${((balance - gift) / 100).toLocaleString('en-GB')}`]) });
+    const donor = c.flagged ? await c.doc({ docType: 'BANK_STATEMENT', fileName: 'donor-statement.txt', facts: F.statement('Sandbox Donor', gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Donor', `Closing balance £${(gift / 100).toLocaleString('en-GB')}`]) }) : null;
+    const letter = c.flagged ? await c.doc({ docType: 'GIFT_LETTER', fileName: 'gift-letter.txt', facts: { content: 'sandbox gift letter' }, body: F.body('Gift letter', ['I, Sandbox Donor, gift £40,000 to my child. Not repayable. No interest in the property.']) }) : null;
+    await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, s.proofOfFunds.requestId, F.pofSubmission(price, advance, c.flagged, statement, donor, letter), { [statement]: 'savings-statement.txt', ...(donor ? { [donor]: 'donor-statement.txt' } : {}), ...(letter ? { [letter]: 'gift-letter.txt' } : {}) });
+  }),
+  step('pof_queries', 'Queries sent to the client and answered', async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    const open = openPofQueries(s).filter((q) => q.status === 'draft' || q.status === 'sent');
+    if (!open.length) return;
+    // The conveyancer asks for more: the sign-off decision is resolved with "request further", which re-opens the form with the queries on it.
+    await c.resolve('proof_of_funds', 'request_further', 'Queries sent to the client with the form.');
+    let after = await c.svc.getState(c.tenantId, c.matterId);
+    if (after.proofOfFunds.status !== 'requested') { await c.svc.requestProofOfFunds(c.tenantId, c.matterId, c.userId, { followUpOf: s.proofOfFunds.requestId }); after = await c.svc.getState(c.tenantId, c.matterId); }
+    const requestId = after.proofOfFunds.requestId;
+    if (!requestId) throw new Error('No follow-up request id.');
+    const balance = price - (advance ?? 0);
+    const gift = c.flagged ? 4_000_000 : 0;
+    const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement-round-2.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Round 2']) });
+    const sub = F.pofSubmission(price, advance, c.flagged, statement, null, null);
+    await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt' });
+  }),
+  step('pof_signoff', 'Proof of funds signed off by a person', async (c) => { await c.resolve('proof_of_funds', 'approve', c.flagged ? 'Gift evidenced: donor ID, letter and statements on file; lender told.' : 'Savings evidenced over the period.'); }),
+  step('pof_lender', 'The lender confirms the gifted deposit', async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    for (const i of Object.values(s.issues).filter((i) => i.kind === 'lender_approval' && (i.status === 'open' || i.status === 'negotiating'))) {
+      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'lender_confirmed', note: 'Lender told of the gift; offer confirmed to stand.' });
+    }
+  }, { flaggedOnly: true }),
+];
+
+const exchangeBuyer = (price: number, deposit: number, advance: number | null): ScenarioStep[] => [
   step('deposit', 'Deposit received on client account', async (c) => { await c.run({ type: 'deposit_received', amountPennies: deposit }); }),
   step('authority', 'The client authorises exchange', async (c) => { await c.run({ type: 'client_decision_recorded', subject: 'exchange_authority', decision: 'authorised', note: 'Authority given by email after the report on title.' }); }),
   step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
@@ -122,10 +164,20 @@ const exchangeBuyer = (price: number, deposit: number): ScenarioStep[] => [
     const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId);
     await c.run({ type: 'completion_statement_generated', documentId });
   }),
-  step('funds', 'Completion funds requested and received', async (c) => {
+  ...(advance != null ? [
+    step('mortgage_deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
+    step('certificate', 'Certificate of title sent to the lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
+  ] : []),
+  step('transfer_deed', 'Transfer deed (TR1) executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Buyer'] }); }),
+  step('funds', advance != null ? 'Advance and the client\'s balance requested and received' : 'The client\'s balance requested and received', async (c) => {
     const ours = await c.verifiedDetails('firm_client_account', '99990000', 'Firm client account');
-    await c.run({ type: 'funds_requested', fromRole: 'client', bankDetailsId: ours, amountPennies: price - deposit });
-    await c.run({ type: 'funds_received', fromRole: 'client', amountPennies: price - deposit });
+    const balance = price - deposit - (advance ?? 0);
+    if (advance != null) {
+      await c.run({ type: 'funds_requested', fromRole: 'lender', bankDetailsId: ours, amountPennies: advance });
+      await c.run({ type: 'funds_received', fromRole: 'lender', amountPennies: advance });
+    }
+    await c.run({ type: 'funds_requested', fromRole: 'client', bankDetailsId: ours, amountPennies: balance });
+    await c.run({ type: 'funds_received', fromRole: 'client', amountPennies: balance });
   }),
   step('pay_seller', 'Completion monies authorised against verified seller\'s-solicitor details', async (c) => {
     const theirs = await c.verifiedDetails('seller_solicitor', '11112222', 'Seller Solicitors LLP client account');
@@ -140,28 +192,31 @@ const exchangeBuyer = (price: number, deposit: number): ScenarioStep[] => [
 
 const PRICE = 38_500_000;
 const DEPOSIT = 3_850_000;
+const ADVANCE = 25_000_000;
 
 export const SCENARIOS: Scenario[] = [
   {
     id: 'freehold_purchase', label: 'Freehold Purchase', transactionType: 'freehold_purchase', hasLender: true,
     summary: 'A buyer with a mortgage: ID, four searches, the offer, the title, enquiries, the report on title, exchange, completion, SDLT and registration.',
     steps: [
-      step('enrol', 'Enrolled as a freehold purchase with a lender', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_purchase', hasLender: true, requireProofOfFunds: false, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'], targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); await c.run({ type: 'record_price_change', toPennies: PRICE, reason: 'Agreed price per memorandum of sale' }); }),
+      step('enrol', 'Enrolled as a freehold purchase with a lender', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_purchase', hasLender: true, requireProofOfFunds: true, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'], targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); await c.run({ type: 'record_price_change', toPennies: PRICE, reason: 'Agreed price per memorandum of sale' }); }),
       ...idCheck(),
+      ...proofOfFunds(PRICE, ADVANCE),
       ...searches(['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL']),
       ...mortgage(),
       ...title(false),
       ...enquiries(),
       ...reportOnTitle(),
-      ...exchangeBuyer(PRICE, DEPOSIT),
+      ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE),
     ],
   },
   {
     id: 'leasehold_purchase', label: 'Leasehold Purchase', transactionType: 'leasehold_purchase', hasLender: true,
     summary: 'A flat with a mortgage: the management pack and the lease join the purchase; notice of assignment after completion.',
     steps: [
-      step('enrol', 'Enrolled as a leasehold purchase with a lender', async (c) => { await c.run({ type: 'enrol', transactionType: 'leasehold_purchase', hasLender: true, requireProofOfFunds: false, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29'], targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); await c.run({ type: 'record_price_change', toPennies: PRICE, reason: 'Agreed price per memorandum of sale' }); }),
+      step('enrol', 'Enrolled as a leasehold purchase with a lender', async (c) => { await c.run({ type: 'enrol', transactionType: 'leasehold_purchase', hasLender: true, requireProofOfFunds: true, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29'], targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); await c.run({ type: 'record_price_change', toPennies: PRICE, reason: 'Agreed price per memorandum of sale' }); }),
       ...idCheck(),
+      ...proofOfFunds(PRICE, ADVANCE),
       ...searches(['LLC1', 'CON29']),
       step('pack_request', 'Management pack requested from the managing agent', async (c) => { await c.run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }); }),
       step('pack', 'Management pack (LPE1) received and read', async (c) => {
@@ -178,7 +233,7 @@ export const SCENARIOS: Scenario[] = [
       ...title(true),
       ...enquiries(),
       ...reportOnTitle(),
-      ...exchangeBuyer(PRICE, DEPOSIT).filter((s) => s.id !== 'close'),
+      ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE).filter((s) => s.id !== 'close'),
       step('notice', 'Notice of assignment served on the landlord', async (c) => { await c.run({ type: 'notice_of_assignment_served', servedOn: 'Block Managers Ltd for Mill Lane Freeholds Limited', reference: 'NOA-1' }); }),
       step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
     ],
