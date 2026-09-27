@@ -22,6 +22,9 @@ export interface DecisionRow {
   status: 'pending' | 'actioned' | 'escalated';
   /** The task in a conveyancer's sentence (present when the list is scoped to one case). */
   what?: string | null;
+  /** `proposal:<what it would send>` or the decision kind; and the chip in words (present when scoped to one case). */
+  taskKind?: string;
+  chip?: string;
   openedBy: string[];
   resolvedBy?: string | null;
   resolvedAt?: string | null;
@@ -298,8 +301,10 @@ export interface EngineEvent { id: string; seq: number; type: string; actor: str
 
 export const STAGES = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
 
-/** The short chip on a task row: the kind alone, no verb. */
-export const chipLabel = (kind: string): string => (kind === 'auto_clear' ? 'Rules clear' : (KIND_LABEL[kind] ?? pretty(kind)).split(' — ')[0]);
+/** The short chip on a task row when the API did not send one. */
+export const chipLabel = (kind: string): string => (kind === 'auto_clear' ? 'Auto-cleared' : (KIND_LABEL[kind] ?? pretty(kind)).split(' — ')[0]);
+/** Proposals a person can approve from the row: a message whose whole content is the standard template (an acknowledgement, a status update). */
+export const quickApprovable = (kind: string | null | undefined): boolean => kind === 'proposal:acknowledgement' || kind === 'proposal:client_update';
 
 export const KIND_LABEL: Record<string, string> = {
   issue: 'Issue',
@@ -411,8 +416,10 @@ export interface WorkItem {
   sinceWorkingDays: number | null;
   /** WAITING: who asked — a person's name once the API has resolved it, or system / ai / external. */
   openedBy?: string | null;
-  /** The kind of thing it is (a decision kind, or issue / wait), for the chip on the list. */
+  /** The kind of thing it is (a decision kind, `proposal:<what it would send>`, or issue / wait). */
   kind?: string;
+  /** The chip on the list, in words. */
+  chip?: string;
   slaWorkingDays: number | null;
   chaseInWorkingDays: number | null;
   chasesSent: number;

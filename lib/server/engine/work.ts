@@ -70,8 +70,10 @@ export interface WorkItem {
   dueBy: string | null;
   /** WAITING: the clock has run out; the next sweep sends the chase. Nobody has to do anything. */
   chaseDue: boolean;
-  /** The kind of thing it is (a decision kind such as proposal / search / proof_of_funds, or issue / wait), for the chip on the list. */
+  /** The kind of thing it is (a decision kind, `proposal:<what it would send>`, or issue / wait). */
   kind?: string;
+  /** The chip on the list, in words. */
+  chip?: string;
   /** Where to go: the decision, the issue, the wait or just the case. */
   ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'client' | 'case'; id: string };
 }
@@ -149,6 +151,22 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
  */
 const subjectLabel = (action: string, subject: string): string => ENGINE_ACTION_SUBJECTS[action as keyof typeof ENGINE_ACTION_SUBJECTS]?.find((s) => s.key === subject)?.label ?? subject.replace(/_/g, ' ');
 
+const PROPOSAL_CHIP: Record<string, string> = { acknowledgement: 'Proposal: acknowledgement', chase: 'Proposal: chase', client_update: 'Proposal: client update', search_order: 'Proposal: search order', enquiry_draft: 'Proposal: enquiry', id_check_request: 'Proposal: ID check', proof_of_funds_request: 'Proposal: form to client' };
+/** What a standard client update is about, in the words of its subject line. */
+const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today' };
+const DECISION_CHIP: Record<string, string> = { search: 'Search result', enquiry: 'Enquiry reply', mortgage: 'Mortgage offer', title: 'Official copies', id_check: 'ID / AML result', proof_of_funds: 'Proof of funds', bank_details: 'Bank details', report_on_title: 'Report on title', management_pack: 'Management pack', requisition: 'HMLR requisition', escalation: 'Escalation', auto_clear: 'Auto-cleared', note_actions: 'Note to apply', lease: 'Lease' };
+
+/** What kind of task a decision is, for the chip on a list: a proposal by what it would send or do, anything else by what arrived. */
+export function decisionTask(s: MatterState, d: DecisionState): { kind: string; chip: string } {
+  if (d.kind === 'proposal') {
+    const pr = s.proposals[d.eventId];
+    const det = (pr?.detail ?? {}) as Record<string, unknown>;
+    const sub = pr?.action === 'client_update' && typeof det.kind === 'string' ? det.kind : pr?.action ?? 'proposal';
+    return { kind: `proposal:${sub}`, chip: PROPOSAL_CHIP[sub] ?? 'Proposal' };
+  }
+  return { kind: d.kind, chip: DECISION_CHIP[d.kind] ?? d.kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) };
+}
+
 /** The task in a conveyancer's sentence: what is in front of them, not the engine's name for it. */
 export function decisionSentence(s: MatterState, d: DecisionState): string {
   // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
@@ -169,13 +187,21 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     if (!pr) return 'Approve the proposal';
     const det = pr.detail as Record<string, unknown>;
     const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
+    const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
     switch (pr.action) {
-      case 'acknowledgement': return `Send an acknowledgement to ${to}`;
-      case 'chase': return `Chase ${to} for ${typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply'}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
-      case 'search_order': return `Order the ${cleanSubject ?? String(det.searchType ?? '')} search`;
-      case 'enquiry_draft': return `Raise an enquiry from the seller's forms`;
-      case 'client_update': return det.kind === 'id_check_request' ? `Request the ID / AML check${typeof det.label === 'string' ? ` for ${det.label}` : ''}` : det.kind === 'proof_of_funds_request' ? 'Send the client the proof-of-funds form' : `Send the client an update${typeof det.template === 'string' ? ` (${det.template.replace(/_/g, ' ')})` : ''}`;
-      default: return `Approve: ${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
+      case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'} — to ${to}`;
+      case 'chase': return `${cap(typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply')}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''} — ${to}`;
+      case 'search_order': return `${SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? '')}`;
+      case 'enquiry_draft': return typeof det.subject === 'string' ? det.subject.slice(0, 120) : "From the seller's forms";
+      case 'client_update': {
+        if (det.kind === 'id_check_request') return typeof det.label === 'string' ? det.label : 'The client';
+        if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Further evidence requested' : 'Proof-of-funds form';
+        const tpl = typeof det.template === 'string' ? det.template : '';
+        const ctx = (det.context ?? {}) as Record<string, unknown>;
+        if (tpl === 'progress_update' && typeof ctx.done === 'string') return cap(ctx.done);
+        return UPDATE_TITLE[tpl] ?? cap(tpl.replace(/_/g, ' '));
+      }
+      default: return `${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
     }
   };
   return (
@@ -216,7 +242,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // An escalation decision IS the escalation: the timer gave up on writing and asked
       // for a person. It does not belong in the same column as an ordinary decision.
       bucket: d.kind === 'escalation' ? 'escalate' : 'do',
-      kind: d.kind,
+      ...decisionTask(s, d),
       what,
       unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : null,
       actionOwner: 'conveyancer',
@@ -239,6 +265,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       id: `do:issue:${i.id}`,
       bucket: 'do',
       kind: 'issue',
+      chip: i.kind === 'send_failed' ? 'Send failed' : 'Issue',
       what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',

@@ -6,7 +6,7 @@ import { ok, fail } from '@/lib/server/http';
 import { offeredOptions } from '@/lib/server/engine/rules';
 import { onlyVisible } from '@/lib/server/access';
 import { engine } from '@/lib/server/engine/adapters';
-import { decisionSentence } from '@/lib/server/engine/work';
+import { decisionSentence, decisionTask } from '@/lib/server/engine/work';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     const decisions = await onlyVisible(user, await svc.eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit }));
     // Scoped to one case, each row carries its task sentence (the same words the Tasks page uses).
     const state = q.matterId ? await svc.getState(user.tenantId, q.matterId).catch(() => null) : null;
-    return ok({ decisions: decisions.map((d) => ({ ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId), what: state && state.decisions[d.eventId] ? decisionSentence(state, state.decisions[d.eventId]) : null })) });
+    return ok({ decisions: decisions.map((d) => ({ ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId), what: state && state.decisions[d.eventId] ? decisionSentence(state, state.decisions[d.eventId]) : null, ...(state && state.decisions[d.eventId] ? (({ kind, chip }) => ({ taskKind: kind, chip }))(decisionTask(state, state.decisions[d.eventId])) : {}) })) });
   } catch (error) {
     return fail(error);
   }

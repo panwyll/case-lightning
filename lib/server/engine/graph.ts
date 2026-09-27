@@ -352,7 +352,12 @@ export function nextActions(s: MatterState, now: Date = new Date()): NextAction[
         out.push({ what: b.label, who: r.authority === 'client' ? 'client' : r.authority === 'third_party' ? 'third_party' : r.authority === 'system' ? 'conveyancer' : 'conveyancer', unblocks: r.label, ref: { type: b.type, id: b.id }, urgency: 'info' });
       }
     }
-    if (!r.blockedBy.length) out.push({ what: `${r.label}: ${r.detail || 'not yet'}`, who: r.authority, unblocks: gateLabelFor(s, g), ref: { type: 'requirement', id: r.id }, urgency: 'info' });
+    if (!r.blockedBy.length) {
+      // A requirement that is simply not there yet: named for the thing, with its state in a word; one that is with the client is theirs, not ours.
+      const st = r.detail?.match(/^status:\s*(.+)$/i)?.[1] ?? null;
+      const what = st ? `${r.label.replace(/ (passed|satisfactory)$/i, '')}: ${st}` : `${r.label}: ${r.detail || 'not yet'}`;
+      out.push({ what, who: st === 'requested' ? 'client' : r.authority, unblocks: gateLabelFor(s, g).replace(/^ready to /i, ''), ref: { type: 'requirement', id: r.id }, urgency: 'info' });
+    }
   }
   const rank: Record<IssueSeverity, number> = { critical: 0, warning: 1, info: 2 };
   return out.sort((a, b) => rank[a.urgency] - rank[b.urgency]);
