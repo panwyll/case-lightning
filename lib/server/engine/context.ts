@@ -736,6 +736,10 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): Bui
       warn: !st.readable || mine.length > 0,
     });
   }
+  // Payslips: income evidence, shown as their own cards; the statements above show the money.
+  for (const ps of s.proofOfFunds.payslips ?? []) {
+    files.push({ documentId: ps.documentId, title: ps.fileName ?? 'Payslip', summary: `Payslip${ps.employer ? ` from ${ps.employer}` : ''}${ps.employee ? ` for ${ps.employee}` : ''}${ps.payDate ? `, ${day(ps.payDate)}` : ''}${ps.netPennies ? ` · net ${gbp(ps.netPennies)}` : ''}`, lines: [], warn: flags.some((fl) => fl.locator?.section?.split(' · ')[0] === ps.fileName) });
+  }
   // What the rules ran and found nothing on: the collapsed "nothing to do" list, in words.
   const raisedCodes = new Set(flags.map((fl) => fl.code.split(':')[0]));
   const RULES: Array<[string, string]> = [

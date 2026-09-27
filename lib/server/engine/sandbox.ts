@@ -64,6 +64,7 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
       extractLease: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractLease(doc),
       extractManagementPack: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractManagementPack(doc),
       extractStatement: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractStatement(doc),
+      extractEvidence: async (doc) => { const ex = await pick(doc.tenantId, doc.matterId, base.extractor, fixture); if (ex.extractEvidence) return ex.extractEvidence(doc); const st = await ex.extractStatement(doc); return { kind: st ? 'bank_statement' : 'other', statement: st, payslip: null }; },
       extractSurvey: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractSurvey(doc),
       extractPropertyForms: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractPropertyForms(doc),
     },

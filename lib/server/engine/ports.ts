@@ -20,7 +20,7 @@ import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
 import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
-import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
+import type { ProofOfFundsFacts, StatementFacts, TransactionReview, PayslipFacts, EvidenceKind } from './proof-of-funds';
 
 /** What the engine knows about a document (a row in `document`, or an in-memory stand-in). */
 export interface DocumentRef {
@@ -61,6 +61,8 @@ export interface DocumentExtractor {
   extractManagementPack(doc: DocumentRef): Promise<ManagementPackFacts>;
   /** Proof of funds: read a client-attached document as a bank statement, transaction by transaction. null = readable but not a statement (a gift letter, an ID). Throws when unreadable. */
   extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
+  /** Proof of funds: the attached document read for what it is (statement, payslip, gift letter…). Readers without it are treated as statement-or-nothing. */
+  extractEvidence?(doc: DocumentRef): Promise<{ kind: EvidenceKind; statement: StatementFacts | null; payslip: PayslipFacts | null }>;
   /** Case model §7: a survey / valuation / specialist report read for its recommendations (facts, never the client's view). */
   extractSurvey(doc: DocumentRef): Promise<SurveyFacts>;
   /** The seller's TA6 / TA7 / TA10 read answer by answer. */

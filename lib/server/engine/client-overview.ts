@@ -11,7 +11,7 @@ import { caseBrief, type BriefWait } from './brief';
 import type { MatterState } from './types';
 
 const TOLD_QUIET_MS = 3 * 24 * 3_600_000;
-const JUST_RAISED_MS = 60 * 60_000;
+const JUST_RAISED_MS = 24 * 60 * 60_000;
 
 /** How long each kind of wait usually takes, in the client's terms. */
 const USUALLY: Record<string, string> = {

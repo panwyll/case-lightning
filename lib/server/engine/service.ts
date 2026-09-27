@@ -296,8 +296,8 @@ export class EngineService {
       if (!ref || ref.matterId !== matterId) return;
       const fileName = evidenceNames[id] ?? ref.fileName ?? null;
       try {
-        const statement = await this.ports.extractor.extractStatement(ref);
-        evidence.push({ id, fileName, sourceIndex, donorFor, statement, unreadable: null });
+        const read = this.ports.extractor.extractEvidence ? await this.ports.extractor.extractEvidence(ref) : await this.ports.extractor.extractStatement(ref).then((st) => ({ kind: st ? ('bank_statement' as const) : ('other' as const), statement: st, payslip: null }));
+        evidence.push({ id, fileName, sourceIndex, donorFor, kind: read.kind, payslip: read.payslip, statement: read.statement, unreadable: null });
       } catch (err) {
         this.ports.log(`statement extraction failed for ${id} — flagged for a person`, err);
         evidence.push({ id, fileName, sourceIndex, donorFor, statement: null, unreadable: err instanceof Error ? err.message : 'unreadable' });
@@ -858,15 +858,18 @@ export class EngineService {
           const fresh = await this.getState(tenantId, matterId);
           const brief = caseBrief(fresh, this.ports.now());
           const done = e.type === 'proof_of_funds_reviewed' ? 'source of funds approved' : 'title approved';
-          const doneLine = e.type === 'proof_of_funds_reviewed' ? 'we have reviewed and approved your proof of funds, so that part of the file is complete.' : 'we have reviewed the title to the property and approved it.';
-          // In the client's words: a plain state per strand (never the file's internal detail), and who we are waiting for.
-          const plain: Record<string, string> = { complete: 'complete', in_progress: 'in hand', awaiting: 'waiting on someone else', blocked: 'being looked into', not_started: 'not started yet' };
-          const status = brief.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => `• ${w.label}: ${plain[w.status] ?? w.status.replace(/_/g, ' ')}`).join('\n');
-          // The outstanding items are listed once, in the "where things stand" tail every client update carries.
-          const next = brief.waiting.length ? 'we chase everything outstanding on its due date and let you know as each piece comes in.' : 'we will be in touch as the next piece comes in.';
+          const doneLine = e.type === 'proof_of_funds_reviewed' ? 'We have signed off your proof of funds: that part of the file is complete.' : 'We have reviewed the title to the property and approved it.';
+          // What comes next, once: one sentence for the stage, the target date if there is one. Outstanding items are the "where things stand" tail every client update carries.
           const target = brief.milestones.targetExchangeDate;
           const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
-          const context = { eventType: e.type, payload: e.payload, done, doneLine, status, next, targetNote, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
+          const stageNext: Record<string, string> = {
+            instruction: 'Once your checks are through we get the contract papers and the searches under way.',
+            pre_contract: 'Once the contract papers and the search results are in, we raise our enquiries with the seller\'s solicitor and report to you before exchange.',
+            contract_review: 'Once the replies to our enquiries are in and the report on title is with you, we can look at exchanging.',
+            pre_exchange: 'When you have read the report and are ready, and the deposit is with us, we can exchange.',
+          };
+          const nextStep = `${stageNext[fresh.stage] ?? 'We will be in touch as the next piece comes in.'}${targetNote}`;
+          const context = { eventType: e.type, payload: e.payload, done, doneLine, nextStep, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
           const detail = { template: 'progress_update', context, triggeredByEventId: e.id };
           if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'progress_update', `progress_update:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${done}; where everything else stands; what happens next\nTemplate: progress_update`))) {
             try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('progress update could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }

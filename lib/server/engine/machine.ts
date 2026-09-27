@@ -1590,7 +1590,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         const party = partyId('donor', c.name);
         if (!s.partyChecks[party] && !out.some((ev) => ev.type === 'id_party_added' && (ev.payload as { party: string }).party === party)) out.push({ type: 'id_party_added', actor: SYSTEM, payload: { party, label: c.label, role: 'donor' } });
       }
-      out.push({ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, statements: review?.statements ?? [], risk, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence });
+      out.push({ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, statements: review?.statements ?? [], payslips: review?.payslips ?? [], risk, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence });
       return out;
     }
     case 'raise_proof_of_funds_query': {

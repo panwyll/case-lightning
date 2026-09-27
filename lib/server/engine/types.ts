@@ -867,7 +867,7 @@ export interface Payloads {
   /** The form link went to the client (recorded after the send). A follow-up carries the request it re-opens. */
   proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; /** the address it went to */ to?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
   /** The client submitted the form: typed facts, the rule flags (declaration AND transaction level), the statements read, the risk rating, and ALWAYS a decision for the conveyancer citing the declaration document. */
-  proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; statements: TransactionReview['statements']; risk: PofRiskRating; decision: DecisionSpec };
+  proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; statements: TransactionReview['statements']; payslips?: TransactionReview['payslips']; risk: PofRiskRating; decision: DecisionSpec };
   proof_of_funds_reviewed: { requestId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
   /** A query to the client about a transaction or a gap — drafted by the rules (actor system) or added by a person. */
   proof_of_funds_query_raised: { requestId: string; query: { id: string; key: string; flagCode: string; documentId: string | null; transaction: StatementTransaction | null; question: string } };
@@ -1329,6 +1329,7 @@ export interface MatterState {
     /** The latest submission's flags (declaration + transactions), statements read, and risk rating. */
     flags: Flag[];
     statements: TransactionReview['statements'];
+    payslips?: TransactionReview['payslips'];
     risk: PofRiskRating | null;
     /** Queries to the client: drafted by the rules or a person, sent with a round, answered through the form, or withdrawn with a reason. */
     queries: Record<string, PofQuery>;

@@ -755,7 +755,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'proof_of_funds_submitted': {
       const p = e.payload as Payloads['proof_of_funds_submitted'];
-      s.proofOfFunds = { ...s.proofOfFunds, status: 'submitted', requestId: p.requestId, submittedAt: e.createdAt, documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id, resolution: null, flags: p.flags, statements: p.statements ?? [], risk: p.risk ?? null };
+      s.proofOfFunds = { ...s.proofOfFunds, status: 'submitted', requestId: p.requestId, submittedAt: e.createdAt, documentId: e.sourceDocumentId ?? null, facts: p.facts, decisionEventId: e.id, resolution: null, flags: p.flags, statements: p.statements ?? [], payslips: p.payslips ?? [], risk: p.risk ?? null };
       closeWait(s, 'proof_of_funds', p.requestId, e);
       break;
     }

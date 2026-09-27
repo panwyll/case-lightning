@@ -1,6 +1,6 @@
 import type { DraftCheck, RegisterFact } from './draft-check';
 import { DeterministicNoteReader } from './notes';
-import type { StatementFacts } from './proof-of-funds';
+import type { StatementFacts, PayslipFacts, EvidenceKind } from './proof-of-funds';
 /**
  * In-memory MOCK implementations of every port (see ports.ts). These are what the
  * engine runs against in unit tests and in a dev environment without InfoTrack,
@@ -108,6 +108,13 @@ export class FixtureExtractor implements DocumentExtractor {
     if (f?.unreadable) throw new Error('scan too poor to read');
     if (Array.isArray(f?.transactions)) return f as unknown as StatementFacts;
     return null;
+  }
+  async extractEvidence(doc: DocumentRef) {
+    const f = doc.extractedFacts as { transactions?: unknown; unreadable?: unknown; payslip?: PayslipFacts; kind?: EvidenceKind } | null;
+    if (f?.unreadable) throw new Error('scan too poor to read');
+    if (Array.isArray(f?.transactions)) return { kind: 'bank_statement' as const, statement: f as unknown as StatementFacts, payslip: null };
+    if (f?.payslip) return { kind: 'payslip' as const, statement: null, payslip: f.payslip };
+    return { kind: f?.kind ?? ('other' as const), statement: null, payslip: null };
   }
 }
 

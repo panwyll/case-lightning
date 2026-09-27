@@ -324,9 +324,24 @@ export interface StatementFacts {
   confidence: number;
 }
 
+/** A payslip as the reader sees it: who was paid, by whom, when, how much. */
+export interface PayslipFacts {
+  employeeName: string | null;
+  employer: string | null;
+  payDate: string | null;
+  netPayPennies: number | null;
+  grossPayPennies: number | null;
+  confidence: number;
+}
+export type EvidenceKind = 'bank_statement' | 'payslip' | 'gift_letter' | 'id_document' | 'sale_memorandum' | 'other';
+
 export interface EvidenceDocument {
   id: string;
   fileName: string | null;
+  /** What the reader took it for. */
+  kind?: EvidenceKind;
+  /** Present when it is a payslip. */
+  payslip?: PayslipFacts | null;
   /** Which declared source (1-based index) it was attached to, or null for donor documents. */
   sourceIndex: number | null;
   donorFor: number | null;
@@ -426,6 +441,8 @@ export interface DraftQuery {
 export interface TransactionReview {
   flags: Flag[];
   queries: DraftQuery[];
+  /** Payslips read, for the briefing: income evidence, kept apart from the statements. */
+  payslips: Array<{ documentId: string; fileName: string | null; employee: string | null; employer: string | null; payDate: string | null; netPennies: number | null }>;
   /** Per-document coverage summary for the briefing. */
   statements: Array<{ documentId: string; fileName: string | null; holder: string | null; bank: string | null; from: string | null; to: string | null; transactions: number; credits: number; closingPennies: number | null; readable: boolean }>;
 }
@@ -435,6 +452,8 @@ export interface TransactionReview {
  * every credit that is not obviously salary or a declared source is a question until it is
  * answered. Deterministic; every flag is a fact about a printed line, with the line quoted.
  */
+const sameName = (a: string, b: string): boolean => { const n = (x: string) => x.toLowerCase().replace(/[^a-z ]/g, '').split(/\s+/).filter(Boolean); const A = n(a); const B = n(b); if (!A.length || !B.length) return false; return A[A.length - 1] === B[B.length - 1] && (A[0][0] === B[0][0]); };
+
 export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceDocument[], submittedAt: string, policy: ProofOfFundsPolicy = POF_POLICY): TransactionReview {
   const flags: Flag[] = [];
   const queries: DraftQuery[] = [];
@@ -446,6 +465,18 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
     if (q) queries.push(q);
   };
   const cite = (doc: EvidenceDocument, t: StatementTransaction | null) => ({ section: `${doc.fileName ?? doc.id}${t ? ` · ${t.date} "${t.description}"` : ''}`, quote: t ? `${t.date} ${t.description} ${t.amountPennies >= 0 ? '+' : '−'}${gbp(Math.abs(t.amountPennies))}` : undefined });
+
+  // Payslips: who was paid, by whom, how much. Income evidence that supports a salary-fed source but never replaces the account the money sits in.
+  const payslips: TransactionReview['payslips'] = [];
+  for (const doc of evidence.filter((e) => e.kind === 'payslip' && e.payslip)) {
+    const ps = doc.payslip!;
+    payslips.push({ documentId: doc.id, fileName: doc.fileName, employee: ps.employeeName, employer: ps.employer, payDate: ps.payDate, netPennies: ps.netPayPennies });
+    const source = doc.sourceIndex != null ? facts.sources[doc.sourceIndex - 1] ?? null : null;
+    const holders = [facts.declarantName, source?.jointHolderName ?? ''].filter(Boolean);
+    if (ps.employeeName && holders.length && !holders.some((h) => sameName(h, ps.employeeName!))) {
+      push({ code: 'PAYSLIP_NAME_MISMATCH', severity: 'medium', description: `Payslip "${doc.fileName ?? doc.id}" is in the name of ${ps.employeeName}, not ${holders.join(' / ')}.`, locator: cite(doc, null) }, { key: `PAYSLIP_NAME_MISMATCH:${doc.id}`, flagCode: 'PAYSLIP_NAME_MISMATCH', documentId: doc.id, transaction: null, question: `The payslip you attached is in the name of ${ps.employeeName}. Whose income is this, and how does it reach the account the deposit is coming from?` });
+    }
+  }
 
   const statementDocs = evidence.filter((e) => e.statement || e.unreadable);
   for (const doc of statementDocs) {
@@ -538,11 +569,19 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
     if (s.kind === 'mortgage' || s.amountPennies === 0) return;
     const readable = statementDocs.some((d) => d.sourceIndex === i + 1 && d.statement);
     const attached = evidence.some((d) => d.sourceIndex === i + 1);
+    const slips = evidence.filter((d) => d.sourceIndex === i + 1 && d.kind === 'payslip');
+    if (attached && !readable && !statementDocs.some((d) => d.sourceIndex === i + 1) && slips.length) {
+      // Payslips show the income; the statements show the money. Ask for the statements, plainly, and note what the payslips do establish.
+      const net = slips.map((d) => d.payslip?.netPayPennies ?? 0).filter(Boolean);
+      const employer = slips.map((d) => d.payslip?.employer).find(Boolean) ?? null;
+      push({ code: `PAYSLIPS_NOT_STATEMENTS:${s.kind.toUpperCase()}`, severity: 'medium', description: `${slips.length} payslip${slips.length === 1 ? '' : 's'} attached for ${FUND_SOURCE_LABEL[s.kind].toLowerCase()} (${gbp(s.amountPennies)})${employer ? ` from ${employer}` : ''}${net.length ? `, net ${gbp(Math.max(...net))} a period` : ''}: income is evidenced, but no statement shows the money.`, locator: cite(slips[0], null) }, { key: `PAYSLIPS_NOT_STATEMENTS:${i + 1}`, flagCode: 'PAYSLIPS_NOT_STATEMENTS', documentId: slips[0].id, transaction: null, question: `Thank you for the payslips — they show your income${employer ? ` from ${employer}` : ''}. We also need to see the money itself: please attach statements for the account your salary is paid into, and for the account the ${FUND_SOURCE_LABEL[s.kind].toLowerCase()} is held in if that is different, covering the last three months.` });
+      return;
+    }
     if (attached && !readable && !statementDocs.some((d) => d.sourceIndex === i + 1)) {
       push({ code: `NO_STATEMENT:${s.kind.toUpperCase()}`, severity: 'medium', description: `The documents attached for ${FUND_SOURCE_LABEL[s.kind].toLowerCase()} (${gbp(s.amountPennies)}) are not bank statements; the money itself has not been seen.`, locator: { section: `Source ${i + 1}` } }, { key: `NO_STATEMENT:${i + 1}`, flagCode: 'NO_STATEMENT', documentId: '', transaction: null, question: `For the ${gbp(s.amountPennies)} from ${FUND_SOURCE_LABEL[s.kind].toLowerCase()}, please send the bank statements for the account the money is in now, covering the last three months.` });
     }
   });
-  return { flags, queries, statements };
+  return { flags, queries, statements, payslips };
 }
 
 /** A query as recorded on the log / projection. */
@@ -596,6 +635,8 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   BALANCE_JUMP: 'A balance that grows through many small credits without salary needs explaining: a side business, rent, family support.',
   NO_SALARY_CREDITS: 'If savings come from salary, salary should be visible; otherwise the statement is not the account the savings came from.',
   NO_STATEMENT: 'A gift letter or an ID is not proof of funds; the money has to be seen in an account.',
+  PAYSLIPS_NOT_STATEMENTS: 'Payslips evidence the income, not the money: ask for the statements of the account the salary is paid into and the account the funds are held in.',
+  PAYSLIP_NAME_MISMATCH: 'Income in another name is a third party\'s money until explained: whose, and how it reaches the deposit account.',
   COVERAGE_SHORT: 'Three months is the usual minimum; less may be acceptable with a reason, and the MLRO decides.',
   QUERY_UNANSWERED: 'A query the client has not answered leaves the flag open; sign-off is not available until every query is answered or withdrawn.',
 };
