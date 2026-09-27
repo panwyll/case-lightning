@@ -62,10 +62,12 @@ export default function TaskList({ who }: { who: string }) {
   const [caseId, setCaseId] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
-  const quickApprove = async (eventId: string) => {
+  const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
+  const quickApprove = async (key: string, eventId: string) => {
     setApproving(eventId);
+    setQuickErr(null);
     try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); await load(); }
-    catch { setOpen(`${eventId}`); }
+    catch (e: unknown) { setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' }); setOpen(key); }
     finally { setApproving(null); }
   };
   const load = useCallback(async () => {
@@ -134,10 +136,11 @@ export default function TaskList({ who }: { who: string }) {
                 <div className="tl-task">
                   <div>
                     <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}`}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
+                    {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : age != null ? (age === 0 ? 'since today' : `waiting ${age}d`) : ''}</span>
-                  {isDecision && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
+                  {isDecision && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
                   {isDecision
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <a className="tl-btn" href={paths.matter(i.matterId)}>Open case <ChevronRight size={14} /></a>}

@@ -38,10 +38,12 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
   const [kind, setKind] = useState<string>('all');
   const [open, setOpen] = useState<string | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
+  const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
   const quickApprove = async (eventId: string) => {
     setApproving(eventId);
+    setQuickErr(null);
     try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); await load(); onResolved?.(); }
-    catch { setOpen(eventId); }
+    catch (e: unknown) { setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' }); setOpen(eventId); }
     finally { setApproving(null); }
   };
 
@@ -100,7 +102,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
           ) : (
             <div key={d.eventId} className={`df-item${open === d.eventId ? ' open' : ''}`}>
               <div className="df-row">
-                <div className="what"><span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{d.chip ?? chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
+                <div className="what">{quickErr?.id === d.eventId && <div style={{ color: '#b91c1c', fontSize: 12, fontWeight: 500 }}>{quickErr.text}</div>}<span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{d.chip ?? chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
                 {quickApprovable(d.taskKind) && open !== d.eventId && <button type="button" className="df-btn go" disabled={approving === d.eventId} onClick={() => void quickApprove(d.eventId)}>{approving === d.eventId ? 'Approving…' : 'Approve'}</button>}
                 <button type="button" className={`df-btn${open === d.eventId ? ' on' : ''}`} aria-label={open === d.eventId ? 'Collapse' : 'Review'} onClick={() => setOpen(open === d.eventId ? null : d.eventId)}>{open === d.eventId ? null : 'Review '}<ChevronRight size={14} style={{ transform: open === d.eventId ? 'rotate(90deg)' : undefined }} /></button>
               </div>
