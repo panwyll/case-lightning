@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { allPolicies, setPolicy, POLICY_DEFAULTS, type PolicyKey } from '@/lib/server/policy';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireRole } from '@/lib/server/session';
@@ -46,7 +47,8 @@ export async function GET() {
     const [levels, sla] = await Promise.all([svc.levels(user.tenantId), svc.eventStore.loadSla(user.tenantId)]);
     const timers = WAIT_KEYS.map((k) => ({ waitKey: k, label: WAIT_LABEL[k], to: RECIPIENT[sla[k].recipientRole], chaseAfter: sla[k].chaseAfter, chaseEvery: sla[k].chaseEvery, escalateAfter: sla[k].escalateAfter, reEscalateAfter: sla[k].reEscalateAfter, overridden: JSON.stringify([sla[k].chaseAfter, sla[k].chaseEvery, sla[k].escalateAfter, sla[k].reEscalateAfter]) !== JSON.stringify([DEFAULT_SLA[k].chaseAfter, DEFAULT_SLA[k].chaseEvery, DEFAULT_SLA[k].escalateAfter, DEFAULT_SLA[k].reEscalateAfter]) }));
     const signoffs = await query<{ rule_id: string; signed_at: string; name: string | null }>(`select s.rule_id, s.signed_at, coalesce(u.display_name, u.email) as name from rule_signoff s left join app_user u on u.id = s.signed_by where s.tenant_id = $1`, [user.tenantId]).catch(() => []);
-    return ok({ timers, messages: engineMessages(levels), documentRules: DOCUMENT_RULES, caseRules: CASE_RULES, signoffs: Object.fromEntries(signoffs.map((s) => [s.rule_id, { at: s.signed_at, by: s.name }])) });
+    const policies = await allPolicies(user.tenantId);
+    return ok({ policies, timers, messages: engineMessages(levels), documentRules: DOCUMENT_RULES, caseRules: CASE_RULES, signoffs: Object.fromEntries(signoffs.map((s) => [s.rule_id, { at: s.signed_at, by: s.name }])) });
   } catch (error) {
     return fail(error);
   }
@@ -88,6 +90,19 @@ export async function POST(req: NextRequest) {
     else await query(`delete from rule_signoff where tenant_id = $1 and rule_id = $2`, [user.tenantId, s.ruleId]);
     await writeAudit({ tenantId: user.tenantId, matterId: null, actorUserId: user.userId, actionType: 'RULE_SIGNOFF', actionStatus: 'SUCCESS', payload: s }).catch(() => {});
     return ok({ saved: true });
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/** A firm policy switch (protect outgoing files). Admins only. */
+export async function PATCH(req: NextRequest) {
+  try {
+    assertFeature('auth');
+    const user = await requireRole(['ADMIN']);
+    const input = z.object({ key: z.enum(Object.keys(POLICY_DEFAULTS) as [PolicyKey, ...PolicyKey[]]), value: z.boolean() }).parse(await req.json());
+    await setPolicy(user.tenantId, input.key, input.value, user.userId);
+    return ok({ saved: true, policies: await allPolicies(user.tenantId) });
   } catch (error) {
     return fail(error);
   }

@@ -9,6 +9,8 @@
  * simply behaves as "no workflow configured".
  */
 import { query, queryOne, transaction } from './db';
+import { getPolicy } from './policy';
+import { protectFiles, sendFilePassword } from './outbound-protect';
 import { writeAudit } from './audit';
 import { createDraftMessage, addAttachmentToMessage, uploadToMatterFolder } from './graph';
 import { driveUserFor } from './matter-drive';
@@ -355,6 +357,7 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
   // generated/attached, or the total is over the size ceiling, flag it and (below) hold any
   // auto-send back as a draft for a human.
   let attachWarning: string | null = null;
+  let filePasswordNote = '';
   const attachIds = (tpl.attach_doc_template_ids ?? []).filter(Boolean);
   if (attachIds.length) {
     try {
@@ -364,6 +367,17 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
       const total = files.reduce((n, f) => n + f.buffer.length, 0);
       if (total > MAX_ATTACH_TOTAL) {
         attachWarning = `attachments too large (${(total / 1048576).toFixed(1)} MB, limit ${Math.round(MAX_ATTACH_TOTAL / 1048576)} MB) — email held without them`;
+      } else if (await getPolicy(tenantId, 'protectOutgoingFiles')) {
+        // Firm policy: the files travel inside a password-protected zip; the password goes to the client on its own channel first.
+        const bundle = await protectFiles(files, `${(vars.matterRef ?? 'documents').replace(/[^A-Za-z0-9-]+/g, '-')}-documents.zip`);
+        await addAttachmentToMessage(userId, draft.id, bundle.fileName, bundle.buffer, bundle.contentType);
+        if (wantsSend) {
+          try { await sendFilePassword(tenantId, matterId, bundle); }
+          catch (err) { attachWarning = `the file password could not be sent to the client (${err instanceof Error ? err.message : String(err)}) — email held; the password is ${bundle.password}`; }
+        } else {
+          attachWarning = null;
+          filePasswordNote = ` · zip password (tell the client separately): ${bundle.password}`;
+        }
       } else {
         for (const f of files) await addAttachmentToMessage(userId, draft.id, f.fileName, f.buffer, DOCX_CT);
       }
@@ -381,7 +395,7 @@ async function fireEmailNode(userId: string, tenantId: string, matterId: string,
     await scheduleSend({ tenantId, userId, matterId, graphMessageId: draft.id, subject, recipient, source: 'WORKFLOW' }).catch(() => {});
     await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: `Update email scheduled — ${tpl.name}`, detail: subject, graphMessageId: draft.id }).catch(() => {});
   } else {
-    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: attachWarning ? `Email needs attention — ${tpl.name}` : `Email drafted — ${tpl.name}`, detail: subject + flag, graphMessageId: draft.id }).catch(() => {});
+    await addDraftReady({ tenantId, matterId, dedupKey: `wfemail:${t.id}`, title: attachWarning ? `Email needs attention — ${tpl.name}` : `Email drafted — ${tpl.name}`, detail: subject + flag + filePasswordNote, graphMessageId: draft.id }).catch(() => {});
   }
 }
 

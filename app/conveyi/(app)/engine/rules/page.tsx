@@ -15,7 +15,7 @@ interface Timer { waitKey: string; label: string; to: string; chaseAfter: number
 interface Message { id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: TrustLevel }
 interface DocRule { id: string; document: string; rule: string; value: string }
 interface CaseRule { id: string; group: string; when: string; then: string; holds?: string; tells?: string; source: string }
-interface Rules { timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
+interface Rules { policies?: { protectOutgoingFiles: boolean }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
 
 const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['cases', 'Case Rules'], ['documents', 'Document Rules']] as const;
 const KIND_LABEL: Record<Message['kind'], string> = { acknowledgement: 'Acknowledgement', update: 'Client update', chase: 'Chase', request: 'Request' };
@@ -58,6 +58,11 @@ export default function RulesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, Partial<Timer>>>({});
   const [section, setSection] = useState<string>(typeof window !== 'undefined' && window.location.hash ? window.location.hash.slice(1) : 'signoffs');
+  const setProtect = async (value: boolean) => {
+    setBusy('policy');
+    try { await api('/admin/rules', { method: 'PATCH', body: JSON.stringify({ key: 'protectOutgoingFiles', value }) }); await load(); }
+    finally { setBusy(null); }
+  };
   const load = useCallback(async () => {
     try {
       setR(await api<Rules>('/admin/rules'));
@@ -209,6 +214,11 @@ export default function RulesPage() {
           </table>
         </div>
         <div className="ru-sub" style={{ marginTop: 6 }}>Wording is under <a href={`${paths.admin}?tab=templates`}>Email Templates</a>.</div>
+        <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13.5 }}>Protect Outgoing Files</b>
+          <span className="ru-sub" style={{ flex: 1, minWidth: 240 }}>Files go inside a password-protected zip; the password goes separately (WhatsApp where the client has opted in, otherwise its own message). Both are on the case log.</span>
+          <button className="eg-btn" disabled={busy === 'policy'} onClick={() => void setProtect(!(r?.policies?.protectOutgoingFiles ?? false))} style={r?.policies?.protectOutgoingFiles ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{r?.policies?.protectOutgoingFiles ? 'On' : 'Off'}</button>
+        </div>
       </section>
 
       <section id="cases" className="ru-sec">
