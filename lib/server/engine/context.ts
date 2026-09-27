@@ -33,8 +33,10 @@ export interface TaskContext {
 export interface ChecklistItem {
   text: string;
   status: 'ok' | 'flag' | 'open';
-  evidence: Array<{ text: string; documentId?: string | null; page?: number | null; warn?: boolean }>;
+  evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; /** One link per line the evidence rests on (each salary credit, each gift receipt): the label, and where it is. */ links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }>;
 }
+/** A bank statement as the pipeline read it, the parts the brief quotes (proof-of-funds.ts StatementFacts). */
+export interface StatementFactsLite { accountHolder: string | null; periodFrom: string | null; periodTo: string | null; closingBalancePennies: number | null; transactions: Array<{ date: string; description: string; amountPennies: number; counterparty?: string | null }>; salaryCredits: Array<{ date: string; amountPennies: number; payer: string }> }
 
 export interface MatterFacts {
   matterRef: string | null;
@@ -134,7 +136,7 @@ const KIND_PREFIX: Record<string, string> = { id_check: 'id_check', mortgage: 'm
 
 const flagWords = (flags: Array<{ code: string }>) => flags.map((f) => f.code.replace(/_/g, ' ').toLowerCase()).join(', ');
 
-export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null; crosschecks?: Array<{ check: string; label: string; status: string; message: string }> | null }): TaskContext {
+export function taskContext(input: { state: MatterState; matter: MatterFacts; events: EngineEvent[]; target: ContextTarget; now?: Date; review?: SourceReview | null; statementFacts?: Array<{ documentId: string; fileName: string | null; facts: StatementFactsLite }> | null; crosschecks?: Array<{ check: string; label: string; status: string; message: string }> | null }): TaskContext {
   const { state: s, matter: m, events, target } = input;
   const now = input.now ?? new Date();
   const p = profileOf(s.transactionType);
@@ -268,7 +270,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       checks = KIND_CHECKS.id_check;
     } else if (d.kind === 'proof_of_funds') {
       const f = s.proofOfFunds.facts;
-      headline = f ? `Declared ${gbp(f.totalDeclaredPennies)}${f.requiredPennies != null ? ` against ${gbp(f.requiredPennies)} needed` : ''}${f.shortfallPennies ? `; shortfall ${gbp(f.shortfallPennies)}` : ''}${f.giftedPennies ? `; ${gbp(f.giftedPennies)} gifted` : ''}${s.proofOfFunds.risk ? ` · ${s.proofOfFunds.risk} risk` : ''}.` : 'Proof of funds submitted.';
+      headline = f ? `Declared ${gbp(f.totalDeclaredPennies)}${f.requiredPennies != null ? ` against ${gbp(f.requiredPennies)} needed` : ''}${f.shortfallPennies ? `; shortfall ${gbp(f.shortfallPennies)}` : ''}${f.giftedPennies ? `; ${gbp(f.giftedPennies)} gifted` : ''}.` : 'Proof of funds submitted.';
       addT('Declared by', f?.declarantName ?? null);
       addT('Needed', f?.requiredPennies != null ? `${gbp(f.requiredPennies)} (price ${gbp(f.purchasePricePennies)} less mortgage ${gbp(f.mortgageAdvancePennies ?? 0)})` : null);
       addT('Declared', gbp(f?.totalDeclaredPennies));
@@ -395,7 +397,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     unblocks = g.ready ? `${g.label}: ready.` : rest.length === 0 ? `This is the last thing before ${g.label.toLowerCase()}.` : `${g.label} still needs ${n(rest.length, 'other thing')}: ${rest.slice(0, 4).join('; ')}${rest.length > 4 ? '…' : ''}`;
   }
 
-  const checklist = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised) : checks.map((text) => ({ text, status: 'open' as const, evidence: [] }));
+  const checklist = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised, { crosschecks: input.crosschecks ?? [], review: input.review ?? null, statementFacts: input.statementFacts ?? [], matter: m, now }) : checks.map((text) => ({ text, status: 'open' as const, evidence: [] }));
   return { headline, task, facts, checks, checklist, history, related: related.slice(0, 6), unblocks };
 }
 
@@ -415,79 +417,280 @@ const flagsOf = (raised: EngineEvent | null): Flag[] => {
   return out;
 };
 
-/** The checks with the evidence the file holds for each. Proof of funds is built from its own facts; the rest attach the decision's flags to the check they speak to. */
-function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null): ChecklistItem[] {
+type Ev = ChecklistItem['evidence'][number];
+interface BuildExtras { crosschecks: Array<{ check: string; label: string; status: string; message: string }>; review: SourceReview | null; statementFacts: Array<{ documentId: string; fileName: string | null; facts: StatementFactsLite }>; matter: MatterFacts; now: Date }
+const item = (text: string, status: ChecklistItem['status'], evidence: Ev[] = []): ChecklistItem => ({ text, status, evidence });
+const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '');
+const monthName = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { month: 'short' });
+
+/**
+ * The checks with the evidence the file holds for each: what a careful paralegal would put in
+ * front of the conveyancer, kind by kind, and nothing the form or the rules have already settled.
+ */
+function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): ChecklistItem[] {
   const docId = d.sourceDocumentId ?? null;
-  if (d.kind === 'proof_of_funds' && s.proofOfFunds.facts) {
-    const f = s.proofOfFunds.facts;
-    const flags = s.proofOfFunds.flags ?? [];
-    const has = (re: RegExp) => flags.filter((x) => re.test(x.code));
-    const qs = Object.values(s.proofOfFunds.queries ?? {});
-    const ev = (text: string, warn = false, documentId: string | null = docId, page: number | null = null) => ({ text, warn, documentId, page });
-    const flagEv = (x: Flag) => ev(seeTail(x.description), x.severity === 'high' || x.severity === 'medium', docId, x.locator?.page ?? null);
-    const queryFor = (code: string) => qs.filter((q) => q.flagCode === code);
-    const items: ChecklistItem[] = [];
-    // 1. The sum.
-    const needed = f.requiredPennies;
-    const shortfall = f.shortfallPennies ?? 0;
-    items.push({ text: 'The declared total covers the balance the client must find', status: needed == null ? 'open' : shortfall > 0 ? 'flag' : 'ok', evidence: [
-      ev(`Declared ${gbp(f.totalDeclaredPennies)}${needed != null ? ` · needed ${gbp(needed)} (price ${gbp(f.purchasePricePennies)}${f.mortgageAdvancePennies ? ` less mortgage ${gbp(f.mortgageAdvancePennies)}` : ', no mortgage'})` : ' · price not on file, so not checked'}${shortfall > 0 ? ` · short by ${gbp(shortfall)}` : ''}`, shortfall > 0),
-      ...has(/^POF_(SHORTFALL|PRICE_UNKNOWN|CASH_PURCHASE)$/).map(flagEv),
-    ] });
-    // 2. Each source evidenced; the statements read.
-    const srcFlags = has(/^(POF_NO_EVIDENCE|NO_STATEMENT|HOLDER_MISMATCH|JOINT_ACCOUNT_UNDECLARED|STATEMENT_STALE|STATEMENT_UNREADABLE|COVERAGE_SHORT|BALANCE_SHORT|NO_SALARY_CREDITS)/);
-    items.push({ text: "Every source is evidenced by statements in the client's name, covering the period", status: srcFlags.length ? 'flag' : f.sources.every((x) => x.evidenceCount > 0) ? 'ok' : 'flag', evidence: [
-      ...f.sources.map((x, i) => ev(`${i + 1}. ${pretty(x.kind)} ${gbp(x.amountPennies)}${x.description ? ` — ${x.description}` : ''} · ${x.evidenceCount ? n(x.evidenceCount, 'document') : 'no document'}`, x.evidenceCount === 0)),
-      ...(s.proofOfFunds.statements ?? []).map((st) => ev(st.readable ? `${st.fileName ?? 'statement'} · ${st.holder ?? 'holder not read'}${st.from && st.to ? ` · ${day(st.from)} to ${day(st.to)}` : ''} · ${st.transactions} lines${st.closingPennies != null ? ` · closing ${gbp(st.closingPennies)}` : ''}` : `${st.fileName ?? 'statement'} · could not be read`, !st.readable, st.documentId)),
-      ...srcFlags.map(flagEv),
-    ] });
-    // 3. Unusual credits, each with its query.
-    const txFlags = has(/^(LARGE_CREDIT|THIRD_PARTY_CREDIT|CASH_DEPOSIT|CASH_PATTERN|IN_AND_OUT|CRYPTO_CREDIT|GAMBLING_CREDIT|OVERSEAS_CREDIT|LOAN_CREDIT|BALANCE_JUMP)/);
-    const txEv = txFlags.flatMap((x) => {
-      const q = queryFor(x.code.split(':')[0]);
-      return [flagEv(x), ...q.map((qq) => ev(`${qq.id} · ${qq.status === 'answered' ? `answered: ${(qq.answer ?? '').slice(0, 200)}` : qq.status === 'sent' ? 'sent to the client, awaiting the answer' : qq.status === 'withdrawn' ? 'withdrawn' : 'drafted, not yet sent'}`, qq.status === 'sent' || qq.status === 'draft', docId))];
-    });
-    items.push({ text: 'Large, recent or third-party credits are explained', status: txFlags.length ? (txFlags.every((x) => queryFor(x.code.split(':')[0]).some((q) => q.status === 'answered' || q.status === 'withdrawn')) ? 'open' : 'flag') : 'ok', evidence: txEv.length ? txEv : [ev('No credit on the statements read needed explaining')] });
-    // 4. Gifts and loans.
-    const giftFlags = has(/^POF_(GIFT|LOAN)/);
-    const donors = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role === 'donor');
-    items.push({ text: "Gifts and loans: donor identified, not repayable, donor's own money, lender told", status: giftFlags.some((x) => /REPAYABLE|NO_DONOR|NON_FAMILY|JOINT_ACCOUNT|NO_DONOR_EVIDENCE/.test(x.code)) || donors.some((pc) => pc.status !== 'cleared' && pc.status !== 'reviewed') ? 'flag' : giftFlags.length ? 'open' : 'ok', evidence: [
-      ...(giftFlags.length ? giftFlags.map(flagEv) : [ev('No gift or loan declared')]),
-      ...donors.map((pc) => ev(`${pc.label}: ID / AML ${pc.status.replace(/_/g, ' ')}`, pc.status !== 'cleared' && pc.status !== 'reviewed', pc.documentId)),
-    ] });
-    // 5. Risk.
-    const riskFlags = has(/^POF_HIGH_RISK|^POF_CASH_PURCHASE$/);
-    const sow = queryFor('SOURCE_OF_WEALTH');
-    items.push({ text: 'Higher-risk sources escalated; enhanced due diligence where the rating says so', status: s.proofOfFunds.risk === 'enhanced' ? (sow.some((q) => q.status === 'answered' || q.status === 'withdrawn') ? 'open' : 'flag') : riskFlags.length ? 'open' : 'ok', evidence: [
-      ev(`Risk rating: ${s.proofOfFunds.risk ?? 'not rated'}`, s.proofOfFunds.risk === 'enhanced'),
-      ...riskFlags.map(flagEv),
-      ...sow.map((q) => ev(`Source of wealth ${q.status === 'answered' ? `answered: ${(q.answer ?? '').slice(0, 200)}` : q.status === 'sent' ? 'asked, awaiting the answer' : q.status === 'withdrawn' ? 'recorded on the file (query withdrawn)' : 'query drafted, not yet sent'}`, q.status === 'sent' || q.status === 'draft')),
-    ] });
-    // 6. The declaration itself.
-    const decl = has(/^POF_(DECLARATION_INCOMPLETE|MISSING_DECLARANT|NO_SOURCES|SALE_PROCEEDS_UNLINKED)$/);
-    items.push({ text: 'The declaration is complete and every buyer stands behind it', status: decl.length ? 'flag' : 'ok', evidence: [
-      ev(`${f.declarantName}${f.coDeclarants?.length ? ` with ${f.coDeclarants.join(', ')}` : ''} · round ${f.round ?? (s.proofOfFunds.rounds || 1)} · declarations ${f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing ? 'all confirmed' : 'NOT all confirmed'}`, !(f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing)),
-      ...decl.map(flagEv),
-    ] });
-    // Anything the rules raised that none of the above claimed.
-    const claimed = new Set(items.flatMap((i) => i.evidence.map((e) => e.text)));
-    const rest = flags.filter((x) => !claimed.has(seeTail(x.description)) && x.code !== 'QUERY_UNANSWERED');
-    for (const x of rest) items.push({ text: seeTail(x.description), status: 'flag', evidence: [] });
-    const unanswered = qs.filter((q) => q.status === 'sent');
-    if (unanswered.length) items.push({ text: `${n(unanswered.length, 'query')} sent to the client and not yet answered`, status: 'flag', evidence: unanswered.map((q) => ev(`${q.id}: ${q.question.slice(0, 160)}`, true)) });
-    return items;
+  const rp = (raised?.payload ?? {}) as Record<string, unknown>;
+  const flagEv = (f: Flag, documentId: string | null = docId): Ev => ({ text: seeTail(f.description), documentId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? f.locator?.section ?? null, warn: f.severity === 'high' || f.severity === 'medium' });
+  const mismatch = (check: string) => x.crosschecks.find((c) => c.check === check && c.status === 'mismatch');
+
+  if (d.kind === 'proof_of_funds' && s.proofOfFunds.facts) return pofChecklist(s, docId, x);
+
+  if (d.kind === 'search') {
+    const f = rp.facts as { flags?: Flag[] } | undefined;
+    const flags = f?.flags ?? [];
+    return attachFlags(checks, flags, docId, flags.length ? [] : [{ text: 'The search came back with nothing the rules flag' }]);
   }
-  // Generic: the kind's checks, with the decision's flags attached to the check they speak to.
-  const flags = flagsOf(raised);
-  const items: ChecklistItem[] = checks.map((text) => ({ text, status: 'open' as const, evidence: [] as ChecklistItem['evidence'] }));
+  if (d.kind === 'enquiry') {
+    const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
+    const q = f?.enquiryId ? s.enquiries[f.enquiryId] : null;
+    const status = f?.status ?? 'unclear';
+    const out: ChecklistItem[] = [
+      item('The reply answers the question actually asked', status === 'answered' ? 'ok' : 'flag', [
+        { text: `Asked: ${q?.subject ?? d.subject ?? 'the enquiry'}` },
+        { text: `The reply ${status === 'answered' ? 'answers it' : status === 'partial' ? 'answers part of it' : status === 'refused' ? 'declines to answer' : 'is unclear'}`, documentId: docId, warn: status !== 'answered' },
+        ...(f?.issues ?? []).map((fl) => flagEv(fl)),
+      ]),
+      ...checks.slice(1).map((t) => item(t, 'open')),
+    ];
+    return out;
+  }
+  if (d.kind === 'mortgage') {
+    const f = s.mortgage.facts;
+    const special = f?.conditions.filter((c) => !c.standard) ?? [];
+    const standard = f?.conditions.filter((c) => c.standard).length ?? 0;
+    const target = s.targetExchangeDate ?? x.matter.exchangeTargetDate ?? null;
+    const daysLeft = f?.expiryDate ? Math.round((Date.parse(f.expiryDate) - x.now.getTime()) / 86_400_000) : null;
+    const tight = f?.expiryDate && target ? Date.parse(f.expiryDate) < Date.parse(target) + 14 * 86_400_000 : false;
+    const names = mismatch('buyer_names');
+    return [
+      item('Every special condition is something the file can meet', special.length ? 'flag' : 'ok', [
+        ...(special.length ? special.map((c) => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })) : [{ text: 'No special conditions' }]),
+        ...(standard ? [{ text: `${n(standard, 'standard condition')} the rules cleared (insurance, occupancy, the usual)` }] : []),
+      ]),
+      item('The offer is valid to completion', daysLeft != null && daysLeft < 0 ? 'flag' : tight ? 'flag' : daysLeft == null ? 'open' : 'ok', [
+        { text: f?.expiryDate ? `Expires ${day(f.expiryDate)}${daysLeft != null ? ` (${daysLeft < 0 ? `${-daysLeft} days ago` : `in ${daysLeft} days`})` : ''}${target ? ` · target exchange ${day(target)}` : ' · no target exchange date set'}` : 'No expiry date read from the offer', warn: !!tight || (daysLeft != null && daysLeft < 0), documentId: docId },
+      ]),
+      item('Advance, lender and names match the instruction', names ? 'flag' : 'ok', [
+        { text: `${f?.lender ?? 'Lender not read'}${f?.amountPennies ? ` · advance ${gbp(f.amountPennies)}` : ''}${s.purchasePricePennies && f?.amountPennies ? ` · ${pct(f.amountPennies, s.purchasePricePennies)} of the price` : ''}`, documentId: docId },
+        ...(names ? [{ text: names.message, warn: true }] : []),
+      ]),
+      item('Valuation against the price; any down-valuation', 'open'),
+    ];
+  }
+  if (d.kind === 'title') {
+    const f = s.title.facts;
+    const sellers = mismatch('seller_names');
+    const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string; section?: string } }[]): Ev[] => arr.map((e) => ({ text: `${e.code}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
+    const out: ChecklistItem[] = [
+      item('The registered proprietor is the seller named in the contract', sellers ? 'flag' : x.crosschecks.some((c) => c.check === 'seller_names' && c.status === 'match') ? 'ok' : 'open', [
+        { text: `${f?.titleNumber ?? 'Title'} · ${f?.tenure ?? 'tenure unknown'}${f?.unregistered ? ' · UNREGISTERED' : ''}`, documentId: docId },
+        ...(sellers ? [{ text: sellers.message, warn: true }] : []),
+      ]),
+      item('Restrictions: whose consent or certificate is needed before registration', f?.restrictions.length ? 'flag' : 'ok', f?.restrictions.length ? entries('restriction', f.restrictions) : [{ text: 'No restriction on the proprietorship register' }]),
+      item('Charges to be discharged on completion', f?.charges.length ? 'flag' : 'ok', f?.charges.length ? entries('charge', f.charges) : [{ text: 'No registered charge' }]),
+      item("Covenants and easements: do they affect the client's use or the lender", f?.covenants.length ? 'flag' : 'ok', f?.covenants.length ? entries('covenant', f.covenants) : [{ text: 'No covenant or easement noted' }]),
+    ];
+    const l = f?.lease;
+    if (l) {
+      const lf = (l.flags ?? []).map((fl) => flagEv(fl, s.title.leaseDocumentId ?? docId));
+      out.push(item('The lease: term, rent and its review, what the lender accepts', lf.length ? 'flag' : 'ok', [
+        { text: `${l.unexpiredYears != null ? n(l.unexpiredYears, 'year') + ' unexpired' : 'term not read'}${l.groundRentPenniesPa != null ? ` · ground rent ${gbp(l.groundRentPenniesPa)} a year` : ''}${l.groundRentReview ? ` · ${l.groundRentReview}` : ''}${s.lenderRequirements?.minUnexpiredYears != null ? ` · lender minimum ${s.lenderRequirements.minUnexpiredYears} years` : ''}`, documentId: s.title.leaseDocumentId ?? docId, page: l.locator?.page ?? null },
+        ...lf,
+      ]));
+    }
+    return out;
+  }
+  if (d.kind === 'id_check') {
+    const f = rp.facts as IdCheckFacts | undefined;
+    const party = d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : x.matter.buyerNames?.[0] ?? x.matter.sellerNames?.[0] ?? 'the client';
+    const names = mismatch('buyer_names') ?? mismatch('seller_names');
+    return [
+      item(`The check on ${party} came back ${f?.outcome ?? 'referred'}`, f?.outcome === 'clear' ? 'ok' : 'flag', [
+        { text: `${f?.provider ?? 'provider'} · ${f?.outcome ?? 'referred'}`, documentId: docId },
+        ...(f?.flags ?? []).map((fl) => flagEv(fl)),
+      ]),
+      item('Names on the ID match the instruction, the contract and the title exactly', names ? 'flag' : x.crosschecks.some((c) => /names/.test(c.check) && c.status === 'match') ? 'ok' : 'open', names ? [{ text: names.message, warn: true }] : []),
+      item('Address on the proof of address matches the correspondence address', 'open'),
+      item('Document in date and not flagged as tampered', 'open'),
+      ...(f?.flags.some((fl) => /PEP|SANCTION/i.test(fl.code)) ? [item('PEP or sanctions hit: escalate, never approve alone', 'flag')] : []),
+    ];
+  }
+  if (d.kind === 'management_pack') {
+    const f = s.managementPack.facts;
+    const bsa = f?.buildingSafety;
+    return [
+      item('Service charge, ground rent and arrears against the budget and the lease', f?.arrearsPennies ? 'flag' : f ? 'ok' : 'open', [
+        { text: `Service charge ${gbp(f?.serviceChargePenniesPa) ?? 'not read'} a year${f?.serviceChargePeriod ? ` (${f.serviceChargePeriod})` : ''}${f?.serviceChargeProportion ? ` · proportion ${f.serviceChargeProportion}` : ''} · ground rent ${gbp(f?.groundRentPenniesPa) ?? 'not read'} a year · reserve fund ${gbp(f?.reserveFundPennies) ?? 'not stated'}`, documentId: docId },
+        ...(f?.arrearsPennies ? [{ text: `Arrears on the account: ${gbp(f.arrearsPennies)}`, warn: true, documentId: docId }] : []),
+      ]),
+      item('Major works planned or levied', f?.majorWorksPlanned || f?.section20Notice ? 'flag' : 'ok', f?.majorWorksPlanned || f?.section20Notice ? [{ text: `${f?.majorWorks ?? 'Major works planned'}${f?.section20Notice ? ' · section 20 consultation under way' : ''}`, warn: true, documentId: docId }] : [{ text: 'None disclosed' }]),
+      item('Buildings insurance in place and adequate', f?.buildingsInsuranceInPlace === false ? 'flag' : f?.buildingsInsuranceInPlace ? 'ok' : 'open', [{ text: f?.buildingsInsuranceInPlace ? `${f.insurer ?? 'Insurer not stated'}${f.insuredSumPennies ? ` · sum insured ${gbp(f.insuredSumPennies)}` : ''}${f.insuranceExpiryDate ? ` · to ${day(f.insuranceExpiryDate)}` : ''}` : f?.buildingsInsuranceInPlace === false ? 'The pack says NO insurance is in place' : 'Not stated', warn: f?.buildingsInsuranceInPlace === false, documentId: docId }]),
+      item("Landlord's consents and fees on assignment; any restriction on the title", f?.consentsRequired ? 'flag' : 'ok', [
+        { text: f?.consentsRequired ? `Required: ${f.consentsRequired}` : 'No consent required on assignment', documentId: docId, warn: !!f?.consentsRequired },
+        ...(f?.fees ? [{ text: `Fees: ${[f.fees.noticeOfAssignmentPennies != null && `notice of assignment ${gbp(f.fees.noticeOfAssignmentPennies)}`, f.fees.noticeOfChargePennies != null && `notice of charge ${gbp(f.fees.noticeOfChargePennies)}`, f.fees.deedOfCovenantPennies != null && `deed of covenant ${gbp(f.fees.deedOfCovenantPennies)}`, f.fees.certificateOfCompliancePennies != null && `certificate of compliance ${gbp(f.fees.certificateOfCompliancePennies)}`, f.fees.other].filter(Boolean).join(', ') || 'none stated'}`, documentId: docId }] : []),
+      ]),
+      ...(f?.disputes ? [item('Disputes, breaches or forfeiture disclosed', 'flag', [{ text: f.disputes, warn: true, documentId: docId }])] : []),
+      ...(bsa?.relevantBuilding ? [item('Building Safety Act: the certificates for a relevant building', bsa.leaseholderDeedOfCertificate === false || bsa.landlordCertificate === false ? 'flag' : 'ok', [{ text: `Leaseholder deed of certificate ${bsa.leaseholderDeedOfCertificate == null ? 'not stated' : bsa.leaseholderDeedOfCertificate ? 'given' : 'MISSING'} · landlord's certificate ${bsa.landlordCertificate == null ? 'not stated' : bsa.landlordCertificate ? 'given' : 'MISSING'}${bsa.remediation ? ` · ${bsa.remediation}` : ''}`, warn: bsa.leaseholderDeedOfCertificate === false || bsa.landlordCertificate === false, documentId: docId }])] : []),
+    ];
+  }
+  if (d.kind === 'report_on_title') {
+    const rv = x.review;
+    const pendingBits = [
+      ...Object.values(s.enquiries).filter((q) => q.status === 'raised' || q.status === 'flagged').map((q) => `enquiry ${q.enquiryId}`),
+      ...Object.values(s.searches).filter((sr) => sr.status === 'ordered' || sr.status === 'flagged').map((sr) => `${sr.searchType} search`),
+      ...(s.hasLender && s.mortgage.status !== 'cleared' && s.mortgage.status !== 'reviewed' ? ['mortgage offer'] : []),
+      ...(s.requireProofOfFunds && !s.proofOfFunds.approvedAt ? ['proof of funds'] : []),
+    ];
+    return [
+      item('Every figure and fact in the draft is backed by the file', rv?.facts ? (rv.unverified.length ? 'flag' : 'ok') : 'open', rv?.facts ? [
+        { text: `${rv.verified} of ${n(rv.facts, 'quoted fact')} found on the page`, documentId: docId },
+        ...rv.unverified.slice(0, 6).map((u) => ({ text: `Not found in the source: ${u.key} = ${u.value}`, warn: true })),
+      ] : [{ text: 'The draft has not been checked against the register' }]),
+      item('Nothing is reported that is still open', pendingBits.length ? 'flag' : 'ok', pendingBits.length ? [{ text: `Still open, not in the report: ${pendingBits.join(', ')}`, warn: true }] : [{ text: 'Every search, enquiry and title point is resolved' }]),
+      item('Mortgage conditions the client must meet are in it', s.hasLender ? 'open' : 'ok', s.hasLender && s.mortgage.facts ? s.mortgage.facts.conditions.filter((c) => !c.standard).map((c) => ({ text: `${c.code}: ${c.text}` })) : []),
+      item('Plain English; nothing the client has not been told elsewhere', 'open'),
+    ];
+  }
+  if (d.kind === 'bank_details') {
+    const b = Object.values(s.bankDetails).find((r) => r.sourceDocumentId === docId) ?? null;
+    const prev = b ? Object.values(s.bankDetails).filter((r) => r.payeeKind === b.payeeKind && r.id !== b.id && r.status === 'verified').pop() ?? null : null;
+    const maskd = (dd: { accountName: string; firmName: string | null; sortCode: string; accountNumber: string }) => `${dd.accountName}${dd.firmName ? ` (${dd.firmName})` : ''} · ${dd.sortCode.replace(/(\d{2})(\d{2})(\d{2})/, '$1-$2-$3')} · ****${dd.accountNumber.slice(-4)}`;
+    return [
+      item(prev ? 'A CHANGE of bank details: the fraud signal' : 'New bank details for this payee', prev ? 'flag' : 'open', [
+        { text: `${b ? maskd(b.details) : 'Details not on the state'} · arrived by ${b ? pretty(b.sourceChannel) : 'unknown channel'}`, documentId: docId, warn: !!prev },
+        ...(prev ? [{ text: `Previously verified: ${maskd(prev.details)}`, warn: true }] : []),
+      ]),
+      item('Verify by a phone call to a number you already hold, or a Lawyer Checker match', 'open'),
+      item('Never confirm on the channel the details arrived on; pay nothing until this is resolved', 'open'),
+    ];
+  }
+  if (d.kind === 'proposal') {
+    const pr = Object.values(s.proposals).find((p) => p.eventId === d.eventId) ?? null;
+    const det = (pr?.detail ?? {}) as Record<string, unknown>;
+    const w = det.waitKey ? openWaits(s).find((ww) => ww.key === det.waitKey && (!det.subject || ww.subject === det.subject)) : null;
+    return [
+      item('Is this the right recipient and the right moment', 'open', [
+        { text: d.summary.split('\n').filter(Boolean).slice(0, 3).join(' · ') },
+        ...(w ? [{ text: `Outstanding since ${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}` }] : []),
+      ]),
+      item('Does anything on the case make this unwise today', openIssues(s).length ? 'flag' : 'ok', openIssues(s).slice(0, 4).map((i) => ({ text: `Open issue: ${i.title}`, warn: true }))),
+    ];
+  }
+  if (d.kind === 'auto_clear') {
+    const ac = raised?.type === 'auto_clear_review_raised' ? (rp as { subFlow?: string; subject?: string; reasons?: string[] }) : null;
+    return [
+      item('Does the document say what the rule layer found', 'open', [{ text: `${ac ? pretty(ac.subFlow ?? '') : pretty(d.subject ?? '')}${ac?.subject ? ` · ${ac.subject.split(':').pop()}` : ''}`, documentId: docId }, ...(ac?.reasons ?? []).map((r) => ({ text: r, documentId: docId }))]),
+      item('Anything the rules do not check that a person would notice', 'open'),
+    ];
+  }
+  // Escalations, requisitions, note actions and anything else: the summary's own lines under the kind's checks.
+  const lines = d.summary.split('\n').map((l) => l.trim()).filter(Boolean).filter((l) => !/^options:/i.test(l)).slice(0, 6);
+  return [item(checks[0] ?? 'What was raised, and why', 'open', lines.map((l) => ({ text: seeTail(l), documentId: docId }))), ...checks.slice(1).map((t) => item(t, 'open'))];
+}
+
+/** The kind's checks with the decision's flags attached to the check they speak to; a flag that fits none is its own row. */
+function attachFlags(checks: string[], flags: Flag[], docId: string | null, okEvidence: Ev[]): ChecklistItem[] {
+  const items: ChecklistItem[] = checks.map((text) => ({ text, status: 'open' as const, evidence: [] as Ev[] }));
   const unplaced: Flag[] = [];
-  for (const x of flags) {
-    const fw = words(`${x.code.replace(/_/g, ' ')} ${x.description}`);
+  for (const f of flags) {
+    const fw = words(`${f.code.replace(/_/g, ' ')} ${f.description}`);
     let best = -1; let score = 0;
     items.forEach((it, i) => { const o = [...words(it.text)].filter((w) => fw.has(w)).length; if (o > score) { score = o; best = i; } });
-    if (best >= 0) { items[best].status = 'flag'; items[best].evidence.push({ text: seeTail(x.description), documentId: docId, page: x.locator?.page ?? null, warn: x.severity === 'high' || x.severity === 'medium' }); }
-    else unplaced.push(x);
+    const ev: Ev = { text: seeTail(f.description), documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? f.locator?.section ?? null, warn: f.severity === 'high' || f.severity === 'medium' };
+    if (best >= 0) { items[best].status = 'flag'; items[best].evidence.push(ev); } else unplaced.push(f);
   }
-  for (const x of unplaced) items.unshift({ text: seeTail(x.description), status: 'flag', evidence: [{ text: `${x.severity} · ${x.code.replace(/_/g, ' ').toLowerCase()}`, documentId: docId, page: x.locator?.page ?? null, warn: x.severity === 'high' }] });
+  for (const f of unplaced) items.unshift({ text: seeTail(f.description), status: 'flag', evidence: [{ text: `${f.severity} · ${f.code.replace(/_/g, ' ').toLowerCase()}`, documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? null, warn: f.severity === 'high' }] });
+  if (!flags.length && items.length) { items[0].status = 'ok'; items[0].evidence.push(...okEvidence); }
+  return items;
+}
+
+/**
+ * Proof of funds, as a paralegal would put it: where the money comes from and in what proportion,
+ * the salary and the savings visible on the statements, the gift and what it still needs, any
+ * credit that wants explaining and what the client said. What the form has already settled
+ * (the total covers the balance) is not repeated unless it failed.
+ */
+function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): ChecklistItem[] {
+  const f = s.proofOfFunds.facts!;
+  const flags = s.proofOfFunds.flags ?? [];
+  const has = (re: RegExp) => flags.filter((fl) => re.test(fl.code));
+  const qs = Object.values(s.proofOfFunds.queries ?? {});
+  const queryFor = (code: string) => qs.filter((q) => q.flagCode === code);
+  const stById = new Map(x.statementFacts.map((st) => [st.documentId, st]));
+  const stmts = s.proofOfFunds.statements ?? [];
+  const flagEv = (fl: Flag): Ev => {
+    // A transaction flag's section is "<file> · <date> "<desc>"": find the statement it came from so the link opens that file.
+    const file = fl.locator?.section?.split(' · ')[0];
+    const st = stmts.find((ss) => ss.fileName === file);
+    return { text: seeTail(fl.description), documentId: st?.documentId ?? docId, page: fl.locator?.page ?? null, quote: fl.locator?.quote?.replace(/^\d{4}-\d{2}-\d{2}\s+/, '').replace(/\s+[+−-]£[\d,.]+$/, '') ?? fl.locator?.section ?? null, warn: fl.severity === 'high' || fl.severity === 'medium' };
+  };
+  const total = f.totalDeclaredPennies;
+  const items: ChecklistItem[] = [];
+
+  // 0. Only when the form did not settle it.
+  if (f.requiredPennies == null) items.push(item('The price is not on the file, so the total could not be checked against the balance', 'open', [{ text: `Declared ${gbp(total)}` }]));
+  else if ((f.shortfallPennies ?? 0) > 0) items.push(item(`Short: ${gbp(f.shortfallPennies)} less than the ${gbp(f.requiredPennies)} the client must find`, 'flag', [{ text: `Declared ${gbp(total)} against price ${gbp(f.purchasePricePennies)}${f.mortgageAdvancePennies ? ` less mortgage ${gbp(f.mortgageAdvancePennies)}` : ''}`, warn: true, documentId: docId }]));
+
+  // 1. Where the money comes from.
+  items.push(item('Where the money comes from', 'ok', f.sources.map((src) => ({ text: `${pretty(src.kind)} ${gbp(src.amountPennies)} (${pct(src.amountPennies, total)})${src.gift ? ` from ${src.gift.donorName}${src.gift.donorRelationship ? ` (${src.gift.donorRelationship})` : ''}` : src.description ? ` — ${src.description}` : ''}${src.evidenceCount ? '' : ' · nothing attached'}`, warn: src.evidenceCount === 0, documentId: docId }))));
+
+  // 2. The statements: whose, when, and the salary and the balance on them.
+  const srcFlags = has(/^(POF_NO_EVIDENCE|NO_STATEMENT|HOLDER_MISMATCH|JOINT_ACCOUNT_UNDECLARED|STATEMENT_STALE|STATEMENT_UNREADABLE|COVERAGE_SHORT|BALANCE_SHORT|NO_SALARY_CREDITS)/);
+  const stEv: Ev[] = [];
+  for (const st of stmts) {
+    const facts = stById.get(st.documentId)?.facts ?? null;
+    stEv.push({ text: st.readable ? `${st.fileName ?? 'Statement'} · ${st.holder ?? 'holder not read'}${st.from && st.to ? ` · ${day(st.from)} to ${day(st.to)}` : ''}${st.closingPennies != null ? ` · closes at ${gbp(st.closingPennies)}` : ''}` : `${st.fileName ?? 'Statement'} · could not be read`, documentId: st.documentId, warn: !st.readable });
+    if (facts?.salaryCredits?.length) {
+      const sal = facts.salaryCredits;
+      const payers = [...new Set(sal.map((c) => c.payer))];
+      const amounts = [...new Set(sal.map((c) => c.amountPennies))];
+      stEv.push({ text: `  Salary: ${sal.length} × ${amounts.length === 1 ? gbp(amounts[0]) : `${gbp(Math.min(...amounts))}–${gbp(Math.max(...amounts))}`} from ${payers.join(', ')}`, documentId: st.documentId, links: sal.map((c) => ({ label: monthName(c.date), documentId: st.documentId, quote: facts.transactions.find((t) => t.date === c.date && t.amountPennies === c.amountPennies)?.description ?? c.payer })) });
+    }
+    if (facts) {
+      const donors = f.sources.filter((src) => src.gift).map((src) => src.gift!.donorName);
+      // The gift arriving: a credit whose payer carries the donor's surname (the last word of the name), never a mere shared first word.
+      const giftIn = facts.transactions.filter((t) => t.amountPennies > 0 && donors.some((dn) => { const surname = dn.trim().toLowerCase().split(/\s+/).pop() ?? ''; return surname.length > 2 && !!t.counterparty && t.counterparty.toLowerCase().includes(surname); }));
+      for (const t of giftIn) stEv.push({ text: `  Gift received: ${gbp(t.amountPennies)} from ${t.counterparty} on ${day(t.date)}`, documentId: st.documentId, quote: t.description });
+    }
+  }
+  if (!stmts.length) stEv.push({ text: 'No statement was read', warn: true });
+  items.push(item('The statements', srcFlags.length ? 'flag' : stmts.some((st) => st.readable) ? 'ok' : 'flag', [...stEv, ...srcFlags.map(flagEv)]));
+
+  // 3. Credits that want explaining, with what the client said.
+  const txFlags = has(/^(LARGE_CREDIT|THIRD_PARTY_CREDIT|CASH_DEPOSIT|CASH_PATTERN|IN_AND_OUT|CRYPTO_CREDIT|GAMBLING_CREDIT|OVERSEAS_CREDIT|LOAN_CREDIT|BALANCE_JUMP)/);
+  if (txFlags.length) {
+    const ev = txFlags.flatMap((fl) => {
+      const q = queryFor(fl.code.split(':')[0]);
+      return [flagEv(fl), ...q.map((qq): Ev => ({ text: `  ${qq.status === 'answered' ? `Client: ${(qq.answer ?? '').slice(0, 220)}` : qq.status === 'sent' ? 'Asked; no answer yet' : qq.status === 'withdrawn' ? 'Query withdrawn with a reason' : 'Query drafted, not sent'}`, warn: qq.status === 'sent' || qq.status === 'draft' }))];
+    });
+    const settled = txFlags.every((fl) => queryFor(fl.code.split(':')[0]).some((q) => q.status === 'answered' || q.status === 'withdrawn'));
+    items.push(item(settled ? 'Credits explained' : 'Credits to explain', settled ? 'open' : 'flag', ev));
+  }
+
+  // 4. The gift, and what it still needs.
+  const gifts = f.sources.filter((src) => src.kind === 'gift' && src.gift);
+  if (gifts.length || has(/^POF_LOAN/).length) {
+    const donors = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role === 'donor');
+    const gflags = has(/^POF_(GIFT|LOAN)/).filter((fl) => fl.code !== 'POF_GIFT');
+    const lenderIssue = Object.values(s.issues).find((i) => i.kind === 'lender_approval' && /gift/i.test(i.title));
+    const ev: Ev[] = [
+      ...gifts.map((g): Ev => ({ text: `${gbp(g.amountPennies)} from ${g.gift!.donorName} (${g.gift!.donorRelationship})${g.gift!.repayable ? ' · REPAYABLE' : ' · not repayable'}${g.gift!.donorAbroad ? ' · donor abroad' : ''}${g.gift!.jointDonorName ? ` · joint account with ${g.gift!.jointDonorName}` : ''} · ${g.evidenceCount ? n(g.evidenceCount, 'donor document') : 'no donor documents'}`, documentId: docId, warn: g.evidenceCount === 0 || g.gift!.repayable })),
+      ...gflags.map(flagEv),
+      ...donors.map((pc): Ev => ({ text: `Next: ${pc.label} ID / AML ${pc.status === 'cleared' || pc.status === 'reviewed' ? 'done' : pc.status.replace(/_/g, ' ')}`, warn: pc.status !== 'cleared' && pc.status !== 'reviewed', documentId: pc.documentId })),
+      ...(s.hasLender ? [{ text: `Next: tell the lender${lenderIssue ? ` (${lenderIssue.status === 'resolved' ? 'confirmed' : 'raised, awaiting the lender'})` : ' (raised on sign-off)'}`, warn: !lenderIssue || lenderIssue.status !== 'resolved' }] : []),
+    ];
+    items.push(item(gifts.length ? 'The gift' : 'The loan', ev.some((e) => e.warn) ? 'flag' : 'ok', ev));
+  }
+
+  // 5. Only what the rules raised beyond the above.
+  const claimed = new Set(items.flatMap((i) => i.evidence.map((e) => e.text)));
+  const rest = flags.filter((fl) => !claimed.has(seeTail(fl.description)) && !/^(QUERY_UNANSWERED|POF_GIFT|POF_SHORTFALL|POF_PRICE_UNKNOWN|POF_CASH_PURCHASE)$/.test(fl.code) && !/^POF_HIGH_RISK/.test(fl.code));
+  for (const fl of rest) items.push(item(seeTail(fl.description), 'flag', [flagEv(fl)]));
+  const sow = queryFor('SOURCE_OF_WEALTH');
+  if (sow.length) items.push(item('Source of wealth', sow.some((q) => q.status === 'answered' || q.status === 'withdrawn') ? 'ok' : 'flag', sow.map((q): Ev => ({ text: q.status === 'answered' ? `Client: ${(q.answer ?? '').slice(0, 220)}` : q.status === 'withdrawn' ? 'Recorded on the file' : q.status === 'sent' ? 'Asked; no answer yet' : 'Query drafted, not sent', warn: q.status === 'sent' || q.status === 'draft' }))));
+  const unanswered = qs.filter((q) => q.status === 'sent' && q.flagCode !== 'SOURCE_OF_WEALTH' && !txFlags.some((fl) => fl.code.split(':')[0] === q.flagCode));
+  if (unanswered.length) items.push(item(`${n(unanswered.length, 'query')} with the client, not yet answered`, 'flag', unanswered.map((q) => ({ text: q.question.slice(0, 160), warn: true }))));
+  const decl = has(/^POF_(DECLARATION_INCOMPLETE|MISSING_DECLARANT|NO_SOURCES|SALE_PROCEEDS_UNLINKED)$/);
+  if (decl.length) items.push(item('The declaration', 'flag', decl.map(flagEv)));
   return items;
 }

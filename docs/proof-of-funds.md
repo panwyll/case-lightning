@@ -224,7 +224,7 @@ asks for. Then:
   unanswered is flagged `QUERY_UNANSWERED` on the next decision and stays open. Rounds are
   counted on the projection and each request row references the one it re-opens.
 - **escalate** — the usual chain to a senior with the same source.
-- **reject** — `manual_handling_required (proof_of_funds_rejected)`: automation stops, like
+- there is no **reject**: what a person cannot sign off they query again or escalate to a senior (removed 2026-09-27: nobody could say what rejecting would do that escalating does not).
   a failed ID check.
 
 ## 8 · Where it sits in the state machine
@@ -246,7 +246,7 @@ asks for. Then:
 - **Sign-off effects.** Open `source_of_funds` issues resolve `evidence_provided`; a gift
   on a lender-funded purchase raises `lender_approval` (UK Finance Handbook: the lender must
   consent to a gifted or third-party deposit).
-- **Rejection** halts automation (`manual_handling_required: proof_of_funds_rejected`) so
+- **Escalation** (the option that replaced rejection) raises it to a senior with the same source; automation carries on elsewhere, so
   the MLRO's process — including whether a report is made — runs outside the machine, and
   nothing in the client-facing channel changes tone.
 - The **client wait** (`proof_of_funds`, SLA in `sla.ts`) chases the client on the client

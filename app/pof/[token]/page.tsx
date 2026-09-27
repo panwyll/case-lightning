@@ -191,7 +191,10 @@ export default function ProofOfFundsPage() {
   }
   if (ctx.status !== 'requested') return <div className="pf"><style>{CSS}</style><div className="wrap"><div className="card">This link has expired. Please ask {ctx.firmName ?? 'your conveyancer'} for a new one.</div></div></div>;
 
-  const canSubmit = fullName.trim().length > 1 && sources.length > 0 && sources.every((s) => pennies(s.amount) > 0 && (s.kind !== 'gift' || (s.gift.donorName.trim() && s.gift.donorRelationship.trim())) && (s.kind !== 'overseas' || s.overseas.country.trim())) && dec.accurate && dec.noThirdPartyInterest && dec.noUndisclosedBorrowing;
+  const declaredTotal = sources.filter((s) => s.kind !== 'mortgage').reduce((n, s) => n + pennies(s.amount), 0);
+  const needed = priceP ? Math.max(0, priceP - (mortgage ? pennies(mortgage) : 0)) : null;
+  const shortfall = needed != null ? Math.max(0, needed - declaredTotal) : 0;
+  const canSubmit = shortfall === 0 && fullName.trim().length > 1 && sources.length > 0 && sources.every((s) => pennies(s.amount) > 0 && (s.kind !== 'gift' || (s.gift.donorName.trim() && s.gift.donorRelationship.trim())) && (s.kind !== 'overseas' || s.overseas.country.trim())) && dec.accurate && dec.noThirdPartyInterest && dec.noUndisclosedBorrowing;
 
   return (
     <div className="pf"><style>{CSS}</style><div className="wrap">

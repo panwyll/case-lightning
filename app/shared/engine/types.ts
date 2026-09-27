@@ -60,7 +60,7 @@ export interface TaskContextView {
   task: Array<{ k: string; v: string; warn?: boolean }>;
   facts: Array<{ k: string; v: string }>;
   checks: string[];
-  checklist?: Array<{ text: string; status: 'ok' | 'flag' | 'open'; evidence: Array<{ text: string; documentId?: string | null; page?: number | null; warn?: boolean }> }>;
+  checklist?: Array<{ text: string; status: 'ok' | 'flag' | 'open'; evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }>;
   history: Array<{ at: string; what: string }>;
   related: string[];
   unblocks: string | null;

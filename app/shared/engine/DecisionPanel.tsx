@@ -30,7 +30,7 @@ const CSS = `
 .dp-actions{border-top:1px solid #e6e8ee;padding:10px 24px calc(10px + env(safe-area-inset-bottom,0px));background:#fff;display:flex;flex-direction:column;gap:8px}
 .dp-src{min-height:0;min-width:0;display:grid;grid-template-rows:auto minmax(0,1fr);background:#fafafa}
 .dp-srcbar{background:#fff;padding:8px 14px;font-size:12px;color:#64748b;display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #e6e8ee;min-height:44px;box-sizing:border-box}
-.dp-pick{font:inherit;font-size:12.5px;font-weight:700;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;padding:5px 8px;background:#fff;max-width:100%;min-width:0;flex:1}
+.dp-pick{font:inherit;font-size:12.5px;font-weight:700;color:#0f172a;border:1px solid #e2e8f0;border-radius:8px;padding:5px 8px;background:#fff;min-width:0;width:0;flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dp-srcbody{overflow:auto;min-height:0;padding:14px 16px;position:relative}
 .dp-srcbody.pdf{padding:0}
 .dp-frame{width:100%;height:100%;border:0;background:#fff;display:block}
@@ -55,6 +55,16 @@ const CSS = `
 .dp-ev li.warn{color:#92400e}
 .dp-ev li::before{content:'·';color:#cbd5e1;flex-shrink:0}
 .dp-ev button{border:0;background:none;padding:0;font:inherit;color:#5A27E0;cursor:pointer;text-decoration:underline dotted;white-space:nowrap}
+.dp-ev .links{display:inline-flex;gap:4px;flex-wrap:wrap}
+.dp-ev .links button{border:1px solid #ddd6fe;background:#f5f3ff;border-radius:6px;padding:0 6px;font-size:11.5px;text-decoration:none}
+.dp-ev .links button.on{background:#5A27E0;color:#fff;border-color:#5A27E0}
+.dp-quiet{margin-top:14px;border-top:1px solid #eef2f7;padding-top:10px}
+.dp-quiet > summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:#64748b}
+.dp-quiet > summary::-webkit-details-marker{display:none}
+.dp-quiet ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.dp-quiet li{font-size:13px;color:#334155}
+.dp-quiet li b{font-weight:700;color:#15803d}
+.dp-quiet .dp-ev{margin-left:22px}
 .dp-btn{border:1px solid #5A27E0;background:#fff;color:#5A27E0;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .dp-btn:hover{background:#f5f3ff}
 .dp-btn.primary{background:#5A27E0;color:#fff}
@@ -195,9 +205,11 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   // The file picker: the decision's source first, then every other document the brief cites; another document is fetched raw.
   const [pickedDoc, setPickedDoc] = useState<string | null>(null);
   const [other, setOther] = useState<{ id: string; content: string | null; rawUrl: string | null } | null>(null);
-  const showDoc = useCallback(async (id: string, pageNo: number | null) => {
+  const [focusQuote, setFocusQuote] = useState<string | null>(null);
+  const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null) => {
     setPickedDoc(id);
     setPage(pageNo ?? 1);
+    setFocusQuote(quote);
     if (!source || id === source.id) { setOther(null); return; }
     try {
       const r = await fetch(`/api/v1/documents/${id}/raw`);
@@ -265,6 +277,20 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
     return parts;
   }, [d, source]);
 
+  // A quoted line: wrap it in a mark and bring it into view, whichever text document is showing.
+  const withQuote = useCallback((content: string): Array<string | { text: string; cite: number }> => {
+    if (!focusQuote) return [content];
+    const at = content.toLowerCase().indexOf(focusQuote.toLowerCase().slice(0, 100));
+    if (at < 0) return [content];
+    const len = Math.min(focusQuote.length, 100);
+    return [content.slice(0, at), { text: content.slice(at, at + len), cite: -2 }, content.slice(at + len)];
+  }, [focusQuote]);
+  useEffect(() => {
+    if (!focusQuote) return;
+    const t = setTimeout(() => { const el = document.querySelector('.dp-srcbody mark.on') as HTMLElement | null; el?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, 60);
+    return () => clearTimeout(t);
+  }, [focusQuote, other, source]);
+
   // On load: auto-scroll to the primary locator (page for PDFs, first mark for text).
   useEffect(() => {
     if (!d || !source) return;
@@ -318,6 +344,20 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const shownPdf = shownOther ? shownOther.rawUrl : pdfSrc;
   const shownPdfSrc = shownOther?.rawUrl ? `${shownOther.rawUrl}#page=${page ?? 1}&view=FitH` : pdfSrc;
   const flagged = checklist.filter((c) => c.status === 'flag').length;
+  const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status !== 'ok');
+  const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
+  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null }, label: string) => e.documentId ? <button type="button" onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null)} title={docLabel(e.documentId)}>{label}</button> : null;
+  const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
+    <ul className="dp-ev">
+      {c.evidence.map((e, j) => (
+        <li key={j} className={e.warn ? 'warn' : ''}>
+          <span>{e.text.trim()}</span>
+          {e.links?.length ? <span className="links">{e.links.map((l, k) => <button key={k} type="button" className={showing === l.documentId && focusQuote === (l.quote ?? null) && l.quote ? 'on' : ''} onClick={() => void showDoc(l.documentId, l.page ?? null, l.quote ?? null)} title={docLabel(l.documentId)}>{l.label}</button>)}</span> : null}
+          {!e.links?.length && e.documentId && (showing !== e.documentId || e.page || e.quote) && evLink(e, e.quote ? 'show' : e.page ? `p.${e.page}` : 'open')}
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <div className="eg dp">
@@ -339,25 +379,29 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
           </div>
 
           {checklist.length > 0 ? (
-            <ul className="dp-checks" aria-label="Checks">
-              {checklist.map((c, i) => (
-                <li key={i} className={`dp-check ${c.status}${ticked.has(i) ? ' done' : ''}`}>
-                  <span className="g" aria-label={c.status}>{c.status === 'ok' ? '✓' : c.status === 'flag' ? '!' : '○'}</span>
-                  <span className="t">{c.text}</span>
-                  {pending ? <input className="tick" type="checkbox" checked={ticked.has(i)} onChange={() => toggleTick(i)} aria-label="Checked" /> : <span />}
-                  {c.evidence.length > 0 && (
-                    <ul className="dp-ev">
-                      {c.evidence.map((e, j) => (
-                        <li key={j} className={e.warn ? 'warn' : ''}>
-                          <span>{e.text}</span>
-                          {e.documentId && (showing !== e.documentId || e.page) && <button type="button" onClick={() => void showDoc(e.documentId!, e.page ?? null)} title={docLabel(e.documentId)}>{e.page ? `p.${e.page}` : 'open'}</button>}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              {live.length > 0 && (
+                <ul className="dp-checks" aria-label="Checks">
+                  {live.map(({ c, i }) => (
+                    <li key={i} className={`dp-check ${c.status}${ticked.has(i) ? ' done' : ''}`}>
+                      <span className="g" aria-label={c.status}>{c.status === 'flag' ? '!' : '○'}</span>
+                      <span className="t">{c.text}</span>
+                      {pending ? <input className="tick" type="checkbox" checked={ticked.has(i)} onChange={() => toggleTick(i)} aria-label="Checked" /> : <span />}
+                      {renderEv(c)}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {live.length === 0 && <p className="dp-prose" style={{ color: '#15803d', fontWeight: 700 }}>Nothing needs looking at.</p>}
+              {quiet.length > 0 && (
+                <details className="dp-quiet" open={live.length === 0}>
+                  <summary>{quiet.length === 1 ? 'One thing checked, nothing to do' : `${quiet.length} things checked, nothing to do`}</summary>
+                  <ul>
+                    {quiet.map(({ c, i }) => (<li key={i}><b>✓</b> {c.text}{renderEv(c)}</li>))}
+                  </ul>
+                </details>
+              )}
+            </>
           ) : (
             <p className="dp-prose">{[...parsed.intro.slice(1), ...parsed.points.map((p) => `${p.n}. ${p.text}`), ...parsed.rest].join('\n')}</p>
           )}
@@ -473,13 +517,13 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
         </div>
         <div className={`dp-srcbody${shownPdf ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
-          {shownOther && shownOther.content != null && <pre className="dp-pre">{shownOther.content}</pre>}
+          {shownOther && shownOther.content != null && <pre className="dp-pre">{withQuote(shownOther.content).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className="on">{p.text}</mark>))}</pre>}
           {shownOther && shownOther.content == null && shownOther.rawUrl && <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />}
           {!shownOther && pdfSrc && <iframe key={pdfSrc} className="dp-frame" title="Source document" src={pdfSrc} />}
           {!shownOther && source && !pdfSrc && source.draftCheck && <CheckedDraft check={source.draftCheck} />}
           {!shownOther && source && !pdfSrc && !source.draftCheck && highlighted && (
             <pre className="dp-pre" ref={preRef}>
-              {highlighted.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} data-cite={p.cite}>{p.text}</mark>))}
+              {(focusQuote && source.content ? withQuote(source.content) : highlighted).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className={p.cite === -2 ? 'on' : undefined} data-cite={p.cite}>{p.text}</mark>))}
             </pre>
           )}
           {!shownOther && source && !pdfSrc && !source.draftCheck && !highlighted && (source.webUrl ? <iframe className="dp-frame" title="Source document" src={source.webUrl} /> : <div className="dp-lock">No inline preview is available for this document. Open the file itself.</div>)}

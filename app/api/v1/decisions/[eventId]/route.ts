@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
-import { engine } from '@/lib/server/engine/adapters';
+import { engine, productionPorts } from '@/lib/server/engine/adapters';
 import { query, queryOne } from '@/lib/server/db';
 import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
 import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
@@ -87,8 +87,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     const crosschecks = await loadCrossChecks(user.tenantId, d.matterId);
     const stateForContext = await svc.getState(user.tenantId, d.matterId);
     const live = stateForContext.decisions[eventId];
+    // Proof of funds: the statements as read, so the brief can point at the salary lines and the gift arriving.
+    const statementFacts = live?.kind === 'proof_of_funds'
+      ? (await Promise.all((stateForContext.proofOfFunds.statements ?? []).filter((st) => st.readable).map(async (st) => { const doc = await productionPorts().documents.get(user.tenantId, st.documentId).catch(() => null); const f = doc?.extractedFacts as { transactions?: unknown[]; salaryCredits?: unknown[] } | null; return f && Array.isArray(f.transactions) ? { documentId: st.documentId, fileName: doc?.fileName ?? st.fileName, facts: f as never } : null; }))).filter((x): x is NonNullable<typeof x> => !!x)
+      : [];
     const context = live
-      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, crosschecks, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
+      ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, statementFacts, crosschecks, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
       : null;
     return ok({
       context,

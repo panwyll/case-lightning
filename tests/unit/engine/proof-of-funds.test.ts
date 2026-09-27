@@ -180,7 +180,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await assert.rejects(h.svc.requestProofOfFunds(TENANT, MATTER, USER), /already approved/);
 });
 
-test('request further re-opens the form automatically with the conveyancer\'s note; reject halts automation; a person\'s request is never gated by trust levels', async () => {
+test('request further re-opens the form automatically with the conveyancer\'s note; escalate raises it to a senior (there is no reject); a person\'s request is never gated by trust levels', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
@@ -199,10 +199,12 @@ test('request further re-opens the form automatically with the conveyancer\'s no
   s = await h.svc.getState(TENANT, MATTER);
   const d2 = firstDecision(s, 'proof_of_funds');
   assert.notEqual(d2.eventId, d1.eventId);
-  await resolve(h, d2.eventId, 'reject', USER, 'Statements show a £30k unexplained cash deposit last month');
+  // There is no "reject" on proof of funds: what a person cannot sign off they escalate (or query again).
+  assert.deepEqual(d2.options, ['approve', 'request_further', 'escalate']);
+  await resolve(h, d2.eventId, 'escalate', USER, 'Statements show a £30k unexplained cash deposit last month');
   s = await h.svc.getState(TENANT, MATTER);
-  assert.equal(s.manualHandling.required, true);
-  assert.equal(s.manualHandling.reason, 'proof_of_funds_rejected');
+  assert.ok(pendingDecisions(s).some((x) => x.kind === 'escalation'), 'escalation raised for a senior');
+  assert.equal(s.manualHandling.required, false);
 
   // Trust levels gate what the engine does on its own. A person asking for the form is
   // not that: at PROPOSE for everything the form still goes out.

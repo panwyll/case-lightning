@@ -59,7 +59,7 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   auto_clear: ['approve', 'escalate'],
   requisition: ['approve', 'escalate'],
   // AML sign-off is a person's act: approve, send the form back for more, escalate, or reject (manual handling).
-  proof_of_funds: ['approve', 'request_further', 'escalate', 'reject'],
+  proof_of_funds: ['approve', 'request_further', 'escalate'],
   management_pack: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   // A note's proposals: apply what the note actually says (approve), throw them away with
   // a reason (reject), or put the note in front of someone senior.
