@@ -19,7 +19,8 @@ export async function GET() {
     const user = await requireUser();
     const [tasks, email] = await Promise.all([
       engine().eventStore.listPendingDecisions(user.tenantId, { limit: 500 })
-        .then((rows) => rows.filter((d) => d.kind !== 'auto_clear' && (!d.assignedTo || d.assignedTo === user.userId)).length)
+        // The badge is the Tasks page's own number: every decision waiting on a person, whoever it is assigned to (the page opens on "Anyone").
+        .then((rows) => rows.filter((d) => d.kind !== 'auto_clear').length)
         .catch(() => 0),
       missingFor('graph').length === 0
         ? toFileCount(user).catch((e) => {

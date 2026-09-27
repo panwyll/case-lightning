@@ -160,16 +160,44 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     // it is described by the first line of what the timer actually said.
     // One sentence, not the whole dossier — the detail is on the case.
     const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
+    // The task in a conveyancer's sentence: what is in front of them, not the engine's name for it.
+    const cleanSubject = d.subject && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? d.subject.replace(/^[a-z_]+:/, '') : null;
+    const flagsOf = (): number => {
+      if (d.kind === 'search' && cleanSubject) return s.searches[cleanSubject]?.facts?.flags?.length ?? 0;
+      if (d.kind === 'mortgage') return s.mortgage.facts?.conditions.filter((c) => !c.standard).length ?? 0;
+      if (d.kind === 'title') return (s.title.facts?.restrictions.length ?? 0) + (s.title.facts?.charges.length ?? 0) + (s.title.facts?.covenants.length ?? 0);
+      return 0;
+    };
+    const points = (k: number, one: string) => (k ? `: ${k} ${k === 1 ? one : `${one}s`}` : '');
+    const pr = s.proposals[d.eventId];
+    const proposalLine = (): string => {
+      if (!pr) return 'Approve what the engine proposes';
+      const det = pr.detail as Record<string, unknown>;
+      const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
+      switch (pr.action) {
+        case 'acknowledgement': return `Send an acknowledgement to ${to}`;
+        case 'chase': return `Chase ${to} for ${typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply'}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
+        case 'search_order': return `Order the ${cleanSubject ?? String(det.searchType ?? '')} search`;
+        case 'enquiry_draft': return `Raise an enquiry from the seller's forms`;
+        case 'client_update': return det.kind === 'id_check_request' ? `Request the ID / AML check${typeof det.label === 'string' ? ` for ${det.label}` : ''}` : det.kind === 'proof_of_funds_request' ? 'Send the client the proof-of-funds form' : `Send the client an update${typeof det.template === 'string' ? ` (${det.template.replace(/_/g, ' ')})` : ''}`;
+        default: return `Approve: ${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
+      }
+    };
     const what =
       d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
       : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
-      : d.kind === 'auto_clear'
-        ? `Approve the clear: ${(d.subject ?? '').includes(':') ? (d.subject ?? '').slice((d.subject ?? '').indexOf(':') + 1) : d.subject ?? 'the rules found nothing wrong'} (held at Propose)`
-      : d.kind === 'proposal'
-        ? `Proposal: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'engine action'}${s.proposals[d.eventId]?.subject ? ` — ${subjectLabel(s.proposals[d.eventId].action, s.proposals[d.eventId].subject!)}` : ''}${typeof s.proposals[d.eventId]?.detail?.label === 'string' ? ` for ${s.proposals[d.eventId].detail.label as string}` : ''}`
-      : d.kind === 'id_check' && d.subject && s.partyChecks[d.subject]
-        ? `Decide: ID / AML check — ${s.partyChecks[d.subject].label}`
-      : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` — ${d.subject}` : ''}`;
+      : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
+      : d.kind === 'proposal' ? proposalLine()
+      : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
+      : d.kind === 'search' ? `${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} search result` : 'Search result'}${points(flagsOf(), 'point')}`
+      : d.kind === 'enquiry' ? `Reply to enquiry ${cleanSubject ?? ''}`.trim()
+      : d.kind === 'mortgage' ? `Mortgage offer${s.mortgage.facts?.lender ? ` from ${s.mortgage.facts.lender}` : ''}${points(flagsOf(), 'special condition')}`
+      : d.kind === 'title' ? `Official copies${s.title.facts?.titleNumber ? ` of ${s.title.facts.titleNumber}` : ''}${points(flagsOf(), 'entry')}`
+      : d.kind === 'proof_of_funds' ? 'Sign off the source of funds'
+      : d.kind === 'report_on_title' ? 'Approve the report on title'
+      : d.kind === 'management_pack' ? 'Management pack (LPE1)'
+      : d.kind === 'requisition' ? "Answer HM Land Registry's requisition"
+      : `${(DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')).replace(/^the /, '').replace(/^\w/, (c) => c.toUpperCase())}${cleanSubject ? ` — ${cleanSubject}` : ''}`;
     out.push({
       ...base,
       id: `${d.kind === 'escalation' ? 'escalate' : 'do'}:decision:${d.eventId}`,

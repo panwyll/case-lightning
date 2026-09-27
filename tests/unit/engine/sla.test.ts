@@ -115,6 +115,6 @@ test('at Propose a clean result still closes its wait on arrival, and the held c
   assert.ok(held && s.pendingAutoClears[held.eventId]);
   assert.ok(blockingDecisions(s).some((d) => d.eventId === held!.eventId), 'a held clear blocks');
   const work = matterWork(s, h.ports.now());
-  assert.ok(work.items.some((i) => i.bucket === 'do' && /Approve the clear/.test(i.what)), 'the tray shows it');
+  assert.ok(work.items.some((i) => i.bucket === 'do' && /Confirm the rules' clear/.test(i.what)), 'the tray shows it');
   assert.ok(!work.items.some((i) => i.bucket === 'waiting' && /ID \/ AML/.test(i.what)), 'nothing left in Waiting for it');
 });

@@ -25,6 +25,9 @@ import { Check } from '@/app/shared/icons';
 
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
+.dp.inline{height:min(72vh,760px);margin:0;border-top:1px solid #e6e8ee;border-radius:0 0 12px 12px;overflow:hidden}
+.dp.inline .dp-scroll{padding:14px 18px 18px}
+.dp.inline .dp-actions{padding-left:18px;padding-right:18px}
 .dp-brief{display:grid;grid-template-rows:minmax(0,1fr) auto;border-right:1px solid #e6e8ee;min-height:0;min-width:0}
 .dp-scroll{overflow:auto;min-height:0;min-width:0;padding:18px 24px 24px}
 .dp-actions{border-top:1px solid #e6e8ee;padding:10px 24px calc(10px + env(safe-area-inset-bottom,0px));background:#fff;display:flex;flex-direction:column;gap:8px}
@@ -153,7 +156,7 @@ const isCountLine = (s: string) => /\b(item|point|thing)s?\b.*\b(need|needs|for)
 const UI_DWELL_MS = 5000;
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-export function DecisionPanel({ eventId }: { eventId: string }) {
+export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId: string; inline?: boolean; onResolved?: () => void }) {
   const [detail, setDetail] = useState<DecisionDetail | null>(null);
   const [source, setSource] = useState<SourceDoc | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -347,6 +350,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
       await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection }) });
       setDone(option);
       await load();
+      onResolved?.();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not record the decision.');
     } finally {
@@ -406,13 +410,13 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   );
 
   return (
-    <div className="eg dp">
+    <div className={`eg dp${inline ? ' inline' : ''}`}>
       <style>{ENGINE_CSS + CSS}</style>
 
       {/* ── The brief: the checks, each with what the file says; the decision pinned underneath ── */}
       <div className="dp-brief">
         <div className="dp-scroll">
-          <div className="dp-head">
+          <div className="dp-head" style={inline ? { display: 'none' } : undefined}>
             <div style={{ minWidth: 0 }}>
               <div className="dp-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</div>
               <p className="dp-lead">{detail.matter?.propertyAddress ?? d.propertyAddress ?? d.matterRef}</p>
@@ -425,6 +429,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             </div>
           </div>
 
+          {inline && ctx?.submitted && <p className="dp-sub" style={{ marginTop: 0 }}>{ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p>}
           {narrative.length > 0 && renderLines(narrative)}
           {files.length > 0 && (
             <div className="dp-files" aria-label="Documents read">

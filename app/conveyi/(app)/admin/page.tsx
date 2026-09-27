@@ -9,8 +9,8 @@ import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
 import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
-import EngineWork, { decisionTask } from './EngineWork';
-import DecisionTray from './DecisionTray';
+import { decisionTask } from './EngineWork';
+import TaskList from './TaskList';
 
 interface MatterHit {
   id: string;
@@ -1204,8 +1204,7 @@ function AdminPageInner() {
 
         {tab === 'mywork' && (
           <>
-            <DecisionTray userId={assignee || me?.userId || ''} all={assignee === ''} />
-            <EngineWork who={assignee} />
+            <TaskList who={assignee} />
           </>
         )}
 

@@ -213,10 +213,10 @@ test('work: a decision is a DO for a person, a hard stop is critical, and a prop
   let s = await h.svc.getState(TENANT, MATTER);
   const cfg = await h.store.loadLevels(TENANT);
   let items = matterWork(s, h.ports.now(), { assignedTo: USER, levels: cfg }).items;
-  const decide = items.find((i) => i.bucket === 'do' && i.ref.type === 'decision' && /title/i.test(i.what))!;
+  const decide = items.find((i) => i.bucket === 'do' && i.ref.type === 'decision' && /official copies|title/i.test(i.what))!;
   assert.ok(decide, 'the flagged title is something a person must do');
   assert.equal(decide.actionOwner, 'conveyancer');
-  assert.match(decide.what, /^Decide: the title/);
+  assert.match(decide.what, /^Official copies/);
 
   // A bank-details change is the hard stop: top of the DO list, and it says why.
   const rec = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'seller_solicitor', payeeRef: 'Smith & Co', details: { sortCode: '401234', accountNumber: '11112222', accountName: 'Smith & Co Client Account', firmName: 'Smith & Co' }, sourceChannel: 'email', sourceDocumentId: h.doc({ content: 'email' }) });

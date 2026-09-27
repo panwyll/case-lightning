@@ -12,7 +12,7 @@ import { CheckCircle, ChevronRight } from '@/app/shared/icons';
  * on, to do what, by when — and chases itself when that date passes, with the count and
  * a notch more severity on the line. Nothing here is groomed by hand.
  */
-const CSS = `
+export const WORK_CSS = `
 .wk-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px;align-items:start;margin-bottom:12px}
 .wk-col{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden}
 .wk-head{padding:10px 14px;border-bottom:1px solid #f1f5f9;display:flex;align-items:baseline;gap:8px}
@@ -129,7 +129,7 @@ function Column({ title, items, checkedAt }: { title: string; items: WorkItem[];
  * Waiting on X to do Y by Z. Collapsed, one line: who holds how many, how many are
  * overdue, and when the next one falls due. Open, every line. It chases itself.
  */
-function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => void }) {
+export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState<string | null>(null);
@@ -203,7 +203,7 @@ export default function EngineWork({ who }: { who: string }) {
   const doItems = data.do.filter((i) => i.ref?.type !== 'decision');
   return (
     <div>
-      <style>{CSS}</style>
+      <style>{WORK_CSS}</style>
       <div className="wk-cols">
         {/* "All clear" only when nothing at all needs them, decisions in the tray included. */}
         <Column title="To Do" items={doItems} checkedAt={data.do.length === 0 ? checkedAt ?? undefined : undefined} />
