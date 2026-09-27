@@ -607,7 +607,8 @@ export async function fileEmailBodyAsDocument(
   message: any
 ): Promise<{ outcome: 'read' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null }> {
   const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
-  if (body.trim().length < 40) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
+  // Any words at all are read: "surveys are all complete" is a signal, not noise.
+  if (!body.trim()) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
   const from = message?.from?.emailAddress?.address ?? 'unknown';
   const fromName = message?.from?.emailAddress?.name ?? '';
   const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');
