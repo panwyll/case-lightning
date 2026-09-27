@@ -62,6 +62,24 @@ const CSS = `
 .dp-quiet li{font-size:13px;color:#334155}
 .dp-quiet li b{font-weight:700;color:#15803d;margin-right:4px}
 .dp-quiet .dp-ev{margin-left:22px}
+.dp-sub{font-size:13px;font-weight:700;color:#334155;margin:10px 0 0}
+.dp-files{display:grid;gap:8px;margin-top:14px}
+.dp-file{border:1px solid #e6e8ee;border-radius:12px;background:#fff}
+.dp-file.warn{border-color:#fde68a;background:#fffdf5}
+.dp-file > summary{cursor:pointer;list-style:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 10px;padding:10px 14px;align-items:baseline}
+.dp-file > summary::-webkit-details-marker{display:none}
+.dp-file > summary .name{font-size:13.5px;font-weight:800;color:#0f172a}
+.dp-file > summary .what{font-size:12.5px;color:#475569;grid-column:2}
+.dp-file > summary .tw{font-size:11px;color:#94a3b8;white-space:nowrap}
+.dp-file > summary::before{content:'';width:6px;height:6px;border-right:2px solid #64748b;border-bottom:2px solid #64748b;transform:rotate(-45deg);transition:transform .15s;margin-right:4px;align-self:center}
+.dp-file[open] > summary::before{transform:rotate(45deg)}
+.dp-file .dp-narr{margin:0;padding:0 14px 12px 34px}
+.dp-passed{margin-top:18px;border-top:1px solid #eef2f7;padding-top:10px}
+.dp-passed > summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:#15803d}
+.dp-passed > summary::-webkit-details-marker{display:none}
+.dp-passed ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.dp-passed li{font-size:12.5px;color:#475569}
+.dp-passed li::before{content:'✓ ';color:#15803d;font-weight:800}
 .dp-narr{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:4px}
 .dp-narr li{font-size:13.5px;line-height:1.5;color:#0f172a;display:flex;gap:8px;align-items:baseline;white-space:pre-wrap}
 .dp-narr li.warn{color:#92400e}
@@ -355,6 +373,18 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
   const shownPdfSrc = shownOther?.rawUrl ? `${shownOther.rawUrl}#page=${page ?? 1}&view=FitH` : pdfSrc;
   const flagged = checklist.filter((c) => c.status === 'flag').length;
   const narrative = ctx?.narrative ?? [];
+  const files = ctx?.files ?? [];
+  const passed = ctx?.passed ?? [];
+  const renderLines = (lines: typeof narrative) => (
+    <ul className="dp-narr">
+      {lines.map((e, j) => (
+        <li key={j} className={`${e.warn ? 'warn' : ''}${/^\s/.test(e.text) ? ' sub' : ''}`}>
+          <span>{e.text}</span>
+          {e.documentId && (e.quote || e.page || showing !== e.documentId) && evLink(e, e.quote ? 'show' : e.page ? `p.${e.page}` : 'open')}
+        </li>
+      ))}
+    </ul>
+  );
   const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status !== 'ok');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
   const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0)} title={docLabel(e.documentId)}>{label}</button> : null;
@@ -380,7 +410,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
           <div className="dp-head">
             <div style={{ minWidth: 0 }}>
               <div className="dp-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</div>
-              {lead && <p className="dp-lead">{lead}</p>}
+              <p className="dp-lead">{detail.matter?.propertyAddress ?? d.propertyAddress ?? d.matterRef}</p>
+              {ctx?.submitted ? <p className="dp-sub">Form submitted by {ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p> : lead ? <p className="dp-sub">{lead}</p> : null}
             </div>
             <div className="dp-case" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               {detail.shadowed && <span className="eg-chip shadow">shadow</span>}
@@ -389,15 +420,20 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             </div>
           </div>
 
-          {narrative.length > 0 && (
-            <ul className="dp-narr" aria-label="What was read">
-              {narrative.map((e, j) => (
-                <li key={j} className={`${e.warn ? 'warn' : ''}${/^\s/.test(e.text) ? ' sub' : ''}`}>
-                  <span>{e.text}</span>
-                  {e.documentId && (e.quote || e.page || showing !== e.documentId) && evLink(e, e.quote ? 'show' : e.page ? `p.${e.page}` : 'open')}
-                </li>
+          {narrative.length > 0 && renderLines(narrative)}
+          {files.length > 0 && (
+            <div className="dp-files" aria-label="Documents read">
+              {files.map((f) => (
+                <details key={f.documentId} className={`dp-file${f.warn ? ' warn' : ''}`} open={!!f.warn}>
+                  <summary>
+                    <span className="name">{f.title}</span>
+                    <span className="tw">{showing === f.documentId ? 'shown' : <button type="button" style={{ border: 0, background: 'none', padding: 0, font: 'inherit', color: '#5A27E0', cursor: 'pointer' }} onClick={(e) => { e.preventDefault(); void showDoc(f.documentId, null); }}>open</button>}</span>
+                    <span className="what">{f.summary}</span>
+                  </summary>
+                  {f.lines.length > 0 ? renderLines(f.lines) : <p className="dp-narr" style={{ padding: '0 14px 12px 34px', color: '#94a3b8', fontSize: 12.5 }}>Nothing on it worth a look</p>}
+                </details>
               ))}
-            </ul>
+            </div>
           )}
           {checklist.length > 0 || narrative.length > 0 ? (
             <>
@@ -417,6 +453,12 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                 <ul className="dp-quiet" aria-label="Checked">
                   {quiet.map(({ c, i }) => (<li key={i}><b>✓</b>{c.text}{renderEv(c)}</li>))}
                 </ul>
+              )}
+              {passed.length > 0 && (
+                <details className="dp-passed">
+                  <summary>{passed.length} checks passed, nothing to do</summary>
+                  <ul>{passed.map((t, k) => <li key={k}>{t}</li>)}</ul>
+                </details>
               )}
             </>
           ) : (

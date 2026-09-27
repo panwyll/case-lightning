@@ -61,6 +61,9 @@ export interface TaskContextView {
   facts: Array<{ k: string; v: string }>;
   checks: string[];
   narrative?: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number; warn?: boolean }>;
+  files?: Array<{ documentId: string; title: string; summary: string; warn?: boolean; lines: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number; warn?: boolean }> }>;
+  passed?: string[];
+  submitted?: { by: string; at: string | null } | null;
   checklist?: Array<{ text: string; status: 'ok' | 'flag' | 'open'; evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }>;
   history: Array<{ at: string; what: string }>;
   related: string[];

@@ -28,6 +28,12 @@ export interface TaskContext {
   checklist: ChecklistItem[];
   /** The account of the file in plain lines, before any check: what was read, what it showed. Lines cite and link like evidence. */
   narrative: ChecklistItem['evidence'];
+  /** One entry per document read, with what it is in a line and the lines worth looking at underneath (each payment, each gift receipt). */
+  files: Array<{ documentId: string; title: string; summary: string; lines: ChecklistItem['evidence']; warn?: boolean }>;
+  /** The checks the rules ran and passed, in words, for the collapsed "nothing to do" section. */
+  passed: string[];
+  /** Who put this in front of the firm, and when (the client's form, the provider's result). */
+  submitted: { by: string; at: string | null } | null;
   history: Array<{ at: string; what: string }>;
   related: string[];
   unblocks: string | null;
@@ -399,12 +405,12 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     unblocks = g.ready ? `${g.label}: ready.` : rest.length === 0 ? `This is the last thing before ${g.label.toLowerCase()}.` : `${g.label} still needs ${n(rest.length, 'other thing')}: ${rest.slice(0, 4).join('; ')}${rest.length > 4 ? '…' : ''}`;
   }
 
-  const built = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised, { crosschecks: input.crosschecks ?? [], review: input.review ?? null, statementFacts: input.statementFacts ?? [], matter: m, now }) : { checklist: checks.map((text) => ({ text, status: 'open' as const, evidence: [] })), narrative: [] };
+  const built = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised, { crosschecks: input.crosschecks ?? [], review: input.review ?? null, statementFacts: input.statementFacts ?? [], matter: m, now }) : { checklist: checks.map((text) => ({ text, status: 'open' as const, evidence: [] })), narrative: [], files: [], passed: [], submitted: null };
   if (target.kind === 'decision' && target.decision.kind === 'proof_of_funds' && s.proofOfFunds.facts) {
     const f = s.proofOfFunds.facts;
     headline = f.sources.map((src) => `${gbp(src.amountPennies)} ${src.kind === 'gift' && src.gift ? `gift from ${src.gift.donorName}${src.gift.donorRelationship ? ` (${src.gift.donorRelationship})` : ''}` : pretty(src.kind).toLowerCase()}`).join(', ');
   }
-  return { headline, task, facts, checks, checklist: built.checklist, narrative: built.narrative, history, related: related.slice(0, 6), unblocks };
+  return { headline, task, facts, checks, checklist: built.checklist, narrative: built.narrative, files: built.files ?? [], passed: built.passed ?? [], submitted: built.submitted ?? null, history, related: related.slice(0, 6), unblocks };
 }
 
 const STOP = new Set(['the', 'and', 'with', 'from', 'that', 'this', 'what', 'against', 'every', 'their', 'where', 'which', 'does', 'into', 'been', 'have', 'client', 'clients', 'lender', 'source', 'sources']);
@@ -433,12 +439,13 @@ const monthName = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { m
  * The checks with the evidence the file holds for each: what a careful paralegal would put in
  * front of the conveyancer, kind by kind, and nothing the form or the rules have already settled.
  */
-function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): { checklist: ChecklistItem[]; narrative: Ev[] } {
+type Built = { checklist: ChecklistItem[]; narrative: Ev[]; files?: TaskContext['files']; passed?: string[]; submitted?: TaskContext['submitted'] };
+function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): Built {
   const built = buildChecklistItems(s, d, checks, raised, x);
   return Array.isArray(built) ? { checklist: built, narrative: [] } : built;
 }
 
-function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): ChecklistItem[] | { checklist: ChecklistItem[]; narrative: Ev[] } {
+function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): ChecklistItem[] | Built {
   const docId = d.sourceDocumentId ?? null;
   const rp = (raised?.payload ?? {}) as Record<string, unknown>;
   const flagEv = (f: Flag, documentId: string | null = docId): Ev => ({ text: seeTail(f.description), documentId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? f.locator?.section ?? null, warn: f.severity === 'high' || f.severity === 'medium' });
@@ -621,7 +628,7 @@ function attachFlags(checks: string[], flags: Flag[], docId: string | null, okEv
  * many transactions were looked at and that none stand out — and only then anything that
  * actually needs a decision, each named for what it is. Nothing the form settled is repeated.
  */
-function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): { checklist: ChecklistItem[]; narrative: Ev[] } {
+function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): Built {
   const f = s.proofOfFunds.facts!;
   const flags = s.proofOfFunds.flags ?? [];
   const has = (re: RegExp) => flags.filter((fl) => re.test(fl.code));
@@ -641,43 +648,60 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): { c
   // The money, source by source, with its share.
   for (const src of f.sources) narrative.push({ text: `${gbp(src.amountPennies)} ${src.kind === 'gift' && src.gift ? `gifted by ${src.gift.donorName} (${src.gift.donorRelationship})` : pretty(src.kind).toLowerCase()}${f.sources.length > 1 ? ` — ${pct(src.amountPennies, total)}` : ''}${src.description && src.kind !== 'gift' ? `, ${src.description.replace(/^\w/, (c) => c.toLowerCase())}` : ''}${src.evidenceCount ? '' : ' — nothing attached'}`, warn: src.evidenceCount === 0, documentId: docId });
 
-  // What was read: each statement, its salary payments one per line, the gift arriving.
+  // Each statement as a file of its own: what it is in a line, and underneath the payments and receipts worth a look.
   let txCount = 0;
   const donors = f.sources.filter((src) => src.gift).map((src) => src.gift!.donorName);
+  const files: TaskContext['files'] = [];
+  const txFlags = has(/^(LARGE_CREDIT|THIRD_PARTY_CREDIT|CASH_DEPOSIT|CASH_PATTERN|IN_AND_OUT|CRYPTO_CREDIT|GAMBLING_CREDIT|OVERSEAS_CREDIT|LOAN_CREDIT|BALANCE_JUMP)/);
+  const srcFlags = has(/^(POF_NO_EVIDENCE|NO_STATEMENT|HOLDER_MISMATCH|JOINT_ACCOUNT_UNDECLARED|STATEMENT_STALE|STATEMENT_UNREADABLE|COVERAGE_SHORT|BALANCE_SHORT|NO_SALARY_CREDITS)/);
+  const fileOf = (fl: Flag) => stmts.find((ss) => ss.fileName === fl.locator?.section?.split(' · ')[0])?.documentId ?? null;
   for (const st of stmts) {
     const facts = stById.get(st.documentId)?.facts ?? null;
     const lines = facts?.transactions.length ?? st.transactions;
     txCount += lines;
-    narrative.push({ text: st.readable ? `${st.fileName ?? 'Statement'}: ${st.holder ?? 'holder not read'}${st.from && st.to ? `, ${day(st.from)} to ${day(st.to)}` : ''}, ${n(lines, 'transaction')}${st.closingPennies != null ? `, closing balance ${gbp(st.closingPennies)}` : ''}` : `${st.fileName ?? 'Statement'} could not be read`, documentId: st.documentId, warn: !st.readable });
+    const fl: Ev[] = [];
     if (facts?.salaryCredits?.length) {
       const payers = [...new Set(facts.salaryCredits.map((c) => c.payer))];
-      narrative.push({ text: `  Salary from ${payers.join(', ')}:` });
-      const seen = new Map<string, number>();
+      fl.push({ text: `Salary from ${payers.join(', ')}` });
       const ordered = [...facts.transactions];
       for (const c of [...facts.salaryCredits].sort((a, b) => ordered.findIndex((t) => t.date === a.date && t.amountPennies === a.amountPennies) - ordered.findIndex((t) => t.date === b.date && t.amountPennies === b.amountPennies))) {
         const t = facts.transactions.find((tt) => tt.date === c.date && tt.amountPennies === c.amountPennies);
         const quote = t?.description ?? c.payer;
-        // The same printed description recurs: count which occurrence this payment is, in the order the statement prints them.
-        const idx = t ? ordered.filter((tt) => tt.description === t.description).findIndex((tt) => tt === t) : (seen.get(quote) ?? 0);
-        seen.set(quote, idx + 1);
-        narrative.push({ text: `    ${day(c.date)} · ${gbp(c.amountPennies)}`, documentId: st.documentId, quote, quoteIndex: Math.max(0, idx) });
+        const idx = t ? ordered.filter((tt) => tt.description === t.description).findIndex((tt) => tt === t) : 0;
+        fl.push({ text: `  ${day(c.date)} · ${gbp(c.amountPennies)}`, documentId: st.documentId, quote, quoteIndex: Math.max(0, idx) });
       }
     }
     if (facts) {
       const giftIn = facts.transactions.filter((t) => t.amountPennies > 0 && donors.some((dn) => { const surname = dn.trim().toLowerCase().split(/\s+/).pop() ?? ''; return surname.length > 2 && !!t.counterparty && t.counterparty.toLowerCase().includes(surname); }));
-      for (const t of giftIn) narrative.push({ text: `  Gift received ${day(t.date)} · ${gbp(t.amountPennies)} from ${t.counterparty}`, documentId: st.documentId, quote: t.description });
+      for (const t of giftIn) fl.push({ text: `Gift received ${day(t.date)} · ${gbp(t.amountPennies)} from ${t.counterparty}`, documentId: st.documentId, quote: t.description });
     }
+    const mine = [...txFlags, ...srcFlags].filter((x2) => fileOf(x2) === st.documentId);
+    for (const x2 of mine) fl.push(flagEv(x2));
+    files.push({
+      documentId: st.documentId,
+      title: st.fileName ?? 'Statement',
+      summary: st.readable ? `Bank statement, ${st.holder ?? 'holder not read'}, ${st.from && st.to ? `${day(st.from)} to ${day(st.to)}, ` : ''}${n(lines, 'transaction')}${st.closingPennies != null ? `, closing balance ${gbp(st.closingPennies)}` : ''}${mine.length ? ` · ${n(mine.length, 'point')}` : ''}` : 'Could not be read as a statement',
+      lines: fl,
+      warn: !st.readable || mine.length > 0,
+    });
   }
-  const txFlags = has(/^(LARGE_CREDIT|THIRD_PARTY_CREDIT|CASH_DEPOSIT|CASH_PATTERN|IN_AND_OUT|CRYPTO_CREDIT|GAMBLING_CREDIT|OVERSEAS_CREDIT|LOAN_CREDIT|BALANCE_JUMP)/);
-  if (stmts.some((st) => st.readable)) {
-    if (!txFlags.length) narrative.push({ text: `${n(txCount, 'transaction')} read across ${n(stmts.filter((st) => st.readable).length, 'statement')}: no cash, no third-party or round-sum credits, nothing large that is not salary. None stand out.` });
-    else narrative.push({ text: `${n(txCount, 'transaction')} read across ${n(stmts.filter((st) => st.readable).length, 'statement')}; ${n(txFlags.length, 'credit')} to explain (below).` });
-  } else narrative.push({ text: 'No statement could be read: nothing has been checked line by line.', warn: true });
+  // What the rules ran and found nothing on: the collapsed "nothing to do" list, in words.
+  const raisedCodes = new Set(flags.map((fl) => fl.code.split(':')[0]));
+  const RULES: Array<[string, string]> = [
+    ['CASH_DEPOSIT', 'No cash deposits'], ['CASH_PATTERN', 'No pattern of cash paid in'], ['THIRD_PARTY_CREDIT', 'No credits from third parties'], ['LARGE_CREDIT', 'No large credits other than salary'],
+    ['IN_AND_OUT', 'No money in and straight out again'], ['CRYPTO_CREDIT', 'No cryptoasset credits'], ['GAMBLING_CREDIT', 'No gambling credits'], ['OVERSEAS_CREDIT', 'No credits from overseas'], ['LOAN_CREDIT', 'No loan credits'], ['BALANCE_JUMP', 'No unexplained jump in the balance'],
+    ['HOLDER_MISMATCH', "Every statement is in the client's name"], ['JOINT_ACCOUNT_UNDECLARED', 'No undeclared joint account holder'], ['STATEMENT_STALE', 'Statements are current'], ['COVERAGE_SHORT', 'The period is covered'], ['BALANCE_SHORT', 'Balances cover what was declared'], ['NO_SALARY_CREDITS', 'Salary is visible where savings come from salary'],
+    ['POF_SHORTFALL', 'The total covers the balance to find'], ['POF_NO_EVIDENCE', 'Every source has a document'], ['POF_DECLARATION_INCOMPLETE', 'All three declarations confirmed'], ['POF_MISSING_DECLARANT', 'Every buyer stands behind the declaration'],
+  ];
+  const applicable = stmts.some((st) => st.readable);
+  const passed = RULES.filter(([code]) => !raisedCodes.has(code) && (applicable || /^POF_/.test(code))).map(([, text]) => text);
+  if (!applicable) narrative.push({ text: 'No statement could be read: nothing has been checked line by line.', warn: true });
+  const submitted = { by: f.declarantName, at: s.proofOfFunds.submittedAt };
+  void txCount;
 
   // Only what needs a decision, each named for what it is.
   if (f.requiredPennies == null) items.push(item('The price is not on the file, so the total was not checked against the balance', 'open', [{ text: `Declared ${gbp(total)}` }]));
   else if ((f.shortfallPennies ?? 0) > 0) items.push(item(`Short by ${gbp(f.shortfallPennies)}: ${gbp(total)} declared against ${gbp(f.requiredPennies)} to find`, 'flag', [{ text: `Price ${gbp(f.purchasePricePennies)}${f.mortgageAdvancePennies ? ` less mortgage ${gbp(f.mortgageAdvancePennies)}` : ''}`, warn: true, documentId: docId }]));
-  const srcFlags = has(/^(POF_NO_EVIDENCE|NO_STATEMENT|HOLDER_MISMATCH|JOINT_ACCOUNT_UNDECLARED|STATEMENT_STALE|STATEMENT_UNREADABLE|COVERAGE_SHORT|BALANCE_SHORT|NO_SALARY_CREDITS)/);
   for (const fl of srcFlags) items.push(item(seeTail(fl.description), 'flag', []));
   if (txFlags.length) {
     for (const fl of txFlags) {
@@ -714,5 +738,5 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): { c
   if (unanswered.length) items.push(item(`${n(unanswered.length, 'query')} with the client, not yet answered`, 'flag', unanswered.map((q) => ({ text: q.question.slice(0, 160), warn: true }))));
   const decl = has(/^POF_(DECLARATION_INCOMPLETE|MISSING_DECLARANT|NO_SOURCES|SALE_PROCEEDS_UNLINKED)$/);
   for (const fl of decl) items.push(item(seeTail(fl.description), 'flag', []));
-  return { checklist: items, narrative };
+  return { checklist: items, narrative, files, passed, submitted };
 }
