@@ -20,9 +20,20 @@ export interface TaskContext {
   /** The case at a glance, trimmed to what this kind of task needs. */
   facts: Array<{ k: string; v: string }>;
   checks: string[];
+  /**
+   * The checks as the spine of the task: each one with what the file already says about it.
+   * `ok` = the rules found nothing against it; `flag` = something to look at (the evidence says what);
+   * `open` = only a person can answer it. Evidence lines cite the document they come from.
+   */
+  checklist: ChecklistItem[];
   history: Array<{ at: string; what: string }>;
   related: string[];
   unblocks: string | null;
+}
+export interface ChecklistItem {
+  text: string;
+  status: 'ok' | 'flag' | 'open';
+  evidence: Array<{ text: string; documentId?: string | null; page?: number | null; warn?: boolean }>;
 }
 
 export interface MatterFacts {
@@ -384,5 +395,99 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     unblocks = g.ready ? `${g.label}: ready.` : rest.length === 0 ? `This is the last thing before ${g.label.toLowerCase()}.` : `${g.label} still needs ${n(rest.length, 'other thing')}: ${rest.slice(0, 4).join('; ')}${rest.length > 4 ? '…' : ''}`;
   }
 
-  return { headline, task, facts, checks, history, related: related.slice(0, 6), unblocks };
+  const checklist = target.kind === 'decision' ? buildChecklist(s, target.decision, checks, raised) : checks.map((text) => ({ text, status: 'open' as const, evidence: [] }));
+  return { headline, task, facts, checks, checklist, history, related: related.slice(0, 6), unblocks };
+}
+
+const STOP = new Set(['the', 'and', 'with', 'from', 'that', 'this', 'what', 'against', 'every', 'their', 'where', 'which', 'does', 'into', 'been', 'have', 'client', 'clients', 'lender', 'source', 'sources']);
+const words = (t: string) => new Set(t.toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !STOP.has(w)));
+const seeTail = (t: string) => t.replace(/\s*\((?:see|at) [^)]*\)\s*$/i, '');
+const flagsOf = (raised: EngineEvent | null): Flag[] => {
+  const p = (raised?.payload ?? {}) as { flags?: Flag[]; facts?: { flags?: Flag[]; issues?: Flag[]; conditions?: Array<{ code: string; text: string; standard?: boolean; locator?: Flag['locator'] }>; restrictions?: Array<{ code: string; text: string; locator?: Flag['locator'] }>; charges?: Array<{ code: string; text: string; locator?: Flag['locator'] }>; covenants?: Array<{ code: string; text: string; locator?: Flag['locator'] }> } };
+  if (Array.isArray(p.flags) && p.flags.length) return p.flags;
+  const f = p.facts;
+  if (!f) return [];
+  if (Array.isArray(f.flags) && f.flags.length) return f.flags;
+  if (Array.isArray(f.issues) && f.issues.length) return f.issues;
+  const out: Flag[] = [];
+  for (const c of f.conditions ?? []) if (!c.standard) out.push({ code: c.code, severity: 'medium', description: c.text, locator: c.locator });
+  for (const [label, arr] of [['restriction', f.restrictions], ['charge', f.charges], ['covenant', f.covenants]] as const) for (const e of arr ?? []) out.push({ code: e.code, severity: 'low', description: `${label}: ${e.text}`, locator: e.locator });
+  return out;
+};
+
+/** The checks with the evidence the file holds for each. Proof of funds is built from its own facts; the rest attach the decision's flags to the check they speak to. */
+function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null): ChecklistItem[] {
+  const docId = d.sourceDocumentId ?? null;
+  if (d.kind === 'proof_of_funds' && s.proofOfFunds.facts) {
+    const f = s.proofOfFunds.facts;
+    const flags = s.proofOfFunds.flags ?? [];
+    const has = (re: RegExp) => flags.filter((x) => re.test(x.code));
+    const qs = Object.values(s.proofOfFunds.queries ?? {});
+    const ev = (text: string, warn = false, documentId: string | null = docId, page: number | null = null) => ({ text, warn, documentId, page });
+    const flagEv = (x: Flag) => ev(seeTail(x.description), x.severity === 'high' || x.severity === 'medium', docId, x.locator?.page ?? null);
+    const queryFor = (code: string) => qs.filter((q) => q.flagCode === code);
+    const items: ChecklistItem[] = [];
+    // 1. The sum.
+    const needed = f.requiredPennies;
+    const shortfall = f.shortfallPennies ?? 0;
+    items.push({ text: 'The declared total covers the balance the client must find', status: needed == null ? 'open' : shortfall > 0 ? 'flag' : 'ok', evidence: [
+      ev(`Declared ${gbp(f.totalDeclaredPennies)}${needed != null ? ` · needed ${gbp(needed)} (price ${gbp(f.purchasePricePennies)}${f.mortgageAdvancePennies ? ` less mortgage ${gbp(f.mortgageAdvancePennies)}` : ', no mortgage'})` : ' · price not on file, so not checked'}${shortfall > 0 ? ` · short by ${gbp(shortfall)}` : ''}`, shortfall > 0),
+      ...has(/^POF_(SHORTFALL|PRICE_UNKNOWN|CASH_PURCHASE)$/).map(flagEv),
+    ] });
+    // 2. Each source evidenced; the statements read.
+    const srcFlags = has(/^(POF_NO_EVIDENCE|NO_STATEMENT|HOLDER_MISMATCH|JOINT_ACCOUNT_UNDECLARED|STATEMENT_STALE|STATEMENT_UNREADABLE|COVERAGE_SHORT|BALANCE_SHORT|NO_SALARY_CREDITS)/);
+    items.push({ text: "Every source is evidenced by statements in the client's name, covering the period", status: srcFlags.length ? 'flag' : f.sources.every((x) => x.evidenceCount > 0) ? 'ok' : 'flag', evidence: [
+      ...f.sources.map((x, i) => ev(`${i + 1}. ${pretty(x.kind)} ${gbp(x.amountPennies)}${x.description ? ` — ${x.description}` : ''} · ${x.evidenceCount ? n(x.evidenceCount, 'document') : 'no document'}`, x.evidenceCount === 0)),
+      ...(s.proofOfFunds.statements ?? []).map((st) => ev(st.readable ? `${st.fileName ?? 'statement'} · ${st.holder ?? 'holder not read'}${st.from && st.to ? ` · ${day(st.from)} to ${day(st.to)}` : ''} · ${st.transactions} lines${st.closingPennies != null ? ` · closing ${gbp(st.closingPennies)}` : ''}` : `${st.fileName ?? 'statement'} · could not be read`, !st.readable, st.documentId)),
+      ...srcFlags.map(flagEv),
+    ] });
+    // 3. Unusual credits, each with its query.
+    const txFlags = has(/^(LARGE_CREDIT|THIRD_PARTY_CREDIT|CASH_DEPOSIT|CASH_PATTERN|IN_AND_OUT|CRYPTO_CREDIT|GAMBLING_CREDIT|OVERSEAS_CREDIT|LOAN_CREDIT|BALANCE_JUMP)/);
+    const txEv = txFlags.flatMap((x) => {
+      const q = queryFor(x.code.split(':')[0]);
+      return [flagEv(x), ...q.map((qq) => ev(`${qq.id} · ${qq.status === 'answered' ? `answered: ${(qq.answer ?? '').slice(0, 200)}` : qq.status === 'sent' ? 'sent to the client, awaiting the answer' : qq.status === 'withdrawn' ? 'withdrawn' : 'drafted, not yet sent'}`, qq.status === 'sent' || qq.status === 'draft', docId))];
+    });
+    items.push({ text: 'Large, recent or third-party credits are explained', status: txFlags.length ? (txFlags.every((x) => queryFor(x.code.split(':')[0]).some((q) => q.status === 'answered' || q.status === 'withdrawn')) ? 'open' : 'flag') : 'ok', evidence: txEv.length ? txEv : [ev('No credit on the statements read needed explaining')] });
+    // 4. Gifts and loans.
+    const giftFlags = has(/^POF_(GIFT|LOAN)/);
+    const donors = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role === 'donor');
+    items.push({ text: "Gifts and loans: donor identified, not repayable, donor's own money, lender told", status: giftFlags.some((x) => /REPAYABLE|NO_DONOR|NON_FAMILY|JOINT_ACCOUNT|NO_DONOR_EVIDENCE/.test(x.code)) || donors.some((pc) => pc.status !== 'cleared' && pc.status !== 'reviewed') ? 'flag' : giftFlags.length ? 'open' : 'ok', evidence: [
+      ...(giftFlags.length ? giftFlags.map(flagEv) : [ev('No gift or loan declared')]),
+      ...donors.map((pc) => ev(`${pc.label}: ID / AML ${pc.status.replace(/_/g, ' ')}`, pc.status !== 'cleared' && pc.status !== 'reviewed', pc.documentId)),
+    ] });
+    // 5. Risk.
+    const riskFlags = has(/^POF_HIGH_RISK|^POF_CASH_PURCHASE$/);
+    const sow = queryFor('SOURCE_OF_WEALTH');
+    items.push({ text: 'Higher-risk sources escalated; enhanced due diligence where the rating says so', status: s.proofOfFunds.risk === 'enhanced' ? (sow.some((q) => q.status === 'answered' || q.status === 'withdrawn') ? 'open' : 'flag') : riskFlags.length ? 'open' : 'ok', evidence: [
+      ev(`Risk rating: ${s.proofOfFunds.risk ?? 'not rated'}`, s.proofOfFunds.risk === 'enhanced'),
+      ...riskFlags.map(flagEv),
+      ...sow.map((q) => ev(`Source of wealth ${q.status === 'answered' ? `answered: ${(q.answer ?? '').slice(0, 200)}` : q.status === 'sent' ? 'asked, awaiting the answer' : q.status === 'withdrawn' ? 'recorded on the file (query withdrawn)' : 'query drafted, not yet sent'}`, q.status === 'sent' || q.status === 'draft')),
+    ] });
+    // 6. The declaration itself.
+    const decl = has(/^POF_(DECLARATION_INCOMPLETE|MISSING_DECLARANT|NO_SOURCES|SALE_PROCEEDS_UNLINKED)$/);
+    items.push({ text: 'The declaration is complete and every buyer stands behind it', status: decl.length ? 'flag' : 'ok', evidence: [
+      ev(`${f.declarantName}${f.coDeclarants?.length ? ` with ${f.coDeclarants.join(', ')}` : ''} · round ${f.round ?? (s.proofOfFunds.rounds || 1)} · declarations ${f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing ? 'all confirmed' : 'NOT all confirmed'}`, !(f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing)),
+      ...decl.map(flagEv),
+    ] });
+    // Anything the rules raised that none of the above claimed.
+    const claimed = new Set(items.flatMap((i) => i.evidence.map((e) => e.text)));
+    const rest = flags.filter((x) => !claimed.has(seeTail(x.description)) && x.code !== 'QUERY_UNANSWERED');
+    for (const x of rest) items.push({ text: seeTail(x.description), status: 'flag', evidence: [] });
+    const unanswered = qs.filter((q) => q.status === 'sent');
+    if (unanswered.length) items.push({ text: `${n(unanswered.length, 'query')} sent to the client and not yet answered`, status: 'flag', evidence: unanswered.map((q) => ev(`${q.id}: ${q.question.slice(0, 160)}`, true)) });
+    return items;
+  }
+  // Generic: the kind's checks, with the decision's flags attached to the check they speak to.
+  const flags = flagsOf(raised);
+  const items: ChecklistItem[] = checks.map((text) => ({ text, status: 'open' as const, evidence: [] as ChecklistItem['evidence'] }));
+  const unplaced: Flag[] = [];
+  for (const x of flags) {
+    const fw = words(`${x.code.replace(/_/g, ' ')} ${x.description}`);
+    let best = -1; let score = 0;
+    items.forEach((it, i) => { const o = [...words(it.text)].filter((w) => fw.has(w)).length; if (o > score) { score = o; best = i; } });
+    if (best >= 0) { items[best].status = 'flag'; items[best].evidence.push({ text: seeTail(x.description), documentId: docId, page: x.locator?.page ?? null, warn: x.severity === 'high' || x.severity === 'medium' }); }
+    else unplaced.push(x);
+  }
+  for (const x of unplaced) items.unshift({ text: seeTail(x.description), status: 'flag', evidence: [{ text: `${x.severity} · ${x.code.replace(/_/g, ' ').toLowerCase()}`, documentId: docId, page: x.locator?.page ?? null, warn: x.severity === 'high' }] });
+  return items;
 }
