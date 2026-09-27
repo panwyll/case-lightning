@@ -3,10 +3,9 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
-import { visibleMatterIds } from '@/lib/server/access';
-import { engine } from '@/lib/server/engine/adapters';
 import { query } from '@/lib/server/db';
-import { buckets, matterWork, OWNER_LABEL, type WorkItem } from '@/lib/server/engine/work';
+import { buckets, OWNER_LABEL } from '@/lib/server/engine/work';
+import { workItems, canCover } from '@/lib/server/engine/my-work';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,21 +23,9 @@ export async function GET(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const q = z.object({ all: z.string().optional(), user: z.string().uuid().optional(), limit: z.coerce.number().min(1).max(500).optional() }).parse(Object.fromEntries(req.nextUrl.searchParams));
-    const cover = user.role === 'ADMIN' || user.role === 'CONVEYANCER';
-    const all = q.all === '1' && cover;
-    const who = q.user && (cover || q.user === user.userId) ? q.user : user.userId;
-    const svc = engine();
-    const [states, subflows] = await Promise.all([
-      svc.eventStore.listStates(user.tenantId, { assignedTo: all ? null : who, limit: q.limit ?? 300 }),
-      svc.eventStore.loadLevels(user.tenantId),
-    ]);
-    const now = new Date();
-    const items: WorkItem[] = [];
-    const visible = await visibleMatterIds(user);
-    for (const { state, meta } of states) {
-      if (visible && !visible.has(state.matterId)) continue;
-      items.push(...matterWork(state, now, { ...meta, levels: subflows }).items);
-    }
+    const all = q.all === '1' && canCover(user);
+    const who = q.user ?? user.userId;
+    const { items, matters } = await workItems(user, { all, who, limit: q.limit });
     // A state stored before waits recorded their opener: read the opening event's actor from the log.
     const missing = items.filter((i) => !i.openedBy && i.openedBySeq != null);
     if (missing.length) {
@@ -56,7 +43,7 @@ export async function GET(req: NextRequest) {
       const name = new Map(rows.map((r) => [r.id, r.display_name || r.email || r.id]));
       for (const i of items) if (i.openedBy && name.has(i.openedBy)) i.openedBy = name.get(i.openedBy)!;
     }
-    return ok({ ...buckets(items), scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters: states.length, ownerLabels: OWNER_LABEL });
+    return ok({ ...buckets(items), scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters, ownerLabels: OWNER_LABEL });
   } catch (error) {
     return fail(error);
   }

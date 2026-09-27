@@ -1,6 +1,7 @@
 import { assertFeature, missingFor } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
-import { engine } from '@/lib/server/engine/adapters';
+import { workItems, canCover } from '@/lib/server/engine/my-work';
+import { actionable } from '@/lib/server/engine/work';
 import { toFileCount } from '@/lib/server/mail/filing-queue';
 import { ok, fail } from '@/lib/server/http';
 
@@ -18,10 +19,8 @@ export async function GET() {
     assertFeature('auth');
     const user = await requireUser();
     const [tasks, email] = await Promise.all([
-      engine().eventStore.listPendingDecisions(user.tenantId, { limit: 500 })
-        // The badge is the Tasks page's own number: every decision waiting on a person, whoever it is assigned to (the page opens on "Anyone").
-        .then((rows) => rows.filter((d) => d.kind !== 'auto_clear').length)
-        .catch(() => 0),
+      // The badge is the Tasks page's own number: everything a person has to pick up (decisions, issues, escalations) across the caseload the page opens on ("Anyone" for cover roles).
+      workItems(user, { all: canCover(user) }).then(({ items }) => actionable(items).length).catch(() => 0),
       missingFor('graph').length === 0
         ? toFileCount(user).catch((e) => {
             // Fail soft to zero, but say why in the log: a missing email_queue table (migration

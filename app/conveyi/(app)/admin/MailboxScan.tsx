@@ -31,6 +31,8 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
   const text = await res.text();
   const json = text ? JSON.parse(text) : {};
   if (!res.ok) throw Object.assign(new Error(json.error || `HTTP ${res.status}`), { status: res.status, action: json.action });
+  // A write can raise or clear a task: the sidebar number re-reads.
+  if ((options.method ?? 'GET').toUpperCase() !== 'GET' && typeof window !== 'undefined') window.dispatchEvent(new Event('conveyi:counts'));
   return json as T;
 }
 

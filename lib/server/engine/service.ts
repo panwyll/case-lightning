@@ -895,8 +895,20 @@ export class EngineService {
         // Automated client status updates (zero legal risk, pure admin).
         const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
-          const detail = { template, context: { eventType: e.type, payload: e.payload }, triggeredByEventId: e.id };
-          if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', template, `${template}:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${e.type.replace(/_/g, ' ')}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
+          let context: Record<string, unknown> = { eventType: e.type, payload: e.payload };
+          let dedupKey = `${template}:${e.id}`;
+          let because = e.type.replace(/_/g, ' ');
+          // Searches are ordered as a set: the client hears once, when the last one has gone, not once per search.
+          if (e.type === 'search_ordered') {
+            const fresh = await this.getState(tenantId, matterId);
+            const ordered = fresh.requiredSearches.filter((t) => fresh.searches[t]);
+            if (ordered.length < fresh.requiredSearches.length) continue;
+            context = { ...context, searches: ordered };
+            dedupKey = `${template}:${ordered.join('+')}`;
+            because = `all ${ordered.length} searches ordered (${ordered.join(', ')})`;
+          }
+          const detail = { template, context, triggeredByEventId: e.id };
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', template, dedupKey, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${because}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
           await this.perform(tenantId, matterId, 'client_update', detail);
         }
       } catch (err) {
