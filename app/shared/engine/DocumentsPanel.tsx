@@ -46,6 +46,8 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     finally { setUnlocking(null); }
   };
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
+  // Every message the case has sent (or drafted, or failed to send), with the address and the provider's reference: the first place to look when someone says they did not get it.
+  const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null }>>([]);
   const [openMail, setOpenMail] = useState<string | null>(null);
   const [mailBody, setMailBody] = useState<Record<string, string>>({});
   const readMail = async (id: string) => {
@@ -76,7 +78,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length, lockTick]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -184,6 +186,22 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                 <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
                 <b style={{ minWidth: 130 }}>{c.label}</b>
                 <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {messages.length > 0 && (
+        <>
+          <div className="ep-sec">Messages ({messages.length})</div>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {messages.map((m) => (
+              <div key={m.id} className="ep-row">
+                <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.at)}</span>
+                <b>{(m.template ?? '').replace(/_/g, ' ') || m.channel}</b>
+                <span className="ep-note">{m.direction === 'OUT' ? 'to' : 'from'} {m.address ?? 'no address'} · {m.channel}</span>
+                <span className="ep-pill" style={m.status === 'SENT' ? { background: '#dcfce7', color: '#166534' } : /FAIL/i.test(m.status ?? '') ? { background: '#fee2e2', color: '#991b1b' } : { background: '#fef3c7', color: '#78350f' }}>{(m.status ?? 'unknown').replace(/^FAILED: /, 'Failed: ')}</span>
+                {m.providerRef && <span className="ep-note" title="The provider's reference for this message">{m.providerRef.slice(0, 18)}…</span>}
               </div>
             ))}
           </div>

@@ -191,7 +191,7 @@ export class EngineService {
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text } });
-      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId, mentioned: ov.mentioned } });
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, to: sent.address ?? null, triggeredByEventId: d.triggeredByEventId, mentioned: ov.mentioned } });
       if (d.agentTemplate) {
         const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: d.agentTemplate, context: d.context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
         if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
@@ -259,7 +259,7 @@ export class EngineService {
     // The form exists whether or not the message gets out. A send failure (no client email on
     // the case, the mailbox not connected, a provider down) must not lose the request: record
     // it as unsent with the reason and the link, so the conveyancer can send it themselves.
-    let sent: { channel: string; messageId: string | null };
+    let sent: { channel: string; messageId: string | null; address?: string | null };
     let sendError: string | null = null;
     let pofSendErr: unknown = null;
     try {
@@ -270,7 +270,7 @@ export class EngineService {
       sent = { channel: 'unsent', messageId: null };
       pofSendErr = err;
     }
-    const result = await this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, sendError, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
+    const result = await this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, to: sent.address ?? null, formUrl: form.formUrl, sendError, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
     if (pofSendErr !== null) await this.recordSendFailure(tenantId, matterId, 'client_update', { kind: 'proof_of_funds_request', followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, formUrl: form.formUrl }, pofSendErr);
     return sendError ? { ...result, warning: `Recorded, but the form was not sent: ${explainSendError(pofSendErr).reason} The form link is on the case; the fix and the message are in the issue raised.` } : result;
   }

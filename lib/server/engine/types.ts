@@ -680,6 +680,8 @@ export interface ClientUpdateSpec {
   triggeredByEventId?: string | null;
   /** The waits this update told the client about (`key:subject`), so the next update does not repeat them for a few days. */
   mentioned?: string[];
+  /** The address it went to. */
+  to?: string | null;
 }
 
 /** Event-type → payload. Keeping this exhaustive is what makes the projection typed. */
@@ -860,7 +862,7 @@ export interface Payloads {
   signed_contract_held: { note?: string | null };
   // ── proof of funds (docs/proof-of-funds.md) ──
   /** The form link went to the client (recorded after the send). A follow-up carries the request it re-opens. */
-  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
+  proof_of_funds_requested: { requestId: string; channel: string; messageId?: string | null; /** the address it went to */ to?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; /** Queries sent to the client with this round (they move draft → sent). */ queryIds?: string[] };
   /** The client submitted the form: typed facts, the rule flags (declaration AND transaction level), the statements read, the risk rating, and ALWAYS a decision for the conveyancer citing the declaration document. */
   proof_of_funds_submitted: { requestId: string; facts: ProofOfFundsFacts; flags: Flag[]; statements: TransactionReview['statements']; risk: PofRiskRating; decision: DecisionSpec };
   proof_of_funds_reviewed: { requestId: string; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };

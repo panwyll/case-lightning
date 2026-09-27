@@ -115,7 +115,7 @@ export interface IdCheckProvider {
 /** Component #5, status updates only — the safe-to-automate half. Q&A is deliberately NOT a port here. */
 export interface ClientComms {
   readonly name: string;
-  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null }>;
+  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
   /** Only ever called after assertCanSendReport passes — the engine, not the port, guards this. */
   sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef }): Promise<{ channel: string; messageId: string | null }>;
 }

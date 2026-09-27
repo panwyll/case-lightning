@@ -116,12 +116,12 @@ export class ProductionClientComms implements ClientComms {
   }
 
   /** Channel choice: WhatsApp only with explicit opt-in; else email; else nothing to send to. */
-  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, body: string): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null }> {
+  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, body: string): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
     if (info.clientPhone && info.clientWhatsAppOptIn && this.deps.whatsapp) {
       try {
         const r = await this.deps.whatsapp.sendText(info.clientPhone, body);
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, body, providerRef: r.messageId, status: 'SENT' });
-        return { channel: 'whatsapp', messageId: r.messageId };
+        return { channel: 'whatsapp', messageId: r.messageId, address: info.clientPhone };
       } catch (err) {
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, body, providerRef: null, status: `FAILED: ${(err as Error).message}` });
       }
@@ -130,12 +130,12 @@ export class ProductionClientComms implements ClientComms {
       if (this.deps.email) {
         const r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, body, providerRef: r.messageId, status: 'SENT' });
-        return { channel: 'email', messageId: r.messageId };
+        return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }
       if (this.deps.mailbox && info.feeEarnerUserId) {
         const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, body, providerRef: r.messageId, status: 'SENT' });
-        return { channel: 'email', messageId: r.messageId };
+        return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }
     }
     throw new Error('No client channel available (no opted-in WhatsApp number, no email address, or no sender configured).');
@@ -174,7 +174,7 @@ export class ProductionClientComms implements ClientComms {
     else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
     else throw new Error('No email sender configured.');
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', body: subject, providerRef: r.messageId, status: 'SENT' });
-    return { channel: 'email', messageId: r.messageId };
+    return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
   }
 }
 
