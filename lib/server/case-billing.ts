@@ -62,6 +62,8 @@ export async function chargeCase(
   feature: UsageFeature
 ): Promise<{ opened: boolean; billed: boolean; reason?: string }> {
   try {
+    const sandbox = await queryOne<{ sandbox: boolean }>(`select sandbox from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]).catch(() => null);
+    if (sandbox?.sandbox) return { opened: false, billed: false, reason: 'SANDBOX' };
     // Insert-if-absent IS the once-only rule. `returning` is empty on conflict.
     const inserted = await queryOne<{ id: string }>(
       `insert into matter_charge (tenant_id, matter_id, trigger_feature, amount_pennies)

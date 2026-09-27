@@ -27,6 +27,8 @@ export const paths = {
   engineMatter: (matterId: string) => `${APP_BASE}/engine/${matterId}`,
   matterShadow: (matterId: string) => `${APP_BASE}/engine/${matterId}/shadow`,
   machineMap: `${APP_BASE}/engine/map`,
+  /** The scenario library: sandbox cases driven through the real engine (admins). */
+  scenarios: `${APP_BASE}/engine/scenarios`,
   /** The firm's rules: sign-offs, timers, messages, document rules (admins). */
   rules: `${APP_BASE}/engine/rules`,
   shadowQueue: `${APP_BASE}/engine/rules`,

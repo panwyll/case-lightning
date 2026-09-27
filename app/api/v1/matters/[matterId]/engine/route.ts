@@ -34,8 +34,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const [state, subflows, matter] = await Promise.all([
       svc.getState(user.tenantId, matterId),
       svc.levels(user.tenantId),
-      queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null }>(
-        `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler
+      queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null; sandbox: boolean; sandbox_scenario: string | null; sandbox_step: string | null }>(
+        `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler, m.sandbox, m.sandbox_scenario, m.sandbox_step
            from matter m left join app_user u on u.id = m.assigned_to where m.id = $1 and m.tenant_id = $2`,
         [matterId, user.tenantId]
       ).catch(() => null),
@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       surfacedDecisions: surfacedDecisions(state),
       levels: subflows,
       contracts: COMPLETION_CONTRACTS,
-      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, charge: charge ? { chargedAt: charge.charged_at, billed: charge.billed, reason: charge.unbilled_reason, amountPennies: charge.amount_pennies } : null } : null,
+      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, sandbox: !!matter.sandbox, sandboxScenario: matter.sandbox_scenario, sandboxStep: matter.sandbox_step, charge: charge ? { chargedAt: charge.charged_at, billed: charge.billed, reason: charge.unbilled_reason, amountPennies: charge.amount_pennies } : null } : null,
     });
   } catch (error) {
     return fail(error);

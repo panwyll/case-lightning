@@ -9,6 +9,7 @@ export interface BoardMatter {
   stage: string;
   status: string;
   statusFlag: string;
+  sandbox?: boolean;
   exchangeTargetDate: string | null;
   completionTargetDate: string | null;
   assignee: string | null;
@@ -32,7 +33,8 @@ export const boardSelect = (withTasks: boolean) => `
               coalesce(u.display_name, u.email) as assignee,
               m.assigned_to          as "assignedTo",
               m.updated_at           as "updatedAt",
-              m.stage_entered_at     as "stageEnteredAt"${
+              m.stage_entered_at     as "stageEnteredAt",
+              m.sandbox              as sandbox${
                 withTasks
                   ? `,
               (select count(*)::int from matter_task t

@@ -251,7 +251,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
 
   if (tokens.length) {
     const byToken = await query<{ id: string }>(
-      `select id from matter where tenant_id = $1 and upper(case_ref_token) = any($2)`,
+      `select id from matter where tenant_id = $1 and not sandbox and upper(case_ref_token) = any($2)`,
       [tenantId, tokens]
     );
     byToken.forEach((r) => candidateIds.add(r.id));
@@ -262,7 +262,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
   if (refCandidates.length) {
     try {
       const byFirmRef = await query<{ id: string }>(
-        `select id from matter where tenant_id = $1 and firm_ref is not null and upper(firm_ref) = any($2)`,
+        `select id from matter where tenant_id = $1 and not sandbox and firm_ref is not null and upper(firm_ref) = any($2)`,
         [tenantId, refCandidates]
       );
       byFirmRef.forEach((r) => candidateIds.add(r.id));
@@ -286,7 +286,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
   const leads = streetLeads(haystack);
   if (leads.length) {
     const byStreet = await query<{ id: string }>(
-      `select id from matter where tenant_id = $1 and regexp_replace(lower(coalesce(property_address, '')), '[^a-z0-9]+', ' ', 'g') like any($2)`,
+      `select id from matter where tenant_id = $1 and not sandbox and regexp_replace(lower(coalesce(property_address, '')), '[^a-z0-9]+', ' ', 'g') like any($2)`,
       [tenantId, leads.map((l) => `%${l}%`)]
     ).catch(() => []);
     byStreet.forEach((r) => candidateIds.add(r.id));

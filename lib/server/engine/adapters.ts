@@ -15,6 +15,7 @@
  *   clientComms    → ProductionClientComms when WhatsApp/Resend/Graph is configured (component #5); mock otherwise
  *   chaser         → ProductionChaser (draft-by-default template chases from the fee-earner mailbox); mock otherwise
  */
+import { sandboxGuard } from './sandbox';
 import { billOnIdResolved } from './billing-reaction';
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
@@ -156,7 +157,7 @@ export function productionPorts(): EnginePorts {
     // The backend (CaseLightning's own tables, or LEAP) supplies the document store and
     // the conclusion sink; the engine is the same either way.
     const be = backend();
-    _ports = {
+    _ports = sandboxGuard({
       linked: new PgLinkedMatterNotifier(),
       documents: be.documents,
       onEvents: async (input) => {
@@ -179,7 +180,7 @@ export function productionPorts(): EnginePorts {
       newId: () => crypto.randomUUID(),
       asAutomation: runAsAutomation,
       log,
-    };
+    });
   }
   return _ports;
 }

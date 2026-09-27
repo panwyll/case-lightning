@@ -39,6 +39,7 @@ export interface QueueRow {
   propertyAddress: string | null;
   stage: string;
   shadowMode: boolean;
+  sandbox?: boolean;
   assignedTo: string | null;
   pendingCount: number;
   reviewCount: number;
@@ -52,7 +53,7 @@ export interface QueueRow {
   updatedAt: string;
 }
 
-export interface MatterMeta { matterRef: string; propertyAddress: string; legacyStage?: string | null; shadowMode: boolean; assignedTo?: string | null; handler?: string | null; /** The case was counted for billing (once, when its ID / AML check came back). */ charge?: { chargedAt: string; billed: boolean; reason: string | null; amountPennies: number } | null }
+export interface MatterMeta { matterRef: string; propertyAddress: string; legacyStage?: string | null; shadowMode: boolean; assignedTo?: string | null; handler?: string | null; /** A scenario-library case: quarantined from every outward effect. */ sandbox?: boolean; sandboxScenario?: string | null; sandboxStep?: string | null; /** The case was counted for billing (once, when its ID / AML check came back). */ charge?: { chargedAt: string; billed: boolean; reason: string | null; amountPennies: number } | null }
 
 export interface TaskContextView {
   headline: string;

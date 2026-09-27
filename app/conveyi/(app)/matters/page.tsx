@@ -82,7 +82,7 @@ export default function CaseViewPage() {
           <House band={r.health?.band ?? 'normal'} size={24} />
           <span style={{ minWidth: 0 }}>
             <div className="cv-addr">{r.propertyAddress ?? r.matterRef ?? 'Case'}</div>
-            <div className="cv-ref">{r.matterRef}{r.dayOfCase ? ` · day ${r.dayOfCase}` : ''}</div>
+            <div className="cv-ref">{r.matterRef}{r.dayOfCase ? ` · day ${r.dayOfCase}` : ''}{r.sandbox ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#5A27E0', background: '#f3efff', borderRadius: 999, padding: '1px 6px' }}>SANDBOX</span> : null}</div>
           </span>
           <span className="cv-cell">{LIFECYCLE_LABEL[r.lifecycle] ?? r.lifecycle}</span>
           <span className="cv-cell">{r.assignedToName ?? 'Unassigned'}</span>

@@ -147,10 +147,12 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {view && enrolled && <span className="eg-chip stage">{view.state.closedAt ? 'Closed' : view.state.abandoned ? 'Abandoned' : stageLabel(view.state.stage, view.profile)}</span>}
                 {view && !enrolled && <span className="eg-chip muted">not enrolled</span>}
                 {view?.state.manualHandling.required && <span className="eg-chip bad">manual handling</span>}
+                {view?.matter?.sandbox && <span className="eg-chip" style={{ background: '#f3efff', color: '#5A27E0', border: '1px solid #c7b8f5' }} title={view.matter.sandboxStep ? `Scenario ${view.matter.sandboxScenario ?? ''} · ${view.matter.sandboxStep}` : undefined}>Sandbox</span>}
               </h1>
               <p className="mx-sub">{[row.matterRef, model?.profile?.label, clients, view?.lifecycle?.label].filter(Boolean).join(' · ')}</p>
             </div>
             <div className="mx-ctl">
+              {view?.matter?.sandbox && <button className="mx-sel" style={{ cursor: 'pointer' }} onClick={() => { if (window.confirm('Retire this sandbox case? It leaves every list; its log stays.')) void api(`/engine/scenarios/${matterId}`, { method: 'DELETE' }).then(() => { window.location.href = '/conveyi/engine/scenarios'; }); }}>Retire Sandbox Case</button>}
               {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
               <select className="mx-sel" value={row.assignedTo ?? ''} onChange={(e) => void setOwner(e.target.value || null)} aria-label="Handler">
                 <option value="">Unassigned</option>

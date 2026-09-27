@@ -57,6 +57,8 @@ export interface QueueRow {
   propertyAddress: string | null;
   stage: string;
   shadowMode: boolean;
+  /** A scenario-library case. */
+  sandbox?: boolean;
   assignedTo: string | null;
   /** Surfaced decisions waiting on a person (assist-level auto-clear reviews excluded). */
   pendingCount: number;
@@ -135,13 +137,14 @@ export interface EventStore {
 
 const row = (s: MatterState, d: DecisionState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null } | undefined): PendingDecisionRow => ({ ...d, tenantId: s.tenantId, matterId: s.matterId, matterRef: meta?.matterRef ?? null, propertyAddress: meta?.propertyAddress ?? null, assignedTo: meta?.assignedTo ?? null, stage: s.stage, shadowMode: s.shadowMode });
 
-function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string } | undefined, _cfg: LevelConfig | null, now: Date = new Date()): QueueRow {
+function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddress: string | null; assignedTo?: string | null; updatedAt?: string; sandbox?: boolean } | undefined, _cfg: LevelConfig | null, now: Date = new Date()): QueueRow {
   const surfaced = surfacedDecisions(s);
   const pending = surfaced.filter((d) => d.kind !== 'auto_clear');
   return {
     tenantId: s.tenantId,
     matterId: s.matterId,
     matterRef: meta?.matterRef ?? null,
+    sandbox: !!meta?.sandbox,
     propertyAddress: meta?.propertyAddress ?? null,
     transactionType: s.transactionType,
     stage: s.stage,
@@ -494,7 +497,7 @@ export class PgEventStore implements EventStore {
 
   private async queueRows(tenantId: string, opts?: QueueOptions) {
     return dbQuery<{ state: MatterState; matter_ref: string | null; property_address: string | null; assigned_to: string | null; updated_at: Date | string }>(
-      `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at
+      `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at, m.sandbox
          from matter_engine_state s
          join matter m on m.id = s.matter_id
         where s.tenant_id = $1 and ($5::boolean or s.finished_at is null)
@@ -514,7 +517,7 @@ export class PgEventStore implements EventStore {
     const cfg = await this.loadLevels(tenantId);
     const rows = await this.queueRows(tenantId, opts);
     return sortQueue(
-      rows.map((r) => queueRow(withStateDefaults(r.state), { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
+      rows.map((r) => queueRow(withStateDefaults(r.state), { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, sandbox: !!(r as { sandbox?: boolean }).sandbox, updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : new Date(r.updated_at).toISOString() }, cfg)),
       opts?.sort
     );
   }
