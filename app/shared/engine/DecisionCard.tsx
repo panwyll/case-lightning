@@ -1,6 +1,7 @@
 'use client';
-import { useState } from 'react';
-import { KIND_LABEL, OPTION_LABEL, OPTION_LABEL_BY_KIND, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Api, type DecisionRow, type SourceDoc } from './types';
+import { useEffect, useState } from 'react';
+import { KIND_LABEL, OPTION_LABEL, OPTION_LABEL_BY_KIND, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Api, type DecisionRow, type ProposalPreview, type SourceDoc } from './types';
+import { ProposalMessage, PROPOSAL_MESSAGE_CSS, proposalApproveLabel } from './ProposalMessage';
 
 /**
  * One decision, the way the spec wants it seen: the pre-digested summary, the source
@@ -30,7 +31,7 @@ export const DECISION_CSS = `
 .dc-warn{font-size:12px;color:#b45309;margin-top:8px}
 .dc-err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 10px;font-size:12.5px;margin-top:8px}
 .dc-quote{font-style:italic;color:#64748b}
-`;
+` + PROPOSAL_MESSAGE_CSS;
 
 /** "search:CON29" → "CON29"; "id_check:ID/AML check (mock-id)" → "ID/AML check"; a bare id → nothing. */
 const subjectLabel = (s: string | null | undefined): string => {
@@ -50,6 +51,16 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
   const isBank = d.kind === 'bank_details';
+  // A proposal or a held clear is the engine's own text: there is no document to read first. The proposal shows the message itself.
+  const ownText = d.kind === 'proposal' || d.kind === 'auto_clear';
+  const [msg, setMsg] = useState<ProposalPreview | null>(null);
+  useEffect(() => {
+    if (d.kind !== 'proposal' || !expanded) return;
+    let live = true;
+    api<{ message?: ProposalPreview | null }>(`/decisions/${d.eventId}`).then((r) => { if (live) setMsg(r.message ?? null); }).catch(() => {});
+    return () => { live = false; };
+  }, [api, d.eventId, d.kind, expanded]);
+  const canDecide = opened || ownText;
 
   const openSource = async () => {
     setBusy(true);
@@ -80,7 +91,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
   };
 
   return (
-    <div className={`dc-card${opened ? ' opened' : ''}${compact ? ' compact' : ''}${isBank ? ' bank' : ''}`}>
+    <div className={`dc-card${canDecide ? ' opened' : ''}${compact ? ' compact' : ''}${isBank ? ' bank' : ''}`}>
       <div className="dc-top" onClick={() => compact && setExpanded((x) => !x)} style={compact ? { cursor: 'pointer' } : undefined}>
         <div>
           <div className="dc-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}</div>
@@ -90,9 +101,9 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
       </div>
       {expanded && (
         <>
-          <div className="dc-sum">{d.summary}</div>
+          {msg ? <ProposalMessage msg={msg} /> : ownText && d.kind === 'proposal' ? null : <div className="dc-sum">{d.summary}</div>}
           <div>
-            {d.citations.map((c, i) => (
+            {!ownText && d.citations.map((c, i) => (
               <div key={i} className="dc-cite">
                 ↳ {c.label}
                 {c.locator?.page ? ` (page ${c.locator.page}${c.locator.section ? `, ${c.locator.section}` : ''})` : ''}
@@ -100,7 +111,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
               </div>
             ))}
           </div>
-          <button className="dc-btn primary" disabled={busy} onClick={openSource}>{opened ? 'Source opened — open again' : 'Open source document'}</button>
+          {!ownText && <button className="dc-btn primary" disabled={busy} onClick={openSource}>{opened ? 'Source opened — open again' : 'Open source document'}</button>}
           {source && (
             <div className="dc-src">
               <strong>{source.fileName ?? source.id}</strong> {source.docType ? `· ${pretty(source.docType.toLowerCase())}` : ''}{' '}
@@ -124,12 +135,12 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
           <textarea className="dc-note" rows={2} placeholder="Note for the record (what you checked, why)…" value={note} onChange={(e) => setNote(e.target.value)} />
           <div>
             {d.options.map((o) => (
-              <button key={o} className="dc-btn" disabled={!opened || busy || (isBank && o === 'verify' && !method)} title={opened ? (isBank && o === 'verify' && !method ? 'Choose the verification method first' : '') : 'Open the source document first'} onClick={() => resolve(o)}>
-                {OPTION_LABEL_BY_KIND[d.kind]?.[o] ?? OPTION_LABEL[o] ?? pretty(o)}
+              <button key={o} className="dc-btn" disabled={!canDecide || busy || (isBank && o === 'verify' && !method)} title={canDecide ? (isBank && o === 'verify' && !method ? 'Choose the verification method first' : '') : 'Open the source document first'} onClick={() => resolve(o)}>
+                {(d.kind === 'proposal' && o === 'approve' && proposalApproveLabel(msg)) || (OPTION_LABEL_BY_KIND[d.kind]?.[o] ?? OPTION_LABEL[o] ?? pretty(o))}
               </button>
             ))}
           </div>
-          {!opened && <div className="dc-warn">Open the source to decide.</div>}
+          {!canDecide && <div className="dc-warn">Open the source to decide.</div>}
           {err && <div className="dc-err">{err}</div>}
         </>
       )}
