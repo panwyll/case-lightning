@@ -35,6 +35,8 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('priority_search_made'), expiresAt: isoDate, documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('bankruptcy_search_clear'), subjects: z.array(z.string().max(120)).max(6).nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
+  z.object({ type: z.literal('resend_proof_of_funds') }),
+  z.object({ type: z.literal('retry_action'), proposalEventId: z.string().uuid() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
   z.object({ type: z.literal('request_id_check'), party: z.string().max(80).nullish() }),

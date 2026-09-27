@@ -1015,6 +1015,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       if (pr) { pr.status = 'failed'; pr.failure = p.reason; }
       break;
     }
+    case 'action_retried': {
+      const p = e.payload as Payloads['action_retried'];
+      const pr = s.proposals[p.proposalEventId];
+      if (pr) { pr.status = 'approved'; pr.failure = null; }
+      break;
+    }
     case 'auto_clear_confirmed': {
       const p = e.payload as Payloads['auto_clear_confirmed'];
       delete s.pendingAutoClears[p.decisionEventId];

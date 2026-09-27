@@ -798,7 +798,7 @@ export class EngineService {
             const reason = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
             this.ports.log(`approved ${p.action} could not be done`, err);
             await this.run(tenantId, matterId, { type: 'record_action_failed', proposalEventId: p.proposalEventId, action: p.action, detail: p.detail, reason }).catch(() => {});
-            await this.recordSendFailure(tenantId, matterId, p.action, p.detail, err);
+            await this.recordSendFailure(tenantId, matterId, p.action, { ...p.detail, __proposalEventId: p.proposalEventId }, err);
           }
         }
         // Enrolment → the two things every instruction starts with: the ID / AML check with
@@ -967,6 +967,7 @@ export class EngineService {
     const role = typeof detail.recipientRole === 'string' ? detail.recipientRole.replace(/_/g, ' ') : 'the client';
     const what = kind === 'proof_of_funds_request' ? 'The proof-of-funds form to the client' : kind === 'id_check_request' ? 'The ID / AML check request' : action === 'chase' ? `The chase to ${role}` : action === 'acknowledgement' ? `The acknowledgement to ${role}` : action === 'search_order' ? 'The search order' : action === 'client_update' ? 'The update to the client' : `The ${action.replace(/_/g, ' ')}`;
     const title = `${what} did not go: ${ex.reason.replace(/[.!]*$/, '')}`;
+    const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
     try {
       await outside(async () => {
@@ -978,11 +979,49 @@ export class EngineService {
         if (msg && msg.kind !== 'action' && (msg.subject || msg.body)) lines.push('', `To: ${msg.to ?? role}`, `Subject: ${msg.subject ?? ''}`, '', msg.body ?? '');
         else if (msg?.title) lines.push('', msg.title);
         lines.push('', `Error text for support: ${ex.raw}`);
+        if (proposalId) lines.push(`[proposal:${proposalId}]`);
         await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'send_failed', title, detail: lines.join('\n'), gate: 'none', severity: 'warning' });
       });
     } catch (inner) {
       this.ports.log('could not record the failed send on the case', inner);
     }
+  }
+
+  /** A person tries a failed action again (the mailbox is back, the address was added). The same message, the same way; on success the proposal stands as done and the failure task closes. */
+  async retryFailedAction(tenantId: string, matterId: string, proposalEventId: string, userId: string): Promise<RunResult> {
+    const s = await this.getState(tenantId, matterId);
+    const pr = s.proposals[proposalEventId];
+    if (!pr) throw Object.assign(new Error('Proposal not found.'), { status: 404 });
+    if (pr.status !== 'failed') throw Object.assign(new Error('Only a failed action can be tried again.'), { status: 409 });
+    try {
+      await this.perform(tenantId, matterId, pr.action, pr.detail as Record<string, unknown>);
+    } catch (err) {
+      await this.recordSendFailure(tenantId, matterId, pr.action, { ...(pr.detail as Record<string, unknown>), __proposalEventId: proposalEventId }, err);
+      throw Object.assign(new Error(explainSendError(err).reason), { status: 502 });
+    }
+    const result = await this.run(tenantId, matterId, { type: 'record_action_retried', actor: userId, proposalEventId, action: pr.action });
+    const fresh = await this.getState(tenantId, matterId);
+    for (const i of Object.values(fresh.issues).filter((x) => x.kind === 'send_failed' && x.status === 'open' && (x.detail ?? '').includes(`[proposal:${proposalEventId}]`))) {
+      await this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId: i.id, resolution: 'evidence_provided', note: 'Sent on retry.' }).catch(() => {});
+    }
+    return result;
+  }
+
+  /** Send the client the proof-of-funds form again: the same link, the same round. For "they never got it". */
+  async resendProofOfFunds(tenantId: string, matterId: string, userId: string): Promise<RunResult> {
+    const s = await this.getState(tenantId, matterId);
+    const pof = s.proofOfFunds;
+    if (!pof.requestId || !pof.formUrl) throw Object.assign(new Error('No proof-of-funds form has been requested on this case.'), { status: 409 });
+    if (pof.status !== 'requested') throw Object.assign(new Error('The form has already come back; there is nothing to resend.'), { status: 409 });
+    const template = (pof.rounds ?? 1) > 1 ? 'proof_of_funds_request_again' : 'proof_of_funds_request';
+    let sent: { channel: string; messageId: string | null; address?: string | null };
+    try {
+      sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: pof.formUrl, noteToClient: '', requestId: pof.requestId, queryCount: 0, resend: 'yes' } });
+    } catch (err) {
+      await this.recordSendFailure(tenantId, matterId, 'client_update', { kind: 'proof_of_funds_request', formUrl: pof.formUrl }, err);
+      throw Object.assign(new Error(explainSendError(err).reason), { status: 502 });
+    }
+    return this.run(tenantId, matterId, { type: 'record_client_update', update: { template, recipientRole: 'client', channel: sent.channel as 'email' | 'whatsapp' | 'mock', messageId: sent.messageId, to: sent.address ?? null } });
   }
 
   /** An effect that failed is written on the case as an issue, not only to the server log: a person sees that the engine did not do what it should have, and why. */

@@ -118,6 +118,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                 </div>
               ) : (
                 <div style={{ marginTop: 4 }}>
+                  {i.kind === 'send_failed' && i.status === 'open' && /\[proposal:([0-9a-f-]{36})\]/.test(i.detail ?? '') && <button className="ep-btn primary" disabled={busy} onClick={() => void cmd({ type: 'retry_action', proposalEventId: (i.detail ?? '').match(/\[proposal:([0-9a-f-]{36})\]/)![1] })}>Try Again</button>}
                   {i.status === 'open' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('What is happening? (e.g. "client asked for £10k off; agent relaying")'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: 'negotiating', note: n }); }}>Negotiating…</button>}
                   <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Progress note'); if (n) void cmd({ type: 'update_issue', issueId: i.id, status: i.status, note: n }); }}>Add note</button>
                   {i.severity !== 'critical' && <button className="ep-btn" disabled={busy} onClick={() => { const n = window.prompt('Raise to critical — why?'); if (n) void cmd({ type: 'set_issue_severity', issueId: i.id, severity: 'critical', reason: n }); }}>Critical</button>}

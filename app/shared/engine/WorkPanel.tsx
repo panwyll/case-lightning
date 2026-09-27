@@ -631,6 +631,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
               Not sent{pof.sendError ? ` — ${pof.sendError}` : '.'} Send the client this link: <a href={pof.formUrl} target="_blank" rel="noreferrer">{pof.formUrl}</a>
             </div>
           )}
+          {pof.status === 'requested' && pof.formUrl && !exchanged && (
+            <div className="acts" style={{ marginBottom: 8 }}>
+              <button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy} onClick={() => cmd({ type: 'resend_proof_of_funds' })}>{pof.channel === 'unsent' ? 'Try Sending Again' : 'Resend the Form'}</button>
+            </div>
+          )}
           {(pof.statements?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Statements read:</b> {pof.statements!.map((x) => `${x.fileName ?? x.documentId}${x.readable ? ` (${x.holder ?? '?'}, ${x.from ?? '?'}–${x.to ?? '?'}, ${x.transactions} lines)` : ' (unreadable)'}`).join(' · ')}</div>}
           {(pof.flags?.length ?? 0) > 0 && <div style={{ fontSize: 12.5, marginBottom: 6 }}><b>Flags:</b> {pof.flags!.map((f) => f.code).join(', ')}</div>}
           {qs.length === 0 && <div className="ep-note">No queries.</div>}

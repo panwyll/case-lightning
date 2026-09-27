@@ -47,3 +47,45 @@ test('a send that fails after a person approved it becomes a task: the reason in
   assert.equal(issue!.gate, 'none');
   assert.equal(Object.values(s.proposals).find((p) => p.eventId === proposal!.eventId)?.status, 'failed');
 });
+
+test('a failed send can be tried again in one click: the same message goes, the proposal stands as done, the failure task closes', async () => {
+  const h = harness();
+  await h.store.setLevel(TENANT, 'client_update', 'propose');
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  let s = await h.svc.getState(TENANT, MATTER);
+  const proposal = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'client_update')!;
+  const realSend = h.ports.clientComms.sendStatusUpdate.bind(h.ports.clientComms);
+  h.ports.clientComms.sendStatusUpdate = async () => { throw new Error('Graph account not connected for this user'); };
+  await resolve(h, proposal.eventId, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proposals[proposal.eventId].status, 'failed');
+  const task = openIssues(s).find((i) => i.kind === 'send_failed')!;
+  assert.ok(task && task.detail!.includes(`[proposal:${proposal.eventId}]`), 'the task knows which action to retry');
+
+  // The mailbox is reconnected; the person presses Try Again.
+  h.ports.clientComms.sendStatusUpdate = realSend;
+  const before = h.ports.clientComms.sent.length;
+  await h.svc.retryFailedAction(TENANT, MATTER, proposal.eventId, USER);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(h.ports.clientComms.sent.length, before + 1, 'the same message went');
+  assert.equal(s.proposals[proposal.eventId].status, 'approved');
+  assert.equal(s.issues[task.id].status, 'resolved');
+  await assert.rejects(h.svc.retryFailedAction(TENANT, MATTER, proposal.eventId, USER), /Only a failed action/);
+});
+
+test('the proof-of-funds form can be sent again with the same link', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: true, requireExchangeAuthority: false });
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
+  const first = h.ports.clientComms.sent.filter((m) => m.template === 'proof_of_funds_request');
+  assert.equal(first.length, 1);
+  await h.svc.resendProofOfFunds(TENANT, MATTER, USER);
+  const again = h.ports.clientComms.sent.filter((m) => m.template === 'proof_of_funds_request');
+  assert.equal(again.length, 2);
+  assert.equal((again[1].context as { formUrl: string }).formUrl, (again[0].context as { formUrl: string }).formUrl, 'the same link, not a new round');
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proofOfFunds.rounds ?? 1, 1);
+  assert.ok(s.clientUpdateLastSentAt.proof_of_funds_request, 'the resend is on the record');
+});

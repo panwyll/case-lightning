@@ -210,7 +210,8 @@ type CommandBody =
   | { type: 'record_client_update'; update: ClientUpdateSpec }
   /** PROPOSE level: the service asks before acting. `sourceDocumentId` is the generated dossier the person reads. */
   | { type: 'propose_action'; action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
-  | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
+  | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string }
+  | { type: 'record_action_retried'; actor: Actor; proposalEventId: string; action: EngineAction };
 
 export type CommandType = CommandBody['type'];
 
@@ -1941,6 +1942,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (!s.proposals[cmd.proposalEventId]) reject('Proposal not found.', 404);
       return [{ type: 'action_failed', actor: SYSTEM, payload: { proposalEventId: cmd.proposalEventId, action: cmd.action, detail: cmd.detail, reason: cmd.reason } }];
+    }
+    case 'record_action_retried': {
+      requireEnrolled(s);
+      const pr = s.proposals[cmd.proposalEventId];
+      if (!pr) reject('Proposal not found.', 404);
+      if (pr.status !== 'failed') reject('Only a failed action can be tried again.');
+      return [{ type: 'action_retried', actor: cmd.actor, payload: { proposalEventId: cmd.proposalEventId, action: cmd.action } }];
     }
 
     // ── Timers / comms ──

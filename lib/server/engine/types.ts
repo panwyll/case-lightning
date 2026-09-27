@@ -147,6 +147,7 @@ export const EVENT_TYPES = [
   'action_approved',
   'action_rejected',
   'action_failed',
+  'action_retried',
   'auto_clear_proposed',
   // eventualities (docs/engine-eventualities.md)
   'matter_abandoned',
@@ -818,6 +819,8 @@ export interface Payloads {
   action_rejected: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
   /** A person approved it and the doing failed (a send bounced, a provider was down). Visible on the case, never swallowed. */
   action_failed: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };
+  /** A person tried a failed action again and it went. */
+  action_retried: { proposalEventId: string; action: EngineAction };
   /** PROPOSE level: the rule layer would clear this; the clear waits for a person. `clearedEvent` is emitted verbatim on approval. */
   auto_clear_proposed: { subFlow: SubFlow; subject: string; clearedEvent: NewEvent; reasons: string[]; decision: DecisionSpec };
   // ── eventualities ──
