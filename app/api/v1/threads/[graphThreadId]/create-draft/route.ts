@@ -45,7 +45,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           [body.matterId, user.tenantId]
         )
       : null;
-    const token = matterRow?.case_ref_token ?? undefined;
+    // The subject tag is the case reference, for matching replies; an auto-generated placeholder ref (MATTER-K3F9) is not a reference anyone recognises, so it is not stamped on mail.
+    const token = matterRow?.case_ref_token && !/^MATTER-[A-Z0-9]{4}$/i.test(matterRow.case_ref_token) ? matterRow.case_ref_token : undefined;
     const message = await getMessage(user.userId, body.messageId);
     const recipients = [
       ...(message.toRecipients ?? []).map((r: any) => r.emailAddress?.address),
