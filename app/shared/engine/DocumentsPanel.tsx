@@ -47,7 +47,16 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   };
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
   // Every message the case has sent (or drafted, or failed to send), with the address and the provider's reference: the first place to look when someone says they did not get it.
-  const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null }>>([]);
+  const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }>>([]);
+  const [resending, setResending] = useState<string | null>(null);
+  const [resendNote, setResendNote] = useState<Record<string, string>>({});
+  const resend = async (id: string) => {
+    setResending(id);
+    setResendNote((m) => ({ ...m, [id]: '' }));
+    try { const r = await api<{ address: string; channel: string }>(`/matters/${matterId}/messages/${id}/resend`, { method: 'POST', body: '{}' }); setResendNote((m) => ({ ...m, [id]: `Sent again to ${r.address}` })); setLockTick((t) => t + 1); }
+    catch (e: unknown) { setResendNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not send.' })); }
+    finally { setResending(null); }
+  };
   const [openMail, setOpenMail] = useState<string | null>(null);
   const [mailBody, setMailBody] = useState<Record<string, string>>({});
   const readMail = async (id: string) => {
@@ -78,7 +87,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length, lockTick]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -198,8 +207,10 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             {messages.map((m) => (
               <div key={m.id} className="ep-row">
                 <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.at)}</span>
-                <b>{(m.template ?? '').replace(/_/g, ' ') || m.channel}</b>
+                <b>{m.subject || (m.template ?? '').replace(/_/g, ' ') || m.channel}</b>
                 <span className="ep-note">{m.direction === 'OUT' ? 'to' : 'from'} {m.address ?? 'no address'} · {m.channel}</span>
+                {m.direction === 'OUT' && m.address && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={resending === m.id} onClick={() => void resend(m.id)}>{resending === m.id ? 'Sending…' : 'Send Again'}</button>}
+                {resendNote[m.id] && <span className="ep-note" style={{ width: '100%', color: /^Sent again/.test(resendNote[m.id]) ? '#166534' : '#b91c1c' }}>{resendNote[m.id]}</span>}
                 <span className="ep-pill" style={m.status === 'SENT' ? { background: '#dcfce7', color: '#166534' } : /FAIL/i.test(m.status ?? '') ? { background: '#fee2e2', color: '#991b1b' } : { background: '#fef3c7', color: '#78350f' }}>{(m.status ?? 'unknown').replace(/^FAILED: /, 'Failed: ')}</span>
                 {m.providerRef && <span className="ep-note" title="The provider's reference for this message">{m.providerRef.slice(0, 18)}…</span>}
               </div>

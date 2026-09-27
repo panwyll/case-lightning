@@ -96,8 +96,8 @@ export function productionCommsDeps(): CommsDeps {
       : null,
     log: async (i) => {
       await query(
-        `insert into client_message (tenant_id, matter_id, direction, channel, address, template, body, provider_ref, status, guard) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)`,
-        [i.tenantId, i.matterId, i.direction, i.channel, i.address, i.template, i.body, i.providerRef, i.status, i.guard === undefined ? null : JSON.stringify(i.guard)]
+        `insert into client_message (tenant_id, matter_id, direction, channel, address, template, subject, body, provider_ref, status, guard) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)`,
+        [i.tenantId, i.matterId, i.direction, i.channel, i.address, i.template, i.subject ?? null, i.body, i.providerRef, i.status, i.guard === undefined ? null : JSON.stringify(i.guard)]
       ).catch(() => {});
     },
     routeToHuman: async (i) => {

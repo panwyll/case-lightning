@@ -29,11 +29,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const pg = new Map(pages.map((p) => [p.document_id, p]));
     const fc = new Map(facts.map((f) => [f.document_id, f]));
     const crosschecks = await loadCrossChecks(user.tenantId, matterId);
-    const messages = await query<{ id: string; created_at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; provider_ref: string | null }>(
-      `select id, created_at, direction, channel, address, template, status, provider_ref from client_message where tenant_id = $1 and matter_id = $2 order by created_at desc limit 50`,
+    const messages = await query<{ id: string; created_at: string; direction: string; channel: string; address: string | null; template: string | null; subject: string | null; status: string | null; provider_ref: string | null }>(
+      `select id, created_at, direction, channel, address, template, subject, status, provider_ref from client_message where tenant_id = $1 and matter_id = $2 order by created_at desc limit 50`,
       [user.tenantId, matterId]
     ).catch(() => []);
-    return ok({ messages: messages.map((m) => ({ id: m.id, at: m.created_at, direction: m.direction, channel: m.channel, address: m.address, template: m.template, status: m.status, providerRef: m.provider_ref })), crosschecks, documents: documents.map((d) => {
+    return ok({ messages: messages.map((m) => ({ id: m.id, at: m.created_at, direction: m.direction, channel: m.channel, address: m.address, template: m.template, subject: m.subject, status: m.status, providerRef: m.provider_ref })), crosschecks, documents: documents.map((d) => {
       const p = pg.get(d.id); const f = fc.get(d.id);
       const review = p ? { pages: Number(p.pages), read: Number(p.read), withFacts: Number(p.with_facts), unreadable: Number(p.unreadable), unattested: Number(p.unattested), complete: Number(p.unattested) === 0, facts: Number(f?.facts ?? 0), verified: Number(f?.verified ?? 0) } : null;
       return { id: d.id, fileName: d.file_name, docType: d.doc_type, webUrl: d.web_url, createdAt: d.created_at, review, checked: d.checked, locked: d.locked };

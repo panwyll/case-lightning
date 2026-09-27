@@ -45,7 +45,7 @@ export interface CommsDeps {
   email: { send(input: { to: string; subject: string; text: string; fromUserId?: string | null }): Promise<{ messageId: string | null }> } | null;
   /** Fee-earner mailbox: send now, or create a draft (returns the draft/message id). */
   mailbox: { send(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }>; draft(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }> } | null;
-  log(input: { tenantId: string; matterId: string | null; direction: 'OUT' | 'IN'; channel: string; address: string | null; template: string | null; body: string; providerRef: string | null; status: string; guard?: unknown }): Promise<void>;
+  log(input: { tenantId: string; matterId: string | null; direction: 'OUT' | 'IN'; channel: string; address: string | null; template: string | null; subject?: string | null; body: string; providerRef: string | null; status: string; guard?: unknown }): Promise<void>;
   /** Put something in front of a person (a task + notification on the matter). */
   routeToHuman(input: { tenantId: string; matterId: string | null; title: string; detail: string; fromAddress: string }): Promise<void>;
   /** Find the matter a client address belongs to (inbound). */
@@ -120,21 +120,21 @@ export class ProductionClientComms implements ClientComms {
     if (info.clientPhone && info.clientWhatsAppOptIn && this.deps.whatsapp) {
       try {
         const r = await this.deps.whatsapp.sendText(info.clientPhone, body);
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, body, providerRef: r.messageId, status: 'SENT' });
+        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, subject, body, providerRef: r.messageId, status: 'SENT' });
         return { channel: 'whatsapp', messageId: r.messageId, address: info.clientPhone };
       } catch (err) {
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, body, providerRef: null, status: `FAILED: ${(err as Error).message}` });
+        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, subject, body, providerRef: null, status: `FAILED: ${(err as Error).message}` });
       }
     }
     if (info.clientEmail) {
       if (this.deps.email) {
         const r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, body, providerRef: r.messageId, status: 'SENT' });
+        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
         return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }
       if (this.deps.mailbox && info.feeEarnerUserId) {
         const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, body, providerRef: r.messageId, status: 'SENT' });
+        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
         return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }
     }
@@ -173,7 +173,7 @@ export class ProductionClientComms implements ClientComms {
     if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
     else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
     else throw new Error('No email sender configured.');
-    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', body: subject, providerRef: r.messageId, status: 'SENT' });
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', subject, body: subject, providerRef: r.messageId, status: 'SENT' });
     return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
   }
 }
@@ -253,11 +253,11 @@ export class ProductionChaser implements ThirdPartyChaser {
 
     if (this.deps.chaseMode === 'send') {
       const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
-      await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+      await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
       return { channel: 'email' as const, messageId: sent.messageId };
     }
     const draft = await this.deps.mailbox.draft(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
-    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, subject: r.subject, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
     await this.deps.onChaseDrafted?.({ tenantId: input.tenantId, matterId: input.matterId, messageId: draft.messageId, title: `Chase drafted: ${r.subject}`, detail: `To ${to} — open Drafts to send.` });
     return { channel: 'email' as const, messageId: draft.messageId };
   }
@@ -279,7 +279,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const r = render(t, vars);
     if (r.missing.length) throw new Error(`Notice template ${t.key} missing ${r.missing.join(', ')}`);
     const sent = await this.deps.mailbox.send(info.feeEarnerUserId, agent.email, r.subject, toHtml(r.body));
-    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: agent.email, template: t.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: agent.email, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };
   }
 
@@ -299,7 +299,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_counterparty), vars);
     if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
     const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
-    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };
   }
 }
