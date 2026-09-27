@@ -31,6 +31,15 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }>; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null } | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [drafts, setDrafts] = useState<Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string }>>([]);
+  const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
+  const [openMail, setOpenMail] = useState<string | null>(null);
+  const [mailBody, setMailBody] = useState<Record<string, string>>({});
+  const readMail = async (id: string) => {
+    setOpenMail((cur) => (cur === id ? null : id));
+    if (mailBody[id]) return;
+    const text = await fetch(`/api/v1/documents/${id}/raw`).then((r) => r.text()).catch(() => 'Could not read this email.');
+    setMailBody((cur) => ({ ...cur, [id]: text }));
+  };
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<{ q: string; facts: Array<{ id: string; documentId: string; fileName: string | null; key: string; value: string; page: number | null; quote: string | null; verified: boolean }>; passages: Array<{ documentId: string; fileName: string | null; page: number; text: string }> } | null>(null);
@@ -53,7 +62,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -159,6 +168,23 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                 <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
                 <b style={{ minWidth: 130 }}>{c.label}</b>
                 <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {outbox.length > 0 && (
+        <>
+          <div className="ep-sec">Outbox ({outbox.length})</div>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {outbox.map((m) => (
+              <div key={m.id}>
+                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => void readMail(m.id)}>
+                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.createdAt)}</span>
+                  <b>{(m.fileName ?? '').replace(/^outbox-/, '').replace(/-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.txt$/, '').replace(/_/g, ' ') || 'email'}</b>
+                  <span className="ep-pill" style={{ background: '#fef3c7', color: '#78350f' }}>Rendered, Not Sent</span>
+                </div>
+                {openMail === m.id && <pre style={{ margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #e6e8ee', borderRadius: 10, whiteSpace: 'pre-wrap', fontSize: 12.5, fontFamily: 'inherit', background: '#fafafa' }}>{mailBody[m.id] ?? 'Reading…'}</pre>}
               </div>
             ))}
           </div>

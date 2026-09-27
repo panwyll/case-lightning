@@ -14,7 +14,10 @@
  */
 import { query, queryOne } from '../db';
 import type { EnginePorts } from './ports';
-import { FixtureExtractor, MockChaser, MockClientComms, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
+import crypto from 'node:crypto';
+import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
+import { ProductionChaser, ProductionClientComms, type CommsDeps, type MatterContactInfo } from '../comms/client-comms';
+import { contactInfo, productionCommsDeps } from '../comms/adapters';
 import { DeterministicNoteReader } from './notes';
 
 const SANDBOX_TTL_MS = 30_000;
@@ -39,8 +42,10 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
   const drafter = new TemplateReportDrafter();
   const search = new MockSearchProvider();
   const idCheck = new MockIdCheckProvider();
-  const comms = new MockClientComms();
-  const chaser = new MockChaser();
+  // The outbox: the live senders, rendering the firm's own wording with the case's data, delivering into the case's documents instead of a mailbox.
+  const outboxDeps = sandboxCommsDeps();
+  const comms = new ProductionClientComms(outboxDeps);
+  const chaser = new ProductionChaser(outboxDeps);
   const notes = new DeterministicNoteReader();
   const pick = async <T>(tenantId: string, matterId: string, real: T, mock: T): Promise<T> => ((await isSandboxMatter(tenantId, matterId)) ? mock : real);
   return {
@@ -105,4 +110,69 @@ export async function listSandboxMatters(tenantId: string): Promise<SandboxMatte
       where m.tenant_id = $1 and m.sandbox and coalesce(m.status, 'OPEN') <> 'MERGED' order by m.created_at desc`,
     [tenantId]
   );
+}
+
+const STAND_IN = {
+  client: 'sandbox.client@example.invalid',
+  seller_solicitor: { email: 'sandbox.other-side@example.invalid', name: 'Sandbox Solicitors LLP' },
+  lender: { email: 'sandbox.lender@example.invalid', name: 'Mock Building Society' },
+  estate_agent: { email: 'sandbox.agent@example.invalid', name: 'Sandbox Estate Agents' },
+};
+
+/** The HTML the live sender builds is plain text with line breaks; take it back to text for the file. */
+const htmlToText = (html: string): string => html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+
+/**
+ * The sandbox outbox as comms dependencies: the real contact lookup with stand-in addresses
+ * where a sandbox case has none, the firm's own template wording, and every send filed on
+ * the case as a SANDBOX_EMAIL document instead of leaving through a mailbox. Nothing here is
+ * reachable from a real case: the guard hands these deps to the senders only when the
+ * matter is a sandbox, and a real case with no mailbox configured still fails as before.
+ */
+export function sandboxCommsDeps(): CommsDeps {
+  const real = productionCommsDeps();
+  const file = async (tenantId: string, matterId: string, input: { to: string; subject: string; text: string; status: 'SENT' | 'DRAFTED'; fromUserId?: string | null }): Promise<{ messageId: string | null }> => {
+    const when = new Date().toISOString();
+    const body = [`SANDBOX OUTBOX — rendered, not sent`, `To: ${input.to}`, `Subject: ${input.subject}`, `Status: ${input.status === 'SENT' ? 'would have been sent' : 'would have been drafted for the fee earner'}`, `At: ${when}`, '', input.text].join('\n');
+    const bytes = Buffer.from(body, 'utf8');
+    const d = await queryOne<{ id: string }>(
+      `insert into document (tenant_id, matter_id, source_type, storage_path, file_name, mime_type, size_bytes, hash_sha256, doc_type, extracted_facts, extraction_confidence, created_by)
+       values ($1, $2, 'SANDBOX', $3, $4, 'text/plain', $5, $6, 'SANDBOX_EMAIL', $7::jsonb, 1, $8) returning id`,
+      [tenantId, matterId, `sandbox://${matterId}/outbox/${when}`, `outbox-${when.slice(0, 19).replace(/[:T]/g, '-')}.txt`, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex'), JSON.stringify({ content: body, to: input.to, subject: input.subject, status: input.status, at: when, template: null }), input.fromUserId ?? null]
+    ).catch(() => null);
+    if (d) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [d.id, tenantId, bytes]).catch(() => {});
+    return { messageId: d?.id ?? null };
+  };
+  // The senders only hand the tenant and matter to contactInfo and log; the file needs both, so they ride along per call.
+  let current: { tenantId: string; matterId: string } | null = null;
+  return {
+    contactInfo: async (tenantId, matterId) => {
+      current = { tenantId, matterId };
+      const info: MatterContactInfo = await contactInfo(tenantId, matterId);
+      return {
+        ...info,
+        clientEmail: info.clientEmail ?? STAND_IN.client,
+        clientWhatsAppOptIn: false,
+        contacts: { seller_solicitor: info.contacts.seller_solicitor ?? STAND_IN.seller_solicitor, lender: info.contacts.lender ?? STAND_IN.lender, estate_agent: info.contacts.estate_agent ?? STAND_IN.estate_agent },
+      };
+    },
+    whatsapp: null,
+    email: { send: async ({ to, subject, text, fromUserId }) => file(current!.tenantId, current!.matterId, { to, subject, text, status: 'SENT', fromUserId }) },
+    mailbox: {
+      send: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to, subject, text: htmlToText(bodyHtml), status: 'SENT', fromUserId: userId }),
+      draft: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to, subject, text: htmlToText(bodyHtml), status: 'DRAFTED', fromUserId: userId }),
+    },
+    // The template name arrives with the log line; it goes onto the filed email. Nothing is written to the client-message history.
+    log: async (i) => {
+      if (i.providerRef && i.template) await query(`update document set extracted_facts = extracted_facts || $3::jsonb, file_name = $4 where id = $1 and tenant_id = $2 and doc_type = 'SANDBOX_EMAIL'`, [i.providerRef, i.tenantId, JSON.stringify({ template: i.template }), `outbox-${i.template}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`]).catch(() => {});
+    },
+    routeToHuman: async () => {},
+    matterForAddress: async () => null,
+    tenantForAddress: async () => null,
+    chaseMode: 'send',
+    ackMode: 'send',
+    templateOverride: real.templateOverride,
+    briefFor: real.briefFor,
+    onChaseDrafted: async () => {},
+  };
 }

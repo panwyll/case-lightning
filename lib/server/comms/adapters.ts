@@ -26,7 +26,7 @@ export function whatsappClient(): WhatsAppClient | null {
   return _wa;
 }
 
-async function contactInfo(tenantId: string, matterId: string): Promise<MatterContactInfo> {
+export async function contactInfo(tenantId: string, matterId: string): Promise<MatterContactInfo> {
   const m = await queryOne<{ matter_ref: string; property_address: string; buyer_names: string[]; assigned_to: string | null; created_by: string; completion_target_date: string | null; tenant_name: string; fee_name: string | null }>(
     `select m.matter_ref, m.property_address, m.buyer_names, m.assigned_to, m.created_by, m.completion_target_date::text, t.name as tenant_name,
             coalesce(u.display_name, u.email) as fee_name
