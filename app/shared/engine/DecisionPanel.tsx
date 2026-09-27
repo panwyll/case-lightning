@@ -75,8 +75,12 @@ const CSS = `
 .dp-file[open] > summary::before{transform:rotate(45deg)}
 .dp-file .dp-narr{margin:0;padding:0 14px 12px 34px}
 .dp-passed{margin-top:18px;border-top:1px solid #eef2f7;padding-top:10px}
-.dp-passed > summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:#15803d}
+.dp-passed > summary{cursor:pointer;list-style:none;font-size:12.5px;font-weight:700;color:#15803d;display:flex;align-items:center;gap:8px}
 .dp-passed > summary::-webkit-details-marker{display:none}
+.dp-passed > summary::before{content:'';width:6px;height:6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg);transition:transform .15s;margin-left:2px}
+.dp-passed[open] > summary::before{transform:rotate(45deg)}
+.dp-passed.todo > summary{color:#475569}
+.dp-passed.todo li::before{content:'○ ';color:#94a3b8}
 .dp-passed ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .dp-passed li{font-size:12.5px;color:#475569}
 .dp-passed li::before{content:'✓ ';color:#15803d;font-weight:800}
@@ -385,7 +389,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
       ))}
     </ul>
   );
-  const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status !== 'ok');
+  const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'flag');
+  const todo = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'open');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
   const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0)} title={docLabel(e.documentId)}>{label}</button> : null;
   const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
@@ -411,7 +416,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
             <div style={{ minWidth: 0 }}>
               <div className="dp-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</div>
               <p className="dp-lead">{detail.matter?.propertyAddress ?? d.propertyAddress ?? d.matterRef}</p>
-              {ctx?.submitted ? <p className="dp-sub">Form submitted by {ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p> : lead ? <p className="dp-sub">{lead}</p> : null}
+              {ctx?.submitted ? <p className="dp-sub">{ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p> : lead ? <p className="dp-sub">{lead}</p> : null}
             </div>
             <div className="dp-case" style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
               {detail.shadowed && <span className="eg-chip shadow">shadow</span>}
@@ -454,9 +459,15 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
                   {quiet.map(({ c, i }) => (<li key={i}><b>✓</b>{c.text}{renderEv(c)}</li>))}
                 </ul>
               )}
+              {todo.length > 0 && (
+                <details className="dp-passed todo" open={live.length === 0}>
+                  <summary>{todo.length === 1 ? 'One thing to check yourself' : `${todo.length} things to check yourself`}</summary>
+                  <ul style={{ gridTemplateColumns: '1fr' }}>{todo.map(({ c, i }) => <li key={i}>{c.text}{renderEv(c)}</li>)}</ul>
+                </details>
+              )}
               {passed.length > 0 && (
                 <details className="dp-passed">
-                  <summary>{passed.length} checks passed, nothing to do</summary>
+                  <summary>{passed.length} checks passed</summary>
                   <ul>{passed.map((t, k) => <li key={k}>{t}</li>)}</ul>
                 </details>
               )}

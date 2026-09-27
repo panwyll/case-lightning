@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { ok, fail } from '@/lib/server/http';
+import { offeredOptions } from '@/lib/server/engine/rules';
 import { onlyVisible } from '@/lib/server/access';
 import { engine } from '@/lib/server/engine/adapters';
 
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
     const user = await requireUser();
     const q = z.object({ matterId: z.string().uuid().optional(), limit: z.coerce.number().int().positive().max(500).default(100) }).parse(Object.fromEntries(req.nextUrl.searchParams));
     const decisions = await onlyVisible(user, await engine().eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit }));
-    return ok({ decisions: decisions.map((d) => ({ ...d, sourceOpenedByMe: d.openedBy.includes(user.userId) })) });
+    return ok({ decisions: decisions.map((d) => ({ ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId) })) });
   } catch (error) {
     return fail(error);
   }

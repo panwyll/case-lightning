@@ -22,7 +22,7 @@ import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
-import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
+import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
@@ -989,7 +989,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'resolve_decision': {
       const d = pendingDecision(s, cmd.decisionEventId);
       if (!isUserActor(cmd.userId)) reject('Decisions are resolved by people, not automation.', 403);
-      if (!d.options.includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${d.options.join(', ')}).`, 400);
+      if (!offeredOptions(d.kind, d.options).includes(cmd.option)) reject(`"${cmd.option}" is not an option for this decision (${offeredOptions(d.kind, d.options).join(', ')}).`, 400);
       requireSurfaced(s, d, ctx);
       if (!d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.

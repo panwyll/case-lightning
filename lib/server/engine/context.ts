@@ -442,7 +442,66 @@ const monthName = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { m
 type Built = { checklist: ChecklistItem[]; narrative: Ev[]; files?: TaskContext['files']; passed?: string[]; submitted?: TaskContext['submitted'] };
 function buildChecklist(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): Built {
   const built = buildChecklistItems(s, d, checks, raised, x);
-  return Array.isArray(built) ? { checklist: built, narrative: [] } : built;
+  if (!Array.isArray(built)) return built;
+  // Every other kind: the source document as a card of its own, and who put it in front of the firm.
+  return { checklist: built, narrative: [], files: sourceFile(s, d, raised, x), submitted: receivedLine(d, raised), passed: [] };
+}
+
+/** "Search result received 11 Sept" / "Offer read 2 Sept": who or what put this decision in front of a person, and when. */
+function receivedLine(d: DecisionState, raised: EngineEvent | null): TaskContext['submitted'] {
+  const at = raised?.createdAt ?? d.createdAt ?? null;
+  const by: Record<string, string> = { search: 'Search result received', enquiry: 'Reply received', mortgage: 'Mortgage offer received', title: 'Official copies received', id_check: 'ID / AML result received', management_pack: 'Management pack received', report_on_title: 'Draft ready for approval', bank_details: 'Bank details received', proposal: 'Proposed by the engine', auto_clear: 'Cleared by the rules', escalation: 'Escalated', requisition: 'Requisition received', note_actions: 'Note read' };
+  return { by: by[d.kind] ?? 'Raised', at };
+}
+
+/** The source document as one card: what it is in a line, and the entries on it worth a look. */
+function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null, x: BuildExtras): TaskContext['files'] {
+  const docId = d.sourceDocumentId ?? null;
+  if (!docId) return [];
+  const rp = (raised?.payload ?? {}) as Record<string, unknown>;
+  const label = d.citations.find((c) => c.documentId === docId)?.label ?? null;
+  const title = label ? label.replace(/^[A-Z0-9_]+ — /, '') : pretty(d.kind);
+  const flagLines = (flags: Flag[] | undefined): Ev[] => (flags ?? []).map((fl) => ({ text: seeTail(fl.description), documentId: docId, page: fl.locator?.page ?? null, quote: fl.locator?.quote ?? fl.locator?.section ?? null, warn: fl.severity === 'high' || fl.severity === 'medium' }));
+  const rv = x.review;
+  const read = rv?.pages ? `${rv.read} of ${n(rv.pages, 'page')} read` : null;
+  if (d.kind === 'search') {
+    const f = rp.facts as { searchType?: string; flags?: Flag[] } | undefined;
+    const sr = f?.searchType ? s.searches[f.searchType] : null;
+    return [{ documentId: docId, title, summary: [`${f?.searchType ?? 'Search'} result`, sr?.returnedAt ? `returned ${day(sr.returnedAt)}` : null, read, f?.flags?.length ? n(f.flags.length, 'point') : 'nothing flagged'].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: !!f?.flags?.length }];
+  }
+  if (d.kind === 'enquiry') {
+    const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
+    return [{ documentId: docId, title, summary: [`Reply to ${f?.enquiryId ?? 'the enquiry'}`, f?.status ? (f.status === 'answered' ? 'answers it' : f.status === 'partial' ? 'answers part of it' : f.status === 'refused' ? 'declines to answer' : 'unclear') : null, read].filter(Boolean).join(', '), lines: flagLines(f?.issues), warn: f?.status !== 'answered' }];
+  }
+  if (d.kind === 'mortgage') {
+    const f = s.mortgage.facts;
+    const special = f?.conditions.filter((c) => !c.standard) ?? [];
+    return [{ documentId: docId, title, summary: [f?.lender ? `Offer from ${f.lender}` : 'Mortgage offer', f?.amountPennies ? `advance ${gbp(f.amountPennies)}` : null, f?.expiryDate ? `expires ${day(f.expiryDate)}` : null, f ? `${n(f.conditions.length, 'condition')}, ${special.length} special` : null, read].filter(Boolean).join(', '), lines: special.map((c) => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })), warn: special.length > 0 }];
+  }
+  if (d.kind === 'title') {
+    const f = s.title.facts;
+    const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string } }[]): Ev[] => arr.map((e) => ({ text: `${label} ${e.code}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
+    const cards: TaskContext['files'] = [{ documentId: docId, title, summary: [f ? `Official copy of ${f.titleNumber}, ${f.tenure}${f.unregistered ? ', UNREGISTERED' : ''}` : 'Official copy', f ? `${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}` : null, read].filter(Boolean).join(', '), lines: f ? [...entries('Restriction', f.restrictions), ...entries('Charge', f.charges), ...entries('Covenant', f.covenants)] : [], warn: !!f && (f.restrictions.length + f.charges.length + f.covenants.length) > 0 }];
+    const l = f?.lease;
+    if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, l.flags?.length ? n(l.flags.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(l.flags), warn: !!l.flags?.length });
+    return cards;
+  }
+  if (d.kind === 'id_check') {
+    const f = rp.facts as IdCheckFacts | undefined;
+    return [{ documentId: docId, title, summary: [`${f?.provider ?? 'ID / AML'} result: ${f?.outcome ?? 'referred'}`, f?.flags?.length ? n(f.flags.length, 'flag') : null].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: f?.outcome !== 'clear' }];
+  }
+  if (d.kind === 'management_pack') {
+    const f = s.managementPack.facts;
+    return [{ documentId: docId, title, summary: ['Management pack (LPE1)', f?.serviceChargePenniesPa != null ? `service charge ${gbp(f.serviceChargePenniesPa)} a year` : null, f?.groundRentPenniesPa != null ? `ground rent ${gbp(f.groundRentPenniesPa)}` : null, f?.arrearsPennies ? `arrears ${gbp(f.arrearsPennies)}` : null, read].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: !!f?.flags?.length || !!f?.arrearsPennies }];
+  }
+  if (d.kind === 'report_on_title') {
+    return [{ documentId: docId, title: 'Draft report on title', summary: [rv?.facts ? `${rv.verified} of ${n(rv.facts, 'quoted fact')} found in the sources` : 'not checked against the register', rv?.unverified.length ? `${n(rv.unverified.length, 'claim')} not found` : null].filter(Boolean).join(', '), lines: (rv?.unverified ?? []).slice(0, 8).map((u) => ({ text: `Not found in the source: ${u.key} = ${u.value}`, documentId: docId, warn: true })), warn: !!rv?.unverified.length }];
+  }
+  if (d.kind === 'bank_details') {
+    const b = Object.values(s.bankDetails).find((r) => r.sourceDocumentId === docId) ?? null;
+    return [{ documentId: docId, title, summary: b ? `Bank details for ${pretty(b.payeeKind)}${b.payeeRef ? ` (${b.payeeRef})` : ''}, arrived by ${pretty(b.sourceChannel)}` : 'Bank details', lines: [], warn: true }];
+  }
+  return [{ documentId: docId, title, summary: [pretty(d.kind), read].filter(Boolean).join(', '), lines: [], warn: false }];
 }
 
 function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[], raised: EngineEvent | null, x: BuildExtras): ChecklistItem[] | Built {
@@ -696,8 +755,19 @@ function pofChecklist(s: MatterState, docId: string | null, x: BuildExtras): Bui
   const applicable = stmts.some((st) => st.readable);
   const passed = RULES.filter(([code]) => !raisedCodes.has(code) && (applicable || /^POF_/.test(code))).map(([, text]) => text);
   if (!applicable) narrative.push({ text: 'No statement could be read: nothing has been checked line by line.', warn: true });
-  const submitted = { by: f.declarantName, at: s.proofOfFunds.submittedAt };
+  const submitted = { by: `Form submitted by ${f.declarantName}`, at: s.proofOfFunds.submittedAt };
   void txCount;
+  // The form itself, as a card of its own: what the client declared, line by line.
+  if (docId) files.unshift({
+    documentId: docId,
+    title: 'Form responses',
+    summary: `${n(f.sources.length, 'source')} declared${f.coDeclarants?.length ? `, confirmed by ${f.coDeclarants.join(', ')}` : ''}; ${f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing ? 'all three declarations confirmed' : 'NOT every declaration confirmed'}${f.round && f.round > 1 ? `; round ${f.round}` : ''}`,
+    lines: [
+      ...f.sources.map((src, i) => ({ text: `${i + 1}. ${pretty(src.kind)} ${gbp(src.amountPennies)}${src.description && src.kind !== 'gift' ? ` — ${src.description}` : ''}${src.gift ? ` — from ${src.gift.donorName} (${src.gift.donorRelationship})${src.gift.repayable ? ', repayable' : ''}${src.gift.donorAbroad ? ', donor abroad' : ''}` : ''}${src.overseas ? ` — ${src.overseas.country}${src.overseas.alreadyInUk ? ', already in the UK' : ', not yet in the UK'}` : ''} · ${src.evidenceCount ? n(src.evidenceCount, 'document') : 'nothing attached'}`, documentId: docId, warn: src.evidenceCount === 0 })),
+      { text: `Declarations: accurate ${f.declarations.accurate ? '✓' : '✗'} · no third-party interest ${f.declarations.noThirdPartyInterest ? '✓' : '✗'} · no undisclosed borrowing ${f.declarations.noUndisclosedBorrowing ? '✓' : '✗'}`, documentId: docId, warn: !(f.declarations.accurate && f.declarations.noThirdPartyInterest && f.declarations.noUndisclosedBorrowing) },
+    ],
+    warn: false,
+  });
 
   // Only what needs a decision, each named for what it is.
   if (f.requiredPennies == null) items.push(item('The price is not on the file, so the total was not checked against the balance', 'open', [{ text: `Declared ${gbp(total)}` }]));

@@ -10,6 +10,7 @@ import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } fr
 import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
 import { taskContext } from '@/lib/server/engine/context';
 import { loadCrossChecks } from '@/lib/server/engine/crosscheck-run';
+import { offeredOptions } from '@/lib/server/engine/rules';
 
 type MatterRow = { matter_ref: string; property_address: string; shadow_mode: boolean | null; buyer_names: string[] | null; seller_names: string[] | null; purchase_price: string | null; lender: string | null; counterparty_solicitor: string | null; counterparty_agent: string | null; exchange_target_date: string | null; completion_target_date: string | null };
 
@@ -97,7 +98,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     return ok({
       context,
       noteActions,
-      decision: { ...d, sourceOpenedByMe: d.openedBy.includes(user.userId) },
+      decision: { ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId) },
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, shadowMode: !!matter.shadow_mode } : null,
       raised: raised ? { seq: raised.seq, type: raised.type, actor: raised.actor, createdAt: raised.createdAt, confidenceScore: raised.confidenceScore } : null,
       resolution: resolving

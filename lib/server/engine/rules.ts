@@ -45,6 +45,9 @@ export const severityAtLeast = (s: Severity, floor: Severity): boolean => SEVERI
 export type Verdict = { outcome: 'clear'; reasons: string[] } | { outcome: 'flag'; flags: Flag[]; reasons: string[] };
 
 /** The standard option set per decision kind (spec 2.4 step 5). */
+/** The options a decision offers today: what it stored when raised, less anything the kind no longer has (a decision raised before an option was withdrawn does not keep it). */
+export const offeredOptions = (kind: DecisionKind, stored: DecisionOption[]): DecisionOption[] => stored.filter((o) => (OPTIONS_FOR[kind] ?? stored).includes(o));
+
 export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   id_check: ['approve', 'request_further', 'escalate'],
   search: ['approve', 'refer_to_client', 'request_further', 'indemnity', 'escalate'],
