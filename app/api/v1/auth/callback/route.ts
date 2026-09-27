@@ -8,6 +8,16 @@ import { ensureSubscription } from '@/lib/server/subscriptions';
 import { applyInviteOnJoin } from '@/lib/server/invites';
 import { paths } from '@/lib/paths';
 
+/** "chloe@delaney-webb.co.uk" → "Delaney Webb"; a personal mailbox gives nothing, and the firm names itself in Get started. */
+function firmNameFromEmail(email: string): string | null {
+  const domain = (email.split('@')[1] ?? '').toLowerCase();
+  const free = new Set(['gmail.com', 'googlemail.com', 'hotmail.com', 'hotmail.co.uk', 'outlook.com', 'outlook.co.uk', 'live.com', 'live.co.uk', 'yahoo.com', 'yahoo.co.uk', 'icloud.com', 'me.com', 'btinternet.com', 'sky.com', 'aol.com', 'msn.com', 'protonmail.com', 'proton.me']);
+  if (!domain || free.has(domain)) return null;
+  const base = domain.replace(/\.(co\.uk|org\.uk|ltd\.uk|com|co|uk|org|net|law|legal|solicitors)$/g, '').split('.')[0];
+  const words = base.split(/[-_]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1));
+  return words.length ? words.join(' ') : null;
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -90,7 +100,7 @@ export async function GET(req: NextRequest) {
       if (existing.rowCount) return existing.rows[0]!;
       const created = await client.query<{ id: string }>(
         'insert into tenant (external_tenant_id, name) values ($1, $2) returning id',
-        [tid, `Tenant-${tid}`]
+        [tid, firmNameFromEmail(email) ?? `Tenant-${tid}`]
       );
       return created.rows[0]!;
     });

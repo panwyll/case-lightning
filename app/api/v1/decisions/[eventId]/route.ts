@@ -6,7 +6,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { engine, productionPorts } from '@/lib/server/engine/adapters';
 import { query, queryOne } from '@/lib/server/db';
-import { SUBFLOW_OF_KIND, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
+import { SUBFLOW_OF_KIND, openPofQueries, type DecisionKind, type NoteAction, type Payloads } from '@/lib/server/engine/types';
 import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
 import { taskContext } from '@/lib/server/engine/context';
 import { loadCrossChecks } from '@/lib/server/engine/crosscheck-run';
@@ -107,6 +107,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
       context,
       noteActions,
       message,
+      openQueries: d.kind === 'proof_of_funds' ? openPofQueries(stateForContext).length : 0,
       decision: { ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId) },
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, shadowMode: !!matter.shadow_mode } : null,
       raised: raised ? { seq: raised.seq, type: raised.type, actor: raised.actor, createdAt: raised.createdAt, confidenceScore: raised.confidenceScore } : null,

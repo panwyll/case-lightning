@@ -51,7 +51,8 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   return {
     matterRef: m.matter_ref,
     propertyAddress: m.property_address,
-    firmName: m.tenant_name,
+    // A firm that has not named itself yet signs as its conveyancer, never as the placeholder the account started with.
+    firmName: /^Tenant-[0-9a-f-]{36}$/i.test(m.tenant_name ?? '') ? (m.fee_name ?? 'Your conveyancing team') : m.tenant_name,
     feeEarnerName: m.fee_name,
     feeEarnerUserId: m.assigned_to ?? m.created_by,
     clientFirstName: firstName,

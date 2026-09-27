@@ -2185,7 +2185,11 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     const open = openPofQueries(s);
     const donorsPending = Object.values(s.partyChecks).filter((pc) => pc.role === 'donor' && !isResolved(pc.status));
     if (option === 'approve' && donorsPending.length) reject(`Sign-off waits for the donor's ID / AML check: ${donorsPending.map((pc) => `${pc.label} ${pc.status.replace(/_/g, ' ')}`).join('; ')}.`);
-    if (option === 'approve' && open.length) reject(`Sign-off is not available while ${open.length} quer${open.length === 1 ? 'y is' : 'ies are'} open (${open.map((q) => q.id).join(', ')}): send them to the client (query), or withdraw each with a reason.`, 409);
+    if (option === 'approve' && open.length) {
+      // The warning stands, the person decides: a reason signs off regardless and withdraws each open query with that reason on the record.
+      if (!note?.trim()) reject(`${open.length} quer${open.length === 1 ? 'y is' : 'ies are'} still open (${open.map((q) => q.id).join(', ')}). Send them to the client (Query the client), withdraw each with a reason, or give a reason here to sign off regardless — it is recorded against each query.`, 409);
+      for (const q of open) out.push({ type: 'proof_of_funds_query_withdrawn', actor: userId, payload: { queryId: q.id, reason: `Signed off with this query outstanding: ${note.trim()}` } });
+    }
     if (option === 'request_further' && open.length === 0 && !note?.trim()) reject('There is nothing to put to the client: add a query first, or write what you need in the reason.', 400);
     if (option === 'approve') {
       for (const i of Object.values(s.issues)) {

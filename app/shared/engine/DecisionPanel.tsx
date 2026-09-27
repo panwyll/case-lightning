@@ -237,7 +237,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const engaged = d?.kind === 'proposal' || d?.kind === 'auto_clear' || scrolled || dwell >= UI_DWELL_MS;
   const isBank = d?.kind === 'bank_details';
   const noteLines = detail?.noteActions ?? null;
-  const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
+  const openQueries = detail?.openQueries ?? 0;
+  const needsReason = (o: string) => (o !== 'approve' && o !== 'verify') || (o === 'approve' && openQueries > 0);
   const msg = detail?.message ?? null;
   const optionLabel = (o: string) => {
     return (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
@@ -594,7 +595,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 ))}
                 {choice && (
                   <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim())} onClick={() => resolve(choice)}>
-                    {busy ? 'Recording…' : `Confirm: ${optionLabel(choice)}`}
+                    {busy ? 'Recording…' : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
                   </button>
                 )}
                 {flagged > 0 && <span className="dp-gate" style={{ marginLeft: 'auto' }}>{flagged} to look at</span>}

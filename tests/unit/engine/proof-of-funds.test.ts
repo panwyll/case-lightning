@@ -155,7 +155,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   // A donor abroad is enhanced due diligence, which brings one source-of-wealth query with it; it has to be sent or withdrawn with a reason before sign-off.
   const sow = openPofQueries(s).find((q) => q.flagCode === 'SOURCE_OF_WEALTH')!;
   assert.ok(sow, 'enhanced risk drafts the source-of-wealth query');
-  await assert.rejects(resolve(h, d.eventId, 'approve'), /Sign-off is not available while 1 query is open/);
+  await assert.rejects(resolve(h, d.eventId, 'approve'), /1 query is still open .*give a reason here to sign off regardless/);
   await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: sow.id, reason: 'Source of wealth taken at the instruction meeting: salary and an inheritance in 2019, recorded on the file note' });
 
   // Sign-off.
@@ -437,7 +437,7 @@ test('the query loop end to end: submission drafts queries → sign-off refused 
   assert.equal(d1.citations.length, 2, 'the declaration and the statement are both cited');
   assert.equal(s.proofOfFunds.risk, 'standard');
   // Sign-off is refused while queries are open.
-  await assert.rejects(resolve(h, d1.eventId, 'approve'), /Sign-off is not available while 2 queries are open/);
+  await assert.rejects(resolve(h, d1.eventId, 'approve'), /2 queries are still open/);
   // The conveyancer adds one of their own, withdraws the cash one with a reason, then queries.
   await h.svc.run(TENANT, MATTER, { type: 'raise_proof_of_funds_query', actor: USER, question: 'Please confirm which account your salary is paid into if not this one.' });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q2', reason: '' }), /reason/);
@@ -467,13 +467,17 @@ test('the query loop end to end: submission drafts queries → sign-off refused 
   assert.match(d2.summary, /A: Tom is my partner/);
   assert.ok(s.proofOfFunds.flags.some((f) => f.code === 'QUERY_UNANSWERED' && /salary is paid into/.test(f.description)));
   assert.equal(s.proofOfFunds.risk, 'enhanced', 'a statement in someone else\'s name');
-  await assert.rejects(resolve(h, d2.eventId, 'approve'), /Sign-off is not available while 3 queries are open/);
+  await assert.rejects(resolve(h, d2.eventId, 'approve'), /3 queries are still open/);
   await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: 'Q3', reason: 'Salary credits are visible on the Nationwide statement after all' });
   const newQ = openPofQueries(await h.svc.getState(TENANT, MATTER));
   assert.deepEqual(newQ.map((q) => q.flagCode).sort(), ['HOLDER_MISMATCH', 'SOURCE_OF_WEALTH'], 'enhanced risk adds the source-of-wealth query once');
-  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ.find((q) => q.flagCode === 'HOLDER_MISMATCH')!.id, reason: 'Partner\'s account: repayment of a holiday, explained in the answer to Q1' });
-  await h.svc.run(TENANT, MATTER, { type: 'withdraw_proof_of_funds_query', actor: USER, queryId: newQ.find((q) => q.flagCode === 'SOURCE_OF_WEALTH')!.id, reason: 'Source of wealth: eight years of salary savings, consistent with the P60s on file' });
-  await resolve(h, d2.eventId, 'approve');
+  // The warning stands, the person decides: signing off with a reason withdraws what is still open, with that reason against each query.
+  await resolve(h, d2.eventId, 'approve', USER, "Partner's account explained on the file note; source of wealth taken at the instruction meeting");
+  const afterOverride = await h.svc.getState(TENANT, MATTER);
+  for (const q of newQ) assert.equal(afterOverride.proofOfFunds.queries[q.id].status, 'withdrawn');
+  const withdrawn = h.store.dump(TENANT, MATTER).filter((e) => e.type === 'proof_of_funds_query_withdrawn').slice(-newQ.length);
+  assert.equal(withdrawn.length, newQ.length);
+  for (const e of withdrawn) assert.match(String((e.payload as { reason: string }).reason), /Signed off with this query outstanding: Partner's account/);
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.proofOfFunds.status, 'reviewed');
   assert.ok(s.proofOfFunds.approvedAt);

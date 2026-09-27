@@ -84,6 +84,8 @@ export type ProposalPreview =
 export interface DecisionDetail {
   /** For a proposal: what it would actually send or do, exactly. */
   message?: ProposalPreview | null;
+  /** Proof of funds: queries to the client still open. Signing off with any needs a reason, which withdraws them. */
+  openQueries?: number;
   /** What a person needs to take this decision from cold (lib/server/engine/context.ts). */
   context: TaskContextView | null;
   decision: DecisionRow;
