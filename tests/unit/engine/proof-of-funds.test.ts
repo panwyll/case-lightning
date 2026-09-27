@@ -230,8 +230,8 @@ test('leasehold purchase: the management pack gates pre_contract, lease facts fl
   s = await h.svc.getState(TENANT, MATTER);
   assert.deepEqual(stageBlockers(s), ['management pack awaiting']);
   h.advanceDays(16);
-  assert.equal((await h.svc.tick(TENANT, MATTER)).chases, 1, 'chased after 10 working days');
-  assert.equal(h.ports.chaser.chases.at(-1)?.template, 'chase_management_pack');
+  assert.ok((await h.svc.tick(TENANT, MATTER)).chases >= 1, 'chased after 10 working days');
+  assert.equal(h.ports.chaser.chases.filter((c) => c.template === 'chase_management_pack').length, 1, 'the pack is chased once (the contract pack has its own chase)');
   const packDoc = h.doc({ serviceChargePenniesPa: 240_000, groundRentPenniesPa: 35_000, arrearsPennies: 0, majorWorksPlanned: true, buildingsInsuranceInPlace: true, reserveFundPennies: 1_200_000, flags: [{ code: 'MAJOR_WORKS', severity: 'medium', description: 'Roof replacement planned 2027, estimated £8,000 per flat' }], confidence: 0.9 }, 'LPE1');
   const mp = await h.svc.managementPackReceived(TENANT, MATTER, packDoc);
   s = mp.state;

@@ -108,9 +108,9 @@ test('a chase to a third party also tells the client — once a day, never while
   await h.svc.tick(TENANT, MATTER);
 
   const updates = h.ports.clientComms.sent.filter((x) => x.template === 'chase_update');
-  assert.equal(updates.length, 1, 'two searches chased in one sweep is one update, not two');
-  assert.match(String(updates[0].context.waitingOn), /local authority/);
-  assert.match(String(updates[0].context.waitingFor), /property search/);
+  assert.equal(updates.length, 1, 'everything chased in one sweep (the contract pack and two searches) is one update, not three');
+  assert.match(String(updates[0].context.waitingOn), /local authority|seller's solicitor/);
+  assert.match(String(updates[0].context.waitingFor), /property search|contract pack/);
   assert.match(String(updates[0].context.nextChase), /\w+day \d+ \w+/, 'the update says when we chase again');
   const state = await h.svc.getState(TENANT, MATTER);
   assert.ok(state.clientUpdateLastSentAt.chase_update, 'the matter remembers it told them');

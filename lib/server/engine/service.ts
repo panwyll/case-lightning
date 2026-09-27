@@ -816,6 +816,22 @@ export class EngineService {
           await this.ports.linked.enquiryRaised({ tenantId, fromMatterId: matterId, enquiryId: p.enquiryId, subject: p.subject });
         }
         // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
+        // A stage the client was waiting on has been signed off: tell them, say where everything else stands and what comes next.
+        if ((e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'approve') || e.type === 'title_reviewed' && (e.payload as { option: string }).option === 'approve') {
+          const fresh = await this.getState(tenantId, matterId);
+          const brief = caseBrief(fresh, this.ports.now());
+          const done = e.type === 'proof_of_funds_reviewed' ? 'source of funds approved' : 'title approved';
+          const doneLine = e.type === 'proof_of_funds_reviewed' ? 'we have reviewed and approved your proof of funds, so that part of the file is complete.' : 'we have reviewed the title to the property and approved it.';
+          const status = brief.workstreams.filter((w) => w.status !== 'not_applicable').map((w) => `• ${w.label}: ${w.detail || w.status.replace(/_/g, ' ')}`).join('\n');
+          const next = brief.nextActions.slice(0, 3).map((a) => a.what).join('; ') || (brief.waiting.length ? `we are waiting on ${brief.waiting.slice(0, 3).map((w) => `${w.who} for ${w.what}`).join(', ')}` : 'we will be in touch as the next piece comes in');
+          const target = brief.milestones.targetExchangeDate;
+          const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
+          const context = { eventType: e.type, payload: e.payload, done, doneLine, status, next, targetNote, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
+          const detail = { template: 'progress_update', context, triggeredByEventId: e.id };
+          if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'progress_update', `progress_update:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${done}; where everything else stands; what happens next\nTemplate: progress_update`))) {
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('progress update could not be sent', err); }
+          }
+        }
         if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
           const p = e.payload as { requestId: string; note?: string | null };
           await this.requestProofOfFunds(tenantId, matterId, e.actor, { followUpOf: p.requestId, noteToClient: p.note ?? null });

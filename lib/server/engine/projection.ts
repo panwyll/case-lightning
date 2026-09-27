@@ -335,6 +335,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.title.facts = s.title.lease && !p.facts.lease ? { ...p.facts, lease: s.title.lease } : p.facts;
       if (p.facts.lease) s.title.lease = p.facts.lease;
       s.title.documentId = e.sourceDocumentId ?? s.title.documentId;
+      closeWait(s, 'contract_pack', '', e);
       s.title.decisionEventId = null;
       break;
     }
@@ -781,6 +782,11 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
     }
     // ── leasehold ──
+    case 'contract_pack_requested': {
+      s.contractPack = { ...s.contractPack, requestedAt: e.createdAt };
+      openWait(s, 'contract_pack', '', e);
+      break;
+    }
     case 'management_pack_requested': {
       s.managementPack = { ...s.managementPack, status: 'requested', requestedAt: e.createdAt };
       openWait(s, 'management_pack', '', e);

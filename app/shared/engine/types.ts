@@ -206,7 +206,7 @@ export interface EngineState {
   hasExistingMortgage?: boolean;
   considerationPennies?: number | null;
   propertyForms?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received'; forms: string[]; requestedAt: string | null; receivedAt: string | null; facts: Record<string, unknown> | null };
-  contractPack?: { sentAt: string | null };
+  contractPack?: { sentAt: string | null; requestedAt?: string | null };
   inboundEnquiries?: Record<string, { id: string; question: string; round: number; receivedAt: string; repliedAt: string | null }>;
   redemption?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; dailyInterestPennies: number | null; requestedAt: string | null; receivedAt: string | null; redeemedAt: string | null; dischargedAt: string | null };
   lenderConsent?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received'; lender: string | null; conditions: string | null; requestedAt: string | null; receivedAt: string | null };

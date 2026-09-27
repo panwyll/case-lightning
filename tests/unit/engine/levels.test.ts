@@ -66,11 +66,11 @@ test('propose: the timer proposes a chase once, does not nag while it waits, and
   assert.equal(t1.chases, 0, 'nothing sent');
   assert.equal(h.ports.chaser.chases.length, 0);
   let s = await h.svc.getState(TENANT, MATTER);
-  const props = Object.values(s.proposals).filter((p) => p.action === 'chase');
+  const props = Object.values(s.proposals).filter((p) => p.action === 'chase' && p.dedupKey.startsWith('search:'));
   assert.equal(props.length, 1, 'one proposal');
   await h.svc.tick(TENANT, MATTER);
   s = await h.svc.getState(TENANT, MATTER);
-  assert.equal(Object.values(s.proposals).filter((p) => p.action === 'chase').length, 1, 'the next tick does not propose it again');
+  assert.equal(Object.values(s.proposals).filter((p) => p.action === 'chase' && p.dedupKey.startsWith('search:')).length, 1, 'the next tick does not propose it again');
   await resolve(h, props[0].eventId, 'approve', USER);
   assert.equal(h.ports.chaser.chases.length, 1, 'approved → chased');
   s = await h.svc.getState(TENANT, MATTER);

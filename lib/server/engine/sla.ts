@@ -49,6 +49,8 @@ export const DEFAULT_SLA: SlaConfig = {
   property_forms: { waitKey: 'property_forms', chaseAfter: 5, chaseEvery: 3, escalateAfter: 12, reEscalateAfter: 5, recipientRole: 'client', template: 'chase_property_forms' },
   // Lenders: redemption statements in days, consents in weeks, discharges (DS1 / e-DS1) in weeks.
   redemption: { waitKey: 'redemption', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'lender', template: 'chase_redemption_statement' },
+  // Purchase: the seller's solicitor owes us the draft contract pack from the day we ask; a week is generous, then every three working days.
+  contract_pack: { waitKey: 'contract_pack', chaseAfter: 5, chaseEvery: 3, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_contract_pack' },
   lender_consent: { waitKey: 'lender_consent', chaseAfter: 5, chaseEvery: 5, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'lender', template: 'chase_lender_consent' },
   discharge: { waitKey: 'discharge', chaseAfter: 10, chaseEvery: 10, escalateAfter: 30, reEscalateAfter: 10, recipientRole: 'lender', template: 'chase_discharge' },
 };

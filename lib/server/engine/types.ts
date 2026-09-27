@@ -197,6 +197,7 @@ export const EVENT_TYPES = [
   'name_change_evidenced',
   'client_account_receipt_recorded',
   'contract_pack_sent',
+  'contract_pack_requested',
   'buyer_enquiries_received',
   'enquiry_replies_sent',
   'redemption_statement_requested',
@@ -566,7 +567,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack'] as const;
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
 export interface WaitState {
@@ -898,6 +899,8 @@ export interface Payloads {
   name_change_evidenced: { party: string | null; from: string; to: string; reason: string; documentId?: string | null };
   /** Sale: draft contract, title and forms sent to the buyer's solicitor. */
   contract_pack_sent: { includes: string[]; channel?: string | null; messageId?: string | null };
+  /** Purchase: the buyer's solicitor has asked the seller's solicitor for the draft contract, official copies, plan and forms; the wait opens here. */
+  contract_pack_requested: { to: string };
   /** Sale: the buyer's solicitor's enquiries arrived (each becomes an inbound enquiry awaiting our reply). */
   buyer_enquiries_received: { enquiries: Array<{ id: string; question: string }>; round: number };
   /** Sale: replies sent (a person sends; the client's answers are theirs). */
@@ -1042,6 +1045,7 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'funds', label: 'Completion funds' },
     { key: 'registration', label: 'Registration at HM Land Registry' },
     { key: 'discharge', label: 'Discharge from the lender' },
+    { key: 'contract_pack', label: "Draft contract pack from the seller's solicitor" },
   ],
   client_update: [
     { key: 'id_check_request', label: 'ID / AML check request' },
@@ -1053,6 +1057,7 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'mortgage_offer_checked', label: 'Mortgage offer checked' },
     { key: 'report_on_title_sent', label: 'Report on title sent' },
     { key: 'chase_update', label: 'Chased on their behalf' },
+    { key: 'progress_update', label: 'A stage signed off: where everything stands' },
     { key: 'exchanged', label: 'Exchanged' },
     { key: 'completed', label: 'Completed' },
     { key: 'registration_complete', label: 'Registration complete' },
@@ -1330,7 +1335,8 @@ export interface MatterState {
   closedAt: string | null;
   // ── transaction-type workstreams (docs/transaction-types.md) ──
   propertyForms: { status: 'not_required' | 'not_started' | 'requested' | 'received'; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null };
-  contractPack: { sentAt: string | null };
+  /** Sale: when our pack went out. Purchase: when we asked the seller's solicitor for theirs (a wait, chased on the SLA, closed by the official copies or the contract arriving). */
+  contractPack: { sentAt: string | null; requestedAt?: string | null };
   /** Sale: the buyer's solicitor's enquiries on us. */
   inboundEnquiries: Record<string, InboundEnquiryState>;
   redemption: { status: 'not_required' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; documentId: string | null; redeemedAt: string | null; dischargedAt: string | null };

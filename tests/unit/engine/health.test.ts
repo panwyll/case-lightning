@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleWithCharge } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, titleWithCharge } from './helpers';
 import { caseHealth, rollup, summariseHealth, HEALTH_RANK } from '../../../lib/server/engine/health';
 import { matterWork, buckets } from '../../../lib/server/engine/work';
 import { DEFAULT_SLA } from '../../../lib/server/engine/sla';
@@ -38,7 +38,7 @@ test('health is expected progress, not age: a 100-day-old case whose outstanding
   assert.equal(health.band, 'normal', `expected normal, got ${health.band}: ${health.reasons.map((r) => r.headline).join(' | ')}`);
   assert.equal(health.reasons.length, 0);
   assert.ok(health.pace.inStage <= 2, 'the phase is what is measured, not the case');
-  assert.equal(health.counts.waiting, 4, 'four searches are outstanding — and that is fine, they were ordered yesterday');
+  assert.equal(health.counts.waiting, 5, 'four searches and the contract pack are outstanding — and that is fine, they were asked for yesterday');
 });
 
 test('health: a case sitting in one phase with nothing outstanding becomes delayed, and says what the phase should take', async () => {
@@ -48,6 +48,8 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   // Nothing is owed by anyone else — so the only thing wrong is that we have not moved.
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
+  // The seller's solicitor sent the pack too, so nothing at all is owed by anyone else.
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.waits.filter((w) => !w.closedAt).length, 0);
   const now = h.advanceDays(70); // ~50 working days in pre-contract; 20 is typical
@@ -78,7 +80,7 @@ test('health: a wait walks attention → delayed → critical as its SLA passes,
   s = await h.svc.getState(TENANT, MATTER);
   let health = caseHealth(s, now);
   assert.equal(health.band, 'attention');
-  const chase = health.reasons.find((r) => r.code === 'chase_due')!;
+  const chase = health.reasons.find((r) => r.code === 'chase_due' && /search provider/.test(r.headline))!;
   assert.match(chase.headline, /search provider is \d+ working day/);
   assert.match(chase.why.join(' '), /No chase has gone out yet/);
   assert.equal(chase.suggested, 'Chase the search provider');

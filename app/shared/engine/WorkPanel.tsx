@@ -667,7 +667,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
-      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure },
+      { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? (buyer && s.contractPack?.requestedAt && !s.title.documentId ? `contract pack asked of the seller's solicitor ${fmtDay(s.contractPack.requestedAt)} · chased on the SLA` : undefined) },
       ...(buyer ? [{ label: "Seller's forms (TA6 / TA7 / TA10)", documentId: s.sellerForms?.documentId ?? undefined, status: s.sellerForms?.receivedAt ? 'read' : 'not_started', detail: s.sellerForms?.receivedAt ? `${s.sellerForms.forms.join(', ')} read ${fmtDay(s.sellerForms.receivedAt)}; answers that matter are issues` : 'arrive with the contract pack; upload under Documents' }] : []),
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],

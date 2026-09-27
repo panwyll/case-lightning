@@ -350,6 +350,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection }) });
       setDone(option);
       await load();
+      window.dispatchEvent(new Event('conveyi:counts'));
       onResolved?.();
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not record the decision.');

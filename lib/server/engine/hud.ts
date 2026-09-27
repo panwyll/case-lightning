@@ -66,7 +66,7 @@ const SELLER: Record<string, Stage> = {
 
 const WHO: Record<string, string> = { seller_solicitor: "the other side's solicitor", search_provider: 'the search provider', lender: 'the lender', client: 'the client', id_provider: 'the ID provider', hmlr: 'HM Land Registry' };
 const SEARCH: Record<string, string> = { LLC1: 'Local land charges (LLC1)', CON29: 'Local authority (CON29)', DRAINAGE_WATER: 'Drainage and water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel', MINING: 'Coal mining', FLOOD: 'Flood risk', HIGHWAYS: 'Highways', PLANNING: 'Planning history' };
-const WAIT_KEY_WS: Record<string, string> = { id_check: 'id_aml', search: 'searches', enquiry: 'enquiries', funds: 'completion', registration: 'registration', proof_of_funds: 'source_of_funds', management_pack: 'leasehold', property_forms: 'property_forms', redemption: 'redemption', lender_consent: 'lender_consent', discharge: 'discharge' };
+const WAIT_KEY_WS: Record<string, string> = { contract_pack: 'title', id_check: 'id_aml', search: 'searches', enquiry: 'enquiries', funds: 'completion', registration: 'registration', proof_of_funds: 'source_of_funds', management_pack: 'leasehold', property_forms: 'property_forms', redemption: 'redemption', lender_consent: 'lender_consent', discharge: 'discharge' };
 
 function fromWorkstream(st: WorkstreamStatus, waiting: boolean): HudStatus {
   switch (st) {
