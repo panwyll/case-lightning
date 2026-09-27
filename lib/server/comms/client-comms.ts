@@ -127,13 +127,20 @@ export class ProductionClientComms implements ClientComms {
       }
     }
     if (info.clientEmail) {
+      // The client hears from their conveyancer: the fee earner's own mailbox first. A transactional sender is only the
+      // fallback when no mailbox is connected, and it says so on the record.
+      if (this.deps.mailbox && info.feeEarnerUserId) {
+        try {
+          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
+          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
+          return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
+        } catch (err) {
+          if (!this.deps.email) throw err;
+          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: null, status: `FAILED: mailbox — ${(err as Error).message}; falling back to the transactional sender` });
+        }
+      }
       if (this.deps.email) {
         const r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
-        return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
-      }
-      if (this.deps.mailbox && info.feeEarnerUserId) {
-        const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
         return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }

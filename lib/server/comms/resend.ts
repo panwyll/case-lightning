@@ -29,10 +29,11 @@ export async function resendClientMessage(tenantId: string, matterId: string, me
     if (row.channel === 'whatsapp') {
       if (!deps.whatsapp) throw new Error('WhatsApp is not configured.');
       out = { channel: 'whatsapp', ...(await deps.whatsapp.sendText(row.address, row.body)) };
+    } else if (deps.mailbox && info.feeEarnerUserId) {
+      try { out = { channel: 'email', ...(await deps.mailbox.send(info.feeEarnerUserId, row.address, subject, toHtml(row.body))) }; }
+      catch (err) { if (!deps.email) throw err; out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: row.body, fromUserId: info.feeEarnerUserId })) }; }
     } else if (deps.email) {
       out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: row.body, fromUserId: info.feeEarnerUserId })) };
-    } else if (deps.mailbox && info.feeEarnerUserId) {
-      out = { channel: 'email', ...(await deps.mailbox.send(info.feeEarnerUserId, row.address, subject, toHtml(row.body))) };
     } else {
       throw new Error('No email sender configured.');
     }
