@@ -70,10 +70,49 @@ export async function POST(req: NextRequest) {
         completionTargetDate: z.string().optional(),
         lender: z.string().optional(),
         chainPosition: z.string().optional(),
+        // The New Case form: who we act for (with a way to reach them), the other side, the agent, the property and the price.
+        track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
+        addressParts: z.record(z.string()).optional(),
+        purchasePricePennies: z.number().int().nonnegative().optional(),
+        parties: z.array(z.object({ name: z.string().trim().min(1), email: z.string().trim().email(), phone: z.string().trim().optional() })).optional(),
+        otherParties: z.array(z.string().trim().min(1)).optional(),
+        otherSide: z.object({ firm: z.string().trim().min(1), contactName: z.string().trim().optional(), email: z.string().trim().email() }).nullable().optional(),
+        agent: z.object({ name: z.string().trim().min(1), email: z.string().trim().email().optional() }).nullable().optional(),
+        lenderContact: z.object({ name: z.string().trim().min(1), email: z.string().trim().email().optional() }).nullable().optional(),
       })
       .parse(await req.json());
 
-    const created = await createMatter(user, body);
+    // Our clients are the buyers on a purchase and the sellers on a sale; the other side's clients are the rest.
+    const ours = (body.parties ?? []).map((x) => x.name);
+    const theirs = body.otherParties ?? [];
+    const buyerNames = body.track === 'SALE' ? theirs : ours.length ? ours : body.buyerNames;
+    const sellerNames = body.track === 'SALE' ? ours : theirs.length ? theirs : body.sellerNames;
+    const created = await createMatter(user, {
+      ...body,
+      buyerNames,
+      sellerNames,
+      counterpartySolicitor: body.otherSide ? [body.otherSide.contactName, body.otherSide.firm].filter(Boolean).join(', ') : body.counterpartySolicitor,
+      counterpartyAgent: body.agent?.name ?? body.counterpartyAgent,
+      lender: body.lenderContact?.name ?? body.lender,
+    });
+    // Track, structured address and price sit on the row; every person is a contact with a role, so the case can reach them from day one.
+    await query(
+      `update matter set track = coalesce($3, track), address_parts = coalesce($4::jsonb, address_parts), purchase_price = coalesce($5, purchase_price) where id = $1 and tenant_id = $2`,
+      [created.id, user.tenantId, body.track ?? null, body.addressParts ? JSON.stringify(body.addressParts) : null, body.purchasePricePennies != null ? String(body.purchasePricePennies / 100) : null]
+    ).catch(() => {});
+    const contacts: Array<{ email: string; name: string | null; role: string; phone: string | null }> = [
+      ...(body.parties ?? []).map((x) => ({ email: x.email, name: x.name, role: 'CLIENT', phone: x.phone || null })),
+      ...(body.otherSide ? [{ email: body.otherSide.email, name: [body.otherSide.contactName, body.otherSide.firm].filter(Boolean).join(', '), role: 'OTHER_SIDE', phone: null }] : []),
+      ...(body.agent?.email ? [{ email: body.agent.email, name: body.agent.name, role: 'AGENT', phone: null }] : []),
+      ...(body.lenderContact?.email ? [{ email: body.lenderContact.email, name: body.lenderContact.name, role: 'LENDER', phone: null }] : []),
+    ];
+    for (const c of contacts) {
+      await query(
+        `insert into matter_contact (tenant_id, matter_id, email, name, role, phone, source, last_seen_at) values ($1, $2, $3, $4, $5, $6, 'NEW_CASE', now())
+         on conflict (matter_id, email) do update set name = excluded.name, role = excluded.role, phone = coalesce(excluded.phone, matter_contact.phone), last_seen_at = now()`,
+        [user.tenantId, created.id, c.email.toLowerCase(), c.name, c.role, c.phone]
+      ).catch(() => {});
+    }
     return ok({
       id: created.id,
       folderPath: created.folderPath,

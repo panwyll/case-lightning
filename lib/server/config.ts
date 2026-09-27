@@ -91,6 +91,8 @@ export const config = {
   whatsappAccessToken: env('WHATSAPP_ACCESS_TOKEN'),
   whatsappVerifyToken: env('WHATSAPP_VERIFY_TOKEN'),
   whatsappAppSecret: env('WHATSAPP_APP_SECRET'),
+  /** Optional: getAddress.io key for full address lists by postcode on the New Case form; without it the postcode is validated and the town filled from postcodes.io. */
+  getAddressApiKey: env('GETADDRESS_API_KEY'),
   resendApiKey: env('RESEND_API_KEY'),
   resendFromEmail: env('RESEND_FROM_EMAIL'),
   // Third-party chases: 'draft' leaves an Outlook draft + worklist item for a human to
