@@ -168,6 +168,10 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
     return { kind: `proposal:${sub}`, chip };
   }
+  if (d.kind === 'note_actions') {
+    const note = Object.values(s.notes).find((n) => n.decisionEventId === d.eventId);
+    if (note?.kind === 'email') return { kind: 'note_actions:email', chip: 'From an email' };
+  }
   return { kind: d.kind, chip: DECISION_CHIP[d.kind] ?? d.kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) };
 }
 

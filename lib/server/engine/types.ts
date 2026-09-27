@@ -437,7 +437,16 @@ export const TENANTS_IN_COMMON = new Set(['tenants_in_common_equal', 'tenants_in
 // ───────────────────────────── Notes and transcripts (docs/intake.md) ──────────────────
 
 /** Where the words came from. A call transcript and a typed note run the same pipeline. */
-export const NOTE_KINDS = ['typed', 'dictated', 'call', 'meeting'] as const;
+export const NOTE_KINDS = ['typed', 'dictated', 'call', 'meeting', 'email'] as const;
+
+/**
+ * Who an email came from, as far as the case knows (its contacts). It decides what the
+ * words may propose: only the client can make a client decision; anyone may report a
+ * problem; nobody's say-so can clear ID, AML, source of funds or a search (notes.ts).
+ */
+export const SENDER_RELATIONS = ['client', 'agent', 'other_side', 'lender', 'colleague', 'unknown'] as const;
+export type SenderRelation = (typeof SENDER_RELATIONS)[number];
+export interface NoteSender { address: string; name: string | null; relation: SenderRelation }
 export type NoteKind = (typeof NOTE_KINDS)[number];
 
 /** What an extractor may propose from a note. Anything else is information only. */
@@ -474,6 +483,8 @@ export interface NoteState {
   documentId: string | null;
   /** Minutes of a call, where it was one. */
   durationSeconds: number | null;
+  /** An email's sender, where the note is one. */
+  from: NoteSender | null;
   actions: NoteAction[];
   extractor: string | null;
   decisionEventId: string | null;
@@ -786,7 +797,7 @@ export interface Payloads {
   client_update_sent: ClientUpdateSpec;
   chase_sent: ChaseSpec;
   acknowledgement_sent: AcknowledgementSpec;
-  note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null };
+  note_recorded: { noteId: string; kind: NoteKind; text: string; durationSeconds: number | null; documentId: string | null; from?: NoteSender | null };
   note_extracted: { noteId: string; actions: NoteAction[]; extractor: string; decision?: DecisionSpec };
   note_actions_applied: { noteId: string; decisionEventId: string; applied: string[]; skipped: string[]; option: DecisionOption; note: string | null };
   note_action_refused: { noteId: string; actionId: string; reason: string };

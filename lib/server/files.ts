@@ -21,6 +21,8 @@ import { isLockedPdf, passwordCandidates } from './pdf-lock';
 import { recordLockedDocument, tryPasswordsFromMessage } from './document-unlock';
 import { emitMatterEvent } from './events';
 import { ingestFiledDocument } from './engine/ingest-hook';
+import { tenantSelfAddresses } from './matching';
+import type { NoteSender, SenderRelation } from './engine/types';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
 
@@ -605,7 +607,7 @@ export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
   message: any
-): Promise<{ outcome: 'read' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null }> {
+): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number }> {
   const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
   // Any words at all are read: "surveys are all complete" is a signal, not noise.
   if (!body.trim()) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
@@ -626,5 +628,32 @@ export async function fileEmailBodyAsDocument(
   const report = await ingestFiledDocument(user.tenantId, matterId, doc.id);
   const role = report?.classification?.role ?? null;
   if (report && report.action.kind !== 'skip') return { outcome: 'read', as: role, reason: null };
+  // Not a document with a role, but words on a case: read them the way a file note is read.
+  // Whatever they appear to say becomes a proposal for a person, gated by who sent it
+  // (notes.ts senderPolicy); the case itself does not move until someone approves.
+  const enrolled = report?.action.kind === 'skip' && !/not enrolled/.test(report.action.reason);
+  if (enrolled && (!role || role === 'other') && body.trim().length >= 10) {
+    const { engine } = await import('./engine/adapters');
+    const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
+    const res = await engine().recordNote(user.tenantId, matterId, { text: body.slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
+    const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
+    const proposals = note?.actions.filter((a) => a.command).length ?? 0;
+    return { outcome: 'noted', as: null, reason: null, proposals };
+  }
   return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' };
+}
+
+/** How the case knows an email address: its contacts' roles, or the firm's own people. Unknown otherwise. */
+export async function senderRelation(tenantId: string, matterId: string, address: string): Promise<SenderRelation> {
+  const email = address.toLowerCase();
+  const row = await queryOne<{ role: string | null }>(`select role from matter_contact where tenant_id = $1 and matter_id = $2 and lower(email) = $3`, [tenantId, matterId, email]).catch(() => null);
+  const role = row?.role ?? null;
+  if (role === 'CLIENT') return 'client';
+  if (role === 'AGENT') return 'agent';
+  if (role === 'OTHER_SIDE') return 'other_side';
+  if (role === 'LENDER') return 'lender';
+  if (role === 'OUR_FIRM') return 'colleague';
+  const self = await tenantSelfAddresses(tenantId).catch(() => null);
+  if (self && (self.emails.has(email) || self.domains.has(email.split('@')[1] ?? ''))) return 'colleague';
+  return 'unknown';
 }

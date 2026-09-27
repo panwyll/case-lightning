@@ -464,6 +464,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
         at: e.createdAt,
         documentId: p.documentId,
         durationSeconds: p.durationSeconds,
+        from: p.from ?? null,
         actions: [],
         extractor: null,
         decisionEventId: null,

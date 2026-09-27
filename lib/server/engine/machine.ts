@@ -98,6 +98,7 @@ import {
   type WaitKey,
   NOTE_KINDS,
   type NoteKind,
+  type NoteSender,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -124,7 +125,7 @@ type CommandBody =
   | { type: 'lease_extracted'; actor: Actor; documentId: string; facts: LeaseFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
   | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null }
-  | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null }
+  | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
   | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
   | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
@@ -1871,7 +1872,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{
         type: 'note_recorded',
         actor: cmd.actor,
-        payload: { noteId, kind: cmd.kind, text, durationSeconds: cmd.durationSeconds ?? null, documentId: cmd.documentId ?? null },
+        payload: { noteId, kind: cmd.kind, text, durationSeconds: cmd.durationSeconds ?? null, documentId: cmd.documentId ?? null, from: cmd.from ?? null },
         sourceDocumentId: cmd.documentId ?? null,
       }];
     }
@@ -1881,7 +1882,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!note) reject(`Note ${cmd.noteId} not found.`, 404);
       if (note.status !== 'no_actions' || note.actions.length) reject('That note has already been read.', 409);
       // Only what the note actually says, and only commands the machine would accept.
-      const { actions } = validateNoteActions(note.text, cmd.drafts);
+      const { actions } = validateNoteActions(note.text, cmd.drafts, { kind: note.kind, from: note.from });
       const actionable = actions.filter((a) => a.command);
       const events: NewEvent[] = [];
       // A decision needs a source to cite. A note filed without a document is read and
@@ -1889,9 +1890,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (actionable.length && note.documentId) {
         const decision: DecisionSpec = {
           kind: 'note_actions',
-          summary: summariseNoteActions({ kind: note.kind, text: note.text, actions }),
+          summary: summariseNoteActions({ kind: note.kind, text: note.text, actions, from: note.from }),
           sourceDocumentId: note.documentId,
-          citations: [{ documentId: note.documentId, label: `${note.kind === 'call' ? 'Call note' : 'Note'} ${note.id}` }],
+          citations: [{ documentId: note.documentId, label: `${note.kind === 'call' ? 'Call note' : note.kind === 'email' ? 'Email' : 'Note'} ${note.id}` }],
           options: OPTIONS_FOR.note_actions,
           summarisedBy: cmd.extractor,
         };

@@ -16,7 +16,7 @@
  * The extractor itself is a port. Without a model key the deterministic reader below
  * still catches the unambiguous phrasings, so the feature degrades to "less", not "wrong".
  */
-import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind } from './types';
+import { CLIENT_DECISION_OUTCOMES, CLIENT_DECISION_SUBJECTS, type ClientDecisionSubject, type NoteAction, type NoteActionKind, type NoteCommand, type NoteKind, type NoteSender, type SenderRelation } from './types';
 import { ISSUE_KIND_SPEC, type IssueGate, type IssueKind } from './issues';
 
 /** What an extractor hands back, before validation. */
@@ -35,6 +35,36 @@ export interface NoteExtractionContext {
   kind: NoteKind;
   /** A one-line account of the matter, so an extractor can tell "the survey" from "a survey". */
   caseLine?: string;
+  /** For an email: who sent it, as far as the case knows. */
+  from?: NoteSender | null;
+}
+
+/** Where a note's words come from: decides what they may propose. */
+export interface NoteSource { kind: NoteKind; from?: NoteSender | null }
+
+export const RELATION_LABEL: Record<SenderRelation, string> = {
+  client: 'the client',
+  agent: 'the estate agent',
+  other_side: "the other side",
+  lender: 'the lender or broker',
+  colleague: 'a colleague',
+  unknown: 'someone the case does not know',
+};
+
+/**
+ * What the sender is allowed to put in front of a person. Only the client can make a
+ * client decision: an agent saying "the buyer is happy with the survey" is hearsay and is
+ * shown for information. A problem may be reported by anyone. Nothing anyone says can
+ * clear ID, AML, source of funds or a search: those are not commands a note can name,
+ * so the machine has no door for them (commandProblem).
+ */
+export function senderPolicy(source: NoteSource | undefined, action: NoteAction): NoteAction {
+  if (!source || source.kind !== 'email') return action;
+  const relation = source.from?.relation ?? 'unknown';
+  if (action.command?.type === 'client_decision_recorded' && relation !== 'client') {
+    return { ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}, not the client; nothing is recorded until the client says so)` };
+  }
+  return action;
 }
 
 /** Whitespace-insensitive containment: a quote must really be in the note. */
@@ -50,7 +80,7 @@ export interface ValidationResult {
  * Keep only the proposals that (a) quote the note, (b) name a command the machine will
  * accept, and (c) are not duplicates. Everything else is dropped with a reason.
  */
-export function validateNoteActions(text: string, drafts: NoteActionDraft[]): ValidationResult {
+export function validateNoteActions(text: string, drafts: NoteActionDraft[], source?: NoteSource): ValidationResult {
   const body = norm(text);
   const actions: NoteAction[] = [];
   const rejected: ValidationResult['rejected'] = [];
@@ -81,14 +111,14 @@ export function validateNoteActions(text: string, drafts: NoteActionDraft[]): Va
       command = d.command;
     }
     seen.add(key);
-    actions.push({
+    actions.push(senderPolicy(source, {
       id: `A${actions.length + 1}`,
       kind: d.kind,
       summary,
       quote,
       confidence: typeof d.confidence === 'number' ? Math.max(0, Math.min(1, d.confidence)) : 0.6,
       command,
-    });
+    }));
   }
   return { actions, rejected };
 }
@@ -111,9 +141,10 @@ export function commandProblem(c: NoteCommand): string | null {
 }
 
 /** The decision a person sees: what the note appears to say, and the words behind each line. */
-export function summariseNoteActions(input: { kind: NoteKind; text: string; actions: NoteAction[]; author?: string | null }): string {
+export function summariseNoteActions(input: { kind: NoteKind; text: string; actions: NoteAction[]; author?: string | null; from?: NoteSender | null }): string {
   const L: string[] = [];
-  const source = input.kind === 'call' ? 'A call' : input.kind === 'dictated' ? 'A dictated note' : input.kind === 'meeting' ? 'A meeting note' : 'A note';
+  const who = input.from ? `${input.from.name || input.from.address} (${RELATION_LABEL[input.from.relation]})` : 'someone';
+  const source = input.kind === 'call' ? 'A call' : input.kind === 'dictated' ? 'A dictated note' : input.kind === 'meeting' ? 'A meeting note' : input.kind === 'email' ? `An email from ${who}` : 'A note';
   L.push(`${source} on this matter appears to record ${input.actions.length} thing${input.actions.length === 1 ? '' : 's'} the case should know about. Nothing has been applied — approve to apply, or reject with a reason.`);
   L.push('');
   for (const a of input.actions) {
@@ -196,6 +227,42 @@ const RULES: Rule[] = [
       quote: sentence,
       confidence: 0.55,
       command: { type: 'raise_issue', kind: 'mortgage_offer_outstanding', title: sentence.trim().slice(0, 160), detail: 'Raised from a note — the engine will chase it if it does not arrive.', gate: 'none' },
+    }),
+  },
+  {
+    // "surveys are all complete" — the report exists somewhere; ask for it. Nothing about the
+    // property is recorded until the report itself is on file.
+    test: /\bsurvey/i,
+    also: /\b(done|complete|completed|back|through|carried out|finished|all in|has happened|took place|went ahead)\b/i,
+    not: /\b(not|hasn'?t|haven'?t|isn'?t|aren'?t|yet|waiting|book|booked|arrang\w*|instruct\w*|when|once|will be|happy|satisfied)\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'The survey has been done; the report is not on file yet',
+      quote: sentence,
+      confidence: 0.7,
+      command: { type: 'raise_issue', kind: 'survey_report_outstanding', title: 'Survey done; ask the client for the report', detail: sentence.trim().slice(0, 400), gate: 'none' },
+    }),
+  },
+  {
+    // "the vendor has pulled out", "the chain has collapsed" — critical, and confirmed with the solicitors, never acted on.
+    test: /\b(pull(ed|ing|s)? out|fallen through|fall(s|ing)? through|chain (has |is )?(collapsed|broken|gone)|gazump\w*|no longer (want\w*|wish\w*|able) to (proceed|buy|sell|go ahead)|not (going|proceeding) ahead|(vendor|seller|buyer|purchaser)s? (has |have |is |are )?(withdrawn|withdrawing))\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'The transaction may be falling through',
+      quote: sentence,
+      confidence: 0.75,
+      command: { type: 'raise_issue', kind: 'transaction_at_risk', title: sentence.trim().slice(0, 160), detail: 'Said in an email or a note. Confirm with the solicitors before anything is done about it.', gate: 'exchange' },
+    }),
+  },
+  {
+    // "I've lost my job so the mortgage may be a problem" — a change the lender must hear about before exchange.
+    test: /\b(lost (my|his|her|their) job|redundan\w*|job (has )?changed|chang\w* (my|his|her|their) job|new job|(mortgage|offer|application) (is|may be|might be|could be|will be) (a problem|in doubt|at risk|affected)|(mortgage|offer|application)( has been| was)? (declined|refused|withdrawn|rejected|pulled)|(income|salary|pay) (has )?(dropped|changed|reduced|gone down|fallen))\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'The mortgage may be at risk',
+      quote: sentence,
+      confidence: 0.7,
+      command: { type: 'raise_issue', kind: 'mortgage_at_risk', title: sentence.trim().slice(0, 160), detail: 'Said in an email or a note. Confirm with the broker whether the offer stands; report a material change to the lender before exchange.', gate: 'exchange' },
     }),
   },
   {

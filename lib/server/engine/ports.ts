@@ -18,7 +18,7 @@
  */
 import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
-import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview, PayslipFacts, EvidenceKind } from './proof-of-funds';
 
@@ -76,7 +76,7 @@ export interface DocumentExtractor {
  */
 export interface NoteExtractor {
   readonly name: string;
-  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string }): Promise<NoteActionDraft[]>;
+  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null }): Promise<NoteActionDraft[]>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */

@@ -34,7 +34,7 @@ import { profileOf } from './transactions';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, type NoteSender, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -494,7 +494,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -517,13 +517,14 @@ export class EngineService {
       noteId: input.noteId ?? null,
       documentId,
       durationSeconds: input.durationSeconds ?? null,
+      from: input.from ?? null,
     });
     const noteId = (recorded.events[0]?.payload as { noteId?: string } | undefined)?.noteId;
     const reader = this.ports.noteExtractor;
     if (!noteId || !reader) return recorded;
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
-      .extract({ tenantId, matterId, text: input.text, kind: input.kind, caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
       .catch((err) => {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];

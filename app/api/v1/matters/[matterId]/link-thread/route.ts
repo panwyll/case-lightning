@@ -19,7 +19,7 @@ export const dynamic = 'force-dynamic';
 
 /** One line per thing that happened to the email and its files, in plain words. */
 function describeFiling(
-  email: { outcome: string; as: string | null; reason: string | null } | null,
+  email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null,
   files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
   problems: string[]
 ): string[] {
@@ -27,6 +27,7 @@ function describeFiling(
   const lines: string[] = [];
   if (email) {
     if (email.outcome === 'read') lines.push(`The email was read${role(email.as)}`);
+    else if (email.outcome === 'noted') lines.push(email.proposals ? `The email was read: ${email.proposals} thing${email.proposals === 1 ? '' : 's'} to confirm (a task asks you)` : 'The email was read; nothing in it for the case to act on');
     else if (email.outcome === 'duplicate') lines.push('The email was already on the case');
     else if (email.outcome === 'skipped') lines.push('The email has no body to read');
     else lines.push(`The email was filed but not acted on${email.reason ? `: ${email.reason}` : ''}`);
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // Every step below reports what it did, or why it could not, on the case's log:
     // a silent failure here looks to the person like the link did nothing.
     let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }> } = { saved: 0, files: [] };
-    let email: { outcome: string; as: string | null; reason: string | null } | null = null;
+    let email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null = null;
     const problems: string[] = [];
     if (body.messageId) {
       attachments = await fileEmailAttachments(owner, matterId, body.messageId, body.subject).catch((e) => {
