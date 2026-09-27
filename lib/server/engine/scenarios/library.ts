@@ -36,6 +36,8 @@ export interface ScenarioStep {
   flaggedOnly?: boolean;
   /** Only in the clean run. */
   cleanOnly?: boolean;
+  /** A person's decision of this kind: in stepping mode the script leaves it to the person under Tasks. */
+  decision?: DecisionKind;
   run(ctx: ScenarioContext): Promise<void>;
 }
 
@@ -50,7 +52,7 @@ export interface Scenario {
   steps: ScenarioStep[];
 }
 
-const step = (id: string, label: string, run: ScenarioStep['run'], opts: Partial<Pick<ScenarioStep, 'flaggedOnly' | 'cleanOnly'>> = {}): ScenarioStep => ({ id, label, run, ...opts });
+const step = (id: string, label: string, run: ScenarioStep['run'], opts: Partial<Pick<ScenarioStep, 'flaggedOnly' | 'cleanOnly' | 'decision'>> = {}): ScenarioStep => ({ id, label, run, ...opts });
 
 // ── shared steps ──
 const idCheck = (): ScenarioStep[] => [
@@ -59,7 +61,7 @@ const idCheck = (): ScenarioStep[] => [
     const doc = await c.doc({ docType: 'ID_CHECK', fileName: 'id-check-result.txt', facts: c.flagged ? F.idRefer() : F.idClear(), body: F.body('ID / AML check result', c.flagged ? ['Outcome: REFER', 'Possible PEP match on one applicant'] : ['Outcome: CLEAR', 'Identity verified electronically; no PEP or sanctions match']) });
     await c.svc.idCheckResultReceived(c.tenantId, c.matterId, doc);
   }),
-  step('id_decision', 'The referred ID check is decided by a person', async (c) => { await c.resolve('id_check', 'approve', 'PEP match reviewed: different date of birth; enhanced due diligence recorded.'); }, { flaggedOnly: true }),
+  step('id_decision', 'The referred ID check is decided by a person', async (c) => { await c.resolve('id_check', 'approve', 'PEP match reviewed: different date of birth; enhanced due diligence recorded.'); }, { flaggedOnly: true, decision: 'id_check' }),
 ];
 
 const searches = (types: F.SearchTypeLike[]): ScenarioStep[] => [
@@ -73,7 +75,7 @@ const searches = (types: F.SearchTypeLike[]): ScenarioStep[] => [
     const doc = await c.doc({ docType: `SEARCH_${t}`, fileName: `${t}-search-result.txt`, facts: flagged ? F.searchFlagged(t) : F.searchClear(t), body: F.body(`${t} search result`, flagged ? ['3.7 Enforcement notice registered 2024 re: rear extension'] : ['No adverse entries', 'Road adopted and maintained at public expense']) });
     await c.svc.searchReturned(c.tenantId, c.matterId, t, doc);
   })),
-  step('search_decision', 'The flagged CON29 is decided by a person', async (c) => { await c.resolve('search', 'approve', 'Enforcement notice relates to the previous owner; indemnity policy to be obtained.'); }, { flaggedOnly: true }),
+  step('search_decision', 'The flagged CON29 is decided by a person', async (c) => { await c.resolve('search', 'approve', 'Enforcement notice relates to the previous owner; indemnity policy to be obtained.'); }, { flaggedOnly: true, decision: 'search' }),
 ];
 
 const mortgage = (): ScenarioStep[] => [
@@ -81,7 +83,7 @@ const mortgage = (): ScenarioStep[] => [
     const doc = await c.doc({ docType: 'MORTGAGE_OFFER', fileName: 'mortgage-offer.txt', facts: c.flagged ? F.offerSpecial() : F.offerClear(), body: F.body('Mortgage offer', ['Lender: Mock Building Society', 'Advance: £250,000.00', 'Offer expires: 1 March 2027', ...(c.flagged ? ['Special condition 4: retention of £5,000 pending roof repairs'] : [])]) });
     await c.svc.mortgageOfferReceived(c.tenantId, c.matterId, doc);
   }),
-  step('offer_decision', 'The special condition is decided by a person', async (c) => { await c.resolve('mortgage', 'approve', 'Retention noted; roof quote obtained and reported to the lender.'); }, { flaggedOnly: true }),
+  step('offer_decision', 'The special condition is decided by a person', async (c) => { await c.resolve('mortgage', 'approve', 'Retention noted; roof quote obtained and reported to the lender.'); }, { flaggedOnly: true, decision: 'mortgage' }),
 ];
 
 const title = (leasehold: boolean): ScenarioStep[] => [
@@ -90,7 +92,7 @@ const title = (leasehold: boolean): ScenarioStep[] => [
     const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts, body: F.body('Official copy of the register', ['Title number AB123456', `Tenure: ${leasehold ? 'leasehold' : 'freehold'}`, ...(c.flagged && !leasehold ? ['C1 Registered charge dated 12 May 2019 in favour of Big Bank plc'] : []), ...(c.flagged && leasehold ? ['Lease: 78 years unexpired; ground rent £350 a year doubling every 10 years'] : [])]) });
     await c.svc.titleReceived(c.tenantId, c.matterId, doc);
   }),
-  step('title_decision', 'The title entries are decided by a person', async (c) => { await c.resolve('title', 'approve', leasehold ? 'Short lease and doubling rent reported to the client and lender; extension to be negotiated.' : 'Registered charge: undertaking to discharge on completion.'); }, { flaggedOnly: true }),
+  step('title_decision', 'The title entries are decided by a person', async (c) => { await c.resolve('title', 'approve', leasehold ? 'Short lease and doubling rent reported to the client and lender; extension to be negotiated.' : 'Registered charge: undertaking to discharge on completion.'); }, { flaggedOnly: true, decision: 'title' }),
 ];
 
 const enquiries = (): ScenarioStep[] => [
@@ -105,12 +107,12 @@ const enquiries = (): ScenarioStep[] => [
       await c.svc.enquiryReplyReceived(c.tenantId, c.matterId, id, doc);
     }
   }),
-  step('enquiry_decision', 'The partial reply is decided by a person', async (c) => { await c.resolve('enquiry', 'approve', 'Boundary responsibility accepted as unknown; client advised.'); }, { flaggedOnly: true }),
+  step('enquiry_decision', 'The partial reply is decided by a person', async (c) => { await c.resolve('enquiry', 'approve', 'Boundary responsibility accepted as unknown; client advised.'); }, { flaggedOnly: true, decision: 'enquiry' }),
 ];
 
 const reportOnTitle = (): ScenarioStep[] => [
   step('report_draft', 'Report on title drafted', async (c) => { await c.svc.draftReportOnTitle(c.tenantId, c.matterId); }),
-  step('report_approve', 'Report on title approved by a person', async (c) => { await c.resolve('report_on_title', 'approve', 'Checked against the register and the searches.'); }),
+  step('report_approve', 'Report on title approved by a person', async (c) => { await c.resolve('report_on_title', 'approve', 'Checked against the register and the searches.'); }, { decision: 'report_on_title' }),
   step('report_send', 'Report on title sent to the client', async (c) => { await c.svc.sendReportOnTitle(c.tenantId, c.matterId, c.userId); }),
 ];
 
@@ -147,7 +149,7 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const sub = F.pofSubmission(price, advance, c.flagged, statement, null, null);
     await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt' });
   }),
-  step('pof_signoff', 'Proof of funds signed off by a person', async (c) => { await c.resolve('proof_of_funds', 'approve', c.flagged ? 'Gift evidenced: donor ID, letter and statements on file; lender told.' : 'Savings evidenced over the period.'); }),
+  step('pof_signoff', 'Proof of funds signed off by a person', async (c) => { await c.resolve('proof_of_funds', 'approve', c.flagged ? 'Gift evidenced: donor ID, letter and statements on file; lender told.' : 'Savings evidenced over the period.'); }, { decision: 'proof_of_funds' }),
   step('pof_lender', 'The lender confirms the gifted deposit', async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
     for (const i of Object.values(s.issues).filter((i) => i.kind === 'lender_approval' && (i.status === 'open' || i.status === 'negotiating'))) {
@@ -223,12 +225,12 @@ export const SCENARIOS: Scenario[] = [
         const doc = await c.doc({ docType: 'MANAGEMENT_PACK', fileName: 'LPE1-management-pack.txt', facts: F.managementPack(c.flagged), body: F.body('Leasehold information (LPE1)', ['Service charge £2,400 a year (1 April 2026 to 31 March 2027)', 'Ground rent £350 a year', 'Reserve fund £12,000', ...(c.flagged ? ['Major works: roof renewal 2027, estimated £48,000; section 20 consultation started'] : ['No major works planned']), 'Buildings insurance in place with Aviva to 28 February 2027']) });
         await c.svc.managementPackReceived(c.tenantId, c.matterId, doc);
       }),
-      step('pack_decision', 'The management pack is decided by a person', async (c) => { await c.resolve('management_pack', c.flagged ? 'refer_to_client' : 'approve', c.flagged ? 'Major works: client advised; retention to be negotiated.' : 'Pack in order.'); }),
+      step('pack_decision', 'The management pack is decided by a person', async (c) => { await c.resolve('management_pack', c.flagged ? 'refer_to_client' : 'approve', c.flagged ? 'Major works: client advised; retention to be negotiated.' : 'Pack in order.'); }, { decision: 'management_pack' }),
       step('lease', 'The lease received and read', async (c) => {
         const doc = await c.doc({ docType: 'LEASE', fileName: 'lease.txt', facts: F.lease(c.flagged), body: F.body('Lease', ['Term: 125 years from 1 January 1998', c.flagged ? 'Rent: £350 a year, doubling every 10 years' : 'Rent: £250 a year, fixed', 'Lessee repairs the interior; lessor repairs the structure and roof', 'Not to assign without the lessor\'s prior written consent, not to be unreasonably withheld']) });
         await c.svc.leaseReceived(c.tenantId, c.matterId, doc);
       }),
-      step('lease_decision', 'The lease terms are decided by a person', async (c) => { await c.resolve('title', 'approve', 'Doubling rent: deed of variation to be obtained; lender content.'); }, { flaggedOnly: true }),
+      step('lease_decision', 'The lease terms are decided by a person', async (c) => { await c.resolve('title', 'approve', 'Doubling rent: deed of variation to be obtained; lender content.'); }, { flaggedOnly: true, decision: 'title' }),
       ...mortgage(),
       ...title(true),
       ...enquiries(),
@@ -250,7 +252,7 @@ export const SCENARIOS: Scenario[] = [
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
-      step('title_decision', 'The registered charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Registered charge: to be redeemed on completion.'); }),
+      step('title_decision', 'The registered charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Registered charge: to be redeemed on completion.'); }, { decision: 'title' }),
       step('pack', 'Contract pack sent to the buyer\'s solicitor', async (c) => { await c.run({ type: 'contract_pack_sent' }); }),
       step('buyer_enquiries', 'The buyer\'s enquiries received', async (c) => { await c.run({ type: 'buyer_enquiries_received', enquiries: [{ question: 'Please confirm the boiler service history.' }, { id: 'BE-Boundary', question: 'Who maintains the rear fence?' }] }); }),
       step('replies', 'Replies sent to the buyer\'s enquiries', async (c) => { await c.run({ type: 'enquiry_replies_sent', enquiryIds: ['BE1', 'BE-Boundary'] }); }),
@@ -281,12 +283,12 @@ export const SCENARIOS: Scenario[] = [
         const doc = await c.doc({ docType: 'MANAGEMENT_PACK', fileName: 'LPE1-management-pack.txt', facts: F.managementPack(false), body: F.body('Leasehold information (LPE1)', ['Service charge £2,400 a year', 'Ground rent £250 a year', 'No major works planned', 'Buildings insurance in place']) });
         await c.svc.managementPackReceived(c.tenantId, c.matterId, doc);
       }),
-      step('pack_decision', 'The management pack is decided by a person', async (c) => { await c.resolve('management_pack', 'approve', 'Pack in order for the buyer.'); }),
+      step('pack_decision', 'The management pack is decided by a person', async (c) => { await c.resolve('management_pack', 'approve', 'Pack in order for the buyer.'); }, { decision: 'management_pack' }),
       step('title', 'Official copies received (leasehold, with the charge)', async (c) => {
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: { ...F.titleWithCharge(), tenure: 'leasehold' as const }, body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: leasehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
-      step('title_decision', 'The registered charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Registered charge: to be redeemed on completion.'); }),
+      step('title_decision', 'The registered charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Registered charge: to be redeemed on completion.'); }, { decision: 'title' }),
       step('pack_sent', 'Contract pack sent to the buyer\'s solicitor', async (c) => { await c.run({ type: 'contract_pack_sent' }); }),
       step('redemption_request', 'Redemption statement requested', async (c) => { await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 9_000_000, validUntil: F.completionDate(3) }); }),
@@ -313,7 +315,7 @@ export const SCENARIOS: Scenario[] = [
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Old Lender plc']) });
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
-      step('title_decision', 'The existing charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Existing charge to be redeemed from the advance.'); }),
+      step('title_decision', 'The existing charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Existing charge to be redeemed from the advance.'); }, { decision: 'title' }),
       step('redemption_request', 'Redemption statement requested from the old lender', async (c) => { await c.run({ type: 'request_redemption_statement', lender: 'Old Lender plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }); }),
       step('deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
@@ -339,7 +341,7 @@ export const SCENARIOS: Scenario[] = [
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
-      step('title_decision', 'The charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Charge stays; lender to consent.'); }),
+      step('title_decision', 'The charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Charge stays; lender to consent.'); }, { decision: 'title' }),
       step('consent_request', 'Lender\'s consent requested', async (c) => { await c.run({ type: 'request_lender_consent', lender: 'Big Bank plc' }); }),
       step('consent', 'Lender\'s consent received', async (c) => { await c.run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released on completion; deed of substituted security.' }); }),
       step('basis', 'The clients decide how they hold', async (c) => { await c.run({ type: 'client_decision_recorded', subject: 'ownership_basis', decision: 'tenants_in_common_unequal', note: '70/30 reflecting contributions; advised separately.' }); }),

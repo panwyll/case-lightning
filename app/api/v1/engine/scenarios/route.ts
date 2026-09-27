@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
-    const body = z.object({ scenarioId: z.string().min(1).max(60), stopAt: z.string().max(60).nullish(), flagged: z.boolean().optional() }).parse(await req.json());
-    const r = await runScenario({ tenantId: user.tenantId, userId: user.userId, scenarioId: body.scenarioId, stopAt: body.stopAt ?? null, flagged: !!body.flagged });
+    const body = z.object({ scenarioId: z.string().min(1).max(60), stopAt: z.string().max(60).nullish(), flagged: z.boolean().optional(), mode: z.enum(['run', 'step']).optional() }).parse(await req.json());
+    const r = await runScenario({ tenantId: user.tenantId, userId: user.userId, scenarioId: body.scenarioId, stopAt: body.stopAt ?? null, flagged: !!body.flagged, mode: body.mode ?? 'run' });
     await writeAudit({ tenantId: user.tenantId, matterId: r.matterId, actorUserId: user.userId, actionType: 'SANDBOX_SCENARIO_RUN', actionStatus: r.steps.every((s) => s.ok) ? 'SUCCESS' : 'FAILED', payload: { scenarioId: body.scenarioId, flagged: !!body.flagged, stoppedAt: r.stoppedAt, steps: r.steps.length } }).catch(() => {});
     return ok(r);
   } catch (error) {

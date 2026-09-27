@@ -41,11 +41,12 @@ export default function ScenariosPage() {
   const load = useCallback(() => api<{ scenarios: Scenario[]; sandboxes: Sandbox[] }>('/engine/scenarios').then((r) => { setScenarios(r.scenarios); setSandboxes(r.sandboxes); }).catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not load the library.')), []);
   useEffect(() => { void load(); }, [load]);
 
-  const run = async (s: Scenario) => {
+  const run = async (s: Scenario, mode: 'run' | 'step' = 'run') => {
     setBusy(s.id);
     setErr(null);
     try {
-      const r = await api<{ matterId: string; matterRef: string; steps: Array<{ id: string; label: string; ok: boolean; error?: string }> }>('/engine/scenarios', { method: 'POST', body: JSON.stringify({ scenarioId: s.id, stopAt: stopAt[s.id] || null, flagged: !!flagged[s.id] }) });
+      const r = await api<{ matterId: string; matterRef: string; steps: Array<{ id: string; label: string; ok: boolean; error?: string }> }>('/engine/scenarios', { method: 'POST', body: JSON.stringify({ scenarioId: s.id, stopAt: mode === 'run' ? stopAt[s.id] || null : null, flagged: !!flagged[s.id], mode }) });
+      if (mode === 'step') { window.location.href = paths.matter(r.matterId); return; }
       setResult((cur) => ({ ...cur, [s.id]: r }));
       await load();
     } catch (e: unknown) {
@@ -87,7 +88,8 @@ export default function ScenariosPage() {
               </div>
               <div className="sc-row">
                 <label className="sc-switch"><input type="checkbox" checked={!!flagged[s.id]} onChange={(e) => setFlagged((cur) => ({ ...cur, [s.id]: e.target.checked }))} />Flagged branches</label>
-                <button className="eg-btn on" style={{ marginLeft: 'auto' }} disabled={busy !== null} onClick={() => void run(s)}>{busy === s.id ? 'Running…' : 'Run'}</button>
+                <button className="eg-btn" style={{ marginLeft: 'auto' }} disabled={busy !== null} onClick={() => void run(s, 'step')} title="Create the case and take it one step at a time; every proposal and decision is yours under Tasks">Start Stepping</button>
+                <button className="eg-btn on" disabled={busy !== null} onClick={() => void run(s)}>{busy === s.id ? 'Running…' : 'Run'}</button>
               </div>
               {r && (
                 <div className="sc-result">

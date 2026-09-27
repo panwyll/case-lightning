@@ -94,6 +94,21 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     window.history.replaceState(null, '', u.toString());
   };
   const eng = useEngine(matterId, api);
+  const [stepping, setStepping] = useState(false);
+  const [stepMsg, setStepMsg] = useState<string | null>(null);
+  const nextStep = async () => {
+    setStepping(true);
+    setStepMsg(null);
+    try {
+      const r = await api<{ done: boolean; index: number; total: number; ran?: { label: string }; next?: string | null; blocked?: string | null; error?: string | null }>(`/engine/scenarios/${matterId}`, { method: 'POST', body: '{}' });
+      setStepMsg(r.blocked ?? r.error ?? (r.ran ? `${r.index} of ${r.total}: ${r.ran.label}${r.next ? ` · next: ${r.next}` : ''}` : r.done ? 'Every step is done.' : null));
+      await eng.load();
+    } catch (e: unknown) {
+      setStepMsg(e instanceof Error ? e.message : 'Could not step.');
+    } finally {
+      setStepping(false);
+    }
+  };
   const view = eng.view;
   const enrolled = !!view?.state.enrolled;
   const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
@@ -150,8 +165,12 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {view?.matter?.sandbox && <span className="eg-chip" style={{ background: '#f3efff', color: '#5A27E0', border: '1px solid #c7b8f5' }} title={view.matter.sandboxStep ? `Scenario ${view.matter.sandboxScenario ?? ''} · ${view.matter.sandboxStep}` : undefined}>Sandbox</span>}
               </h1>
               <p className="mx-sub">{[row.matterRef, model?.profile?.label, clients, view?.lifecycle?.label].filter(Boolean).join(' · ')}</p>
+              {stepMsg && <p className="mx-sub" style={{ color: '#5A27E0', fontWeight: 600 }}>{stepMsg}</p>}
             </div>
             <div className="mx-ctl">
+              {view?.matter?.sandbox && /^\d+\//.test(view.matter.sandboxStep ?? '') && !view.state.closedAt && (
+                <button className="mx-sel" style={{ cursor: 'pointer', background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' }} disabled={stepping} onClick={() => void nextStep()} title={view.matter.sandboxStep ?? undefined}>{stepping ? 'Stepping…' : 'Next Step'}</button>
+              )}
               {view?.matter?.sandbox && <button className="mx-sel" style={{ cursor: 'pointer' }} onClick={() => { if (window.confirm('Retire this sandbox case? It leaves every list; its log stays.')) void api(`/engine/scenarios/${matterId}`, { method: 'DELETE' }).then(() => { window.location.href = '/conveyi/engine/scenarios'; }); }}>Retire Sandbox Case</button>}
               {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
               <select className="mx-sel" value={row.assignedTo ?? ''} onChange={(e) => void setOwner(e.target.value || null)} aria-label="Handler">
