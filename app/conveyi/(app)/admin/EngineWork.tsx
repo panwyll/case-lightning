@@ -161,7 +161,7 @@ function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => voi
         <span className="wk-who">{byWho.map(([who, n]) => <span key={who}>{WHO_SHORT[who] ?? pretty(who)} {n}</span>)}</span>
         <span className="sum">
           {overdue > 0 && <span className="wk-left over">{overdue} overdue</span>}
-          {upcoming && <span>next due <Left i={upcoming} /></span>}
+          {upcoming && upcoming.chaseInWorkingDays != null && <span>next chase in {upcoming.chaseInWorkingDays} working day{upcoming.chaseInWorkingDays === 1 ? '' : 's'}</span>}
         </span>
       </button>
       {open && sorted.map((i) => {
@@ -173,12 +173,11 @@ function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => voi
           <div key={`${i.matterId}:${i.id}`} className="wk-row">
             <House band={i.urgency} size={18} />
             <a href={paths.matter(i.matterId)} style={{ textDecoration: 'none', color: 'inherit', minWidth: 0 }}>
-              <span className="line">Waiting on <b>{who}</b> to {i.what}{i.dueBy ? <> by <b>{day(i.dueBy)}</b></> : null}</span>
-              <div className="meta">{i.propertyAddress ?? i.matterRef ?? 'Case'}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
+              <span className="line"><b>{i.what.charAt(0).toUpperCase() + i.what.slice(1)}</b>{i.dueBy ? <> by {day(i.dueBy)}</> : null}</span>
+              <div className="meta">{[i.matterRef, i.clients?.length ? i.clients.join(' & ') : null, i.propertyAddress].filter(Boolean).join(' · ')}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
             </a>
             <span className="right">
-              <Left i={i} />
-              <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
                 {chasing}
                 <button type="button" className="wk-send" disabled={sending !== null} onClick={() => void sendNow(i)}>{sending === i.id ? 'Sending…' : 'Send Now'}</button>
               </div>

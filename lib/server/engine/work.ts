@@ -20,6 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
+import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
@@ -36,6 +37,8 @@ export interface WorkItem {
   matterId: string;
   matterRef: string | null;
   propertyAddress: string | null;
+  /** The firm's clients on the matter. */
+  clients: string[];
   /** What has to happen, in a conveyancer's words. */
   what: string;
   /** Why it matters — what it unblocks, or what it holds up. */
@@ -123,6 +126,9 @@ const WAIT_WHAT: Record<string, string> = {
 export interface WorkContext {
   matterRef?: string | null;
   propertyAddress?: string | null;
+  /** The parties as the matter row holds them; the firm's own side is the client. */
+  buyers?: string[];
+  sellers?: string[];
   /** The fee-earner the matter is assigned to. */
   assignedTo?: string | null;
   /** Kept for callers; every pending decision surfaces now. */
@@ -142,7 +148,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   const out: WorkItem[] = [];
   if (!s.enrolled || s.abandoned || s.closedAt) return { matterId: s.matterId, band: health.band, health: summariseHealth(health), items: out };
   const owner = ctx.assignedTo ?? null;
-  const base = { matterId: s.matterId, matterRef: ctx.matterRef ?? null, propertyAddress: ctx.propertyAddress ?? null, responsibilityOwner: owner };
+  const base = { matterId: s.matterId, matterRef: ctx.matterRef ?? null, propertyAddress: ctx.propertyAddress ?? null, clients: profileOf(s.transactionType).side === 'seller' ? ctx.sellers ?? [] : ctx.buyers ?? [], responsibilityOwner: owner };
   const bandOf = (code: string): HealthBand => health.reasons.find((r) => r.ref.id === code)?.band ?? 'normal';
 
   // ── DO: decisions a person must resolve ──

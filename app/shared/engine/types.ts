@@ -371,6 +371,8 @@ export interface WorkItem {
   matterId: string;
   matterRef: string | null;
   propertyAddress: string | null;
+  /** The firm's clients on the matter. */
+  clients?: string[];
   what: string;
   unblocks: string | null;
   actionOwner: string;

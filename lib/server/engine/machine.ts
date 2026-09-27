@@ -558,7 +558,11 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
     const side = profile(s).side;
-    if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
+    const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
+    if (staleChase) {
+      // The thing we were going to chase for has arrived: the proposal is withdrawn, not left for a person to reject.
+      ev = { type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: staleChase.eventId, action: staleChase.action, detail: staleChase.detail, note: 'Withdrawn by the engine: what was being chased has arrived.' } };
+    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
     } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && issuesGating(s, 'exchange').length === 0 && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['contract pack sent', "buyer's enquiries answered", s.hasExistingMortgage ? 'redemption figure known' : 'unencumbered', 'no open issue holding exchange', s.requireExchangeAuthority ? 'client authorised exchange' : 'authority not required by policy'] } };

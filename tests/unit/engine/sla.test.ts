@@ -76,3 +76,25 @@ test('nextChase: the first chase falls chaseAfter working days after the wait op
   assert.ok(again.dueInWorkingDays < 0, 'overdue reads as due now');
   assert.equal(nextChase(chased, { ...DEFAULT_SLA.enquiry, chaseEvery: null }, new Date('2026-09-28T09:00:00Z')), null);
 });
+
+test('a chase proposed at Propose is withdrawn by the engine when the thing being chased arrives', async () => {
+  const { harness, TENANT, MATTER, USER, idRefer } = await import('./helpers');
+  const { pendingDecisions } = await import('../../../lib/server/engine/types');
+  const h = harness();
+  await h.store.setLevel(TENANT, 'chase', 'propose', null);
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  h.advanceDays(6);
+  await h.svc.tick(TENANT, MATTER);
+  let s = await h.svc.getState(TENANT, MATTER);
+  const proposal = Object.values(s.proposals).find((p) => p.action === 'chase' && p.status === 'pending');
+  assert.ok(proposal, 'the chase is proposed, not sent');
+  assert.ok(pendingDecisions(s).some((d) => d.kind === 'proposal'));
+  // The result comes back (flagged, so a person still has to look at it) — the chase is off the table either way.
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idRefer()));
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proposals[proposal!.eventId].status, 'rejected');
+  assert.equal(s.proposals[proposal!.eventId].resolvedBy, 'system');
+  assert.ok(!pendingDecisions(s).some((d) => d.kind === 'proposal'), 'no stale chase left in Tasks');
+  assert.ok(s.waits.every((w) => w.key !== 'id_check' || w.closedAt), 'the wait closed on arrival');
+});

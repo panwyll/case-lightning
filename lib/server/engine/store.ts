@@ -129,7 +129,7 @@ export interface EventStore {
   /** Addendum 3 §3: the handler's queue — one row per matter. */
   listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]>;
   /** Full state per matter, for anything that has to reason over the whole caseload (the work list). */
-  listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>>;
+  listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null; buyers?: string[]; sellers?: string[] } }>>;
   /** Addendum 3 §2: the comparison record. */
   listShadowReviews(tenantId: string, matterId?: string | null): Promise<ShadowReview[]>;
   recordShadowReview(input: Omit<ShadowReview, 'id' | 'createdAt'>): Promise<ShadowReview>;
@@ -290,8 +290,8 @@ export class MemoryEventStore implements EventStore {
   }
 
   /** Every enrolled matter this view should consider, with its meta. */
-  private matching(tenantId: string, opts?: QueueOptions): Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }> {
-    const out: Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }> = [];
+  private matching(tenantId: string, opts?: QueueOptions): Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null; buyers?: string[]; sellers?: string[] } }> {
+    const out: Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null; buyers?: string[]; sellers?: string[] } }> = [];
     for (const s of this.states.values()) {
       if (s.tenantId !== tenantId || !s.enrolled) continue;
       if (!opts?.includeFinished && (s.closedAt || s.abandoned)) continue;
@@ -309,7 +309,7 @@ export class MemoryEventStore implements EventStore {
     return opts?.limit ? sorted.slice(0, opts.limit) : sorted;
   }
 
-  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>> {
+  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null; buyers?: string[]; sellers?: string[] } }>> {
     const all = this.matching(tenantId, opts);
     return opts?.limit ? all.slice(0, opts.limit) : all;
   }
@@ -497,7 +497,7 @@ export class PgEventStore implements EventStore {
 
   private async queueRows(tenantId: string, opts?: QueueOptions) {
     return dbQuery<{ state: MatterState; matter_ref: string | null; property_address: string | null; assigned_to: string | null; updated_at: Date | string }>(
-      `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at, m.sandbox
+      `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at, m.sandbox, m.buyer_names, m.seller_names
          from matter_engine_state s
          join matter m on m.id = s.matter_id
         where s.tenant_id = $1 and ($5::boolean or s.finished_at is null)
@@ -508,9 +508,9 @@ export class PgEventStore implements EventStore {
     );
   }
 
-  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null } }>> {
+  async listStates(tenantId: string, opts?: QueueOptions): Promise<Array<{ state: MatterState; meta: { matterRef: string | null; propertyAddress: string | null; assignedTo: string | null; buyers?: string[]; sellers?: string[] } }>> {
     const rows = await this.queueRows(tenantId, opts);
-    return rows.map((r) => ({ state: withStateDefaults(r.state), meta: { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to } }));
+    return rows.map((r) => ({ state: withStateDefaults(r.state), meta: { matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to, buyers: (r as { buyer_names?: string[] }).buyer_names ?? [], sellers: (r as { seller_names?: string[] }).seller_names ?? [] } }));
   }
 
   async listQueue(tenantId: string, opts?: QueueOptions): Promise<QueueRow[]> {
