@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { project } from '../../../lib/server/engine/projection';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { isUserActor, type EngineEvent } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge } from './helpers';
+import { titleClear, harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge } from './helpers';
 
 test('full lifecycle: instruction → post_completion, with every decision cited, approved and replayable', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z'));
@@ -198,6 +198,8 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   await svc.requestIdCheck(TENANT, MATTER, USER);
   await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   assert.equal((await svc.getState(TENANT, MATTER)).searches.LLC1.status, 'ordered');
+  // The seller's solicitor sends the pack straight away, so the only clock running is the search's.
+  await svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
 
   ports.setNow(new Date('2026-09-25T09:00:00Z')); // 9 working days
   assert.deepEqual(await svc.tickAll(TENANT), { matters: 1, chases: 0, escalations: 0 });
