@@ -154,7 +154,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   // ── DO: decisions a person must resolve ──
   // Only what a person may act on (shadow-mode matters surface nothing).
   const surfaced = surfacedDecisions(s);
-  for (const d of surfaced.filter((x) => x.kind !== 'auto_clear')) {
+  for (const d of surfaced.filter((x) => x.kind !== 'auto_clear' || !!s.pendingAutoClears[x.eventId])) {
     const age = wd(d.createdAt, now, cal);
     // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
     // it is described by the first line of what the timer actually said.
@@ -163,6 +163,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     const what =
       d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
       : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
+      : d.kind === 'auto_clear'
+        ? `Approve the clear: ${(d.subject ?? '').includes(':') ? (d.subject ?? '').slice((d.subject ?? '').indexOf(':') + 1) : d.subject ?? 'the rules found nothing wrong'} (held at Propose)`
       : d.kind === 'proposal'
         ? `Proposal: ${ENGINE_ACTION_LABEL[s.proposals[d.eventId]?.action ?? ''] ?? 'engine action'}${s.proposals[d.eventId]?.subject ? ` — ${subjectLabel(s.proposals[d.eventId].action, s.proposals[d.eventId].subject!)}` : ''}`
       : `Decide: ${DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')}${d.subject && !d.subject.includes(':') && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` — ${d.subject}` : ''}`;

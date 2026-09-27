@@ -922,7 +922,13 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break; // the decision itself is registered generically above; non-blocking by design
     case 'auto_clear_proposed': {
       // The decision is registered generically; the clear it holds back waits here for approval.
-      s.pendingAutoClears[e.id] = (e.payload as Payloads['auto_clear_proposed']).clearedEvent;
+      const held = (e.payload as Payloads['auto_clear_proposed']).clearedEvent;
+      s.pendingAutoClears[e.id] = held;
+      // The thing being waited for has arrived; only the clear is held. The wait closes now so no chase goes out for it.
+      const hp = (held.payload ?? {}) as { searchType?: string; enquiryId?: string };
+      if (held.type === 'id_check_cleared') closeWait(s, 'id_check', null, e);
+      else if (held.type === 'search_cleared' && hp.searchType) closeWait(s, 'search', hp.searchType, e);
+      else if (held.type === 'enquiry_reply_cleared' && hp.enquiryId) closeWait(s, 'enquiry', hp.enquiryId, e);
       break;
     }
     case 'action_proposed': {

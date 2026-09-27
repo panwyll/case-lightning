@@ -98,3 +98,23 @@ test('a chase proposed at Propose is withdrawn by the engine when the thing bein
   assert.ok(!pendingDecisions(s).some((d) => d.kind === 'proposal'), 'no stale chase left in Tasks');
   assert.ok(s.waits.every((w) => w.key !== 'id_check' || w.closedAt), 'the wait closed on arrival');
 });
+
+test('at Propose a clean result still closes its wait on arrival, and the held clear is a task a person sees', async () => {
+  const { harness, TENANT, MATTER, USER, idClear } = await import('./helpers');
+  const { blockingDecisions, pendingDecisions } = await import('../../../lib/server/engine/types');
+  const { matterWork } = await import('../../../lib/server/engine/work');
+  const h = harness();
+  await h.store.setLevel(TENANT, 'auto_clear', 'propose', null);
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.idCheck.status, 'requested', 'the clear itself is held for approval');
+  assert.ok(s.waits.every((w) => w.key !== 'id_check' || w.closedAt), 'the wait closed: the result is in, nobody should be chased for it');
+  const held = pendingDecisions(s).find((d) => d.kind === 'auto_clear');
+  assert.ok(held && s.pendingAutoClears[held.eventId]);
+  assert.ok(blockingDecisions(s).some((d) => d.eventId === held!.eventId), 'a held clear blocks');
+  const work = matterWork(s, h.ports.now());
+  assert.ok(work.items.some((i) => i.bucket === 'do' && /Approve the clear/.test(i.what)), 'the tray shows it');
+  assert.ok(!work.items.some((i) => i.bucket === 'waiting' && /ID \/ AML/.test(i.what)), 'nothing left in Waiting for it');
+});

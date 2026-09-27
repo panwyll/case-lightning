@@ -1432,7 +1432,8 @@ export function pendingDecisions(state: MatterState): DecisionState[] {
  */
 /** Pending decisions that gate progress — assist-level auto-clear reviews are advisory and excluded. */
 export function blockingDecisions(state: MatterState): DecisionState[] {
-  return pendingDecisions(state).filter((d) => d.kind !== 'auto_clear');
+  // At Propose the clear itself is held until a person approves it, so that review blocks; at Assist it is advisory.
+  return pendingDecisions(state).filter((d) => d.kind !== 'auto_clear' || !!state.pendingAutoClears[d.eventId]);
 }
 /** Every pending decision is a person's to see. (Shadow mode, which hid some, is gone.) */
 export function surfacedDecisions(state: MatterState): DecisionState[] {
