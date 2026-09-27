@@ -1,6 +1,5 @@
 'use client';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import type { CaseHudData } from '@/app/shared/engine/CaseHud';
@@ -81,11 +80,18 @@ function Field({ k, v }: { k: string; v: string }) {
 
 export default function MatterPage({ params }: { params: Promise<{ matterId: string }> }) {
   const { matterId } = use(params);
-  const search = useSearchParams();
-  const wanted = search.get('tab') as Tab | null;
-  const focus = search.get('focus');
-  const doc = search.get('doc');
-  const [tab, setTabState] = useState<Tab>(wanted && TABS.includes(wanted) ? wanted : 'overview');
+  // The URL's tab / focus / doc are read on the client after mount. Reading them through useSearchParams made the whole page
+  // bail out of server rendering behind the segment's loading fallback, and a background tab then never got past it.
+  const [q, setQ] = useState<{ tab: Tab | null; focus: string | null; doc: string | null }>({ tab: null, focus: null, doc: null });
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search);
+    const t = s.get('tab') as Tab | null;
+    setQ({ tab: t && TABS.includes(t) ? t : null, focus: s.get('focus'), doc: s.get('doc') });
+  }, []);
+  const focus = q.focus;
+  const doc = q.doc;
+  const [tab, setTabState] = useState<Tab>('overview');
+  useEffect(() => { if (q.tab) setTabState(q.tab); }, [q.tab]);
   const setTab = (t: Tab) => {
     setTabState(t);
     const u = new URL(window.location.href);
