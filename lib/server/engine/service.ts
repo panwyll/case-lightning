@@ -25,6 +25,7 @@
  * puts the connection on the conveyi_automation role: the database refuses human-gated
  * events from there whatever this code does.
  */
+import { workingDaysBetween } from './working-days';
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
@@ -33,7 +34,7 @@ import { profileOf } from './transactions';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -54,7 +55,7 @@ const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
-import { openPofQueries } from './types';
+import { openPofQueries, openWaits } from './types';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -663,6 +664,21 @@ export class EngineService {
       }
     }
     return { chases, escalations };
+  }
+
+  /** A person sends the chase for a wait now rather than when the timer would; the same template and record as the timer's. */
+  async chaseNow(tenantId: string, matterId: string, waitKey: WaitKey, subject: string | null, actor: string): Promise<RunResult> {
+    const state = await this.getState(tenantId, matterId);
+    const wait = openWaits(state).find((w) => w.key === waitKey && (w.subject ?? null) === (subject ?? null));
+    if (!wait) throw Object.assign(new Error(`No open ${waitKey.replace(/_/g, ' ')} wait${subject ? ` for ${subject}` : ''} on this case.`), { status: 409 });
+    const sla = await this.store.loadSla(tenantId);
+    const rule = sla[waitKey];
+    if (!rule) throw Object.assign(new Error(`No chase rule for ${waitKey}.`), { status: 400 });
+    const ageWorkingDays = workingDaysBetween(new Date(wait.openedAt), this.ports.now());
+    const context = { waitKey: wait.key, subject: wait.subject, openedAt: wait.openedAt, ageWorkingDays, priorChases: wait.chasesSentAt.length, sentBy: actor };
+    await this.perform(tenantId, matterId, 'chase', { waitKey: wait.key, subject: wait.subject, recipientRole: rule.recipientRole, template: rule.template, context });
+    const after = await this.getState(tenantId, matterId);
+    return { state: after, events: [], warning: `Chase sent to the ${rule.recipientRole.replace(/_/g, ' ')} (${rule.template.replace(/_/g, ' ')}).` };
   }
 
   /** Sweep every active matter (cron). */

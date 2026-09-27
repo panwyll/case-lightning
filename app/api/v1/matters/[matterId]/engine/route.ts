@@ -1,3 +1,4 @@
+import { DEFAULT_SLA, nextChase } from '@/lib/server/engine/sla';
 import { fundsFromFor } from '@/lib/server/engine/shapes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
@@ -41,6 +42,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       ).catch(() => null),
     ]);
     const charge = await queryOne<{ charged_at: string; billed: boolean; unbilled_reason: string | null; amount_pennies: number }>(`select charged_at, billed, unbilled_reason, amount_pennies from matter_charge where tenant_id = $1 and matter_id = $2`, [user.tenantId, matterId]).catch(() => null);
+    const sla = await svc.eventStore.loadSla(user.tenantId).catch(() => DEFAULT_SLA);
     const profile = profileOf(state.transactionType);
     return ok({
       state,
@@ -48,7 +50,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
       lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
       blockers: stageBlockers(state),
-      waits: openWaits(state),
+      waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),
       // Everything the log holds (the panel shows the engine's conclusions) …
       pendingDecisions: pendingDecisions(state),
       // … and what a person may act on (addendum 3 §2).
@@ -89,6 +91,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId);
     else if (input.type === 'request_proof_of_funds') result = await svc.requestProofOfFunds(user.tenantId, matterId, user.userId, { noteToClient: input.noteToClient ?? null });
     else if (input.type === 'draft_report_on_title') result = await svc.draftReportOnTitle(user.tenantId, matterId);
+    else if (input.type === 'chase_now') result = await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId);
     else if (input.type === 'draft_completion_statement') {
       result = await svc.draftCompletionStatement(user.tenantId, matterId);
       await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_DRAFT', actionStatus: 'SUCCESS', payload: { kind: 'completion_statement', documentId: (result as { documentId: string }).documentId } }).catch(() => {});

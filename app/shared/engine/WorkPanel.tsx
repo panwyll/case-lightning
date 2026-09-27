@@ -811,6 +811,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
               <div key={`${w.key}:${w.subject}`} className="ep-tile">
                 <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}</b>
                 <span className="d">since {fmtDay(w.openedAt)} ({daysAgo(w.openedAt)}d){w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}×` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
+                {w.chase ? (
+                  <span className="d" style={{ color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
+                    {w.chase.dueInWorkingDays > 0 ? `Chasing ${w.chase.recipientRole.replace(/_/g, ' ')} in ${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'} (${fmtDay(w.chase.dueDate)})` : `Chase to ${w.chase.recipientRole.replace(/_/g, ' ')} due now`}
+                  </span>
+                ) : <span className="d">No further chase scheduled</span>}
+                <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy || !w.chase} onClick={() => cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null })}>Send Now</button></div>
               </div>
             ))}
           </div>

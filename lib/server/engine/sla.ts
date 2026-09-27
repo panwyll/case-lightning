@@ -14,7 +14,7 @@ import type { MatterState, WaitKey, WaitState } from './types';
 import { openIssues, openWaits } from './types';
 import { ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
-import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR } from './working-days';
+import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays } from './working-days';
 
 export interface SlaRule {
   waitKey: WaitKey;
@@ -250,4 +250,16 @@ export function timedIssueActions(state: MatterState, now: Date, cal: WorkingCal
     if (age >= after) out.push({ kind: 'escalate', issueId: i.id, severity: i.severity === 'info' ? 'warning' : 'critical', reason: `no movement for ${age} working days (escalates after ${after})` });
   }
   return out;
+}
+
+export interface NextChase { dueDate: string; dueInWorkingDays: number; recipientRole: SlaRule['recipientRole']; template: string; priorChases: number }
+/** When the timer will chase this wait next: the first chase at chaseAfter working days, then every chaseEvery after the last; null when no further chase is due. */
+export function nextChase(wait: WaitState, rule: SlaRule, now: Date, cal: WorkingCalendar = EW_CALENDAR): NextChase | null {
+  const last = wait.chasesSentAt[wait.chasesSentAt.length - 1];
+  let due: Date;
+  if (!last) due = addWorkingDays(new Date(wait.openedAt), rule.chaseAfter, cal);
+  else if (rule.chaseEvery === null) return null;
+  else due = addWorkingDays(new Date(last), rule.chaseEvery, cal);
+  const dueIn = due > now ? workingDaysBetween(now, due, cal) : -workingDaysBetween(due, now, cal);
+  return { dueDate: due.toISOString().slice(0, 10), dueInWorkingDays: dueIn, recipientRole: rule.recipientRole, template: rule.template, priorChases: wait.chasesSentAt.length };
 }

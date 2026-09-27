@@ -62,3 +62,17 @@ test('closed waits never fire; overrides change the numbers', () => {
   assert.equal(cfg.search.chaseAfter, 2);
   assert.equal(cfg.search.escalateAfter, DEFAULT_SLA.search.escalateAfter);
 });
+
+test('nextChase: the first chase falls chaseAfter working days after the wait opened, later ones chaseEvery after the last, none when chaseEvery is null', async () => {
+  const { nextChase, DEFAULT_SLA } = await import('../../../lib/server/engine/sla');
+  const wait = { key: 'enquiry' as const, subject: 'E1', openedAt: '2026-09-14T09:00:00Z', closedAt: null, chasesSentAt: [], escalations: [] };
+  const first = nextChase(wait, DEFAULT_SLA.enquiry, new Date('2026-09-15T09:00:00Z'))!;
+  assert.equal(first.dueDate, '2026-09-21');
+  assert.equal(first.dueInWorkingDays, 4);
+  assert.equal(first.recipientRole, 'seller_solicitor');
+  const chased = { ...wait, chasesSentAt: ['2026-09-21T09:00:00Z'] };
+  const again = nextChase(chased, DEFAULT_SLA.enquiry, new Date('2026-09-28T09:00:00Z'))!;
+  assert.equal(again.dueDate, '2026-09-24');
+  assert.ok(again.dueInWorkingDays < 0, 'overdue reads as due now');
+  assert.equal(nextChase(chased, { ...DEFAULT_SLA.enquiry, chaseEvery: null }, new Date('2026-09-28T09:00:00Z')), null);
+});

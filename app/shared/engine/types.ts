@@ -119,7 +119,7 @@ export interface DraftCheckView {
   summary: { sentences: number; claims: number; matched: number; struck: number; cited: number };
 }
 
-export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }> }
+export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>; /** When the timer chases next; null when no further chase is due. */ chase?: { dueDate: string; dueInWorkingDays: number; recipientRole: string; template: string; priorChases: number } | null }
 
 export interface PofQueryRow {
   id: string;

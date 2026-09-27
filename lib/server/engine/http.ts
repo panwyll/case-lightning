@@ -4,6 +4,7 @@
  * (search_extracted, record_chase, …) is deliberately NOT expressible here.
  */
 import { CASE_SHAPES } from './shapes';
+import { WAIT_KEYS } from './types';
 import { z } from 'zod';
 import type { SessionUser } from '../types';
 import { ForbiddenError } from '../session';
@@ -72,6 +73,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   // Report on title lifecycle (the service does the I/O; these are the human-triggered steps).
   z.object({ type: z.literal('draft_report_on_title') }),
   z.object({ type: z.literal('draft_completion_statement') }),
+  z.object({ type: z.literal('chase_now'), waitKey: z.enum(WAIT_KEYS), subject: z.string().max(120).nullish() }),
   z.object({ type: z.literal('send_report_on_title') }),
   // Eventualities (docs/engine-eventualities.md).
   z.object({ type: z.literal('abandon_matter'), reason: z.enum(ABANDON_REASONS), detail: z.string().max(2000).nullish() }),
@@ -122,6 +124,7 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'request_proof_of_funds':
     case 'draft_report_on_title':
     case 'draft_completion_statement':
+    case 'chase_now':
     case 'send_report_on_title':
     case 'record_bank_details':
     case 'record_note':
