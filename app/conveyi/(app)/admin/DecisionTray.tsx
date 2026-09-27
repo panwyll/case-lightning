@@ -84,7 +84,8 @@ function Card({ d, onDone }: { d: Row; onDone: (id: string) => void }) {
   const [going, setGoing] = useState(false);
   const shownAt = useRef<number | null>(null);
   const quick = d.options.includes('approve') && !REVIEW_ONLY.has(d.kind);
-  const engaged = scrolled || dwell >= DWELL_MS;
+  // The engine's own proposals and held clears need no reading first; a document-backed decision does.
+  const engaged = d.kind === 'proposal' || d.kind === 'auto_clear' || scrolled || dwell >= DWELL_MS;
 
   // Time spent with the source in view is the second way through the gate.
   useEffect(() => {

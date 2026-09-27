@@ -62,7 +62,7 @@ const CSS = TASK_CONTEXT_CSS + `
 .dp-line .eff{display:block;font-size:12px;color:#334155;margin-top:3px}
 `;
 
-const UI_DWELL_MS = 8000;
+const UI_DWELL_MS = 5000;
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
 /** Attach a citation marker to the first summary line that mentions it (section, label word, or a piece of the quote). */
@@ -146,7 +146,8 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
 
   const d = detail?.decision ?? null;
   const pending = d?.status === 'pending' && !detail?.shadowed && !done;
-  const engaged = scrolled || dwell >= UI_DWELL_MS;
+  // A proposal or a held clear is the engine's own text: nothing to read first. A document-backed decision waits for a scroll or a few seconds on the source.
+  const engaged = d?.kind === 'proposal' || d?.kind === 'auto_clear' || scrolled || dwell >= UI_DWELL_MS;
   const isBank = d?.kind === 'bank_details';
   const noteLines = detail?.noteActions ?? null;
   const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
