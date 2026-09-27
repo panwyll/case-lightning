@@ -433,8 +433,9 @@ export async function fileEmailAttachments(
   for (const att of attachments) {
     const kind = String(att['@odata.type'] ?? '');
     const isImage = /^image\//i.test(att.contentType ?? '');
-    // Signature logos and pasted pictures are inline images: not files anyone sent.
-    if (att.isInline && isImage) continue;
+    // Signature logos are small inline images: not files anyone sent. A pasted photo or scan of a
+    // document is an inline image too, but a big one, and it is filed like any attachment.
+    if (att.isInline && isImage && (att.size ?? 0) < 60_000) continue;
     if (kind === '#microsoft.graph.referenceAttachment') { files.push({ name: att.name ?? 'a linked file', outcome: 'skipped', as: null, reason: 'it is a link to a file in someone\'s OneDrive, not the file itself; ask for it as an attachment' }); continue; }
     if (kind === '#microsoft.graph.itemAttachment') { files.push({ name: att.name ?? 'an attached email', outcome: 'skipped', as: null, reason: 'it is an email attached inside the email; open it in Outlook and file its attachments from there' }); continue; }
     if (!att.contentBytes || !att.name) { files.push({ name: att.name ?? 'an attachment', outcome: 'skipped', as: null, reason: att.fetchError ? `it could not be downloaded: ${att.fetchError}` : 'its contents could not be downloaded' }); continue; }

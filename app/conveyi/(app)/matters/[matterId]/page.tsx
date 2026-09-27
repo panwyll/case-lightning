@@ -9,7 +9,10 @@ import { WorkPanel, WORK_CSS } from '@/app/shared/engine/WorkPanel';
 import { IssuesPanel } from '@/app/shared/engine/IssuesPanel';
 import { NotesPanel } from '@/app/shared/engine/NotesPanel';
 import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
-import { Timeline } from '@/app/shared/engine/Timeline';
+import { Timeline, type CaseLogEntry } from '@/app/shared/engine/Timeline';
+
+/** Case-log lines the timeline shows: filings, not the engine's own mirror of its events. */
+const FILING_LOG = new Set(['EMAIL_FILED', 'DOC_RECEIVED', 'EMAIL_SAVED_TO_MATTER', 'ENGINE_INGEST_SKIPPED']);
 import { CaseView, type CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
@@ -133,6 +136,14 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   // The row, the summary and the model arrive with the engine view in one request; a command reloads all of them together.
   bundleRef.current = (b) => { const r = b.row as { matter: Row; assignees: Person[] }; setRow(r.matter); setTeam(r.assignees); setDetail(b.detail as Detail); setModel(b.graph as Model); };
   useEffect(() => { if (eng.err) setErr(eng.err); }, [eng.err]);
+  // The case log (what happened to each email and file filed on the case) sits on the timeline beside the engine's events.
+  const [caseLog, setCaseLog] = useState<CaseLogEntry[]>([]);
+  useEffect(() => {
+    if (tab !== 'timeline') return;
+    api<{ timeline: Array<{ id: string; event_at: string | null; created_at: string; event_type: string; title: string; details: string | null }> }>(`/matters/${matterId}/timeline`)
+      .then((r) => setCaseLog(r.timeline.filter((t) => FILING_LOG.has(t.event_type)).map((t) => ({ id: t.id, at: t.event_at ?? t.created_at, type: t.event_type, title: t.title, details: t.details }))))
+      .catch(() => setCaseLog([]));
+  }, [tab, matterId, eng.events.length]);
   const load = useCallback(async () => {
     api<{ threads: any[] }>(`/matters/${matterId}/emails`).then((x) => setEmails(x.threads ?? [])).catch(() => setEmails([]));
     api<{ files: any[] }>(`/matters/${matterId}/files`).then((x) => setFiles(x.files ?? [])).catch(() => setFiles([]));
@@ -220,7 +231,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 )}
               </div>
           )}
-          {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} focus={focus} onClearFocus={() => setTab('timeline')} />}
+          {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} focus={focus} onClearFocus={() => setTab('timeline')} log={caseLog} />}
           {tab === 'diagnostics' && enrolled && (
             <>
               <CaseView matterId={matterId} api={api} view="readiness" model={model} />

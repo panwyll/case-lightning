@@ -51,6 +51,7 @@ const touches = (e: EngineEvent, focus: string) => e.type.startsWith(focus) || O
 /** What a person reads when a note or an issue is opened: the words, not the event. */
 function readable(e: EngineEvent): string | null {
   const p = e.payload as Record<string, unknown>;
+  if (e.type.startsWith('log:')) return p.details ? String(p.details) : null;
   if (e.type === 'note_recorded') {
     const from = p.from as { name?: string | null; address?: string } | null | undefined;
     return `${from ? `From ${from.name || from.address}\n\n` : ''}${String(p.text ?? '')}`;
@@ -61,9 +62,15 @@ function readable(e: EngineEvent): string | null {
   return null;
 }
 
-export function Timeline({ events, state, people = {}, focus = null, onClearFocus }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string>; focus?: string | null; onClearFocus?: () => void }) {
+/** A line from the case log (email filed, document received): shown in time order among the engine's events. */
+export interface CaseLogEntry { id: string; at: string; type: string; title: string; details: string | null }
+
+export function Timeline({ events, state, people = {}, focus = null, onClearFocus, log = [] }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string>; focus?: string | null; onClearFocus?: () => void; log?: CaseLogEntry[] }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
-  const ordered = useMemo(() => [...events].filter((e) => !focus || touches(e, focus)).sort((a, b) => b.seq - a.seq), [events, focus]);
+  const ordered = useMemo(() => {
+    const logged: EngineEvent[] = focus ? [] : log.map((l) => ({ id: `log:${l.id}`, seq: 0, type: `log:${l.type}`, actor: 'system', createdAt: l.at, sourceDocumentId: null, confidenceScore: null, payload: { title: l.title, details: l.details } }) as unknown as EngineEvent);
+    return [...events.filter((e) => !focus || touches(e, focus)), ...logged].sort((a, b) => (a.createdAt === b.createdAt ? b.seq - a.seq : a.createdAt < b.createdAt ? 1 : -1));
+  }, [events, focus, log]);
   const days = useMemo(() => {
     const out: Array<[string, EngineEvent[]]> = [];
     for (const e of ordered) {
@@ -113,9 +120,9 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
               <div key={e.id}>
                 <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} >
                   <span className="t">{hhmm(e.createdAt)}</span>
-                  <span className="ty">{pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
+                  <span className="ty">{e.type.startsWith('log:') ? String((e.payload as { title?: string }).title ?? '') : pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
                   <span className="ac">{who(e.actor)} · {actorKind(e.actor)}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 11 }}>#{e.seq}</span>
+                  <span style={{ marginLeft: 'auto', fontSize: 11 }}>{e.type.startsWith('log:') ? '' : `#${e.seq}`}</span>
                 </div>
                 {open[e.id] && (readable(e)
                   ? <div className="tl-read">{readable(e)}{e.sourceDocumentId && <a href={`/api/v1/documents/${e.sourceDocumentId}/raw`} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 6 }}>Open The Source</a>}</div>

@@ -132,6 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         } else {
           problems.push('the email could not be fetched from the mailbox, so nothing was read');
         }
+        if (msg && (msg as { hasAttachments?: boolean }).hasAttachments && !attachments.files.length && !problems.length) problems.push('The email says it has attachments, but none could be listed from the mailbox');
         const said = describeFiling(email, attachments.files, problems);
         await emitMatterEvent({
           tenantId: user.tenantId,

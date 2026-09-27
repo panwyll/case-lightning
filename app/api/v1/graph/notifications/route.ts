@@ -141,6 +141,7 @@ export async function POST(req: NextRequest) {
             problems.push(`the email could not be read: ${(e as Error).message}`);
             return null;
           });
+          if (message.hasAttachments && !filed.files.length && !problems.length) problems.push('The email says it has attachments, but none could be listed from the mailbox');
           await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email filed: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: describeFiling(read, filed.files, problems).join('\n') }).catch(() => {});
           // ...and the message text itself, so the case record is genuinely shared.
           // listThreadMessages reads the CALLING user's mailbox, so without this a
