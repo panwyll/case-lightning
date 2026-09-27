@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
             return { saved: 0, files: [] };
           });
           // The email itself is read into the case too: a reply in the body is a reply.
-          const read = await fileEmailBodyAsDocument(user, mId, message).catch((e) => {
+          const read = await fileEmailBodyAsDocument(user, mId, message, filed.files).catch((e) => {
             console.error('[graph notification] email body read failed', (e as Error).message);
             problems.push(`the email could not be read: ${(e as Error).message}`);
             return null;

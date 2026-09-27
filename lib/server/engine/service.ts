@@ -59,6 +59,7 @@ import { openPofQueries, openWaits, awayOn, awayNow } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
+const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
 
 export interface RunResult {
@@ -498,7 +499,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[] }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -528,14 +529,17 @@ export class EngineService {
     if (!noteId || !reader) return recorded;
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
-      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
       .catch((err) => {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];
       });
     const stranger = input.kind === 'email' && (input.from?.relation ?? 'unknown') === 'unknown';
-    if (!drafts.length && !stranger) return recorded;
-    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts, extractor: reader.name });
+    // An email that brings files is not evidence that those files are missing: whatever the reader
+    // made of "attached", an "it has not arrived" issue is not proposed from it.
+    const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
+    if (!kept.length && !stranger) return recorded;
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name });
   }
 
   // ───────────── decisions (dashboard #6) ─────────────

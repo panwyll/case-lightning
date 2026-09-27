@@ -124,7 +124,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
           // and the email itself is read like a filed document — a reply to enquiries in the body is a reply.
           await recordContactsFromMessage(user, matterId, msg).catch((e) => problems.push(`contacts not recorded: ${(e as Error).message}`));
           await indexEmailBodyToMatter(owner, matterId, msg).catch((e) => problems.push(`email not indexed: ${(e as Error).message}`));
-          email = await fileEmailBodyAsDocument(owner, matterId, msg).catch((e) => {
+          email = await fileEmailBodyAsDocument(owner, matterId, msg, attachments.files).catch((e) => {
             console.error('[link-thread] email body read failed', (e as Error).message);
             problems.push(`the email could not be read: ${(e as Error).message}`);
             return null;

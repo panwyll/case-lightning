@@ -40,6 +40,8 @@ export interface NoteExtractionContext {
   from?: NoteSender | null;
   /** Today, so "14 November" gets the right year. */
   now?: string;
+  /** Files that came with the email, and what each was read as: "attached" is about these, not a claim. */
+  attachments?: string[];
 }
 
 /** Issues that word from the right person may close: waits and chain positions, never a defect or a check. */
@@ -442,7 +444,7 @@ const RULES: Rule[] = [
     // property is recorded until the report itself is on file.
     test: /\bsurvey/i,
     also: /\b(done|complete|completed|back|through|carried out|finished|all in|has happened|took place|went ahead)\b/i,
-    not: /\b(not|hasn'?t|haven'?t|isn'?t|aren'?t|yet|waiting|book|booked|arrang\w*|instruct\w*|when|once|will be|happy|satisfied)\b/i,
+    not: /\b(not|hasn'?t|haven'?t|isn'?t|aren'?t|yet|waiting|book|booked|arrang\w*|instruct\w*|when|once|will be|happy|satisfied|attach\w*|enclos\w*|here is|here's|herewith|sending)\b/i,
     build: (sentence) => ({
       kind: 'issue',
       summary: 'The survey has been done; the report is not on file yet',

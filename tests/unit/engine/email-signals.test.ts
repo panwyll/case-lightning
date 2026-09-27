@@ -358,3 +358,15 @@ test('the reply in the screenshot: only "Hi, survey attached" is read, from Outl
   assert.match(doc, /From: Peter Anwyll <pete@killerdotdev\.onmicrosoft\.com>\nSent: 27 September 2026 23:16/);
   assert.doesNotMatch(doc, /&nbsp;|&lt;|&gt;/);
 });
+
+test('"Hi, survey attached" with a file on it proposes nothing about a missing survey, whatever the reader says', async () => {
+  const h = await enrolled();
+  // A reader that makes the mistake the model made on prod.
+  h.ports.noteExtractor = { name: 'overeager', extract: async () => [{ kind: 'issue', summary: 'Survey not on file', quote: 'survey attached', command: { type: 'raise_issue', kind: 'survey_report_outstanding', title: 'Survey done; ask for the report', detail: null, gate: 'none' } }] };
+  const res = await h.svc.recordNote(TENANT, MATTER, { text: 'Hi, survey attached', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT, attachments: ['survey.pdf (read as survey)'] });
+  assert.equal(blockingDecisions(res.state).filter((d) => d.kind === 'note_actions').length, 0);
+  // The deterministic reader does not read "attached" as "done" either.
+  const r = new DeterministicNoteReader();
+  const drafts = await r.extract({ tenantId: TENANT, matterId: MATTER, text: 'Hi, survey attached', kind: 'email' });
+  assert.equal(drafts.filter((d) => (d.command as { kind?: string } | null)?.kind === 'survey_report_outstanding').length, 0);
+});

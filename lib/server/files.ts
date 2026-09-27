@@ -428,6 +428,8 @@ export async function fileEmailAttachments(
   // receive the email — otherwise a case's documents scatter across colleagues.
   const driveUser = folder ? await driveUserFor(user.tenantId, matterId, user.userId) : null;
   const attachments = await listMessageAttachments(user.userId, messageId);
+  // One line per email so a skipped file can be diagnosed from the logs (names and shapes only, never contents).
+  console.info(`[files] ${attachments.length} attachment(s) on the email for matter ${matterId}: ${attachments.map((a) => `${a.name ?? '?'} [${String(a['@odata.type'] ?? '').replace('#microsoft.graph.', '')} ${a.contentType ?? ''} ${a.size ?? '?'}B${a.isInline ? ' inline' : ''}${a.contentBytes ? '' : ' no-bytes'}${a.fetchError ? ` error: ${a.fetchError}` : ''}]`).join(', ') || 'none'}`);
   let saved = 0;
   const savedNames: string[] = [];
   for (const att of attachments) {
@@ -448,7 +450,17 @@ export async function fileEmailAttachments(
       `select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`,
       [matterId, user.tenantId, hash]
     );
-    if (exists) { files.push({ name: att.name, outcome: 'duplicate', as: null, reason: null }); continue; } // identical content already filed
+    if (exists) {
+      // Identical content already filed. If it was never read into the case (an earlier attempt
+      // filed it but the read failed or was skipped), read it now instead of stopping at "duplicate".
+      const cited = await queryOne<{ n: string }>(`select count(*)::text as n from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1' }));
+      if (Number(cited?.n ?? '1') > 0) { files.push({ name: att.name, outcome: 'duplicate', as: null, reason: null }); continue; }
+      const report = await ingestFiledDocument(user.tenantId, matterId, exists.id).catch((e) => ({ failed: (e as Error).message }) as const);
+      if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `already on the case, and could not be read: ${report.failed}` }); continue; }
+      const role = report?.classification?.role ?? null;
+      files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role, reason: null } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: `already on the case; ${report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled'}` });
+      continue;
+    }
     const uploaded = folder && driveUser ? await uploadToMatterKb(driveUser, folder, att.name, buffer) : null;
     const doc = await queryOne<{ id: string }>(
       `insert into document
@@ -642,7 +654,8 @@ export async function supersedePriorVersions(
 export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
-  message: any
+  message: any,
+  attachments: Array<{ name: string; outcome: string; as: string | null }> = []
 ): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number }> {
   const body = htmlToText(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
   const fresh = newWordsOf(message ?? {});
@@ -672,7 +685,7 @@ export async function fileEmailBodyAsDocument(
   if (enrolled && (!role || role === 'other') && (fresh || body).trim().length >= 2) {
     const { engine } = await import('./engine/adapters');
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
-    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
+    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details
