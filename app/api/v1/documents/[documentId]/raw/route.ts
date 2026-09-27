@@ -1,3 +1,5 @@
+import { downloadDriveItem } from '@/lib/server/graph';
+import { driveUserFor } from '@/lib/server/matter-drive';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -21,8 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     assertFeature('auth');
     const user = await requireUser();
     const { documentId } = z.object({ documentId: z.string().uuid() }).parse(await params);
-    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null }>(
-      `select d.matter_id, d.file_name, d.mime_type, b.bytes from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
+    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null; graph_item_id: string | null; web_url: string | null; content: string | null }>(
+      `select d.matter_id, d.file_name, d.mime_type, b.bytes, d.graph_item_id, d.web_url, d.extracted_facts->>'content' as content from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
       [documentId, user.tenantId]
     );
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
@@ -37,7 +39,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
         mime = fromLeap.mimeType ?? mime;
       }
     }
-    if (!bytes) return fail(Object.assign(new Error('No stored bytes for this document (it lives in OneDrive).'), { status: 404 }));
+    if (!bytes && doc.content) { bytes = Buffer.from(doc.content, 'utf8'); mime = mime ?? 'text/plain; charset=utf-8'; }
+    if (!bytes && doc.graph_item_id) {
+      // In the case's OneDrive folder: fetched as the drive's owner, the same account that filed it.
+      const owner = await driveUserFor(user.tenantId, doc.matter_id, user.userId).catch(() => user.userId);
+      bytes = await downloadDriveItem(owner, doc.graph_item_id).catch(() => null);
+      if (!bytes && owner !== user.userId) bytes = await downloadDriveItem(user.userId, doc.graph_item_id).catch(() => null);
+      if (!bytes && doc.web_url) return NextResponse.redirect(doc.web_url);
+    }
+    if (!bytes) return new NextResponse('This file could not be fetched from OneDrive. It may have been moved or deleted there; file it again from the email or the case folder.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
     return new NextResponse(new Uint8Array(bytes), {
       status: 200,
       headers: { 'content-type': mime ?? 'application/octet-stream', 'content-disposition': `inline; filename="${(doc.file_name ?? 'document').replace(/"/g, '')}"`, 'cache-control': 'private, max-age=60' },

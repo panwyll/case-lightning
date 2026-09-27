@@ -34,13 +34,17 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
     const [items, processed] = await Promise.all([
       listMatterFiles(user.userId, matter.folder_path).catch(() => [] as any[]),
-      query<{ graph_item_id: string | null; file_name: string }>(
-        `select graph_item_id, file_name from document where matter_id = $1 and tenant_id = $2`,
+      query<{ graph_item_id: string | null; created_at: string }>(
+        `select graph_item_id, created_at from document where matter_id = $1 and tenant_id = $2 and graph_item_id is not null and superseded_at is null`,
         [matterId, user.tenantId]
       ),
     ]);
-    const processedIds = new Set(processed.map((d) => d.graph_item_id).filter(Boolean));
-    const processedNames = new Set(processed.map((d) => d.file_name));
+    // Read = this item was read, and not edited since. A file that merely shares a name with one we read is not.
+    const readAt = new Map(processed.map((d) => [d.graph_item_id!, d.created_at]));
+    const isRead = (it: { id: string; lastModifiedDateTime?: string }) => {
+      const at = readAt.get(it.id);
+      return !!at && (!it.lastModifiedDateTime || new Date(it.lastModifiedDateTime).getTime() <= new Date(at).getTime() + 60_000);
+    };
 
     const files = items
       .filter((it: any) => !it.folder) // files only
@@ -51,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
         size: (it.size as number) ?? null,
         lastModified: (it.lastModifiedDateTime as string) ?? null,
         mimeType: (it.file?.mimeType as string) ?? null,
-        processed: processedIds.has(it.id) || processedNames.has(it.name),
+        processed: isRead(it),
       }));
 
     return ok({ files, folderProvisioned: true });

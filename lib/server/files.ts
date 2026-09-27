@@ -91,10 +91,12 @@ export async function processMatterFile(
     indexText = buffer.toString('utf8').slice(0, 40000);
   }
 
-  // Record the file so it isn't reprocessed (idempotent on graph_item_id).
+  // A file is known by its contents (SHA-256), never its name: an edited file is a new
+  // version and is read again; identical bytes anywhere on the case are already there.
+  const hash = crypto.createHash('sha256').update(buffer).digest('hex');
   const existing = await queryOne<{ id: string }>(
-    `select id from document where matter_id = $1 and tenant_id = $2 and graph_item_id = $3`,
-    [matterId, user.tenantId, opts.itemId]
+    `select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3 and superseded_at is null`,
+    [matterId, user.tenantId, hash]
   );
   if (!existing) {
     const doc = await queryOne<{ id: string }>(
@@ -107,7 +109,7 @@ export async function processMatterFile(
         matter.folder_path ? `${matter.folder_path}/${opts.fileName}` : opts.fileName,
         opts.fileName,
         opts.mimeType ?? null,
-        crypto.createHash('sha256').update(buffer).digest('hex'),
+        hash,
         documentType || null,
         user.userId,
       ]
@@ -121,8 +123,8 @@ export async function processMatterFile(
       text: indexText ? `${opts.fileName}\n${indexText}` : `${opts.fileName}\n${opts.mimeType ?? ''}`,
       metadata: { fileName: opts.fileName, graphItemId: opts.itemId, source: 'ONEDRIVE_UPLOAD', indexed: indexText ? 'content' : 'name' },
     }).catch(() => {});
-    // A changed file with this name supersedes older versions on the matter.
-    if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, opts.fileName, doc.id).catch(() => {});
+    // An edited OneDrive file supersedes the earlier version of the SAME item; a different file that shares a name does not.
+    if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, { graphItemId: opts.itemId }, doc.id).catch(() => {});
     if (doc?.id && locked) {
       if (opts.bytes) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, opts.bytes]).catch(() => {});
       await recordLockedDocument(user.tenantId, matterId, doc.id, opts.fileName);
@@ -399,7 +401,7 @@ export function describeFiling(
   for (const f of files) {
     if (f.outcome === 'read') lines.push(`${f.name} read${role(f.as)}`);
     else if (f.outcome === 'locked') lines.push(`${f.name} is password-protected (a task asks for the password)`);
-    else if (f.outcome === 'duplicate') lines.push(`${f.name} was already on the case`);
+    else if (f.outcome === 'duplicate') lines.push(`${f.name} is already on the case${f.as ? `, read as ${f.as}` : ''}${f.reason ? ` (${f.reason})` : ''}; nothing new to read`);
     else if (f.outcome === 'skipped') lines.push(`${f.name} was not filed: ${f.reason ?? 'unknown reason'}`);
     else lines.push(`${f.name} filed but not acted on${f.reason ? `: ${f.reason}` : ''}`);
   }
@@ -451,10 +453,17 @@ export async function fileEmailAttachments(
       [matterId, user.tenantId, hash]
     );
     if (exists) {
-      // Identical content already filed. If it was never read into the case (an earlier attempt
-      // filed it but the read failed or was skipped), read it now instead of stopping at "duplicate".
-      const cited = await queryOne<{ n: string }>(`select count(*)::text as n from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1' }));
-      if (Number(cited?.n ?? '1') > 0) { files.push({ name: att.name, outcome: 'duplicate', as: null, reason: null }); continue; }
+      // Identical content already filed. The copy we hold must open: if its bytes live only in a
+      // OneDrive item (which may have been moved or deleted), keep these bytes against it now.
+      await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [exists.id, user.tenantId, buffer]).catch(() => {});
+      // If it was never read into the case (an earlier attempt filed it but the read failed or
+      // was skipped), read it now instead of stopping at "duplicate".
+      const cited = await queryOne<{ n: string; type: string | null; at: string | null }>(`select count(*)::text as n, max(type) as type, max(created_at)::text as at from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1', type: null, at: null }));
+      if (Number(cited?.n ?? '1') > 0) {
+        const readAs = cited?.type ? cited.type.replace(/_(received|extracted|returned)$/, '').replace(/_/g, ' ') : null;
+        files.push({ name: att.name, outcome: 'duplicate', as: readAs, reason: cited?.at ? `read on ${new Date(cited.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' })}` : null });
+        continue;
+      }
       const report = await ingestFiledDocument(user.tenantId, matterId, exists.id).catch((e) => ({ failed: (e as Error).message }) as const);
       if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `already on the case, and could not be read: ${report.failed}` }); continue; }
       const role = report?.classification?.role ?? null;
@@ -492,7 +501,7 @@ export async function fileEmailAttachments(
       text: indexText ? `${att.name}\n${indexText}` : `${att.name}\n${att.contentType ?? ''}`,
       metadata: { fileName: att.name, graphItemId: uploaded?.id ?? null, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
     }).then(async () => {
-      if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, att.name, doc.id).catch(() => {});
+      // An attachment is its own document: a later file with the same name is not assumed to replace it.
     }).catch(() => {});
     saved += 1;
     savedNames.push(att.name);
@@ -615,20 +624,21 @@ export async function indexEmailBodyToMatter(
 export async function supersedePriorVersions(
   tenantId: string,
   matterId: string,
-  fileName: string,
+  of: { graphItemId: string | null },
   newDocId: string
 ): Promise<number> {
-  if (!fileName?.trim()) return 0;
+  // Versions are the same file edited in place (one OneDrive item), never two files that share a name.
+  if (!of.graphItemId) return 0;
   try {
     const prior = await query<{ id: string }>(
       `update document
           set superseded_at = now(), superseded_by = $4
         where tenant_id = $1 and matter_id = $2
-          and lower(file_name) = lower($3)
+          and graph_item_id = $3
           and id <> $4
           and superseded_at is null
         returning id`,
-      [tenantId, matterId, fileName, newDocId]
+      [tenantId, matterId, of.graphItemId, newDocId]
     );
     if (prior.length) {
       const ids = prior.map((r) => r.id);
