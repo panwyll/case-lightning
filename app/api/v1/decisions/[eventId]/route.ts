@@ -12,6 +12,7 @@ import { taskContext } from '@/lib/server/engine/context';
 import { loadCrossChecks } from '@/lib/server/engine/crosscheck-run';
 import { offeredOptions } from '@/lib/server/engine/rules';
 import { previewProposal } from '@/lib/server/comms/preview';
+import { clientOverview } from '@/lib/server/engine/client-overview';
 
 type MatterRow = { matter_ref: string; property_address: string; shadow_mode: boolean | null; buyer_names: string[] | null; seller_names: string[] | null; purchase_price: string | null; lender: string | null; counterparty_solicitor: string | null; counterparty_agent: string | null; exchange_target_date: string | null; completion_target_date: string | null };
 
@@ -100,7 +101,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     let message = null as Awaited<ReturnType<typeof previewProposal>>;
     if (d.kind === 'proposal') {
       const pr = Object.values(stateForContext.proposals).find((x) => x.eventId === eventId) ?? null;
-      if (pr) message = await previewProposal(user.tenantId, d.matterId, pr.action, (pr.detail ?? {}) as Record<string, unknown>).catch(() => null);
+      if (pr) message = await previewProposal(user.tenantId, d.matterId, pr.action, (pr.detail ?? {}) as Record<string, unknown>, { overview: clientOverview(stateForContext, new Date()).text }).catch(() => null);
     }
     return ok({
       context,

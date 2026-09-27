@@ -14,7 +14,7 @@ export type ProposalPreview =
   | { kind: 'form'; to: string; address: string | null; channel: MessagePreview['channel']; subject: string; body: string; note: string | null }
   | { kind: 'action'; title: string; lines: string[] };
 
-export async function previewProposal(tenantId: string, matterId: string, action: string, detail: Record<string, unknown>): Promise<ProposalPreview | null> {
+export async function previewProposal(tenantId: string, matterId: string, action: string, detail: Record<string, unknown>, extra: { overview?: string } = {}): Promise<ProposalPreview | null> {
   const deps = (await isSandboxMatter(tenantId, matterId)) ? sandboxCommsDeps() : commsDeps();
   const comms = new ProductionClientComms(deps);
   const chaser = new ProductionChaser(deps);
@@ -29,7 +29,7 @@ export async function previewProposal(tenantId: string, matterId: string, action
     return { kind: 'form', ...m, note };
   }
   if (action === 'client_update' && str('template')) {
-    const m = await comms.previewStatusUpdate({ tenantId, matterId, template: str('template')!, context: (detail.context as Record<string, unknown>) ?? {} });
+    const m = await comms.previewStatusUpdate({ tenantId, matterId, template: str('template')!, context: { ...((detail.context as Record<string, unknown>) ?? {}), overview: extra.overview ?? '' } });
     return { kind: 'message', ...m };
   }
   if (action === 'chase' && str('template') && str('recipientRole')) {

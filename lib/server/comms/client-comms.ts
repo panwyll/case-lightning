@@ -80,6 +80,14 @@ const clientAddress = (info: MatterContactInfo): { address: string | null; chann
   info.clientPhone && info.clientWhatsAppOptIn ? { address: info.clientPhone, channel: 'whatsapp' } : info.clientEmail ? { address: info.clientEmail, channel: 'email' } : { address: null, channel: 'none' };
 const clientLine = (info: MatterContactInfo): string => `${info.clientFirstName ? `${info.clientFirstName} (the client)` : 'the client'}${clientAddress(info).address ? ` · ${clientAddress(info).address}` : ' · no address on the case'}`;
 
+/** The "where things stand" tail goes in before the sign-off, when there is one. */
+const withOverview = (body: string, context: Record<string, unknown>): string => {
+  const ov = typeof context.overview === 'string' ? context.overview.trim() : '';
+  if (!ov) return body;
+  const cut = body.lastIndexOf('\n\n');
+  return cut > 0 ? `${body.slice(0, cut)}\n\n${ov}${body.slice(cut)}` : `${body}\n\n${ov}`;
+};
+
 export class ProductionClientComms implements ClientComms {
   readonly name = 'client-comms';
   constructor(private deps: CommsDeps) {}
@@ -140,7 +148,7 @@ export class ProductionClientComms implements ClientComms {
     const t = await resolveTemplate(this.deps, input.tenantId, base);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.vars(info, input.context));
-    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: r.body };
+    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
   }
 
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }) {
@@ -150,7 +158,7 @@ export class ProductionClientComms implements ClientComms {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.vars(info, input.context));
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
-    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, r.body);
+    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, withOverview(r.body, input.context));
   }
 
   /** Only ever reached after the engine's approval invariant (assertCanSendReport). Email only — a report is a document, not a chat message. */

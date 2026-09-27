@@ -507,6 +507,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.clientUpdatesSent += 1;
       const p = e.payload as Payloads['client_update_sent'];
       if (p.template) s.clientUpdateLastSentAt[p.template] = e.createdAt;
+      for (const k of p.mentioned ?? []) s.clientToldAt[k] = e.createdAt;
       break;
     }
     case 'chase_sent': {

@@ -676,6 +676,8 @@ export interface ClientUpdateSpec {
   channel: 'email' | 'whatsapp' | 'mock';
   messageId?: string | null;
   triggeredByEventId?: string | null;
+  /** The waits this update told the client about (`key:subject`), so the next update does not repeat them for a few days. */
+  mentioned?: string[];
 }
 
 /** Event-type → payload. Keeping this exhaustive is what makes the projection typed. */
@@ -1374,6 +1376,8 @@ export interface MatterState {
   clientUpdatesSent: number;
   /** When each client-update template last went out — so the same news is not sent twice in a day. */
   clientUpdateLastSentAt: Record<string, string>;
+  /** When the client was last told about each open wait (`key:subject`). */
+  clientToldAt: Record<string, string>;
   chasesSent: number;
   /** What we have told the sender we received, so nothing is acknowledged twice. */
   acknowledgements: Array<{ forEventId: string; recipientRole: string; at: string }>;
@@ -1478,6 +1482,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     notes: {},
     clientUpdatesSent: 0,
     clientUpdateLastSentAt: {},
+    clientToldAt: {},
     chasesSent: 0,
     acknowledgements: [],
     bankDetails: {},
@@ -1507,6 +1512,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     ...init,
     ...s,
     clientUpdateLastSentAt: { ...(s.clientUpdateLastSentAt ?? {}) },
+    clientToldAt: { ...(s.clientToldAt ?? {}) },
     notes: { ...(s.notes ?? {}) },
     postCompletion: merge('postCompletion'),
     proofOfFunds: merge('proofOfFunds'),

@@ -57,6 +57,7 @@ import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLe
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
 import { openPofQueries, openWaits } from './types';
 import { explainSendError } from '../comms/errors';
+import { clientOverview } from './client-overview';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -187,8 +188,10 @@ export class EngineService {
       await this.requestProofOfFunds(tenantId, matterId, d.requestedBy ?? SYSTEM, { followUpOf: d.followUpOf ?? null, noteToClient: d.noteToClient ?? null });
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
-      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: d.context });
-      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId } });
+      // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
+      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
+      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text } });
+      await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.template, recipientRole: 'client', channel: sent.channel, messageId: sent.messageId, triggeredByEventId: d.triggeredByEventId, mentioned: ov.mentioned } });
       if (d.agentTemplate) {
         const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: d.agentTemplate, context: d.context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
         if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
