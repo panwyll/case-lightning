@@ -31,7 +31,8 @@ const submissionSchema = z.object({
         accountHolder: z.string().max(140).nullish(),
         bankName: z.string().max(140).nullish(),
         evidenceDocumentIds: z.array(docId).max(12).default([]),
-        gift: z.object({ donorName: z.string().min(2).max(140), donorRelationship: z.string().min(1).max(80), donorAddress: z.string().max(300).nullish(), repayable: z.boolean(), donorAbroad: z.boolean(), donorEvidenceDocumentIds: z.array(docId).max(12).default([]) }).nullish(),
+        gift: z.object({ donorName: z.string().min(2).max(140), donorRelationship: z.string().min(1).max(80), donorAddress: z.string().max(300).nullish(), repayable: z.boolean(), donorAbroad: z.boolean(), jointDonorName: z.string().max(140).nullish(), donorEvidenceDocumentIds: z.array(docId).max(12).default([]) }).nullish(),
+        jointHolderName: z.string().max(140).nullish(),
         overseas: z.object({ country: z.string().min(2).max(80), alreadyInUk: z.boolean() }).nullish(),
       })
     )

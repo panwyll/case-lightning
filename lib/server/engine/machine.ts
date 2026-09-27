@@ -1427,12 +1427,23 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: cmd.summary?.by ?? 'template',
       };
       assertDecisionSpec(decision);
-      // A gift donor is a person whose identity and money we must check like the client's.
+      // A gift donor is a person whose identity and money we must check like the client's. So is the other holder of a joint
+      // account the money sits in — the donor's, or the client's with someone who is not buying: their share is a contribution.
+      const contributors: Array<{ name: string; label: string }> = [];
       for (const src of cmd.facts.sources) {
-        const name = src.kind === 'gift' ? src.gift?.donorName?.trim() : null;
-        if (!name) continue;
-        const party = partyId('donor', name);
-        if (!s.partyChecks[party] && !out.some((ev) => ev.type === 'id_party_added' && (ev.payload as { party: string }).party === party)) out.push({ type: 'id_party_added', actor: SYSTEM, payload: { party, label: `${name} (donor)`, role: 'donor' } });
+        if (src.kind === 'gift' && src.gift) {
+          const donor = src.gift.donorName?.trim();
+          if (donor) contributors.push({ name: donor, label: `${donor} (donor)` });
+          const joint = src.gift.jointDonorName?.trim();
+          if (joint) contributors.push({ name: joint, label: `${joint} (donor, joint account with ${donor || 'the donor'})` });
+        } else if (src.jointHolderName?.trim()) {
+          const joint = src.jointHolderName.trim();
+          contributors.push({ name: joint, label: `${joint} (joint account holder, not buying)` });
+        }
+      }
+      for (const c of contributors) {
+        const party = partyId('donor', c.name);
+        if (!s.partyChecks[party] && !out.some((ev) => ev.type === 'id_party_added' && (ev.payload as { party: string }).party === party)) out.push({ type: 'id_party_added', actor: SYSTEM, payload: { party, label: c.label, role: 'donor' } });
       }
       out.push({ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, statements: review?.statements ?? [], risk, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence });
       return out;
@@ -1976,7 +1987,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
         if (i.kind === 'source_of_funds' && (i.status === 'open' || i.status === 'negotiating')) out.push({ type: 'issue_resolved', actor: userId, payload: { issueId: i.id, resolution: 'evidence_provided', note: `Proof of funds signed off${note ? `: ${note}` : ''}`, costPennies: null, paidBy: null }, sourceDocumentId: d.sourceDocumentId });
       }
       if (facts && facts.giftedPennies > 0 && s.hasLender && !s.exchange.exchangedAt) {
-        const donors = facts.sources.filter((x) => x.kind === 'gift' && x.gift).map((x) => x.gift!.donorName).join(', ');
+        const donors = facts.sources.filter((x) => x.kind === 'gift' && x.gift).flatMap((x) => [x.gift!.donorName, ...(x.gift!.jointDonorName?.trim() ? [`${x.gift!.jointDonorName.trim()} (joint account)`] : [])]).join(', ');
         out.push(lenderApprovalIssue(s, `pof:${facts.requestId}:gift:lender`, `Tell the lender: gifted deposit ${gbp(facts.giftedPennies)}${donors ? ` from ${donors}` : ''}`, d.sourceDocumentId, null));
       }
     }

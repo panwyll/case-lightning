@@ -58,7 +58,7 @@ export const pofSubmission = (pricePennies: number, advancePennies: number | nul
     mortgageAdvancePennies: advancePennies,
     sources: [
       { kind: 'savings', amountPennies: balance - giftPennies, description: 'Saved from salary, Sandbox Savings Bank', bankName: 'Sandbox Savings Bank', accountHolder: 'Sandbox Buyer', evidenceDocumentIds: [statementDocId] },
-      ...(flagged ? [{ kind: 'gift' as const, amountPennies: giftPennies, description: 'Gift from my mother', evidenceDocumentIds: giftLetterDocId ? [giftLetterDocId] : [], gift: { donorName: 'Sandbox Donor', donorRelationship: 'mother', donorAddress: 'Barcelona', repayable: false, donorAbroad: true, donorEvidenceDocumentIds: donorStatementDocId ? [donorStatementDocId] : [] } }] : []),
+      ...(flagged ? [{ kind: 'gift' as const, amountPennies: giftPennies, description: 'Gift from my mother', evidenceDocumentIds: giftLetterDocId ? [giftLetterDocId] : [], gift: { donorName: 'Sandbox Donor', donorRelationship: 'mother', donorAddress: 'Barcelona', repayable: false, donorAbroad: true, jointDonorName: 'Sandbox Donor Two', donorEvidenceDocumentIds: donorStatementDocId ? [donorStatementDocId] : [] } }] : []),
     ],
     declarations: { accurate: true, noThirdPartyInterest: true, noUndisclosedBorrowing: true },
     clientNote: null,
@@ -68,6 +68,7 @@ export const pofSubmission = (pricePennies: number, advancePennies: number | nul
 
 /** A bank statement the fixture extractor reads: three months of salary in, a balance that covers what it is meant to prove. */
 export const statement = (holder: string, closingPennies: number, employer = 'Sandbox Employer Ltd'): StatementFacts => {
+  // A holder line naming two people reads as a joint account, as a real statement prints it.
   const end = new Date(); end.setUTCDate(1);
   const days = (n: number) => iso(new Date(end.getTime() - n * 86_400_000));
   const salary = 320_000;

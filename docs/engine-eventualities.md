@@ -15,7 +15,8 @@ engine; **gap**: not modelled — design note given.
 
 Several gaps recorded in the first edition (price renegotiation, survey findings,
 down-valuations, gifted deposits, chains, funding shortfalls, completion-day failures)
-have since been closed by the **issues layer** — see `docs/engine-issues.md`.
+have since been closed by the **issues layer** — see `docs/engine-issues.md`. The conditions
+*inside* each sub-flow, and how far each is modelled, are in `docs/conditions-register.md`.
 
 ## 1 · Transaction shapes
 
@@ -25,17 +26,17 @@ have since been closed by the **issues layer** — see `docs/engine-issues.md`.
 | Mortgage purchase | Offer must arrive, be checked (special conditions, retention, expiry) and be current at exchange; CML/UK Finance handbook duties to the lender; lender funds requested for completion | **built** | Offer sub-flow; expiry checked at extraction *and* by the deadline timer; withdrawal reopens the sub-flow and blocks exchange. |
 | Chain (dependent sale) | Exchange is simultaneous up and down the chain; target dates move constantly; a collapse above or below aborts | **built / outside** | Target dates re-planned with `set_target_dates`; collapse → `abandon_matter(chain_collapsed)`. The chain itself (who is ready) is not modelled — it is a coordination problem the handler runs by phone. |
 | No chain / first-time buyer | Faster; buyer often less experienced — more client questions | **built** | Client Q&A is guarded (component #5): only FAQ answers go out unreviewed. |
-| Two or more buyers | Each buyer needs ID/AML and source-of-funds; joint ownership advice (joint tenants / tenants in common) is a report-on-title point | **gap (partial)** | One ID sub-flow per matter today. Design: key `idCheck` by party (`state.idChecks[partyId]`) and gate `instruction` on *all* parties; the ID provider port already takes a party. Until then, the second buyer's report is filed as a second ID document and the handler notes it on the first decision. |
-| Company buyer / buy-to-let | Companies House checks, directors' ID, often lender special conditions; SDLT surcharge | **manual** (by policy) | `mark_manual_handling('company_buyer')` from the enrolment UI; extraction and searches still run. |
-| Gifted deposit | Gift letter, donor ID and source of funds, lender must be told | **gap** | Not modelled. Design: a `gift_declared` event with donor party → an ID sub-flow for the donor and a lender-notification note; the report on title drafter should cite it. |
-| Help to Buy ISA / Lifetime ISA | Bonus claim after exchange, before completion; funds arrive from the ISA provider | **gap** | Design: a third `fromRole` for `funds_requested` (`isa_provider`) and a wait with a short SLA. |
-| New build | Reservation, developer's pack, long-stop dates, incentives disclosed to lender, retention for snagging, first registration | **manual** (by policy) | Out of v1 scope (spec 2.7). The searches/title sub-flows still apply once instructed; the handler runs the developer side. |
-| Auction purchase | Legal pack pre-auction, exchange at the fall of the hammer, 28-day completion | **manual** | The order of events is inverted (exchange first). Not v1. |
-| Shared ownership / Right to Buy / lease | Leasehold | **manual** | `title_extracted` with tenure ≠ freehold → `manual_handling_required(leasehold_unsupported)` automatically. |
+| Two or more buyers | Each buyer needs ID/AML and source-of-funds; joint ownership advice (joint tenants / tenants in common) is a report-on-title point | **built** | Every client named at enrolment beyond the first gets an ID / AML check of their own (`partyChecks`); Instruction holds until each is resolved. Co-ownership basis is a client decision; tenants in common need the declaration of trust before completion. |
+| Company buyer / buy-to-let | Companies House checks, directors' ID, often lender special conditions; SDLT surcharge | **built (checklist)** | Enrolment shapes `company_buyer` / `buy_to_let`: a checklist issue from day one holds exchange. Directors and PSCs are not yet keyed as parties (see `docs/conditions-register.md`). |
+| Gifted deposit | Gift letter, donor ID and source of funds, lender must be told | **built** | A declared gift adds the donor as a party with their own ID / AML check, which holds proof-of-funds sign-off; a gift from a joint account adds both holders; sign-off tells the lender. |
+| Help to Buy ISA / Lifetime ISA | Bonus claim after exchange, before completion; funds arrive from the ISA provider | **built** | Shapes `lifetime_isa` / `help_to_buy_isa`: `isa_bonus` issue holds completion; `funds_requested` / `funds_received` from `isa_provider`. |
+| New build | Reservation, developer's pack, long-stop dates, incentives disclosed to lender, retention for snagging, first registration | **built (checklist)** | Shape `new_build`: the `new_build_pack` issue (warranty, planning, roads, CIL, completion on notice, the developer's deadline) holds exchange. |
+| Auction purchase | Legal pack pre-auction, exchange at the fall of the hammer, 28-day completion | **built (checklist)** | Shape `auction`: `auction_conditions` issue; the client's exchange authority is not a step. |
+| Shared ownership / Right to Buy | Leasehold with a housing association landlord | **manual** | Leasehold itself is built (`leasehold_purchase`: management pack, lease facts on the title decision, notice of assignment); shared ownership is not. |
 | Probate seller | Grant of probate must be seen before exchange; delays | **built (as enquiry)** | Raised as an enquiry to the seller's solicitor; the chase/escalate timers do the rest. |
 | Unrepresented seller | Extra care, ID of the seller, no undertakings possible | **manual** | Handler flags it; the machine's chase templates assume a solicitor on the other side. |
 | Internal counterparty (both sides in the firm) | Ethical wall; same event pair as an external exchange | **built** | Addendum 1. |
-| Related-party / transfer of equity | Not a purchase | **outside** | Not enrolled (enrolment policy). |
+| Related-party / transfer of equity | Not a purchase | **built** | Transaction type `transfer_of_equity` (see `docs/transaction-types.md`). |
 
 ## 2 · Instruction stage
 

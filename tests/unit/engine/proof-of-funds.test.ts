@@ -471,3 +471,48 @@ test('after sign-off: a price rise beyond the verified funds re-opens the questi
   assert.match(i.title, /exceeds the verified funds by £10,000/);
   assert.equal(i.gate, 'exchange');
 });
+
+test('joint accounts: a gift from a joint account makes both holders donors (both checked, both hold sign-off, both named to the lender); a non-buying joint holder of the client\'s account is a contributor too; a statement in two names with one undeclared is flagged and queried', async () => {
+  // Declaration rules.
+  const f = factsFromSubmission('r9', submission({
+    sources: [
+      { kind: 'savings', amountPennies: 4_500_000, description: 'Joint savings with my partner', bankName: 'Nationwide', accountHolder: 'P Shah & D Patel', jointHolderName: 'Dev Patel', evidenceDocumentIds: ['nw'] },
+      { kind: 'gift', amountPennies: 4_000_000, description: 'From my parents', evidenceDocumentIds: [], gift: { donorName: 'Anita Shah', donorRelationship: 'mother', repayable: false, donorAbroad: false, jointDonorName: 'Vikram Shah', donorEvidenceDocumentIds: ['parents'] } },
+    ],
+  }), null);
+  const v = evaluateProofOfFunds(f);
+  const codes = v.outcome === 'flag' ? v.flags.map((x) => x.code) : [];
+  assert.ok(codes.includes('POF_GIFT_JOINT_ACCOUNT') && codes.includes('POF_JOINT_HOLDER'), codes.join(','));
+
+  // Statement review: a two-name holder line where the second name was declared passes; where it was not, it is flagged and a query drafted.
+  const declared = reviewTransactions(f, [ev('nw', statement({ accountHolder: 'MR P SHAH & MR D PATEL' })), ev('parents', statement({ accountHolder: 'A SHAH AND V SHAH', closingBalancePennies: 4_000_000 }), null, { donorFor: 2 })], '2026-09-20T10:00:00Z');
+  assert.ok(!declared.flags.some((x) => x.code === 'JOINT_ACCOUNT_UNDECLARED' || x.code === 'HOLDER_MISMATCH'), declared.flags.map((x) => x.code).join(','));
+  const f2 = factsFromSubmission('r10', submission(), null);
+  const undeclared = reviewTransactions(f2, [ev('d-gift-letter', statement({ accountHolder: 'MRS A SHAH & MR V SHAH', closingBalancePennies: 4_000_000 }), null, { donorFor: 2 })], '2026-09-20T10:00:00Z');
+  const flag = undeclared.flags.find((x) => x.code === 'JOINT_ACCOUNT_UNDECLARED')!;
+  assert.match(flag.description, /MR V SHAH is not declared as a donor/);
+  assert.ok(undeclared.queries.some((q) => q.flagCode === 'JOINT_ACCOUNT_UNDECLARED' && /name the other account holder on the form as a joint donor/.test(q.question)));
+
+  // The machine: every contributor becomes a donor party; sign-off waits for each; the lender hears of both donors.
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  const req = await h.svc.requestProofOfFunds(TENANT, MATTER, USER, {});
+  const requestId = (req.events[0].payload as { requestId: string }).requestId;
+  let s = await h.svc.getState(TENANT, MATTER);
+  await h.svc.proofOfFundsSubmitted(TENANT, MATTER, requestId, submission({
+    sources: [
+      { kind: 'savings', amountPennies: 4_500_000, description: 'Joint savings with my partner', evidenceDocumentIds: ['d-nw-1'], jointHolderName: 'Dev Patel' },
+      { kind: 'gift', amountPennies: 4_000_000, description: 'From my parents', evidenceDocumentIds: [], gift: { donorName: 'Anita Shah', donorRelationship: 'mother', repayable: false, donorAbroad: false, jointDonorName: 'Vikram Shah', donorEvidenceDocumentIds: [] } },
+    ],
+  }), { 'd-nw-1': 'nationwide.pdf' });
+  s = await h.svc.getState(TENANT, MATTER);
+  const donors = Object.values(s.partyChecks).filter((pc) => pc.role === 'donor').map((pc) => pc.label).sort();
+  assert.deepEqual(donors, ['Anita Shah (donor)', 'Dev Patel (joint account holder, not buying)', 'Vikram Shah (donor, joint account with Anita Shah)']);
+  const d = pendingDecisions(s).find((x) => x.kind === 'proof_of_funds')!;
+  await assert.rejects(resolve(h, d.eventId, 'approve'), /Sign-off waits for the donor's ID \/ AML check: .*Vikram Shah/);
+  for (const pc of Object.values(s.partyChecks)) await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()), pc.party);
+  await resolve(h, d.eventId, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  const lender = openIssues(s).find((i) => i.kind === 'lender_approval')!;
+  assert.match(lender.title, /from Anita Shah, Vikram Shah \(joint account\)/);
+});

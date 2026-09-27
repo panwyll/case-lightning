@@ -88,6 +88,11 @@ export interface FundSource {
   description: string;
   accountHolder?: string | null;
   bankName?: string | null;
+  /**
+   * Someone else named on the account who is not buying: their share of the money is a third-party
+   * contribution, so they are identified and sign like a donor (LSAG 6.17.2.1 treats every contributor as the client).
+   */
+  jointHolderName?: string | null;
   /** Documents the client attached for this source (ids of rows in `document`). */
   evidenceDocumentIds: string[];
   gift?: {
@@ -97,6 +102,8 @@ export interface FundSource {
     /** A "gift" that must be repaid is a loan and the lender must know. */
     repayable: boolean;
     donorAbroad: boolean;
+    /** The gift comes from a joint account: the other holder owns the money too, so they are a donor in their own right. */
+    jointDonorName?: string | null;
     donorEvidenceDocumentIds: string[];
   } | null;
   overseas?: { country: string; alreadyInUk: boolean } | null;
@@ -133,7 +140,7 @@ export interface ProofOfFundsFacts {
   requiredPennies: number | null;
   totalDeclaredPennies: number;
   shortfallPennies: number | null;
-  sources: Array<{ kind: FundSourceKind; amountPennies: number; description: string; evidenceCount: number; gift: FundSource['gift']; overseas: FundSource['overseas'] }>;
+  sources: Array<{ kind: FundSourceKind; amountPennies: number; description: string; evidenceCount: number; gift: FundSource['gift']; overseas: FundSource['overseas']; jointHolderName?: string | null }>;
   giftedPennies: number;
   declarations: ProofOfFundsSubmission['declarations'];
   confidence: number;
@@ -155,7 +162,7 @@ export function factsFromSubmission(requestId: string, sub: ProofOfFundsSubmissi
     requiredPennies: required,
     totalDeclaredPennies: total,
     shortfallPennies: required != null ? Math.max(0, required - total) : null,
-    sources: sub.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, evidenceCount: s.evidenceDocumentIds.length + (s.gift?.donorEvidenceDocumentIds.length ?? 0), gift: s.gift ?? null, overseas: s.overseas ?? null })),
+    sources: sub.sources.map((s) => ({ kind: s.kind, amountPennies: s.amountPennies, description: s.description, evidenceCount: s.evidenceDocumentIds.length + (s.gift?.donorEvidenceDocumentIds.length ?? 0), gift: s.gift ?? null, overseas: s.overseas ?? null, jointHolderName: s.jointHolderName?.trim() || null })),
     giftedPennies: sub.sources.filter((s) => s.kind === 'gift').reduce((n, s) => n + s.amountPennies, 0),
     declarations: sub.declarations,
     // The client typed it; there is no extraction uncertainty. 1 unless the form is internally inconsistent.
@@ -191,9 +198,11 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts): Verdict {
         flags.push({ code: 'POF_GIFT', severity: 'medium', description: `Gifted deposit of ${gbp(s.amountPennies)} from ${g.donorName} (${g.donorRelationship}). Donor ID, a gift letter and the donor's statements are required, and the lender must be told.`, locator: where });
         if (g.repayable) flags.push({ code: 'POF_GIFT_REPAYABLE', severity: 'high', description: `The "gift" from ${g.donorName} is stated to be repayable: it is a loan, which the lender must approve and which may affect affordability.`, locator: where });
         if (g.donorAbroad) flags.push({ code: 'POF_GIFT_DONOR_ABROAD', severity: 'medium', description: `The donor (${g.donorName}) is outside the UK: identity and source of the donor's funds need extra care.`, locator: where });
+        if (g.jointDonorName?.trim()) flags.push({ code: 'POF_GIFT_JOINT_ACCOUNT', severity: 'medium', description: `The gift comes from an account ${g.donorName} holds jointly with ${g.jointDonorName.trim()}: the money is theirs too, so ${g.jointDonorName.trim()} is a donor in their own right — ID / AML check, the gift letter signed by both, and both named to the lender.`, locator: where });
         if (g.donorEvidenceDocumentIds.length === 0) flags.push({ code: 'POF_GIFT_NO_DONOR_EVIDENCE', severity: 'medium', description: `No donor documents (ID, gift letter, statements) attached for the gift from ${g.donorName}.`, locator: where });
       }
     }
+    if (s.kind !== 'gift' && s.jointHolderName) flags.push({ code: 'POF_JOINT_HOLDER', severity: 'medium', description: `${FUND_SOURCE_LABEL[s.kind]} of ${gbp(s.amountPennies)} sits in an account held jointly with ${s.jointHolderName}, who is not buying: their share is a third-party contribution — ID / AML check, a signed confirmation that they gift their share and claim no interest in the property, and the lender told.`, locator: where });
     if (HIGH_RISK_SOURCES.has(s.kind)) flags.push({ code: `POF_HIGH_RISK:${s.kind.toUpperCase()}`, severity: 'high', description: `${FUND_SOURCE_LABEL[s.kind]} (${gbp(s.amountPennies)}) is a higher-risk source under the firm's AML policy: enhanced due diligence questions apply.${s.kind === 'overseas' && s.overseas ? ` Country: ${s.overseas.country}; ${s.overseas.alreadyInUk ? 'already in a UK account' : 'not yet transferred to the UK'}.` : ''}`, locator: where });
     if (s.kind === 'loan') flags.push({ code: 'POF_LOAN', severity: 'high', description: `A loan of ${gbp(s.amountPennies)} forms part of the funds: the mortgage lender must be told and may decline.`, locator: where });
   });
@@ -356,6 +365,28 @@ const LOAN_RE = /\b(loan|lending|finance|klarna|clearpay|zopa|ratesetter|funding
 
 const days = (a: string, b: string): number => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
 const norm = (x: string | null | undefined): string => (x ?? '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+/** The people a printed account-holder line names: "MR A SMITH & MRS B SMITH", "A Smith and B Jones", "A Smith / B Jones". */
+export function holderNames(holder: string | null | undefined): string[] {
+  return (holder ?? '').split(/\s*(?:&|\/|\band\b|,)\s*/i).map((x) => x.trim()).filter((x) => x.length > 1);
+}
+const TITLE_RE = /^(mr|mrs|ms|miss|mx|dr|prof|sir|lady|lord|rev)$/;
+/**
+ * Is this one printed name the same person as one of the known parties? Surname AND first initial, so that the two
+ * holders of a family joint account ("MRS A SHAH & MR V SHAH" against a declared donor Anita Shah) are told apart —
+ * the loose surname match `looksLike` cannot, and a joint account is usually shared by people with the same surname.
+ */
+function samePerson(printed: string, known: string[]): boolean {
+  const toks = norm(printed).split(' ').filter((t) => t && !TITLE_RE.test(t));
+  if (toks.length === 0) return false;
+  const surname = toks[toks.length - 1];
+  const initial = toks.length > 1 ? toks[0][0] : null;
+  return known.some((k) => {
+    const kt = norm(k).split(' ').filter((t) => t && !TITLE_RE.test(t));
+    if (kt.length === 0) return false;
+    if (kt[kt.length - 1] !== surname) return false;
+    return initial == null || kt.length === 1 || kt[0][0] === initial;
+  });
+}
 /** Does a printed name look like one of the known parties (holder, declarant, donor, employer)? Loose surname match. */
 function looksLike(name: string | null | undefined, known: string[]): boolean {
   const n = norm(name);
@@ -392,7 +423,7 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
   const flags: Flag[] = [];
   const queries: DraftQuery[] = [];
   const statements: TransactionReview['statements'] = [];
-  const knownParties = [facts.declarantName, ...facts.sources.flatMap((s) => [s.gift?.donorName ?? '', ...(s.description ? [] : [])])].filter(Boolean);
+  const knownParties = [facts.declarantName, ...facts.sources.flatMap((s) => [s.gift?.donorName ?? '', s.gift?.jointDonorName ?? '', s.jointHolderName ?? ''])].filter(Boolean);
   const declaredEmployers = evidence.flatMap((e) => e.statement?.salaryCredits.map((c) => c.payer) ?? []);
   const push = (flag: Flag, q: DraftQuery | null) => {
     flags.push(flag);
@@ -410,12 +441,15 @@ export function reviewTransactions(facts: ProofOfFundsFacts, evidence: EvidenceD
     }
     const source = doc.sourceIndex != null ? facts.sources[doc.sourceIndex - 1] ?? null : null;
     const donor = doc.donorFor != null ? facts.sources[doc.donorFor - 1]?.gift ?? null : null;
-    const expectedHolders = donor ? [donor.donorName] : [facts.declarantName, source?.description ?? ''];
+    const expectedHolders = donor ? [donor.donorName, donor.jointDonorName ?? ''] : [facts.declarantName, source?.jointHolderName ?? '', source?.description ?? ''];
     const credits = st.transactions.filter((t) => t.amountPennies > 0);
     statements.push({ documentId: doc.id, fileName: doc.fileName, holder: st.accountHolder, bank: st.bankName, from: st.periodFrom, to: st.periodTo, transactions: st.transactions.length, credits: credits.length, closingPennies: st.closingBalancePennies, readable: true });
 
-    // Whose account is this?
-    if (st.accountHolder && !looksLike(st.accountHolder, expectedHolders.filter(Boolean))) {
+    // Whose account is this? A joint account names two people; the second is a contributor the client must have declared.
+    const undeclared = holderNames(st.accountHolder).filter((h) => !samePerson(h, [...expectedHolders, ...knownParties].filter(Boolean)));
+    if (holderNames(st.accountHolder).length > 1 && undeclared.length > 0 && looksLike(st.accountHolder, expectedHolders.filter(Boolean))) {
+      push({ code: 'JOINT_ACCOUNT_UNDECLARED', severity: 'high', description: `"${doc.fileName ?? doc.id}" is a joint account (${st.accountHolder}); ${undeclared.join(' and ')} ${undeclared.length === 1 ? 'is' : 'are'} not declared as ${donor ? 'a donor' : 'a joint holder'}. Their share of the money is a third-party contribution: ID / AML and a signed gift letter or no-interest confirmation are needed.`, locator: cite(doc, null) }, { key: `JOINT_ACCOUNT_UNDECLARED:${doc.id}`, flagCode: 'JOINT_ACCOUNT_UNDECLARED', documentId: doc.id, transaction: null, question: `The statement "${doc.fileName ?? ''}" is in the names of ${st.accountHolder}. Please name the other account holder on the form${donor ? ' as a joint donor' : ' as a joint account holder'}: they will need to give their ID and sign to confirm the money is a gift and they claim no interest in the property.` });
+    } else if (st.accountHolder && !looksLike(st.accountHolder, expectedHolders.filter(Boolean))) {
       push({ code: 'HOLDER_MISMATCH', severity: 'high', description: `"${doc.fileName ?? doc.id}" is in the name of ${st.accountHolder}, which does not match ${donor ? `the donor (${donor.donorName})` : `the client (${facts.declarantName})`}.`, locator: cite(doc, null) }, { key: `HOLDER_MISMATCH:${doc.id}`, flagCode: 'HOLDER_MISMATCH', documentId: doc.id, transaction: null, question: `The statement "${doc.fileName ?? ''}" is in the name of ${st.accountHolder}. Please explain whose account this is and how the money in it relates to your purchase.` });
     }
     // Coverage: period length, recency, gaps.
@@ -532,6 +566,9 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   OVERSEAS_CREDIT: 'Funds from outside the UK need the sending account\'s statement and an explanation of how the money was earned there; high-risk third countries call for enhanced due diligence.',
   LOAN_CREDIT: 'Borrowed money changes the affordability picture and must be declared to the mortgage lender; an undisclosed loan is a common reason an offer is withdrawn.',
   HOLDER_MISMATCH: 'A statement in someone else\'s name is that person\'s money until shown otherwise: their identity and source of funds are needed.',
+  JOINT_ACCOUNT_UNDECLARED: 'Money in a joint account belongs to both holders. The other holder is a contributor: they are identified like a donor, sign the gift letter (or confirm they claim no interest), and the lender is told.',
+  POF_GIFT_JOINT_ACCOUNT: 'Both holders of the donor\'s joint account are donors: an ID / AML check and the gift letter for each, and both named to the lender.',
+  POF_JOINT_HOLDER: 'A non-buying joint holder of the client\'s account is a third-party contributor: ID / AML check and a signed confirmation that their share is gifted and they claim no interest; the lender is told.',
   STATEMENT_STALE: 'Source of funds must be current at the point money is received; ask for statements up to date.',
   STATEMENT_UNREADABLE: 'An unreadable document is no evidence; get a legible copy or the bank\'s PDF.',
   BALANCE_SHORT: 'The money declared must be visible in the accounts shown; ask where the balance is.',

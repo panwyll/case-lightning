@@ -129,7 +129,7 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const balance = price - (advance ?? 0);
     const gift = c.flagged ? 4_000_000 : 0;
     const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Buyer', 'Three months of salary credits', `Closing balance £${((balance - gift) / 100).toLocaleString('en-GB')}`]) });
-    const donor = c.flagged ? await c.doc({ docType: 'BANK_STATEMENT', fileName: 'donor-statement.txt', facts: F.statement('Sandbox Donor', gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Donor', `Closing balance £${(gift / 100).toLocaleString('en-GB')}`]) }) : null;
+    const donor = c.flagged ? await c.doc({ docType: 'BANK_STATEMENT', fileName: 'donor-statement.txt', facts: F.statement('Sandbox Donor & Sandbox Donor Two', gift), body: F.body('Bank statement', ['Sandbox Savings Bank · Sandbox Donor & Sandbox Donor Two (joint account)', `Closing balance £${(gift / 100).toLocaleString('en-GB')}`]) }) : null;
     const letter = c.flagged ? await c.doc({ docType: 'GIFT_LETTER', fileName: 'gift-letter.txt', facts: { content: 'sandbox gift letter' }, body: F.body('Gift letter', ['I, Sandbox Donor, gift £40,000 to my child. Not repayable. No interest in the property.']) }) : null;
     await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, s.proofOfFunds.requestId, F.pofSubmission(price, advance, c.flagged, statement, donor, letter), { [statement]: 'savings-statement.txt', ...(donor ? { [donor]: 'donor-statement.txt' } : {}), ...(letter ? { [letter]: 'gift-letter.txt' } : {}) });
   }),
@@ -150,13 +150,15 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const sub = F.pofSubmission(price, advance, c.flagged, statement, null, null);
     await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt' });
   }),
-  step('donor_id', 'The gift donor\'s ID / AML result received', async (c) => {
+  step('donor_id', 'The gift donors\' ID / AML results received (the gift comes from a joint account: both holders are donors)', async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
-    const donor = Object.values(s.partyChecks).find((pc) => pc.role === 'donor');
-    if (!donor) throw new Error('The declared gift did not add the donor as a party.');
-    if (donor.status === 'not_started') await c.run({ type: 'request_id_check', provider: 'sandbox-id', party: donor.party });
-    const doc = await c.doc({ docType: 'ID_CHECK', fileName: 'id-check-result-donor.txt', facts: F.idClear(), body: F.body('ID / AML check result — donor', ['Subject: Sandbox Donor', 'Outcome: CLEAR']) });
-    await c.svc.idCheckResultReceived(c.tenantId, c.matterId, doc, donor.party);
+    const donors = Object.values(s.partyChecks).filter((pc) => pc.role === 'donor');
+    if (donors.length < 2) throw new Error(`The declared gift from a joint account should add both holders as donors; found ${donors.length}.`);
+    for (const donor of donors) {
+      if (donor.status === 'not_started') await c.run({ type: 'request_id_check', provider: 'sandbox-id', party: donor.party });
+      const doc = await c.doc({ docType: 'ID_CHECK', fileName: `id-check-result-${donor.party.replace(/^donor:/, '')}.txt`, facts: F.idClear(), body: F.body('ID / AML check result — donor', [`Subject: ${donor.label}`, 'Outcome: CLEAR']) });
+      await c.svc.idCheckResultReceived(c.tenantId, c.matterId, doc, donor.party);
+    }
   }, { flaggedOnly: true }),
   step('pof_signoff', 'Proof of funds signed off by a person', async (c) => { await c.resolve('proof_of_funds', 'approve', c.flagged ? 'Gift evidenced: donor ID, letter and statements on file; lender told.' : 'Savings evidenced over the period.'); }, { decision: 'proof_of_funds' }),
   step('pof_lender', 'The lender confirms the gifted deposit', async (c) => {

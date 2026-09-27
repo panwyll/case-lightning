@@ -33,10 +33,10 @@ interface Source {
   bankName: string;
   accountHolder: string;
   files: Array<{ id: string; fileName: string }>;
-  gift: { donorName: string; donorRelationship: string; donorAddress: string; repayable: boolean; donorAbroad: boolean; files: Array<{ id: string; fileName: string }> };
+  jointHolderName: string; gift: { donorName: string; donorRelationship: string; donorAddress: string; repayable: boolean; donorAbroad: boolean; jointDonorName: string; files: Array<{ id: string; fileName: string }> };
   overseas: { country: string; alreadyInUk: boolean };
 }
-const blank = (kind = 'savings'): Source => ({ kind, amount: '', description: '', bankName: '', accountHolder: '', files: [], gift: { donorName: '', donorRelationship: '', donorAddress: '', repayable: false, donorAbroad: false, files: [] }, overseas: { country: '', alreadyInUk: true } });
+const blank = (kind = 'savings'): Source => ({ kind, amount: '', description: '', bankName: '', accountHolder: '', jointHolderName: '', files: [], gift: { donorName: '', donorRelationship: '', donorAddress: '', repayable: false, donorAbroad: false, jointDonorName: '', files: [] }, overseas: { country: '', alreadyInUk: true } });
 const pennies = (s: string): number => Math.round(Number(String(s).replace(/[^0-9.]/g, '') || 0) * 100);
 const gbp = (p: number) => `£${(p / 100).toLocaleString('en-GB')}`;
 
@@ -91,7 +91,7 @@ export default function ProofOfFundsPage() {
         if (j.previous) {
           if (j.previous.purchasePricePennies) setPrice(String(j.previous.purchasePricePennies / 100));
           if (j.previous.mortgageAdvancePennies) setMortgage(String(j.previous.mortgageAdvancePennies / 100));
-          setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null }>).map((s) => ({ ...blank(s.kind), amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
+          setSources((j.previous.sources as Array<{ kind: string; amountPennies: number; description: string; bankName?: string | null; accountHolder?: string | null; jointHolderName?: string | null; files?: Array<{ id: string; fileName: string }>; gift: { donorName: string; donorRelationship: string; donorAddress?: string | null; repayable: boolean; donorAbroad: boolean; jointDonorName?: string | null; files?: Array<{ id: string; fileName: string }> } | null; overseas: { country: string; alreadyInUk: boolean } | null }>).map((s) => ({ ...blank(s.kind), amount: String(s.amountPennies / 100), description: s.description, bankName: s.bankName ?? '', accountHolder: s.accountHolder ?? '', jointHolderName: s.jointHolderName ?? '', files: s.files ?? [], gift: s.gift ? { donorName: s.gift.donorName, donorRelationship: s.gift.donorRelationship, donorAddress: s.gift.donorAddress ?? '', repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName ?? '', files: s.gift.files ?? [] } : blank().gift, overseas: s.overseas ?? blank().overseas })));
         }
       }
     }).catch(() => setCtx({ status: 'unknown' }));
@@ -158,7 +158,8 @@ export default function ProofOfFundsPage() {
           bankName: s.bankName.trim() || null,
           accountHolder: s.accountHolder.trim() || null,
           evidenceDocumentIds: s.files.map((f) => f.id),
-          gift: s.kind === 'gift' ? { donorName: s.gift.donorName.trim(), donorRelationship: s.gift.donorRelationship.trim(), donorAddress: s.gift.donorAddress.trim() || null, repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, donorEvidenceDocumentIds: s.gift.files.map((f) => f.id) } : null,
+          gift: s.kind === 'gift' ? { donorName: s.gift.donorName.trim(), donorRelationship: s.gift.donorRelationship.trim(), donorAddress: s.gift.donorAddress.trim() || null, repayable: s.gift.repayable, donorAbroad: s.gift.donorAbroad, jointDonorName: s.gift.jointDonorName.trim() || null, donorEvidenceDocumentIds: s.gift.files.map((f) => f.id) } : null,
+          jointHolderName: s.kind !== 'gift' && s.kind !== 'mortgage' ? s.jointHolderName.trim() || null : null,
           overseas: s.kind === 'overseas' ? { country: s.overseas.country.trim(), alreadyInUk: s.overseas.alreadyInUk } : null,
         })),
         declarations: dec,
@@ -246,6 +247,13 @@ export default function ProofOfFundsPage() {
                 <div><label htmlFor={`pf-holder-${i}`}>Account holder</label><input id={`pf-holder-${i}`} type="text" value={s.accountHolder} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, accountHolder: e.target.value } : x)))} /></div>
               </div>
             )}
+            {s.kind !== 'gift' && s.kind !== 'mortgage' && (
+              <>
+                <label htmlFor={`pf-joint-${i}`}>Anyone else named on this account who is not buying with you</label>
+                <input id={`pf-joint-${i}`} type="text" value={s.jointHolderName} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, jointHolderName: e.target.value } : x)))} placeholder="Leave blank if the account is yours alone or shared only with a co-buyer" />
+                <div className="hint">Their share of the money counts as a gift to you: they will be asked for ID and to sign to say so.</div>
+              </>
+            )}
             {k.gift && (
               <div style={{ marginTop: 6, padding: 10, background: '#f8fafc', borderRadius: 8 }}>
                 <div className="row">
@@ -254,6 +262,9 @@ export default function ProofOfFundsPage() {
                 </div>
                 <label htmlFor={`pf-daddr-${i}`}>Their address</label><input id={`pf-daddr-${i}`} type="text" value={s.gift.donorAddress} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, donorAddress: e.target.value } } : x)))} />
                 <div className="chk"><input id={`pf-repay-${i}`} type="checkbox" checked={s.gift.repayable} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, repayable: e.target.checked } } : x)))} /><label htmlFor={`pf-repay-${i}`} style={{ margin: 0, fontWeight: 400 }}>I will have to pay this money back</label></div>
+                <label htmlFor={`pf-jdonor-${i}`}>Is the account the gift comes from in joint names? Name the other account holder</label>
+                <input id={`pf-jdonor-${i}`} type="text" value={s.gift.jointDonorName} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, jointDonorName: e.target.value } } : x)))} placeholder="e.g. my father, if the gift comes from my parents' joint account" />
+                <div className="hint">Both account holders are giving the money, so both will be asked for ID and to sign the gift letter.</div>
                 <div className="chk"><input id={`pf-abroad-${i}`} type="checkbox" checked={s.gift.donorAbroad} onChange={(e) => setSources((ss) => ss.map((x, k2) => (k2 === i ? { ...x, gift: { ...x.gift, donorAbroad: e.target.checked } } : x)))} /><label htmlFor={`pf-abroad-${i}`} style={{ margin: 0, fontWeight: 400 }}>They live outside the UK</label></div>
                 <label>Documents from the person giving it (ID, gift letter, their statements)</label>
                 <input type="file" multiple accept="application/pdf,image/*" onChange={(e) => void attach(i, e.target.files, true)} disabled={busy} />
