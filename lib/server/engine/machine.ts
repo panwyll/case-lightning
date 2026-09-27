@@ -392,6 +392,8 @@ export function stageBlockers(s: MatterState): string[] {
       if (!s.completion.confirmedAt) {
         b.push(...issueBlockers(s, 'completion'));
         if (!s.deeds.transferDeedAt) b.push('transfer deed not executed');
+        if (s.parties > 1 && !s.clientDecisions.ownership_basis) b.push('basis of co-ownership not yet decided by the clients');
+        if (deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) b.push('declaration of trust not executed (tenants in common)');
         if (s.hasLender && !s.deeds.mortgageDeedAt) b.push('mortgage deed not executed');
         if (s.hasLender && !s.deeds.certificateOfTitleAt) b.push('certificate of title not sent');
         if (s.hasLender && !(s.completion.receivedFrom ?? []).includes('lender')) b.push('mortgage advance not received');
@@ -402,7 +404,8 @@ export function stageBlockers(s: MatterState): string[] {
       }
       break;
     case 'completed':
-      if (!s.postCompletion.sdltSubmittedAt && !s.postCompletion.ap1SubmittedAt) b.push('SDLT / AP1 not submitted');
+      if (!s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) b.push('SDLT return not filed (or recorded as not required)');
+      if (!s.postCompletion.ap1SubmittedAt) b.push('AP1 not submitted');
       break;
     case 'post_completion':
       if (s.postCompletion.requisitions.some((r) => !r.respondedAt)) b.push('HMLR requisition outstanding');
@@ -452,6 +455,7 @@ function saleBlockers(s: MatterState): string[] {
     case 'pre_completion':
       if (!s.completion.confirmedAt) {
         b.push(...issueBlockers(s, 'completion'));
+        if (!s.deeds.transferDeedAt) b.push('transfer deed not executed by the seller');
         if (!s.completion.fundsReceivedAt) b.push("completion monies not received from the buyer's solicitor");
         if (s.hasExistingMortgage && !s.payments.some((x) => x.payeeKind === 'lender')) b.push('redemption payment not authorised against verified lender details');
         if (pendingBankDetailsDecision(s, 'lender')) b.push('lender bank-details change awaiting out-of-band verification (hard stop)');
@@ -968,6 +972,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (profile(s).side !== 'buyer') {
         const p = profile(s);
         const remo = p.type === 'remortgage';
+        if (p.side === 'seller' && !s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed by the seller.');
         if (p.side === 'seller' && !s.completion.fundsReceivedAt) reject("Completion monies have not been received from the buyer's solicitor.");
         if (remo && !s.completion.fundsReceivedAt) reject('The advance has not been received from the lender.');
         if (remo && (!s.deeds.mortgageDeedAt || !s.deeds.certificateOfTitleAt)) reject('The mortgage deed must be executed and the certificate of title sent before completion.');
@@ -988,6 +993,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.deeds.transferDeedAt) reject('The transfer deed (TR1) has not been executed.');
       if (s.hasLender && !s.deeds.mortgageDeedAt) reject('The mortgage deed has not been executed (witnessed).');
       if (s.hasLender && !s.deeds.certificateOfTitleAt) reject('The certificate of title has not been sent to the lender; the advance is released against it.');
+      // Co-owners: how they hold is their decision, recorded before completion; tenants in common execute the declaration of trust.
+      if (s.parties > 1 && !s.clientDecisions.ownership_basis) reject('The clients have not decided how they hold (joint tenants or tenants in common); record the ownership_basis decision before completion.');
+      if (deedOfTrustApplies(s) && !s.deeds.deedOfTrustAt) reject('The clients hold as tenants in common: the declaration of trust must be executed before completion.');
       // Then the money: the advance from the lender where there is one, and the client's balance (an ISA bonus counts as the client's).
       const from = s.completion.receivedFrom ?? [];
       if (!s.completion.fundsReceivedAt) reject('Funds have not been received.');
@@ -1018,6 +1026,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStageAtLeast(s, 'completed', 'AP1 submission');
       if (profile(s).registration !== 'ap1') reject(`No application to register on a ${profile(s).label.toLowerCase()} — the buyer's solicitor registers; we discharge.`);
       if (s.postCompletion.ap1SubmittedAt) reject('AP1 already submitted.');
+      // HM Land Registry needs the SDLT5 (or a return that was not required) with the application.
+      if (!s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) reject('The SDLT return has not been filed, nor recorded as not required; HM Land Registry needs the SDLT5 with the AP1.');
       return [{ type: 'ap1_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
     }
     case 'ap1_confirmed': {
@@ -1581,7 +1591,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     }
     case 'transfer_deed_executed': {
       requireEnrolled(s);
-      requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase'], 'A transfer deed');
+      requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase', 'freehold_sale', 'leasehold_sale'], 'A transfer deed');
       if (s.deeds.transferDeedAt) reject('The transfer deed is already executed.');
       if (cmd.witnessed === false) reject('A transfer deed must be witnessed.', 400);
       if (!cmd.parties.length) reject('Name the parties who signed.', 400);

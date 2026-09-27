@@ -120,6 +120,9 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   // Money comes from the buyer's solicitor, not from a request of ours.
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'funds_requested', actor: USER, fromRole: 'client', bankDetailsId: 'x' }), /does not apply to a freehold sale/);
   await h.svc.run(TENANT, MATTER, { type: 'funds_received', actor: USER, fromRole: 'buyer_solicitor', amountPennies: 42_500_000 });
+  // The seller's executed TR1 is held before completion.
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /transfer deed \(TR1\) has not been executed by the seller/);
+  await h.svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Ms Client'] });
   // Completion cannot be confirmed until the redemption payment is authorised against verified lender details.
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'completion_confirmed', actor: USER }), /No authorised redemption payment/);
   const lenderDetails = await verifiedDetails(h, 'lender', '22223333', 'Big Bank plc');

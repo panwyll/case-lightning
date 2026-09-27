@@ -65,6 +65,7 @@ export const WORK_CSS = `
 .ep-box-h:hover{background:#fafafa}
 .ep-box-t{display:flex;align-items:flex-start;gap:8px;font-size:13px;font-weight:700;line-height:1.3;color:#0f172a}
 .ep-box-t .ic{flex-shrink:0;display:flex;margin-top:1px}
+.ep-holds{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#7c3aed;background:#f3efff;border:1px solid #ddd6fe;border-radius:999px;padding:1px 7px;white-space:nowrap}
 .ep-box-m{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11.5px;font-weight:600;white-space:nowrap}
 .ep-box-m .n{color:#64748b;font-variant-numeric:tabular-nums;font-weight:600}
 .ep-bar{height:4px;border-radius:99px;background:#eef1f5;overflow:hidden}
@@ -212,7 +213,7 @@ const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.
 /** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
 const PERSON: Array<[RegExp, 'conveyancer' | 'client']> = [[/^Contract approved/, 'conveyancer'], [/^Client's authority/, 'client'], [/^Exchange$/, 'conveyancer'], [/^Report on title/, 'conveyancer'], [/^Proof of funds/, 'conveyancer'], [/^Mortgage deed/, 'client'], [/^Certificate of title/, 'conveyancer'], [/^Completion payment/, 'conveyancer'], [/^Balance to the client/, 'conveyancer'], [/^Payment to the lender/, 'conveyancer'], [/^AP1/, 'conveyancer'], [/^SDLT/, 'conveyancer'], [/^Transfer deed/, 'client'], [/^Declaration of trust/, 'client'], [/^How they hold/, 'client'], [/^Forms/, 'client'], [/^Completion$/, 'conveyancer']];
 const personFor = (label: string) => PERSON.find(([re]) => re.test(label))?.[1] ?? null;
-export interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** a map, not a case: no state label, no progress bar, no status pills */ plain?: boolean; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
+export interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** a map, not a case: no state label, no progress bar, no status pills */ plain?: boolean; /** the gate this box holds when it is not the exit of its own band, e.g. 'Holds Exchange' */ holds?: string; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
@@ -241,7 +242,7 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}</span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <span className="ep-holds" title="What this box holds: the rest of its band carries on without it">{lane.holds}</span>}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
@@ -561,7 +562,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const qs = Object.values(pof?.queries ?? {}).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
     const open = qs.filter((q) => q.status === 'draft' || q.status === 'sent');
     const QCHIP: Record<string, { bg: string; fg: string }> = { draft: { bg: '#fef3c7', fg: '#78350f' }, sent: { bg: '#e0e7ff', fg: '#3730a3' }, answered: { bg: '#dcfce7', fg: '#14532d' }, withdrawn: { bg: '#f1f5f9', fg: '#94a3b8' } };
-    lane({ id: 'source_of_funds', title: 'Source of funds', state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
+    lane({ id: 'source_of_funds', title: 'Source of funds', holds: s.requireProofOfFunds ? 'Holds Exchange' : undefined, state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
       tiles: [
         { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'flagged' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
         ...(qs.length ? [{ label: 'Queries to the client', depth: 1 as const, focus: 'proof_of_funds_query', status: open.length ? 'raised' : 'replied', detail: `${qs.length} raised · ${open.length} open` }] : []),
@@ -670,7 +671,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {consent.status !== 'received' && consent.status !== 'not_applicable' && act('lender_consent', 'lender_consent_received', 'Consent Received')}
     </> });
 
-  if (has('co_ownership') && parties > 1) lane({ id: 'co_ownership', title: `Co-ownership · ${parties} clients`, state: !s.clientDecisions?.ownership_basis ? 'blocked' : tic && !deeds.deedOfTrustAt ? 'open' : 'done', note: "the clients' decision, advised separately where their interests differ",
+  if (has('co_ownership') && parties > 1) lane({ id: 'co_ownership', title: `Co-ownership · ${parties} clients`, holds: toe ? 'Holds Execution' : 'Holds Completion', state: !s.clientDecisions?.ownership_basis ? 'blocked' : tic && !deeds.deedOfTrustAt ? 'open' : 'done', note: "the clients' decision, advised separately where their interests differ",
     tiles: [
       { label: 'How they hold', status: s.clientDecisions?.ownership_basis ? 'done' : 'not_started', detail: s.clientDecisions?.ownership_basis ? `${pretty(s.clientDecisions.ownership_basis.decision)} · ${fmtDay(s.clientDecisions.ownership_basis.at)}${s.clientDecisions.ownership_basis.note ? ` · ${s.clientDecisions.ownership_basis.note}` : ''}` : undefined },
       ...(tic ? [{ label: 'Declaration of trust', status: deeds.deedOfTrustAt ? 'done' : 'not_started', detail: deeds.deedOfTrustAt ? `executed ${fmtDay(deeds.deedOfTrustAt)}` : undefined }] : []),
@@ -682,7 +683,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {tic && !deeds.deedOfTrustAt && act('co_ownership', 'deed_of_trust_executed', 'Declaration of Trust Executed', {}, { primary: true })}
     </> });
 
-  if (has('survey') && s.survey && s.survey.status !== 'not_started') lane({ id: 'survey', title: 'Survey / physical condition', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
+  if (has('survey') && s.survey && s.survey.status !== 'not_started') lane({ id: 'survey', title: 'Survey / physical condition', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
     tiles: [{ label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
     actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
       {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: true, disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
@@ -721,7 +722,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('New contractual completion date (YYYY-MM-DD):', s.exchange.completionDate ?? ''); if (d) { const r = ask('Reason?'); if (r) void cmd({ type: 'change_completion_date', completionDate: d, reason: r }); } }}>Change completion date</button>}
     </> });
 
-  if (toe || buyer) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', state: deeds.transferDeedAt ? 'done' : toe && s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'usually signed with the contract' : 'every party signs, witnessed',
+  if (toe || buyer || seller) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', holds: 'Holds Completion', state: deeds.transferDeedAt ? 'done' : s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'usually signed with the contract' : seller ? 'signed by the seller, witnessed, held undated until completion' : 'every party signs, witnessed',
     tiles: [{ label: 'Transfer deed', status: deeds.transferDeedAt ? 'done' : 'not_started', detail: deeds.transferDeedAt ? `executed ${fmtDay(deeds.transferDeedAt)}` : undefined }],
     actions: !deeds.transferDeedAt && !completed ? act('transfer_deed', 'transfer_deed_executed', 'Transfer Deed Executed', { witnessed: true }, { primary: toe }) : null });
 

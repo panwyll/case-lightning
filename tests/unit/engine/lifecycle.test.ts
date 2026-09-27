@@ -137,9 +137,12 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   assert.equal(r.state.stage, 'completed');
 
   // ── post_completion ──
+  // HMLR needs the SDLT5 with the AP1: the return first, and the stage moves only when both are lodged.
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-1' }), /SDLT return has not been filed/);
   r = await svc.run(TENANT, MATTER, { type: 'sdlt_submitted', actor: USER, reference: 'SDLT-1' });
+  assert.equal(r.state.stage, 'completed');
+  r = await svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-1' });
   assert.equal(r.state.stage, 'post_completion');
-  await svc.run(TENANT, MATTER, { type: 'ap1_submitted', actor: USER, reference: 'AP1-1' });
   r = await svc.run(TENANT, MATTER, { type: 'ap1_confirmed', actor: USER });
   assert.ok(r.state.postCompletion.ap1ConfirmedAt);
   assert.deepEqual(stageBlockers(r.state), ['matter complete']);
