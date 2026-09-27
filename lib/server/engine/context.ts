@@ -648,10 +648,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const det = (pr?.detail ?? {}) as Record<string, unknown>;
     const w = det.waitKey ? openWaits(s).find((ww) => ww.key === det.waitKey && (!det.subject || ww.subject === det.subject)) : null;
     return [
-      item('Is this the right recipient and the right moment', 'open', [
-        { text: d.summary.split('\n').filter(Boolean).slice(0, 3).join(' · ') },
-        ...(w ? [{ text: `Outstanding since ${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}` }] : []),
-      ]),
+      // The message itself is shown above the checks (the API renders it exactly as it would go); the check carries only the timing.
+      item('Is this the right recipient and the right moment', 'open', w ? [{ text: `Outstanding since ${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}` }] : []),
       item('Does anything on the case make this unwise today', openIssues(s).length ? 'flag' : 'ok', openIssues(s).slice(0, 4).map((i) => ({ text: `Open issue: ${i.title}`, warn: true }))),
     ];
   }

@@ -88,6 +88,13 @@ const CSS = `
 .dp-passed ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:3px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
 .dp-passed li{font-size:12.5px;color:#475569}
 .dp-passed li::before{content:'✓ ';color:#15803d;font-weight:800}
+.dp-msg{margin-top:12px;border:1px solid #e6e8ee;border-radius:12px;background:#fff;padding:12px 14px}
+.dp-msg.warn{border-color:#fbbf24;background:#fffbeb}
+.dp-msg .h{font-size:13px;font-weight:700;color:#0f172a}
+.dp-msg .s{margin-top:8px;font-size:13.5px;font-weight:700;color:#0f172a}
+.dp-msg .b{margin:6px 0 0;font:inherit;font-size:13.5px;line-height:1.55;color:#0f172a;white-space:pre-wrap}
+.dp-msg p{margin:6px 0 0;font-size:13px;color:#475569}
+.dp-msg p.warn{color:#92400e}
 .dp-narr{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:4px}
 .dp-narr li{font-size:13.5px;line-height:1.5;color:#0f172a;display:flex;gap:8px;align-items:baseline;white-space:pre-wrap}
 .dp-narr li.warn{color:#92400e}
@@ -228,7 +235,11 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const isBank = d?.kind === 'bank_details';
   const noteLines = detail?.noteActions ?? null;
   const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
-  const optionLabel = (o: string) => (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
+  const msg = detail?.message ?? null;
+  const optionLabel = (o: string) => {
+    if (d?.kind === 'proposal' && msg && o === 'approve') return msg.kind === 'action' ? 'Go Ahead' : msg.kind === 'form' ? 'Send the Form' : msg.channel === 'draft' ? 'Draft It in Outlook' : 'Send';
+    return (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
+  };
   const parsed = useMemo(() => (d ? parseSummary(d.summary) : { intro: [], points: [], rest: [] }), [d]);
   const [ticked, setTicked] = useState<Set<number>>(new Set());
   const toggleTick = (i: number) => setTicked((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
@@ -435,6 +446,23 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           </div>
 
           {inline && ctx?.submitted && <p className="dp-sub" style={{ marginTop: 0 }}>{ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p>}
+          {msg && (
+            <div className={`dp-msg${msg.kind !== 'action' && msg.channel === 'none' ? ' warn' : ''}`} aria-label="What would be sent">
+              {msg.kind === 'action' ? (
+                <>
+                  <div className="h">{msg.title}</div>
+                  {msg.lines.map((l, i) => <p key={i}>{l}</p>)}
+                </>
+              ) : (
+                <>
+                  <div className="h">{msg.kind === 'form' ? 'The proof-of-funds form goes to' : msg.channel === 'whatsapp' ? 'WhatsApp to' : msg.channel === 'draft' ? 'Email drafted in Outlook to' : 'Email to'} {msg.to}</div>
+                  {msg.channel === 'none' && <p className="warn">There is no address for them on the case, so this cannot go until one is added.</p>}
+                  <div className="s">{msg.subject}</div>
+                  <pre className="b">{msg.body}</pre>
+                </>
+              )}
+            </div>
+          )}
           {narrative.length > 0 && renderLines(narrative)}
           {files.length > 0 && (
             <div className="dp-files" aria-label="Documents read">

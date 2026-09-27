@@ -365,6 +365,9 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
   );
 }
 
+/** Who a wait is chased with, as a conveyancer would say it. */
+const WAIT_PARTY: Record<string, string> = { client: 'the client', seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", other_side: 'the other side', lender: 'the lender', search_provider: 'the search provider', estate_agent: 'the estate agent', freeholder: 'the freeholder / managing agent', hmlr: 'HM Land Registry' };
+
 /** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
 /** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the contract pack asked for at enrolment, the offer, the survey), not when the tier before is done. */
 const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[] }> = [
@@ -879,20 +882,27 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
       {openWaits.length > 0 && (
         <>
-          <div className="ep-sec">Waiting ({openWaits.length})</div>
+          <div className="ep-sec">Waiting On Others ({openWaits.length})</div>
           <div className="ep-grid">
-            {openWaits.map((w) => (
-              <div key={`${w.key}:${w.subject}`} className="ep-tile">
-                <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}</b>
-                <span className="d">since {fmtDay(w.openedAt)} ({daysAgo(w.openedAt)}d){w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}×` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
-                {w.chase ? (
-                  <span className="d" style={{ color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
-                    {w.chase.dueInWorkingDays > 0 ? `Chasing ${w.chase.recipientRole.replace(/_/g, ' ')} in ${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'} (${fmtDay(w.chase.dueDate)})` : `Chase to ${w.chase.recipientRole.replace(/_/g, ' ')} due now`}
-                  </span>
-                ) : <span className="d">No further chase scheduled</span>}
-                <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy || !w.chase} onClick={() => cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null })}>Send Now</button></div>
-              </div>
-            ))}
+            {openWaits.map((w) => {
+              const who = w.chase ? (WAIT_PARTY[w.chase.recipientRole] ?? w.chase.recipientRole.replace(/_/g, ' ')) : null;
+              const proposes = (view.levels?.chase ?? 'propose') === 'propose';
+              const chased = w.chasesSentAt.length;
+              return (
+                <div key={`${w.key}:${w.subject}`} className="ep-tile">
+                  <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}{who ? <span style={{ fontWeight: 500, color: '#64748b' }}> from {who}</span> : null}</b>
+                  <span className="d">Asked {fmtDay(w.openedAt)}{chased ? ` · chased ${chased === 1 ? 'once' : `${chased} times`}` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
+                  {w.chase ? (
+                    <span className="d" style={{ color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
+                      {w.chase.dueInWorkingDays > 0
+                        ? `${proposes ? 'A chase is proposed to you' : 'The engine chases them'} on ${fmtDay(w.chase.dueDate)} (${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'})`
+                        : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
+                    </span>
+                  ) : <span className="d">No further chase scheduled</span>}
+                  <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy || !w.chase} onClick={() => cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null })}>Chase Now Instead</button></div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}

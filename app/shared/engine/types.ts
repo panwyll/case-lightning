@@ -70,7 +70,15 @@ export interface TaskContextView {
   unblocks: string | null;
 }
 
+/** What a proposal would actually do: the exact message and recipient, the form, or the order. */
+export type ProposalPreview =
+  | { kind: 'message'; to: string; address: string | null; channel: 'whatsapp' | 'email' | 'draft' | 'none'; subject: string; body: string }
+  | { kind: 'form'; to: string; address: string | null; channel: 'whatsapp' | 'email' | 'draft' | 'none'; subject: string; body: string; note: string | null }
+  | { kind: 'action'; title: string; lines: string[] };
+
 export interface DecisionDetail {
+  /** For a proposal: what it would actually send or do, exactly. */
+  message?: ProposalPreview | null;
   /** What a person needs to take this decision from cold (lib/server/engine/context.ts). */
   context: TaskContextView | null;
   decision: DecisionRow;

@@ -11,6 +11,7 @@ import { ISSUE_KIND_SPEC } from '@/lib/server/engine/issues';
 import { taskContext } from '@/lib/server/engine/context';
 import { loadCrossChecks } from '@/lib/server/engine/crosscheck-run';
 import { offeredOptions } from '@/lib/server/engine/rules';
+import { previewProposal } from '@/lib/server/comms/preview';
 
 type MatterRow = { matter_ref: string; property_address: string; shadow_mode: boolean | null; buyer_names: string[] | null; seller_names: string[] | null; purchase_price: string | null; lender: string | null; counterparty_solicitor: string | null; counterparty_agent: string | null; exchange_target_date: string | null; completion_target_date: string | null };
 
@@ -95,9 +96,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     const context = live
       ? taskContext({ state: stateForContext, events, target: { kind: 'decision', decision: live }, review, statementFacts, crosschecks, matter: { matterRef: matter?.matter_ref ?? null, propertyAddress: matter?.property_address ?? null, buyerNames: matter?.buyer_names, sellerNames: matter?.seller_names, purchasePrice: matter?.purchase_price, lender: matter?.lender, counterpartySolicitor: matter?.counterparty_solicitor, counterpartyAgent: matter?.counterparty_agent, exchangeTargetDate: matter?.exchange_target_date, completionTargetDate: matter?.completion_target_date } })
       : null;
+    // A proposal is decided on what it would actually send or do: the exact message, form or order.
+    let message = null as Awaited<ReturnType<typeof previewProposal>>;
+    if (d.kind === 'proposal') {
+      const pr = Object.values(stateForContext.proposals).find((x) => x.eventId === eventId) ?? null;
+      if (pr) message = await previewProposal(user.tenantId, d.matterId, pr.action, (pr.detail ?? {}) as Record<string, unknown>).catch(() => null);
+    }
     return ok({
       context,
       noteActions,
+      message,
       decision: { ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId) },
       matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, shadowMode: !!matter.shadow_mode } : null,
       raised: raised ? { seq: raised.seq, type: raised.type, actor: raised.actor, createdAt: raised.createdAt, confidenceScore: raised.confidenceScore } : null,

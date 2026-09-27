@@ -73,6 +73,13 @@ async function resolveTemplate(deps: CommsDeps, tenantId: string, t: Template): 
   return o ? { ...t, subject: o.subject || t.subject, body: o.body || t.body } : t;
 }
 
+/** A message exactly as it would go: who it is addressed to, on which channel, with the subject and body. Nothing sent, nothing logged. */
+export interface MessagePreview { to: string; address: string | null; channel: 'whatsapp' | 'email' | 'draft' | 'none'; subject: string; body: string }
+
+const clientAddress = (info: MatterContactInfo): { address: string | null; channel: MessagePreview['channel'] } =>
+  info.clientPhone && info.clientWhatsAppOptIn ? { address: info.clientPhone, channel: 'whatsapp' } : info.clientEmail ? { address: info.clientEmail, channel: 'email' } : { address: null, channel: 'none' };
+const clientLine = (info: MatterContactInfo): string => `${info.clientFirstName ? `${info.clientFirstName} (the client)` : 'the client'}${clientAddress(info).address ? ` · ${clientAddress(info).address}` : ' · no address on the case'}`;
+
 export class ProductionClientComms implements ClientComms {
   readonly name = 'client-comms';
   constructor(private deps: CommsDeps) {}
@@ -80,7 +87,10 @@ export class ProductionClientComms implements ClientComms {
   private vars(info: MatterContactInfo, context: Record<string, unknown>): Record<string, string> {
     const payload = (context.payload ?? {}) as Record<string, unknown>;
     const searchType = typeof payload.searchType === 'string' ? payload.searchType : '';
+    // Every string the engine put in the context is a variable (a progress update's done / doneLine / status / next / targetNote); the named ones below take precedence.
+    const fromContext = Object.fromEntries(Object.entries(context).filter(([, v]) => typeof v === 'string')) as Record<string, string>;
     return {
+      ...fromContext,
       firstName: info.clientFirstName ?? 'there',
       property: info.propertyAddress,
       firmName: info.firmName,
@@ -123,6 +133,16 @@ export class ProductionClientComms implements ClientComms {
     throw new Error('No client channel available (no opted-in WhatsApp number, no email address, or no sender configured).');
   }
 
+  /** The status update exactly as sendStatusUpdate would send it. */
+  async previewStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }): Promise<MessagePreview> {
+    const base = CLIENT_UPDATES[input.template];
+    if (!base) throw new Error(`Unknown client update template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, base);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const r = render(t, this.vars(info, input.context));
+    return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: r.body };
+  }
+
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }) {
     const base = CLIENT_UPDATES[input.template];
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
@@ -156,15 +176,10 @@ export class ProductionChaser implements ThirdPartyChaser {
   readonly name = 'chaser';
   constructor(private deps: CommsDeps) {}
 
-  async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown> }) {
-    const baseChase = CHASES[input.template];
-    if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
-    const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
-    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
-    const ctx = input.context;
+  private chaseVars(info: MatterContactInfo, ctx: Record<string, unknown>): Record<string, string> {
     const subject = typeof ctx.subject === 'string' ? ctx.subject : '';
     const prior = Number(ctx.priorChases ?? 0);
-    const vars = {
+    return {
       matterRef: info.matterRef,
       address: info.propertyAddress,
       property: info.propertyAddress,
@@ -177,7 +192,43 @@ export class ProductionChaser implements ThirdPartyChaser {
       priorChaseNote: prior > 0 ? ` and despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
       completionDate: info.completionDate ?? '',
     };
-    const r = render(t, vars);
+  }
+
+  /** Who a chase to this role goes to, as a line for a person, with the address the send would use. */
+  private recipient(info: MatterContactInfo, role: string): { to: string; address: string | null; channel: MessagePreview['channel'] } {
+    if (role === 'client' || role === 'id_provider') return { to: clientLine(info), ...clientAddress(info) };
+    const key = role === 'seller_solicitor' ? 'seller_solicitor' : role === 'lender' ? 'lender' : null;
+    const c = key ? info.contacts[key] : null;
+    const label = role.replace(/_/g, ' ');
+    if (!c?.email) return { to: `the ${label} · no address on the case`, address: null, channel: 'none' };
+    return { to: `${c.name ? `${c.name} (${label})` : `the ${label}`} · ${c.email}`, address: c.email, channel: this.deps.chaseMode === 'send' ? 'email' : 'draft' };
+  }
+
+  /** The chase exactly as sendChase would send it. */
+  async previewChase(input: { tenantId: string; matterId: string; recipientRole: string; template: string; context: Record<string, unknown> }): Promise<MessagePreview> {
+    const baseChase = CHASES[input.template];
+    if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const r = render(t, this.chaseVars(info, input.context));
+    return { ...this.recipient(info, input.recipientRole), subject: r.subject, body: r.body };
+  }
+
+  /** The acknowledgement exactly as sendAcknowledgement would send it. */
+  async previewAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: string; what: string }): Promise<MessagePreview> {
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what };
+    const r = render(await resolveTemplate(this.deps, input.tenantId, input.recipientRole === 'client' ? ACKS.ack_client : ACKS.ack_counterparty), vars);
+    const who = this.recipient(info, input.recipientRole === 'client' ? 'client' : 'seller_solicitor');
+    return { ...who, channel: who.channel === 'draft' ? 'email' : who.channel, subject: r.subject, body: r.body };
+  }
+
+  async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown> }) {
+    const baseChase = CHASES[input.template];
+    if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const r = render(t, this.chaseVars(info, input.context));
     if (r.missing.length) throw new Error(`Chase template ${t.key} missing ${r.missing.join(', ')}`);
 
     // The client's own chase (ID documents) goes down the client channel.
