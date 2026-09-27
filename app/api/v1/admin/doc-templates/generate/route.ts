@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       `insert into doc_template
          (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, created_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8)
+       on conflict (tenant_id, name) do update set description = excluded.description, file_name = excluded.file_name, file_content = excluded.file_content, file_size_bytes = excluded.file_size_bytes, has_llm_prompts = excluded.has_llm_prompts, updated_at = now()
        returning id`,
       [user.tenantId, name, description || null, fileName, content, content.length, hasLlmPrompts, user.userId]
     );

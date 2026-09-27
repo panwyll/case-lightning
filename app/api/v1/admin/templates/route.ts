@@ -16,7 +16,7 @@ async function ensureEngineTemplates(tenantId: string, userId: string): Promise<
   const all = [...Object.values(CLIENT_UPDATES), ...Object.values(CHASES), ...Object.values(PARTY_NOTICES), ...Object.values(ACKS)];
   for (const t of all) {
     if (have.has(t.key)) continue;
-    await query(`insert into template (tenant_id, name, category, subject_template, body_template, style_tag, policy_tags, created_by) values ($1, $2, 'Engine', $3, $4, 'NEUTRAL', '{}', $5) on conflict do nothing`, [tenantId, t.key, t.subject, t.body, userId]).catch(() => {});
+    await query(`insert into template (tenant_id, name, category, subject_template, body_template, style_tag, policy_tags, created_by) values ($1, $2, 'Engine', $3, $4, 'NEUTRAL', '{}', $5) on conflict (tenant_id, name) where is_active do nothing`, [tenantId, t.key, t.subject, t.body, userId]).catch(() => {});
   }
 }
 

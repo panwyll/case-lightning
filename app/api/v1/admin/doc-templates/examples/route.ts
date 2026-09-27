@@ -17,13 +17,15 @@ export async function POST() {
     const user = await requireRole(['ADMIN']);
 
     const inserted: string[] = [];
+    const have = new Set((await query<{ name: string }>(`select name from doc_template where tenant_id = $1`, [user.tenantId])).map((r) => r.name));
     for (const tpl of EXAMPLE_TEMPLATES) {
+      if (have.has(tpl.name)) continue; // already in the library, whether the standard one or the firm's own replacement
       const content = createMinimalDocx(tpl.paragraphs);
       await query(
         `insert into doc_template
            (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, sort_order, created_by)
          values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         on conflict do nothing`,
+         on conflict (tenant_id, name) do nothing`,
         [
           user.tenantId,
           tpl.name,
