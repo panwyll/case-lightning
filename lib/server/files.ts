@@ -375,11 +375,24 @@ export async function saveEmailAttachmentsToMatter(
   messageId: string,
   subject?: string
 ): Promise<number> {
+  return (await fileEmailAttachments(user, matterId, messageId, subject)).saved;
+}
+
+/** What became of each attachment: filed and read into the case, filed but locked, or already there. */
+export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate'; as: string | null }
+
+export async function fileEmailAttachments(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  messageId: string,
+  subject?: string
+): Promise<{ saved: number; files: FiledAttachment[] }> {
+  const files: FiledAttachment[] = [];
   const matter = await queryOne<{ folder_path: string | null }>(
     `select folder_path from matter where id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
-  if (!matter?.folder_path) return 0;
+  if (!matter?.folder_path) return { saved: 0, files };
 
   // Files go to the matter's own drive, not the drive of whoever happened to
   // receive the email — otherwise a case's documents scatter across colleagues.
@@ -398,7 +411,7 @@ export async function saveEmailAttachmentsToMatter(
       `select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`,
       [matterId, user.tenantId, hash]
     );
-    if (exists) continue; // identical content already filed
+    if (exists) { files.push({ name: att.name, outcome: 'duplicate', as: null }); continue; } // identical content already filed
     const uploaded = await uploadToMatterKb(driveUser, matter.folder_path, att.name, buffer);
     const doc = await queryOne<{ id: string }>(
       `insert into document
@@ -433,6 +446,19 @@ export async function saveEmailAttachmentsToMatter(
     }).catch(() => {});
     saved += 1;
     savedNames.push(att.name);
+    // Read into the case: a locked PDF becomes the password task; anything else is classified and routed to its sub-flow (title, search, forms…).
+    if (doc?.id) {
+      const isPdf = /pdf/i.test(att.contentType ?? '') || /\.pdf$/i.test(att.name);
+      if (isPdf && (await isLockedPdf(buffer).catch(() => false))) {
+        await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, buffer]).catch(() => {});
+        await recordLockedDocument(user.tenantId, matterId, doc.id, att.name);
+        files.push({ name: att.name, outcome: 'locked', as: null });
+      } else {
+        const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => null);
+        const role = report?.classification?.role ?? null;
+        files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null });
+      }
+    }
   }
 
   if (saved > 0) {
@@ -462,7 +488,7 @@ export async function saveEmailAttachmentsToMatter(
       },
     }).catch(() => {});
   }
-  return saved;
+  return { saved, files };
 }
 
 /**

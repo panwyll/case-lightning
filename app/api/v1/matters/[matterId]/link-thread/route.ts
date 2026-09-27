@@ -4,7 +4,8 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { fileEmailAttachments, indexEmailBodyToMatter } from '@/lib/server/files';
+import { recordContactsFromMessage } from '@/lib/server/contacts';
 import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
 import { matterColor } from '@/lib/server/colors';
 import { writeAudit } from '@/lib/server/audit';
@@ -51,10 +52,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // The client may send an Office/EWS conversationId that never equals it, so the
     // link would never fire. Resolve the canonical value from the message itself.
     let conversationId = body.graphConversationId ?? body.graphThreadId;
+    let msg: Record<string, unknown> | null = null;
     if (body.messageId) {
       try {
-        const msg = await getMessage(owner.userId, body.messageId);
-        if (msg?.conversationId) conversationId = msg.conversationId;
+        msg = await getMessage(owner.userId, body.messageId);
+        if (msg && typeof msg.conversationId === 'string') conversationId = msg.conversationId;
       } catch {
         /* fall back to the client-supplied id */
       }
@@ -92,8 +94,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // Linking the email to a matter saves its attachments to the matter folder
     // (best-effort; no-ops when there are none). The email itself stays in the
     // inbox in-tray until the user actually actions it.
+    let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null }> } = { saved: 0, files: [] };
     if (body.messageId) {
-      await saveEmailAttachmentsToMatter(owner, matterId, body.messageId, body.subject).catch(() => {});
+      attachments = await fileEmailAttachments(owner, matterId, body.messageId, body.subject).catch(() => ({ saved: 0, files: [] }));
+      if (msg) {
+        // The people on the email become contacts (without a role until someone sets it); its words join the case's knowledge.
+        await recordContactsFromMessage(user, matterId, msg).catch(() => {});
+        await indexEmailBodyToMatter(owner, matterId, msg).catch(() => {});
+      }
     }
 
     await writeAudit({
@@ -105,7 +113,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       payload: { graphThreadId: body.graphThreadId },
     });
 
-    return ok({ ok: true });
+    return ok({ ok: true, attachments });
   } catch (error) {
     return fail(error);
   }

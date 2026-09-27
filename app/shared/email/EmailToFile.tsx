@@ -138,6 +138,7 @@ function Pct({ s }: { s: Suggestion }) {
 export default function EmailToFile() {
   const [items, setItems] = useState<Item[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [noMailbox, setNoMailbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
@@ -203,7 +204,10 @@ export default function EmailToFile() {
   const fileTo = async (item: Item, matterId: string) => {
     setBusy(true); setErr(null);
     try {
-      await api(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
+      const r = await api<{ attachments?: { saved: number; files: Array<{ name: string; outcome: string; as: string | null }> } }>(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
+      const files = r.attachments?.files ?? [];
+      const said = files.map((f) => f.outcome === 'read' ? `${f.name} read${f.as ? ` as ${f.as.replace(/_/g, ' ')}` : ''}` : f.outcome === 'locked' ? `${f.name} is password-protected (a task asks for it)` : f.outcome === 'duplicate' ? `${f.name} was already on the case` : `${f.name} filed`);
+      setInfo(said.length ? `Filed. ${said.join(' · ')}` : 'Filed.');
       retire([item.id]);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not file that email.');
@@ -245,6 +249,7 @@ export default function EmailToFile() {
         )}
       </div>
       {err && <div className="eg-err">{err}</div>}
+      {info && !err && <div className="eg-note" style={{ color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 10px', fontSize: 12.5 }}>{info}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
       {noMailbox && (
         <div className="ef-done">
