@@ -133,6 +133,7 @@ const PILL: Record<string, { bg: string; fg: string }> = {
   ordered: { bg: '#fef3c7', fg: '#78350f' },
   raised: { bg: '#fef3c7', fg: '#78350f' },
   requested: { bg: '#fef3c7', fg: '#78350f' },
+  awaiting_sign_off: { bg: '#e0e7ff', fg: '#3730a3' },
   awaiting: { bg: '#f1f5f9', fg: '#475569' },
   returned: { bg: '#e0e7ff', fg: '#3730a3' },
   extracted: { bg: '#e0e7ff', fg: '#3730a3' },
@@ -161,7 +162,7 @@ const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 
 /** "Source of funds" → "Source of Funds"; words already carrying capitals or digits (ID, TA6, LPE1) are left alone. */
 export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMALL.has(w) ? w : /[A-Z0-9]/.test(w.slice(1)) ? w : w.replace(/^([^A-Za-z]*)([a-z])/, (_m, a: string, b: string) => a + b.toUpperCase()))).join(' ');
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
-const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Blocked' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
+const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Needs You' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
 const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read']);
 const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -566,7 +567,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const QCHIP: Record<string, { bg: string; fg: string }> = { draft: { bg: '#fef3c7', fg: '#78350f' }, sent: { bg: '#e0e7ff', fg: '#3730a3' }, answered: { bg: '#dcfce7', fg: '#14532d' }, withdrawn: { bg: '#f1f5f9', fg: '#94a3b8' } };
     lane({ id: 'source_of_funds', title: 'Source of funds', holds: s.requireProofOfFunds ? 'Holds Exchange' : undefined, state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
       tiles: [
-        { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'flagged' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
+        { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'awaiting_sign_off' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
         ...(qs.length ? [{ label: 'Queries to the client', depth: 1 as const, focus: 'proof_of_funds_query', status: open.length ? 'raised' : 'replied', detail: `${qs.length} raised · ${open.length} open` }] : []),
       ],
       extra: pof && pof.status !== 'not_started' ? (
