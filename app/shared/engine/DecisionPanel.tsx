@@ -526,7 +526,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           )}
           {pending && noteLines && (
             <div className="dp-lines">
-              <div style={{ fontSize: 12.5, fontWeight: 700 }}>Tick what the {noteLines.noteKind === 'call' ? 'call' : 'note'} actually says. Only ticked lines are recorded.</div>
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>Tick the lines to act on.</div>
               {noteLines.actions.map((a) => {
                 const on = !!picked?.has(a.id);
                 return (

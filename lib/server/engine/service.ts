@@ -764,6 +764,29 @@ export class EngineService {
             await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject, origin: { formsQuestion: q.question } });
           }
         }
+        // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.
+        if (e.type === 'issue_raised') {
+          const p = e.payload as { issueId: string; kind: string; detail: string | null; title: string };
+          if (p.kind === 'survey_report_outstanding') {
+            const detail = { template: 'request_survey_report', context: { eventType: e.type }, triggeredByEventId: e.id };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'request_survey_report', `request_survey_report:${p.issueId}`, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: the survey has been done; ask for the report\nTemplate: request_survey_report'))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('survey report request could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            }
+          }
+          if (p.kind === 'mortgage_at_risk') {
+            const detail = { template: 'mortgage_change_query', context: { eventType: e.type, quote: p.title.slice(0, 200) }, triggeredByEventId: e.id };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'mortgage_change_query', `mortgage_change_query:${p.issueId}`, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: a change may affect the mortgage; ask what changed and say the lender must be told\nTemplate: mortgage_change_query'))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('mortgage change query could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            }
+          }
+          if (p.kind === 'transaction_at_risk') {
+            const subject = `We have been told that your client may not be proceeding with the sale (${p.title.slice(0, 160)}). Please confirm by return whether your client intends to proceed and, if so, on what timetable; our client is incurring costs in reliance on the transaction.`;
+            const detail = { subject, issueId: p.issueId };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'chain', `enquiry_draft:at_risk:${p.issueId}`, detail, `ENQUIRY — IS THE SALE PROCEEDING?\n\nTo: the seller's solicitor\nFor: ${p.title}\n\n${subject}`))) {
+              try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('proceeding enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+            }
+          }
+        }
         // The client wants the specialist in: ask the seller's solicitor for access, one enquiry per recommendation, proposed or raised as the trust level says.
         if (e.type === 'client_decision_recorded' && (e.payload as { subject: string; decision: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'pursue') {
           const fresh = await this.getState(tenantId, matterId);

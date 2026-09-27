@@ -74,6 +74,17 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   return action;
 }
 
+/** What the system does once an issue of this kind is raised: the panel says it, the service does it (issue_raised reactions). */
+export function issueConsequence(kind: string): string | null {
+  switch (kind) {
+    case 'survey_report_outstanding': return 'asks the client to send us the survey report, and chases it';
+    case 'mortgage_at_risk': return 'asks the client what has changed and tells them the lender must hear of it before exchange';
+    case 'transaction_at_risk': return "asks the seller's solicitor to confirm whether their client is proceeding";
+    case 'unknown_correspondent': return 'nothing they said counts until you set who they are on the case';
+    default: return null;
+  }
+}
+
 /** The claim put to the client, in their terms: "you are happy with the survey and want to proceed". */
 export function claimText(subject: ClientDecisionSubject, decision: string): string {
   const k = `${subject}:${decision}`;
@@ -178,7 +189,7 @@ export function summariseNoteActions(input: { kind: NoteKind; text: string; acti
       ? `Would record the client's decision: ${a.command.subject.replace(/_/g, ' ')} = ${a.command.decision.replace(/_/g, ' ')}.`
       : a.command.type === 'confirm_with_client'
       ? `Would ask the client to confirm that ${claimText(a.command.subject, a.command.decision)}. Recorded only when they say so themselves.`
-      : `Would raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? ' (holding nothing)' : `, holding ${a.command.gate}`}.`;
+      : `Would raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? '' : `, holding ${a.command.gate}`}${issueConsequence(a.command.kind) ? `, and ${issueConsequence(a.command.kind)}` : ''}.`;
     L.push(`${a.id}. ${a.summary}`);
     L.push(`    “${a.quote}”`);
     L.push(`    ${effect}`);

@@ -204,9 +204,8 @@ export default function EmailToFile() {
   const fileTo = async (item: Item, matterId: string) => {
     setBusy(true); setErr(null);
     try {
-      const r = await api<{ said?: string[] }>(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
-      const said = r.said ?? [];
-      setInfo(said.length ? `Filed. ${said.join(' · ')}` : 'Filed.');
+      await api(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
+      setInfo('Filed. The case log will say what it contained.');
       retire([item.id]);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not file that email.');

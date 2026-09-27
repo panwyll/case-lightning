@@ -344,7 +344,7 @@ export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
   // Nothing on a decision is "rejected": a draft goes back for redraft, a bank-details check fails, a note's reading is discarded.
   report_on_title: { approve: 'Approve — send to the client', reject: 'Send back for redraft' },
   bank_details: { reject: 'Could not verify' },
-  note_actions: { approve: 'Record the ticked lines', reject: 'Discard the reading' },
+  note_actions: { approve: 'Approve', reject: 'Decline' },
 };
 /** What each option does, for the button tooltip. */
 export const OPTION_HELP: Record<string, string> = {

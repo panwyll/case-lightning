@@ -49,6 +49,8 @@ test('"surveys are all complete" from the client asks for the report, and record
   const issue = Object.values(after.state.issues).find((i) => i.kind === 'survey_report_outstanding');
   assert.ok(issue, 'the issue is raised once approved');
   assert.equal(after.state.survey.status, 'not_started');
+  // And the issue does what its label promises: the client is asked for the report.
+  assert.ok(h.ports.clientComms.sent.some((m) => m.template === 'request_survey_report'), 'the client was asked for the report');
 });
 
 test('nobody can clear ID, AML, source of funds or a search by saying so', async () => {
@@ -87,6 +89,9 @@ test('"the vendor has pulled out" from the agent is a critical issue for a perso
   const issue = Object.values(after.state.issues).find((i) => i.kind === 'transaction_at_risk')!;
   assert.equal(issue.severity, 'critical');
   assert.equal(after.state.closedAt, null, 'abandoning the file stays a deliberate step');
+  // The seller's solicitor is asked whether their client is proceeding (proposed: enquiry drafts are not automatic in the fixture).
+  const ask = Object.values(after.state.proposals).find((p) => p.action === 'enquiry_draft' && String((p.detail as { subject?: string }).subject ?? '').includes('intends to proceed'));
+  assert.ok(ask, 'an enquiry to the other side is proposed');
 });
 
 test('"I have lost my job" is a mortgage-at-risk issue', async () => {
@@ -94,6 +99,10 @@ test('"I have lost my job" is a mortgage-at-risk issue', async () => {
   const res = await email(h, "Hi, I have lost my job this week so the mortgage may be a problem. Not sure what happens now.", CLIENT);
   const kinds = Object.values(res.state.notes)[0].actions.map((a) => (a.command as { kind?: string } | null)?.kind).filter(Boolean);
   assert.ok(kinds.includes('mortgage_at_risk'), kinds.join(','));
+  await approve(h);
+  const sent = h.ports.clientComms.sent.find((m) => m.template === 'mortgage_change_query');
+  assert.ok(sent, 'the client is asked what changed');
+  assert.match(String(sent!.context.quote), /lost my job/);
 });
 
 test('a survey that is merely booked, or not done yet, is not "done"', async () => {
