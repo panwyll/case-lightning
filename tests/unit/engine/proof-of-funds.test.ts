@@ -143,6 +143,15 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /awaiting the conveyancer's sign-off/);
   await assert.rejects(h.svc.proofOfFundsSubmitted(TENANT, MATTER, requestId, submission()), /No proof-of-funds request/);
 
+  // The donor is a person to identify: their check was requested the moment the gift was declared (a post-commit reaction, so re-read the state), and sign-off waits for it.
+  s = await h.svc.getState(TENANT, MATTER);
+  const donor = Object.values(s.partyChecks).find((pc) => pc.role === 'donor')!;
+  assert.ok(donor && donor.label === 'Anita Shah (donor)' && donor.status === 'requested', 'the donor\'s ID check was requested on declaration');
+  await assert.rejects(resolve(h, d.eventId, 'approve'), /Sign-off waits for the donor's ID \/ AML check: Anita Shah \(donor\) requested/);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()), donor.party);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.partyChecks[donor.party].status, 'cleared');
+
   // Sign-off.
   await resolve(h, d.eventId, 'approve');
   s = await h.svc.getState(TENANT, MATTER);

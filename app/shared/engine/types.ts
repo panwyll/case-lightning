@@ -209,6 +209,7 @@ export interface EngineState {
   sdltNotRequiredAt?: string | null;
   hasLender: boolean;
   shapes?: string[];
+  partyChecks?: Record<string, { party: string; label: string; role: 'buyer' | 'seller' | 'owner' | 'donor'; status: string; documentId: string | null }>;
   requiredSearches: string[];
   stage: string;
   stageHistory: Array<{ stage: string; at: string; seq: number }>;

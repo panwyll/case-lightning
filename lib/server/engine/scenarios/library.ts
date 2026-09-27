@@ -150,6 +150,14 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const sub = F.pofSubmission(price, advance, c.flagged, statement, null, null);
     await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt' });
   }),
+  step('donor_id', 'The gift donor\'s ID / AML result received', async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    const donor = Object.values(s.partyChecks).find((pc) => pc.role === 'donor');
+    if (!donor) throw new Error('The declared gift did not add the donor as a party.');
+    if (donor.status === 'not_started') await c.run({ type: 'request_id_check', provider: 'sandbox-id', party: donor.party });
+    const doc = await c.doc({ docType: 'ID_CHECK', fileName: 'id-check-result-donor.txt', facts: F.idClear(), body: F.body('ID / AML check result — donor', ['Subject: Sandbox Donor', 'Outcome: CLEAR']) });
+    await c.svc.idCheckResultReceived(c.tenantId, c.matterId, doc, donor.party);
+  }, { flaggedOnly: true }),
   step('pof_signoff', 'Proof of funds signed off by a person', async (c) => { await c.resolve('proof_of_funds', 'approve', c.flagged ? 'Gift evidenced: donor ID, letter and statements on file; lender told.' : 'Savings evidenced over the period.'); }, { decision: 'proof_of_funds' }),
   step('pof_lender', 'The lender confirms the gifted deposit', async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);

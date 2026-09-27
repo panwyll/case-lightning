@@ -88,7 +88,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     if (input.type === 'enrol' && input.counterpartyType == null) input.counterpartyType = await counterpartyTypeOf(user.tenantId, matterId);
     const svc = engine();
     let result;
-    if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId);
+    if (input.type === 'request_id_check') result = await svc.requestIdCheck(user.tenantId, matterId, user.userId, input.party ?? null);
     else if (input.type === 'request_proof_of_funds') result = await svc.requestProofOfFunds(user.tenantId, matterId, user.userId, { noteToClient: input.noteToClient ?? null });
     else if (input.type === 'draft_report_on_title') result = await svc.draftReportOnTitle(user.tenantId, matterId);
     else if (input.type === 'chase_now') result = await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId);

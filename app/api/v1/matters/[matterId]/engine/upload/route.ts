@@ -31,6 +31,8 @@ const bodySchema = z.object({
   base64: z.string().min(1),
   mimeType: z.string().max(100).default('application/pdf'),
   role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report']).default('auto'),
+  /** id_check: whose result this is (a party id from the case); blank = the first client */
+  party: z.string().max(80).nullish(),
   searchType: z.enum(SEARCH_TYPES).optional(),
   enquiryId: z.string().max(60).optional(),
   facts: z.unknown().optional(),
@@ -84,6 +86,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     } else if (body.role === 'enquiry_reply') {
       if (!body.enquiryId) throw Object.assign(new Error('enquiryId is required for an enquiry reply.'), { status: 400 });
       action = { kind: 'enquiry_reply', enquiryId: body.enquiryId };
+      await runAction(svc, user.tenantId, matterId, doc!.id, action);
+    } else if (body.role === 'id_check') {
+      action = { kind: 'id_check', party: body.party ?? null };
       await runAction(svc, user.tenantId, matterId, doc!.id, action);
     } else if (body.role === 'specialist_report') {
       const state = await svc.getState(user.tenantId, matterId);

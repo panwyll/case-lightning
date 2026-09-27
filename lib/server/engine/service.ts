@@ -177,7 +177,7 @@ export class EngineService {
       const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context });
       await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
-      await this.requestIdCheck(tenantId, matterId, SYSTEM);
+      await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'proof_of_funds_request') {
       await this.requestProofOfFunds(tenantId, matterId, SYSTEM);
     } else if (action === 'client_update') {
@@ -221,13 +221,14 @@ export class EngineService {
   // ───────────── sub-flows (external wait → extraction → rule → clear/flag) ─────────────
 
   /** ID/AML: ask the provider, then record the request. */
-  async requestIdCheck(tenantId: string, matterId: string, actor: string): Promise<RunResult> {
+  async requestIdCheck(tenantId: string, matterId: string, actor: string, party: string | null = null): Promise<RunResult> {
     // Enrolment already asks the provider; a second request while that one is in flight is a no-op, not an error.
     const before = await this.getState(tenantId, matterId);
-    if (before.idCheck.status === 'requested') return { state: before, events: [] };
+    const pc = party ? before.partyChecks[party] : null;
+    if ((pc ? pc.status : before.idCheck.status) === 'requested') return { state: before, events: [] };
     // A person asked for this: their click is the approval, whatever the trust levels say.
-    const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId });
-    return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference });
+    const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
+    return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference, party });
   }
 
   // ───────────── proof of funds (docs/proof-of-funds.md) ─────────────
@@ -352,8 +353,8 @@ export class EngineService {
   }
 
   /** ID/AML result landed (webhook / upload): extract → rule → cleared or flagged. */
-  async idCheckResultReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
-    if (await this.alreadyHave(tenantId, matterId, 'id_check', null)) {
+  async idCheckResultReceived(tenantId: string, matterId: string, documentId: string, party: string | null = null): Promise<RunResult> {
+    if (await this.alreadyHave(tenantId, matterId, 'id_check', party)) {
       this.ports.log('ID check result already on the case; duplicate ignored', { matterId, documentId });
       return { state: await this.getState(tenantId, matterId), events: [], warning: 'The ID check result is already on the case; this copy was filed but not read again.' };
     }
@@ -362,8 +363,9 @@ export class EngineService {
       this.ports.log('id check extraction failed — routing to human', err);
       return { provider: 'unknown', outcome: 'refer' as const, flags: [], confidence: 0 };
     });
-    const summary = await this.summarise('id_check', `ID/AML check (${facts.provider})`, evaluateIdCheck(facts), doc, tenantId, matterId);
-    return this.run(tenantId, matterId, { type: 'id_check_result', actor: EXTERNAL, documentId, facts, summary });
+    const label = party ? (await this.getState(tenantId, matterId)).partyChecks[party]?.label : null;
+    const summary = await this.summarise('id_check', label ? `ID/AML check — ${label} (${facts.provider})` : `ID/AML check (${facts.provider})`, evaluateIdCheck(facts), doc, tenantId, matterId);
+    return this.run(tenantId, matterId, { type: 'id_check_result', actor: EXTERNAL, documentId, facts, summary, party });
   }
 
   /** Spec 2.4 steps 3–5: a search PDF is back. Record it, extract, rule-check, clear or flag. */
@@ -377,6 +379,7 @@ export class EngineService {
     const s = await this.getState(tenantId, matterId);
     if (kind === 'search') { const sr = subject ? s.searches[subject] : null; return !!sr && sr.status !== 'ordered'; }
     if (kind === 'official_copies') return !!s.title.documentId; // the lease may have been read first; only the official copy itself counts
+    if (subject) { const pc = s.partyChecks[subject]; return !!pc && pc.status !== 'not_started' && pc.status !== 'requested'; }
     return s.idCheck.status !== 'not_started' && s.idCheck.status !== 'requested';
   }
 
@@ -732,6 +735,15 @@ export class EngineService {
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, 'PROOF OF FUNDS\n\nTo: the client\nWhy: the firm requires source of funds signed off before exchange; the form goes out at instruction so the statements arrive in time.'))) {
               try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); }
             }
+          }
+        }
+        // Another person to identify (a co-client named at enrolment, a gift donor declared on the form): their own check, proposed or sent as the trust level says.
+        if (e.type === 'id_party_added') {
+          const p = e.payload as { party: string; label: string; role: string };
+          const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name, party: p.party, label: p.label };
+          const why = p.role === 'donor' ? 'a gift donor is a source of funds: identity and AML are checked as for the client' : 'every client on the matter is identified in their own right';
+          if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${p.party}`, detail, `ID / AML CHECK — ${p.label}\n\nTo: ${p.label}, via ${this.ports.idCheckProvider.name}\nWhy: ${why}.`))) {
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log(`ID check could not be requested for ${p.label}`, err); }
           }
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).

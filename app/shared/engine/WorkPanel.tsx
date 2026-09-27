@@ -205,6 +205,7 @@ const ABOUT: Record<string, About> = {
   'Lease': { starts: 'The lease is filed under Documents on a leasehold case, before or after the official copy.', done: 'Read into the review table: term, ground rent and its review, service charge proportion, repairs, assignment, alterations, use, insurance, notices and fees, forfeiture, every clause quoted with its page.', note: 'A short term, an escalating rent or an absolute bar on assignment raises the title decision; the lease and the official copy are one review.', via: 'Claude reads the lease; the rules test the term and the rent.', creates: 'A title decision when anything needs a person; otherwise the lease facts on the case.' },
   case_counted: { starts: 'The moment the ID / AML check comes back resolved: cleared by the rules or reviewed by a person. Enrolment and triage never count.', done: 'The case is counted once. A firm on a paid plan is billed £100 for it that month; a trial or comped firm sees the count and no bill.', via: 'Stripe Billing Meter, one event per case; a failed report is retried.', creates: 'A line on the Billing page.' },
   'Document review': { starts: 'The moment a document is filed into a sub-block: Claude reads every page and returns a fact for each thing it relies on, with the page and a quote.', done: 'Every page attested (read, nothing on it, or unreadable), every quote found on its page, cross-checks run against the other documents and the case record.', note: 'A page that could not be read, or a quote that is not on the page, shows here as partly read; the review table under Documents says which.', via: 'Claude reads; the engine verifies against the page text (OCR for scans).', creates: 'The review table under Documents.' },
+  donor_id: { starts: 'The moment a gift is declared on the proof-of-funds form: the donor is a source of funds, so their identity and AML are checked as the client\'s are.', done: 'Cleared by the rules, or reviewed by a person. Sign-off on the proof of funds waits for it.', via: 'The same ID provider as the client\'s check. At Propose you approve the request first.', creates: 'A decision when the check refers or fails.' },
   'Management pack (LPE1)': { starts: 'Requested from the freeholder or agent on a leasehold; chased on the SLA.', done: 'Read by the rules: service charge, ground rent, arrears, major works and insurance; anything off goes to a conveyancer.' },
   'Notice of assignment': { starts: 'After completion on a leasehold.', done: 'Served on the landlord with the fee; notice of charge where there is a lender.' },
   SDLT: { starts: 'On completion.', done: 'Return filed and paid within 14 days; UTRN on file.', note: 'The deadline is tracked and escalated.' },
@@ -395,6 +396,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   const [consideration, setConsideration] = useState('');
   const [searches, setSearches] = useState('');
   const [shapes, setShapes] = useState<string[]>([]);
+  const [names, setNames] = useState('');
   const buyer = type === 'freehold_purchase' || type === 'leasehold_purchase';
   const seller = type === 'freehold_sale' || type === 'leasehold_sale';
   const remo = type === 'remortgage';
@@ -409,6 +411,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         {(buyer || remo) && <label>{remo ? 'New lender' : 'Buyer has a mortgage lender'}<select value={hasLender ? 'yes' : 'no'} onChange={(e) => setHasLender(e.target.value === 'yes')}><option value="yes">Yes — lender-funded</option><option value="no">No — cash</option></select></label>}
         {(seller || remo || toe) && <label>Existing mortgage on the property<select value={hasExistingMortgage ? 'yes' : 'no'} onChange={(e) => setHasExistingMortgage(e.target.value === 'yes')}><option value="yes">Yes — charge to redeem / consent needed</option><option value="no">No — unencumbered</option></select></label>}
         {(buyer || toe) && <label>Clients (co-owners after completion)<input type="number" min={1} max={4} value={parties} onChange={(e) => setParties(Math.max(1, Number(e.target.value) || 1))} /></label>}
+        {parties > 1 && <label>Client names (comma-separated; each is identified in their own right)<input value={names} onChange={(e) => setNames(e.target.value)} placeholder="Tomasz Nowak, Ewa Nowak" /></label>}
         {toe && <label>Consideration (£, 0 for none)<input type="number" min={0} value={consideration} onChange={(e) => setConsideration(e.target.value)} placeholder="0" /></label>}
         {(buyer || seller) && (
           <div className="ep-shapes">
@@ -426,6 +429,8 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         const body: Record<string, unknown> = { type: 'enrol', transactionType: type, hasLender: buyer || remo ? hasLender : false, hasExistingMortgage: seller || remo || toe ? hasExistingMortgage : false, parties: buyer || toe ? parties : 1 };
         if (toe) body.considerationPennies = Math.round((Number(consideration) || 0) * 100);
         if (shapes.length && (buyer || seller)) body.shapes = shapes;
+        const partyNames = names.split(',').map((x) => x.trim()).filter(Boolean);
+        if (partyNames.length) body.partyNames = partyNames;
         const list = searches.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
         if (list.length) body.requiredSearches = list;
         void cmd(body);
@@ -552,9 +557,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   });
   const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, tiles: withReview(l.tiles) }); };
 
-  lane({ id: 'id_aml', title: 'ID / AML', state: resolved(s.idCheck.status) ? 'done' : s.idCheck.status === 'flagged' ? 'blocked' : s.idCheck.status === 'requested' ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
+  const clientChecks = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role !== 'donor');
+  const donorChecks = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role === 'donor');
+  const idStatuses = [s.idCheck.status, ...clientChecks.map((pc) => pc.status)];
+  lane({ id: 'id_aml', title: 'ID / AML', state: idStatuses.every((x) => resolved(x)) ? 'done' : idStatuses.some((x) => x === 'flagged') ? 'blocked' : idStatuses.some((x) => x === 'requested') ? 'open' : 'idle', note: parties > 1 ? `${parties} clients — every party is identified` : undefined,
     tiles: [
-      { label: s.shapes?.includes('company_buyer') ? 'ID / AML check (company, directors and PSCs)' : 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' },
+      { label: s.shapes?.includes('company_buyer') ? 'ID / AML check (company, directors and PSCs)' : clientChecks.length ? 'ID / AML check · first client' : 'ID / AML check', status: s.idCheck.status, documentId: s.idCheck.documentId, focus: 'id_check' },
+      ...clientChecks.map((pc) => ({ label: `ID / AML check · ${pc.label}`, status: pc.status, documentId: pc.documentId, focus: 'id_check' })),
       { label: 'Case counted for billing', key: 'case_counted', status: view.matter?.charge ? 'done' : 'not_started', detail: view.matter?.charge ? `${fmtDay(view.matter.charge.chargedAt)} · ${view.matter.charge.billed ? `£${Math.round(view.matter.charge.amountPennies / 100)} billed` : view.matter.charge.reason === 'TRIAL' ? 'free on trial' : view.matter.charge.reason === 'COMP' || view.matter.charge.reason === 'PILOT' ? 'not billed (comped)' : view.matter.charge.reason === 'ERROR' ? 'billing retry pending' : 'no subscription'}` : undefined },
     ],
     actions: s.stage === 'instruction' && s.idCheck.status === 'not_started' ? <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button> : null });
@@ -568,6 +577,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     lane({ id: 'source_of_funds', title: 'Source of funds', holds: s.requireProofOfFunds ? 'Holds Exchange' : undefined, state: st, note: pof?.risk ? `risk ${pof.risk}${pof.approvedAt ? ` · signed off ${fmtDay(pof.approvedAt)}` : ''}` : s.requireProofOfFunds ? 'firm policy: signed off before exchange' : undefined,
       tiles: [
         { label: `Proof of funds${pof?.rounds ? ` · round ${pof.rounds}` : ''}`, documentId: pof?.documentId, focus: 'proof_of_funds', status: pof?.status === 'reviewed' ? (pof.resolution === 'approve' ? 'reviewed' : pof.resolution === 'reject' ? 'rejected' : 'reviewed') : pof?.status === 'submitted' ? 'awaiting_sign_off' : pof?.status === 'requested' ? 'requested' : 'not_started', detail: pof?.facts ? `declared ${gbp(pof.facts.totalDeclaredPennies)}${pof.facts.requiredPennies != null ? ` of ${gbp(pof.facts.requiredPennies)} needed` : ''}${pof.facts.giftedPennies ? ' · includes a gift' : ''}` : pof?.status === 'requested' ? `form with the client since ${fmtDay(pof.requestedAt)}` : undefined },
+        ...donorChecks.map((pc) => ({ label: `ID / AML check · ${pc.label}`, status: pc.status, documentId: pc.documentId, focus: 'id_check', key: 'donor_id' })),
         ...(qs.length ? [{ label: 'Queries to the client', depth: 1 as const, focus: 'proof_of_funds_query', status: open.length ? 'raised' : 'replied', detail: `${qs.length} raised · ${open.length} open` }] : []),
       ],
       extra: pof && pof.status !== 'not_started' ? (

@@ -137,28 +137,36 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
 
     // ── ID / AML ──
+    case 'id_party_added': {
+      const p = e.payload as Payloads['id_party_added'];
+      if (!s.partyChecks[p.party]) s.partyChecks[p.party] = { party: p.party, label: p.label, role: p.role, status: 'not_started', requestedAt: null, documentId: null, decisionEventId: null };
+      break;
+    }
     case 'id_check_requested': {
-      s.idCheck.status = 'requested';
-      s.idCheck.requestedAt = e.createdAt;
-      openWait(s, 'id_check', '', e);
+      const p = e.payload as Payloads['id_check_requested'];
+      const target = p.party ? s.partyChecks[p.party] : s.idCheck;
+      if (target) { target.status = 'requested'; target.requestedAt = e.createdAt; }
+      openWait(s, 'id_check', p.party ?? '', e);
       break;
     }
     case 'id_check_cleared': {
-      s.idCheck.status = 'cleared';
-      s.idCheck.documentId = e.sourceDocumentId ?? s.idCheck.documentId;
-      closeWait(s, 'id_check', null, e);
+      const p = e.payload as Payloads['id_check_cleared'];
+      const target = p.party ? s.partyChecks[p.party] : s.idCheck;
+      if (target) { target.status = 'cleared'; target.documentId = e.sourceDocumentId ?? target.documentId; }
+      closeWait(s, 'id_check', p.party ?? '', e);
       break;
     }
     case 'id_check_flagged': {
-      s.idCheck.status = 'flagged';
-      s.idCheck.documentId = e.sourceDocumentId ?? s.idCheck.documentId;
-      s.idCheck.decisionEventId = e.id;
-      closeWait(s, 'id_check', null, e);
+      const p = e.payload as Payloads['id_check_flagged'];
+      const target = p.party ? s.partyChecks[p.party] : s.idCheck;
+      if (target) { target.status = 'flagged'; target.documentId = e.sourceDocumentId ?? target.documentId; target.decisionEventId = e.id; }
+      closeWait(s, 'id_check', p.party ?? '', e);
       break;
     }
     case 'id_check_reviewed': {
       const p = e.payload as Payloads['id_check_reviewed'];
-      if (p.option !== 'escalate') s.idCheck.status = 'reviewed';
+      const target = p.party ? s.partyChecks[p.party] : s.idCheck;
+      if (target && p.option !== 'escalate') target.status = 'reviewed';
       resolveDecision(s, p.decisionEventId, p.option, p.note, e);
       break;
     }
@@ -926,7 +934,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.pendingAutoClears[e.id] = held;
       // The thing being waited for has arrived; only the clear is held. The wait closes now so no chase goes out for it.
       const hp = (held.payload ?? {}) as { searchType?: string; enquiryId?: string };
-      if (held.type === 'id_check_cleared') closeWait(s, 'id_check', null, e);
+      if (held.type === 'id_check_cleared') closeWait(s, 'id_check', (held.payload as { party?: string | null } | undefined)?.party ?? '', e);
       else if (held.type === 'search_cleared' && hp.searchType) closeWait(s, 'search', hp.searchType, e);
       else if (held.type === 'enquiry_reply_cleared' && hp.enquiryId) closeWait(s, 'enquiry', hp.enquiryId, e);
       break;
@@ -980,6 +988,8 @@ function subjectOf(e: EngineEvent): string | null {
   const p = e.payload as Record<string, unknown>;
   if (typeof p.searchType === 'string') return p.searchType;
   if (typeof p.enquiryId === 'string') return p.enquiryId;
+  // A named party's ID check: the party id, so the tray and the panel say whose.
+  if (e.type === 'id_check_flagged' && typeof p.party === 'string' && p.party) return p.party;
   if (typeof p.draftId === 'string') return p.draftId;
   if (e.type === 'note_extracted') return (p as Payloads['note_extracted']).noteId;
   if (e.type === 'proof_of_funds_submitted') return (p as Payloads['proof_of_funds_submitted']).requestId;

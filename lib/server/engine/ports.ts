@@ -107,7 +107,7 @@ export interface SearchProvider {
 
 export interface IdCheckProvider {
   readonly name: string;
-  requestCheck(input: { tenantId: string; matterId: string }): Promise<{ reference: string }>;
+  requestCheck(input: { tenantId: string; matterId: string; /** a named party beyond the first client (co-buyer, donor); absent = the first client */ party?: string | null; label?: string | null }): Promise<{ reference: string }>;
 }
 
 /** Component #5, status updates only — the safe-to-automate half. Q&A is deliberately NOT a port here. */

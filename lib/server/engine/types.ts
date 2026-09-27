@@ -72,6 +72,7 @@ export const EVENT_TYPES = [
   'stage_advanced',
   'manual_handling_required',
   // instruction
+  'id_party_added',
   'id_check_requested',
   'id_check_cleared',
   'id_check_flagged',
@@ -314,6 +315,19 @@ export interface LeaseFacts {
   confidence?: number;
 }
 export interface LeaseClause { code: string; topic: 'term' | 'rent' | 'service_charge' | 'repairs' | 'alienation' | 'alterations' | 'use' | 'insurance' | 'notices' | 'forfeiture' | 'other'; text: string; locator?: SourceLocator }
+
+/** One person's ID / AML check beyond the first client's: who they are to the matter and where the check stands. */
+export interface IdPartyCheck {
+  party: string;
+  label: string;
+  role: 'buyer' | 'seller' | 'owner' | 'donor';
+  status: 'not_started' | 'requested' | ReviewStatus;
+  requestedAt: string | null;
+  documentId: string | null;
+  decisionEventId: string | null;
+}
+/** The party id for a named person: stable, readable, safe as a wait subject. */
+export const partyId = (role: IdPartyCheck['role'], name: string): string => `${role}:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
 
 export interface TitleFacts {
   titleNumber: string;
@@ -668,6 +682,8 @@ export interface Payloads {
     requireExchangeAuthority?: boolean;
     /** Number of clients on our side (buyers / sellers / owners). More than one → co-ownership decisions apply on a purchase or a transfer. */
     parties?: number;
+    /** The clients by name, when known; every one beyond the first gets an ID / AML check of their own. */
+    partyNames?: string[];
     /** Sale / remortgage / transfer: the property is charged today (redemption and discharge apply). */
     hasExistingMortgage?: boolean;
     /** Transfer of equity: money changing hands (SDLT may apply; funds come from the incoming owner). */
@@ -676,10 +692,12 @@ export interface Payloads {
   stage_advanced: { from: Stage; to: Stage; reason: string };
   manual_handling_required: { reason: string; detail?: string };
 
-  id_check_requested: { provider: string; reference?: string | null };
-  id_check_cleared: { facts: IdCheckFacts; reasons: string[] };
-  id_check_flagged: { facts: IdCheckFacts; flags: Flag[]; decision: DecisionSpec };
-  id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
+  /** Another person to identify: a co-buyer / co-owner named at enrolment, or a gift donor declared on the proof-of-funds form. */
+  id_party_added: { party: string; label: string; role: IdPartyCheck['role'] };
+  id_check_requested: { provider: string; reference?: string | null; /** null / absent = the first client */ party?: string | null };
+  id_check_cleared: { facts: IdCheckFacts; reasons: string[]; party?: string | null };
+  id_check_flagged: { facts: IdCheckFacts; flags: Flag[]; decision: DecisionSpec; party?: string | null };
+  id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null; party?: string | null };
 
   search_ordered: { searchType: SearchType; provider: string; reference?: string | null; reissue?: boolean };
   search_returned: { searchType: SearchType; provider?: string | null };
@@ -1142,6 +1160,8 @@ export interface MatterState {
     documentId: string | null;
     decisionEventId: string | null;
   };
+  /** Every other person who must be identified: a second buyer, seller or owner (holds Instruction) and a gift donor (holds proof-of-funds sign-off). Keyed by party id. */
+  partyChecks: Record<string, IdPartyCheck>;
   searches: Record<string, SearchState>;
   enquiries: Record<string, EnquiryState>;
   mortgage: {
@@ -1304,6 +1324,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     lastEventAt: null,
     manualHandling: { required: false, reason: null },
     idCheck: { status: 'not_started', requestedAt: null, documentId: null, decisionEventId: null },
+    partyChecks: {},
     searches: {},
     enquiries: {},
     mortgage: { status: 'not_required', documentId: null, facts: null, decisionEventId: null },

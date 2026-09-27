@@ -17,6 +17,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [role, setRole] = useState<Role>('auto');
   const [search, setSearch] = useState('CON29');
   const [enquiryId, setEnquiryId] = useState('');
+  const [idParty, setIdParty] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -89,7 +90,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
       const r = await api<{ action: { kind: string; reason?: string }; classification: { role: string; confidence: number } | null }>(`/matters/${matterId}/engine/upload`, {
         method: 'POST',
-        body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64: btoa(bin), role, searchType: role === 'search' ? search : undefined, enquiryId: role === 'enquiry_reply' ? enquiryId.trim() : undefined }),
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64: btoa(bin), role, party: role === 'id_check' ? idParty || undefined : undefined, searchType: role === 'search' ? search : undefined, enquiryId: role === 'enquiry_reply' ? enquiryId.trim() : undefined }),
       });
       setMsg(r.action.kind === 'skip' ? `Filed, not routed: ${r.action.reason ?? ''}` : `Filed as ${r.action.kind.replace('_', ' ')}${r.classification ? ` (classifier ${Math.round(r.classification.confidence * 100)}% sure)` : ''} — the engine has extracted and rule-checked it.`);
       setFile(null);
@@ -121,6 +122,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             {buyer && <option value="specialist_report">Specialist report (damp, timber, structural…)</option>}
           </select>
           {role === 'search' && <select className="ep-input" value={search} onChange={(e) => setSearch(e.target.value)}>{['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL'].map((t) => <option key={t} value={t}>{t}</option>)}</select>}
+          {role === 'id_check' && Object.keys(s.partyChecks ?? {}).length > 0 && <select className="ep-input" value={idParty} onChange={(e) => setIdParty(e.target.value)} aria-label="Whose result"><option value="">First client</option>{Object.values(s.partyChecks ?? {}).map((pc) => <option key={pc.party} value={pc.party}>{pc.label}</option>)}</select>}
           {role === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={enquiryId} onChange={(e) => setEnquiryId(e.target.value)} style={{ width: 120 }} />}
           <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !file || (role === 'enquiry_reply' && !enquiryId.trim())} onClick={upload}>File into engine</button>
         </div>

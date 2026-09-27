@@ -28,7 +28,7 @@ export type IngestAction =
   | { kind: 'enquiry_reply'; enquiryId: string }
   | { kind: 'mortgage_offer' }
   | { kind: 'title' }
-  | { kind: 'id_check' }
+  | { kind: 'id_check'; party: string | null }
   | { kind: 'management_pack' }
   | { kind: 'lease' }
   | { kind: 'contract' }
@@ -65,9 +65,14 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
       if (state.title.status === 'flagged') return { kind: 'skip', reason: 'a title decision is pending' };
       if (state.reportOnTitle.status === 'sent') return { kind: 'skip', reason: 'report on title already sent' };
       return { kind: 'title' };
-    case 'id_check':
-      if (state.idCheck.status !== 'requested') return { kind: 'skip', reason: `ID check is ${state.idCheck.status}, not awaiting a result` };
-      return { kind: 'id_check' };
+    case 'id_check': {
+      // A result with no name on it goes to the one check that is waiting; two waiting means a person says whose it is.
+      const waiting = Object.values(state.partyChecks).filter((pc) => pc.status === 'requested');
+      if (state.idCheck.status === 'requested') return waiting.length ? { kind: 'skip', reason: `${waiting.length + 1} ID checks are awaiting results; file it against the right person` } : { kind: 'id_check', party: null };
+      if (waiting.length === 1) return { kind: 'id_check', party: waiting[0].party };
+      if (waiting.length > 1) return { kind: 'skip', reason: `${waiting.length} ID checks are awaiting results; file it against the right person` };
+      return { kind: 'skip', reason: `ID check is ${state.idCheck.status}, not awaiting a result` };
+    }
     case 'contract':
       if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts already exchanged; file the contract under Documents' };
       return { kind: 'contract' };
@@ -132,7 +137,7 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
     case 'title':
       return svc.titleReceived(tenantId, matterId, documentId);
     case 'id_check':
-      return svc.idCheckResultReceived(tenantId, matterId, documentId);
+      return svc.idCheckResultReceived(tenantId, matterId, documentId, action.party);
     case 'contract':
       return svc.contractReceived(tenantId, matterId, documentId);
     case 'management_pack':

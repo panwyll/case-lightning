@@ -25,11 +25,11 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 
 /** Commands a user may POST to /matters/:id/engine. Mirrors machine.ts USER_COMMANDS. */
 export const userCommandSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(6).optional() }),
+  z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(6).optional(), partyNames: z.array(z.string().min(1).max(120)).max(4).optional() }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   // Addendum 3 §2: shadow mode is switched by an admin, and the switch is itself an event.
   z.object({ type: z.literal('set_shadow_mode'), shadowMode: z.boolean(), reason: z.string().max(500).nullish() }),
-  z.object({ type: z.literal('request_id_check') }),
+  z.object({ type: z.literal('request_id_check'), party: z.string().max(80).nullish() }),
   z.object({ type: z.literal('raise_enquiry'), enquiryId: z.string().min(1).max(60).nullish(), subject: z.string().min(1).max(500), origin: z.object({ issueId: z.string().min(1).max(60).optional() }).nullish() }),
   z.object({ type: z.literal('deposit_received'), amountPennies: z.number().int().nonnegative().nullish() }),
   z.object({ type: z.literal('contracts_exchanged'), completionDate: isoDate, exchangedAt: z.string().datetime().nullish() }),
@@ -140,7 +140,7 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('enquiry_reply'), documentId: z.string().uuid(), enquiryId: z.string().min(1).max(60) }),
   z.object({ role: z.literal('mortgage_offer'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('title'), documentId: z.string().uuid() }),
-  z.object({ role: z.literal('id_check'), documentId: z.string().uuid() }),
+  z.object({ role: z.literal('id_check'), documentId: z.string().uuid(), party: z.string().max(80).nullish() }),
   z.object({ role: z.literal('management_pack'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('lease'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('survey'), documentId: z.string().uuid(), surveyType: z.enum(['level1', 'level2', 'level3', 'valuation']).nullish() }),

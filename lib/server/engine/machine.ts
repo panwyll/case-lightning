@@ -92,6 +92,8 @@ import {
   type Stage,
   type TitleFacts,
   type LeaseFacts,
+  type IdPartyCheck,
+  partyId,
   type WaitKey,
   NOTE_KINDS,
   type NoteKind,
@@ -106,10 +108,10 @@ export interface SummaryOverride {
 export type Command = CommandBody & { completion?: Completion | null };
 
 type CommandBody =
-  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null }
+  | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
-  | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null }
-  | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null }
+  | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null }
+  | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null; party?: string | null }
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
@@ -361,6 +363,7 @@ export function stageBlockers(s: MatterState): string[] {
   switch (s.stage) {
     case 'instruction':
       if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
+      for (const pc of Object.values(s.partyChecks)) if (pc.role !== 'donor' && !isResolved(pc.status)) b.push(`ID/AML check for ${pc.label} ${pc.status.replace(/_/g, ' ')}`);
       break;
     case 'pre_contract':
       b.push(...unresolvedSearches(s, true));
@@ -427,6 +430,7 @@ function saleBlockers(s: MatterState): string[] {
   switch (s.stage) {
     case 'instruction':
       if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
+      for (const pc of Object.values(s.partyChecks)) if (pc.role !== 'donor' && !isResolved(pc.status)) b.push(`ID/AML check for ${pc.label} ${pc.status.replace(/_/g, ' ')}`);
       break;
     case 'pre_contract':
       if (s.propertyForms.status !== 'received') b.push(`property forms ${s.propertyForms.status === 'requested' ? 'awaited from the client' : 'not requested'}`);
@@ -481,6 +485,7 @@ function ownerBlockers(s: MatterState, p: TransactionProfile): string[] {
   switch (s.stage) {
     case 'instruction':
       if (!isResolved(s.idCheck.status)) b.push(`ID/AML check ${s.idCheck.status.replace('_', ' ')}`);
+      for (const pc of Object.values(s.partyChecks)) if (pc.role !== 'donor' && !isResolved(pc.status)) b.push(`ID/AML check for ${pc.label} ${pc.status.replace(/_/g, ' ')}`);
       break;
     case 'pre_contract':
       if (!isResolved(s.title.status)) b.push(`title ${s.title.status}`);
@@ -665,6 +670,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       for (const sh of shapes) if (!SHAPE_SPEC[sh].sides.includes(side)) reject(`${SHAPE_SPEC[sh].label} does not apply to a ${profileOf(cmd.transactionType).label.toLowerCase()}.`, 400);
       // A shape's checklist is an issue from day one, holding the gate it threatens until a person resolves it.
       const shapeIssues: NewEvent[] = shapes.map((sh, i) => ({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `I${i + 1}`, kind: SHAPE_SPEC[sh].issue.kind, title: SHAPE_SPEC[sh].issue.title, detail: SHAPE_SPEC[sh].issue.detail, gate: SHAPE_SPEC[sh].issue.gate, stage: 'instruction', sourceDocumentId: null, origin: null, party: null, severity: ISSUE_KIND_SPEC[SHAPE_SPEC[sh].issue.kind].severity, causedBy: null } }));
+      // Every client beyond the first, by name, is a person to identify in their own right.
+      const roleOf: IdPartyCheck['role'] = side === 'seller' ? 'seller' : side === 'owner' ? 'owner' : 'buyer';
+      const names = [...new Set((cmd.partyNames ?? []).map((n) => n.trim()).filter(Boolean))];
+      const partyEvents: NewEvent[] = names.slice(1).map((name) => ({ type: 'id_party_added', actor: cmd.actor, payload: { party: partyId(roleOf, name), label: name, role: roleOf } }));
       return [
         {
           type: 'matter_created',
@@ -672,6 +681,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           payload: {
             transactionType: cmd.transactionType ?? 'freehold_purchase',
             shapes,
+            partyNames: names,
             // Proof of funds and the client's exchange authority are purchase-side policies; a sale, remortgage or transfer has neither. At auction the hammer is the exchange.
             requireProofOfFunds: side === 'buyer' ? (cmd.requireProofOfFunds ?? true) : false,
             requireExchangeAuthority: profileOf(cmd.transactionType).hasExchange && !shapes.some((sh) => SHAPE_SPEC[sh].skipExchangeAuthority) ? (cmd.requireExchangeAuthority ?? true) : false,
@@ -687,6 +697,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           },
         },
         ...shapeIssues,
+        ...partyEvents,
       ];
     }
 
@@ -699,23 +710,29 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── ID / AML ──
     case 'request_id_check': {
       requireEnrolled(s);
-      if (s.idCheck.status === 'requested') reject('An ID check is already in progress.');
-      if (isResolved(s.idCheck.status)) reject('The ID check is already resolved.');
-      return [{ type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null } }];
+      const pc = cmd.party ? s.partyChecks[cmd.party] : null;
+      if (cmd.party && !pc) reject(`No such party on this matter: ${cmd.party}.`, 404);
+      const status = pc ? pc.status : s.idCheck.status;
+      if (status === 'requested') reject(`An ID check${pc ? ` for ${pc.label}` : ''} is already in progress.`);
+      if (isResolved(status)) reject(`The ID check${pc ? ` for ${pc.label}` : ''} is already resolved.`);
+      return [{ type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null, party: cmd.party ?? null } }];
     }
     case 'id_check_result': {
       requireEnrolled(s);
-      if (s.idCheck.status !== 'requested') reject(`No ID check is awaiting a result (status: ${s.idCheck.status}).`);
+      const pc = cmd.party ? s.partyChecks[cmd.party] : null;
+      if (cmd.party && !pc) reject(`No such party on this matter: ${cmd.party}.`, 404);
+      const status = pc ? pc.status : s.idCheck.status;
+      if (status !== 'requested') reject(`No ID check${pc ? ` for ${pc.label}` : ''} is awaiting a result (status: ${status}).`);
       return verdictEvents({
         verdict: evaluateIdCheck(cmd.facts),
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
         kind: 'id_check',
         level: levelFor(ctx.levels, 'auto_clear', 'id_check'),
-        subjectLabel: `ID/AML check (${cmd.facts.provider})`,
+        subjectLabel: pc ? `ID/AML check — ${pc.label} (${cmd.facts.provider})` : `ID/AML check (${cmd.facts.provider})`,
         sourceDocumentId: cmd.documentId,
         summary: cmd.summary,
-        extra: { facts: cmd.facts },
+        extra: { facts: cmd.facts, party: cmd.party ?? null },
         confidence: cmd.facts.confidence,
       });
     }
@@ -1410,6 +1427,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: cmd.summary?.by ?? 'template',
       };
       assertDecisionSpec(decision);
+      // A gift donor is a person whose identity and money we must check like the client's.
+      for (const src of cmd.facts.sources) {
+        const name = src.kind === 'gift' ? src.gift?.donorName?.trim() : null;
+        if (!name) continue;
+        const party = partyId('donor', name);
+        if (!s.partyChecks[party] && !out.some((ev) => ev.type === 'id_party_added' && (ev.payload as { party: string }).party === party)) out.push({ type: 'id_party_added', actor: SYSTEM, payload: { party, label: `${name} (donor)`, role: 'donor' } });
+      }
       out.push({ type: 'proof_of_funds_submitted', actor: cmd.actor, payload: { requestId: cmd.requestId, facts: cmd.facts, flags, statements: review?.statements ?? [], risk, decision }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence });
       return out;
     }
@@ -1870,7 +1894,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
     } else if (d.kind === 'bank_details' || d.kind === 'requisition') {
       // handled via the generic escalation (the bank record stays unverified / the requisition stays open)
     } else {
-      out.push(reviewedEvent(d, option, note, userId, subject, engagement));
+      out.push(reviewedEvent(s, d, option, note, userId, subject, engagement));
     }
     const decision: DecisionSpec = {
       kind: 'escalation',
@@ -1906,7 +1930,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       const origin = d.origin;
       if (origin) {
         const od = s.decisions[origin.decisionEventId];
-        if (od) out.push(reviewedEvent(od, option, note, userId, od.subject ?? ''));
+        if (od) out.push(reviewedEvent(s, od, option, note, userId, od.subject ?? ''));
       }
       return out;
     }
@@ -1922,7 +1946,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       return out;
     }
     default:
-      out.push(reviewedEvent(d, option, note, userId, subject, engagement));
+      out.push(reviewedEvent(s, d, option, note, userId, subject, engagement));
   }
 
   // "Request further search/enquiry" raises the follow-up enquiry so the wait is tracked.
@@ -1943,6 +1967,8 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   if (d.kind === 'proof_of_funds') {
     const facts = s.proofOfFunds.facts;
     const open = openPofQueries(s);
+    const donorsPending = Object.values(s.partyChecks).filter((pc) => pc.role === 'donor' && !isResolved(pc.status));
+    if (option === 'approve' && donorsPending.length) reject(`Sign-off waits for the donor's ID / AML check: ${donorsPending.map((pc) => `${pc.label} ${pc.status.replace(/_/g, ' ')}`).join('; ')}.`);
     if (option === 'approve' && open.length) reject(`Sign-off is not available while ${open.length} quer${open.length === 1 ? 'y is' : 'ies are'} open (${open.map((q) => q.id).join(', ')}): send them to the client (query), or withdraw each with a reason.`, 409);
     if (option === 'request_further' && open.length === 0 && !note?.trim()) reject('There is nothing to put to the client: add a query first, or write what you need in the reason.', 400);
     if (option === 'approve') {
@@ -1961,13 +1987,15 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   return out;
 }
 
-function reviewedEvent(d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string, engagement: Engagement | null = null): NewEvent {
+function reviewedEvent(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, subject: string, engagement: Engagement | null = null): NewEvent {
   const base = { decisionEventId: d.eventId, option, note, engagement };
   // note_actions never reaches here: it is resolved into note_actions_applied above.
   if (d.kind === 'note_actions') reject('A note\'s proposals are applied, not reviewed.', 500);
   switch (d.kind) {
-    case 'id_check':
-      return { type: 'id_check_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
+    case 'id_check': {
+      const party = Object.values(s.partyChecks).find((pc) => pc.decisionEventId === d.eventId)?.party ?? null;
+      return { type: 'id_check_reviewed', actor: userId, payload: { ...base, party }, sourceDocumentId: d.sourceDocumentId };
+    }
     case 'search':
       return { type: 'search_reviewed', actor: userId, payload: { ...base, searchType: subject as SearchType }, sourceDocumentId: d.sourceDocumentId };
     case 'enquiry':
