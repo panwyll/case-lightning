@@ -1404,6 +1404,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed') reject('Record what the client said (note).', 400);
       const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      if (cmd.subject === 'further_investigation') {
+        const open = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
+        if (!open.length) reject('No further investigation is outstanding on this survey.');
+        // Waiving is the client accepting the risk, advised in writing: each recommendation's issue closes as accepted as is.
+        if (cmd.decision === 'waive') for (const i of open) out.push({ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: 'accepted_as_is', note: `Client waives further investigation (advised in writing)${cmd.note ? `: ${cmd.note.trim()}` : ''}` } });
+      }
       if (cmd.subject === 'physical_condition' && cmd.decision === 'renegotiate') {
         out.push({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: nextIssueId(s), kind: 'survey_defect', title: `Client wants to renegotiate after the survey${cmd.note ? `: ${cmd.note.trim().slice(0, 120)}` : ''}`, detail: cmd.note?.trim() || null, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.evidenceDocumentId ?? null, origin: null, party: null, severity: 'warning', causedBy: null }, sourceDocumentId: cmd.evidenceDocumentId ?? null });
       }

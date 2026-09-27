@@ -418,10 +418,12 @@ export interface SurveyFacts {
 }
 
 /** What a client, and only a client, decides (docs/case-model.md §7–§8). */
-export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'exchange_authority', 'accept_risk', 'accept_terms', 'completion_date', 'ownership_basis'] as const;
+export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'further_investigation', 'exchange_authority', 'accept_risk', 'accept_terms', 'completion_date', 'ownership_basis'] as const;
 export type ClientDecisionSubject = (typeof CLIENT_DECISION_SUBJECTS)[number];
 export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> = {
   physical_condition: ['satisfied', 'renegotiate', 'further_investigation', 'withdraw'],
+  /** The surveyor recommended a specialist: the client pursues it (we seek access from the seller) or waives it (accepts the risk, advised in writing). */
+  further_investigation: ['pursue', 'waive'],
   exchange_authority: ['authorised', 'not_yet', 'withdrawn'],
   accept_risk: ['accepted', 'declined'],
   accept_terms: ['accepted', 'declined'],

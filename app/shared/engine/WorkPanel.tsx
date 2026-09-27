@@ -748,7 +748,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('survey') && s.survey) lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
     tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started' }, { label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
     actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
-      {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: true, disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
+      {s.survey.status === 'further_investigation' && !s.clientDecisions?.further_investigation && <>
+        {act('survey', 'client_decision_recorded', 'Client Wants the Specialist In', { subject: 'further_investigation', decision: 'pursue' }, { primary: true })}
+        {act('survey', 'client_decision_recorded', 'Client Waives Further Investigation', { subject: 'further_investigation', decision: 'waive' })}
+      </>}
+      {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status !== 'further_investigation', disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
       {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
     </> : null });
 

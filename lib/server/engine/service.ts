@@ -197,8 +197,8 @@ export class EngineService {
         if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
     } else if (action === 'enquiry_draft') {
-      const d = detail as { subject: string; question: string };
-      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: { formsQuestion: d.question } });
+      const d = detail as { subject: string; question?: string | null; issueId?: string | null };
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: d.issueId ? { issueId: d.issueId } : { formsQuestion: d.question ?? undefined } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -759,6 +759,33 @@ export class EngineService {
             const detail = { subject, question: q.question, section: q.section, page: q.page };
             if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'ta6', `enquiry_draft:${q.question}`, detail, `ENQUIRY FROM THE SELLER'S FORMS\n\nQuestion: ${q.question}${q.section ? `\nSection: ${q.section}` : ''}${q.page ? `\nPage: ${q.page}` : ''}\nAnswer given: not known\n\nProposed enquiry to the seller's solicitor:\n${subject}`)) continue;
             await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject, origin: { formsQuestion: q.question } });
+          }
+        }
+        // The client wants the specialist in: ask the seller's solicitor for access, one enquiry per recommendation, proposed or raised as the trust level says.
+        if (e.type === 'client_decision_recorded' && (e.payload as { subject: string; decision: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'pursue') {
+          const fresh = await this.getState(tenantId, matterId);
+          const note = (e.payload as { note?: string | null }).note;
+          for (const i of Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && !x.enquiryIds.length)) {
+            const what = i.title.replace(/^.*?recommended:\s*/i, '');
+            const subject = `Access for a specialist inspection: the survey recommends ${what}. Our client wishes to proceed with this. Please confirm your client will permit access for the specialist, on what dates, and on what conditions (including whether any lifting of floor coverings or minor opening-up is acceptable and who makes good).${note ? ` Our client adds: ${note}` : ''}`;
+            const detail = { subject, issueId: i.id };
+            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', `enquiry_draft:access:${i.id}`, detail, `ENQUIRY — ACCESS FOR A SPECIALIST\n\nTo: the seller's solicitor\nFor: ${i.title}\n\n${subject}`)) continue;
+            await this.perform(tenantId, matterId, 'enquiry_draft', detail);
+          }
+        }
+        // The seller's solicitor has answered an access enquiry: the client hears the conditions and can book the specialist.
+        if (e.type === 'enquiry_reply_received') {
+          const fresh = await this.getState(tenantId, matterId);
+          const q = fresh.enquiries[(e.payload as { enquiryId: string }).enquiryId];
+          const issue = q?.origin?.issueId ? fresh.issues[q.origin.issueId] : null;
+          if (q && issue?.kind === 'survey_further_investigation') {
+            const dec = q.decisionEventId ? fresh.decisions[q.decisionEventId] : null;
+            const conditions = (dec?.summary ?? '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 8).join(' ');
+            const context = { eventType: e.type, payload: e.payload, specialist: issue.title.replace(/ recommended:.*$/i, ''), conditions: conditions || "see their reply, which we will forward" };
+            const detail = { template: 'access_conditions', context, triggeredByEventId: e.id };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'access_conditions', `access_conditions:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: the seller's reply on access for the ${issue.title}\nTemplate: access_conditions`))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('access conditions could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            }
           }
         }
         // PROPOSE level: a person said yes — do it now, the same way the unasked path would.
