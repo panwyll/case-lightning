@@ -551,3 +551,18 @@ test('joint accounts: a gift from a joint account makes both holders donors (bot
   const lender = openIssues(s).find((i) => i.kind === 'lender_approval')!;
   assert.match(lender.title, /from Anita Shah, Vikram Shah \(joint account\)/);
 });
+
+test('payslips: income evidence, not the money — a plain request for the statements, and a payslip in another name is a query', () => {
+  const sub = submission({ mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 32_500_000, description: 'Savings from salary', evidenceDocumentIds: ['p1', 'p2'] }] });
+  const facts = factsFromSubmission('pof-9', sub, 40_000_000);
+  const slip = (id: string, employeeName: string): EvidenceDocument => ({ id, fileName: `${id}.pdf`, sourceIndex: 1, donorFor: null, kind: 'payslip', payslip: { employeeName, employer: 'Acme Ltd', payDate: '2026-08-28', netPayPennies: 312_000, grossPayPennies: 410_000, confidence: 0.9 }, statement: null, unreadable: null });
+  const r = reviewTransactions(facts, [slip('p1', facts.declarantName), slip('p2', facts.declarantName)], '2026-09-01T09:00:00Z');
+  assert.equal(r.payslips.length, 2);
+  assert.ok(r.flags.some((f) => f.code === 'PAYSLIPS_NOT_STATEMENTS:SAVINGS'), 'the money has not been seen');
+  assert.ok(!r.flags.some((f) => f.code.startsWith('NO_STATEMENT')), 'no blunt "not bank statements" on top');
+  assert.ok(!r.flags.some((f) => f.code === 'STATEMENT_UNREADABLE'), 'a payslip is not an unreadable statement');
+  const q = r.queries.find((x) => x.flagCode === 'PAYSLIPS_NOT_STATEMENTS')!;
+  assert.match(q.question, /Thank you for the payslips.*from Acme Ltd.*statements for the account your salary is paid into/);
+  const other = reviewTransactions(facts, [slip('p3', 'Someone Else')], '2026-09-01T09:00:00Z');
+  assert.ok(other.flags.some((f) => f.code === 'PAYSLIP_NAME_MISMATCH'));
+});
