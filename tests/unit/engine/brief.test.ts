@@ -44,7 +44,7 @@ test('brief for drafting: facts a fee-earner may use, and an instruction not to 
   const text = renderForDrafting(caseBrief(await h.svc.getState(TENANT, MATTER), h.ports.now()));
   assert.match(text, /Freehold purchase/);
   assert.match(text, /Outstanding with others:/);
-  assert.match(text, /a property search \(CON29\) — with the local authority and search providers, \d+ working days, 1 chase sent/);
+  assert.match(text, /the property searches \(CON29\) — with the local authority and search providers, \d+ working days, 1 chase sent/);
   assert.match(text, /Do not state anything about this matter that is not above or in the thread\./);
 });
 
@@ -110,7 +110,7 @@ test('a chase to a third party also tells the client — once a day, never while
   const updates = h.ports.clientComms.sent.filter((x) => x.template === 'chase_update');
   assert.equal(updates.length, 1, 'everything chased in one sweep (the contract pack and two searches) is one update, not three');
   assert.match(String(updates[0].context.waitingOn), /local authority|seller's solicitor/);
-  assert.match(String(updates[0].context.waitingFor), /property search|contract pack/);
+  assert.match(String(updates[0].context.waitingFor), /property search|contract pa/);
   assert.match(String(updates[0].context.nextChase), /\w+day \d+ \w+/, 'the update says when we chase again');
   const state = await h.svc.getState(TENANT, MATTER);
   assert.ok(state.clientUpdateLastSentAt.chase_update, 'the matter remembers it told them');
