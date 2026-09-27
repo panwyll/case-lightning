@@ -12,6 +12,7 @@ import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
 import { Timeline } from '@/app/shared/engine/Timeline';
 import { CaseView, type CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
+import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { paths } from '@/lib/paths';
 
 /**
@@ -256,17 +257,9 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <Field k="Handler" v={nameOf(row.assignedTo)} />
                 <Field k="Reference" v={row.matterRef ?? ''} />
               </div>
-              {(detail?.contacts ?? []).some((c) => c.role && !/unknown/i.test(String(c.role))) && (
-                <>
-                  <hr className="mx-hr" />
-                  {detail!.contacts.filter((c) => c.role && !/unknown/i.test(String(c.role))).slice(0, 8).map((c) => (
-                    <div key={c.id} className="mx-party">
-                      <a href={`mailto:${c.email}`} title={c.email}>{c.name || c.email}</a>
-                      <span>{pretty(String(c.role || '').toLowerCase())}</span>
-                    </div>
-                  ))}
-                </>
-              )}
+              <hr className="mx-hr" />
+              <div className="mx-k" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Contacts</div>
+              <ContactsCard matterId={matterId} api={api} />
             </div>
           </div>
           </>)}

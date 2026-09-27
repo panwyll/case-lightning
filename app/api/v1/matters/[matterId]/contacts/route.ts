@@ -20,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const contacts = await query<Record<string, unknown>>(
-      `select id, email, name, role, source, last_seen_at
+      `select id, email, name, role, source, last_seen_at, phone, whatsapp_opt_in as "whatsappOptIn"
        from matter_contact where matter_id = $1 and tenant_id = $2
        order by role <> 'UNKNOWN' desc, last_seen_at desc`,
       [matterId, user.tenantId]
@@ -43,19 +43,24 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         email: z.string().email(),
         name: z.string().optional(),
         role: z.enum(ROLES).optional(),
+        phone: z.string().max(40).nullable().optional(),
+        /** WhatsApp only ever with the client's explicit opt-in, recorded here by the person who took it. */
+        whatsappOptIn: z.boolean().optional(),
       })
       .parse(await req.json());
     await assertMatterAccess(user, matterId);
 
     const email = body.email.trim().toLowerCase();
     const row = await query<{ id: string }>(
-      `insert into matter_contact (tenant_id, matter_id, email, name, role, source, last_seen_at)
-       values ($1, $2, $3, $4, $5, 'MANUAL', now())
+      `insert into matter_contact (tenant_id, matter_id, email, name, role, phone, whatsapp_opt_in, source, last_seen_at)
+       values ($1, $2, $3, $4, $5, $6, coalesce($7, false), 'MANUAL', now())
        on conflict (matter_id, email) do update
          set name = coalesce($4, matter_contact.name),
-             role = coalesce($5, matter_contact.role)
+             role = coalesce($5, matter_contact.role),
+             phone = case when $8 then $6 else matter_contact.phone end,
+             whatsapp_opt_in = coalesce($7, matter_contact.whatsapp_opt_in)
        returning id`,
-      [user.tenantId, matterId, email, body.name ?? null, body.role ?? null]
+      [user.tenantId, matterId, email, body.name ?? null, body.role ?? null, body.phone ?? null, body.whatsappOptIn ?? null, body.phone !== undefined]
     );
     return ok({ id: row[0]?.id });
   } catch (error) {
