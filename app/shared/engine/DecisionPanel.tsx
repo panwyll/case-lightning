@@ -26,6 +26,7 @@ import { Check } from '@/app/shared/icons';
 
 const CSS = `
 .dp{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(320px,1fr);height:calc(100vh - 56px);margin:-18px -24px -14px;background:#fff;min-height:0}
+.dp.solo{grid-template-columns:minmax(0,1fr)}
 .dp.inline{height:min(72vh,760px);margin:0;border-top:1px solid #e6e8ee;border-radius:0 0 12px 12px;overflow:hidden}
 .dp.inline .dp-scroll{padding:14px 18px 18px}
 .dp.inline .dp-actions{padding-left:18px;padding-right:18px}
@@ -425,7 +426,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   );
 
   return (
-    <div className={`eg dp${inline ? ' inline' : ''}`}>
+    <div className={`eg dp${inline ? ' inline' : ''}${d.kind === 'proposal' ? ' solo' : ''}`}>
       <style>{ENGINE_CSS + CSS + PDF_CSS}</style>
 
       {/* ── The brief: the checks, each with what the file says; the decision pinned underneath ── */}
@@ -608,6 +609,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       </div>
 
       {/* ── The source: one document at a time, picked from what the checks cite ── */}
+      {d.kind !== 'proposal' && (
       <section className="dp-src" ref={srcRef} aria-label="Source document">
         <div className="dp-srcbar">
           {docIds.length > 1 ? (
@@ -637,6 +639,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           {!shownOther && source && !pdfSrc && !source.draftCheck && !highlighted && (source.webUrl ? <iframe className="dp-frame" title="Source document" src={source.webUrl} /> : <div className="dp-lock">No inline preview is available for this document. Open the file itself.</div>)}
         </div>
       </section>
+      )}
     </div>
   );
 }

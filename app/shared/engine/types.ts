@@ -20,6 +20,8 @@ export interface DecisionRow {
   createdAt: string;
   summarisedBy: string;
   status: 'pending' | 'actioned' | 'escalated';
+  /** The task in a conveyancer's sentence (present when the list is scoped to one case). */
+  what?: string | null;
   openedBy: string[];
   resolvedBy?: string | null;
   resolvedAt?: string | null;
@@ -296,7 +298,11 @@ export interface EngineEvent { id: string; seq: number; type: string; actor: str
 
 export const STAGES = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
 
+/** The short chip on a task row: the kind alone, no verb. */
+export const chipLabel = (kind: string): string => (kind === 'auto_clear' ? 'Rules clear' : (KIND_LABEL[kind] ?? pretty(kind)).split(' — ')[0]);
+
 export const KIND_LABEL: Record<string, string> = {
+  issue: 'Issue',
   proposal: 'Proposal',
   search: 'Search result',
   enquiry: 'Enquiry reply',
@@ -405,6 +411,8 @@ export interface WorkItem {
   sinceWorkingDays: number | null;
   /** WAITING: who asked — a person's name once the API has resolved it, or system / ai / external. */
   openedBy?: string | null;
+  /** The kind of thing it is (a decision kind, or issue / wait), for the chip on the list. */
+  kind?: string;
   slaWorkingDays: number | null;
   chaseInWorkingDays: number | null;
   chasesSent: number;

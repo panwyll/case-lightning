@@ -25,7 +25,7 @@ import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
-import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type LevelConfig } from './types';
+import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type LevelConfig, type DecisionState } from './types';
 import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
 
 export type Bucket = 'do' | 'waiting' | 'escalate';
@@ -70,6 +70,8 @@ export interface WorkItem {
   dueBy: string | null;
   /** WAITING: the clock has run out; the next sweep sends the chase. Nobody has to do anything. */
   chaseDue: boolean;
+  /** The kind of thing it is (a decision kind such as proposal / search / proof_of_funds, or issue / wait), for the chip on the list. */
+  kind?: string;
   /** Where to go: the decision, the issue, the wait or just the case. */
   ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'client' | 'case'; id: string };
 }
@@ -147,6 +149,53 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
  */
 const subjectLabel = (action: string, subject: string): string => ENGINE_ACTION_SUBJECTS[action as keyof typeof ENGINE_ACTION_SUBJECTS]?.find((s) => s.key === subject)?.label ?? subject.replace(/_/g, ' ');
 
+/** The task in a conveyancer's sentence: what is in front of them, not the engine's name for it. */
+export function decisionSentence(s: MatterState, d: DecisionState): string {
+  // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
+  // it is described by the first line of what the timer actually said.
+  // One sentence, not the whole dossier — the detail is on the case.
+  const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
+  // The task in a conveyancer's sentence: what is in front of them, not the engine's name for it.
+  const cleanSubject = d.subject && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? d.subject.replace(/^[a-z_]+:/, '') : null;
+  const flagsOf = (): number => {
+    if (d.kind === 'search' && cleanSubject) return s.searches[cleanSubject]?.facts?.flags?.length ?? 0;
+    if (d.kind === 'mortgage') return s.mortgage.facts?.conditions.filter((c) => !c.standard).length ?? 0;
+    if (d.kind === 'title') return (s.title.facts?.restrictions.length ?? 0) + (s.title.facts?.charges.length ?? 0) + (s.title.facts?.covenants.length ?? 0);
+    return 0;
+  };
+  const points = (k: number, one: string) => (k ? `: ${k} ${k === 1 ? one : `${one}s`}` : '');
+  const pr = s.proposals[d.eventId];
+  const proposalLine = (): string => {
+    if (!pr) return 'Approve the proposal';
+    const det = pr.detail as Record<string, unknown>;
+    const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
+    switch (pr.action) {
+      case 'acknowledgement': return `Send an acknowledgement to ${to}`;
+      case 'chase': return `Chase ${to} for ${typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply'}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
+      case 'search_order': return `Order the ${cleanSubject ?? String(det.searchType ?? '')} search`;
+      case 'enquiry_draft': return `Raise an enquiry from the seller's forms`;
+      case 'client_update': return det.kind === 'id_check_request' ? `Request the ID / AML check${typeof det.label === 'string' ? ` for ${det.label}` : ''}` : det.kind === 'proof_of_funds_request' ? 'Send the client the proof-of-funds form' : `Send the client an update${typeof det.template === 'string' ? ` (${det.template.replace(/_/g, ' ')})` : ''}`;
+      default: return `Approve: ${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
+    }
+  };
+  return (
+    d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
+    : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
+    : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
+    : d.kind === 'proposal' ? proposalLine()
+    : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
+    : d.kind === 'search' ? `${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} search result` : 'Search result'}${points(flagsOf(), 'point')}`
+    : d.kind === 'enquiry' ? `Reply to enquiry ${cleanSubject ?? ''}`.trim()
+    : d.kind === 'mortgage' ? `Mortgage offer${s.mortgage.facts?.lender ? ` from ${s.mortgage.facts.lender}` : ''}${points(flagsOf(), 'special condition')}`
+    : d.kind === 'title' ? `Official copies${s.title.facts?.titleNumber ? ` of ${s.title.facts.titleNumber}` : ''}${points(flagsOf(), 'entry')}`
+    : d.kind === 'proof_of_funds' ? 'Sign off the source of funds'
+    : d.kind === 'report_on_title' ? 'Approve the report on title'
+    : d.kind === 'management_pack' ? 'Management pack (LPE1)'
+    : d.kind === 'requisition' ? "Answer HM Land Registry's requisition"
+    : `${(DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')).replace(/^the /, '').replace(/^\w/, (c) => c.toUpperCase())}${cleanSubject ? ` — ${cleanSubject}` : ''}`
+  );
+}
+
 export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkContext = {}, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): MatterWork {
   const health = caseHealth(s, now, sla, cal);
   const out: WorkItem[] = [];
@@ -160,54 +209,14 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   const surfaced = surfacedDecisions(s);
   for (const d of surfaced.filter((x) => x.kind !== 'auto_clear' || !!s.pendingAutoClears[x.eventId])) {
     const age = wd(d.createdAt, now, cal);
-    // An escalation's subject is an internal key ("deadline:mortgage_offer_expiry:…"), so
-    // it is described by the first line of what the timer actually said.
-    // One sentence, not the whole dossier — the detail is on the case.
-    const firstLine = ((d.summary ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '').split(/(?<=\.)\s/)[0].slice(0, 120);
-    // The task in a conveyancer's sentence: what is in front of them, not the engine's name for it.
-    const cleanSubject = d.subject && !/^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? d.subject.replace(/^[a-z_]+:/, '') : null;
-    const flagsOf = (): number => {
-      if (d.kind === 'search' && cleanSubject) return s.searches[cleanSubject]?.facts?.flags?.length ?? 0;
-      if (d.kind === 'mortgage') return s.mortgage.facts?.conditions.filter((c) => !c.standard).length ?? 0;
-      if (d.kind === 'title') return (s.title.facts?.restrictions.length ?? 0) + (s.title.facts?.charges.length ?? 0) + (s.title.facts?.covenants.length ?? 0);
-      return 0;
-    };
-    const points = (k: number, one: string) => (k ? `: ${k} ${k === 1 ? one : `${one}s`}` : '');
-    const pr = s.proposals[d.eventId];
-    const proposalLine = (): string => {
-      if (!pr) return 'Approve what the engine proposes';
-      const det = pr.detail as Record<string, unknown>;
-      const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
-      switch (pr.action) {
-        case 'acknowledgement': return `Send an acknowledgement to ${to}`;
-        case 'chase': return `Chase ${to} for ${typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply'}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
-        case 'search_order': return `Order the ${cleanSubject ?? String(det.searchType ?? '')} search`;
-        case 'enquiry_draft': return `Raise an enquiry from the seller's forms`;
-        case 'client_update': return det.kind === 'id_check_request' ? `Request the ID / AML check${typeof det.label === 'string' ? ` for ${det.label}` : ''}` : det.kind === 'proof_of_funds_request' ? 'Send the client the proof-of-funds form' : `Send the client an update${typeof det.template === 'string' ? ` (${det.template.replace(/_/g, ' ')})` : ''}`;
-        default: return `Approve: ${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
-      }
-    };
-    const what =
-      d.kind === 'bank_details' ? 'Verify bank details out-of-band (payments are stopped until you do)'
-      : d.kind === 'escalation' ? escalationLine(firstLine || 'Deal with an escalation')
-      : d.kind === 'auto_clear' ? `Confirm the rules' clear of ${cleanSubject ? cleanSubject.replace(/^ID\/AML check(?: — (.*?))?(?: \([^)]*\))?$/, (_m, who: string | undefined) => `the ID / AML check${who ? ` for ${who}` : ''}`) : 'the document'}`
-      : d.kind === 'proposal' ? proposalLine()
-      : d.kind === 'id_check' ? `ID / AML result for ${d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : 'the client'}`
-      : d.kind === 'search' ? `${SEARCH_NAME[cleanSubject ?? ''] ? `${SEARCH_NAME[cleanSubject ?? '']} search result` : 'Search result'}${points(flagsOf(), 'point')}`
-      : d.kind === 'enquiry' ? `Reply to enquiry ${cleanSubject ?? ''}`.trim()
-      : d.kind === 'mortgage' ? `Mortgage offer${s.mortgage.facts?.lender ? ` from ${s.mortgage.facts.lender}` : ''}${points(flagsOf(), 'special condition')}`
-      : d.kind === 'title' ? `Official copies${s.title.facts?.titleNumber ? ` of ${s.title.facts.titleNumber}` : ''}${points(flagsOf(), 'entry')}`
-      : d.kind === 'proof_of_funds' ? 'Sign off the source of funds'
-      : d.kind === 'report_on_title' ? 'Approve the report on title'
-      : d.kind === 'management_pack' ? 'Management pack (LPE1)'
-      : d.kind === 'requisition' ? "Answer HM Land Registry's requisition"
-      : `${(DECISION_LABEL[d.kind] ?? d.kind.replace(/_/g, ' ')).replace(/^the /, '').replace(/^\w/, (c) => c.toUpperCase())}${cleanSubject ? ` — ${cleanSubject}` : ''}`;
+    const what = decisionSentence(s, d);
     out.push({
       ...base,
       id: `${d.kind === 'escalation' ? 'escalate' : 'do'}:decision:${d.eventId}`,
       // An escalation decision IS the escalation: the timer gave up on writing and asked
       // for a person. It does not belong in the same column as an ordinary decision.
       bucket: d.kind === 'escalation' ? 'escalate' : 'do',
+      kind: d.kind,
       what,
       unblocks: d.kind === 'bank_details' ? 'Any payment to this payee' : null,
       actionOwner: 'conveyancer',
@@ -229,6 +238,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       ...base,
       id: `do:issue:${i.id}`,
       bucket: 'do',
+      kind: 'issue',
       what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',

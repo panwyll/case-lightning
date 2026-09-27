@@ -878,7 +878,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
       {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
-      <DecisionFeed api={api} matterId={matterId} compact onResolved={onChanged} />
+      <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
 
       {openWaits.length > 0 && (
         <>
@@ -895,7 +895,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                   {w.chase ? (
                     <span className="d" style={{ display: 'block', color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
                       {w.chase.dueInWorkingDays > 0
-                        ? `${proposes ? 'A chase is proposed to you' : 'The engine chases them'} on ${fmtDay(w.chase.dueDate)} (${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'})`
+                        ? `${proposes ? 'A chase is proposed to you' : 'The system chases them'} on ${fmtDay(w.chase.dueDate)} (${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'})`
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
                   ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}

@@ -100,7 +100,7 @@ const KIND_CHECKS: Record<string, string[]> = {
   bank_details: ['Verify by a phone call to a number you already hold, or a Lawyer Checker match', 'Never confirm on the channel the details arrived on', 'Compare with any details held before: a change is the fraud signal', 'Pay nothing until this is resolved'],
   requisition: ['What HM Land Registry is asking for, exactly', 'The reply deadline and the priority period', 'Whether the answer needs the other side, the lender or the client'],
   escalation: ['What the handler decided and why they escalated', 'The same source they saw', 'Whether the position needs the client or the lender told'],
-  proposal: ['Is this the right recipient and the right moment', 'Does anything on the case make this send unwise today'],
+  proposal: [],
   auto_clear: ['Does the document say what the rule layer found', 'Anything the rules do not check that a person would notice'],
   note_actions: ['Does each proposed line say what the note actually says', 'Nothing recorded that the client did not say'],
 };
@@ -319,8 +319,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       const to = (det.recipientRole as string) ?? (det.kind === 'proof_of_funds_request' || det.kind === 'id_check_request' ? 'client' : action === 'client_update' ? 'client' : null);
       const hasDetail = Object.keys(det).length > 0;
       headline = hasDetail
-        ? `The engine wants to ${action === 'chase' ? `chase ${pretty(String(to ?? 'the party'))}` : action === 'acknowledgement' ? `acknowledge to ${pretty(String(to ?? 'the sender'))}` : action === 'search_order' ? `order the ${det.searchType ?? ''} search` : action === 'client_update' ? 'update the client' : pretty(action)}.`
-        : `The engine proposed ${pretty(action)}: ${d.summary.split('\n')[0].slice(0, 160)}`;
+        ? `Proposed: ${action === 'chase' ? `chase ${pretty(String(to ?? 'the party'))}` : action === 'acknowledgement' ? `acknowledge to ${pretty(String(to ?? 'the sender'))}` : action === 'search_order' ? `order the ${det.searchType ?? ''} search` : action === 'client_update' ? 'update the client' : pretty(action)}.`
+        : `Proposed ${pretty(action)}: ${d.summary.split('\n')[0].slice(0, 160)}`;
       if (hasDetail) addT('Would send', action === 'chase' ? `chase for ${pretty(String(det.waitKey ?? ''))}${det.subject ? ` ${det.subject}` : ''}${det.template ? ` (${det.template})` : ''}` : action === 'acknowledgement' ? `acknowledgement of ${det.what ?? 'a delivery'}` : action === 'client_update' ? `client update: ${pretty(String(det.template ?? det.kind ?? ''))}` : action === 'search_order' ? `order for ${det.searchType} from ${det.provider ?? 'the provider'}` : pretty(action));
       addT('To', to ? pretty(String(to)) : null);
       if (action === 'chase') {
@@ -643,16 +643,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
       item('Never confirm on the channel the details arrived on; pay nothing until this is resolved', 'open'),
     ];
   }
-  if (d.kind === 'proposal') {
-    const pr = Object.values(s.proposals).find((p) => p.eventId === d.eventId) ?? null;
-    const det = (pr?.detail ?? {}) as Record<string, unknown>;
-    const w = det.waitKey ? openWaits(s).find((ww) => ww.key === det.waitKey && (!det.subject || ww.subject === det.subject)) : null;
-    return [
-      // The message itself is shown above the checks (the API renders it exactly as it would go); the check carries only the timing.
-      item('Is this the right recipient and the right moment', 'open', w ? [{ text: `Outstanding since ${day(w.openedAt)}${w.chasesSentAt.length ? ` · chased ${w.chasesSentAt.length}× (last ${day(w.chasesSentAt[w.chasesSentAt.length - 1])})` : ' · not chased yet'}` }] : []),
-      item('Does anything on the case make this unwise today', openIssues(s).length ? 'flag' : 'ok', openIssues(s).slice(0, 4).map((i) => ({ text: `Open issue: ${i.title}`, warn: true }))),
-    ];
-  }
+  // A proposal is decided on the message itself (rendered by the API): no checks to tick.
+  if (d.kind === 'proposal') return [];
   if (d.kind === 'auto_clear') {
     const ac = raised?.type === 'auto_clear_review_raised' ? (rp as { subFlow?: string; subject?: string; reasons?: string[] }) : null;
     return [

@@ -33,7 +33,7 @@ export function NotesPanel({
   const [kind, setKind] = useState('typed');
   const [open, setOpen] = useState<string | null>(null);
   const notes = Object.values(state.notes ?? {}).sort((a, b) => b.at.localeCompare(a.at));
-  const who = (id: string) => people?.[id] ?? (id === 'ai' ? 'the reader' : id === 'system' ? 'the engine' : id.slice(0, 8));
+  const who = (id: string) => people?.[id] ?? (id === 'ai' ? 'the reader' : id === 'system' ? 'the system' : id.slice(0, 8));
 
   const file = async () => {
     const body = text.trim();

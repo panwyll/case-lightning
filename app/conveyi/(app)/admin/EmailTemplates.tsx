@@ -134,7 +134,7 @@ export default function EmailTemplates() {
               <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                 <span style={{ fontSize: 11, color: '#94a3b8', marginRight: 4 }}>Insert:</span>
                 {(cur.category === 'Engine' && engine[cur.name] ? engine[cur.name].vars : PLACEHOLDERS).map((k) => (
-                  <button key={k} onClick={() => insertPlaceholder(k)} title={SAMPLE[k] ? `Sample: ${SAMPLE[k]}` : `{{${k}}} is filled by the engine`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
+                  <button key={k} onClick={() => insertPlaceholder(k)} title={SAMPLE[k] ? `Sample: ${SAMPLE[k]}` : `{{${k}}} is filled in automatically`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
                 ))}
               </div>
               <label style={lbl}>Attach documents</label>

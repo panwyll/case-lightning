@@ -93,7 +93,7 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                 {i.severity && chip(i.severity === 'critical' ? { bg: '#fecaca', fg: '#7f1d1d' } : i.severity === 'warning' ? { bg: '#fef3c7', fg: '#78350f' } : { bg: '#f1f5f9', fg: '#475569' }, i.severity)}
                 {i.causedBy && <span style={{ fontSize: 11, color: '#7c3aed' }}>discovered via {i.causedBy}</span>}
                 {chip(GATE_CHIP[i.gate], GATE_CHIP[i.gate].label)}
-                <span style={{ color: '#64748b' }}>raised {fmtDay(i.raisedAt)} at {pretty(i.raisedAtStage)}{i.raisedBy === 'system' ? ' by the engine' : ''} · last touched {fmtDay(i.updatedAt)}</span>
+                <span style={{ color: '#64748b' }}>raised {fmtDay(i.raisedAt)} at {pretty(i.raisedAtStage)}{i.raisedBy === 'system' ? ' by the system' : ''} · last touched {fmtDay(i.updatedAt)}</span>
               </div>
               <div style={{ marginTop: 2 }}>{i.title}{i.detail ? <span style={{ color: '#64748b' }}> — {i.detail}</span> : null}{i.enquiryIds?.length ? <span style={{ color: '#64748b' }}> · enquiries {i.enquiryIds.join(', ')}</span> : null}</div>
               {last && <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{last.what}</div>}

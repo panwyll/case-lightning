@@ -1,7 +1,28 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DecisionCard, DECISION_CSS } from './DecisionCard';
-import { KIND_LABEL, pretty, type Api, type DecisionRow } from './types';
+import { DecisionPanel } from './DecisionPanel';
+import { ChevronRight } from '@/app/shared/icons';
+import { KIND_LABEL, pretty, type Api, type DecisionRow , chipLabel } from './types';
+
+const ROW_CSS = `
+.df-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:10px 14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-bottom:8px}
+.df-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
+.df-chip.prop{color:#5A27E0;background:#f5f3ff}
+.df-row .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
+.df-btn{border:1px solid #5A27E0;background:#fff;color:#5A27E0;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.df-btn:hover{background:#f5f3ff}
+.df-btn.on{color:#64748b;border-color:#e2e8f0;padding:6px 8px}
+.df-open{border:1px solid #e6e8ee;border-radius:12px;margin:-4px 0 10px;overflow:hidden}
+`;
+
+/** "search:CON29" → "CON29"; a bare id → nothing. */
+const subjectLabel = (s: string | null | undefined): string => {
+  if (!s) return '';
+  const tail = s.includes(':') ? s.slice(s.indexOf(':') + 1) : s;
+  if (/^(rot|bd|pof|draft)?-?[0-9a-f]{8}-[0-9a-f-]{20,}$/i.test(tail)) return '';
+  return tail.replace(/\s*\(mock[^)]*\)/i, '').replace(/_/g, ' ');
+};
 
 /**
  * The "Spark Notes" feed (component #6): only decision events, oldest first, grouped
@@ -12,6 +33,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
   const [rows, setRows] = useState<DecisionRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [kind, setKind] = useState<string>('all');
+  const [open, setOpen] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -43,7 +65,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
   if (hideWhenEmpty && (rows === null || rows.length === 0)) return null;
   return (
     <div>
-      <style>{DECISION_CSS}</style>
+      <style>{DECISION_CSS + ROW_CSS}</style>
       {err && <div className="dc-err">{err}</div>}
       {rows === null && !err && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Loading…</div>}
       {rows && rows.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: compact ? 12 : 30, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>Nothing waiting on you{matterId ? ' for this case' : ''}.</div>}
@@ -63,8 +85,20 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
               {list[0].matterRef ?? mid}{list[0].propertyAddress ? ` — ${list[0].propertyAddress}` : ''} · {list.length} decision{list.length === 1 ? '' : 's'}
             </div>
           )}
-          {list.map((d) => (
-            <DecisionCard key={d.eventId} decision={d} api={api} compact={compact} showMatter={!matterId && compact} onResolved={() => { void load(); onResolved?.(); }} />
+          {list.map((d) => compact ? (
+            <DecisionCard key={d.eventId} decision={d} api={api} compact showMatter={!matterId} onResolved={() => { void load(); onResolved?.(); }} />
+          ) : (
+            <div key={d.eventId}>
+              <div className="df-row">
+                <div className="what"><span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
+                <button type="button" className={`df-btn${open === d.eventId ? ' on' : ''}`} aria-label={open === d.eventId ? 'Collapse' : 'Review'} onClick={() => setOpen(open === d.eventId ? null : d.eventId)}>{open === d.eventId ? null : 'Review '}<ChevronRight size={14} style={{ transform: open === d.eventId ? 'rotate(90deg)' : undefined }} /></button>
+              </div>
+              {open === d.eventId && (
+                <div className="df-open">
+                  <DecisionPanel eventId={d.eventId} inline onResolved={() => { setOpen(null); void load(); onResolved?.(); }} />
+                </div>
+              )}
+            </div>
           ))}
         </div>
       ))}

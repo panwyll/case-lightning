@@ -35,7 +35,7 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
       }
       setErr(null);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Could not load the engine view.');
+      setErr(e instanceof Error ? e.message : 'Could not load the case.');
     }
   }, [api, matterId, wantsBundle]);
 

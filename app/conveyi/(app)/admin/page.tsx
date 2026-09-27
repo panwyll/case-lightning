@@ -109,11 +109,11 @@ function describeEngine(type: string, p: Record<string, any>): string {
     case 'trust_level': return `Set ${nice(p.action)} to ${nice(p.level)}`;
     case 'sla': return `Set the ${nice(p.waitKey)} timer: chase after ${p.chaseAfter}, every ${p.chaseEvery ?? 'once'}, escalate after ${p.escalateAfter}, re-escalate after ${p.reEscalateAfter} working days`;
     case 'upload': return `Filed ${p.fileName ?? 'a document'} as ${nice(p.role)}${p.action?.kind ? ` — ${nice(p.action.kind)}` : ''}`;
-    case 'ingest': return `Handed a document to the engine as ${nice(p.role)}`;
+    case 'ingest': return `Filed a document as ${nice(p.role)}`;
     case 'audit_export': return 'Exported the audit log';
     case 'action_proposed': return `Engine proposed ${nice(p.action)}${subj} — ${firstLine(p.summary)}`;
-    case 'action_approved': return `Approved the engine's ${nice(p.action)}${subj}`;
-    case 'action_rejected': return `Declined the engine's ${nice(p.action)}${subj}${p.reason ? ` — ${p.reason}` : ''}`;
+    case 'action_approved': return `Approved the proposed ${nice(p.action)}${subj}`;
+    case 'action_rejected': return `Declined the proposed ${nice(p.action)}${subj}${p.reason ? ` — ${p.reason}` : ''}`;
     case 'action_failed': return `Approved ${nice(p.action)}${subj}, but it did not go through — ${p.reason ?? 'unknown error'}`;
     case 'action_suppressed': return `Engine held back ${nice(p.action)}${subj} (${nice(p.reason ?? 'not performed')})`;
     case 'auto_clear_proposed': return `Rules cleared ${nice(p.subFlow ?? p.subject)}${subj}; put to a person to confirm`;

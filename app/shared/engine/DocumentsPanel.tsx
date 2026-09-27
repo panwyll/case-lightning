@@ -105,12 +105,12 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   return (
     <div className="ep">
       <style>{WORK_CSS}</style>
-      <div className="ep-sec">File a document into the engine</div>
+      <div className="ep-sec">File a Document</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input type="file" accept="application/pdf,image/*,.txt" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12.5 }} />
           <select className="ep-input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="auto">Let the engine classify it</option>
+            <option value="auto">Classify it automatically</option>
             <option value="title">Official copy of the register</option>
             <option value="id_check">ID / AML report</option>
             {(buyer || p?.type === 'remortgage') && <option value="search">Search result</option>}
@@ -213,7 +213,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       )}
       <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-        {filed.length === 0 && <div className="ep-note">Nothing has been filed into the engine yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
+        {filed.length === 0 && <div className="ep-note">Nothing has been filed yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
         {filed.map((e, i) => (
           <div key={e.id}>
           <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) || checked.has(e.sourceDocumentId ?? '') ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId) && !checked.has(e.sourceDocumentId ?? '')) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>

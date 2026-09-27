@@ -960,7 +960,7 @@ export class EngineService {
   /** An effect that failed is written on the case as an issue, not only to the server log: a person sees that the engine did not do what it should have, and why. */
   private async recordEffectFailure(tenantId: string, matterId: string, e: EngineEvent, err: unknown): Promise<void> {
     const reason = (err instanceof Error ? err.message : String(err)).trim() || 'unknown error';
-    const title = `The engine could not act on ${e.type.replace(/_/g, ' ')}`;
+    const title = `The system could not act on ${e.type.replace(/_/g, ' ')}`;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
     try {
       await outside(async () => {

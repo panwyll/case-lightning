@@ -15,7 +15,7 @@ export function EnginePanel({ matterId, api, onChanged }: { matterId: string; ap
   const eng = useEngine(matterId, api, onChanged);
   const [tab, setTab] = useState<'work' | 'issues' | 'notes' | 'documents'>('work');
   if (eng.err && !eng.view) return <div className="ep"><style>{WORK_CSS}</style><div className="ep-err">{eng.err}</div></div>;
-  if (!eng.view) return <div className="ep"><style>{WORK_CSS}</style><div style={{ color: '#94a3b8' }}>Loading the engine…</div></div>;
+  if (!eng.view) return <div className="ep"><style>{WORK_CSS}</style><div style={{ color: '#94a3b8' }}>Loading…</div></div>;
   const openIssues = Object.values(eng.view.state.issues ?? {}).filter((i) => i.status === 'open' || i.status === 'negotiating').length;
   const unreadNotes = Object.values(eng.view.state.notes ?? {}).filter((n) => n.status === 'proposed').length;
   return (

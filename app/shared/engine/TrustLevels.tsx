@@ -14,7 +14,7 @@ interface Board { levels: Record<string, TrustLevel>; groups: Group[] }
 
 export const LEVEL_LABEL: Record<TrustLevel, string> = { propose: 'Propose', assist: 'Assist', auto: 'Auto' };
 export const LEVEL_HELP: Record<TrustLevel, string> = {
-  propose: 'The engine puts the intended action in Tasks and does nothing until someone approves it.',
+  propose: 'The system puts the intended action in Tasks and does nothing until someone approves it.',
   assist: 'Acknowledgements, chases and search orders are sent without asking. Client updates are still proposed. Documents the rules clear are cleared, then put to a person to confirm.',
   auto: 'Proceeds without asking. Flagged documents and payments still come to a person.',
 };

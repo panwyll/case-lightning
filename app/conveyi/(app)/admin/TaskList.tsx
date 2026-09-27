@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
-import { type WorkItem } from '@/app/shared/engine/types';
+import { type WorkItem , KIND_LABEL , pretty , chipLabel } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ChevronRight, CheckCircle } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
@@ -27,6 +27,8 @@ const CSS = `
 .tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:10px 14px 10px 40px;border-top:1px solid #f1f5f9}
 .tl-task:first-of-type{border-top:0}
 .tl-task .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
+.tl-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
+.tl-chip.prop{color:#5A27E0;background:#f5f3ff}
 .tl-task .sub{font-size:12px;color:#64748b;margin-top:2px}
 .tl-task .age{font-size:12px;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tl-task .age.over{color:#b91c1c;font-weight:700}
@@ -118,7 +120,7 @@ export default function TaskList({ who }: { who: string }) {
               <div key={key}>
                 <div className="tl-task">
                   <div>
-                    <div className="what">{sentence(i.what)}</div>
+                    <div className="what">{i.kind && <span className={`tl-chip${i.kind === 'proposal' ? ' prop' : ''}`}>{chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : age != null ? (age === 0 ? 'since today' : `waiting ${age}d`) : ''}</span>
