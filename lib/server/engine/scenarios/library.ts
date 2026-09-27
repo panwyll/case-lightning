@@ -147,8 +147,11 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const balance = price - (advance ?? 0);
     const gift = c.flagged ? 4_000_000 : 0;
     const statement = await c.doc({ docType: 'BANK_STATEMENT', fileName: 'savings-statement-round-2.txt', facts: F.statement('Sandbox Buyer', balance - gift), body: F.body('Bank statement', ['Round 2']) });
-    const sub = F.pofSubmission(price, advance, c.flagged, statement, null, null);
-    await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt' });
+    // Round 2 keeps what round 1 attached for the gift (as the client form does): the donors' statement, and the letter again.
+    const donorDoc = s.proofOfFunds.facts?.sources.find((x) => x.kind === 'gift')?.gift?.donorEvidenceDocumentIds?.[0] ?? null;
+    const letter = c.flagged ? await c.doc({ docType: 'GIFT_LETTER', fileName: 'gift-letter-signed-by-both.txt', facts: { content: 'sandbox gift letter' }, body: F.body('Gift letter', ['We, Sandbox Donor and Sandbox Donor Two, gift £40,000 from our joint account to our child. Not repayable. No interest in the property.']) }) : null;
+    const sub = F.pofSubmission(price, advance, c.flagged, statement, donorDoc, letter);
+    await c.svc.proofOfFundsSubmitted(c.tenantId, c.matterId, requestId, { ...sub, round: 2, answers: open.map((q) => ({ queryId: q.id, answer: 'Sandbox answer: explained and evidenced.', evidenceDocumentIds: [statement] })) }, { [statement]: 'savings-statement-round-2.txt', ...(donorDoc ? { [donorDoc]: 'donor-statement.txt' } : {}), ...(letter ? { [letter]: 'gift-letter-signed-by-both.txt' } : {}) });
   }),
   step('donor_id', 'The gift donors\' ID / AML results received (the gift comes from a joint account: both holders are donors)', async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
