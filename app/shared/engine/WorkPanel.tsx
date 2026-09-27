@@ -891,14 +891,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
               return (
                 <div key={`${w.key}:${w.subject}`} className="ep-tile">
                   <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}{who ? <span style={{ fontWeight: 500, color: '#64748b' }}> from {who}</span> : null}</b>
-                  <span className="d">Asked {fmtDay(w.openedAt)}{chased ? ` · chased ${chased === 1 ? 'once' : `${chased} times`}` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
+                  <span className="d" style={{ display: 'block' }}>Asked {fmtDay(w.openedAt)}{chased ? ` · chased ${chased === 1 ? 'once' : `${chased} times`}` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
                   {w.chase ? (
-                    <span className="d" style={{ color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
+                    <span className="d" style={{ display: 'block', color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
                       {w.chase.dueInWorkingDays > 0
                         ? `${proposes ? 'A chase is proposed to you' : 'The engine chases them'} on ${fmtDay(w.chase.dueDate)} (${w.chase.dueInWorkingDays} working day${w.chase.dueInWorkingDays === 1 ? '' : 's'})`
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
-                  ) : <span className="d">No further chase scheduled</span>}
+                  ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}
                   <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy || !w.chase} onClick={() => cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null })}>Chase Now Instead</button></div>
                 </div>
               );
