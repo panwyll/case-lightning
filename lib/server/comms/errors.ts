@@ -17,6 +17,12 @@ export function explainSendError(err: unknown): SendFailure {
   if (m(/No client channel|no email address|No .* email address|no address on the (case|matter)|add the contact/i)) {
     return { reason: 'There is no email address (or opted-in WhatsApp number) for them on this case.', steps: ['Add their email address to the case (Case View → the contacts)', 'Approve the message again'], raw };
   }
+  if (m(/bounce|does not exist|no such user|mailbox unavailable|recipient rejected|undeliverable|address rejected/i)) {
+    return { reason: `The address rejected it: ${raw.replace(/[.!]*$/, '')}.`, steps: ['Check the address on the case (Contacts on the case view) and correct it', 'Then send it again'], raw };
+  }
+  if (m(/complain|spam report|marked as spam/i)) {
+    return { reason: 'The recipient reported it as spam, so nothing further will go to that address by email.', steps: ['Speak to the client and agree how they want to hear from us', 'Update the contact on the case'], raw };
+  }
   if (m(/\b429\b|throttl|rate limit|too many requests/i)) {
     return { reason: 'Microsoft is rate-limiting the mailbox for the moment.', steps: ['Wait ten minutes and approve the message again'], raw };
   }

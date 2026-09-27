@@ -987,6 +987,12 @@ export class EngineService {
     }
   }
 
+  /** The provider reported, after accepting a message, that it did not arrive (a bounce, a complaint): the same task as a failed send, with the reason it gave. */
+  async recordDeliveryFailure(tenantId: string, matterId: string, input: { template: string | null; address: string | null; reason: string; providerRef: string | null }): Promise<void> {
+    const detail: Record<string, unknown> = input.template === 'proof_of_funds_request' || input.template === 'proof_of_funds_request_again' ? { kind: 'proof_of_funds_request', template: input.template, __providerRef: input.providerRef } : { template: input.template ?? 'client_update', __providerRef: input.providerRef };
+    await this.recordSendFailure(tenantId, matterId, 'client_update', detail, new Error(`${input.reason}${input.address ? ` (to ${input.address})` : ''}`));
+  }
+
   /** A person tries a failed action again (the mailbox is back, the address was added). The same message, the same way; on success the proposal stands as done and the failure task closes. */
   async retryFailedAction(tenantId: string, matterId: string, proposalEventId: string, userId: string): Promise<RunResult> {
     const s = await this.getState(tenantId, matterId);

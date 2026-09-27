@@ -94,6 +94,8 @@ export const config = {
   /** Optional: getAddress.io key for full address lists by postcode on the New Case form; without it the postcode is validated and the town filled from postcodes.io. */
   getAddressApiKey: env('GETADDRESS_API_KEY'),
   resendApiKey: env('RESEND_API_KEY'),
+  /** Signing secret of the Resend webhook (delivered / bounced / complained): a bounce becomes a task on the case. */
+  resendWebhookSecret: env('RESEND_WEBHOOK_SECRET'),
   resendFromEmail: env('RESEND_FROM_EMAIL'),
   // Third-party chases: 'draft' leaves an Outlook draft + worklist item for a human to
   // send (default, safest); 'send' sends the template chase automatically from the
