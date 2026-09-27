@@ -5,7 +5,7 @@ import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink, hasDefinitiveSignal } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { fileEmailBodyAsDocument, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
 import { learnFirmRef } from '@/lib/server/contacts';
 import { assistOnMessage } from '@/lib/server/assist';
@@ -132,6 +132,8 @@ export async function POST(req: NextRequest) {
               console.error('[graph notification] auto-save attachments failed', (e as Error).message)
             );
           }
+          // The email itself is read into the case too: a reply in the body is a reply.
+          await fileEmailBodyAsDocument(user, mId, message).catch((e) => console.error('[graph notification] email body read failed', (e as Error).message));
           // ...and the message text itself, so the case record is genuinely shared.
           // listThreadMessages reads the CALLING user's mailbox, so without this a
           // colleague asked for an update can't see what an email in someone else's
