@@ -229,7 +229,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       ...base,
       id: `do:issue:${i.id}`,
       bucket: 'do',
-      what: `${spec.actions[0] ?? 'Deal with'}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}`,
+      what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
       urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',

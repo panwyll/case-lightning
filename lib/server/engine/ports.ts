@@ -220,6 +220,8 @@ export interface EnginePorts {
   asAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
   /** The inverse, for recording on the case that an automation effect failed: that note must land even when the automation role is what failed. */
   outsideAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** The message a proposal would send, rendered exactly (to, subject, body), so a failed send can hand it to a person to send by hand. */
+  messagePreview?: (tenantId: string, matterId: string, action: string, detail: Record<string, unknown>) => Promise<{ kind: string; to?: string; subject?: string; body?: string; title?: string } | null>;
   /**
    * Post-commit observer: every command's committed events, after the effects. Used to
    * project the log into an external system of record (LEAP write-back). Runs as

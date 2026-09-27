@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openIssues } from '../../../lib/server/engine/types';
-import { harness, TENANT, MATTER, USER } from './helpers';
+import { harness, resolve, idClear, TENANT, MATTER, USER } from './helpers';
 
 test('an effect that fails is written on the case as an issue carrying the reason, once', async () => {
   const h = harness();
@@ -21,4 +21,29 @@ test('an effect that fails is written on the case as an issue carrying the reaso
   assert.match(issues[0].detail ?? '', /document store unavailable/);
   assert.equal(issues[0].gate, 'none', 'it tells; it holds nothing');
   assert.equal(s.stage, 'instruction');
+});
+
+test('a send that fails after a person approved it becomes a task: the reason in plain words, the fix, and the message to send by hand', async () => {
+  const h = harness();
+  await h.store.setLevel(TENANT, 'client_update', 'propose');
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  // The search order went (auto); the "searches ordered" update to the client was proposed. The mailbox is dead when the person says yes.
+  let s = await h.svc.getState(TENANT, MATTER);
+  const proposal = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'client_update');
+  assert.ok(proposal, 'the client update is proposed');
+  h.ports.clientComms.sendStatusUpdate = async () => { throw new Error('Refresh token missing; reconnect required'); };
+  h.ports.messagePreview = async () => ({ kind: 'message', to: 'Jane (the client) · jane@example.com', subject: 'Your purchase — searches ordered', body: 'Hello Jane,\n\nWe have ordered the searches.' });
+  await resolve(h, proposal!.eventId, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  const issue = openIssues(s).find((i) => i.kind === 'send_failed');
+  assert.ok(issue, 'the failed send is on the case as a task');
+  assert.match(issue!.title, /^The update to the client did not go: Your Microsoft 365 connection has expired/);
+  assert.match(issue!.detail ?? '', /Connect Microsoft 365/);
+  assert.match(issue!.detail ?? '', /To: Jane \(the client\)/);
+  assert.match(issue!.detail ?? '', /Hello Jane/);
+  assert.match(issue!.detail ?? '', /Error text for support: Refresh token missing/);
+  assert.equal(issue!.gate, 'none');
+  assert.equal(Object.values(s.proposals).find((p) => p.eventId === proposal!.eventId)?.status, 'failed');
 });

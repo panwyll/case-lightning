@@ -113,6 +113,7 @@ export const ISSUE_KINDS = [
   // survey / physical condition
   'survey_further_investigation',
   'document_mismatch',
+  'send_failed',
   'other',
 ] as const;
 export type IssueKind = (typeof ISSUE_KINDS)[number];
@@ -270,6 +271,7 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   { kind: 'sdlt_basis', group: 'money', label: 'SDLT basis', arisesFrom: 'the client\'s declaration at enrolment: first-time buyer relief, the higher rates for an additional property, the non-UK resident surcharge', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Confirm the basis against the facts before the return; the client signs the return\'s declaration.' },
   { kind: 'cdd_refresh', group: 'funds_aml', label: 'CDD refresh due', arisesFrom: 'a client identified more than a year ago on a matter still open (LSAG 6.21 ongoing monitoring)', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Re-check the electronic verification, confirm the address, refresh sanctions and PEP screening; record it.' },
   { kind: 'building_safety', group: 'leasehold', label: 'Building Safety Act', arisesFrom: 'the management pack: a relevant building (11 m / 5 storeys) without a leaseholder deed of certificate or landlord\'s certificate, or with remediation outstanding', gate: 'exchange', stages: ['pre_contract', 'contract_review', 'pre_exchange'], resolutions: ['evidence_provided', 'lender_confirmed', 'accepted_as_is', 'other'], note: 'The lender will need the certificates (and possibly an EWS1) before it lends; the buyer inherits the leaseholder protections only if the certificate chain is intact.' },
+  { kind: 'send_failed', group: 'other', label: 'Message could not be sent', arisesFrom: 'an email, WhatsApp message, form or order the engine or a person tried to send and the mailbox or provider refused (an expired Microsoft 365 connection, no address on the case, a provider outage)', gate: 'none', stages: ['instruction', ...PRE, ...POST_EX], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Never silent: the failure is a task with the fix and the message to send by hand.' },
   { kind: 'other', group: 'other', label: 'Other', arisesFrom: 'anything else the handler needs the matter to wait for', gate: 'exchange', stages: ['instruction', ...PRE, ...POST_EX], resolutions: [...ISSUE_RESOLUTIONS], note: '' },
 ];
 
@@ -335,6 +337,7 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   sdlt_basis: { severity: 'info', workstreams: ['completion'], threatens: ['registration'], actions: ['Check every buyer against the relief or surcharge conditions', 'Confirm the figure with the client before the return'], responsible: 'conveyancer', escalateAfterWorkingDays: null },
   cdd_refresh: { severity: 'info', workstreams: ['id_aml'], threatens: ['completion'], actions: ['Re-run electronic verification', 'Refresh PEP / sanctions screening', 'Record the review'], responsible: 'conveyancer', escalateAfterWorkingDays: null },
   building_safety: { severity: 'warning', workstreams: ['leasehold', 'mortgage'], threatens: ['exchange'], actions: ['Obtain the leaseholder deed of certificate and the landlord\'s certificate', 'Ask the lender what it requires (EWS1, remediation evidence)', 'Advise the client on the protections'], responsible: 'seller_side', escalateAfterWorkingDays: 10 },
+  send_failed: { severity: 'warning', workstreams: [], threatens: [], actions: [], responsible: 'conveyancer', escalateAfterWorkingDays: 2 },
   other: { severity: 'warning', workstreams: [], threatens: ['exchange'], actions: [], responsible: 'conveyancer', escalateAfterWorkingDays: null },
 };
 

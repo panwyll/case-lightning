@@ -21,9 +21,9 @@ const SURVEY = { surveyType: 'level3' as const, surveyor: 'J Bloggs MRICS', summ
 test('issue kinds carry behaviour: severity, workstreams, milestones threatened, actions, owner, escalation', () => {
   for (const k of ISSUE_KIND_SPECS) {
     assert.ok(['info', 'warning', 'critical'].includes(k.severity), k.kind);
-    assert.ok(k.threatens.length > 0, `${k.kind} threatens something`);
+    if (k.kind !== 'send_failed') assert.ok(k.threatens.length > 0, `${k.kind} threatens something`);
     assert.ok(k.responsible, k.kind);
-    if (k.kind !== 'other') assert.ok(k.workstreams.length > 0 && k.actions.length > 0, `${k.kind} has workstreams and actions`);
+    if (k.kind !== 'other' && k.kind !== 'send_failed') assert.ok(k.workstreams.length > 0 && k.actions.length > 0, `${k.kind} has workstreams and actions`); // a failed send: its task is its title, its fix is in the detail
   }
   const exp = ISSUE_KIND_SPECS.find((k) => k.kind === 'mortgage_offer_expiring')!;
   assert.deepEqual(exp.threatens, ['exchange', 'completion']);

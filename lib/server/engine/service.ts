@@ -56,6 +56,7 @@ import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
 import { openPofQueries, openWaits } from './types';
+import { explainSendError } from '../comms/errors';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -130,6 +131,7 @@ export class EngineService {
         await this.perform(tenantId, matterId, 'acknowledgement', detail);
       } catch (err) {
         this.ports.log(`acknowledgement failed (${e.type})`, err);
+        await this.recordSendFailure(tenantId, matterId, 'acknowledgement', { forEventId: e.id, forEventType: e.type, recipientRole: rule.recipient, what: rule.what }, err);
       }
     }
   }
@@ -256,15 +258,18 @@ export class EngineService {
     // it as unsent with the reason and the link, so the conveyancer can send it themselves.
     let sent: { channel: string; messageId: string | null };
     let sendError: string | null = null;
+    let pofSendErr: unknown = null;
     try {
       sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template, context: { formUrl: form.formUrl, noteToClient: opts.noteToClient ?? '', requestId: form.requestId, queryCount: queryIds.length } });
     } catch (err) {
       sendError = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
       this.ports.log('proof-of-funds form could not be sent; recorded as unsent', err);
       sent = { channel: 'unsent', messageId: null };
+      pofSendErr = err;
     }
     const result = await this.run(tenantId, matterId, { type: 'request_proof_of_funds', actor, requestId: form.requestId, channel: sent.channel, messageId: sent.messageId, formUrl: form.formUrl, sendError, followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, queryIds });
-    return sendError ? { ...result, warning: `Recorded, but the form was not sent: ${sendError}` } : result;
+    if (pofSendErr !== null) await this.recordSendFailure(tenantId, matterId, 'client_update', { kind: 'proof_of_funds_request', followUpOf: opts.followUpOf ?? null, noteToClient: opts.noteToClient ?? null, formUrl: form.formUrl }, pofSendErr);
+    return sendError ? { ...result, warning: `Recorded, but the form was not sent: ${explainSendError(pofSendErr).reason} The form link is on the case; the fix and the message are in the issue raised.` } : result;
   }
 
   /**
@@ -683,7 +688,7 @@ export class EngineService {
           const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
           const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
           if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.wait.key, `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
-          await this.perform(tenantId, matterId, 'chase', detail);
+          try { await this.perform(tenantId, matterId, 'chase', detail); } catch (err) { this.ports.log(`chase could not be sent (${a.wait.key})`, err); await this.recordSendFailure(tenantId, matterId, 'chase', detail, err); continue; }
           chases += 1;
         } else {
           // The escalation's SOURCE is the chase dossier — every decision points at a document.
@@ -763,6 +768,7 @@ export class EngineService {
             const reason = (err instanceof Error ? err.message : String(err)).trim().replace(/[.!]*$/, '.');
             this.ports.log(`approved ${p.action} could not be done`, err);
             await this.run(tenantId, matterId, { type: 'record_action_failed', proposalEventId: p.proposalEventId, action: p.action, detail: p.detail, reason }).catch(() => {});
+            await this.recordSendFailure(tenantId, matterId, p.action, p.detail, err);
           }
         }
         // Enrolment → the two things every instruction starts with: the ID / AML check with
@@ -774,13 +780,13 @@ export class EngineService {
           if (state.idCheck.status === 'not_started') {
             const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name };
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${e.id}`, detail, `ID / AML CHECK\n\nTo: the client, via ${this.ports.idCheckProvider.name}\nWhy: every instruction starts with identity and AML.\n\nThe check costs the firm a fee.`))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); }
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
             }
           }
           if (state.requireProofOfFunds && state.proofOfFunds.status === 'not_started' && this.ports.pofForms) {
             const detail = { kind: 'proof_of_funds_request' };
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, 'PROOF OF FUNDS\n\nTo: the client\nWhy: the firm requires source of funds signed off before exchange; the form goes out at instruction so the statements arrive in time.'))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); }
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
             }
           }
         }
@@ -790,7 +796,7 @@ export class EngineService {
           const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name, party: p.party, label: p.label };
           const why = p.role === 'donor' ? 'a gift donor is a source of funds: identity and AML are checked as for the client' : 'every client on the matter is identified in their own right';
           if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${p.party}`, detail, `ID / AML CHECK — ${p.label}\n\nTo: ${p.label}, via ${this.ports.idCheckProvider.name}\nWhy: ${why}.`))) {
-            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log(`ID check could not be requested for ${p.label}`, err); }
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log(`ID check could not be requested for ${p.label}`, err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
           }
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
@@ -835,7 +841,7 @@ export class EngineService {
           const context = { eventType: e.type, payload: e.payload, done, doneLine, status, next, targetNote, transaction: brief.side === 'seller' ? 'sale' : 'purchase' };
           const detail = { template: 'progress_update', context, triggeredByEventId: e.id };
           if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'progress_update', `progress_update:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${done}; where everything else stands; what happens next\nTemplate: progress_update`))) {
-            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('progress update could not be sent', err); }
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('progress update could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
           }
         }
         // "Request further": the form goes back to the client with the conveyancer's note. It is a message to the client, so the trust level decides whether a person sees it first.
@@ -843,7 +849,7 @@ export class EngineService {
           const p = e.payload as { requestId: string; note?: string | null };
           const detail = { kind: 'proof_of_funds_request', followUpOf: p.requestId, noteToClient: p.note ?? null, requestedBy: e.actor };
           if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, `PROOF OF FUNDS — FURTHER EVIDENCE\n\nTo: the client\nWhy: the conveyancer asked for more on the source of funds.${p.note ? `\nNote to the client: ${p.note}` : ''}\n\nThe form goes back to the client with that note; they answer in it.`))) {
-            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent again', err); }
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent again', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
           }
         }
         // An approved note: run each chosen proposal through the machine's ordinary front
@@ -914,12 +920,40 @@ export class EngineService {
           }
           const detail = { template, context, triggeredByEventId: e.id };
           if (await this.proposeUnless(tenantId, matterId, subflows, 'client_update', template, dedupKey, detail, `CLIENT UPDATE\n\nTo: the client\nBecause: ${because}\nTemplate: ${template}\n\nThe firm's standard status message for this milestone.`)) continue;
-          await this.perform(tenantId, matterId, 'client_update', detail);
+          try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log(`client update could not be sent (${template})`, err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
         }
       } catch (err) {
         this.ports.log(`effect failed for ${e.type}`, err);
         await this.recordEffectFailure(tenantId, matterId, e, err);
       }
+    }
+  }
+
+  /**
+   * A send that failed (a person's approved message, an automatic chase, the proof-of-funds form) becomes a task on the case:
+   * what went wrong in plain words, the steps that fix it, and the message itself so it can be sent by hand meanwhile.
+   */
+  private async recordSendFailure(tenantId: string, matterId: string, action: string, detail: Record<string, unknown>, err: unknown): Promise<void> {
+    const ex = explainSendError(err);
+    const kind = typeof detail.kind === 'string' ? detail.kind : null;
+    const role = typeof detail.recipientRole === 'string' ? detail.recipientRole.replace(/_/g, ' ') : 'the client';
+    const what = kind === 'proof_of_funds_request' ? 'The proof-of-funds form to the client' : kind === 'id_check_request' ? 'The ID / AML check request' : action === 'chase' ? `The chase to ${role}` : action === 'acknowledgement' ? `The acknowledgement to ${role}` : action === 'search_order' ? 'The search order' : action === 'client_update' ? 'The update to the client' : `The ${action.replace(/_/g, ' ')}`;
+    const title = `${what} did not go: ${ex.reason.replace(/[.!]*$/, '')}`;
+    const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
+    try {
+      await outside(async () => {
+        const state = await this.getState(tenantId, matterId);
+        if (!state.enrolled || state.completion.confirmedAt || Object.values(state.issues).some((i) => i.status === 'open' && i.title === title)) return;
+        const msg = await this.ports.messagePreview?.(tenantId, matterId, action, detail).catch(() => null);
+        const steps = [...ex.steps, 'If it still will not go, send it yourself from your own mailbox using the message below, then resolve this issue'];
+        const lines = [ex.reason, '', 'What to do:', ...steps.map((s, i) => `${i + 1}. ${s}`)];
+        if (msg && msg.kind !== 'action' && (msg.subject || msg.body)) lines.push('', `To: ${msg.to ?? role}`, `Subject: ${msg.subject ?? ''}`, '', msg.body ?? '');
+        else if (msg?.title) lines.push('', msg.title);
+        lines.push('', `Error text for support: ${ex.raw}`);
+        await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'send_failed', title, detail: lines.join('\n'), gate: 'none', severity: 'warning' });
+      });
+    } catch (inner) {
+      this.ports.log('could not record the failed send on the case', inner);
     }
   }
 
