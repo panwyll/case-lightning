@@ -134,6 +134,8 @@ test('a chase to the CLIENT is not paired with an update telling the client we c
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  // The pack is in, so the only thing owed is the client's own ID check.
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
   h.ports.clientComms.sent.length = 0;
   h.advanceDays(Math.ceil(DEFAULT_SLA.id_check.chaseAfter * 1.4) + 2);
   await h.svc.tick(TENANT, MATTER);

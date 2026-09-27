@@ -589,8 +589,8 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     if (staleChase) {
       // The thing we were going to chase for has arrived: the proposal is withdrawn, not left for a person to reject.
       ev = { type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: staleChase.eventId, action: staleChase.action, detail: staleChase.detail, note: 'Withdrawn by the engine: what was being chased has arrived.' } };
-    } else if (side === 'buyer' && s.enrolled && s.stage !== 'instruction' && !s.contractPack.requestedAt && !s.title.documentId && !s.manualHandling.required && !s.abandoned) {
-      // The purchase has cleared Instruction: the seller's solicitor owes us the draft contract pack, and the clock on it starts now.
+    } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.manualHandling.required && !s.abandoned) {
+      // A purchase asks the seller's solicitor for the draft contract pack at instruction, not after the client's checks: the clock on it starts the day we are instructed.
       ev = { type: 'contract_pack_requested', actor: SYSTEM, payload: { to: 'seller_solicitor' } };
     } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
@@ -943,8 +943,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 
     // ── Title ──
     case 'title_extracted': {
+      // The pack is asked for at instruction, so it may arrive while the client's checks are still running: the title is read when it lands, whatever the stage.
       requireEnrolled(s);
-      requireStageAtLeast(s, 'pre_contract', 'Title review');
       if (s.title.status === 'flagged') reject('A title decision is pending; resolve it before re-extracting.');
       if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing title now needs manual handling.');
       const extracted: NewEvent = { type: 'title_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence };

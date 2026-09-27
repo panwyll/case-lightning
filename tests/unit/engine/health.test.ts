@@ -28,7 +28,8 @@ test('health is expected progress, not age: a 100-day-old case whose outstanding
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
-  // A long instruction phase — the ID check came back on day 100.
+  // The seller's solicitor sent the pack straight away; a long instruction phase — the ID check came back on day 100.
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
   h.advanceDays(100);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const s = await h.svc.getState(TENANT, MATTER);
@@ -38,7 +39,7 @@ test('health is expected progress, not age: a 100-day-old case whose outstanding
   assert.equal(health.band, 'normal', `expected normal, got ${health.band}: ${health.reasons.map((r) => r.headline).join(' | ')}`);
   assert.equal(health.reasons.length, 0);
   assert.ok(health.pace.inStage <= 2, 'the phase is what is measured, not the case');
-  assert.equal(health.counts.waiting, 5, 'four searches and the contract pack are outstanding — and that is fine, they were asked for yesterday');
+  assert.equal(health.counts.waiting, 4, 'four searches are outstanding — and that is fine, they were asked for yesterday');
 });
 
 test('health: a case sitting in one phase with nothing outstanding becomes delayed, and says what the phase should take', async () => {

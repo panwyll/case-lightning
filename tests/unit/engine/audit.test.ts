@@ -32,13 +32,13 @@ test('tampering is detected: altered content, removed event, reordered events, s
   const clone = (): EngineEvent[] => JSON.parse(JSON.stringify(log));
 
   const altered = clone();
-  (altered[2].payload as { provider: string }).provider = 'someone-else';
-  assert.equal(verifyChain(altered).brokenAtSeq, 3);
+  (altered[3].payload as { provider: string }).provider = 'someone-else';
+  assert.equal(verifyChain(altered).brokenAtSeq, 4);
   assert.match(verifyChain(altered).reason ?? '', /altered/);
 
   const actorSwap = clone();
-  actorSwap[1].actor = 'system'; // "the system did it, not me"
-  assert.equal(verifyChain(actorSwap).brokenAtSeq, 2);
+  actorSwap[2].actor = 'system'; // "the system did it, not me"
+  assert.equal(verifyChain(actorSwap).brokenAtSeq, 3);
 
   const removed = clone().filter((e) => e.seq !== 3).map((e, i) => ({ ...e, seq: i + 1 }));
   assert.equal(verifyChain(removed).ok, false);

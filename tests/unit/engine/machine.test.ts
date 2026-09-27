@@ -38,7 +38,7 @@ test('every transition is automation or a decision — nothing else', () => {
   ]);
   for (const e of log) assert.ok(['system', 'ai', 'external', USER].includes(e.actor), `${e.type} by ${e.actor}`);
   assert.ok(log.some((e) => e.type === 'stage_advanced'));
-  assert.equal(log.at(-1)?.type, 'contract_pack_requested', 'and the moment a purchase leaves Instruction the engine asks for the pack');
+  assert.equal(log[1]?.type, 'contract_pack_requested', 'and the moment a purchase is enrolled the engine asks for the pack');
 });
 
 test('search sub-flow: ordered → returned → extracted → cleared, and the stage gate holds until ALL required searches resolve', () => {

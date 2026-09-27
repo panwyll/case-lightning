@@ -20,7 +20,7 @@ test('every shape names a real issue kind whose gate matches, and the ISA shapes
 test('enrolling with shapes raises each shape\'s checklist issue on day one, holding the gate it threatens', async () => {
   const h = harness();
   const r = await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_purchase', hasLender: true, requiredSearches: ['CON29'], shapes: ['company_buyer', 'new_build', 'lifetime_isa'] });
-  assert.deepEqual(r.events.map((e) => e.type), ['matter_created', 'issue_raised', 'issue_raised', 'issue_raised']);
+  assert.deepEqual(r.events.map((e) => e.type).filter((t) => t !== 'contract_pack_requested'), ['matter_created', 'issue_raised', 'issue_raised', 'issue_raised']);
   const s = await h.svc.getState(TENANT, MATTER);
   assert.deepEqual(s.shapes, ['company_buyer', 'new_build', 'lifetime_isa']);
   const issues = Object.values(s.issues);
