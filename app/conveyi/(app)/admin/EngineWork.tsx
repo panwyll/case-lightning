@@ -39,6 +39,9 @@ const CSS = `
 .wk-row .meta{font-size:11.5px;color:#94a3b8;margin-top:2px}
 .wk-row .right{font-size:11.5px;color:#64748b;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
 .wk-row .right .over{color:#b91c1c;font-weight:700}
+.wk-send{font-size:11px;font-weight:700;color:#0f172a;background:#fff;border:1px solid #e2e8f0;border-radius:7px;padding:2px 8px;cursor:pointer}
+.wk-send:hover{background:#f8fafc}
+.wk-send:disabled{opacity:.6;cursor:default}
 .wk-who{display:flex;gap:6px;flex-wrap:wrap}
 .wk-who span{font-size:11.5px;font-weight:700;color:#334155;background:#f1f5f9;border-radius:999px;padding:2px 9px;white-space:nowrap}
 .wk-clear{display:flex;align-items:center;gap:8px;padding:2px 14px 12px;font-size:13px;color:#166534}
@@ -126,8 +129,26 @@ function Column({ title, items, checkedAt }: { title: string; items: WorkItem[];
  * Waiting on X to do Y by Z. Collapsed, one line: who holds how many, how many are
  * overdue, and when the next one falls due. Open, every line. It chases itself.
  */
-function Waiting({ items }: { items: WorkItem[] }) {
+function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
+  const [sendErr, setSendErr] = useState<string | null>(null);
+  // Send the chase now: the same template and record the timer would use, sent by a person.
+  const sendNow = async (i: WorkItem) => {
+    const at = i.ref.id.indexOf(':');
+    const waitKey = at < 0 ? i.ref.id : i.ref.id.slice(0, at);
+    const subject = at < 0 ? null : i.ref.id.slice(at + 1) || null;
+    setSending(i.id);
+    setSendErr(null);
+    try {
+      await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'chase_now', waitKey, subject }) });
+      onChanged();
+    } catch (e: unknown) {
+      setSendErr(e instanceof Error ? e.message : 'The chase could not be sent.');
+    } finally {
+      setSending(null);
+    }
+  };
   const sorted = items.slice().sort(pressing);
   const overdue = items.filter((i) => (daysLeft(i) ?? 0) < 0).length;
   const upcoming = sorted.find((i) => (daysLeft(i) ?? -1) >= 0);
@@ -145,22 +166,25 @@ function Waiting({ items }: { items: WorkItem[] }) {
       </button>
       {open && sorted.map((i) => {
         const who = OWNER[i.actionOwner] ?? pretty(i.actionOwner);
+        const chasing = i.chaseDue ? <span className="over">Chasing {who} on the next sweep</span>
+          : i.chaseInWorkingDays != null ? <span>Chasing {who} in {i.chaseInWorkingDays} working day{i.chaseInWorkingDays === 1 ? '' : 's'}</span>
+          : <span>No further chase scheduled</span>;
         return (
-          <a key={`${i.matterId}:${i.id}`} className="wk-row" href={paths.matter(i.matterId)}>
+          <div key={`${i.matterId}:${i.id}`} className="wk-row">
             <House band={i.urgency} size={18} />
-            <span>
+            <a href={paths.matter(i.matterId)} style={{ textDecoration: 'none', color: 'inherit', minWidth: 0 }}>
               <span className="line">Waiting on <b>{who}</b> to {i.what}{i.dueBy ? <> by <b>{day(i.dueBy)}</b></> : null}</span>
               <div className="meta">{i.propertyAddress ?? i.matterRef ?? 'Case'}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
-            </span>
+            </a>
             <span className="right">
               <Left i={i} />
-              <div style={{ marginTop: 2 }}>
-                {i.chaseDue ? <span className="over">chase goes out on the next sweep</span>
-                  : i.chaseInWorkingDays != null ? <span>chase in {i.chaseInWorkingDays} working day{i.chaseInWorkingDays === 1 ? '' : 's'}</span>
-                  : null}
+              <div style={{ marginTop: 2, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+                {chasing}
+                <button type="button" className="wk-send" disabled={sending !== null} onClick={() => void sendNow(i)}>{sending === i.id ? 'Sending…' : 'Send Now'}</button>
               </div>
+              {sendErr && sending === null && <div className="over" style={{ marginTop: 2 }}>{sendErr}</div>}
             </span>
-          </a>
+          </div>
         );
       })}
     </div>
@@ -186,7 +210,7 @@ export default function EngineWork({ who }: { who: string }) {
         <Column title="To Do" items={doItems} checkedAt={data.do.length === 0 ? checkedAt ?? undefined : undefined} />
         {data.escalate.length > 0 && <Column title="Escalate" items={data.escalate} />}
       </div>
-      {data.waiting.length > 0 && <Waiting items={data.waiting} />}
+      {data.waiting.length > 0 && <Waiting items={data.waiting} onChanged={() => void load()} />}
     </div>
   );
 }
