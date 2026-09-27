@@ -32,6 +32,19 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [table, setTable] = useState<{ id: string; pages: Array<{ page: number; verdict: string; ocr_confidence?: number | null }>; facts: Array<{ id: string; key: string; value: string; page: number | null; quote: string | null; verified: boolean; note: string | null; confirmedAt: string | null; confirmedBy: string | null; disputedNote: string | null }>; diff?: RegisterDiffView | null; draftCheck?: DraftCheckView | null } | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [drafts, setDrafts] = useState<Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string }>>([]);
+  // Password-protected files: nothing in them can be read until someone enters the password here (or it arrives in a later message and is tried automatically).
+  const [lockedDocs, setLockedDocs] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
+  const [lockTick, setLockTick] = useState(0);
+  const [pw, setPw] = useState<Record<string, string>>({});
+  const [unlocking, setUnlocking] = useState<string | null>(null);
+  const [unlockErr, setUnlockErr] = useState<Record<string, string>>({});
+  const unlock = async (id: string) => {
+    setUnlocking(id);
+    setUnlockErr((m) => ({ ...m, [id]: '' }));
+    try { await api(`/documents/${id}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw[id] ?? '' }) }); setLockTick((t) => t + 1); onChanged?.(); }
+    catch (e: unknown) { setUnlockErr((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not unlock.' })); }
+    finally { setUnlocking(null); }
+  };
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
   const [openMail, setOpenMail] = useState<string | null>(null);
   const [mailBody, setMailBody] = useState<Record<string, string>>({});
@@ -63,8 +76,8 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
-  }, [api, matterId, filed.length]);
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks }>(`/matters/${matterId}/engine/documents`).then((r) => { setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+  }, [api, matterId, filed.length, lockTick]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
     if (!r) return null;
@@ -206,6 +219,22 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                   <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>
                 </div>
                 {openReview === d.id && table && table.id === d.id && table.draftCheck && <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, padding: '10px 12px' }}><CheckedDraft check={table.draftCheck} /></div>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {lockedDocs.length > 0 && (
+        <>
+          <div className="ep-sec">Password-Protected ({lockedDocs.length})</div>
+          <div className="ep-block" style={{ background: '#fffbeb', borderColor: '#fde68a' }}>
+            {lockedDocs.map((d) => (
+              <div key={d.id} className="ep-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{d.fileName ?? d.id}</b>
+                <span className="ep-note">{fmtWhen(d.createdAt)}</span>
+                <input className="ep-input" type="password" placeholder="Password" value={pw[d.id] ?? ''} onChange={(e) => setPw((m) => ({ ...m, [d.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') void unlock(d.id); }} style={{ width: 180 }} aria-label={`Password for ${d.fileName ?? 'file'}`} />
+                <button className="ep-btn primary" disabled={unlocking === d.id || !(pw[d.id] ?? '').length} onClick={() => void unlock(d.id)}>{unlocking === d.id ? 'Unlocking…' : 'Unlock'}</button>
+                {unlockErr[d.id] && <span className="ep-note" style={{ color: '#b91c1c' }}>{unlockErr[d.id]}</span>}
               </div>
             ))}
           </div>

@@ -46,7 +46,7 @@ export const WORK_CSS = `
 .ep-tier{position:relative;padding:26px 18px 34px;background:#fff}
 .ep-tier:nth-child(even){background:#f8fafc}
 .ep-tier + .ep-tier{border-top:1px solid #eef1f5}
-.ep-tier-l{position:absolute;z-index:6;right:14px;bottom:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap}
+.ep-tier-l{position:absolute;z-index:6;right:14px;bottom:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:3px 10px}
 .ep-tier-l i{width:7px;height:7px;border-radius:99px;display:inline-block}
 .ep-tier-l.done{color:#15803d}
 .ep-tier-l.blocked{color:#b91c1c}

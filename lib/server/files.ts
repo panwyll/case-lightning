@@ -17,6 +17,8 @@ import { reviewDocument, upsertChunks } from './ai';
 import { stripHtml } from './text';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
+import { isLockedPdf, passwordCandidates } from './pdf-lock';
+import { recordLockedDocument, tryPasswordsFromMessage } from './document-unlock';
 import { emitMatterEvent } from './events';
 import { ingestFiledDocument } from './engine/ingest-hook';
 
@@ -55,7 +57,10 @@ export async function processMatterFile(
   let substantive = false;
   let readable = false;
   let indexText = ''; // document content to embed into the matter's RAG index
-  if (isPdf || isImage) {
+  const locked = isPdf && (await isLockedPdf(buffer).catch(() => false));
+  if (locked) {
+    // Password-protected: nothing can be read until it is unlocked. Filed, marked, and a task asks for the password.
+  } else if (isPdf || isImage) {
     try {
       const { review } = await reviewDocument({
         userId: user.userId,
@@ -115,6 +120,11 @@ export async function processMatterFile(
     }).catch(() => {});
     // A changed file with this name supersedes older versions on the matter.
     if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, opts.fileName, doc.id).catch(() => {});
+    if (doc?.id && locked) {
+      if (opts.bytes) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, opts.bytes]).catch(() => {});
+      await recordLockedDocument(user.tenantId, matterId, doc.id, opts.fileName);
+      return { documentType: null, substantive: false, drafted: false, draftSubject: null, reason: 'password-protected: a task asks for the password' };
+    }
     // Conveyancing engine (component #2): classify + route the new document into the
     // matter's sub-flows. No-op unless the matter is enrolled; never fails the filing.
     if (doc?.id) await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => {});
@@ -482,6 +492,8 @@ export async function indexEmailBodyToMatter(
 ): Promise<boolean> {
   const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
   if (!body.trim()) return false;
+  // The password for a file that arrived recently often comes in the next message: try it, quietly.
+  await tryPasswordsFromMessage(user.tenantId, matterId, body, passwordCandidates(body)).catch(() => []);
 
   const from = message?.from?.emailAddress?.address ?? 'unknown';
   const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');

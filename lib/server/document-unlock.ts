@@ -1,0 +1,85 @@
+/**
+ * Unlocking a password-protected file on a case: the unlocked copy replaces the bytes we read
+ * (the original stays wherever it was filed), the file is marked open, the task closes, the
+ * document is read into the case, and the audit log says who unlocked it and how. The
+ * password itself is used once and never stored.
+ */
+import { query, queryOne } from './db';
+import { writeAudit } from './audit';
+import { downloadDriveItem } from './graph';
+import { driveUserFor } from './matter-drive';
+import { engine } from './engine/adapters';
+import { ingestFiledDocument } from './engine/ingest-hook';
+import { isLockedPdf, unlockPdf } from './pdf-lock';
+import { SYSTEM } from './engine/types';
+
+export interface LockedDoc { id: string; matterId: string; fileName: string | null; createdAt: string }
+
+export async function lockedDocuments(tenantId: string, matterId: string, withinHours: number | null = null): Promise<LockedDoc[]> {
+  return query<{ id: string; matter_id: string; file_name: string | null; created_at: string }>(
+    `select id, matter_id, file_name, created_at from document where tenant_id = $1 and matter_id = $2 and superseded_at is null and (extracted_facts->>'locked')::boolean = true${withinHours ? ` and created_at > now() - interval '${Math.floor(withinHours)} hours'` : ''} order by created_at desc`,
+    [tenantId, matterId]
+  ).then((rows) => rows.map((r) => ({ id: r.id, matterId: r.matter_id, fileName: r.file_name, createdAt: r.created_at })));
+}
+
+/** Mark a freshly filed PDF as locked and raise the task that asks for its password. Best effort: filing never fails on it. */
+export async function recordLockedDocument(tenantId: string, matterId: string, documentId: string, fileName: string): Promise<void> {
+  await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || '{"locked": true}'::jsonb where id = $1 and tenant_id = $2`, [documentId, tenantId]).catch(() => {});
+  try {
+    const svc = engine();
+    const s = await svc.getState(tenantId, matterId);
+    if (!s.enrolled || s.completion.confirmedAt) return;
+    const title = `Password-protected file: ${fileName}`;
+    if (Object.values(s.issues).some((i) => i.status === 'open' && i.title === title)) return;
+    await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title, detail: `${fileName} arrived password-protected, so nothing in it can be read yet. The password usually comes separately (an email, a text, a phone call). Enter it on the Documents tab against this file; if a later email to this case contains it, it is tried automatically. [doc:${documentId}]`, gate: 'none', severity: 'warning', documentId });
+  } catch { /* the file is still marked; the tab shows it */ }
+}
+
+async function bytesFor(tenantId: string, documentId: string): Promise<{ bytes: Buffer; matterId: string; fileName: string | null; hasBlob: boolean } | null> {
+  const row = await queryOne<{ matter_id: string; file_name: string | null; graph_item_id: string | null; created_by: string | null; blob: Buffer | null }>(
+    `select d.matter_id, d.file_name, d.graph_item_id, d.created_by, (select b.bytes from document_blob b where b.document_id = d.id) as blob from document d where d.id = $1 and d.tenant_id = $2`,
+    [documentId, tenantId]
+  );
+  if (!row) return null;
+  let bytes: Buffer | null = row.blob;
+  if (!bytes && row.graph_item_id) {
+    const owner = await driveUserFor(tenantId, row.matter_id, row.created_by ?? '');
+    if (owner) bytes = await downloadDriveItem(owner, row.graph_item_id).catch(() => null);
+  }
+  return bytes ? { bytes, matterId: row.matter_id, fileName: row.file_name, hasBlob: !!row.blob } : null;
+}
+
+/** Try a password on a locked document. Wrong password → false, nothing changes. Right password → unlocked, task closed, read into the case. */
+export async function tryUnlockDocument(tenantId: string, documentId: string, password: string, by: { userId: string | null; how: string }): Promise<{ unlocked: boolean; reason?: string }> {
+  const src = await bytesFor(tenantId, documentId);
+  if (!src) return { unlocked: false, reason: 'The file could not be read.' };
+  if (!(await isLockedPdf(src.bytes))) return { unlocked: true, reason: 'The file is not password-protected.' };
+  const open = await unlockPdf(src.bytes, password).catch(() => null);
+  if (!open) return { unlocked: false, reason: 'That password does not open the file.' };
+  await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do update set bytes = excluded.bytes`, [documentId, tenantId, open]);
+  await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || $3::jsonb, size_bytes = $4 where id = $1 and tenant_id = $2`, [documentId, tenantId, JSON.stringify({ locked: false, unlockedAt: new Date().toISOString(), unlockedBy: by.userId ?? 'system', unlockedHow: by.how }), open.length]);
+  await writeAudit({ tenantId, matterId: src.matterId, actorUserId: by.userId, actionType: 'DOCUMENT_UNLOCKED', actionStatus: 'SUCCESS', payload: { documentId, fileName: src.fileName, how: by.how } }).catch(() => {});
+  // The task closes and the file is read into the case.
+  try {
+    const svc = engine();
+    const s = await svc.getState(tenantId, src.matterId);
+    const issue = Object.values(s.issues).find((i) => i.kind === 'file_locked' && i.status === 'open' && (i.detail ?? '').includes(`[doc:${documentId}]`));
+    if (issue) await svc.run(tenantId, src.matterId, { type: 'resolve_issue', actor: by.userId ?? SYSTEM, issueId: issue.id, resolution: 'evidence_provided', note: `Unlocked (${by.how})` });
+  } catch { /* the file is unlocked either way */ }
+  await ingestFiledDocument(tenantId, src.matterId, documentId).catch(() => null);
+  return { unlocked: true };
+}
+
+/** A message on the case may carry the password for a file that arrived recently: try each candidate, quietly. */
+export async function tryPasswordsFromMessage(tenantId: string, matterId: string, text: string, candidates: string[]): Promise<string[]> {
+  if (!candidates.length) return [];
+  const locked = await lockedDocuments(tenantId, matterId, 72).catch(() => [] as LockedDoc[]);
+  const opened: string[] = [];
+  for (const doc of locked) {
+    for (const pw of candidates) {
+      const r = await tryUnlockDocument(tenantId, doc.id, pw, { userId: null, how: `password found in a message on the case: "${text.slice(0, 60).replace(/\s+/g, ' ')}"` }).catch(() => ({ unlocked: false }));
+      if (r.unlocked) { opened.push(doc.id); break; }
+    }
+  }
+  return opened;
+}

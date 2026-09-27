@@ -92,6 +92,7 @@ export class PgDocumentBytesLoader implements DocumentBytesLoader {
   async load(doc: DocumentRef): Promise<EngineDocumentInput | null> {
     const inline = (doc.extractedFacts as { content?: string } | null)?.content;
     if (typeof inline === 'string' && inline.length) return { kind: 'text', data: inline, title: doc.fileName ?? undefined };
+    if ((doc.extractedFacts as { locked?: boolean } | null)?.locked) return null; // password-protected: nothing to read until it is unlocked
     const row = await queryOne<{ graph_item_id: string | null; mime_type: string | null; created_by: string | null; blob: Buffer | null }>(
       `select d.graph_item_id, d.mime_type, d.created_by, (select b.bytes from document_blob b where b.document_id = d.id) as blob
          from document d where d.id = $1 and d.tenant_id = $2`,

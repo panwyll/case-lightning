@@ -269,7 +269,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       id: `do:issue:${i.id}`,
       bucket: 'do',
       kind: 'issue',
-      chip: i.kind === 'send_failed' ? 'Send failed' : 'Issue',
+      chip: i.kind === 'send_failed' ? 'Send failed' : i.kind === 'file_locked' ? 'Locked file' : 'Issue',
       what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
