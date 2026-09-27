@@ -42,7 +42,8 @@ export async function previewProposal(tenantId: string, matterId: string, action
   }
   if (action === 'search_order') {
     const t = str('searchType') ?? '';
-    return { kind: 'action', title: `Order the ${SEARCH_NAMES[t] ?? t} search from ${str('provider') ?? 'the search provider'}`, lines: ['The result comes back to the case and is read when it lands.', 'Ordering costs the firm a fee.'] };
+    const name = SEARCH_NAMES[t] ?? t;
+    return { kind: 'action', title: `Order the ${name}${/search/i.test(name) ? '' : ' search'} from ${str('provider') ?? 'the search provider'}`, lines: ['The result comes back to the case and is read when it lands.', 'Ordering costs the firm a fee.'] };
   }
   if (action === 'enquiry_draft') {
     return { kind: 'action', title: "Raise this enquiry with the seller's solicitor", lines: [str('subject') ?? ''].filter(Boolean) };

@@ -394,9 +394,11 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const shownPdf = shownOther ? shownOther.rawUrl : pdfSrc;
   const shownPdfSrc = shownOther?.rawUrl ? `${shownOther.rawUrl}#page=${page ?? 1}&view=FitH` : pdfSrc;
   const flagged = checklist.filter((c) => c.status === 'flag').length;
-  const narrative = ctx?.narrative ?? [];
-  const files = ctx?.files ?? [];
-  const passed = ctx?.passed ?? [];
+  // A proposal is its message: no file cards, no narrative, no summary text under it.
+  const isProposal = d?.kind === 'proposal';
+  const narrative = isProposal ? [] : ctx?.narrative ?? [];
+  const files = isProposal ? [] : ctx?.files ?? [];
+  const passed = isProposal ? [] : ctx?.passed ?? [];
   const renderLines = (lines: typeof narrative) => (
     <ul className="dp-narr">
       {lines.map((e, j) => (
@@ -501,7 +503,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 </details>
               )}
             </>
-          ) : (
+          ) : isProposal ? null : (
             <p className="dp-prose">{[...parsed.intro.slice(1), ...parsed.points.map((p) => `${p.n}. ${p.text}`), ...parsed.rest].join('\n')}</p>
           )}
 

@@ -296,7 +296,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       addT('Payee', b ? `${pretty(b.payeeKind)}${b.payeeRef ? ` · ${b.payeeRef}` : ''}` : null);
       addT('New details', b ? mask(b.details) : null);
       addT('Previously on file', prev ? `${mask(prev.details)} · ${prev.verifiedAt ? `verified ${day(prev.verifiedAt)}` : prev.status === 'superseded' ? 'never verified' : prev.status}` : b ? 'nothing for this payee' : null, !!prev);
-      addT('Arrived by', b ? `${pretty(b.sourceChannel)} on ${day(b.recordedAt)}${b.recordedBy === 'external' ? ', from outside' : b.recordedBy === 'system' || b.recordedBy === 'ai' ? ', read by the engine' : ', recorded by a person'}` : null);
+      addT('Arrived by', b ? `${pretty(b.sourceChannel)} on ${day(b.recordedAt)}${b.recordedBy === 'external' ? ', from outside' : b.recordedBy === 'system' || b.recordedBy === 'ai' ? ', read by the system' : ', recorded by a person'}` : null);
       addT('Payments due to this payee', b ? (b.payeeKind === 'seller_solicitor' && p.side === 'buyer' ? 'completion monies' : b.payeeKind === 'lender' ? 'redemption' : b.payeeKind === 'client' ? 'balance after completion' : 'none tracked') : null);
       checks = KIND_CHECKS.bank_details;
     } else if (d.kind === 'report_on_title') {
@@ -450,7 +450,7 @@ function buildChecklist(s: MatterState, d: DecisionState, checks: string[], rais
 /** "Search result received 11 Sept" / "Offer read 2 Sept": who or what put this decision in front of a person, and when. */
 function receivedLine(d: DecisionState, raised: EngineEvent | null): TaskContext['submitted'] {
   const at = raised?.createdAt ?? d.createdAt ?? null;
-  const by: Record<string, string> = { search: 'Search result received', enquiry: 'Reply received', mortgage: 'Mortgage offer received', title: 'Official copies received', id_check: 'ID / AML result received', management_pack: 'Management pack received', report_on_title: 'Draft ready for approval', bank_details: 'Bank details received', proposal: 'Proposed by the engine', auto_clear: 'Cleared by the rules', escalation: 'Escalated', requisition: 'Requisition received', note_actions: 'Note read' };
+  const by: Record<string, string> = { search: 'Search result received', enquiry: 'Reply received', mortgage: 'Mortgage offer received', title: 'Official copies received', id_check: 'ID / AML result received', management_pack: 'Management pack received', report_on_title: 'Draft ready for approval', bank_details: 'Bank details received', proposal: 'Proposed', auto_clear: 'Cleared by the rules', escalation: 'Escalated', requisition: 'Requisition received', note_actions: 'Note read' };
   return { by: by[d.kind] ?? 'Raised', at };
 }
 
