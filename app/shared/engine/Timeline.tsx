@@ -48,6 +48,19 @@ function noteLabel(e: EngineEvent, state: EngineState): string | null {
 /** Does this event belong to the subject a sub-block linked from: its type starts with it, or a payload field names it. */
 const touches = (e: EngineEvent, focus: string) => e.type.startsWith(focus) || Object.values(e.payload as Record<string, unknown>).some((v) => v === focus || (typeof v === 'string' && v.split(':').pop() === focus));
 
+/** What a person reads when a note or an issue is opened: the words, not the event. */
+function readable(e: EngineEvent): string | null {
+  const p = e.payload as Record<string, unknown>;
+  if (e.type === 'note_recorded') {
+    const from = p.from as { name?: string | null; address?: string } | null | undefined;
+    return `${from ? `From ${from.name || from.address}\n\n` : ''}${String(p.text ?? '')}`;
+  }
+  if (e.type === 'issue_raised') return [String(p.title ?? ''), p.detail ? String(p.detail) : null].filter(Boolean).join('\n\n');
+  if (e.type === 'issue_resolved') return [pretty(String(p.resolution ?? '')), p.note ? String(p.note) : null].filter(Boolean).join('\n\n');
+  if (e.type === 'note_extracted' && Array.isArray(p.actions)) return (p.actions as Array<{ summary: string; quote: string }>).map((a) => `${a.summary}\n“${a.quote}”`).join('\n\n') || null;
+  return null;
+}
+
 export function Timeline({ events, state, people = {}, focus = null, onClearFocus }: { events: EngineEvent[]; state: EngineState; people?: Record<string, string>; focus?: string | null; onClearFocus?: () => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const ordered = useMemo(() => [...events].filter((e) => !focus || touches(e, focus)).sort((a, b) => b.seq - a.seq), [events, focus]);
@@ -98,13 +111,15 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
             const issueLine = issueLabel(e, state) ?? (e.type.startsWith('note_') ? noteLabel(e, state) : null);
             return (
               <div key={e.id}>
-                <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} title="Show the raw event">
+                <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} >
                   <span className="t">{hhmm(e.createdAt)}</span>
                   <span className="ty">{pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
                   <span className="ac">{who(e.actor)} · {actorKind(e.actor)}</span>
                   <span style={{ marginLeft: 'auto', fontSize: 11 }}>#{e.seq}</span>
                 </div>
-                {open[e.id] && <pre className="tl-raw">{JSON.stringify({ id: e.id, seq: e.seq, type: e.type, actor: e.actor, createdAt: e.createdAt, sourceDocumentId: e.sourceDocumentId, confidenceScore: e.confidenceScore, payload: e.payload }, null, 2)}</pre>}
+                {open[e.id] && (readable(e)
+                  ? <div className="tl-read">{readable(e)}{e.sourceDocumentId && <a href={`/api/v1/documents/${e.sourceDocumentId}/raw`} target="_blank" rel="noopener noreferrer" style={{ display: 'block', marginTop: 6 }}>Open The Source</a>}</div>
+                  : <pre className="tl-raw">{JSON.stringify({ id: e.id, seq: e.seq, type: e.type, actor: e.actor, createdAt: e.createdAt, sourceDocumentId: e.sourceDocumentId, confidenceScore: e.confidenceScore, payload: e.payload }, null, 2)}</pre>)}
               </div>
             );
           })}

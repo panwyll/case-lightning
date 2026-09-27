@@ -13,6 +13,9 @@ type RegisterDiffView = { previousAt: string; added: Array<{ key: string; value:
  */
 type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'lease' | 'survey' | 'specialist_report' | 'property_forms';
 
+/** Log entries that cite a generated text file are not documents to a person; the timeline has them. */
+const NOT_PAPER = new Set(['FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL']);
+
 export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged, doc = null }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void; doc?: string | null }) {
   const [role, setRole] = useState<Role>('auto');
   const [search, setSearch] = useState('CON29');
@@ -25,7 +28,16 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const p = view.profile;
   const buyer = !p || p.side === 'buyer';
   const leasehold = p?.tenure === 'leasehold';
-  const filed = useMemo(() => events.filter((e) => e.sourceDocumentId).sort((a, b) => b.seq - a.seq), [events]);
+  // Paper only: a note, an email's text, a dossier or a proposal is a log entry, not a document; they live on the timeline.
+  const [allDocs, setAllDocs] = useState<Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; locked?: boolean }>>([]);
+  const filed = useMemo(() => {
+    const byDoc = new Map<string, EngineEvent[]>();
+    for (const e of events) if (e.sourceDocumentId) byDoc.set(e.sourceDocumentId, [...(byDoc.get(e.sourceDocumentId) ?? []), e]);
+    return allDocs
+      .filter((dd) => !NOT_PAPER.has(dd.docType ?? '') && !dd.locked)
+      .map((dd) => ({ doc: dd, events: (byDoc.get(dd.id) ?? []).sort((a, b) => b.seq - a.seq) }))
+      .sort((a, b) => (b.doc.createdAt < a.doc.createdAt ? -1 : 1));
+  }, [events, allDocs]);
   const [reviews, setReviews] = useState<Record<string, DocumentReviewSummary | null>>({});
   const [checks, setChecks] = useState<Array<{ check: string; label: string; status: string; message: string; values: Array<{ source: string; value: string; page: number | null }> }>>([]);
   const [openReview, setOpenReview] = useState<string | null>(null);
@@ -87,7 +99,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setAllDocs(r.documents.map((dd) => ({ id: dd.id, fileName: dd.fileName, docType: dd.docType, createdAt: dd.createdAt, locked: dd.locked }))); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length, lockTick]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -272,16 +284,20 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         {filed.length === 0 && <div className="ep-note">Nothing has been filed yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
-        {filed.map((e, i) => (
-          <div key={e.id}>
-          <div id={`doc-${e.sourceDocumentId}`} className="ep-row" style={{ cursor: reviewOf(e.sourceDocumentId) || checked.has(e.sourceDocumentId ?? '') ? 'pointer' : undefined, ...(doc && e.sourceDocumentId === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(e.sourceDocumentId) && !checked.has(e.sourceDocumentId ?? '')) return; if (openReview === e.sourceDocumentId) { setOpenReview(null); setTable(null); } else void loadTable(e.sourceDocumentId!); }}>
-            <span className="ep-note" style={{ minWidth: 120 }}>#{e.seq} {fmtWhen(e.createdAt)}</span>
-            <b>{pretty(e.type)}</b>
-            <span className="ep-note">{typeof e.payload.searchType === 'string' ? e.payload.searchType : ''}{typeof e.payload.enquiryId === 'string' ? e.payload.enquiryId : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</span>
-            {filed.findIndex((x) => x.sourceDocumentId === e.sourceDocumentId) === i && badge(reviewOf(e.sourceDocumentId))}
-            {e.sourceDocumentId && checked.has(e.sourceDocumentId) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>}
+        {filed.map(({ doc: dd, events: evs }) => {
+          const e = evs[0] ?? null;
+          const id = dd.id;
+          return (
+          <div key={id}>
+          <div id={`doc-${id}`} className="ep-row" style={{ cursor: reviewOf(id) || checked.has(id) ? 'pointer' : undefined, ...(doc && id === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(id) && !checked.has(id)) return; if (openReview === id) { setOpenReview(null); setTable(null); } else void loadTable(id); }}>
+            <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(dd.createdAt)}</span>
+            <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{dd.fileName ?? pretty((dd.docType ?? 'document').toLowerCase())}</b>
+            <span className="ep-note">{e ? `${pretty(e.type)}${typeof e.payload.searchType === 'string' ? ` ${e.payload.searchType}` : ''}${typeof e.payload.enquiryId === 'string' ? ` ${e.payload.enquiryId}` : ''}${e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}` : 'Filed'}</span>
+            <a className="ep-note" href={`/api/v1/documents/${id}/raw`} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}>Open</a>
+            {badge(reviewOf(id))}
+            {checked.has(id) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>}
           </div>
-          {openReview === e.sourceDocumentId && table && table.id === e.sourceDocumentId && (
+          {openReview === id && table && table.id === id && (
             <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, overflow: 'hidden' }}>
               {table.draftCheck && <div style={{ padding: '10px 12px', borderBottom: table.pages.length ? '1px solid #eef1f5' : undefined }}><CheckedDraft check={table.draftCheck} /></div>}
               {table.diff && (table.diff.added.length + table.diff.removed.length + table.diff.changed.length > 0) && (
@@ -314,7 +330,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             </div>
           )}
           </div>
-        ))}
+        );})}
       </div>
     </div>
   );

@@ -395,11 +395,13 @@ export async function fileEmailAttachments(
     `select folder_path from matter where id = $1 and tenant_id = $2`,
     [matterId, user.tenantId]
   );
-  if (!matter?.folder_path) return { saved: 0, files };
-
+  // A case without a OneDrive folder still files its attachments: the bytes live in the
+  // database (document_blob, as a locked file or a provider download does) and are read,
+  // shown and opened from there. Nothing is dropped for want of a folder.
+  const folder = matter?.folder_path ?? null;
   // Files go to the matter's own drive, not the drive of whoever happened to
   // receive the email — otherwise a case's documents scatter across colleagues.
-  const driveUser = await driveUserFor(user.tenantId, matterId, user.userId);
+  const driveUser = folder ? await driveUserFor(user.tenantId, matterId, user.userId) : null;
   const attachments = await listMessageAttachments(user.userId, messageId);
   let saved = 0;
   const savedNames: string[] = [];
@@ -415,7 +417,7 @@ export async function fileEmailAttachments(
       [matterId, user.tenantId, hash]
     );
     if (exists) { files.push({ name: att.name, outcome: 'duplicate', as: null, reason: null }); continue; } // identical content already filed
-    const uploaded = await uploadToMatterKb(driveUser, matter.folder_path, att.name, buffer);
+    const uploaded = folder && driveUser ? await uploadToMatterKb(driveUser, folder, att.name, buffer) : null;
     const doc = await queryOne<{ id: string }>(
       `insert into document
         (tenant_id, matter_id, source_type, drive_id, graph_item_id, storage_path, web_url, file_name, mime_type, size_bytes, hash_sha256, doc_type, created_by)
@@ -423,10 +425,10 @@ export async function fileEmailAttachments(
       [
         user.tenantId,
         matterId,
-        uploaded.parentReference?.driveId ?? null,
-        uploaded.id,
-        `${matterKbPath(matter.folder_path)}/${att.name}`,
-        uploaded.webUrl ?? null,
+        uploaded?.parentReference?.driveId ?? null,
+        uploaded?.id ?? null,
+        uploaded && folder ? `${matterKbPath(folder)}/${att.name}` : `email-attachment://${matterId}/${att.name}`,
+        uploaded?.webUrl ?? null,
         att.name,
         att.contentType ?? null,
         att.size ?? null,
@@ -434,6 +436,7 @@ export async function fileEmailAttachments(
         user.userId,
       ]
     );
+    if (!uploaded && doc?.id) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, buffer]).catch((e) => console.error('[files] attachment bytes could not be kept', (e as Error).message));
     // Index the document's CONTENT (not just its filename) so the drafter is
     // case-aware across the matter's documents, not only the current email.
     const indexText = await buildDocIndexText(user, matterId, att.name, att.contentType, att.contentBytes);
@@ -443,7 +446,7 @@ export async function fileEmailAttachments(
       sourceKind: 'DOCUMENT',
       sourceId: doc!.id,
       text: indexText ? `${att.name}\n${indexText}` : `${att.name}\n${att.contentType ?? ''}`,
-      metadata: { fileName: att.name, graphItemId: uploaded.id, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
+      metadata: { fileName: att.name, graphItemId: uploaded?.id ?? null, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
     }).then(async () => {
       if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, att.name, doc.id).catch(() => {});
     }).catch(() => {});

@@ -61,6 +61,7 @@ export const ENGINE_CSS = `
 .tl-ev .ty{color:#64748b;font-weight:600}
 .tl-ev .ac{font-size:11px}
 .tl-ev.sup .ty{color:#6366f1}
+.tl-read{margin:0 0 8px 60px;font-size:13px;line-height:1.5;background:#fff;border:1px solid #e6e8ee;border-radius:8px;padding:10px 12px;white-space:pre-wrap;max-height:360px;overflow:auto;color:#1e293b}
 .tl-raw{margin:0 0 8px 60px;font-size:11.5px;background:#f8fafc;border:1px solid #e6e8ee;border-radius:8px;padding:8px 10px;white-space:pre-wrap;max-height:260px;overflow:auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#334155}
 .tl-card{display:block;margin:6px 0 10px;padding:12px 14px;border-left:4px solid #f59e0b;text-decoration:none;color:inherit}
 .tl-card:hover{box-shadow:0 2px 10px rgba(16,24,40,.08)}
