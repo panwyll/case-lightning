@@ -751,7 +751,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     </> });
 
   if (has('survey') && s.survey) lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
-    tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started' }, { label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
+    tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started', documentId: s.survey.reports[s.survey.reports.length - 1]?.documentId ?? null, href: s.survey.reports.length && s.survey.reports[s.survey.reports.length - 1]?.documentId ? `/api/v1/documents/${s.survey.reports[s.survey.reports.length - 1].documentId}/raw` : undefined }, { label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
     actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
       {s.survey.status === 'further_investigation' && !s.clientDecisions?.further_investigation && <>
         {act('survey', 'client_decision_recorded', 'Client Wants the Specialist In', { subject: 'further_investigation', decision: 'pursue' }, { primary: true })}

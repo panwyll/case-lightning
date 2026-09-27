@@ -23,8 +23,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     assertFeature('auth');
     const user = await requireUser();
     const { documentId } = z.object({ documentId: z.string().uuid() }).parse(await params);
-    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null; graph_item_id: string | null; web_url: string | null; content: string | null }>(
-      `select d.matter_id, d.file_name, d.mime_type, b.bytes, d.graph_item_id, d.web_url, d.extracted_facts->>'content' as content from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
+    const doc = await queryOne<{ matter_id: string; file_name: string | null; mime_type: string | null; bytes: Buffer | null; graph_item_id: string | null; web_url: string | null; content: string | null; hash_sha256: string | null }>(
+      `select d.matter_id, d.file_name, d.mime_type, b.bytes, d.graph_item_id, d.web_url, d.extracted_facts->>'content' as content, d.hash_sha256 from document d left join document_blob b on b.document_id = d.id where d.id = $1 and d.tenant_id = $2`,
       [documentId, user.tenantId]
     );
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
@@ -38,6 +38,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
         bytes = fromLeap.bytes;
         mime = fromLeap.mimeType ?? mime;
       }
+    }
+    // Identical contents filed on the case under another record (a repeat email): those bytes are this file.
+    if (!bytes && doc.hash_sha256) {
+      const twin = await queryOne<{ bytes: Buffer }>(`select b.bytes from document d join document_blob b on b.document_id = d.id where d.tenant_id = $1 and d.matter_id = $2 and d.hash_sha256 = $3 limit 1`, [user.tenantId, doc.matter_id, doc.hash_sha256]).catch(() => null);
+      if (twin?.bytes) bytes = twin.bytes;
     }
     if (!bytes && doc.content) { bytes = Buffer.from(doc.content, 'utf8'); mime = mime ?? 'text/plain; charset=utf-8'; }
     if (!bytes && doc.graph_item_id) {

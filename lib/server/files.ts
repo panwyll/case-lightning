@@ -123,8 +123,8 @@ export async function processMatterFile(
       text: indexText ? `${opts.fileName}\n${indexText}` : `${opts.fileName}\n${opts.mimeType ?? ''}`,
       metadata: { fileName: opts.fileName, graphItemId: opts.itemId, source: 'ONEDRIVE_UPLOAD', indexed: indexText ? 'content' : 'name' },
     }).catch(() => {});
-    // An edited OneDrive file supersedes the earlier version of the SAME item; a different file that shares a name does not.
-    if (doc?.id) await supersedePriorVersions(user.tenantId, matterId, { graphItemId: opts.itemId }, doc.id).catch(() => {});
+    // An edited OneDrive file (the same item) or a revised copy of a document already on the case becomes its current version.
+    const prior = doc?.id ? await supersedeAsVersion(user.tenantId, matterId, doc.id, { fileName: opts.fileName, graphItemId: opts.itemId }).catch(() => null) : null;
     if (doc?.id && locked) {
       if (opts.bytes) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, opts.bytes]).catch(() => {});
       await recordLockedDocument(user.tenantId, matterId, doc.id, opts.fileName);
@@ -132,7 +132,10 @@ export async function processMatterFile(
     }
     // Conveyancing engine (component #2): classify + route the new document into the
     // matter's sub-flows. No-op unless the matter is enrolled; never fails the filing.
-    if (doc?.id) await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => {});
+    if (doc?.id) {
+      const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => null);
+      if (prior) await surfaceRevision(user.tenantId, matterId, opts.fileName, doc.id, prior, report).catch(() => {});
+    }
   }
 
   // Gate the notification: only draft for files we read and confirmed substantive.
@@ -383,6 +386,65 @@ export async function saveEmailAttachmentsToMatter(
   return (await fileEmailAttachments(user, matterId, messageId, subject)).saved;
 }
 
+/** "Contract v2 (1).pdf" and "contract-final.pdf" are the same document as "Contract.pdf"; "scan.pdf" is nobody's name for anything. */
+export function versionKey(fileName: string): string | null {
+  const m = fileName.toLowerCase().match(/^(.*?)(\.[a-z0-9]{1,5})?$/);
+  const ext = m?.[2] ?? '';
+  const stem = (m?.[1] ?? '')
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/\(\d+\)/g, ' ')
+    .replace(/[\s_\-.]*(v|ver|version|rev|revision)[\s_\-.]*[\da-z]{0,3}\b/g, ' ')
+    .replace(/\b(final|revised|amended|updated|latest|draft|copy|signed|clean|tracked)\b/g, ' ')
+    .replace(/[\s_\-.]+/g, ' ')
+    .trim();
+  if (!stem || /^(scan|scanned|document|doc|image|img|attachment|untitled|file|print|page|photo|pdf|\d+|img \d+|dsc \d+|scan \d+|doc \d+)$/.test(stem)) return null;
+  return `${stem}${ext}`;
+}
+
+/**
+ * A new file that is a revision of one already on the case (the same OneDrive item edited, or
+ * the same document name sent again with different contents) replaces it as the current
+ * version. The earlier one stays on file, superseded, and is what the new reading is compared with.
+ */
+export async function supersedeAsVersion(tenantId: string, matterId: string, newDocId: string, of: { fileName: string; graphItemId?: string | null }): Promise<{ id: string; fileName: string | null; at: string; read: boolean } | null> {
+  const key = versionKey(of.fileName);
+  const candidates = await query<{ id: string; file_name: string | null; graph_item_id: string | null; created_at: string }>(
+    `select id, file_name, graph_item_id, created_at::text from document where tenant_id = $1 and matter_id = $2 and id <> $3 and superseded_at is null and file_name is not null order by created_at desc limit 300`,
+    [tenantId, matterId, newDocId]
+  ).catch(() => []);
+  const prior = candidates.find((c) => (of.graphItemId && c.graph_item_id === of.graphItemId) || (key && c.file_name && versionKey(c.file_name) === key));
+  if (!prior) return null;
+  await query(`update document set superseded_at = now(), superseded_by = $3 where id = $1 and tenant_id = $2`, [prior.id, tenantId, newDocId]).catch(() => {});
+  await query(`delete from kb_chunk where tenant_id = $1 and source_kind in ('DOCUMENT', 'DOCUMENT_PAGE') and source_id = $2`, [tenantId, prior.id]).catch(() => {});
+  const cited = await queryOne<{ n: string }>(`select count(*)::text as n from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [tenantId, matterId, prior.id]).catch(() => ({ n: '0' }));
+  return { id: prior.id, fileName: prior.file_name, at: prior.created_at, read: Number(cited?.n ?? '0') > 0 };
+}
+
+/** After a revision is read: say what happened, and when the case could not simply take it, give it to a person. */
+async function surfaceRevision(tenantId: string, matterId: string, fileName: string, newDocId: string, prior: { fileName: string | null; at: string; read: boolean }, report: { action: { kind: string; reason?: string }; classification?: { role: string } | null } | null): Promise<{ outcome: 'read' | 'filed'; as: string | null; reason: string }> {
+  const when = new Date(prior.at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/London' });
+  const replaces = `a new version of ${prior.fileName ?? 'a document'} (the version from ${when} is kept, superseded)`;
+  const role = report?.classification?.role ?? null;
+  // What changed between the two readings (the reader compares a new version with the one it replaces).
+  const d = await queryOne<{ diff: { changed?: Array<{ key: string; from: string; to: string }>; added?: Array<{ key: string; value: string }>; removed?: Array<{ key: string; value: string }> } | null }>(`select review_diff as diff from document where id = $1 and tenant_id = $2`, [newDocId, tenantId]).catch(() => null);
+  const label = (k: string) => k.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ');
+  const changes = [
+    ...(d?.diff?.changed ?? []).map((c) => `${label(c.key)}: ${c.from} → ${c.to}`),
+    ...(d?.diff?.added ?? []).map((a) => `${label(a.key)} added: ${a.value}`),
+    ...(d?.diff?.removed ?? []).map((r) => `${label(r.key)} gone (was ${r.value})`),
+  ];
+  const changedText = changes.length ? `What changed: ${changes.slice(0, 12).join('; ')}${changes.length > 12 ? `; and ${changes.length - 12} more` : ''}.` : d?.diff ? 'The facts read from it are the same as the earlier version.' : 'The two versions could not be compared fact by fact.';
+  const applied = !!report && report.action.kind !== 'skip';
+  // A person sees every revision that changed something, and every one the system could not re-apply.
+  if (prior.read && (!applied || changes.length)) {
+    const { engine } = await import('./engine/adapters');
+    await engine().run(tenantId, matterId, { type: 'raise_issue', actor: 'system', kind: 'document_revised', title: `Revised: ${fileName} replaces the version from ${when}`, detail: `${changedText}${applied ? '' : ` The system could not simply re-apply it${report?.action.kind === 'skip' && report.action.reason ? ` (${report.action.reason})` : ''}.`} Decide whether the change affects advice, enquiries or the report.`, gate: 'none', documentId: newDocId } as never).catch((e) => console.error('[files] revision issue could not be raised', (e as Error).message));
+    return { outcome: applied ? 'read' : 'filed', as: role && role !== 'other' ? role : null, reason: `${replaces}. ${changedText} A task asks you to check it` };
+  }
+  if (applied) return { outcome: 'read', as: role, reason: `${replaces}. ${changedText}` };
+  return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: `${replaces}; ${report?.action.kind === 'skip' && report.action.reason ? report.action.reason : 'not acted on'}` };
+}
+
 /** One line per thing that happened to an email and its files, in plain words, for the case log. */
 export function describeFiling(
   email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null,
@@ -455,7 +517,7 @@ export async function fileEmailAttachments(
     if (exists) {
       // Identical content already filed. The copy we hold must open: if its bytes live only in a
       // OneDrive item (which may have been moved or deleted), keep these bytes against it now.
-      await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [exists.id, user.tenantId, buffer]).catch(() => {});
+      await query(`insert into document_blob (document_id, tenant_id, bytes) select d.id, d.tenant_id, $3 from document d where d.tenant_id = $1 and d.matter_id = $4 and d.hash_sha256 = $2 on conflict (document_id) do nothing`, [user.tenantId, hash, buffer, matterId]).catch((e) => console.error('[files] could not keep the bytes for a repeat file', (e as Error).message));
       // If it was never read into the case (an earlier attempt filed it but the read failed or
       // was skipped), read it now instead of stopping at "duplicate".
       const cited = await queryOne<{ n: string; type: string | null; at: string | null }>(`select count(*)::text as n, max(type) as type, max(created_at)::text as at from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1', type: null, at: null }));
@@ -501,7 +563,7 @@ export async function fileEmailAttachments(
       text: indexText ? `${att.name}\n${indexText}` : `${att.name}\n${att.contentType ?? ''}`,
       metadata: { fileName: att.name, graphItemId: uploaded?.id ?? null, source: 'EMAIL_ATTACHMENT', indexed: indexText ? 'content' : 'name' },
     }).then(async () => {
-      // An attachment is its own document: a later file with the same name is not assumed to replace it.
+      // A revision of a document already on the case (same document name, new contents) becomes its current version.
     }).catch(() => {});
     saved += 1;
     savedNames.push(att.name);
@@ -513,8 +575,10 @@ export async function fileEmailAttachments(
         await recordLockedDocument(user.tenantId, matterId, doc.id, att.name);
         files.push({ name: att.name, outcome: 'locked', as: null, reason: null });
       } else {
+        const prior = await supersedeAsVersion(user.tenantId, matterId, doc.id, { fileName: att.name });
         const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch((e) => { console.error('[files] ingest failed', att.name, (e as Error).message); return { failed: (e as Error).message } as const; });
         if (report && 'failed' in report) { files.push({ name: att.name, outcome: 'filed', as: null, reason: `could not be read: ${report.failed}` }); continue; }
+        if (prior) { const r = await surfaceRevision(user.tenantId, matterId, att.name, doc.id, prior, report); files.push({ name: att.name, outcome: r.outcome, as: r.as, reason: r.reason }); continue; }
         const role = report?.classification?.role ?? null;
         files.push(report && report.action.kind !== 'skip' ? { name: att.name, outcome: 'read', as: role, reason: null } : { name: att.name, outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' });
       }

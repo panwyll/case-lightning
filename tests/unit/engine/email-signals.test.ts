@@ -370,3 +370,15 @@ test('"Hi, survey attached" with a file on it proposes nothing about a missing s
   const drafts = await r.extract({ tenantId: TENANT, matterId: MATTER, text: 'Hi, survey attached', kind: 'email' });
   assert.equal(drafts.filter((d) => (d.command as { kind?: string } | null)?.kind === 'survey_report_outstanding').length, 0);
 });
+
+test('a revised document is the same document: "Contract v2 (1).pdf" and "contract-final.pdf" are versions of "Contract.pdf"; "scan.pdf" is nobody\'s name', async () => {
+  const { versionKey } = await import('../../../lib/server/files');
+  assert.equal(versionKey('Contract v2 (1).pdf'), versionKey('Contract.pdf'));
+  assert.equal(versionKey('contract-final.pdf'), versionKey('Contract.pdf'));
+  assert.equal(versionKey('Replies to enquiries_revised.docx'), versionKey('Replies to enquiries.docx'));
+  assert.notEqual(versionKey('Contract.pdf'), versionKey('Contract.docx'), 'a different format is a different file');
+  assert.notEqual(versionKey('Search - drainage.pdf'), versionKey('Search - local.pdf'));
+  assert.equal(versionKey('scan.pdf'), null);
+  assert.equal(versionKey('IMG_2041.jpg'), null);
+  assert.equal(versionKey('Document (3).pdf'), null);
+});

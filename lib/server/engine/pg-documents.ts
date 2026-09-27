@@ -121,7 +121,9 @@ export class PgDocumentFactsWriter implements DocumentFactsWriter {
   }
   /** Replace the ledger and this role's facts for the document (a re-read is a new projection, not an append), keep what changed since the last read, and index the pages. */
   async writeReview(doc: DocumentRef, review: DocumentReview, extractor: string, texts?: PageTexts): Promise<void> {
-    const prev = await query<{ key: string; value: string; extractor: string | null; created_at: string }>(`select key, value, extractor, created_at from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
+    let prev = await query<{ key: string; value: string; extractor: string | null; created_at: string }>(`select key, value, extractor, created_at from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
+    // A new version of a document is compared with the version it replaces, so a revision shows what changed.
+    if (!prev.length) prev = await query<{ key: string; value: string; extractor: string | null; created_at: string }>(`select f.key, f.value, f.extractor, f.created_at from document_fact f join document d on d.id = f.document_id where d.superseded_by = $1 and d.tenant_id = $2 and f.role = $3`, [doc.id, doc.tenantId, review.role]).catch(() => []);
     await query(`delete from document_page where document_id = $1 and tenant_id = $2`, [doc.id, doc.tenantId]);
     for (const pg of review.pages) await query(`insert into document_page (document_id, tenant_id, page, verdict, text_chars, ocr_confidence) values ($1, $2, $3, $4, $5, $6)`, [doc.id, doc.tenantId, pg.page, pg.verdict, pg.textChars, pg.ocr ?? null]);
     await query(`delete from document_fact where document_id = $1 and tenant_id = $2 and role = $3`, [doc.id, doc.tenantId, review.role]);
