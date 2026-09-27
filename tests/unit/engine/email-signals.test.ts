@@ -51,26 +51,6 @@ test('"surveys are all complete" from the client asks for the report, and record
   assert.equal(after.state.survey.status, 'not_started');
 });
 
-test('the agent saying the buyer is happy with the survey is information, not a client decision', async () => {
-  const h = await enrolled();
-  await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level3', surveyor: 'J Bloggs MRICS', summary: 'Damp to the rear addition.', recommendations: [{ code: 'DAMP', text: 'Damp-proofing quote.', furtherInvestigation: false, severity: 'medium' }], confidence: 0.9 }, 'SURVEY'));
-  const text = 'Spoke to the buyer this morning. She is happy with the survey report and wants to press on to exchange.';
-  const fromAgent = await email(h, text, AGENT);
-  const agentNote = Object.values(fromAgent.state.notes).find((n) => n.from?.relation === 'agent')!;
-  assert.ok(agentNote.actions.length >= 1, 'the sentence is still read');
-  assert.equal(agentNote.actions.filter((a) => a.command).length, 0, 'but nothing is proposed');
-  assert.match(agentNote.actions[0].summary, /said by the estate agent, not the client/);
-  assert.equal(blockingDecisions(fromAgent.state).filter((d) => d.kind === 'note_actions').length, 0, 'no decision when there is nothing to apply');
-  assert.equal(fromAgent.state.clientDecisions.physical_condition, undefined);
-
-  // The same words from the client are a decision the person can approve.
-  const fromClient = await email(h, text, CLIENT);
-  const clientNote = Object.values(fromClient.state.notes).find((n) => n.from?.relation === 'client')!;
-  assert.equal(clientNote.actions.filter((a) => a.command?.type === 'client_decision_recorded').length, 1);
-  const after = await approve(h);
-  assert.equal(after.state.clientDecisions.physical_condition?.decision, 'satisfied');
-});
-
 test('nobody can clear ID, AML, source of funds or a search by saying so', async () => {
   const h = await enrolled();
   const before = await h.svc.getState(TENANT, MATTER);
@@ -78,7 +58,9 @@ test('nobody can clear ID, AML, source of funds or a search by saying so', async
   for (const from of [CLIENT, AGENT, STRANGER]) {
     const res = await email(h, text, from);
     const note = Object.values(res.state.notes).at(-1)!;
-    assert.equal(note.actions.filter((a) => a.command).length, 0, `${from.relation}: nothing to apply`);
+    // A stranger's email always carries one thing: who are they? Never a clearance.
+    const commands = note.actions.filter((a) => a.command).map((a) => a.command!);
+    assert.deepEqual(commands.map((c) => (c.type === 'raise_issue' ? c.kind : c.type)), from.relation === 'unknown' ? ['unknown_correspondent'] : [], `${from.relation}: nothing to apply`);
     assert.deepEqual(res.state.idCheck, before.idCheck);
     assert.deepEqual(res.state.proofOfFunds, before.proofOfFunds);
     assert.deepEqual(res.state.searches, before.searches);
@@ -119,4 +101,57 @@ test('a survey that is merely booked, or not done yet, is not "done"', async () 
   const count = async (t: string) => (await r.extract({ tenantId: TENANT, matterId: MATTER, text: t, kind: 'email' })).filter((x) => (x.command as { kind?: string } | null)?.kind === 'survey_report_outstanding').length;
   assert.equal(await count('The survey is booked for Tuesday.'), 0);
   assert.equal(await count('The survey has not been done yet.'), 0);
+});
+
+// ───────────────────────────── hearsay is confirmed with the client, not dropped ─────────────────────────────
+
+test('the agent reporting the client\'s view asks the client to confirm; the client\'s own reply is what gets recorded', async () => {
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level3', surveyor: 'J Bloggs MRICS', summary: 'Damp to the rear addition.', recommendations: [{ code: 'DAMP', text: 'Damp-proofing quote.', furtherInvestigation: false, severity: 'medium' }], confidence: 0.9 }, 'SURVEY'));
+  const res = await email(h, 'Spoke to the buyer this morning. She is happy with the survey report and wants to press on to exchange.', AGENT);
+  const note = Object.values(res.state.notes).find((n) => n.from?.relation === 'agent')!;
+  const confirm = note.actions.find((a) => a.command?.type === 'confirm_with_client');
+  assert.ok(confirm, 'hearsay becomes a request to confirm, not information');
+  assert.match(confirm!.summary, /estate agent says/);
+  assert.equal(blockingDecisions(res.state).filter((d) => d.kind === 'note_actions').length, 1, 'a person decides whether to ask');
+  assert.equal(res.state.clientDecisions.physical_condition, undefined);
+
+  // Approving sends the client a message (client_update is auto in the fixture levels).
+  const after = await approve(h);
+  assert.equal(after.state.clientDecisions.physical_condition, undefined, 'still nothing recorded');
+  const sent = h.ports.clientComms.sent.find((m) => m.template === 'confirm_with_client');
+  assert.ok(sent, 'the client was asked');
+  assert.equal(sent!.context.claim, 'you are happy with the survey and want to proceed');
+  assert.equal(sent!.context.saidBy, 'Sam Agent');
+
+  // The client replies in their own words: now it is a decision, still for a person to approve.
+  const reply = await email(h, 'Yes that is right, I am happy with the survey and want to proceed.', CLIENT);
+  const clientNote = Object.values(reply.state.notes).find((n) => n.from?.relation === 'client')!;
+  assert.equal(clientNote.actions.filter((a) => a.command?.type === 'client_decision_recorded').length, 1);
+  const done = await approve(h);
+  assert.equal(done.state.clientDecisions.physical_condition?.decision, 'satisfied');
+});
+
+test('an email from someone not on the file always reaches a person, even when it says nothing actionable', async () => {
+  const h = await enrolled();
+  const res = await email(h, 'Hi, I am Jo\'s wife. Just checking how things are going with the house, we are very excited!', STRANGER);
+  const note = Object.values(res.state.notes)[0];
+  const unknown = note.actions.find((a) => (a.command as { kind?: string } | null)?.kind === 'unknown_correspondent');
+  assert.ok(unknown, 'the unknown sender is itself the thing to confirm');
+  assert.match(unknown!.summary, /not on the file/);
+  assert.equal(blockingDecisions(res.state).filter((d) => d.kind === 'note_actions').length, 1, 'not buried');
+  const after = await approve(h);
+  const issue = Object.values(after.state.issues).find((i) => i.kind === 'unknown_correspondent')!;
+  assert.ok(issue);
+  assert.equal(issue.gate, 'none');
+});
+
+test('a stranger reporting the client\'s decision is asked about, and the client is asked to confirm', async () => {
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level3', surveyor: 'J Bloggs MRICS', summary: 'Fine.', recommendations: [], confidence: 0.9 }, 'SURVEY'));
+  const res = await email(h, 'Hi, I am Jo\'s wife. We are happy with the survey report and want to proceed.', STRANGER);
+  const kinds = Object.values(res.state.notes)[0].actions.map((a) => a.command?.type ?? 'none');
+  assert.ok(kinds.includes('raise_issue'), 'who are they?');
+  assert.ok(kinds.includes('confirm_with_client'), 'ask the client');
+  assert.ok(!kinds.includes('client_decision_recorded'), 'never recorded on a stranger\'s word');
 });

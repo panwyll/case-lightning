@@ -450,12 +450,14 @@ export interface NoteSender { address: string; name: string | null; relation: Se
 export type NoteKind = (typeof NOTE_KINDS)[number];
 
 /** What an extractor may propose from a note. Anything else is information only. */
-export const NOTE_ACTION_KINDS = ['client_decision', 'issue', 'expectation', 'information'] as const;
+export const NOTE_ACTION_KINDS = ['client_decision', 'confirm_with_client', 'issue', 'expectation', 'information'] as const;
 export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 
 /** The command a proposal would run. Deliberately a small, safe set — see notes.ts. */
 export type NoteCommand =
   | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string }
+  /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
+  | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
 
 /**

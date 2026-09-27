@@ -502,6 +502,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
         n.appliedActionIds = p.applied;
         n.status = p.applied.length ? 'applied' : 'discarded';
       }
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
       break;
     }
     case 'client_update_sent': {

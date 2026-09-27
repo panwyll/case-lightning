@@ -1,3 +1,4 @@
+import { claimText } from '@/lib/server/engine/notes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -75,6 +76,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
             ? null
             : a.command.type === 'client_decision_recorded'
             ? `Record the client's decision: ${a.command.subject.replace(/_/g, ' ')} — ${a.command.decision.replace(/_/g, ' ')}`
+            : a.command.type === 'confirm_with_client'
+            ? `Ask the client to confirm that ${claimText(a.command.subject, a.command.decision)}; recorded only when they say so`
             : `Raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? ' (holding nothing)' : `, holding ${a.command.gate}`}`,
         })),
         applied: applied?.applied ?? null,

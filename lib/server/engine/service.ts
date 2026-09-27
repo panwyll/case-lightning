@@ -58,6 +58,7 @@ import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTra
 import { openPofQueries, openWaits } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
+import { claimText } from './notes';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -529,7 +530,8 @@ export class EngineService {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];
       });
-    if (!drafts.length) return recorded;
+    const stranger = input.kind === 'email' && (input.from?.relation ?? 'unknown') === 'unknown';
+    if (!drafts.length && !stranger) return recorded;
     return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts, extractor: reader.name });
   }
 
@@ -901,6 +903,14 @@ export class EngineService {
                 // Cites the approval it came from: the database refuses a client decision written
                 // from an automation context without one (migration 079).
                 await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId, approvedEventId: e.id });
+              } else if (c.type === 'confirm_with_client') {
+                // Hearsay: ask the client. Their reply comes back through the same reader as their
+                // own words, and only then is the decision proposed for the record.
+                const claim = claimText(c.subject, c.decision);
+                const detail = { kind: 'confirm_with_client', template: 'confirm_with_client', context: { saidBy: c.saidBy, claim, quote: c.quote, subject: c.subject, decision: c.decision }, triggeredByEventId: e.id };
+                if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'confirm_with_client', `confirm_with_client:${p.noteId}:${id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${c.saidBy} says ${claim}; ask the client to confirm it before it is recorded\nTemplate: confirm_with_client`))) {
+                  try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('confirmation request could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+                }
               } else {
                 await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
               }

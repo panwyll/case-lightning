@@ -1883,6 +1883,20 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (note.status !== 'no_actions' || note.actions.length) reject('That note has already been read.', 409);
       // Only what the note actually says, and only commands the machine would accept.
       const { actions } = validateNoteActions(note.text, cmd.drafts, { kind: note.kind, from: note.from });
+      // An email from someone the case does not know is never buried, whatever it says: a
+      // person is asked who they are before anything from them can count.
+      if (note.kind === 'email' && (note.from?.relation ?? 'unknown') === 'unknown') {
+        const who = note.from?.name ? `${note.from.name} <${note.from.address}>` : note.from?.address ?? 'an unknown address';
+        const firstLine = note.text.split(/\n/).map((l) => l.trim()).find(Boolean) ?? note.text.slice(0, 120);
+        actions.unshift({
+          id: 'A0',
+          kind: 'issue',
+          summary: `${who} wrote in and is not on the file`,
+          quote: firstLine.slice(0, 200),
+          confidence: 1,
+          command: { type: 'raise_issue', kind: 'unknown_correspondent', title: `${who} wrote in; not on the file`, detail: firstLine.slice(0, 400), gate: 'none' },
+        });
+      }
       const actionable = actions.filter((a) => a.command);
       const events: NewEvent[] = [];
       // A decision needs a source to cite. A note filed without a document is read and

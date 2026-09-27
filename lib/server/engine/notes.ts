@@ -62,9 +62,33 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (!source || source.kind !== 'email') return action;
   const relation = source.from?.relation ?? 'unknown';
   if (action.command?.type === 'client_decision_recorded' && relation !== 'client') {
-    return { ...action, kind: 'information', command: null, summary: `${action.summary} (said by ${RELATION_LABEL[relation]}, not the client; nothing is recorded until the client says so)` };
+    // Hearsay about the client is not dropped: the client is asked, and their own answer is what gets recorded.
+    const saidBy = source.from?.name || source.from?.address || RELATION_LABEL[relation];
+    return {
+      ...action,
+      kind: 'confirm_with_client',
+      summary: `${RELATION_LABEL[relation]} says: ${action.summary.replace(/^The client /, 'the client ')}. Ask the client to confirm; nothing is recorded until they do`,
+      command: { type: 'confirm_with_client', subject: action.command.subject, decision: action.command.decision, saidBy, quote: action.quote },
+    };
   }
   return action;
+}
+
+/** The claim put to the client, in their terms: "you are happy with the survey and want to proceed". */
+export function claimText(subject: ClientDecisionSubject, decision: string): string {
+  const k = `${subject}:${decision}`;
+  const known: Record<string, string> = {
+    'physical_condition:satisfied': 'you are happy with the survey and want to proceed',
+    'physical_condition:renegotiate': 'you want to renegotiate the price following the survey',
+    'physical_condition:further_investigation': 'you want the further investigation the surveyor recommended',
+    'physical_condition:withdraw': 'you no longer wish to proceed with the purchase',
+    'further_investigation:pursue': 'you want the further investigation the surveyor recommended carried out',
+    'further_investigation:waive': 'you are content to proceed without the further investigation the surveyor recommended',
+    'exchange_authority:authorised': 'you authorise us to exchange contracts',
+    'exchange_authority:not_yet': 'you are not yet ready for us to exchange contracts',
+    'exchange_authority:withdrawn': 'you have withdrawn your authority to exchange contracts',
+  };
+  return known[k] ?? `your decision on ${subject.replace(/_/g, ' ')} is "${decision.replace(/_/g, ' ')}"`;
 }
 
 /** Whitespace-insensitive containment: a quote must really be in the note. */
@@ -125,7 +149,7 @@ export function validateNoteActions(text: string, drafts: NoteActionDraft[], sou
 
 /** Why this command could never run. null = it is a command the machine accepts. */
 export function commandProblem(c: NoteCommand): string | null {
-  if (c.type === 'client_decision_recorded') {
+  if (c.type === 'client_decision_recorded' || c.type === 'confirm_with_client') {
     if (!(CLIENT_DECISION_SUBJECTS as readonly string[]).includes(c.subject)) return `"${c.subject}" is not a client decision the engine knows`;
     const allowed = CLIENT_DECISION_OUTCOMES[c.subject as ClientDecisionSubject] ?? [];
     if (!allowed.includes(c.decision)) return `"${c.decision}" is not an outcome for ${c.subject.replace(/_/g, ' ')}`;
@@ -152,6 +176,8 @@ export function summariseNoteActions(input: { kind: NoteKind; text: string; acti
       ? 'For information only — nothing to record.'
       : a.command.type === 'client_decision_recorded'
       ? `Would record the client's decision: ${a.command.subject.replace(/_/g, ' ')} = ${a.command.decision.replace(/_/g, ' ')}.`
+      : a.command.type === 'confirm_with_client'
+      ? `Would ask the client to confirm that ${claimText(a.command.subject, a.command.decision)}. Recorded only when they say so themselves.`
       : `Would raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? ' (holding nothing)' : `, holding ${a.command.gate}`}.`;
     L.push(`${a.id}. ${a.summary}`);
     L.push(`    “${a.quote}”`);
