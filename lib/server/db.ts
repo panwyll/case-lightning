@@ -167,9 +167,17 @@ export async function transaction<T>(work: (client: pg.PoolClient) => Promise<T>
     const user = await effectiveDbUser();
     const automation = inAutomationContext();
     if (automation && automationRoleAvailable === null) {
-      // Probed once per process, outside any transaction.
-      const r = await client.query<{ ok: boolean }>(`select pg_has_role(current_user, 'conveyi_automation', 'member') as ok`).catch(() => ({ rows: [{ ok: false }] }));
-      automationRoleAvailable = !!r.rows[0]?.ok;
+      // Probed once per process by actually switching role and rolling back. Membership alone is not
+      // enough: Postgres 16 also needs the SET option on the grant (migration 097), and a probe that only
+      // checked membership let every automation statement fail with "permission denied to set role".
+      try {
+        await client.query('begin; set local role conveyi_automation; rollback');
+        automationRoleAvailable = true;
+      } catch (err) {
+        await client.query('rollback').catch(() => {});
+        automationRoleAvailable = false;
+        console.warn('[db] cannot SET ROLE conveyi_automation from this connection; automation effects run on the app role until migration 097 is applied:', (err as Error).message);
+      }
     }
     const setup = ['begin'];
     const inlineUser = user && UUID.test(user) ? user : null;

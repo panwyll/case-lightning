@@ -220,7 +220,7 @@ test('request further re-opens the form automatically with the conveyancer\'s no
 test('in PROPOSE mode, request further does not send the form again by itself: a person sees the proposal, and their yes sends it with the note', async () => {
   const h = harness();
   await h.store.setLevel(TENANT, 'client_update', 'propose');
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: true, requireExchangeAuthority: false, purchasePricePennies: 32_500_000 });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: true, requireExchangeAuthority: false });
   await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
   await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-1', submission({ mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 32_500_000, description: 'Savings', evidenceDocumentIds: [] }] }));
   let s = await h.svc.getState(TENANT, MATTER);
