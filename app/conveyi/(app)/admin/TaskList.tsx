@@ -38,7 +38,11 @@ const CSS = `
 .tl-btn.go{background:#5A27E0;color:#fff}
 .tl-btn.go:hover{background:#4c1fc4}
 .tl-btn.on{background:#fff;color:#64748b;border-color:#e2e8f0;padding:6px 8px}
-.tl-open{border-top:1px solid #f1f5f9}
+.tl-item.open{background:#f8f7ff;box-shadow:inset 3px 0 0 #5A27E0;border-top:1px solid #e6e8ee;border-bottom:1px solid #e6e8ee;margin:6px 0}
+.tl-item.open .tl-task{border-top:0}
+.tl-item.open + .tl-item .tl-task{border-top:0}
+.tl-open{padding:0 14px 14px 40px}
+.tl-open .dp.inline{border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .tl-clear{display:flex;align-items:center;gap:8px;padding:14px;font-size:13px;color:#166534;background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px}
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 `;
@@ -126,7 +130,7 @@ export default function TaskList({ who }: { who: string }) {
             const due = dueIn(i, now);
             const age = ageDays(i, now);
             return (
-              <div key={key}>
+              <div key={key} className={`tl-item${isOpen ? ' open' : ''}`}>
                 <div className="tl-task">
                   <div>
                     <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}`}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>

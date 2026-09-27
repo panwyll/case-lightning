@@ -14,7 +14,9 @@ const ROW_CSS = `
 .df-btn:hover{background:#f5f3ff}
 .df-btn.go{background:#5A27E0;color:#fff}
 .df-btn.on{color:#64748b;border-color:#e2e8f0;padding:6px 8px}
-.df-open{border:1px solid #e6e8ee;border-radius:12px;margin:-4px 0 10px;overflow:hidden}
+.df-item.open{background:#f8f7ff;box-shadow:inset 3px 0 0 #5A27E0;border-radius:12px;padding:0 0 10px;margin-bottom:10px}
+.df-item.open .df-row{margin-bottom:0;border-color:transparent;background:transparent}
+.df-open{margin:0 10px 0 13px;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden;background:#fff}
 `;
 
 /** "search:CON29" → "CON29"; a bare id → nothing. */
@@ -96,7 +98,7 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
           {list.map((d) => compact ? (
             <DecisionCard key={d.eventId} decision={d} api={api} compact showMatter={!matterId} onResolved={() => { void load(); onResolved?.(); }} />
           ) : (
-            <div key={d.eventId}>
+            <div key={d.eventId} className={`df-item${open === d.eventId ? ' open' : ''}`}>
               <div className="df-row">
                 <div className="what"><span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{d.chip ?? chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
                 {quickApprovable(d.taskKind) && open !== d.eventId && <button type="button" className="df-btn go" disabled={approving === d.eventId} onClick={() => void quickApprove(d.eventId)}>{approving === d.eventId ? 'Approving…' : 'Approve'}</button>}
