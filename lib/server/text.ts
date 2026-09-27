@@ -52,3 +52,29 @@ export function rowToSafeTemplate(row: any) {
     updatedAt: row.updated_at,
   };
 }
+
+
+/**
+ * The new words in a reply: everything before the quoted history ("From: … Sent: …",
+ * "-----Original Message-----", "On … wrote:", "> " lines). What was said before is already on
+ * the case; reading it again would propose it again.
+ */
+export function stripQuotedReply(text: string): string {
+  const t = text.replace(/\r\n/g, '\n');
+  const markers = [
+    /\n\s*-{2,}\s*Original Message\s*-{2,}/i,
+    /\n\s*From:\s.+\n(?:\s*.+\n){0,4}?\s*(?:Sent|Date):\s/i,
+    /\n\s*From:\s[^\n]*<[^>]+>\s*\n/i,
+    /\n\s*On\s.{6,120}?\bwrote:\s*\n/i,
+    /\n\s*Le\s.{6,120}?\ba écrit\s*:/i,
+    /\n\s*>\s?[^\n]*\n(?:\s*>[^\n]*\n?){2,}/,
+    /\n_{5,}\s*\n/,
+  ];
+  let cut = t.length;
+  for (const m of markers) {
+    const i = t.search(m);
+    if (i >= 0 && i < cut) cut = i;
+  }
+  const head = t.slice(0, cut).trim();
+  return head.length ? head : t.trim();
+}

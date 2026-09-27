@@ -317,3 +317,27 @@ test('the broker reporting a problem with the offer: the broker is asked to conf
   assert.ok(h.ports.chaser.notices.some((n) => n.recipientRole === 'lender' && n.template === 'confirm_offer_status'), 'the broker is asked');
   assert.ok(h.ports.clientComms.sent.some((m) => m.template === 'mortgage_status_client'), 'the client is told');
 });
+
+// ───────────────────────────── replies and arrivals ─────────────────────────────
+
+test('a reply is read for its new words only; the quoted history is not proposed again', async () => {
+  const { stripQuotedReply } = await import('../../../lib/server/text');
+  const reply = 'Hi, survey attached\nThanks, Pete\n\nFrom: Peter Anwyll <pete@example.com>\nSent: 27 September 2026 23:16\nTo: jo@example.com\nSubject: Your purchase — your survey report\n\nHello Jo, we would like to exchange on 7 November and complete on 14 November.';
+  assert.equal(stripQuotedReply(reply), 'Hi, survey attached\nThanks, Pete');
+  assert.equal(stripQuotedReply('Yes fine.\n\nOn Mon, 28 Sep 2026 at 09:00, Jo <jo@example.com> wrote:\n> can we complete on 14 November?'), 'Yes fine.');
+  assert.equal(stripQuotedReply('Agreed.\n-----Original Message-----\nFrom: x'), 'Agreed.');
+  assert.equal(stripQuotedReply('Just the one line, no history.'), 'Just the one line, no history.');
+});
+
+test('the survey arriving closes "survey done, report not on file" by itself', async () => {
+  const h = await enrolled();
+  await email(h, 'Hi, surveys are all complete', CLIENT);
+  await approve(h);
+  let s = await h.svc.getState(TENANT, MATTER);
+  const issue = Object.values(s.issues).find((i) => i.kind === 'survey_report_outstanding')!;
+  assert.equal(issue.status, 'open');
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level2', surveyor: 'J Bloggs MRICS', summary: 'Fine.', recommendations: [], confidence: 0.9 }, 'SURVEY'));
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.issues[issue.id].status, 'resolved');
+  assert.notEqual(s.survey.status, 'not_started', 'the survey workstream has started');
+});

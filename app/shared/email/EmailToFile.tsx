@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { paths } from '@/lib/paths';
-import { Paperclip, Check, X, Mail, AlertTriangle, Home } from '@/app/shared/icons';
+import { Paperclip, Check, X, Mail, AlertTriangle, Home, Loader } from '@/app/shared/icons';
 
 /**
  * Filing email to cases (docs/email-filing.md).
@@ -148,6 +148,13 @@ export default function EmailToFile() {
   const [mailbox, setMailbox] = useState<string | null>(null); // null = my own
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [asideProgress, setAsideProgress] = useState<{ done: number; of: number } | null>(null);
+  // A status line is read once and goes: it is not a banner.
+  useEffect(() => {
+    if (!info) return;
+    const t = setTimeout(() => setInfo(null), 6000);
+    return () => clearTimeout(t);
+  }, [info]);
 
   const load = useCallback(async () => {
     try {
@@ -157,6 +164,8 @@ export default function EmailToFile() {
       setTotals({ toFile: r.toFile, bulk: r.bulk });
       setSel((cur) => cur ?? r.items.find((i) => !i.notCaseMail)?.id ?? r.items[0]?.id ?? null);
       setErr(null);
+      // The page's sweep may have found mail the sidebar counted before it ran: the badge re-reads now, so the two agree.
+      window.dispatchEvent(new Event('conveyi:counts'));
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Could not read your mailbox.';
       if (/graph account not connected/i.test(msg)) { setNoMailbox(true); setItems([]); } else setErr(msg);
@@ -213,12 +222,18 @@ export default function EmailToFile() {
   };
   const setAside = async (list: Item[]) => {
     setBusy(true); setErr(null);
+    if (list.length > 1) setAsideProgress({ done: 0, of: list.length });
     try {
-      for (const item of list) await api('/mail/not-a-case', { method: 'POST', body: JSON.stringify({ conversationId: item.conversationId ?? item.id, subject: item.subject, reason: item.notCaseMail ?? null, mailboxUserId: mailbox ?? undefined }) });
+      let done = 0;
+      for (const item of list) {
+        await api('/mail/not-a-case', { method: 'POST', body: JSON.stringify({ conversationId: item.conversationId ?? item.id, subject: item.subject, reason: item.notCaseMail ?? null, mailboxUserId: mailbox ?? undefined }) });
+        done += 1;
+        if (list.length > 1) setAsideProgress({ done, of: list.length });
+      }
       retire(list.map((i) => i.id));
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not set that aside.');
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setAsideProgress(null); }
   };
 
   // Up / down (or j / k) moves through the list, as in any mail client.
@@ -247,6 +262,7 @@ export default function EmailToFile() {
         )}
       </div>
       {err && <div className="eg-err">{err}</div>}
+      <style>{`@keyframes ef-spin { to { transform: rotate(360deg) } }`}</style>
       {info && !err && <div className="eg-note" style={{ color: '#166534', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 10px', fontSize: 12.5 }}>{info}</div>}
       {items === null && !err && !noMailbox && <div className="eg-sub">Loading…</div>}
       {noMailbox && (
@@ -268,7 +284,7 @@ export default function EmailToFile() {
               <button className={`tab${tab === 'bulk' ? ' on' : ''}`} role="tab" aria-selected={tab === 'bulk'} onClick={() => { setTab('bulk'); setSel(bulk[0]?.id ?? null); }}>
                 Bulk <span className="c">{totals?.bulk ?? bulk.length}</span>
               </button>
-              {tab === 'bulk' && bulk.length > 0 && <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>Set All Aside</button>}
+              {tab === 'bulk' && bulk.length > 0 && <button className="aside" disabled={busy} onClick={() => void setAside(bulk)}>{asideProgress ? <><Loader size={14} style={{ animation: "ef-spin 0.9s linear infinite" }} /> Setting Aside {asideProgress.done}/{asideProgress.of}</> : 'Set All Aside'}</button>}
             </div>
             {order.map((i) => <ListRow key={i.id} item={i} on={i.id === sel} onPick={() => setSel(i.id)} muted={tab === 'bulk'} />)}
             {order.length === 0 && <div className="ef-empty">{tab === 'cases' ? 'Nothing to file.' : 'No bulk mail.'}</div>}

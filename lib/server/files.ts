@@ -14,7 +14,7 @@ import { query, queryOne } from './db';
 import { downloadDriveItem, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
 import { addDraftReady } from './worklist';
 import { reviewDocument, upsertChunks } from './ai';
-import { stripHtml } from './text';
+import { stripHtml, stripQuotedReply } from './text';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { isLockedPdf, passwordCandidates } from './pdf-lock';
@@ -636,12 +636,13 @@ export async function fileEmailBodyAsDocument(
   if (enrolled && (!role || role === 'other') && body.trim().length >= 10) {
     const { engine } = await import('./engine/adapters');
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
-    const res = await engine().recordNote(user.tenantId, matterId, { text: body.slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
+    const fresh = stripQuotedReply(body);
+    const res = await engine().recordNote(user.tenantId, matterId, { text: fresh.length >= 10 ? fresh.slice(0, 20_000) : body.slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details
     // decision, with who sent them and how the case knows them, never into the notes.
-    const bank = bankDetailsIn(body);
+    const bank = bankDetailsIn(fresh.length >= 10 ? fresh : body);
     if (bank) {
       const payeeKind = sender.relation === 'other_side' ? 'seller_solicitor' : sender.relation === 'client' ? 'client' : sender.relation === 'lender' ? 'lender' : sender.relation === 'agent' ? 'estate_agent' : 'other';
       await engine().recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind, payeeRef: sender.name || sender.address, details: { sortCode: bank.sortCode, accountNumber: bank.accountNumber, accountName: bank.accountName ?? sender.name ?? sender.address, firmName: null }, sourceChannel: 'email', sourceDocumentId: doc.id, note: `Found in an email from ${sender.name ? `${sender.name} <${sender.address}>` : sender.address} (${sender.relation.replace(/_/g, ' ')}). Verify by phone on a known number before any payment.` });

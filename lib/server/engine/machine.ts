@@ -665,6 +665,9 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
   return [{ type: input.flagged, actor: AI, payload: { ...input.extra, flags: input.verdict.flags, decision }, sourceDocumentId: input.sourceDocumentId, confidenceScore: input.confidence } as NewEvent];
 }
 
+/** Issues that say something is on its way: its arrival closes them (service reactions). */
+export const CLOSED_BY_ARRIVAL: IssueKind[] = ['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding'];
+
 const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase', proposal: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
@@ -1454,7 +1457,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       const i = openIssue(s, cmd.issueId);
       // The timer may close the issues it raised itself (a search that arrived, an offer that was exchanged inside); everything else is a person's act.
-      if (!isUserActor(cmd.actor) && !(cmd.actor === SYSTEM && /\[[a-z-]+:[^\]]*\]/.test(i.title) && (cmd.resolution === 'received' || cmd.resolution === 'other'))) reject('Issues are resolved by people.', 403);
+      // The timer may close the issues it raised itself, and the arrival of the thing itself closes an "it is coming" issue whoever raised it.
+      const closedByArrival = CLOSED_BY_ARRIVAL.includes(i.kind) && cmd.resolution === 'received';
+      if (!isUserActor(cmd.actor) && !(cmd.actor === SYSTEM && (closedByArrival || (/\[[a-z-]+:[^\]]*\]/.test(i.title) && (cmd.resolution === 'received' || cmd.resolution === 'other'))))) reject('Issues are resolved by people.', 403);
       const spec = ISSUE_KIND_SPEC[i.kind];
       if (!spec.resolutions.includes(cmd.resolution)) reject(`"${spec.label}" is not resolved by "${RESOLUTION_LABEL[cmd.resolution] ?? cmd.resolution}". Realistic outcomes: ${spec.resolutions.map((r) => RESOLUTION_LABEL[r]).join('; ')}.`, 400);
       const note = cmd.note?.trim() || null;

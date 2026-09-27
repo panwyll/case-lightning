@@ -71,3 +71,5 @@ export const Clock = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="1
 export const ChevronDown = (p: IconProps) => <Icon {...p}><path d="m6 9 6 6 6-6" /></Icon>;
 export const User = (p: IconProps) => <Icon {...p}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Icon>;
 export const Zap = (p: IconProps) => <Icon {...p}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></Icon>;
+/** A spinner: the arc turns while something is in progress (the caller adds the animation). */
+export const Loader = (p: IconProps) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.22-8.56" /></Icon>;

@@ -59,6 +59,7 @@ import { openPofQueries, openWaits, awayOn, awayNow } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
+import type { IssueKind } from './issues';
 
 export interface RunResult {
   events: EngineEvent[];
@@ -767,6 +768,15 @@ export class EngineService {
             const detail = { subject, question: q.question, section: q.section, page: q.page };
             if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'ta6', `enquiry_draft:${q.question}`, detail, `ENQUIRY FROM THE SELLER'S FORMS\n\nQuestion: ${q.question}${q.section ? `\nSection: ${q.section}` : ''}${q.page ? `\nPage: ${q.page}` : ''}\nAnswer given: not known\n\nProposed enquiry to the seller's solicitor:\n${subject}`)) continue;
             await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject, origin: { formsQuestion: q.question } });
+          }
+        }
+        // The thing itself arrived: whatever said it was coming is closed.
+        const arrivalCloses: Partial<Record<string, IssueKind>> = { survey_received: 'survey_report_outstanding', mortgage_offer_received: 'mortgage_offer_outstanding', search_returned: 'search_delayed', management_pack_received: 'freeholder_info_outstanding' };
+        const closes = arrivalCloses[e.type];
+        if (closes) {
+          const fresh = await this.getState(tenantId, matterId);
+          for (const i of Object.values(fresh.issues).filter((x) => x.kind === closes && (x.status === 'open' || x.status === 'negotiating'))) {
+            await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: i.id, resolution: 'received', note: `${e.type.replace(/_/g, ' ')}: it arrived.` }).catch((err) => this.ports.log(`arrival could not close ${i.id}`, err));
           }
         }
         // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.
