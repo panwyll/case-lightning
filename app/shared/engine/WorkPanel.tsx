@@ -258,7 +258,7 @@ function Box({ lane, open, onToggle, notice }: { lane: LaneDef; open: boolean; o
             const stepNo = steps.indexOf(x) + 1;
             const name = x.href ? <a href={x.href} className="ep-sub-a">{titleCase(x.label)}</a> : titleCase(x.label);
             return (
-              <div key={x.label} className={`ep-sub${x.depth ? ' d1' : ''}${last ? ' gate' : ''}${done ? ' done' : ''}`}>
+              <div key={`${x.label}-${n}`} className={`ep-sub${x.depth ? ' d1' : ''}${last ? ' gate' : ''}${done ? ' done' : ''}`}>
                 {lane.order === 'sequence' && !x.depth && <span className="ep-n">{done ? <Check size={10} /> : stepNo}</span>}
                 <b>
                   {name}
