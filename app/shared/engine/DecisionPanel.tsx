@@ -1,6 +1,7 @@
 'use client';
 import { paths } from '@/lib/paths';
 import { CheckedDraft } from './CheckedDraft';
+import { PdfView, PDF_CSS } from './PdfView';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
@@ -233,7 +234,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const toggleTick = (i: number) => setTicked((s) => { const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   // The file picker: the decision's source first, then every other document the brief cites; another document is fetched raw.
   const [pickedDoc, setPickedDoc] = useState<string | null>(null);
-  const [other, setOther] = useState<{ id: string; content: string | null; rawUrl: string | null } | null>(null);
+  const [other, setOther] = useState<{ id: string; content: string | null; rawUrl: string | null; pdf?: boolean } | null>(null);
+  const [pdfFound, setPdfFound] = useState<boolean | null>(null);
   const [focusQuote, setFocusQuote] = useState<string | null>(null);
   const [focusIndex, setFocusIndex] = useState(0);
   const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null, index = 0) => {
@@ -246,8 +248,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       const r = await fetch(`/api/v1/documents/${id}/raw`);
       const type = r.headers.get('content-type') ?? '';
       if (r.ok && /^text\//.test(type)) setOther({ id, content: await r.text(), rawUrl: null });
-      else setOther({ id, content: null, rawUrl: `/api/v1/documents/${id}/raw` });
-    } catch { setOther({ id, content: null, rawUrl: `/api/v1/documents/${id}/raw` }); }
+      else setOther({ id, content: null, rawUrl: `/api/v1/documents/${id}/raw`, pdf: /pdf/i.test(type) });
+    } catch { setOther({ id, content: null, rawUrl: `/api/v1/documents/${id}/raw`, pdf: true }); }
   }, [source]);
 
   /** Jump the source to a citation: PDF → page; text → highlighted passage. */
@@ -412,7 +414,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
 
   return (
     <div className={`eg dp${inline ? ' inline' : ''}`}>
-      <style>{ENGINE_CSS + CSS}</style>
+      <style>{ENGINE_CSS + CSS + PDF_CSS}</style>
 
       {/* ── The brief: the checks, each with what the file says; the decision pinned underneath ── */}
       <div className="dp-brief">
@@ -441,7 +443,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                     <span className="tw">{showing === f.documentId ? 'shown' : <button type="button" style={{ border: 0, background: 'none', padding: 0, font: 'inherit', color: '#5A27E0', cursor: 'pointer' }} onClick={(e) => { e.preventDefault(); void showDoc(f.documentId, null); }}>open</button>}</span>
                     <span className="what">{f.summary}</span>
                   </summary>
-                  {f.lines.length > 0 ? renderLines(f.lines) : <p className="dp-narr" style={{ padding: '0 14px 12px 34px', color: '#94a3b8', fontSize: 12.5 }}>Nothing on it worth a look</p>}
+                  {(() => { const said = new Set(live.flatMap(({ c }) => c.evidence.map((e) => e.text))); const lines = f.lines.filter((l) => !said.has(l.text)); return lines.length > 0 ? renderLines(lines) : <p className="dp-narr" style={{ padding: '0 14px 12px 34px', color: '#94a3b8', fontSize: 12.5 }}>{f.lines.length ? 'Its points are under the checks below' : 'Nothing on it worth a look'}</p>; })()}
                 </details>
               ))}
             </div>
@@ -585,6 +587,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
             </select>
           ) : <strong style={{ color: '#0f172a', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{source?.fileName ?? 'Source'}</strong>}
           {showing && <a href={`/api/v1/documents/${showing}/raw`} target="_blank" rel="noopener noreferrer">open ↗</a>}
+          {focusQuote && pdfFound === false && <span style={{ color: '#b45309', fontWeight: 700 }}>line not found on this copy (a scan has no text to search)</span>}
           {pending && (
             <span className="dp-gate">
               {engaged ? <span style={{ color: '#15803d', fontWeight: 700 }}><Check size={12} /></span> : <span className="bar"><i style={{ width: `${Math.min(100, (dwell / UI_DWELL_MS) * 100)}%` }} /></span>}
@@ -594,8 +597,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
         <div className={`dp-srcbody${shownPdf ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {shownOther && shownOther.content != null && <pre className="dp-pre">{withQuote(shownOther.content).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className="on">{p.text}</mark>))}</pre>}
-          {shownOther && shownOther.content == null && shownOther.rawUrl && <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />}
-          {!shownOther && pdfSrc && <iframe key={pdfSrc} className="dp-frame" title="Source document" src={pdfSrc} />}
+          {shownOther && shownOther.content == null && shownOther.rawUrl && (shownOther.pdf ? <PdfView key={shownOther.id} url={shownOther.rawUrl} page={page} quote={focusQuote} quoteIndex={focusIndex} onFound={setPdfFound} /> : <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />)}
+          {!shownOther && pdfSrc && source?.rawUrl && <PdfView key={source.id} url={source.rawUrl} page={page} quote={focusQuote} quoteIndex={focusIndex} onFound={setPdfFound} />}
           {!shownOther && source && !pdfSrc && source.draftCheck && <CheckedDraft check={source.draftCheck} />}
           {!shownOther && source && !pdfSrc && !source.draftCheck && highlighted && (
             <pre className="dp-pre" ref={preRef}>

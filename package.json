@@ -15,7 +15,8 @@
     "leap:mock": "tsx scripts/mock-leap-server.ts",
     "engine:map": "tsx scripts/engine-map.ts",
     "caseload:demo": "tsx scripts/caseload-demo.ts",
-    "cases:stage": "tsx scripts/stage-cases.ts"
+    "cases:stage": "tsx scripts/stage-cases.ts",
+    "pdf:worker": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/pdf.worker.min.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
