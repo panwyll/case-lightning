@@ -457,7 +457,9 @@ export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 export type NoteCommand =
   | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string }
   /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
-  | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string }
+  | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }
+  /** Dates mentioned for exchange or completion: the case's targets, which a person sets (contractual dates after exchange are not touched by a note). */
+  | { type: 'set_target_dates'; targetExchangeDate: string | null; targetCompletionDate: string | null; reason: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
 
 /**

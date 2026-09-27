@@ -525,7 +525,7 @@ export class EngineService {
     if (!noteId || !reader) return recorded;
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
-      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
       .catch((err) => {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];
@@ -926,10 +926,12 @@ export class EngineService {
                 // Cites the approval it came from: the database refuses a client decision written
                 // from an automation context without one (migration 079).
                 await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId, approvedEventId: e.id });
+              } else if (c.type === 'set_target_dates') {
+                await this.run(tenantId, matterId, { type: 'set_target_dates', actor: e.actor, targetExchangeDate: c.targetExchangeDate ?? undefined, targetCompletionDate: c.targetCompletionDate ?? undefined, reason: c.reason });
               } else if (c.type === 'confirm_with_client') {
                 // Hearsay: ask the client. Their reply comes back through the same reader as their
                 // own words, and only then is the decision proposed for the record.
-                const claim = claimText(c.subject, c.decision);
+                const claim = claimText(c.subject, c.decision, c.detail);
                 const detail = { kind: 'confirm_with_client', template: 'confirm_with_client', context: { saidBy: c.saidBy, claim, quote: c.quote, subject: c.subject, decision: c.decision }, triggeredByEventId: e.id };
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'confirm_with_client', `confirm_with_client:${p.noteId}:${id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: ${c.saidBy} says ${claim}; ask the client to confirm it before it is recorded\nTemplate: confirm_with_client`))) {
                   try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('confirmation request could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }

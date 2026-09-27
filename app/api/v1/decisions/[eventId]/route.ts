@@ -1,4 +1,4 @@
-import { claimText, issueConsequence } from '@/lib/server/engine/notes';
+import { claimText, issueConsequence, prettyDate } from '@/lib/server/engine/notes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -77,7 +77,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
             : a.command.type === 'client_decision_recorded'
             ? `Record the client's decision: ${a.command.subject.replace(/_/g, ' ')} — ${a.command.decision.replace(/_/g, ' ')}`
             : a.command.type === 'confirm_with_client'
-            ? `Ask the client to confirm that ${claimText(a.command.subject, a.command.decision)}; recorded only when they say so`
+            ? `Ask the client to confirm that ${claimText(a.command.subject, a.command.decision, a.command.detail)}; recorded only when they say so`
+            : a.command.type === 'set_target_dates'
+            ? `Set the target dates: ${[a.command.targetExchangeDate ? `exchange ${prettyDate(a.command.targetExchangeDate)}` : null, a.command.targetCompletionDate ? `completion ${prettyDate(a.command.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`
             : `Raises the issue "${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind}"${a.command.gate === 'none' ? '' : ` (holds ${a.command.gate})`}${issueConsequence(a.command.kind) ? ` and ${issueConsequence(a.command.kind)}` : ''}`,
         })),
         applied: applied?.applied ?? null,

@@ -76,7 +76,7 @@ export interface DocumentExtractor {
  */
 export interface NoteExtractor {
   readonly name: string;
-  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null }): Promise<NoteActionDraft[]>;
+  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string }): Promise<NoteActionDraft[]>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */

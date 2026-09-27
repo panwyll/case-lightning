@@ -164,3 +164,56 @@ test('a stranger reporting the client\'s decision is asked about, and the client
   assert.ok(kinds.includes('confirm_with_client'), 'ask the client');
   assert.ok(!kinds.includes('client_decision_recorded'), 'never recorded on a stranger\'s word');
 });
+
+// ───────────────────────────── dates ─────────────────────────────
+
+test('dates in an email are read: "14 November" gets the right year, exchange and completion are told apart', async () => {
+  const { targetDatesIn, datesIn } = await import('../../../lib/server/engine/notes');
+  const now = new Date('2026-09-27T09:00:00Z');
+  assert.deepEqual(datesIn('on 14 November', now).map((d) => d.iso), ['2026-11-14']);
+  assert.deepEqual(datesIn('on the 14th of Nov 2027', now).map((d) => d.iso), ['2027-11-14']);
+  assert.deepEqual(datesIn('by 3 January', now).map((d) => d.iso), ['2027-01-03'], 'a date already well past is next year');
+  assert.deepEqual(datesIn('on 14/11/26', now).map((d) => d.iso), ['2026-11-14']);
+  assert.deepEqual(datesIn('Nov 14', now).map((d) => d.iso), ['2026-11-14']);
+  assert.deepEqual(targetDatesIn('We would like to exchange on 7 November and complete on 14 November.', now), { targetExchangeDate: '2026-11-07', targetCompletionDate: '2026-11-14' });
+  assert.deepEqual(targetDatesIn('Can we complete on the 14th of November?', now), { targetExchangeDate: null, targetCompletionDate: '2026-11-14' });
+  assert.deepEqual(targetDatesIn('Keys on 14 November would be ideal.', now), { targetExchangeDate: null, targetCompletionDate: '2026-11-14' });
+  assert.equal(targetDatesIn('The survey is on 14 November.', now), null, 'a date with no exchange or completion word is not a target');
+});
+
+test('the agent proposing a completion date sets the targets (once approved) and asks the client to agree it', async () => {
+  const h = await enrolled();
+  const res = await email(h, 'Both sides are keen. The seller would like to exchange on 7 November and complete on 14 November, can you make that work?', AGENT);
+  const note = Object.values(res.state.notes)[0];
+  const types = note.actions.map((a) => a.command?.type);
+  assert.ok(types.includes('set_target_dates'), types.join(','));
+  assert.ok(types.includes('confirm_with_client'), types.join(','));
+  assert.ok(!types.includes('client_decision_recorded'));
+  const after = await approve(h);
+  assert.equal(after.state.targetExchangeDate, '2026-11-07');
+  assert.equal(after.state.targetCompletionDate, '2026-11-14');
+  assert.equal(after.state.clientDecisions.completion_date, undefined, 'the client has not agreed yet');
+  const ask = h.ports.clientComms.sent.find((m) => m.template === 'confirm_with_client');
+  assert.ok(ask);
+  assert.match(String(ask!.context.claim), /happy to complete on Saturday, 14 November 2026/);
+});
+
+test('the client naming a completion date is their agreement to it', async () => {
+  const h = await enrolled();
+  const res = await email(h, 'We would love to complete on 14 November if the seller can do that.', CLIENT);
+  const types = Object.values(res.state.notes)[0].actions.map((a) => a.command?.type);
+  assert.ok(types.includes('set_target_dates') && types.includes('client_decision_recorded'), types.join(','));
+  const after = await approve(h);
+  assert.equal(after.state.targetCompletionDate, '2026-11-14');
+  assert.equal(after.state.clientDecisions.completion_date?.decision, 'agreed');
+});
+
+test('a gift, a change of name and being away are read as the issues they are', async () => {
+  const r = new DeterministicNoteReader();
+  const kinds = async (t: string) => (await r.extract({ tenantId: TENANT, matterId: MATTER, text: t, kind: 'email', now: '2026-09-27' })).map((x) => (x.command as { kind?: string } | null)?.kind ?? x.command?.type);
+  assert.ok((await kinds('My dad is giving us £20,000 towards the deposit.')).includes('source_of_funds'));
+  assert.ok((await kinds('Also I got married in June so my name has changed to Okafor-Reid.')).includes('cdd_refresh'));
+  assert.ok((await kinds('We are away from 10 October until the 20th, so nothing can be signed then.')).includes('buyer_delay'));
+  assert.ok((await kinds('The seller says the replies to enquiries should be with you next week.')).includes('seller_delay'));
+  assert.ok((await kinds('The broker expects the offer on Friday.')).includes('mortgage_offer_outstanding'));
+});

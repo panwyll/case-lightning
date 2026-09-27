@@ -37,6 +37,8 @@ export interface NoteExtractionContext {
   caseLine?: string;
   /** For an email: who sent it, as far as the case knows. */
   from?: NoteSender | null;
+  /** Today, so "14 November" gets the right year. */
+  now?: string;
 }
 
 /** Where a note's words come from: decides what they may propose. */
@@ -58,20 +60,90 @@ export const RELATION_LABEL: Record<SenderRelation, string> = {
  * clear ID, AML, source of funds or a search: those are not commands a note can name,
  * so the machine has no door for them (commandProblem).
  */
-export function senderPolicy(source: NoteSource | undefined, action: NoteAction): NoteAction {
-  if (!source || source.kind !== 'email') return action;
+export function senderPolicy(source: NoteSource | undefined, action: NoteAction): NoteAction[] {
+  if (!source || source.kind !== 'email') return [action];
   const relation = source.from?.relation ?? 'unknown';
+  // Dates for exchange or completion: the targets are the conveyancer's to set (a person approves),
+  // and the client's agreement to a completion date is the client's alone: recorded when they say it,
+  // asked for when someone else does.
+  if (action.command?.type === 'set_target_dates') {
+    const c = action.command;
+    const when = c.targetCompletionDate ? prettyDate(c.targetCompletionDate) : c.targetExchangeDate ? prettyDate(c.targetExchangeDate) : null;
+    const subject = c.targetCompletionDate ? 'completion_date' : null;
+    if (!subject || !when) return [action];
+    if (relation === 'client') {
+      return [action, { ...action, id: `${action.id}b`, kind: 'client_decision', summary: `The client agrees to complete on ${when}`, command: { type: 'client_decision_recorded', subject, decision: 'agreed', note: action.quote.slice(0, 400) } }];
+    }
+    const saidBy = source.from?.name || source.from?.address || RELATION_LABEL[relation];
+    return [action, { ...action, id: `${action.id}b`, kind: 'confirm_with_client', summary: `${RELATION_LABEL[relation]} says completion on ${when}. Ask the client to confirm the date`, command: { type: 'confirm_with_client', subject, decision: 'agreed', saidBy, quote: action.quote, detail: when } }];
+  }
   if (action.command?.type === 'client_decision_recorded' && relation !== 'client') {
     // Hearsay about the client is not dropped: the client is asked, and their own answer is what gets recorded.
     const saidBy = source.from?.name || source.from?.address || RELATION_LABEL[relation];
-    return {
+    return [{
       ...action,
       kind: 'confirm_with_client',
       summary: `${RELATION_LABEL[relation]} says: ${action.summary.replace(/^The client /, 'the client ')}. Ask the client to confirm; nothing is recorded until they do`,
       command: { type: 'confirm_with_client', subject: action.command.subject, decision: action.command.decision, saidBy, quote: action.quote },
-    };
+    }];
   }
-  return action;
+  return [action];
+}
+
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+export function prettyDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+const pad = (n: number) => String(n).padStart(2, '0');
+/**
+ * Dates as people write them in email: "14 November", "14th Nov 2026", "Nov 14", "14/11/26".
+ * A missing year is this year, or next if that day is already more than a month gone.
+ */
+export function datesIn(text: string, now: Date): Array<{ iso: string; index: number }> {
+  const out: Array<{ iso: string; index: number }> = [];
+  const y0 = now.getUTCFullYear();
+  const settle = (day: number, month: number, year: number | null, index: number) => {
+    if (day < 1 || day > 31 || month < 0 || month > 11) return;
+    let y = year ?? y0;
+    if (year !== null && year < 100) y = 2000 + year;
+    let d = new Date(Date.UTC(y, month, day));
+    if (year === null && d.getTime() < now.getTime() - 30 * 86_400_000) d = new Date(Date.UTC(y + 1, month, day));
+    if (d.getUTCMonth() !== month) return; // 31 February
+    out.push({ iso: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`, index });
+  };
+  const month = (s: string) => MONTHS.indexOf(s.slice(0, 3).toLowerCase());
+  const dm = /\b(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}|\d{2})\b)?/gi;
+  const md = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4})\b)?/gi;
+  const num = /\b(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4}|\d{2})\b/g;
+  const seen = new Set<number>();
+  for (const m of text.matchAll(dm)) { seen.add(m.index!); settle(Number(m[1]), month(m[2]), m[3] ? Number(m[3]) : null, m.index!); }
+  for (const m of text.matchAll(md)) { if (![...seen].some((i) => Math.abs(i - m.index!) < 12)) { seen.add(m.index!); settle(Number(m[2]), month(m[1]), m[3] ? Number(m[3]) : null, m.index!); } }
+  for (const m of text.matchAll(num)) settle(Number(m[1]), Number(m[2]) - 1, Number(m[3]), m.index!);
+  return out.sort((a, b) => a.index - b.index);
+}
+
+/** "exchange on 7 Nov and complete on 14 Nov": each date belongs to the nearest exchange/completion word before it. */
+export function targetDatesIn(sentence: string, now: Date): { targetExchangeDate: string | null; targetCompletionDate: string | null } | null {
+  const dates = datesIn(sentence, now);
+  if (!dates.length) return null;
+  const lower = sentence.toLowerCase();
+  const mentionsExchange = /\bexchang/.test(lower);
+  const mentionsCompletion = /\bcomplet|\bmove in|\bmoving (in|day|date)|\bkeys\b/.test(lower);
+  if (!mentionsExchange && !mentionsCompletion) return null;
+  let ex: string | null = null;
+  let co: string | null = null;
+  for (const d of dates) {
+    const before = lower.slice(0, d.index);
+    const lastEx = before.lastIndexOf('exchang');
+    const lastCo = Math.max(before.lastIndexOf('complet'), before.lastIndexOf('move in'), before.lastIndexOf('moving'), before.lastIndexOf('keys'));
+    const which = lastEx < 0 && lastCo < 0 ? (mentionsExchange && !mentionsCompletion ? 'ex' : mentionsCompletion && !mentionsExchange ? 'co' : null) : lastEx > lastCo ? 'ex' : 'co';
+    if (which === 'ex' && !ex) ex = d.iso;
+    else if (which === 'co' && !co) co = d.iso;
+  }
+  if (!ex && !co) return null;
+  return { targetExchangeDate: ex, targetCompletionDate: co };
 }
 
 /** What the system does once an issue of this kind is raised: the panel says it, the service does it (issue_raised reactions). */
@@ -86,8 +158,10 @@ export function issueConsequence(kind: string): string | null {
 }
 
 /** The claim put to the client, in their terms: "you are happy with the survey and want to proceed". */
-export function claimText(subject: ClientDecisionSubject, decision: string): string {
+export function claimText(subject: ClientDecisionSubject, decision: string, detail?: string | null): string {
   const k = `${subject}:${decision}`;
+  if (k === 'completion_date:agreed') return `you are happy to complete on ${detail ?? 'the date proposed'}`;
+  if (k === 'completion_date:declined') return `the completion date proposed does not work for you`;
   const known: Record<string, string> = {
     'physical_condition:satisfied': 'you are happy with the survey and want to proceed',
     'physical_condition:renegotiate': 'you want to renegotiate the price following the survey',
@@ -146,7 +220,7 @@ export function validateNoteActions(text: string, drafts: NoteActionDraft[], sou
       command = d.command;
     }
     seen.add(key);
-    actions.push(senderPolicy(source, {
+    actions.push(...senderPolicy(source, {
       id: `A${actions.length + 1}`,
       kind: d.kind,
       summary,
@@ -164,6 +238,11 @@ export function commandProblem(c: NoteCommand): string | null {
     if (!(CLIENT_DECISION_SUBJECTS as readonly string[]).includes(c.subject)) return `"${c.subject}" is not a client decision the engine knows`;
     const allowed = CLIENT_DECISION_OUTCOMES[c.subject as ClientDecisionSubject] ?? [];
     if (!allowed.includes(c.decision)) return `"${c.decision}" is not an outcome for ${c.subject.replace(/_/g, ' ')}`;
+    return null;
+  }
+  if (c.type === 'set_target_dates') {
+    if (!c.targetExchangeDate && !c.targetCompletionDate) return 'no date was given';
+    for (const d of [c.targetExchangeDate, c.targetCompletionDate]) if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return `"${d}" is not a date (YYYY-MM-DD)`;
     return null;
   }
   if (c.type === 'raise_issue') {
@@ -188,7 +267,9 @@ export function summariseNoteActions(input: { kind: NoteKind; text: string; acti
       : a.command.type === 'client_decision_recorded'
       ? `Would record the client's decision: ${a.command.subject.replace(/_/g, ' ')} = ${a.command.decision.replace(/_/g, ' ')}.`
       : a.command.type === 'confirm_with_client'
-      ? `Would ask the client to confirm that ${claimText(a.command.subject, a.command.decision)}. Recorded only when they say so themselves.`
+      ? `Would ask the client to confirm that ${claimText(a.command.subject, a.command.decision, a.command.detail)}. Recorded only when they say so themselves.`
+      : a.command.type === 'set_target_dates'
+      ? `Would set the target dates: ${[a.command.targetExchangeDate ? `exchange ${prettyDate(a.command.targetExchangeDate)}` : null, a.command.targetCompletionDate ? `completion ${prettyDate(a.command.targetCompletionDate)}` : null].filter(Boolean).join(', ')}.`
       : `Would raise a ${ISSUE_KIND_SPEC[a.command.kind]?.label ?? a.command.kind} issue${a.command.gate === 'none' ? '' : `, holding ${a.command.gate}`}${issueConsequence(a.command.kind) ? `, and ${issueConsequence(a.command.kind)}` : ''}.`;
     L.push(`${a.id}. ${a.summary}`);
     L.push(`    “${a.quote}”`);
@@ -263,7 +344,7 @@ const RULES: Rule[] = [
       summary: `Something is expected: ${sentence.trim().slice(0, 120)}`,
       quote: sentence,
       confidence: 0.55,
-      command: { type: 'raise_issue', kind: 'mortgage_offer_outstanding', title: sentence.trim().slice(0, 160), detail: 'Raised from a note — the engine will chase it if it does not arrive.', gate: 'none' },
+      command: { type: 'raise_issue', kind: expectedKind(sentence), title: sentence.trim().slice(0, 160), detail: 'Said in an email or a note: something is expected. The system chases it if it does not arrive.', gate: 'none' },
     }),
   },
   {
@@ -303,6 +384,41 @@ const RULES: Rule[] = [
     }),
   },
   {
+    // "my dad is giving us £20k towards the deposit" — a gift is a source-of-funds matter and a donor to identify.
+    test: /\b(gift\w*|giving us|give us|lending us|lend us|helping (us|me) with the deposit|contribut\w* (to|towards) the deposit)\b/i,
+    also: /\b(deposit|£|\d{1,3}(,\d{3})+|k\b|money|funds|towards)/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'A gift or loan towards the purchase was mentioned',
+      quote: sentence,
+      confidence: 0.7,
+      command: { type: 'raise_issue', kind: 'source_of_funds', title: `Gift or loan towards the purchase: ${sentence.trim().slice(0, 120)}`, detail: 'Said in an email or a note. The donor needs identifying and a gift letter; a loan needs the lender told.', gate: 'exchange' },
+    }),
+  },
+  {
+    // "I got married and my name has changed" — the ID on file no longer matches.
+    test: /\b(changed? (my|her|his) name|name (has )?changed|got married|now (called|known as)|maiden name|deed poll)\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'A change of name was mentioned',
+      quote: sentence,
+      confidence: 0.7,
+      command: { type: 'raise_issue', kind: 'cdd_refresh', title: `Name change mentioned: ${sentence.trim().slice(0, 120)}`, detail: 'Said in an email or a note. Evidence of the change (marriage certificate, deed poll) is needed before the transfer and the lender documents.', gate: 'exchange' },
+    }),
+  },
+  {
+    // "we are away 10–20 October" — the timetable has to work around it.
+    test: /\b(away|on holiday|abroad|out of the country|unavailable|not around|off grid)\b/i,
+    also: /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|week|weekend|from|until|till|between)\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'The client will be unavailable for a period',
+      quote: sentence,
+      confidence: 0.6,
+      command: { type: 'raise_issue', kind: 'buyer_delay', title: `Client unavailable: ${sentence.trim().slice(0, 120)}`, detail: 'Said in an email or a note. Plan signing, exchange and completion around it.', gate: 'none' },
+    }),
+  },
+  {
     // a problem mentioned in passing — raised as an issue for a person to classify properly.
     test: /\b(boundary|dispute|japanese knotweed|knotweed|subsidence|flying freehold|unregistered|no building regs?|without (planning|building)|damp problem|leak)\b/i,
     build: (sentence) => ({
@@ -315,12 +431,38 @@ const RULES: Rule[] = [
   },
 ];
 
+/** What is expected decides which wait it is: the offer, the replies, the pack, the search. */
+function expectedKind(sentence: string): IssueKind {
+  const s = sentence.toLowerCase();
+  if (/\b(offer|mortgage|lender|broker|underwrit)/.test(s)) return 'mortgage_offer_outstanding';
+  if (/\bsearch/.test(s)) return 'search_delayed';
+  if (/\b(management|freeholder|managing agent|lpe1)/.test(s)) return 'freeholder_info_outstanding';
+  if (/\b(repl|enquir|answer|pack|contract|forms?)\b/.test(s)) return 'seller_delay';
+  return 'seller_delay';
+}
+
+const DATE_RULE: Rule = {
+  // "we'd like to exchange on 7 Nov and complete on the 14th of November" — targets for a person to set.
+  test: /\b(exchang\w*|complet\w*|move in|moving (in|day|date)|keys)\b/i,
+  also: /\d/,
+  not: /\b(exchanged|completed) on\b/i,
+  build: (sentence) => ({ kind: 'information', summary: sentence.trim().slice(0, 120), quote: sentence, confidence: 0.6 }),
+};
+
 export class DeterministicNoteReader {
   readonly name = 'deterministic-note-reader';
   async extract(input: NoteExtractionContext): Promise<NoteActionDraft[]> {
     const sentences = (input.text.match(SENTENCE) ?? []).map((s) => s.trim()).filter((s) => s.length > 8);
     const out: NoteActionDraft[] = [];
     const used = new Set<string>();
+    const now = input.now ? new Date(input.now) : new Date();
+    for (const sentence of sentences) {
+      if (!DATE_RULE.test.test(sentence) || !DATE_RULE.also!.test(sentence) || DATE_RULE.not!.test(sentence)) continue;
+      const dates = targetDatesIn(sentence, now);
+      if (!dates) continue;
+      out.push({ kind: 'information', summary: `Dates mentioned: ${[dates.targetExchangeDate ? `exchange ${prettyDate(dates.targetExchangeDate)}` : null, dates.targetCompletionDate ? `completion ${prettyDate(dates.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`, quote: sentence, confidence: 0.65, command: { type: 'set_target_dates', ...dates, reason: sentence.trim().slice(0, 200) } });
+      used.add(sentence);
+    }
     for (const sentence of sentences) {
       for (const r of RULES) {
         if (!r.test.test(sentence)) continue;
