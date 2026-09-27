@@ -162,7 +162,11 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const pr = s.proposals[d.eventId];
     const det = (pr?.detail ?? {}) as Record<string, unknown>;
     const sub = pr?.action === 'client_update' && typeof det.kind === 'string' ? det.kind : pr?.action ?? 'proposal';
-    return { kind: `proposal:${sub}`, chip: PROPOSAL_CHIP[sub] ?? 'Proposal' };
+    // Who it is for rides in the chip: "Proposal: client acknowledgement", "Proposal: chase seller's solicitor".
+    const role = typeof det.recipientRole === 'string' ? det.recipientRole : null;
+    const who = role === 'seller_solicitor' ? "seller's solicitor" : role === 'buyer_solicitor' ? "buyer's solicitor" : role === 'search_provider' ? 'search provider' : role === 'lender' ? 'lender' : role === 'hmlr' ? 'HMLR' : role ? role.replace(/_/g, ' ') : null;
+    const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
+    return { kind: `proposal:${sub}`, chip };
   }
   return { kind: d.kind, chip: DECISION_CHIP[d.kind] ?? d.kind.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) };
 }
@@ -189,8 +193,8 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
     const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
     switch (pr.action) {
-      case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'} — to ${to}`;
-      case 'chase': return `${cap(typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply')}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''} — ${to}`;
+      case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'}`;
+      case 'chase': return `${cap(typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply')}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
       case 'search_order': return `${SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? '')}`;
       case 'enquiry_draft': return typeof det.subject === 'string' ? det.subject.slice(0, 120) : "From the seller's forms";
       case 'client_update': {
