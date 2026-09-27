@@ -32,7 +32,7 @@ import { ClaudeSummariser, ClaudeReportDrafter, ClaudeProofOfFundsSummariser, Cl
 import { PgProofOfFundsForms } from './pof-store';
 import { infotrackConfigured, infotrackProviders } from '../integrations/infotrack-adapters';
 import { chaser as productionChaser, clientComms as productionClientComms, commsConfigured } from '../comms/adapters';
-import { runAsSystem, runAsAutomation } from '../db';
+import { runAsSystem, runAsAutomation, runOutsideAutomation } from '../db';
 import { createTask } from '../tasks';
 import { emitMatterEvent } from '../events';
 import { resolveCounterparty } from './counterparty';
@@ -181,6 +181,7 @@ export function productionPorts(): EnginePorts {
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
       asAutomation: runAsAutomation,
+      outsideAutomation: runOutsideAutomation,
       log,
     });
   }

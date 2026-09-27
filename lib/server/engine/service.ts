@@ -905,10 +905,13 @@ export class EngineService {
   private async recordEffectFailure(tenantId: string, matterId: string, e: EngineEvent, err: unknown): Promise<void> {
     const reason = (err instanceof Error ? err.message : String(err)).trim() || 'unknown error';
     const title = `The engine could not act on ${e.type.replace(/_/g, ' ')}`;
+    const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
     try {
-      const state = await this.getState(tenantId, matterId);
-      if (!state.enrolled || state.completion.confirmedAt || Object.values(state.issues).some((i) => i.status === 'open' && i.title === title)) return;
-      await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title, detail: `${reason.replace(/[.!]*$/, '.')} What it would have done (a proposal, an update, an order) has not happened: do it by hand, and report this.`, gate: 'none', severity: 'warning' });
+      await outside(async () => {
+        const state = await this.getState(tenantId, matterId);
+        if (!state.enrolled || state.completion.confirmedAt || Object.values(state.issues).some((i) => i.status === 'open' && i.title === title)) return;
+        await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title, detail: `${reason.replace(/[.!]*$/, '.')} What it would have done (a proposal, an update, an order) has not happened: do it by hand, and report this.`, gate: 'none', severity: 'warning' });
+      });
     } catch (inner) {
       this.ports.log('could not record the effect failure on the case', inner);
     }

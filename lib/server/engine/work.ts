@@ -50,6 +50,10 @@ export interface WorkItem {
   workstream: string | null;
   /** WAITING / CHASE: when we asked. */
   since: string | null;
+  /** WAITING: who asked — a person's id, or system / ai / external. */
+  openedBy?: string | null;
+  /** WAITING: the log position of the event that opened it (to look the opener up when the stored state predates `openedBy`). */
+  openedBySeq?: number;
   sinceWorkingDays: number | null;
   /** WAITING: their normal turnaround, in working days. */
   slaWorkingDays: number | null;
@@ -284,7 +288,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // Each chase that goes unanswered is a notch worse: one → attention, two → delayed, escalated → critical.
       urgency: escalated ? 'critical' : age >= rule.escalateAfter || chases >= 2 ? 'delayed' : isChase || chases >= 1 ? 'attention' : 'normal',
       workstream: null,
-      since: w.openedAt, sinceWorkingDays: age,
+      since: w.openedAt, sinceWorkingDays: age, openedBy: w.openedBy ?? null, openedBySeq: w.openedBySeq,
       slaWorkingDays: rule.chaseAfter,
       chaseInWorkingDays: nextChaseIn,
       chasesSent: chases,

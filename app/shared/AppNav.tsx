@@ -108,7 +108,7 @@ function useCounts(): { tasks: number; email: number } {
     let live = true;
     const read = () => fetch('/api/v1/nav/counts', { credentials: 'include' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (live && j) setC({ tasks: j.tasks ?? 0, email: j.email ?? 0 }); }).catch(() => {});
     read();
-    const t = setInterval(read, 120_000);
+    const t = setInterval(read, 60_000);
     // Anything that changes the numbers (a decision taken, an email filed) asks for a re-read; so does coming back to the tab.
     const onSignal = () => read();
     const onVisible = () => { if (document.visibilityState === 'visible') read(); };

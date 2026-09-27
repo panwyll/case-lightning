@@ -395,6 +395,8 @@ export interface WorkItem {
   workstream: string | null;
   since: string | null;
   sinceWorkingDays: number | null;
+  /** WAITING: who asked — a person's name once the API has resolved it, or system / ai / external. */
+  openedBy?: string | null;
   slaWorkingDays: number | null;
   chaseInWorkingDays: number | null;
   chasesSent: number;

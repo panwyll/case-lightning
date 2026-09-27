@@ -38,7 +38,7 @@ const resolvedStatus = (option: DecisionOption): DecisionState['status'] => (opt
 function openWait(state: MatterState, key: WaitKey, subject: string, e: EngineEvent): void {
   // Re-opening the same wait (e.g. a re-ordered search) closes the stale one first.
   for (const w of state.waits) if (w.key === key && w.subject === subject && w.closedAt === null) w.closedAt = e.createdAt;
-  state.waits.push({ key, subject, openedAt: e.createdAt, openedBySeq: e.seq, closedAt: null, chasesSentAt: [], escalations: [] });
+  state.waits.push({ key, subject, openedAt: e.createdAt, openedBySeq: e.seq, openedBy: e.actor, closedAt: null, chasesSentAt: [], escalations: [] });
 }
 
 function closeWait(state: MatterState, key: WaitKey, subject: string | null, e: EngineEvent): void {

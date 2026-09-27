@@ -70,6 +70,10 @@ export async function verifySession(token: string): Promise<{ userId: string; ac
 }
 
 /** Reads the session cookie and loads the current user, or null if unauthenticated. */
+/** The user row, for a few seconds per session: a page open fires several requests at once and each paid for the same lookup. A role change or removal takes effect within this window. */
+const SESSION_USER_TTL_MS = 15_000;
+const sessionUserCache = new Map<string, { at: number; user: SessionUser }>();
+
 export async function getSessionUser(): Promise<SessionUser | null> {
   const store = await cookies();
   // Cookie works in Outlook on the web; on desktop the dialog and taskpane have
@@ -84,6 +88,13 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   const verified = await verifySession(token);
   if (!verified) return null;
 
+  const cacheKey = `${verified.userId}:${verified.actorId ?? ''}`;
+  const cached = sessionUserCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < SESSION_USER_TTL_MS) {
+    const user = structuredClone(cached.user);
+    bindDbUser(user.userId, user.actor?.userId ?? null);
+    return user;
+  }
   const user = await queryOne<SessionUser>(
     `select id as "userId", tenant_id as "tenantId", role, email, display_name as "displayName", case_access as "caseAccess", mailbox_access as "mailboxAccess"
      from app_user where id = $1`,
@@ -100,6 +111,8 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     if (!actor) return null;
     user.actor = { userId: actor.id, email: actor.email, displayName: actor.display_name };
   }
+  if (sessionUserCache.size > 500) sessionUserCache.clear();
+  sessionUserCache.set(cacheKey, { at: Date.now(), user: structuredClone(user) });
   // Every query from here on carries this user for the database's ethical-wall check.
   bindDbUser(user.userId, user.actor?.userId ?? null);
   return user;

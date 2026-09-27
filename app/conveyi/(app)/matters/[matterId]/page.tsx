@@ -1,5 +1,5 @@
 'use client';
-import { use, useCallback, useEffect, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -12,7 +12,7 @@ import { NotesPanel } from '@/app/shared/engine/NotesPanel';
 import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
 import { Timeline } from '@/app/shared/engine/Timeline';
 import { CaseView, type CaseModel } from '@/app/shared/engine/CaseView';
-import { useEngine } from '@/app/shared/engine/useEngine';
+import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { paths } from '@/lib/paths';
 
 /**
@@ -93,7 +93,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     u.searchParams.delete('focus'); u.searchParams.delete('doc');
     window.history.replaceState(null, '', u.toString());
   };
-  const eng = useEngine(matterId, api);
+  const bundleRef = useRef<(b: EngineBundle) => void>(() => {});
+  const eng = useEngine(matterId, api, undefined, { onBundle: (b) => bundleRef.current(b) });
   const [stepping, setStepping] = useState(false);
   const [stepMsg, setStepMsg] = useState<string | null>(null);
   const nextStep = async () => {
@@ -122,23 +123,18 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null }> | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // The row, the summary and the model arrive with the engine view in one request; a command reloads all of them together.
+  bundleRef.current = (b) => { const r = b.row as { matter: Row; assignees: Person[] }; setRow(r.matter); setTeam(r.assignees); setDetail(b.detail as Detail); setModel(b.graph as Model); };
+  useEffect(() => { if (eng.err) setErr(eng.err); }, [eng.err]);
   const load = useCallback(async () => {
-    const [r, d, m] = await Promise.all([
-      api<{ matter: Row; assignees: Person[] }>(`/matters/${matterId}/row`),
-      api<Detail>(`/matters/${matterId}`),
-      api<Model>(`/matters/${matterId}/engine/graph`).catch(() => null),
-    ]);
-    setRow(r.matter); setTeam(r.assignees); setDetail(d); setModel(m);
     api<{ threads: any[] }>(`/matters/${matterId}/emails`).then((x) => setEmails(x.threads ?? [])).catch(() => setEmails([]));
     api<{ files: any[] }>(`/matters/${matterId}/files`).then((x) => setFiles(x.files ?? [])).catch(() => setFiles([]));
   }, [matterId]);
-  useEffect(() => { load().catch((e: unknown) => setErr(e instanceof Error ? e.message : 'Could not open the case.')); }, [load]);
-  // An engine command changes the model (health, HUD, tasks) too — reload it when the log grows.
-  useEffect(() => { if (eng.events.length) api<Model>(`/matters/${matterId}/engine/graph`).then(setModel).catch(() => {}); }, [eng.events.length, matterId]);
+  useEffect(() => { void load(); }, [load]);
   const refresh = () => { void eng.load(); void load().catch(() => {}); };
 
   const setOwner = async (assignedTo: string | null) => {
-    try { await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify({ assignedTo }) }); await load(); }
+    try { await api(`/matters/${matterId}`, { method: 'PATCH', body: JSON.stringify({ assignedTo }) }); await eng.load(); }
     catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not change the owner.'); }
   };
 

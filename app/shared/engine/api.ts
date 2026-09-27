@@ -30,7 +30,10 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   if (method !== 'GET') {
     cache.clear();
-    return request<T>(path, init);
+    const out = await request<T>(path, init);
+    // Anything a person does through the API can raise or clear a task: the sidebar number re-reads.
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('conveyi:counts'));
+    return out;
   }
   const hit = cache.get(path);
   const now = Date.now();

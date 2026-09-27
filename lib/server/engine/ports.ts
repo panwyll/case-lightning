@@ -218,6 +218,8 @@ export interface EnginePorts {
    * from that block. Mocks run the block as-is.
    */
   asAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
+  /** The inverse, for recording on the case that an automation effect failed: that note must land even when the automation role is what failed. */
+  outsideAutomation?: <T>(fn: () => Promise<T>) => Promise<T>;
   /**
    * Post-commit observer: every command's committed events, after the effects. Used to
    * project the log into an external system of record (LEAP write-back). Runs as

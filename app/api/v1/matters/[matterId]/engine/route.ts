@@ -1,6 +1,4 @@
-import { DEFAULT_SLA, nextChase } from '@/lib/server/engine/sla';
-import { fundsFromFor } from '@/lib/server/engine/shapes';
-import { computeSdlt, sdltLabel } from '@/lib/server/engine/sdlt';
+import { engineView } from '@/lib/server/engine/open-case';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -10,13 +8,10 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions, openWaits, surfacedDecisions } from '@/lib/server/engine/types';
-import { queryOne } from '@/lib/server/db';
 import { requireWriter, requireDecider, toCommand, userCommandSchema, completionSchema } from '@/lib/server/engine/http';
 import { COMPLETION_CONTRACTS, type CompletionContract } from '@/lib/server/engine/completion';
 import { writeAudit } from '@/lib/server/audit';
 import { counterpartyTypeOf } from '@/lib/server/engine/counterparty';
-import { profileOf } from '@/lib/server/engine/transactions';
-import { lifecycle, lifecycleFor, gatesFor, LIFECYCLE_LABEL } from '@/lib/server/engine/graph';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,34 +28,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
     const svc = engine();
-    const [state, subflows, matter] = await Promise.all([
-      svc.getState(user.tenantId, matterId),
-      svc.levels(user.tenantId),
-      queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null; sandbox: boolean; sandbox_scenario: string | null; sandbox_step: string | null }>(
-        `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler, m.sandbox, m.sandbox_scenario, m.sandbox_step
-           from matter m left join app_user u on u.id = m.assigned_to where m.id = $1 and m.tenant_id = $2`,
-        [matterId, user.tenantId]
-      ).catch(() => null),
-    ]);
-    const charge = await queryOne<{ charged_at: string; billed: boolean; unbilled_reason: string | null; amount_pennies: number }>(`select charged_at, billed, unbilled_reason, amount_pennies from matter_charge where tenant_id = $1 and matter_id = $2`, [user.tenantId, matterId]).catch(() => null);
-    const sla = await svc.eventStore.loadSla(user.tenantId).catch(() => DEFAULT_SLA);
-    const profile = profileOf(state.transactionType);
-    return ok({
-      state,
-      // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
-      profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
-      sdlt: profile.side === 'buyer' && state.purchasePricePennies ? (() => { const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }; const est = computeSdlt(state.purchasePricePennies, basis); return { estimatePennies: est.totalPennies, scheme: est.scheme, basis: sdltLabel(basis), declared: !!state.sdltBasis }; })() : null,
-      lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
-      blockers: stageBlockers(state),
-      waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),
-      // Everything the log holds (the panel shows the engine's conclusions) …
-      pendingDecisions: pendingDecisions(state),
-      // … and what a person may act on (addendum 3 §2).
-      surfacedDecisions: surfacedDecisions(state),
-      levels: subflows,
-      contracts: COMPLETION_CONTRACTS,
-      matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, sandbox: !!matter.sandbox, sandboxScenario: matter.sandbox_scenario, sandboxStep: matter.sandbox_step, charge: charge ? { chargedAt: charge.charged_at, billed: charge.billed, reason: charge.unbilled_reason, amountPennies: charge.amount_pennies } : null } : null,
-    });
+    return ok(await engineView(svc, user.tenantId, matterId, await svc.getState(user.tenantId, matterId)));
   } catch (error) {
     return fail(error);
   }

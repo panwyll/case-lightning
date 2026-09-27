@@ -33,7 +33,7 @@ const CSS = `
 .tl-task .age.soon{color:#b45309;font-weight:700}
 .tl-btn{border:1px solid #5A27E0;background:#fff;color:#5A27E0;border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;text-decoration:none}
 .tl-btn:hover{background:#f5f3ff}
-.tl-btn.on{background:#5A27E0;color:#fff}
+.tl-btn.on{background:#fff;color:#64748b;border-color:#e2e8f0;padding:6px 8px}
 .tl-open{border-top:1px solid #f1f5f9}
 .tl-clear{display:flex;align-items:center;gap:8px;padding:14px;font-size:13px;color:#166534;background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px}
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
@@ -123,7 +123,7 @@ export default function TaskList({ who }: { who: string }) {
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : age != null ? (age === 0 ? 'since today' : `waiting ${age}d`) : ''}</span>
                   {isDecision
-                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? 'Close' : 'Review'} <ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <a className="tl-btn" href={paths.matter(i.matterId)}>Open case <ChevronRight size={14} /></a>}
                 </div>
                 {isOpen && isDecision && (

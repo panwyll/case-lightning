@@ -34,6 +34,11 @@ export function runAsAutomation<T>(fn: () => Promise<T>): Promise<T> {
   return dbAutomation.run({ automation: true }, fn);
 }
 
+/** Run `fn` on the app role again from inside an automation block: for the one write that must land when the automation role cannot write (recording that it could not). */
+export function runOutsideAutomation<T>(fn: () => Promise<T>): Promise<T> {
+  return dbAutomation.run({ automation: false }, fn);
+}
+
 export function inAutomationContext(): boolean {
   return dbAutomation.getStore()?.automation === true;
 }

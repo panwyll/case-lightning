@@ -576,6 +576,8 @@ export interface WaitState {
   subject: string;
   openedAt: string;
   openedBySeq: number;
+  /** The actor of the event that opened it: a person's id, or system / ai / external. Absent on states stored before this field. */
+  openedBy?: string;
   closedAt: string | null;
   chasesSentAt: string[];
   escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>;

@@ -175,6 +175,7 @@ export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: ()
             <a href={paths.matter(i.matterId)} style={{ textDecoration: 'none', color: 'inherit', minWidth: 0 }}>
               <span className="line"><b>{i.what.charAt(0).toUpperCase() + i.what.slice(1)}</b>{i.dueBy ? <> by {day(i.dueBy)}</> : null}</span>
               <div className="meta">{[i.matterRef, i.clients?.length ? i.clients.join(' & ') : null, i.propertyAddress].filter(Boolean).join(' · ')}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
+              {i.since && <div className="meta">Asked {day(i.since)}{i.openedBy ? ` by ${i.openedBy === 'system' || i.openedBy === 'ai' ? 'the engine' : i.openedBy === 'external' ? 'the other side' : i.openedBy}` : ''}</div>}
             </a>
             <span className="right">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>

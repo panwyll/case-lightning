@@ -1,12 +1,19 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Api, EngineEvent, EngineView } from './types';
 
 /**
  * One matter's engine view, its log, and the command channel — shared by the work panel,
  * the issues tab and the documents tab so that a command recorded in one refreshes them all.
  */
-export function useEngine(matterId: string, api: Api, onChanged?: () => void) {
+/** What the combined case-view request carries besides the engine view and the log. */
+export interface EngineBundle { row: unknown; detail: unknown; graph: unknown }
+
+export function useEngine(matterId: string, api: Api, onChanged?: () => void, opts?: { onBundle?: (b: EngineBundle) => void }) {
+  // The page's handler may be a new function each render; the load must not restart for that.
+  const bundleRef = useRef(opts?.onBundle);
+  bundleRef.current = opts?.onBundle;
+  const wantsBundle = !!opts?.onBundle;
   const [view, setView] = useState<EngineView | null>(null);
   const [events, setEvents] = useState<EngineEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -16,14 +23,21 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void) {
 
   const load = useCallback(async () => {
     try {
-      const [v, ev] = await Promise.all([api<EngineView>(`/matters/${matterId}/engine`), api<{ events: EngineEvent[] }>(`/matters/${matterId}/engine/events?limit=2000`)]);
-      setView(v);
-      setEvents(ev.events);
+      if (wantsBundle) {
+        const b = await api<{ view: EngineView; events: EngineEvent[] } & EngineBundle>(`/matters/${matterId}/open`);
+        setView(b.view);
+        setEvents(b.events);
+        bundleRef.current?.({ row: b.row, detail: b.detail, graph: b.graph });
+      } else {
+        const [v, ev] = await Promise.all([api<EngineView>(`/matters/${matterId}/engine`), api<{ events: EngineEvent[] }>(`/matters/${matterId}/engine/events?limit=2000`)]);
+        setView(v);
+        setEvents(ev.events);
+      }
       setErr(null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not load the engine view.');
     }
-  }, [api, matterId]);
+  }, [api, matterId, wantsBundle]);
 
   useEffect(() => {
     void load();
