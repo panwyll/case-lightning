@@ -592,3 +592,35 @@ export async function supersedePriorVersions(
     return 0; // pre-063: supersede columns not present
   }
 }
+
+/**
+ * The email itself, read into the case. Replies to enquiries, a solicitor's answer, a lender's
+ * confirmation — much of what moves a case arrives in the body of an email, not as a file.
+ * On a trusted link the message text becomes a document on the case (From / To / Date /
+ * Subject and the words), deduplicated on content, and goes through the same classify-and-route
+ * step as a filed document. Returns what the reader made of it.
+ */
+export async function fileEmailBodyAsDocument(
+  user: { userId: string; tenantId: string },
+  matterId: string,
+  message: any
+): Promise<{ outcome: 'read' | 'filed' | 'duplicate' | 'skipped'; as: string | null }> {
+  const body = stripHtml(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  if (body.trim().length < 80) return { outcome: 'skipped', as: null };
+  const from = message?.from?.emailAddress?.address ?? 'unknown';
+  const fromName = message?.from?.emailAddress?.name ?? '';
+  const to = (message?.toRecipients ?? []).map((r: any) => r?.emailAddress?.address).filter(Boolean).join(', ');
+  const when = message?.receivedDateTime ?? message?.sentDateTime ?? new Date().toISOString();
+  const subject = String(message?.subject ?? '(no subject)');
+  const text = `From: ${fromName ? `${fromName} <${from}>` : from}\nTo: ${to}\nDate: ${when}\nSubject: ${subject}\n\n${body}`.slice(0, 60_000);
+  const hash = crypto.createHash('sha256').update(text).digest('hex');
+  const exists = await queryOne<{ id: string }>(`select id from document where matter_id = $1 and tenant_id = $2 and hash_sha256 = $3`, [matterId, user.tenantId, hash]).catch(() => null);
+  if (exists) return { outcome: 'duplicate', as: null };
+  const { productionPorts } = await import('./engine/adapters');
+  const slug = subject.toLowerCase().replace(/^(re|fw|fwd):\s*/i, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'email';
+  const doc = await productionPorts().documents.createGenerated({ tenantId: user.tenantId, matterId, docType: 'EMAIL', fileName: `email-${String(when).slice(0, 10)}-${slug}.txt`, content: text, createdBy: user.userId });
+  await query(`update document set hash_sha256 = $3, sender_domain = $4 where id = $1 and tenant_id = $2`, [doc.id, user.tenantId, hash, from.split('@')[1] ?? null]).catch(() => {});
+  const report = await ingestFiledDocument(user.tenantId, matterId, doc.id).catch(() => null);
+  const role = report?.classification?.role ?? null;
+  return report && report.action.kind !== 'skip' ? { outcome: 'read', as: role } : { outcome: 'filed', as: role && role !== 'other' ? role : null };
+}

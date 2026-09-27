@@ -4,7 +4,7 @@ import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
 import { query, queryOne } from '@/lib/server/db';
 import { assertMatterAccess } from '@/lib/server/guard';
-import { fileEmailAttachments, indexEmailBodyToMatter } from '@/lib/server/files';
+import { fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter } from '@/lib/server/files';
 import { recordContactsFromMessage } from '@/lib/server/contacts';
 import { ensureMasterCategory, addMessageCategories, getMessage } from '@/lib/server/graph';
 import { matterColor } from '@/lib/server/colors';
@@ -95,12 +95,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // (best-effort; no-ops when there are none). The email itself stays in the
     // inbox in-tray until the user actually actions it.
     let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null }> } = { saved: 0, files: [] };
+    let email: { outcome: string; as: string | null } | null = null;
     if (body.messageId) {
       attachments = await fileEmailAttachments(owner, matterId, body.messageId, body.subject).catch(() => ({ saved: 0, files: [] }));
       if (msg) {
-        // The people on the email become contacts (without a role until someone sets it); its words join the case's knowledge.
+        // The people on the email become contacts (without a role until someone sets it); its words join the case's knowledge;
+        // and the email itself is read like a filed document — a reply to enquiries in the body is a reply.
         await recordContactsFromMessage(user, matterId, msg).catch(() => {});
         await indexEmailBodyToMatter(owner, matterId, msg).catch(() => {});
+        email = await fileEmailBodyAsDocument(owner, matterId, msg).catch(() => null);
       }
     }
 
@@ -113,7 +116,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       payload: { graphThreadId: body.graphThreadId },
     });
 
-    return ok({ ok: true, attachments });
+    return ok({ ok: true, attachments, email });
   } catch (error) {
     return fail(error);
   }
