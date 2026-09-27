@@ -669,7 +669,7 @@ export class EngineService {
   /** A person sends the chase for a wait now rather than when the timer would; the same template and record as the timer's. */
   async chaseNow(tenantId: string, matterId: string, waitKey: WaitKey, subject: string | null, actor: string): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
-    const wait = openWaits(state).find((w) => w.key === waitKey && (w.subject ?? null) === (subject ?? null));
+    const wait = openWaits(state).find((w) => w.key === waitKey && (w.subject || null) === (subject || null));
     if (!wait) throw Object.assign(new Error(`No open ${waitKey.replace(/_/g, ' ')} wait${subject ? ` for ${subject}` : ''} on this case.`), { status: 409 });
     const sla = await this.store.loadSla(tenantId);
     const rule = sla[waitKey];

@@ -65,7 +65,7 @@ test('closed waits never fire; overrides change the numbers', () => {
 
 test('nextChase: the first chase falls chaseAfter working days after the wait opened, later ones chaseEvery after the last, none when chaseEvery is null', async () => {
   const { nextChase, DEFAULT_SLA } = await import('../../../lib/server/engine/sla');
-  const wait = { key: 'enquiry' as const, subject: 'E1', openedAt: '2026-09-14T09:00:00Z', closedAt: null, chasesSentAt: [], escalations: [] };
+  const wait = { key: 'enquiry' as const, subject: 'E1', openedAt: '2026-09-14T09:00:00Z', openedBySeq: 1, closedAt: null, chasesSentAt: [] as string[], escalations: [] };
   const first = nextChase(wait, DEFAULT_SLA.enquiry, new Date('2026-09-15T09:00:00Z'))!;
   assert.equal(first.dueDate, '2026-09-21');
   assert.equal(first.dueInWorkingDays, 4);
