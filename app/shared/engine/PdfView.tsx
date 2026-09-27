@@ -12,7 +12,7 @@ type Pdfjs = typeof import('pdfjs-dist');
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
-export function PdfView({ url, page, quote, quoteIndex = 0, onFound }: { url: string; page: number | null; quote: string | null; quoteIndex?: number; onFound?: (found: boolean | null) => void }) {
+export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: { url: string; page: number | null; quote: string | null; /** Fallbacks tried in order when `quote` is not on the page (a section number, the first words of the finding). */ quotes?: string[]; quoteIndex?: number; onFound?: (found: boolean | null) => void }) {
   const host = useRef<HTMLDivElement | null>(null);
   const [failed, setFailed] = useState(false);
   const [boxes, setBoxes] = useState<Box[]>([]);
@@ -81,24 +81,36 @@ export function PdfView({ url, page, quote, quoteIndex = 0, onFound }: { url: st
     if (!doc || !lib || !pages.length) return;
     let live = true;
     (async () => {
-      if (!quote) { setBoxes([]); onFound?.(null); scrollToPage(page); return; }
-      const needle = norm(quote).slice(0, 80);
+      // A quote may be abridged with an ellipsis ("ENFORCEMENT NOTICE served … remains OUTSTANDING"): search each run of it, longest first.
+      const candidates = [quote, ...(quotes ?? [])].filter((q): q is string => !!q && q.trim().length > 1).flatMap((q) => { const runs = q.split(/\u2026|\.\.\./).map((r) => r.trim()).filter((r) => r.length >= 3); return runs.length > 1 ? runs.sort((x, y) => y.length - x.length) : [q]; });
+      if (!candidates.length) { setBoxes([]); onFound?.(null); scrollToPage(page); return; }
       const order = [...(page ? [page] : []), ...pages.map((p) => p.n).filter((n) => n !== page)];
-      let seen = 0;
+      // Text layers split words and even numbers into separate items: match with every space removed, and map back to the items.
+      const layers = new Map<number, { items: import('pdfjs-dist/types/src/display/api').TextItem[]; compact: string; owner: number[]; vp: import('pdfjs-dist').PageViewport; unit: number }>();
       for (const n of order) {
         const p = await doc.getPage(n);
         const pg = pages.find((x) => x.n === n)!;
-        const vp = p.getViewport({ scale: pg.w / p.getViewport({ scale: 1 }).width });
+        const unit = pg.w / p.getViewport({ scale: 1 }).width;
+        const vp = p.getViewport({ scale: unit });
         const tc = await p.getTextContent();
         const items = tc.items.filter((it): it is import('pdfjs-dist/types/src/display/api').TextItem => 'str' in it && typeof (it as { str?: string }).str === 'string');
-        // Join items in reading order with single spaces, remember where each begins.
-        let text = ''; const starts: number[] = [];
-        for (const it of items) { starts.push(text.length); text += norm(it.str) + ' '; }
-        let at = text.indexOf(needle);
+        let compact = ''; const owner: number[] = [];
+        items.forEach((it, i) => { for (const ch of it.str.toLowerCase()) { if (!/\s/.test(ch)) { compact += ch; owner.push(i); } } });
+        layers.set(n, { items, compact, owner, vp, unit });
+        if (!live) return;
+      }
+      for (const cand of candidates) {
+      const needle = norm(cand).slice(0, 80).replace(/\s+/g, '');
+      if (!needle) continue;
+      let seen = 0;
+      for (const n of order) {
+        const L = layers.get(n)!; const { items, compact, owner, vp } = L; const pg = pages.find((x) => x.n === n)!; const p = await doc.getPage(n);
+        let at = compact.indexOf(needle);
         while (at >= 0) {
           if (seen === quoteIndex) {
             const end = at + needle.length;
-            const hit = items.filter((_, i) => starts[i] < end && starts[i] + norm(items[i].str).length + 1 > at);
+            const ids = new Set(owner.slice(at, end));
+            const hit = items.filter((_, i) => ids.has(i));
             const out: Box[] = hit.map((it) => {
               const t = lib.Util.transform(vp.transform, it.transform);
               const h = Math.hypot(t[2], t[3]) || it.height * (pg.w / p.getViewport({ scale: 1 }).width);
@@ -111,8 +123,9 @@ export function PdfView({ url, page, quote, quoteIndex = 0, onFound }: { url: st
             return;
           }
           seen += 1;
-          at = text.indexOf(needle, at + 1);
+          at = compact.indexOf(needle, at + 1);
         }
+      }
       }
       if (!live) return;
       setBoxes([]);
@@ -121,7 +134,7 @@ export function PdfView({ url, page, quote, quoteIndex = 0, onFound }: { url: st
     })();
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pages, quote, quoteIndex, page]);
+  }, [pages, quote, quotes?.join('|'), quoteIndex, page]);
 
   const scrollToPage = (n: number | null, y: number | null = null) => {
     if (!n) return;

@@ -237,11 +237,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const [other, setOther] = useState<{ id: string; content: string | null; rawUrl: string | null; pdf?: boolean } | null>(null);
   const [pdfFound, setPdfFound] = useState<boolean | null>(null);
   const [focusQuote, setFocusQuote] = useState<string | null>(null);
+  const [focusAlts, setFocusAlts] = useState<string[]>([]);
   const [focusIndex, setFocusIndex] = useState(0);
-  const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null, index = 0) => {
+  const showDoc = useCallback(async (id: string, pageNo: number | null, quote: string | null = null, index = 0, alts: string[] = []) => {
     setPickedDoc(id);
     setPage(pageNo ?? 1);
     setFocusQuote(quote);
+    setFocusAlts(alts);
     setFocusIndex(index);
     if (!source || id === source.id) { setOther(null); return; }
     try {
@@ -399,7 +401,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const live = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'flag');
   const todo = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'open');
   const quiet = checklist.map((c, i) => ({ c, i })).filter(({ c }) => c.status === 'ok');
-  const evLink = (e: { documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0)} title={docLabel(e.documentId)}>{label}</button> : null;
+  const evLink = (e: { text?: string; documentId?: string | null; page?: number | null; quote?: string | null; quoteIndex?: number }, label: string) => e.documentId ? <button type="button" className={showing === e.documentId && !!e.quote && focusQuote === e.quote && focusIndex === (e.quoteIndex ?? 0) ? 'on' : ''} onClick={() => void showDoc(e.documentId!, e.page ?? null, e.quote ?? null, e.quoteIndex ?? 0, e.text ? [e.text.replace(/^[\d.]+\s*/, '').split(/[;:—(]/)[0].trim().split(/\s+/).slice(0, 6).join(' ')] : [])} title={docLabel(e.documentId)}>{label}</button> : null;
   const renderEv = (c: { evidence: Array<{ text: string; documentId?: string | null; page?: number | null; quote?: string | null; warn?: boolean; links?: Array<{ label: string; documentId: string; page?: number | null; quote?: string | null }> }> }) => c.evidence.length > 0 && (
     <ul className="dp-ev">
       {c.evidence.map((e, j) => (
@@ -597,8 +599,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
         <div className={`dp-srcbody${shownPdf ? ' pdf' : ''}`} onScroll={(e) => { if ((e.currentTarget as HTMLElement).scrollTop > 40) setScrolled(true); }}>
           {!source && <div className="eg-sub">{detail.shadowed ? 'The source is available from the timeline once this case or sub-flow leaves shadow mode.' : 'Loading the source…'}</div>}
           {shownOther && shownOther.content != null && <pre className="dp-pre">{withQuote(shownOther.content).map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <mark key={i} className="on">{p.text}</mark>))}</pre>}
-          {shownOther && shownOther.content == null && shownOther.rawUrl && (shownOther.pdf ? <PdfView key={shownOther.id} url={shownOther.rawUrl} page={page} quote={focusQuote} quoteIndex={focusIndex} onFound={setPdfFound} /> : <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />)}
-          {!shownOther && pdfSrc && source?.rawUrl && <PdfView key={source.id} url={source.rawUrl} page={page} quote={focusQuote} quoteIndex={focusIndex} onFound={setPdfFound} />}
+          {shownOther && shownOther.content == null && shownOther.rawUrl && (shownOther.pdf ? <PdfView key={shownOther.id} url={shownOther.rawUrl} page={page} quote={focusQuote} quotes={focusAlts} quoteIndex={focusIndex} onFound={setPdfFound} /> : <iframe key={shownPdfSrc ?? ''} className="dp-frame" title="Document" src={shownPdfSrc ?? shownOther.rawUrl} />)}
+          {!shownOther && pdfSrc && source?.rawUrl && <PdfView key={source.id} url={source.rawUrl} page={page} quote={focusQuote} quotes={focusAlts} quoteIndex={focusIndex} onFound={setPdfFound} />}
           {!shownOther && source && !pdfSrc && source.draftCheck && <CheckedDraft check={source.draftCheck} />}
           {!shownOther && source && !pdfSrc && !source.draftCheck && highlighted && (
             <pre className="dp-pre" ref={preRef}>
