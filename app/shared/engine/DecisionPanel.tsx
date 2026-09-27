@@ -237,7 +237,6 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const needsReason = (o: string) => o !== 'approve' && o !== 'verify';
   const msg = detail?.message ?? null;
   const optionLabel = (o: string) => {
-    if (d?.kind === 'proposal' && msg && o === 'approve') return msg.kind === 'action' ? 'Go Ahead' : msg.kind === 'form' ? 'Send the Form' : msg.channel === 'draft' ? 'Draft It in Outlook' : 'Send';
     return (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
   };
   const parsed = useMemo(() => (d ? parseSummary(d.summary) : { intro: [], points: [], rest: [] }), [d]);

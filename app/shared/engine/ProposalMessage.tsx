@@ -31,7 +31,3 @@ export function ProposalMessage({ msg }: { msg: ProposalPreview }) {
     </div>
   );
 }
-
-/** The button a person presses to say yes to a proposal, named for what it does. */
-export const proposalApproveLabel = (msg: ProposalPreview | null | undefined): string | null =>
-  !msg ? null : msg.kind === 'action' ? 'Go Ahead' : msg.kind === 'form' ? 'Send the Form' : msg.channel === 'draft' ? 'Draft It in Outlook' : 'Send';

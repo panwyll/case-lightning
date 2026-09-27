@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { KIND_LABEL, OPTION_LABEL, OPTION_LABEL_BY_KIND, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Api, type DecisionRow, type ProposalPreview, type SourceDoc } from './types';
-import { ProposalMessage, PROPOSAL_MESSAGE_CSS, proposalApproveLabel } from './ProposalMessage';
+import { ProposalMessage, PROPOSAL_MESSAGE_CSS } from './ProposalMessage';
 
 /**
  * One decision, the way the spec wants it seen: the pre-digested summary, the source
@@ -136,7 +136,7 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
           <div>
             {d.options.map((o) => (
               <button key={o} className="dc-btn" disabled={!canDecide || busy || (isBank && o === 'verify' && !method)} title={canDecide ? (isBank && o === 'verify' && !method ? 'Choose the verification method first' : '') : 'Open the source document first'} onClick={() => resolve(o)}>
-                {(d.kind === 'proposal' && o === 'approve' && proposalApproveLabel(msg)) || (OPTION_LABEL_BY_KIND[d.kind]?.[o] ?? OPTION_LABEL[o] ?? pretty(o))}
+                {OPTION_LABEL_BY_KIND[d.kind]?.[o] ?? OPTION_LABEL[o] ?? pretty(o)}
               </button>
             ))}
           </div>
