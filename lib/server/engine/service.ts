@@ -181,7 +181,8 @@ export class EngineService {
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
       await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'proof_of_funds_request') {
-      await this.requestProofOfFunds(tenantId, matterId, SYSTEM);
+      const d = detail as { followUpOf?: string | null; noteToClient?: string | null; requestedBy?: string | null };
+      await this.requestProofOfFunds(tenantId, matterId, d.requestedBy ?? SYSTEM, { followUpOf: d.followUpOf ?? null, noteToClient: d.noteToClient ?? null });
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: d.context });
@@ -832,9 +833,13 @@ export class EngineService {
             try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('progress update could not be sent', err); }
           }
         }
+        // "Request further": the form goes back to the client with the conveyancer's note. It is a message to the client, so the trust level decides whether a person sees it first.
         if (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'request_further') {
           const p = e.payload as { requestId: string; note?: string | null };
-          await this.requestProofOfFunds(tenantId, matterId, e.actor, { followUpOf: p.requestId, noteToClient: p.note ?? null });
+          const detail = { kind: 'proof_of_funds_request', followUpOf: p.requestId, noteToClient: p.note ?? null, requestedBy: e.actor };
+          if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, `PROOF OF FUNDS — FURTHER EVIDENCE\n\nTo: the client\nWhy: the conveyancer asked for more on the source of funds.${p.note ? `\nNote to the client: ${p.note}` : ''}\n\nThe form goes back to the client with that note; they answer in it.`))) {
+            try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent again', err); }
+          }
         }
         // An approved note: run each chosen proposal through the machine's ordinary front
         // door, under the name of the person who approved it. Nothing bypasses validation —

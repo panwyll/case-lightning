@@ -180,7 +180,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await assert.rejects(h.svc.requestProofOfFunds(TENANT, MATTER, USER), /already approved/);
 });
 
-test('request further re-opens the form automatically with the conveyancer\'s note; escalate raises it to a senior (there is no reject); a person\'s request is never gated by trust levels', async () => {
+test('request further re-opens the form automatically with the conveyancer\'s note; escalate raises it to a senior (there is no reject); at AUTO the form goes straight back out', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
   await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
@@ -215,6 +215,29 @@ test('request further re-opens the form automatically with the conveyancer\'s no
   assert.equal(sh.ports.pofForms.issued.length, 1, 'the link is issued');
   assert.equal(sh.ports.clientComms.sent.length, 1, 'and sent');
   assert.equal(r.state.proofOfFunds.status, 'requested');
+});
+
+test('in PROPOSE mode, request further does not send the form again by itself: a person sees the proposal, and their yes sends it with the note', async () => {
+  const h = harness();
+  await h.store.setLevel(TENANT, 'client_update', 'propose');
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: true, requireExchangeAuthority: false, purchasePricePennies: 32_500_000 });
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
+  await h.svc.proofOfFundsSubmitted(TENANT, MATTER, 'pof-1', submission({ mortgageAdvancePennies: null, sources: [{ kind: 'savings', amountPennies: 32_500_000, description: 'Savings', evidenceDocumentIds: [] }] }));
+  let s = await h.svc.getState(TENANT, MATTER);
+  const sentBefore = h.ports.clientComms.sent.length;
+  await resolve(h, firstDecision(s, 'proof_of_funds').eventId, 'request_further', USER, 'Please attach three months of statements.');
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(h.ports.clientComms.sent.length, sentBefore, 'nothing went to the client unasked');
+  assert.equal(h.ports.pofForms.issued.length, 1, 'no second form yet');
+  const proposal = pendingDecisions(s).find((d) => d.kind === 'proposal');
+  assert.ok(proposal, 'the second round is proposed');
+  assert.match(proposal!.summary, /FURTHER EVIDENCE/);
+  await resolve(h, proposal!.eventId, 'approve', USER);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.proofOfFunds.rounds, 2, 'the person said yes: the form went back out');
+  assert.equal(h.ports.pofForms.issued[1].followUpOf, 'pof-1');
+  assert.equal(h.ports.clientComms.sent.at(-1)?.template, 'proof_of_funds_request_again');
+  assert.match(String((h.ports.clientComms.sent.at(-1)?.context as { noteToClient: string }).noteToClient), /three months of statements/);
 });
 
 test('leasehold purchase: the management pack gates pre_contract, lease facts flag on title, a freehold title is a mismatch, notice of assignment after completion', async () => {

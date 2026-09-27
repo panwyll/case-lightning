@@ -12,7 +12,7 @@
  * serves real and sandbox matters alike and nothing depends on remembering to use a
  * different service.
  */
-import { query, queryOne } from '../db';
+import { query, queryOne, runOutsideAutomation } from '../db';
 import type { EnginePorts } from './ports';
 import crypto from 'node:crypto';
 import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
@@ -28,8 +28,11 @@ export async function isSandboxMatter(tenantId: string, matterId: string): Promi
   const key = `${tenantId}:${matterId}`;
   const hit = cache.get(key);
   if (hit && (hit.sandbox || Date.now() - hit.at < SANDBOX_TTL_MS)) return hit.sandbox;
-  const row = await queryOne<{ sandbox: boolean }>(`select sandbox from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]).catch(() => null);
-  const sandbox = !!row?.sandbox;
+  // Read on the app role: the engine's effects run as the automation role, and a row it cannot see must never be taken for "not a sandbox" — that would route a
+  // sandbox's mail to the real senders. An unanswerable lookup throws, so the send fails loudly instead of going the wrong way.
+  const row = await runOutsideAutomation(() => queryOne<{ sandbox: boolean }>(`select sandbox from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]));
+  if (!row) throw new Error('Could not tell whether this case is a sandbox; nothing was sent.');
+  const sandbox = !!row.sandbox;
   cache.set(key, { at: Date.now(), sandbox });
   return sandbox;
 }
