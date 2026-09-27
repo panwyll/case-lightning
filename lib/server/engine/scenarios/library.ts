@@ -137,8 +137,9 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
     const s = await c.svc.getState(c.tenantId, c.matterId);
     const open = openPofQueries(s).filter((q) => q.status === 'draft' || q.status === 'sent');
     if (!open.length) return;
-    // The conveyancer asks for more: the sign-off decision is resolved with "request further", which re-opens the form with the queries on it.
-    await c.resolve('proof_of_funds', 'request_further', 'Queries sent to the client with the form.');
+    // The conveyancer asks for more: the sign-off decision is resolved with "request further", which re-opens the form with the queries on it (in stepping mode the person has already done this under Tasks).
+    const { blockingDecisions } = await import('../types');
+    if (blockingDecisions(s).some((d) => d.kind === 'proof_of_funds')) await c.resolve('proof_of_funds', 'request_further', 'Queries sent to the client with the form.');
     let after = await c.svc.getState(c.tenantId, c.matterId);
     if (after.proofOfFunds.status !== 'requested') { await c.svc.requestProofOfFunds(c.tenantId, c.matterId, c.userId, { followUpOf: s.proofOfFunds.requestId }); after = await c.svc.getState(c.tenantId, c.matterId); }
     const requestId = after.proofOfFunds.requestId;
