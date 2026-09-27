@@ -73,6 +73,29 @@ learn their purchase fell through.
 **Bytes are kept.** A decision must be able to show a client's own document, and InTouch
 is not guaranteed to still hold it when someone opens the panel next year.
 
+## Saving received files down (pencilled in, not started)
+
+Every file that lands on a case in CONVEYi is saved down into each practice system the
+firm has connected: LEAP and InTouch today. That covers email attachments, the text of a
+linked email, uploads, InfoTrack results, and client uploads from either portal.
+
+- **One step, every system.** It runs after the file is saved and read, the same way the
+  LEAP write-back does. It is keyed per system on our document id, so each file is written
+  once to each system.
+- **No echoes.** A file is never sent back to the system it came from. A client's InTouch
+  upload still goes to LEAP, and a LEAP document still goes to InTouch.
+- **Filed by what it was read as.** Survey, search, title, enquiry replies and so on, with
+  Correspondence when the file was not classified.
+- **Bytes** come from wherever CONVEYi holds them: OneDrive, or the database for a case
+  with no folder.
+
+**One decision before InTouch is built.** InTouch is what the client and the estate agent
+see. Every received file must not land where they can see it: the other side's papers,
+the lender's instructions and a note about a gift are for the firm. The step needs
+InTouch's staff-only document area, if it has one, and it needs to know which kinds may
+be shared with the client. With no staff-only area, only files the client or agent sent
+themselves go to InTouch, and everything else goes to LEAP alone.
+
 ## What is assumed, and where to fix it
 
 InTouch's API reference is behind developer registration and was not readable from the
@@ -88,6 +111,7 @@ provider-specific is therefore isolated:
 | Form slugs → TA6/TA7/TA10/TA13/LPE1 | `endpoints.ts` (`INTOUCH_FORM_CODES`) | the real slugs |
 | Pagination (`limit` + `cursor`/`offset`, `updatedSince`), list envelopes | `client.ts` (`page()`) | parameter names and envelope |
 | Milestone vocabulary | `endpoints.ts` (`INTOUCH_MILESTONES`) | what the portal actually displays |
+| Document upload (not in the client yet): path, multipart or JSON, folder or category, and whether a document can be staff-only | `endpoints.ts`, `client.ts` | needed for saving received files down |
 | Webhook events, HMAC-SHA256 in `x-intouch-signature` | `endpoints.ts`, `client.ts` | event names, signature scheme, which resources emit |
 | Hosts | env (`INTOUCH_API_BASE_URL`, `INTOUCH_AUTH_BASE_URL`) | none invented |
 
