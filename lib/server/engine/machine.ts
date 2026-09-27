@@ -116,7 +116,7 @@ type CommandBody =
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
-  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string } | null }
+  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null }
   | { type: 'enquiry_reply_received'; actor: Actor; enquiryId: string; documentId: string; facts?: EnquiryReplyFacts | null; summary?: SummaryOverride | null }
   | { type: 'mortgage_offer_received'; actor: Actor; documentId: string; lender?: string | null }
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
@@ -191,6 +191,7 @@ type CommandBody =
   | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
+  | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
   | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null }
   | { type: 'priority_search_made'; actor: Actor; expiresAt: string; documentId?: string | null }
   | { type: 'bankruptcy_search_clear'; actor: Actor; subjects?: string[] | null; documentId?: string | null }
@@ -276,6 +277,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'link_related_matter',
   'record_lender_requirements',
   'name_change_evidenced',
+  'client_account_receipt',
   'buildings_insurance_confirmed',
   'priority_search_made',
   'bankruptcy_search_clear',
@@ -681,12 +683,19 @@ export function decide(state: MatterState, cmd: Command, ctx: DecideContext): De
   return { events: all, state: applyNew(state, all, ctx.now) };
 }
 
+/** Names on the printed remitter line that are nobody we know: not the declarant, a party, a client, or a holder of a statement read. Empty when we know nobody yet. */
+function strangersAmong(s: MatterState, remitter: string): string[] {
+  const known = [...(s.partyNames ?? []), s.proofOfFunds.facts?.declarantName ?? '', ...(s.proofOfFunds.facts?.coDeclarants ?? []), ...Object.values(s.partyChecks).map((pc) => pc.label.replace(/\s*\(.*\)$/, '')), ...(s.proofOfFunds.statements ?? []).flatMap((st) => holderNames(st.holder)), ...(s.nameAliases ?? []).flatMap((a) => [a.from, a.to])].filter(Boolean);
+  if (!known.length) return [];
+  return holderNames(remitter).filter((h) => !samePerson(h, known));
+}
+
 /** The seller's forms read into issues: one per answer that changes what the file needs, cited to the page, never duplicated. */
 function formsIssueEvents(s: MatterState, facts: PropertyFormsFacts, side: 'buyer' | 'seller', documentId: string | null): NewEvent[] {
   const out: NewEvent[] = [];
   let n = 0;
   const existing = new Set(Object.values(s.issues).map((i) => i.title));
-  for (const fi of propertyFormsIssues(facts, side)) {
+  for (const fi of propertyFormsIssues(facts, side, { buyToLet: s.shapes?.includes('buy_to_let') ?? false })) {
     if (existing.has(fi.title)) continue;
     existing.add(fi.title);
     const gate: IssueGate = s.exchange.exchangedAt ? 'completion' : ISSUE_KIND_SPEC[fi.kind].gate;
@@ -1085,9 +1094,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // The client's money must come from where the source-of-funds evidence said it was (LSAG 6.17.2; red flag 18.4 "the source changes at the last minute").
       const remitter = cmd.remitter?.trim();
       if (remitter && cmd.fromRole === 'client') {
-        const known = [...(s.partyNames ?? []), s.proofOfFunds.facts?.declarantName ?? '', ...Object.values(s.partyChecks).map((pc) => pc.label.replace(/\s*\(.*\)$/, '')), ...(s.proofOfFunds.statements ?? []).flatMap((st) => holderNames(st.holder))].filter(Boolean);
-        const strangers = holderNames(remitter).filter((h) => !samePerson(h, known));
-        if (known.length && strangers.length && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Completion money from'))) {
+        const strangers = strangersAmong(s, remitter);
+        if (strangers.length && !Object.values(s.issues).some((i) => i.kind === 'aml_kyc_problem' && i.title.startsWith('Completion money from'))) {
           out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title: `Completion money from an account not seen in the evidence: ${remitter}`, detail: `The client's balance arrived from "${remitter}". ${strangers.join(' and ')} ${strangers.length === 1 ? 'was' : 'were'} not the declarant, a named party, or a holder of any statement read for the proof of funds. Establish whose account it is and why the money came from there before completing; consider whether the change of source is a reporting matter.`, gate: 'completion', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'critical', causedBy: null } });
         }
       }
@@ -1694,6 +1702,20 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.hasLender) reject('No lender on this matter.');
       if (cmd.minUnexpiredYears == null && cmd.maxSearchAgeMonths == null && cmd.acceptsNonFamilyGift == null && cmd.requiresEws1 == null && !cmd.note?.trim()) reject('Nothing to record.', 400);
       return [{ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: cmd.minUnexpiredYears ?? null, maxSearchAgeMonths: cmd.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: cmd.acceptsNonFamilyGift ?? null, requiresEws1: cmd.requiresEws1 ?? null, note: cmd.note?.trim() || null } }];
+    }
+    case 'client_account_receipt': {
+      requireEnrolled(s);
+      const remitter = cmd.remitter.trim();
+      if (!remitter) reject('The name on the sending account is required.', 400);
+      const out: NewEvent[] = [{ type: 'client_account_receipt_recorded', actor: cmd.actor, payload: { remitter, amountPennies: cmd.amountPennies ?? null, purpose: cmd.purpose, reference: cmd.reference ?? null } }];
+      // Money from someone we do not know, for anything, is a third-party payment (LSAG 5.6.3.2, 6.17.2): the fees as much as the deposit.
+      const strangers = strangersAmong(s, remitter);
+      const title = `${cmd.purpose === 'fees' ? 'Our fees' : cmd.purpose === 'deposit' ? 'The deposit' : cmd.purpose === 'completion' ? 'Completion money' : 'A payment'} received from a third party: ${remitter}`;
+      if (strangers.length && !Object.values(s.issues).some((i) => i.title === title && (i.status === 'open' || i.status === 'negotiating'))) {
+        const gate: IssueGate = cmd.purpose === 'completion' ? 'completion' : cmd.purpose === 'deposit' ? 'exchange' : 'none';
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'aml_kyc_problem', title, detail: `${cmd.amountPennies != null ? `${gbp(cmd.amountPennies)} ` : ''}arrived from "${remitter}"${cmd.reference ? ` (ref ${cmd.reference})` : ''}. ${strangers.join(' and ')} ${strangers.length === 1 ? 'is' : 'are'} not the client, a named party, a donor or a holder of any statement read. Anyone paying towards the transaction is a contributor: establish who they are and why they paid${cmd.purpose === 'fees' ? ' (a friend paying the fees is a gift to declare; an employer or a business paying them needs explaining)' : ''}, identify them if the sum warrants it, and consider whether it is a reporting matter. Money that cannot be explained is returned to its source, never onward.`, gate, stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: cmd.purpose === 'fees' ? 'warning' : 'critical', causedBy: null } });
+      }
+      return out;
     }
     case 'name_change_evidenced': {
       requireEnrolled(s);

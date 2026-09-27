@@ -195,6 +195,7 @@ export const EVENT_TYPES = [
   'related_matter_linked',
   'lender_requirements_recorded',
   'name_change_evidenced',
+  'client_account_receipt_recorded',
   'contract_pack_sent',
   'buyer_enquiries_received',
   'enquiry_replies_sent',
@@ -705,7 +706,7 @@ export interface Payloads {
     /** Adult occupiers who are not buying: the lender wants their consent / deed of postponement before completion. */
     occupiers?: string[];
     /** The SDLT basis as the client states it; the return is a person's, the basis is on the file from day one. */
-    sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null;
+    sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null;
     /** Sale / remortgage / transfer: the property is charged today (redemption and discharge apply). */
     hasExistingMortgage?: boolean;
     /** Transfer of equity: money changing hands (SDLT may apply; funds come from the incoming owner). */
@@ -728,7 +729,7 @@ export interface Payloads {
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
   search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string } | null; counterpartyType?: CounterpartyType | null };
+  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
@@ -891,6 +892,8 @@ export interface Payloads {
   related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
   /** The lender's Part 2 answers that change a rule on this matter. */
   lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
+  /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */
+  client_account_receipt_recorded: { remitter: string; amountPennies: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null };
   /** A person's name differs across documents for a documented reason (marriage, deed poll): the two names are the same person from here on. */
   name_change_evidenced: { party: string | null; from: string; to: string; reason: string; documentId?: string | null };
   /** Sale: draft contract, title and forms sent to the buyer's solicitor. */
@@ -958,6 +961,8 @@ export interface PropertyFormsFacts {
     epcRating?: string | null;
     councilTaxBand?: string | null;
   } | null;
+  /** Questions the seller answered "not known" or left blank: each is an enquiry to draft (the engine proposes them; a person sends). */
+  notKnown?: Array<{ question: string; section: string | null; page: number | null }> | null;
   /** Page of the form each section was read from. */
   pages?: Partial<Record<'boundaries' | 'disputes' | 'notices' | 'alterations' | 'guarantees' | 'insurance' | 'environment' | 'rights' | 'occupiers' | 'services' | 'leasehold', number>> | null;
 }
@@ -1006,7 +1011,7 @@ export type SubFlow = (typeof SUB_FLOWS)[number];
  *
  * Promotion is earned per action, from the proposals a firm has approved unchanged.
  */
-export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear'] as const;
+export const ENGINE_ACTIONS = ['acknowledgement', 'chase', 'client_update', 'search_order', 'auto_clear', 'enquiry_draft'] as const;
 export type EngineAction = (typeof ENGINE_ACTIONS)[number];
 export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   acknowledgement: 'Acknowledgements',
@@ -1014,6 +1019,7 @@ export const ENGINE_ACTION_LABEL: Record<EngineAction, string> = {
   client_update: 'Client updates',
   search_order: 'Search orders',
   auto_clear: 'Auto-clears',
+  enquiry_draft: 'Enquiries drafted from the forms',
 };
 /**
  * The subjects a level can be set on within each action: who is written to, which search,
@@ -1065,12 +1071,15 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'mortgage', label: 'Mortgage offer' },
     { key: 'title', label: 'Title' },
   ],
+  enquiry_draft: [
+    { key: 'ta6', label: 'From the seller\'s TA6 / TA7 answers' },
+  ],
 };
 export const TRUST_LEVELS = ['propose', 'assist', 'auto'] as const;
 export type TrustLevel = (typeof TRUST_LEVELS)[number];
 /** Keys are an action (`chase`) or an action and subject (`chase:lender`). */
 export type LevelConfig = Record<string, TrustLevel>;
-export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose' };
+export const DEFAULT_LEVELS: LevelConfig = { acknowledgement: 'propose', chase: 'propose', client_update: 'propose', search_order: 'propose', auto_clear: 'propose', enquiry_draft: 'propose' };
 export const levelKey = (action: EngineAction, subject?: string | null): string => (subject ? `${action}:${subject}` : action);
 /** The level in force for an action on a subject: the subject's own, else the action's, else propose. */
 export function levelFor(cfg: LevelConfig | null | undefined, action: EngineAction, subject?: string | null): TrustLevel {
@@ -1078,7 +1087,7 @@ export function levelFor(cfg: LevelConfig | null | undefined, action: EngineActi
   return (subject ? c[levelKey(action, subject)] : undefined) ?? c[action] ?? 'propose';
 }
 /** What ASSIST does unasked. Everything else at assist is proposed. */
-export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true };
+export const ASSIST_ACTS: Record<EngineAction, boolean> = { acknowledgement: true, chase: true, search_order: true, client_update: false, auto_clear: true, enquiry_draft: false };
 /** Whether an action at a level goes ahead without a person. */
 export const actsUnasked = (level: TrustLevel, action: EngineAction): boolean => level === 'auto' || (level === 'assist' && ASSIST_ACTS[action]);
 
@@ -1156,6 +1165,8 @@ export interface EnquiryState {
   documentId: string | null;
   decisionEventId: string | null;
   resolution: DecisionOption | null;
+  /** Where it came from: a decision, a follow-up, an issue, or a "not known" answer on the seller's forms. */
+  origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null;
 }
 
 export interface IssueState {
@@ -1271,7 +1282,9 @@ export interface MatterState {
   /** Adult occupiers named at enrolment who are not buying. */
   occupiers: string[];
   /** The SDLT basis the client declared at enrolment (null = nothing declared). */
-  sdltBasis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null;
+  sdltBasis: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean; mixedUse?: boolean; linkedConsiderationPennies?: number | null } | null;
+  /** Money that landed on client account outside the completion flow (fees, the deposit, an unexpected credit): who sent it and what for. */
+  receipts: Array<{ remitter: string; amountPennies: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; at: string }>;
   completion: {
     statementGeneratedAt: string | null;
     fundsRequestedAt: string | null;
@@ -1428,6 +1441,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     nameAliases: [],
     preCompletion: { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null },
     partyNames: [],
+    receipts: [],
     occupiers: [],
     sdltBasis: null,
     completion: { statementGeneratedAt: null, fundsRequestedAt: null, fundsReceivedAt: null, receivedFrom: [], confirmedAt: null },

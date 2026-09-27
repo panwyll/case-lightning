@@ -190,6 +190,9 @@ export class EngineService {
         const agent = await this.ports.chaser.sendPartyNotice({ tenantId, matterId, recipientRole: 'estate_agent', template: d.agentTemplate, context: d.context }).catch((err) => { this.ports.log('agent notice failed', err); return null; });
         if (agent) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: d.agentTemplate, recipientRole: 'estate_agent', channel: agent.channel, messageId: agent.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
+    } else if (action === 'enquiry_draft') {
+      const d = detail as { subject: string; question: string };
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: { formsQuestion: d.question } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -420,6 +423,13 @@ export class EngineService {
       this.ports.log('mortgage offer extraction failed — routing to human', err);
       return { lender: 'unknown', conditions: [], confidence: 0 };
     });
+    // The firm's lender directory: this lender's Part 2 answers go on the matter before the offer is judged, so the rules read them.
+    if (this.ports.lenderDirectory && facts.lender && facts.lender !== 'unknown') {
+      const profile = await this.ports.lenderDirectory.find(tenantId, facts.lender).catch((err) => { this.ports.log('lender directory lookup failed', err); return null; });
+      if (profile && (profile.minUnexpiredYears != null || profile.maxSearchAgeMonths != null || profile.acceptsNonFamilyGift != null || profile.requiresEws1 != null || profile.note)) {
+        await this.run(tenantId, matterId, { type: 'record_lender_requirements', actor: SYSTEM, minUnexpiredYears: profile.minUnexpiredYears, maxSearchAgeMonths: profile.maxSearchAgeMonths, acceptsNonFamilyGift: profile.acceptsNonFamilyGift, requiresEws1: profile.requiresEws1, note: profile.note ? `${facts.lender} (directory): ${profile.note}` : `${facts.lender} (directory)` }).catch((err) => this.ports.log('lender requirements from the directory not recorded', err));
+      }
+    }
     const state = await this.getState(tenantId, matterId);
     const summary = await this.summarise('mortgage', `Mortgage offer (${facts.lender})`, evaluateMortgageOffer(facts, state.targetExchangeDate, this.ports.now()), doc, tenantId, matterId);
     return this.run(tenantId, matterId, { type: 'mortgage_offer_extracted', actor: SYSTEM, facts, extractor: this.ports.extractor.name, summary });
@@ -731,6 +741,17 @@ export class EngineService {
   private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
     for (const e of events) {
       try {
+        // The seller answered "not known": each such question is an enquiry to the seller's solicitor, proposed (never sent unasked below auto).
+        if (e.type === 'seller_forms_received') {
+          const facts = (e.payload as { facts: { notKnown?: Array<{ question: string; section: string | null; page: number | null }> | null } | null }).facts;
+          for (const q of facts?.notKnown ?? []) {
+            const subject = `TA6 ${q.question.replace(/\s+/g, ' ').trim()}: the seller answered "not known". Please make enquiries of your client and confirm the position, with any documents held.`;
+            if (Object.values(state.enquiries).some((x) => x.origin?.formsQuestion === q.question)) continue;
+            const detail = { subject, question: q.question, section: q.section, page: q.page };
+            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'ta6', `enquiry_draft:${q.question}`, detail, `ENQUIRY FROM THE SELLER'S FORMS\n\nQuestion: ${q.question}${q.section ? `\nSection: ${q.section}` : ''}${q.page ? `\nPage: ${q.page}` : ''}\nAnswer given: not known\n\nProposed enquiry to the seller's solicitor:\n${subject}`)) continue;
+            await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject, origin: { formsQuestion: q.question } });
+          }
+        }
         // PROPOSE level: a person said yes — do it now, the same way the unasked path would.
         if (e.type === 'action_approved') {
           const p = e.payload as { proposalEventId: string; action: EngineAction; detail: Record<string, unknown> };

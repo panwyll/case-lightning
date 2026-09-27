@@ -17,7 +17,7 @@ const yes = (v: boolean | null | undefined): boolean => v === true;
 const some = (v: string | null | undefined): v is string => !!v && v.trim().length > 0 && !/^(none|no|n\/a|not applicable|not known|nil)\.?$/i.test(v.trim());
 
 /** Deterministic rules over the TA6 / TA7 answers. `side` says whose forms they are. */
-export function propertyFormsIssues(f: PropertyFormsFacts, side: 'buyer' | 'seller'): FormsIssue[] {
+export function propertyFormsIssues(f: PropertyFormsFacts, side: 'buyer' | 'seller', opts: { buyToLet?: boolean } = {}): FormsIssue[] {
   const out: FormsIssue[] = [];
   const who = side === 'buyer' ? 'The seller' : 'Our client';
   const push = (kind: IssueKind, code: string, title: string, detail: string, page: number | null, severity: Flag['severity'] = 'medium') => out.push({ kind, title, detail, page, flag: { code, severity, description: title, locator: page != null ? { page } : undefined } });
@@ -38,6 +38,9 @@ export function propertyFormsIssues(f: PropertyFormsFacts, side: 'buyer' | 'sell
   if (some(a.boundariesUnclear)) push('boundary_discrepancy', 'TA6_BOUNDARIES', `TA6: boundary answer needs checking — "${a.boundariesUnclear!.slice(0, 140)}"`, `${who} is unsure who owns or maintains a boundary, or a boundary has moved (TA6 section 1). Compare with the title plan and raise an enquiry.`, f.pages?.boundaries ?? null, 'low');
   if (yes(a.listedOrConservation)) push('planning_permission_missing', 'TA6_LISTED', 'TA6: listed building or conservation area', `The property is listed or in a conservation area (TA6 section 4). Works need listed building consent; check every alteration disclosed against it, and tell the lender.`, f.pages?.alterations ?? null, 'low');
   if (yes(a.leaseholdArrearsOrDispute)) push('service_charge_issue', 'TA7_ARREARS', 'TA7: service charge or ground rent arrears, or a dispute with the landlord', `${who} discloses arrears or a dispute under the lease (TA7). Match against the management pack; arrears are settled on completion or retained.`, f.pages?.leasehold ?? null);
+  // Energy performance: a seller must have commissioned an EPC before marketing; F or G cannot be let (MEES), which matters to a buy-to-let buyer and their lender.
+  if (side === 'seller' && !some(a.epcRating)) push('document_missing', 'TA6_EPC_MISSING', 'EPC: no energy performance certificate stated on the forms', 'The seller must have commissioned an EPC before marketing (Energy Performance of Buildings Regulations 2012) and the buyer\'s solicitor will ask for it with the pack. Check the EPC register and put the certificate in the pack; if the property is to be let, a rating of F or G bars a new tenancy (MEES).', null, 'low');
+  if (side === 'buyer' && some(a.epcRating) && /^[FG]$/i.test(a.epcRating!.trim()) && opts.buyToLet) push('buy_to_let_conditions', 'TA6_EPC_MEES', `EPC rating ${a.epcRating!.trim().toUpperCase()}: the property cannot be let without improvement (MEES)`, 'A domestic property rated F or G cannot be let under the Minimum Energy Efficiency Standards unless an exemption is registered; the buy-to-let lender will not accept the rental cover until it is improved to E or better. Advise the client on the cost and tell the lender.', null, 'high');
   for (const fl of f.disclosures ?? []) if (!out.some((x) => x.flag.code === fl.code)) push('disclosure_concern', fl.code, `Forms: ${fl.description.slice(0, 160)}`, fl.description, fl.locator?.page ?? null, fl.severity);
   return out;
 }

@@ -259,6 +259,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
         documentId: null,
         decisionEventId: null,
         resolution: null,
+        origin: p.origin ?? null,
       };
       openWait(s, 'enquiry', p.enquiryId, e);
       break;
@@ -903,6 +904,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['lender_requirements_recorded'];
       const prev = s.lenderRequirements;
       s.lenderRequirements = { minUnexpiredYears: p.minUnexpiredYears ?? prev?.minUnexpiredYears ?? null, maxSearchAgeMonths: p.maxSearchAgeMonths ?? prev?.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: p.acceptsNonFamilyGift ?? prev?.acceptsNonFamilyGift ?? null, requiresEws1: p.requiresEws1 ?? prev?.requiresEws1 ?? null, note: p.note ?? prev?.note ?? null, recordedAt: e.createdAt };
+      break;
+    }
+    case 'client_account_receipt_recorded': {
+      const p = e.payload as Payloads['client_account_receipt_recorded'];
+      if (!s.receipts) s.receipts = [];
+      s.receipts.push({ remitter: p.remitter, amountPennies: p.amountPennies ?? null, purpose: p.purpose, at: e.createdAt });
       break;
     }
     case 'name_change_evidenced': {

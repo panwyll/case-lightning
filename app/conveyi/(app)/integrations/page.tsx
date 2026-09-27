@@ -66,6 +66,7 @@ export default function ToolsPage() {
       <div className="ig-grid" style={{ marginBottom: 18 }}>
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2></a>
         <a className="ig-card" href={paths.scenarios}><h2 className="ig-name">Scenarios</h2></a>
+        <a className="ig-card" href={paths.lenders}><h2 className="ig-name">Lender Directory</h2></a>
       </div>
     </div>
   );

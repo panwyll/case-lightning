@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide, stageBlockers } from '../../../lib/server/engine/machine';
-import { initialState, openIssues } from '../../../lib/server/engine/types';
+import { initialState, openIssues, pendingDecisions } from '../../../lib/server/engine/types';
 import { deadlineActions, timedIssueActions } from '../../../lib/server/engine/sla';
 import { evaluateProofOfFunds, factsFromSubmission, type ProofOfFundsSubmission } from '../../../lib/server/engine/proof-of-funds';
 import { harness, FIXTURE_LEVELS, TENANT, MATTER, USER, idClear } from './helpers';
@@ -207,4 +207,46 @@ test('a documented name change is one person to the cross-checks; the Right to B
   assert.deepEqual(openIssues(s).map((i) => i.kind).sort(), ['commonhold_terms', 'flying_freehold', 'right_to_buy_terms']);
   await h.svc.run(TENANT, MATTER, { type: 'name_change_evidenced', actor: USER, from: 'Priya Shah', to: 'Priya Patel', reason: 'Marriage certificate on file' });
   assert.deepEqual((await h.svc.getState(TENANT, MATTER)).nameAliases, [{ from: 'Priya Shah', to: 'Priya Patel', party: null }]);
+});
+
+test('the last open rows: a third party paying our fees; mixed-use and linked SDLT; "not known" answers become proposed enquiries; the EPC rules', async () => {
+  const { computeSdlt } = await import('../../../lib/server/engine/sdlt');
+  const none = { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false };
+  assert.equal(computeSdlt(30_000_000, { ...none, mixedUse: true }).totalPennies, 450_000, 'mixed use £300k: 2% of £100k + 5% of £50k');
+  const linked = computeSdlt(30_000_000, { ...none, linkedConsiderationPennies: 30_000_000 });
+  assert.equal(linked.totalPennies, Math.round(computeSdlt(60_000_000, none).totalPennies / 2), 'linked: the rate on £600k, half borne here');
+  assert.match(linked.scheme, /linked transactions/);
+  // Fees from a stranger.
+  const base = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase' as const, stage: 'pre_contract' as const, partyNames: ['Priya Shah'] };
+  const own = decide(base, { type: 'client_account_receipt', actor: USER, remitter: 'MRS P SHAH', amountPennies: 150_000, purpose: 'fees' }, ctx);
+  assert.ok(!own.events.some((e) => e.type === 'issue_raised'));
+  const stranger = decide(base, { type: 'client_account_receipt', actor: USER, remitter: 'ACME TRADING LTD', amountPennies: 150_000, purpose: 'fees' }, ctx);
+  const issue = stranger.events.find((e) => e.type === 'issue_raised')!;
+  assert.ok(issue);
+  assert.equal((issue.payload as { gate: string }).gate, 'none', 'fees hold nothing');
+  const dep = decide(base, { type: 'client_account_receipt', actor: USER, remitter: 'ACME TRADING LTD', purpose: 'deposit' }, ctx).events.find((e) => e.type === 'issue_raised')!;
+  assert.equal((dep.payload as { gate: string }).gate, 'exchange', 'the deposit holds exchange');
+  assert.equal(decide(base, { type: 'client_account_receipt', actor: USER, remitter: 'ACME TRADING LTD', purpose: 'fees' }, ctx).state.receipts.length, 1);
+  // "Not known" on the TA6 → an enquiry proposed at propose level, raised when approved; at auto, raised at once.
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  const doc = h.doc({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: {}, notKnown: [{ question: '8.1 Does the property have a right of way over a neighbour\'s land?', section: 'Rights and informal arrangements', page: 6 }] }, 'PROPERTY_FORMS');
+  await h.svc.propertyFormsReceived(TENANT, MATTER, doc);
+  let s = await h.svc.getState(TENANT, MATTER);
+  const proposal = Object.values(s.proposals).find((p) => p.action === 'enquiry_draft');
+  assert.ok(proposal && proposal.status === 'pending', 'proposed, not sent');
+  assert.equal(Object.values(s.enquiries).length, 0);
+  const d = pendingDecisions(s).find((x) => x.kind === 'proposal')!;
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve', null, null, { scrolledSource: false, dwellMs: 0 }, null);
+  s = await h.svc.getState(TENANT, MATTER);
+  const q = Object.values(s.enquiries)[0];
+  assert.ok(q && /8\.1 Does the property have a right of way/.test(q.subject) && q.origin?.formsQuestion, 'raised on approval, with its origin');
+  // EPC.
+  const { propertyFormsIssues } = await import('../../../lib/server/engine/property-forms');
+  assert.ok(propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: {} }, 'seller').some((i) => i.flag.code === 'TA6_EPC_MISSING'));
+  assert.ok(propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { epcRating: 'F' } }, 'buyer', { buyToLet: true }).some((i) => i.flag.code === 'TA6_EPC_MEES'));
+  assert.ok(!propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { epcRating: 'F' } }, 'buyer').some((i) => i.flag.code === 'TA6_EPC_MEES'));
 });

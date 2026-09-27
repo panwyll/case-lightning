@@ -271,6 +271,7 @@ export const PropertyFormsExtractionSchema = z.object({
   epcRating: z.string().describe('EPC rating letter if stated; empty string if not.'),
   councilTaxBand: z.string().describe('Council tax band if stated; empty string if not.'),
   sectionPages: z.object({ boundaries: z.number().int().min(0), disputes: z.number().int().min(0), notices: z.number().int().min(0), alterations: z.number().int().min(0), guarantees: z.number().int().min(0), insurance: z.number().int().min(0), environment: z.number().int().min(0), rights: z.number().int().min(0), occupiers: z.number().int().min(0), services: z.number().int().min(0), leasehold: z.number().int().min(0) }).describe('The page each section starts on; 0 if the section is absent.'),
+  notKnown: z.array(z.object({ question: z.string().describe('The question as printed, with its number (e.g. "4.2 Has any building work been carried out?")'), section: z.string().describe('The section heading; empty string if none'), page: z.number().int().min(0) })).describe('Every question the seller answered "not known", "don\'t know", "no information" or left blank where an answer was required.'),
   disclosures: z.array(flagSchema).describe('Anything else a buyer\'s conveyancer must act on that the fields above do not capture (a covenant breach admitted, a right of pre-emption, an ongoing planning application, an outstanding invoice for works).'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
@@ -531,6 +532,7 @@ export function toPropertyFormsFacts(out: z.infer<typeof PropertyFormsExtraction
       sharedAccessOrServices: yn(out.sharedAccessOrServices), rightsOfWayOverProperty: t(out.rightsOfWayOverProperty), septicTank: yn(out.septicTank), solarPanelsLeased: yn(out.solarPanelsLeased), boundariesUnclear: t(out.boundariesUnclear),
       leaseholdArrearsOrDispute: yn(out.leaseholdArrearsOrDispute), epcRating: t(out.epcRating), councilTaxBand: t(out.councilTaxBand),
     },
+    notKnown: out.notKnown.map((q) => ({ question: q.question, section: q.section || null, page: q.page > 0 ? q.page : null })),
     pages: { boundaries: pg(sp.boundaries), disputes: pg(sp.disputes), notices: pg(sp.notices), alterations: pg(sp.alterations), guarantees: pg(sp.guarantees), insurance: pg(sp.insurance), environment: pg(sp.environment), rights: pg(sp.rights), occupiers: pg(sp.occupiers), services: pg(sp.services), leasehold: pg(sp.leasehold) },
   };
 }

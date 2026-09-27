@@ -29,6 +29,8 @@ export const paths = {
   machineMap: `${APP_BASE}/engine/map`,
   /** The scenario library: sandbox cases driven through the real engine (admins). */
   scenarios: `${APP_BASE}/engine/scenarios`,
+  /** The firm's lender directory: Part 2 requirements the engine applies when an offer names the lender (admins). */
+  lenders: `${APP_BASE}/engine/lenders`,
   /** The firm's rules: sign-offs, timers, messages, document rules (admins). */
   rules: `${APP_BASE}/engine/rules`,
   shadowQueue: `${APP_BASE}/engine/rules`,

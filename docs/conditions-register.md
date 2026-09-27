@@ -63,7 +63,7 @@ practice guide.
 | Source of **wealth** (how the client came to have it) | EDD cases | **gated** | an `enhanced` rating drafts one `SOURCE_OF_WEALTH` query; it is sent or withdrawn with a reason before sign-off (LSAG 6.17.3, 6.18.3) |
 | Cash purchase (no lender) | all the money is the client's: source of funds carries the whole risk | **flagged** | `POF_CASH_PURCHASE` (medium) on every declaration with no advance (LSAG 18.5.2) |
 | Funds from the sale of another property | the linked sale exchanges with us; proceeds traced | **gated** | `link_related_matter`: the chain issue holds exchange, the service refuses exchange until the linked file can exchange and clears the issue when it can; sale proceeds with no linked sale are `POF_SALE_PROCEEDS_UNLINKED` |
-| Third party pays our fees or the deposit directly | third-party payment risk | **gap** | LSAG §6.17.2; nothing on the ledger side |
+| Third party pays our fees or the deposit directly | third-party payment risk | **gated** | `client_account_receipt` (remitter, purpose): a sender nobody on the file knows raises `aml_kyc_problem`; fees hold nothing, the deposit holds exchange, completion money holds completion (LSAG 5.6.3.2, 6.17.2) |
 | Two declarants (joint buyers) | each their own round, or each confirms the one declaration | **flagged** | co-buyers are ticked on the form (`coDeclarants`); a co-buyer who neither confirms nor declares is `POF_MISSING_DECLARANT` |
 
 ## 3 · Mortgage
@@ -78,7 +78,7 @@ practice guide.
 | Names on the offer differ from the buyers | cross-check | **flagged** | `crosscheck.ts` where names are extracted |
 | Buy-to-let product | rental cover, tenancy, licensing | **flagged** | shape checklist issue |
 | Second charge / Help to Buy equity loan / shared equity | a second lender with its own consent and deed | **gated** | shape `second_charge` → `second_charge_consent` issue holding completion |
-| Lender's Part 2 specifics (search age, lease term minimum, gifts, EWS1) | vary per lender | **gated** | `record_lender_requirements` on the matter: the lease review flags a term under the minimum, exchange refuses searches older than the limit, a non-family gift is accepted when the lender says so |
+| Lender's Part 2 specifics (search age, lease term minimum, gifts, EWS1) | vary per lender | **gated** | the firm's lender directory (Tools → Lender Directory, `lender_profile`, migration 096) is matched by name when an offer is read and recorded on the matter; or `record_lender_requirements` by hand. The lease review flags a term under the minimum, exchange refuses searches older than the limit, a non-family gift is accepted when the lender says so |
 | Incentives / cashback on a new build (disclosure of incentives form) | lender told | **flagged** | shape text only |
 | Searches older than the lender's limit at exchange | re-order | **gated** | re-ordered searches gate exchange again |
 | Indemnity policy taken | lender told | **gated** | `lender_approval` issue |
@@ -114,7 +114,7 @@ practice guide.
 | Money from the client short of the statement | issue `funding_shortfall` | **gated** | |
 | Bank details change | hard stop; out-of-band verification | **gated** | |
 | Completion fails on the day / notice to complete | issue + decision + deadline | **gated** | |
-| SDLT: first-time-buyer relief, higher rates (additional property, company), non-resident surcharge | the return and the sum | **flagged** | `sdlt.ts` computes the estimate on the declared basis (rates from April 2025) onto the completion statement, the SDLT deadline and the registration tile; the `sdlt_basis` issue lists what to check; mixed use and linked transactions stay a person's |
+| SDLT: first-time-buyer relief, higher rates (additional property, company), non-resident surcharge, mixed use, linked transactions | the return and the sum | **flagged** | `sdlt.ts` computes the estimate on the declared basis (rates from April 2025): standard, relief, surcharges, company flat rate, non-residential rates for mixed use, linked consideration setting the rate on the aggregate; on the completion statement, the SDLT deadline and the registration tile; the `sdlt_basis` issue lists what to check |
 | Priority search (OS1) window | completion inside the period | **gated** | `priority_search_made(expiresAt)` required on a lender purchase; completion refused after expiry; deadline timer 2 working days before |
 | Buildings insurance from exchange | on the lender's terms | **gated** | `buildings_insurance_confirmed` required before completion on a lender purchase (Handbook: insurance) |
 | Bankruptcy search against every borrower | K16 before completion | **gated** | `bankruptcy_search_clear` required before completion on a lender purchase (Handbook: insolvency); a hit is a `bankruptcy_insolvency` issue |
@@ -124,6 +124,8 @@ practice guide.
 | Condition | What changes | Status | Source / note |
 |---|---|---|---|
 | Property forms (TA6 / TA7 / TA10) chased | | **gated** | wait `property_forms` |
+| TA6 answered "not known" | an enquiry to the seller's solicitor | **gated** | each such question is an enquiry proposed under the `enquiry_draft` trust level (propose by default; raised at once only at auto) |
+| EPC | the seller's certificate before marketing; F / G cannot be let (MEES) | **flagged** | `TA6_EPC_MISSING` on a sale; `TA6_EPC_MEES` on a buy-to-let purchase |
 | TA6 / TA7 answers read for issues | disputes, notices, works without consent, guarantees and insurance claims, flooding, knotweed, radon, occupiers, shared rights, septic tank, solar lease, boundaries, listed, leasehold arrears | **gated** | `property-forms.ts`: each material answer is an issue cited to the page, on the purchase (`seller_forms_received`) and on the sale (our client's forms); the issue's own gate holds |
 | Probate / attorney / capacity of the seller | issue `seller_capacity` holds exchange | **gated** | |
 | Redemption figure known before exchange; discharge before close | | **gated** | |
@@ -135,13 +137,7 @@ practice guide.
 
 ## 7 · Still open
 
-After the second pass on 2026-09-27 (the whole-transaction one), what remains needs a source the engine does not have:
-
-- **Third parties paying our fees**: no ledger side to the engine.
-- **Linked transactions and mixed use for SDLT**: the estimate is for one dwelling on the declared basis.
-- **Per-lender numbers the firm has not recorded**: `record_lender_requirements` is per matter; there is no lender directory.
-- **Enquiries drafted from the TA6 gaps**: an answer of "not known" raises no enquiry yet; the issues do.
-- **EPC and the seller's marketing duties**: recorded from the TA6 when stated, not chased.
+Nothing on the register is a gap after the third pass on 2026-09-27. What is not modelled is outside the engine's reach rather than a condition it misses: the firm's ledger (only what a person records as received is seen), the lender's Part 2 text itself (the directory holds what a person keys from it), and HMRC's own view of a mixed-use claim.
 
 ## 8 · Where to get the rest of the kinks
 

@@ -411,6 +411,8 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   const [ftb, setFtb] = useState(false);
   const [additional, setAdditional] = useState(false);
   const [nonRes, setNonRes] = useState(false);
+  const [mixedUse, setMixedUse] = useState(false);
+  const [linked, setLinked] = useState('');
   const buyer = type === 'freehold_purchase' || type === 'leasehold_purchase';
   const seller = type === 'freehold_sale' || type === 'leasehold_sale';
   const remo = type === 'remortgage';
@@ -436,6 +438,8 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
             <label className="ep-shape"><input type="checkbox" checked={ftb} onChange={(e) => setFtb(e.target.checked)} />SDLT: first-time buyer relief</label>
             <label className="ep-shape"><input type="checkbox" checked={additional} onChange={(e) => setAdditional(e.target.checked)} />SDLT: additional property</label>
             <label className="ep-shape"><input type="checkbox" checked={nonRes} onChange={(e) => setNonRes(e.target.checked)} />SDLT: non-UK resident</label>
+            <label className="ep-shape"><input type="checkbox" checked={mixedUse} onChange={(e) => setMixedUse(e.target.checked)} />SDLT: mixed use</label>
+            <label className="ep-shape">SDLT: linked consideration £<input type="number" min={0} value={linked} onChange={(e) => setLinked(e.target.value)} style={{ width: 110 }} /></label>
           </div>
         )}
         {(buyer || seller || toe) && (
@@ -461,7 +465,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
         if (buyer && shapes.includes('company_buyer') && split(officers).length) body.officers = split(officers);
         if (split(executors).length) body.executors = split(executors);
         if (buyer && split(occupiers).length) body.occupiers = split(occupiers);
-        if (buyer && (ftb || additional || nonRes)) body.sdlt = { firstTimeBuyer: ftb, additionalProperty: additional, nonUkResident: nonRes };
+        if (buyer && (ftb || additional || nonRes || mixedUse || Number(linked) > 0)) body.sdlt = { firstTimeBuyer: ftb, additionalProperty: additional, nonUkResident: nonRes, mixedUse, linkedConsiderationPennies: Number(linked) > 0 ? Math.round(Number(linked) * 100) : null };
         const list = searches.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
         if (list.length) body.requiredSearches = list;
         void cmd(body);
@@ -646,9 +650,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           )}
         </div>
       ) : null,
-      actions: !exchanged && (pof?.status === 'not_started' || (pof?.status === 'reviewed' && pof.resolution !== 'approve')) ? (
+      actions: <>
+        {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Name on the sending account (as the bank shows it):'); if (!r) return; const p = ask('What for: fees, deposit, completion or other', 'fees'); if (!p) return; const a = ask('Amount in £ (blank if unknown):', ''); if (a === null) return; void cmd({ type: 'client_account_receipt', remitter: r, purpose: /^(fees|deposit|completion|other)$/.test(p.trim()) ? p.trim() : 'other', amountPennies: a.trim() ? Math.round(Number(a) * 100) : null }); }}>Receipt on Client Account</button>}
+        {!exchanged && (pof?.status === 'not_started' || (pof?.status === 'reviewed' && pof.resolution !== 'approve')) ? (
         <span><input className="ep-input" placeholder="Note to the client (optional)" value={pofNote} onChange={(e) => setPofNote(e.target.value)} style={{ width: 260 }} /><button className="ep-btn primary" disabled={busy} onClick={() => { void cmd({ type: 'request_proof_of_funds', noteToClient: pofNote.trim() || null }); setPofNote(''); }}>Send Proof-of-Funds Form</button></span>
-      ) : null });
+      ) : null}
+      </> });
   }
 
   if (has('property_forms')) lane({ id: 'property_forms', order: 'sequence', title: 'Property forms (TA6 / TA10 / TA7)', state: forms.status === 'received' ? 'done' : forms.status === 'requested' ? 'open' : 'idle', 

@@ -187,6 +187,8 @@ export interface EnginePorts {
   autoStartOnEnrol?: boolean;
   /** Optional; only used when a matter's counterparty is internal. */
   linked?: LinkedMatterNotifier | null;
+  /** Optional: the firm's lender directory; a mortgage offer naming a lender in it records that lender's requirements on the matter. */
+  lenderDirectory?: { find(tenantId: string, lenderName: string): Promise<{ minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null } | null> } | null;
   documents: DocumentRepository;
   extractor: DocumentExtractor;
   /** Optional: without a classifier, documents must be ingested with an explicit role (the /ingest route). */
