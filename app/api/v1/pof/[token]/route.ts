@@ -1,13 +1,14 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { ok, fail } from '@/lib/server/http';
 import { query, queryOne, runAsAutomation, runAsSystem } from '@/lib/server/db';
 import { engine } from '@/lib/server/engine/adapters';
-import { markSubmitted, openRequestByToken, type PofRequestRow } from '@/lib/server/engine/pof-store';
+import { markSubmitted, openRequestByToken, readSubmission, type PofRequestRow } from '@/lib/server/engine/pof-store';
 import { FUND_SOURCE_KINDS, type ProofOfFundsSubmission } from '@/lib/server/engine/proof-of-funds';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /**
  * The client's side of proof of funds (docs/proof-of-funds.md). No login: the link's
@@ -109,12 +110,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
         : [];
       if (docs.length !== ids.length) throw Object.assign(new Error('One of the attached documents does not belong to this form.'), { status: 400 });
       const submission: ProofOfFundsSubmission = { ...body, purchasePricePennies: body.purchasePricePennies ?? null, mortgageAdvancePennies: body.mortgageAdvancePennies ?? null, clientNote: body.clientNote ?? null, sources: body.sources.map((s) => ({ ...s, gift: s.gift ?? null, overseas: s.overseas ?? null })), answers: body.answers ?? [], round: ctx.view.round, submittedAt: new Date().toISOString() };
-      const evidenceNames = Object.fromEntries(docs.map((d) => [d.id, d.file_name ?? d.id]));
-      const run = await runAsAutomation(() => engine().proofOfFundsSubmitted(ctx.req.tenant_id, ctx.req.matter_id, ctx.req.id, submission, evidenceNames));
-      const declaration = run.events.find((e) => e.type === 'proof_of_funds_submitted');
-      await markSubmitted(ctx.req.id, submission, declaration?.sourceDocumentId ?? null);
-      return { flagged: (declaration?.payload as { flags?: unknown[] } | undefined)?.flags?.length ?? 0 };
+      // The client is answered the moment the submission is safely stored. Reading it (every statement through the reader,
+      // the briefing, the decision) runs after the response, and the timer sweep picks it up if that does not finish.
+      const stored = await markSubmitted(ctx.req.id, submission, null);
+      if (!stored) throw Object.assign(new Error('This form has already been submitted. Thank you.'), { status: 409 });
+      return { requestId: ctx.req.id, flagged: 0 };
     });
+    after(() => readSubmission(result.requestId).catch((err) => console.error('[pof] read after response failed', err)));
     return ok({ ok: true, ...result });
   } catch (error) {
     return fail(error);

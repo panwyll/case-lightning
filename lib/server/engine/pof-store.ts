@@ -62,3 +62,54 @@ export async function markSubmitted(id: string, submission: ProofOfFundsSubmissi
 export async function listRequests(tenantId: string, matterId: string): Promise<PofRequestRow[]> {
   return query<PofRequestRow>(`select * from proof_of_funds_request where tenant_id = $1 and matter_id = $2 order by requested_at desc`, [tenantId, matterId]);
 }
+
+/**
+ * Read a submission the client has already made: every statement through the reader, the rules,
+ * the briefing, the decision for the conveyancer. The form answered the client the moment the
+ * submission was stored; this runs after, and again from the timer sweep if it did not finish
+ * (a reader outage, a function cut short). A submission is read once: the machine refuses a second.
+ */
+export async function readSubmission(requestId: string): Promise<{ read: boolean; reason?: string }> {
+  const { engine } = await import('./adapters');
+  const { runAsAutomation, runAsSystem } = await import('../db');
+  const { SYSTEM } = await import('./types');
+  return runAsSystem(async () => {
+    const req = await queryOne<PofRequestRow>(`select * from proof_of_funds_request where id = $1`, [requestId]);
+    if (!req || req.status !== 'submitted' || !req.submission) return { read: false, reason: 'nothing to read' };
+    if (req.document_id) return { read: true, reason: 'already read' };
+    const sub = req.submission;
+    const ids = Array.from(new Set([...sub.sources.flatMap((x) => [...x.evidenceDocumentIds, ...(x.gift?.donorEvidenceDocumentIds ?? [])]), ...(sub.answers ?? []).flatMap((a) => a.evidenceDocumentIds)]));
+    const docs = ids.length ? await query<{ id: string; file_name: string | null }>(`select id, file_name from document where id = any($1::uuid[]) and matter_id = $2`, [ids, req.matter_id]) : [];
+    const evidenceNames = Object.fromEntries(docs.map((d) => [d.id, d.file_name ?? d.id]));
+    try {
+      const run = await runAsAutomation(() => engine().proofOfFundsSubmitted(req.tenant_id, req.matter_id, req.id, sub, evidenceNames));
+      const declaration = run.events.find((e) => e.type === 'proof_of_funds_submitted');
+      await query(`update proof_of_funds_request set document_id = $2 where id = $1`, [req.id, declaration?.sourceDocumentId ?? null]);
+      return { read: true };
+    } catch (err) {
+      const reason = (err instanceof Error ? err.message : String(err)).trim();
+      // The machine already has it (a first attempt got through before the function was cut short): record that and stop.
+      if (/awaiting a submission/.test(reason)) {
+        await query(`update proof_of_funds_request set document_id = coalesce(document_id, $2) where id = $1`, [req.id, req.id]).catch(() => {});
+        return { read: true, reason: 'already in the case' };
+      }
+      // Never silent: the task says the client's answers are in but could not be read, and the sweep will try again.
+      try {
+        const svc = engine();
+        const s = await svc.getState(req.tenant_id, req.matter_id);
+        const title = "The client's proof-of-funds form is in but could not be read";
+        if (s.enrolled && !Object.values(s.issues).some((i) => i.status === 'open' && i.title === title)) {
+          await svc.run(req.tenant_id, req.matter_id, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title, detail: `${reason}. The answers and files are safe on the case; the system tries again on its next sweep. If it keeps failing, open the files under Documents and review by hand.`, gate: 'none', severity: 'warning' });
+        }
+      } catch { /* logged below */ }
+      console.error('[pof] submission could not be read', requestId, reason);
+      return { read: false, reason };
+    }
+  });
+}
+
+/** Submissions stored but not yet read (older than a moment, so the after-response read has had its chance). */
+export async function unreadSubmissions(olderThanSeconds = 90): Promise<string[]> {
+  const rows = await query<{ id: string }>(`select id from proof_of_funds_request where status = 'submitted' and submission is not null and document_id is null and submitted_at < now() - ($1 || ' seconds')::interval order by submitted_at limit 20`, [String(Math.floor(olderThanSeconds))]).catch(() => []);
+  return rows.map((r) => r.id);
+}

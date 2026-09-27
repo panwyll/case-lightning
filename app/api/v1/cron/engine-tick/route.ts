@@ -3,6 +3,7 @@ import { assertFeature } from '@/lib/server/config';
 import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { runAsAutomation } from '@/lib/server/db';
+import { readSubmission, unreadSubmissions } from '@/lib/server/engine/pof-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -21,7 +22,10 @@ export async function GET(req: NextRequest) {
       return fail(Object.assign(new Error('Unauthorized'), { status: 401 }));
     }
     const result = await runAsAutomation(() => engine().tickAll(null));
-    return ok(result);
+    // Proof-of-funds submissions whose after-response read did not finish.
+    let reread = 0;
+    for (const id of await unreadSubmissions()) { const r = await readSubmission(id).catch(() => ({ read: false })); if (r.read) reread += 1; }
+    return ok({ ...result, proofOfFundsReread: reread });
   } catch (error) {
     return fail(error);
   }
