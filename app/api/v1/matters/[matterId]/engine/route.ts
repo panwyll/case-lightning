@@ -1,5 +1,6 @@
 import { DEFAULT_SLA, nextChase } from '@/lib/server/engine/sla';
 import { fundsFromFor } from '@/lib/server/engine/shapes';
+import { computeSdlt, sdltLabel } from '@/lib/server/engine/sdlt';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -48,6 +49,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
       state,
       // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
       profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
+      sdlt: profile.side === 'buyer' && state.purchasePricePennies ? (() => { const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }; const est = computeSdlt(state.purchasePricePennies, basis); return { estimatePennies: est.totalPennies, scheme: est.scheme, basis: sdltLabel(basis), declared: !!state.sdltBasis }; })() : null,
       lifecycle: { id: lifecycle(state), label: LIFECYCLE_LABEL[lifecycle(state)] },
       blockers: stageBlockers(state),
       waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),

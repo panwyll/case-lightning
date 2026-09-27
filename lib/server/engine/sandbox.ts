@@ -62,6 +62,7 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
       extractManagementPack: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractManagementPack(doc),
       extractStatement: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractStatement(doc),
       extractSurvey: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractSurvey(doc),
+      extractPropertyForms: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractPropertyForms(doc),
     },
     classifier: base.classifier ? { name: base.classifier.name, classify: async (doc) => ((await isSandboxMatter(doc.tenantId, doc.matterId)) ? { role: 'other', searchType: null, enquiryReferences: [], titleNumber: null, lender: null, confidence: 0, reason: 'sandbox: file with an explicit role' } : base.classifier!.classify(doc)) } : base.classifier,
     summariser: { name: base.summariser.name, summarise: async (input) => (await pick(input.state.tenantId, input.state.matterId, base.summariser, summariser)).summarise(input) },

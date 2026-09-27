@@ -15,6 +15,7 @@ import { openIssues, openWaits } from './types';
 import { ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
 import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays } from './working-days';
+import { computeSdlt, sdltLabel } from './sdlt';
 
 export interface SlaRule {
   waitKey: WaitKey;
@@ -150,7 +151,10 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   }
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt) {
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
-    push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.`);
+    const price = state.purchasePricePennies;
+    const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
+    const est = price ? computeSdlt(price, basis) : null;
+    push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.${est ? ` Estimate on the ${sdltLabel(basis)} basis: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}); check against HMRC's calculator.` : ''}`);
   }
   if (state.preCompletion?.prioritySearchExpiresAt && !state.completion.confirmedAt) {
     const exp = state.preCompletion.prioritySearchExpiresAt.slice(0, 10);

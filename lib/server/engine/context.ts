@@ -55,13 +55,17 @@ const withClock = (iso: string | null | undefined, now: Date) => {
   return iso ? `${day(iso)}${d != null ? d < 0 ? ` (${-d} days ago)` : d === 0 ? ' (today)' : ` (${n(d, 'day')})` : ''}` : null;
 };
 
-const SEARCH_LABEL: Record<SearchType, string> = { LLC1: 'Local land charges (LLC1)', CON29: 'Local authority (CON29)', DRAINAGE_WATER: 'Drainage and water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel repair' };
+const SEARCH_LABEL: Record<SearchType, string> = { LLC1: 'Local land charges (LLC1)', CON29: 'Local authority (CON29)', DRAINAGE_WATER: 'Drainage and water', ENVIRONMENTAL: 'Environmental', MINING: 'Coal mining (CON29M)', FLOOD: 'Flood risk', HIGHWAYS: 'Highways', PLANNING: 'Planning history', CHANCEL: 'Chancel repair' };
 const SEARCH_CHECKS: Record<SearchType, string[]> = {
   LLC1: ['Financial charges, conservation area, listing, tree preservation orders: does the client know', 'Enforcement or planning contravention notices', 'Anything that breaches the lender handbook'],
   CON29: ['Planning history matches what the seller says was built, and when; building regulations sign-off for every alteration', 'Road and footpath adopted and maintained at public expense', 'Proposed road, rail or development schemes nearby', 'Contaminated land, radon and flooding entries', 'Does the flag change the price, the lender, or the advice'],
   DRAINAGE_WATER: ['Foul and surface water connected to the public sewer', 'A public sewer within 3m or under the building: build-over agreement', 'Water supply metered; no pending charges'],
   ENVIRONMENTAL: ['Flood risk, and whether insurance is available on ordinary terms', 'Contaminated land: past use and any remediation record', 'Subsidence, mining, landfill within the search radius', 'Whether the report recommends further action, and by whom'],
   CHANCEL: ['Whether liability is registered on the title', 'Whether an indemnity policy is the proportionate answer'],
+  MINING: ['Past, present or planned coal mining beneath or near the property', 'Mine entries within 20 m', 'Subsidence claims and any Coal Authority damage notice'],
+  FLOOD: ['River, surface water and groundwater risk bands', 'Whether insurance is available on ordinary terms (Flood Re)', 'Any flood defences the property depends on'],
+  HIGHWAYS: ['Whether the road and footpath abutting the property are adopted', 'Any private road and who maintains it', 'Proposed road schemes'],
+  PLANNING: ['Applications and decisions for the property and its neighbours', 'Consents for every alteration the seller disclosed', 'Enforcement action'],
 };
 
 const KIND_CHECKS: Record<string, string[]> = {

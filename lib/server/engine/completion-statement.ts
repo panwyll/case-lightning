@@ -7,6 +7,7 @@
  */
 import { canon, type RegisterFact } from './draft-check';
 import type { MatterState } from './types';
+import { computeSdlt, sdltLabel } from './sdlt';
 
 export interface StatementLine { label: string; pennies: number | null; sign: 1 | -1 | 0; factId: string | null; note?: string }
 export interface CompletionStatement { title: string; lines: StatementLine[]; balancePennies: number | null; toConfirm: string[]; text: string; allowed: string[] }
@@ -75,6 +76,14 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
     toConfirm.push("Estate agent's commission: from the agent's invoice");
   }
 
+  // SDLT on the declared basis: an estimate the person filing checks, never the figure itself.
+  if (!sale && side === 'buyer' && pricePennies != null && pricePennies > 0) {
+    const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
+    const est = computeSdlt(pricePennies, basis);
+    lines.push({ label: `Stamp Duty Land Tax (estimate, ${est.scheme}${state.sdltBasis ? '' : ', no basis declared'})`, pennies: est.totalPennies, sign: 1, factId: priceFact?.id ?? null, note: `${sdltLabel(basis)} basis` });
+    allowed.push(pounds(est.totalPennies));
+    toConfirm.push(`SDLT: ${pounds(est.totalPennies)} is the estimate on the ${sdltLabel(basis)} basis; confirm against HMRC's calculator before the return.`);
+  }
   // Leasehold apportionments: the seller has paid the year's ground rent and service charge; the buyer refunds from completion to the period end.
   const period = parsePeriod(textFact(register, /^pack\.service_charge_period$/)?.value);
   for (const [label, re] of [['service charge', /^pack\.service_charge_pennies_pa$/], ['ground rent', /^(pack|lease)\.ground_rent_pennies_pa$/]] as const) {
@@ -94,7 +103,8 @@ export function buildCompletionStatement(input: { state: MatterState; side: 'buy
   }
 
   // Lines only the firm can fill.
-  for (const l of sale ? ['Our fees', 'Disbursements', 'Land Registry fee for official copies'] : ['Our fees', 'Stamp Duty Land Tax', 'Land Registry registration fee', 'Searches and disbursements', 'Bank transfer fee']) {
+  const sdltEstimated = lines.some((l) => l.label.startsWith('Stamp Duty Land Tax ('));
+  for (const l of sale ? ['Our fees', 'Disbursements', 'Land Registry fee for official copies'] : ['Our fees', ...(sdltEstimated ? [] : ['Stamp Duty Land Tax']), 'Land Registry registration fee', 'Searches and disbursements', 'Bank transfer fee']) {
     lines.push({ label: l, pennies: null, sign: sale ? -1 : 1, factId: null });
   }
 

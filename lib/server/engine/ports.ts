@@ -18,7 +18,7 @@
  */
 import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
-import type { Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview } from './proof-of-funds';
 
@@ -63,6 +63,8 @@ export interface DocumentExtractor {
   extractStatement(doc: DocumentRef): Promise<StatementFacts | null>;
   /** Case model §7: a survey / valuation / specialist report read for its recommendations (facts, never the client's view). */
   extractSurvey(doc: DocumentRef): Promise<SurveyFacts>;
+  /** The seller's TA6 / TA7 / TA10 read answer by answer. */
+  extractPropertyForms(doc: DocumentRef): Promise<PropertyFormsFacts>;
 }
 
 /**
@@ -159,7 +161,7 @@ export interface DocumentClassifier {
 }
 
 export interface DocumentClassification {
-  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'other';
+  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms' | 'other';
   searchType: SearchType | null;
   enquiryReferences: string[];
   titleNumber: string | null;

@@ -36,7 +36,7 @@ practice guide.
 | ID result is refer / PEP / sanctions | decision: approve / further / escalate / reject → manual | **gated** | provider flags feed the `id_check` decision |
 | Client outside the UK / non-UK documents | enhanced verification (certified copies, video) | **flagged** (donors only) | `POF_GIFT_DONOR_ABROAD`; nothing for a client abroad |
 | ID older than the firm's refresh period (long matter) | refresh EID&V, address, PEP / sanctions | **flagged** | the timer raises `cdd_refresh` a year after the first client's check resolved (LSAG 6.21); holds nothing |
-| Name differs across documents (marriage, deed poll) | evidence of the change | **gap** | `crosscheck.ts` compares names across documents where it has them; no name-change step |
+| Name differs across documents (marriage, deed poll) | evidence of the change | **gated** | `name_change_evidenced` (a person, from the certificate): the alias is one person to the cross-checks; an undocumented difference stays a `document_mismatch` |
 | Gift donor | own check; holds proof-of-funds sign-off | **gated** | LSAG §6.17.2.1 |
 | Gift from a joint account | both holders are donors; both checked; both on the gift letter; both to the lender | **gated** | shipped 2026-09-27; declared on the form (`jointDonorName`) or caught on the statement (`JOINT_ACCOUNT_UNDECLARED`) |
 | Client's own account held jointly with a non-buyer | the other holder is a contributor: checked, no-interest confirmation, lender told | **gated** | `jointHolderName`; same mechanism |
@@ -62,9 +62,9 @@ practice guide.
 | Money arrives from an account never seen in the evidence | must be traced before completing | **gated** | `funds_received.remitter` compared with the declarant, every party and every statement read; a stranger raises `aml_kyc_problem` (critical) holding completion (LSAG 6.17.2; red flag 18.4) |
 | Source of **wealth** (how the client came to have it) | EDD cases | **gated** | an `enhanced` rating drafts one `SOURCE_OF_WEALTH` query; it is sent or withdrawn with a reason before sign-off (LSAG 6.17.3, 6.18.3) |
 | Cash purchase (no lender) | all the money is the client's: source of funds carries the whole risk | **flagged** | `POF_CASH_PURCHASE` (medium) on every declaration with no advance (LSAG 18.5.2) |
-| Funds from the sale of another property | completion statement / memorandum; a chain | **flagged** | `sale_proceeds` evidence expectations only; no link to the sale matter |
+| Funds from the sale of another property | the linked sale exchanges with us; proceeds traced | **gated** | `link_related_matter`: the chain issue holds exchange, the service refuses exchange until the linked file can exchange and clears the issue when it can; sale proceeds with no linked sale are `POF_SALE_PROCEEDS_UNLINKED` |
 | Third party pays our fees or the deposit directly | third-party payment risk | **gap** | LSAG §6.17.2; nothing on the ledger side |
-| Two declarants (joint buyers) | each their own round | **declared** | one declarant per form; the second buyer's round is sent by hand |
+| Two declarants (joint buyers) | each their own round, or each confirms the one declaration | **flagged** | co-buyers are ticked on the form (`coDeclarants`); a co-buyer who neither confirms nor declares is `POF_MISSING_DECLARANT` |
 
 ## 3 · Mortgage
 
@@ -78,7 +78,7 @@ practice guide.
 | Names on the offer differ from the buyers | cross-check | **flagged** | `crosscheck.ts` where names are extracted |
 | Buy-to-let product | rental cover, tenancy, licensing | **flagged** | shape checklist issue |
 | Second charge / Help to Buy equity loan / shared equity | a second lender with its own consent and deed | **gated** | shape `second_charge` → `second_charge_consent` issue holding completion |
-| Lender's Part 2 specifics (search age, lease term minimum, insurer rating…) | vary per lender | **gap** | Part 2 is per lender; nothing per-lender is modelled |
+| Lender's Part 2 specifics (search age, lease term minimum, gifts, EWS1) | vary per lender | **gated** | `record_lender_requirements` on the matter: the lease review flags a term under the minimum, exchange refuses searches older than the limit, a non-family gift is accepted when the lender says so |
 | Incentives / cashback on a new build (disclosure of incentives form) | lender told | **flagged** | shape text only |
 | Searches older than the lender's limit at exchange | re-order | **gated** | re-ordered searches gate exchange again |
 | Indemnity policy taken | lender told | **gated** | `lender_approval` issue |
@@ -89,13 +89,13 @@ practice guide.
 | Condition | What changes | Status | Source / note |
 |---|---|---|---|
 | Search flags (enforcement, unadopted road, flood, contaminated land) | decision incl. indemnity / enquiry | **gated** | |
-| Extra search types (mining, chancel already; flood, highways, HS2, radon) | | **gap** (partial) | `SEARCH_TYPES` fixed |
+| Extra search types | mining, flood, highways, planning history | **gated** | `SEARCH_TYPES` now carries MINING, FLOOD, HIGHWAYS, PLANNING with their checks; any of them can be a required search |
 | Search unreadable | flagged, never guessed | **gated** | |
 | Restriction / charge / covenant on the register | decision; issues `covenant_consent`, `title_defect` | **gated** | |
 | Unregistered land | first registration; epitome of title | **manual** | `title_extracted` with `unregistered` → `manual_handling_required(unregistered_land)` |
 | Leasehold: short term, ground rent, doubling, service charge, major works, s.20 | flagged on the title decision; pack gates pre-contract | **flagged** | lender minimum unexpired term (Part 2) not compared |
 | Shared ownership | model lease, provider approval, rent, staircasing, nomination | **gated** | shape `shared_ownership` → `shared_ownership_terms` issue holding exchange |
-| Right to Buy / commonhold / flying freehold | | **gap** | manual |
+| Right to Buy / commonhold / flying freehold | discount repayment and pre-emption; the community statement; the lender's limit and rights of support | **gated** | shapes `right_to_buy`, `commonhold`, `flying_freehold`, each a checklist issue holding exchange |
 | Building Safety Act (relevant building, leaseholder deed of certificate, landlord's certificate) | lender needs it on a flat in a building over 11 m / 5 storeys | **gated** | the pack is read for the three answers; a relevant building missing a certificate raises `building_safety` holding exchange |
 | Deed of covenant / licence to assign / restriction consent certificate needed on registration | | **flagged** | on completion of a leasehold purchase the pack's `consentsRequired` becomes a `missing_consent` issue ("After completion: …") that must be resolved before close |
 | Notice of assignment / charge after completion | | **gated** | leasehold purchase |
@@ -114,7 +114,7 @@ practice guide.
 | Money from the client short of the statement | issue `funding_shortfall` | **gated** | |
 | Bank details change | hard stop; out-of-band verification | **gated** | |
 | Completion fails on the day / notice to complete | issue + decision + deadline | **gated** | |
-| SDLT: first-time-buyer relief, higher rates (additional property, company), non-resident surcharge, mixed use | the return and the sum | **declared + flagged** | `enrol.sdlt` basis on the state; an `sdlt_basis` issue (holds nothing) lists what to check before the return; no computation |
+| SDLT: first-time-buyer relief, higher rates (additional property, company), non-resident surcharge | the return and the sum | **flagged** | `sdlt.ts` computes the estimate on the declared basis (rates from April 2025) onto the completion statement, the SDLT deadline and the registration tile; the `sdlt_basis` issue lists what to check; mixed use and linked transactions stay a person's |
 | Priority search (OS1) window | completion inside the period | **gated** | `priority_search_made(expiresAt)` required on a lender purchase; completion refused after expiry; deadline timer 2 working days before |
 | Buildings insurance from exchange | on the lender's terms | **gated** | `buildings_insurance_confirmed` required before completion on a lender purchase (Handbook: insurance) |
 | Bankruptcy search against every borrower | K16 before completion | **gated** | `bankruptcy_search_clear` required before completion on a lender purchase (Handbook: insolvency); a hit is a `bankruptcy_insolvency` issue |
@@ -124,27 +124,24 @@ practice guide.
 | Condition | What changes | Status | Source / note |
 |---|---|---|---|
 | Property forms (TA6 / TA7 / TA10) chased | | **gated** | wait `property_forms` |
-| TA6 answers read for issues (disputes, alterations without consent, Japanese knotweed) | | **declared** | facts recorded; no rule reads them |
+| TA6 / TA7 answers read for issues | disputes, notices, works without consent, guarantees and insurance claims, flooding, knotweed, radon, occupiers, shared rights, septic tank, solar lease, boundaries, listed, leasehold arrears | **gated** | `property-forms.ts`: each material answer is an issue cited to the page, on the purchase (`seller_forms_received`) and on the sale (our client's forms); the issue's own gate holds |
 | Probate / attorney / capacity of the seller | issue `seller_capacity` holds exchange | **gated** | |
 | Redemption figure known before exchange; discharge before close | | **gated** | |
-| Our client is also buying (linked sale and purchase) | one chain | **gap** | two matters; no link beyond chain issues |
+| Our client is also buying (linked sale and purchase) | one chain, simultaneous exchange | **gated** | `link_related_matter` on either side; see Source of funds |
 | Remortgage: SDLT determination, old lender redeemed, new deed | | **gated** | |
 | Transfer of equity: lender consent, deed by every party, consideration, deed of trust | | **gated** | |
 | Transfer on divorce / court order (no consideration, SDLT exemption) | the sealed order, the lender's release, the exemption | **gated** | shape `court_order_transfer` → issue holding completion |
 | Outgoing owner's independent advice | undue influence | **flagged** | on the `court_order_transfer` checklist; not captured on a plain transfer |
 
-## 7 · Still open after the 2026-09-27 pass
+## 7 · Still open
 
-Left as gaps on purpose, each needing something the engine does not yet have:
+After the second pass on 2026-09-27 (the whole-transaction one), what remains needs a source the engine does not have:
 
-- **A linked sale and purchase** (one client, one chain): two matters today; the link is a model change.
-- **Reading the TA6 / TA7 / TA10 for issues** (a disclosed dispute, works without consent, knotweed): the forms are filed, not read.
-- **Name changes** across documents: `crosscheck.ts` compares what it has; no name-change step.
-- **Two declarants on one proof-of-funds form**: each buyer gets their own round.
 - **Third parties paying our fees**: no ledger side to the engine.
-- **Per-lender Part 2 numbers** (minimum lease term, search age, insurer rating): needs the lender's own answers on the matter.
-- **Right to Buy, commonhold, flying freehold**: manual.
-- **SDLT computation**: the basis is declared and checked by a person; nothing calculates the sum.
+- **Linked transactions and mixed use for SDLT**: the estimate is for one dwelling on the declared basis.
+- **Per-lender numbers the firm has not recorded**: `record_lender_requirements` is per matter; there is no lender directory.
+- **Enquiries drafted from the TA6 gaps**: an answer of "not known" raises no enquiry yet; the issues do.
+- **EPC and the seller's marketing duties**: recorded from the TA6 when stated, not chased.
 
 ## 8 · Where to get the rest of the kinks
 

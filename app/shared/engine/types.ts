@@ -224,6 +224,9 @@ export interface EngineState {
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  sellerForms?: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: unknown };
+  relatedMatter?: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
+  lenderRequirements?: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
   preCompletion?: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
   completion: { statementGeneratedAt: string | null; fundsRequestedAt: string | null; fundsReceivedAt: string | null; confirmedAt: string | null };
   postCompletion: { sdltSubmittedAt: string | null; ap1SubmittedAt: string | null; ap1ConfirmedAt: string | null; noticeOfAssignmentAt?: string | null };
@@ -274,7 +277,7 @@ export interface CompletionContract { label: string; documentRoles?: string[]; d
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {
   review?: DocumentReviewSummary | null; id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string }
-export interface EngineView { contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
+export interface EngineView { sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 

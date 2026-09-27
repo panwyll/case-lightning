@@ -11,7 +11,7 @@ type RegisterDiffView = { previousAt: string; added: Array<{ key: string; value:
  * a flagged result becomes a decision), and the list of what has been filed so far — every
  * event on the log that cites a source document, newest first.
  */
-type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'lease' | 'survey' | 'specialist_report';
+type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'lease' | 'survey' | 'specialist_report' | 'property_forms';
 
 export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged, doc = null }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void; doc?: string | null }) {
   const [role, setRole] = useState<Role>('auto');
@@ -118,10 +118,11 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             {(buyer || p?.type === 'remortgage') && <option value="mortgage_offer">Mortgage offer</option>}
             {leasehold && <option value="lease">Lease</option>}
             {leasehold && <option value="management_pack">Management pack (LPE1)</option>}
+            {buyer && <option value="property_forms">Seller's property forms (TA6 / TA7 / TA10)</option>}
             {buyer && <option value="survey">Survey / valuation report</option>}
             {buyer && <option value="specialist_report">Specialist report (damp, timber, structural…)</option>}
           </select>
-          {role === 'search' && <select className="ep-input" value={search} onChange={(e) => setSearch(e.target.value)}>{['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL'].map((t) => <option key={t} value={t}>{t}</option>)}</select>}
+          {role === 'search' && <select className="ep-input" value={search} onChange={(e) => setSearch(e.target.value)}>{['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL', 'MINING', 'FLOOD', 'HIGHWAYS', 'PLANNING'].map((t) => <option key={t} value={t}>{t}</option>)}</select>}
           {role === 'id_check' && Object.keys(s.partyChecks ?? {}).length > 0 && <select className="ep-input" value={idParty} onChange={(e) => setIdParty(e.target.value)} aria-label="Whose result"><option value="">First client</option>{Object.values(s.partyChecks ?? {}).map((pc) => <option key={pc.party} value={pc.party}>{pc.label}</option>)}</select>}
           {role === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={enquiryId} onChange={(e) => setEnquiryId(e.target.value)} style={{ width: 120 }} />}
           <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !file || (role === 'enquiry_reply' && !enquiryId.trim())} onClick={upload}>File into engine</button>

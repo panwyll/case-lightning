@@ -191,6 +191,10 @@ export const EVENT_TYPES = [
   // transaction types (docs/transaction-types.md): sale, remortgage, transfer of equity, co-ownership
   'property_forms_requested',
   'property_forms_received',
+  'seller_forms_received',
+  'related_matter_linked',
+  'lender_requirements_recorded',
+  'name_change_evidenced',
   'contract_pack_sent',
   'buyer_enquiries_received',
   'enquiry_replies_sent',
@@ -228,7 +232,7 @@ export const isUserActor = (a: Actor): boolean => a !== 'system' && a !== 'ai' &
 
 // ───────────────────────────── Sub-flow vocab ─────────────────────────────
 
-export const SEARCH_TYPES = ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL'] as const;
+export const SEARCH_TYPES = ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL', 'MINING', 'FLOOD', 'HIGHWAYS', 'PLANNING'] as const;
 export type SearchType = (typeof SEARCH_TYPES)[number];
 /** Ordered on entry to pre_contract for every freehold purchase unless the matter says otherwise. */
 export const DEFAULT_REQUIRED_SEARCHES: SearchType[] = ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL'];
@@ -881,6 +885,14 @@ export interface Payloads {
   /** Sale: the protocol forms (TA6 / TA10 / TA7) asked of the client; the wait opens. */
   property_forms_requested: { forms: string[] };
   property_forms_received: { forms: string[]; facts?: PropertyFormsFacts | null };
+  /** Purchase side: the seller's TA6 / TA7 / TA10 arrived with the contract pack and were read. */
+  seller_forms_received: { forms: string[]; facts: PropertyFormsFacts | null };
+  /** Our client is also selling (or buying): the other matter, so exchange can be made simultaneous and sale proceeds traced. */
+  related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
+  /** The lender's Part 2 answers that change a rule on this matter. */
+  lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
+  /** A person's name differs across documents for a documented reason (marriage, deed poll): the two names are the same person from here on. */
+  name_change_evidenced: { party: string | null; from: string; to: string; reason: string; documentId?: string | null };
   /** Sale: draft contract, title and forms sent to the buyer's solicitor. */
   contract_pack_sent: { includes: string[]; channel?: string | null; messageId?: string | null };
   /** Sale: the buyer's solicitor's enquiries arrived (each becomes an inbound enquiry awaiting our reply). */
@@ -920,6 +932,34 @@ export interface PropertyFormsFacts {
   forms: string[];
   disclosures: Flag[];
   confidence: number;
+  /** The TA6 / TA7 answers that change what the file needs (property-forms.ts turns each into an issue). Null / empty = "no" or not answered. */
+  answers?: {
+    disputes?: string | null;
+    notices?: string | null;
+    alterations?: string | null;
+    alterationsConsented?: boolean | null;
+    alterationsDocumentsEnclosed?: boolean | null;
+    listedOrConservation?: boolean | null;
+    guaranteesOutstandingClaims?: string | null;
+    insuranceClaims?: string | null;
+    insuranceRefused?: boolean | null;
+    flooded?: boolean | null;
+    floodDetail?: string | null;
+    japaneseKnotweed?: boolean | null;
+    knotweedDetail?: string | null;
+    radonTestAboveAction?: boolean | null;
+    occupiers?: string | null;
+    sharedAccessOrServices?: boolean | null;
+    rightsOfWayOverProperty?: string | null;
+    septicTank?: boolean | null;
+    solarPanelsLeased?: boolean | null;
+    boundariesUnclear?: string | null;
+    leaseholdArrearsOrDispute?: boolean | null;
+    epcRating?: string | null;
+    councilTaxBand?: string | null;
+  } | null;
+  /** Page of the form each section was read from. */
+  pages?: Partial<Record<'boundaries' | 'disputes' | 'notices' | 'alterations' | 'guarantees' | 'insurance' | 'environment' | 'rights' | 'occupiers' | 'services' | 'leasehold', number>> | null;
 }
 
 export const ISSUE_PAID_BY = ['buyer', 'seller', 'shared', 'lender', 'other'] as const;
@@ -1216,6 +1256,14 @@ export interface MatterState {
   };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
+  /** Purchase side: the seller's forms as read. */
+  sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null };
+  /** Our client's linked sale or purchase (one client, one chain). */
+  relatedMatter: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
+  /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */
+  lenderRequirements: { minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; recordedAt: string } | null;
+  /** Documented name changes: [from, to] pairs the cross-checks treat as one person. */
+  nameAliases: Array<{ from: string; to: string; party: string | null }>;
   /** Pre-completion checks the Lenders' Handbook requires on a lender-funded purchase (and good practice on a cash one). */
   preCompletion: { insuranceConfirmedAt: string | null; insurer: string | null; prioritySearchAt: string | null; prioritySearchExpiresAt: string | null; bankruptcySearchAt: string | null };
   /** The clients by name as enrolled (first = the client on `idCheck`). */
@@ -1374,6 +1422,10 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     },
     deposit: { received: false, at: null },
     exchange: { conditionsMet: false, exchangedAt: null, completionDate: null },
+    sellerForms: { receivedAt: null, forms: [], documentId: null, facts: null },
+    relatedMatter: null,
+    lenderRequirements: null,
+    nameAliases: [],
     preCompletion: { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null },
     partyNames: [],
     occupiers: [],
@@ -1446,6 +1498,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     exchange: merge('exchange'),
     completion: merge('completion'),
     preCompletion: merge('preCompletion'),
+    sellerForms: merge('sellerForms'),
     readiness: merge('readiness'),
     managementPack: merge('managementPack'),
     propertyForms: merge('propertyForms'),

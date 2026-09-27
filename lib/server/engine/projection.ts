@@ -889,6 +889,28 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.deeds.mortgageDeedAt = e.createdAt;
       break;
     }
+    case 'seller_forms_received': {
+      const p = e.payload as Payloads['seller_forms_received'];
+      s.sellerForms = { receivedAt: e.createdAt, forms: p.forms, documentId: e.sourceDocumentId ?? null, facts: p.facts };
+      break;
+    }
+    case 'related_matter_linked': {
+      const p = e.payload as Payloads['related_matter_linked'];
+      s.relatedMatter = { matterId: p.relatedMatterId, relation: p.relation, linkedAt: e.createdAt };
+      break;
+    }
+    case 'lender_requirements_recorded': {
+      const p = e.payload as Payloads['lender_requirements_recorded'];
+      const prev = s.lenderRequirements;
+      s.lenderRequirements = { minUnexpiredYears: p.minUnexpiredYears ?? prev?.minUnexpiredYears ?? null, maxSearchAgeMonths: p.maxSearchAgeMonths ?? prev?.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: p.acceptsNonFamilyGift ?? prev?.acceptsNonFamilyGift ?? null, requiresEws1: p.requiresEws1 ?? prev?.requiresEws1 ?? null, note: p.note ?? prev?.note ?? null, recordedAt: e.createdAt };
+      break;
+    }
+    case 'name_change_evidenced': {
+      const p = e.payload as Payloads['name_change_evidenced'];
+      if (!s.nameAliases) s.nameAliases = [];
+      s.nameAliases.push({ from: p.from, to: p.to, party: p.party ?? null });
+      break;
+    }
     case 'buildings_insurance_confirmed': {
       const p = e.payload as Payloads['buildings_insurance_confirmed'];
       s.preCompletion.insuranceConfirmedAt = e.createdAt;

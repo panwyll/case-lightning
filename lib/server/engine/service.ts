@@ -34,7 +34,7 @@ import { profileOf } from './transactions';
 import { project } from './projection';
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -89,6 +89,8 @@ export class EngineService {
   /** Run one command atomically, then its effects. */
   async run(tenantId: string, matterId: string, cmd: Command): Promise<RunResult> {
     const subflows = await this.levels(tenantId);
+    // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
+    if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor);
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
       const log = await tx.load();
       const state = project(tenantId, matterId, log);
@@ -297,7 +299,7 @@ export class EngineService {
     const review = reviewTransactions(facts, evidence, sub.submittedAt);
     const declaration = renderDeclaration(facts, sub, evidenceNames);
     const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: `proof-of-funds-${requestId}-round-${facts.round}.txt`, content: declaration });
-    const verdict = evaluateProofOfFunds(facts);
+    const verdict = evaluateProofOfFunds(facts, { coBuyers: state.partyNames.slice(1), hasLinkedSale: state.relatedMatter?.relation === 'sale' ? true : state.relatedMatter ? undefined : false, acceptsNonFamilyGift: state.lenderRequirements?.acceptsNonFamilyGift ?? null });
     const flags = [...(verdict.outcome === 'flag' ? verdict.flags : []), ...review.flags];
     let summary = null;
     if (this.ports.pofSummariser) {
@@ -429,6 +431,16 @@ export class EngineService {
    * with the case record and every other document. No engine event: approval is a person's
    * command (contract_approved), and a disagreement surfaces as a document_mismatch issue.
    */
+  /** The seller's property forms: read answer by answer, then the side's own command (the purchase reads the seller's; the sale files our client's). */
+  async propertyFormsReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    const facts = await this.ports.extractor.extractPropertyForms(doc).catch((err) => { this.ports.log('property forms extraction failed — filed without a read', err); return null; });
+    const state = await this.getState(tenantId, matterId);
+    const side = profileOf(state.transactionType ?? 'freehold_purchase').side;
+    if (side === 'seller') return this.run(tenantId, matterId, { type: 'property_forms_received', actor: EXTERNAL, forms: facts?.forms?.length ? facts.forms : ['TA6'], facts, documentId });
+    return this.run(tenantId, matterId, { type: 'seller_forms_received', actor: EXTERNAL, documentId, forms: facts?.forms ?? null, facts });
+  }
+
   async contractReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractContract(doc).catch((err) => { this.ports.log('contract extraction failed — the review table will be empty', err); return null; });
@@ -584,6 +596,19 @@ export class EngineService {
   }
 
   /** The case record as the drafters see it: what the matter row says about the parties, the property and the price. */
+  private async assertLinkedMatterReady(tenantId: string, matterId: string, actor: Actor): Promise<void> {
+    const state = await this.getState(tenantId, matterId);
+    const link = state.relatedMatter;
+    if (!link) return;
+    const other = await this.getState(tenantId, link.matterId).catch(() => null);
+    if (!other) throw Object.assign(new Error(`The linked ${link.relation} (${link.matterId}) cannot be read; unlink it or check the matter.`), { status: 409 });
+    const ready = !!other.exchange.exchangedAt || (other.stage === 'pre_exchange' && other.exchange.conditionsMet && !other.abandoned);
+    if (!ready) throw Object.assign(new Error(`Cannot exchange: the linked ${link.relation} is at "${other.stage}"${other.exchange.conditionsMet ? '' : ' and its exchange conditions are not met'}; exchange is simultaneous.`), { status: 409 });
+    for (const i of Object.values(state.issues)) {
+      if (i.kind === 'chain_dependency' && i.title.startsWith('Linked ') && (i.status === 'open' || i.status === 'negotiating')) await this.run(tenantId, matterId, { type: 'resolve_issue', actor, issueId: i.id, resolution: 'other', note: `The linked ${link.relation} is ready to exchange (${other.exchange.exchangedAt ? 'exchanged' : 'conditions met'}); exchanging together.` });
+    }
+  }
+
   private async caseRecord(tenantId: string, matterId: string): Promise<{ propertyAddress: string | null; purchasePricePennies: number | null; buyerNames: string[]; sellerNames: string[] } | null> {
     try {
       const { loadCaseRecord } = await import('./crosscheck-run');

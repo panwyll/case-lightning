@@ -13,7 +13,7 @@ import type { StatementFacts } from './proof-of-funds';
  *   - TemplateReportDrafter assembles a plain report from cleared facts.
  *   - Mock providers/comms record what they were asked to do and return fake ids.
  */
-import type { Citation, EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts, SurveyFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { PropertyFormsFacts, Citation, EnquiryReplyFacts, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts, SurveyFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { ClientComms, DecisionSummariser, DocumentExtractor, DocumentRef, DocumentRepository, EnginePorts, IdCheckProvider, ReportDrafter, SearchProvider, ThirdPartyChaser, ProofOfFundsForms } from './ports';
 
 export class MemoryDocumentRepository implements DocumentRepository {
@@ -98,6 +98,9 @@ export class FixtureExtractor implements DocumentExtractor {
   }
   async extractSurvey(doc: DocumentRef): Promise<SurveyFacts> {
     return this.facts(doc, 'survey');
+  }
+  async extractPropertyForms(doc: DocumentRef): Promise<PropertyFormsFacts> {
+    return this.facts(doc, 'property forms');
   }
   /** A seeded document with `transactions` is a statement; `{ unreadable: true }` throws; anything else is "not a statement". */
   async extractStatement(doc: DocumentRef): Promise<StatementFacts | null> {

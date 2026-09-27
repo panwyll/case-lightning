@@ -41,6 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
               ? await svc.titleReceived(t, matterId, input.documentId)
               : input.role === 'management_pack'
                 ? await svc.managementPackReceived(t, matterId, input.documentId)
+              : input.role === 'property_forms'
+                ? await svc.propertyFormsReceived(t, matterId, input.documentId)
               : input.role === 'lease'
                 ? await svc.leaseReceived(t, matterId, input.documentId)
                 : input.role === 'survey'
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
                   : input.role === 'specialist_report'
                     ? await svc.specialistReportReceived(t, matterId, input.documentId, input.forIssueId ?? null)
                     : await svc.idCheckResultReceived(t, matterId, input.documentId, input.role === 'id_check' ? input.party ?? null : null);
-    await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_INGEST', actionStatus: 'SUCCESS', payload: { role: input.role, documentId: input.documentId, events: result.events.map((e) => e.type) } }).catch(() => {});
+    await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_INGEST', actionStatus: 'SUCCESS', payload: { role: input.role, documentId: input.documentId, events: result.events.map((e: { type: string }) => e.type) } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {
     return fail(error);

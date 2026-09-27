@@ -164,7 +164,7 @@ export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMA
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
 const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Needs You' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
 const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read']);
-const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair' };
+const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair', MINING: 'Coal Mining (CON29M)', FLOOD: 'Flood Risk', HIGHWAYS: 'Highways', PLANNING: 'Planning History' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
@@ -389,6 +389,9 @@ const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: strin
   { id: 'shared_ownership', label: 'Shared Ownership', sides: ['buyer'], summary: 'Model lease with the mortgagee protection clause, provider approval, rent and staircasing.' },
   { id: 'unrepresented_counterparty', label: 'Unrepresented Other Side', sides: ['buyer', 'seller'], summary: 'No undertakings, identity against the title, the lender told.' },
   { id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'], summary: 'The sealed order, the lender\'s release of the outgoing owner, the SDLT exemption.' },
+  { id: 'right_to_buy', label: 'Right To Buy', sides: ['buyer', 'seller'], summary: 'Discount repayment charge for five years, right of first refusal for ten.' },
+  { id: 'flying_freehold', label: 'Flying Freehold', sides: ['buyer'], summary: 'The lender\'s limit, rights of support and access, an indemnity policy.' },
+  { id: 'commonhold', label: 'Commonhold', sides: ['buyer', 'seller'], summary: 'The community statement and the association in place of the lease and the pack.' },
 ];
 
 /** Enrolment: the transaction type decides everything that follows. */
@@ -597,6 +600,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     actions: <>
       {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button>}
       {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const name = ask('Name of the person to identify:'); if (!name) return; const role = ask('Their role: buyer, seller, owner, donor, attorney, director or executor', buyer ? 'buyer' : seller ? 'seller' : 'owner'); if (role) void cmd({ type: 'add_party', name, role }); }}>Add Party</button>}
+      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const from = ask('Name as it appears on the older document:'); if (!from) return; const to = ask('Name now:'); if (!to) return; const reason = ask('Evidence of the change (marriage certificate, deed poll, decree absolute):'); if (reason) void cmd({ type: 'name_change_evidenced', from, to, reason }); }}>Name Change Evidenced</button>}
+      {!exchanged && (buyer || seller) && !s.relatedMatter && <button className="ep-btn" disabled={busy} onClick={() => { const id = ask(`Matter id of the client's linked ${buyer ? 'sale' : 'purchase'}:`); if (id) void cmd({ type: 'link_related_matter', relatedMatterId: id.trim(), relation: buyer ? 'sale' : 'purchase' }); }}>Link Related {buyer ? 'Sale' : 'Purchase'}</button>}
     </> });
 
   if (has('source_of_funds')) {
@@ -656,6 +661,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   lane({ id: 'title', order: 'sequence', title: 'Title', state: resolved(s.title.status) ? (has('report_on_title') && s.reportOnTitle.status !== 'sent' ? 'open' : 'done') : s.title.status === 'flagged' ? 'blocked' : 'idle', note: p.tenure === 'any' ? 'freehold or leasehold' : `expected ${p.tenure}`,
     tiles: [
       { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure },
+      ...(buyer ? [{ label: "Seller's forms (TA6 / TA7 / TA10)", documentId: s.sellerForms?.documentId ?? undefined, status: s.sellerForms?.receivedAt ? 'read' : 'not_started', detail: s.sellerForms?.receivedAt ? `${s.sellerForms.forms.join(', ')} read ${fmtDay(s.sellerForms.receivedAt)}; answers that matter are issues` : 'arrive with the contract pack; upload under Documents' }] : []),
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],
     actions: has('report_on_title') ? <>
@@ -690,6 +696,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : undefined },
     ],
     actions: <>
+      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const y = ask("Lender's minimum unexpired lease term in years (blank if none):", s.lenderRequirements?.minUnexpiredYears?.toString() ?? ''); if (y === null) return; const m = ask("Maximum age of searches at exchange, in months (blank if none):", s.lenderRequirements?.maxSearchAgeMonths?.toString() ?? ''); if (m === null) return; const g = ask('Accepts a gifted deposit from outside the family? yes / no / blank', s.lenderRequirements?.acceptsNonFamilyGift == null ? '' : s.lenderRequirements.acceptsNonFamilyGift ? 'yes' : 'no'); if (g === null) return; void cmd({ type: 'record_lender_requirements', minUnexpiredYears: y.trim() ? Number(y) : null, maxSearchAgeMonths: m.trim() ? Number(m) : null, acceptsNonFamilyGift: g.trim() ? /^y/i.test(g) : null }); }}>Lender Requirements</button>}
       {!deeds.mortgageDeedAt && resolved(s.mortgage.status) && act('mortgage', 'mortgage_deed_executed', 'Mortgage Deed Executed', { witnessed: true })}
       {!deeds.certificateOfTitleAt && resolved(s.mortgage.status) && act('mortgage', 'certificate_of_title_sent', 'Certificate of Title Sent')}
       {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && resolved(s.mortgage.status) && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why was the offer withdrawn / lapsed?'); if (r) void cmd({ type: 'mortgage_offer_withdrawn', reason: r }); }}>Offer withdrawn</button>}
@@ -816,7 +823,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   lane({ id: 'registration', order: 'sequence', title: p.registration === 'ap1' ? 'Registration' : 'Discharge & close', state: closed ? 'done' : atLeast('completed') ? 'open' : 'idle', note: p.registration === 'ap1' ? 'SDLT within 14 days; AP1 within the priority period' : "the buyer's solicitor registers; we see the charge discharged and close",
     tiles: [
-      ...(p.registration === 'ap1' && (buyer || toe) ? [{ label: 'SDLT', status: s.postCompletion.sdltSubmittedAt ? 'sent' : s.sdltNotRequiredAt ? 'not_required' : 'not_started' }] : []),
+      ...(p.registration === 'ap1' && (buyer || toe) ? [{ label: 'SDLT', status: s.postCompletion.sdltSubmittedAt ? 'sent' : s.sdltNotRequiredAt ? 'not_required' : 'not_started', detail: view.sdlt ? `estimate ${gbp(view.sdlt.estimatePennies)} · ${view.sdlt.basis}${view.sdlt.declared ? '' : ' (no basis declared)'}` : undefined }] : []),
       ...(p.registration === 'ap1' ? [{ label: 'AP1', status: s.postCompletion.ap1ConfirmedAt ? 'done' : s.postCompletion.ap1SubmittedAt ? 'requested' : 'not_started', detail: s.postCompletion.ap1ConfirmedAt ? `registered ${fmtDay(s.postCompletion.ap1ConfirmedAt)}` : undefined }] : []),
       ...(redemptionApplies ? [{ label: 'Discharge (DS1 / e-DS1)', status: red.status === 'discharged' ? 'discharged' : red.status === 'redeemed' ? 'awaiting' : 'not_started' }] : []),
       { label: 'File', status: closed ? 'done' : 'not_started', detail: closed ? `closed ${fmtDay(s.closedAt)}` : undefined },

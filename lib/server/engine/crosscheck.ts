@@ -15,6 +15,8 @@ export interface CaseRecord {
   sellerNames: string[];
   lender: string | null;
   completionDate: string | null;
+  /** Documented name changes (marriage, deed poll): a document naming the old name names the same person. */
+  nameAliases?: Array<{ from: string; to: string }>;
 }
 export type CheckId = 'address' | 'title_number' | 'price' | 'buyer_names' | 'seller_names' | 'lender' | 'completion_date' | 'ground_rent' | 'landlord';
 export interface CheckValue { source: string; documentId: string | null; value: string; page: number | null }
@@ -93,8 +95,10 @@ export function crossCheck(record: CaseRecord, rows: RegisterRow[]): CheckResult
   finish('landlord', pick('landlord'), (a, b) => normLender(a.value) === normLender(b.value) || namesMatch(a.value, b.value));
 
   // Names: every document's list against the case record's list; a document may name a subset (one borrower of two).
-  const nameCheck = (check: CheckId, recordNames: string[], docRows: CheckValue[]) => {
-    if (!recordNames.length || !docRows.length) return;
+  const nameCheck = (check: CheckId, recordNamesIn: string[], docRows: CheckValue[]) => {
+    if (!recordNamesIn.length || !docRows.length) return;
+    // A documented change of name: the former name is the same person as the record's name.
+    const recordNames = [...recordNamesIn, ...(record.nameAliases ?? []).filter((a) => recordNamesIn.some((n) => namesMatch(n, a.to) || namesMatch(n, a.from))).flatMap((a) => [a.from, a.to])];
     const byDoc = new Map<string, CheckValue[]>();
     for (const v of docRows) (byDoc.get(v.source) ?? byDoc.set(v.source, []).get(v.source)!).push(v);
     const values: CheckValue[] = [{ source: 'Case record', documentId: null, value: recordNames.join(' & '), page: null }];

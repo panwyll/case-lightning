@@ -2,7 +2,7 @@
  * Fixture facts for the scenario library: what the fixture extractor hands the engine for a
  * sandbox document. Plainly marked as sandbox material; no real person, firm or property.
  */
-import type { EnquiryReplyFacts, IdCheckFacts, LeaseFacts, ManagementPackFacts, MortgageOfferFacts, SearchFacts, SearchType, TitleFacts } from '../types';
+import type { EnquiryReplyFacts, IdCheckFacts, LeaseFacts, ManagementPackFacts, MortgageOfferFacts, PropertyFormsFacts, SearchFacts, SearchType, TitleFacts } from '../types';
 import type { ProofOfFundsSubmission, StatementFacts } from '../proof-of-funds';
 
 export type SearchTypeLike = SearchType;
@@ -46,6 +46,23 @@ export const managementPack = (flagged: boolean): ManagementPackFacts => ({
   arrearsPennies: 0, reserveFundPennies: 1_200_000, majorWorksPlanned: flagged, majorWorks: flagged ? 'Roof renewal 2027, estimated £48,000, this flat 12.5%' : null, section20Notice: flagged, buildingsInsuranceInPlace: true, insurer: 'Aviva', insuredSumPennies: 320_000_000, insuranceExpiryDate: '2027-02-28',
   fees: { noticeOfAssignmentPennies: 9_000, noticeOfChargePennies: 9_000, deedOfCovenantPennies: 15_000, certificateOfCompliancePennies: null, other: null }, consentsRequired: 'Deed of covenant with the management company', disputes: null, accountsProvided: 'Years ending March 2024 and 2025; budget 2026/27',
   entries: [], flags: flagged ? [{ code: 'MAJOR_WORKS_PLANNED', severity: 'medium', description: 'Roof renewal planned for 2027 at an estimated £48,000', locator: { page: 2 } }] : [], confidence: 0.9,
+});
+
+/** The seller's TA6 (and TA7 on a leasehold): clean answers, or works without consent and knotweed on the flagged run. */
+export const propertyForms = (flagged: boolean, leasehold = false): PropertyFormsFacts => ({
+  forms: leasehold ? ['TA6', 'TA7', 'TA10'] : ['TA6', 'TA10'],
+  disclosures: [],
+  confidence: 0.94,
+  answers: {
+    disputes: null, notices: null,
+    alterations: flagged ? 'Rear single-storey extension 2019; replacement windows 2021' : null,
+    alterationsConsented: flagged ? false : null, alterationsDocumentsEnclosed: flagged ? false : null, listedOrConservation: false,
+    guaranteesOutstandingClaims: null, insuranceClaims: null, insuranceRefused: false,
+    flooded: false, floodDetail: null, japaneseKnotweed: flagged, knotweedDetail: flagged ? 'Treated 2023 under a five-year plan with an insurance-backed guarantee' : null, radonTestAboveAction: false,
+    occupiers: null, sharedAccessOrServices: false, rightsOfWayOverProperty: null, septicTank: false, solarPanelsLeased: false, boundariesUnclear: null,
+    leaseholdArrearsOrDispute: false, epcRating: 'C', councilTaxBand: 'D',
+  },
+  pages: { alterations: 3, environment: 5 },
 });
 
 /** The client's proof-of-funds declaration: savings that cover the balance; the flagged run adds a gift from a donor abroad. */

@@ -86,6 +86,25 @@ const mortgage = (): ScenarioStep[] => [
   step('offer_decision', 'The special condition is decided by a person', async (c) => { await c.resolve('mortgage', 'approve', 'Retention noted; roof quote obtained and reported to the lender.'); }, { flaggedOnly: true, decision: 'mortgage' }),
 ];
 
+const sellerForms = (leasehold: boolean): ScenarioStep[] => [
+  step('seller_forms', "The seller's property forms (TA6 / TA10) received with the contract pack and read", async (c) => {
+    const facts = F.propertyForms(c.flagged, leasehold);
+    const doc = await c.doc({ docType: 'PROPERTY_FORMS', fileName: 'ta6-property-information.txt', facts, body: F.body('TA6 property information form', ['Section 4 alterations: ' + (facts.answers?.alterations ?? 'none'), 'Section 7 Japanese knotweed: ' + (facts.answers?.japaneseKnotweed ? 'Yes' : 'No')]) });
+    await c.svc.propertyFormsReceived(c.tenantId, c.matterId, doc);
+  }),
+  step('seller_forms_issues', "The TA6 issues resolved: consents obtained by indemnity, the knotweed guarantee on file", async (c) => {
+    const s = await c.svc.getState(c.tenantId, c.matterId);
+    for (const i of Object.values(s.issues).filter((i) => i.title.startsWith('TA6:') && (i.status === 'open' || i.status === 'negotiating'))) {
+      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: i.kind === 'building_regs_missing' ? 'indemnity_policy' : 'evidence_provided', note: i.kind === 'building_regs_missing' ? 'Building regulations indemnity policy quoted and accepted by the lender.' : 'Treatment plan and insurance-backed guarantee received; lender content.' });
+    }
+    // An indemnity policy tells the lender (the engine raises that itself); the lender confirms.
+    const after = await c.svc.getState(c.tenantId, c.matterId);
+    for (const i of Object.values(after.issues).filter((i) => i.kind === 'lender_approval' && i.title.includes('TA6') && (i.status === 'open' || i.status === 'negotiating'))) {
+      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'lender_confirmed', note: 'Lender accepts the indemnity policy.' });
+    }
+  }, { flaggedOnly: true }),
+];
+
 const title = (leasehold: boolean): ScenarioStep[] => [
   step('title', 'Official copies received', async (c) => {
     const facts = leasehold ? { ...F.titleClear(), tenure: 'leasehold' as const, ...(c.flagged ? { lease: F.leaseShort() } : {}) } : c.flagged ? F.titleWithCharge() : F.titleClear();
@@ -234,6 +253,7 @@ export const SCENARIOS: Scenario[] = [
       ...searches(['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL']),
       ...mortgage(),
       ...title(false),
+      ...sellerForms(false),
       ...enquiries(),
       ...reportOnTitle(),
       ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE),
@@ -260,6 +280,7 @@ export const SCENARIOS: Scenario[] = [
       step('lease_decision', 'The lease terms are decided by a person', async (c) => { await c.resolve('title', 'approve', 'Doubling rent: deed of variation to be obtained; lender content.'); }, { flaggedOnly: true, decision: 'title' }),
       ...mortgage(),
       ...title(true),
+      ...sellerForms(true),
       ...enquiries(),
       ...reportOnTitle(),
       ...exchangeBuyer(PRICE, DEPOSIT, ADVANCE).filter((s) => s.id !== 'close'),
@@ -274,7 +295,15 @@ export const SCENARIOS: Scenario[] = [
       step('enrol', 'Enrolled as a freehold sale with an existing mortgage', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: true, requireExchangeAuthority: false, targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); }),
       ...idCheck(),
       step('forms_request', 'Property forms requested from the client', async (c) => { await c.run({ type: 'request_property_forms' }); }),
-      step('forms', 'Property forms received (TA6, TA10)', async (c) => { await c.run({ type: 'property_forms_received', forms: ['TA6', 'TA10'] }); }),
+      step('forms', 'Property forms received (TA6, TA10) and read for what must be disclosed', async (c) => {
+        const facts = F.propertyForms(c.flagged);
+        const doc = await c.doc({ docType: 'PROPERTY_FORMS', fileName: 'ta6-our-client.txt', facts, body: F.body('TA6 property information form', ['Completed by the seller']) });
+        await c.svc.propertyFormsReceived(c.tenantId, c.matterId, doc);
+      }),
+      step('forms_issues', 'What the TA6 discloses is dealt with before the pack goes out', async (c) => {
+        const s = await c.svc.getState(c.tenantId, c.matterId);
+        for (const i of Object.values(s.issues).filter((i) => i.title.startsWith('TA6:') && (i.status === 'open' || i.status === 'negotiating'))) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Disclosed in full with the paperwork in the pack.' });
+      }, { flaggedOnly: true }),
       step('title', 'Official copies received (with the charge to redeem)', async (c) => {
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);

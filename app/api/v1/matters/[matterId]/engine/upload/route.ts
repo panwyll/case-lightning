@@ -30,7 +30,7 @@ const bodySchema = z.object({
   fileName: z.string().min(1).max(200),
   base64: z.string().min(1),
   mimeType: z.string().max(100).default('application/pdf'),
-  role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report']).default('auto'),
+  role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report', 'property_forms']).default('auto'),
   /** id_check: whose result this is (a party id from the case); blank = the first client */
   party: z.string().max(80).nullish(),
   searchType: z.enum(SEARCH_TYPES).optional(),

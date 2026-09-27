@@ -115,3 +115,96 @@ test('a relevant building without its certificates raises a Building Safety Act 
   assert.ok(refresh, JSON.stringify(actions));
   assert.equal(timedIssueActions(s, new Date(Date.parse(s.idCheck.resolvedAt!) + 100 * 86_400_000)).some((a) => a.kind === 'raise' && a.issueKind === 'cdd_refresh'), false);
 });
+
+test('SDLT on the declared basis: standard, first-time buyer, additional property, non-resident, company flat rate', async () => {
+  const { computeSdlt } = await import('../../../lib/server/engine/sdlt');
+  const none = { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false };
+  assert.equal(computeSdlt(30_000_000, none).totalPennies, 500_000, '£300k standard: 2% of £125k + 5% of £50k = £5,000');
+  assert.equal(computeSdlt(30_000_000, { ...none, firstTimeBuyer: true }).totalPennies, 0, 'first-time buyer at £300k pays nothing');
+  assert.equal(computeSdlt(45_000_000, { ...none, firstTimeBuyer: true }).totalPennies, 750_000, 'first-time buyer at £450k: 5% of £150k');
+  const over = computeSdlt(55_000_000, { ...none, firstTimeBuyer: true });
+  assert.equal(over.scheme, 'standard residential rates');
+  assert.ok(over.notes.some((n) => /not available above £500,000/.test(n)));
+  assert.equal(computeSdlt(30_000_000, { ...none, additionalProperty: true }).totalPennies, 2_000_000, 'additional property at £300k: £5,000 + 5% of £300k');
+  assert.equal(computeSdlt(30_000_000, { ...none, nonUkResident: true }).totalPennies, 1_100_000, 'non-resident at £300k: £5,000 + 2% of £300k');
+  assert.equal(computeSdlt(60_000_000, { ...none, company: true }).totalPennies, 10_200_000, 'company over £500k: 17% flat');
+});
+
+test("the seller's TA6 read into issues on a purchase; our client's on a sale; nothing from clean answers", async () => {
+  const { propertyFormsIssues } = await import('../../../lib/server/engine/property-forms');
+  const clean = propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { flooded: false, japaneseKnotweed: false, alterations: null } }, 'buyer');
+  assert.equal(clean.length, 0);
+  const dirty = propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { disputes: 'Ongoing complaint to the council about the neighbour\'s extension', alterations: 'Loft conversion 2020', alterationsConsented: false, japaneseKnotweed: true, occupiers: 'Mrs J Smith (mother)', septicTank: true, solarPanelsLeased: true }, pages: { disputes: 2, alterations: 3, environment: 5 } }, 'buyer');
+  assert.deepEqual(dirty.map((i) => i.kind).sort(), ['building_regs_missing', 'disclosure_concern', 'environmental_risk', 'occupier_consent', 'third_party_encumbrance', 'third_party_encumbrance']);
+  assert.equal(dirty.find((i) => i.kind === 'building_regs_missing')!.page, 3);
+  // Through the machine on a purchase: each becomes an issue cited to the document, once.
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  const doc = h.doc({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { japaneseKnotweed: true, flooded: true, floodDetail: 'Garden flooded in 2021' } }, 'PROPERTY_FORMS');
+  const r = await h.svc.propertyFormsReceived(TENANT, MATTER, doc);
+  assert.ok(r.events.some((e) => e.type === 'seller_forms_received'));
+  const raised = r.events.filter((e) => e.type === 'issue_raised');
+  assert.equal(raised.length, 2);
+  assert.ok(raised.every((e) => e.sourceDocumentId === doc || (e.payload as { sourceDocumentId: string }).sourceDocumentId === doc));
+  const again = await h.svc.propertyFormsReceived(TENANT, MATTER, doc).catch((e: Error) => e);
+  assert.ok(again instanceof Error ? true : again.events.filter((e) => e.type === 'issue_raised').length === 0, 'the same answers do not raise the same issues twice');
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(openIssues(s).every((i) => i.gate === 'exchange'));
+  assert.ok(s.sellerForms.receivedAt);
+});
+
+test("the lender's Part 2 on the matter: the lease review compares the minimum term; exchange refuses searches older than the limit; a non-family gift is accepted when the lender says so", async () => {
+  const { evaluateLease } = await import('../../../lib/server/engine/rules');
+  const lease = { unexpiredYears: 88, groundRentPenniesPa: 25_000, confidence: 0.9 };
+  assert.equal(evaluateLease(lease).outcome, 'clear');
+  const v = evaluateLease(lease, 95);
+  assert.ok(v.outcome === 'flag' && v.flags.some((f) => f.code === 'LEASE_BELOW_LENDER_MINIMUM'));
+  const { evaluateProofOfFunds: evalPof, factsFromSubmission: facts } = await import('../../../lib/server/engine/proof-of-funds');
+  const f = facts('r', { declarant: { fullName: 'P Shah' }, purchasePricePennies: 30_000_000, mortgageAdvancePennies: 20_000_000, sources: [{ kind: 'gift', amountPennies: 10_000_000, description: 'From a friend', evidenceDocumentIds: ['g'], gift: { donorName: 'R Friend', donorRelationship: 'friend', repayable: false, donorAbroad: false, donorEvidenceDocumentIds: ['g'] } }], declarations: { accurate: true, noThirdPartyInterest: true, noUndisclosedBorrowing: true }, submittedAt: '2026-09-20T10:00:00Z' }, null);
+  const flagged = evalPof(f); const accepted = evalPof(f, { acceptsNonFamilyGift: true });
+  assert.ok(flagged.outcome === 'flag' && flagged.flags.some((x) => x.code === 'POF_GIFT_NON_FAMILY'));
+  assert.ok(!(accepted.outcome === 'flag' && accepted.flags.some((x) => x.code === 'POF_GIFT_NON_FAMILY')));
+  // Search age at exchange.
+  const base = { ...initialState(TENANT, MATTER), enrolled: true, transactionType: 'freehold_purchase' as const, stage: 'pre_exchange' as const, hasLender: false, requireProofOfFunds: false, requireExchangeAuthority: false, requiredSearches: ['CON29' as const], exchange: { ...initialState(TENANT, MATTER).exchange, conditionsMet: true }, lenderRequirements: { minUnexpiredYears: null, maxSearchAgeMonths: 6, acceptsNonFamilyGift: null, requiresEws1: null, note: null, recordedAt: '2026-01-01T00:00:00Z' } };
+  base.searches = { CON29: { searchType: 'CON29', status: 'cleared', cycle: 1, orderedAt: '2026-01-05T00:00:00Z', returnedAt: '2026-01-20T00:00:00Z', provider: null, documentId: 'd', decisionEventId: null, facts: null } as never };
+  assert.throws(() => decide(base, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }, ctx), /searches under 6 months old and CON29 \(2026-01-20\) is older/);
+  const fresh = { ...base, searches: { CON29: { ...base.searches.CON29, returnedAt: '2026-08-01T00:00:00Z' } } };
+  assert.ok(decide(fresh, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }, ctx).events.some((e) => e.type === 'contracts_exchanged'), 'a search inside the limit does not hold exchange');
+});
+
+test('co-declarants: a co-buyer who neither confirms nor declares is flagged; linked sale: proceeds without a link are flagged, and exchange waits for the linked matter', async () => {
+  const { evaluateProofOfFunds: evalPof, factsFromSubmission: facts } = await import('../../../lib/server/engine/proof-of-funds');
+  const sub = (co: string[]) => facts('r', { declarant: { fullName: 'Tomasz Nowak' }, coDeclarants: co, purchasePricePennies: 30_000_000, mortgageAdvancePennies: 20_000_000, sources: [{ kind: 'sale_proceeds', amountPennies: 10_000_000, description: 'Sale of 12 Elm Road', evidenceDocumentIds: ['m'] }], declarations: { accurate: true, noThirdPartyInterest: true, noUndisclosedBorrowing: true }, submittedAt: '2026-09-20T10:00:00Z' }, null);
+  const v1 = evalPof(sub([]), { coBuyers: ['Ewa Nowak'], hasLinkedSale: false });
+  assert.ok(v1.outcome === 'flag' && v1.flags.some((f) => f.code === 'POF_MISSING_DECLARANT') && v1.flags.some((f) => f.code === 'POF_SALE_PROCEEDS_UNLINKED'));
+  const v2 = evalPof(sub(['Ewa Nowak']), { coBuyers: ['Ewa Nowak'], hasLinkedSale: true });
+  assert.ok(!(v2.outcome === 'flag' && v2.flags.some((f) => f.code === 'POF_MISSING_DECLARANT' || f.code === 'POF_SALE_PROCEEDS_UNLINKED')));
+  // The link: an issue holds exchange; the service refuses exchange until the linked file can exchange, and clears the issue when it can.
+  const h = harness();
+  const SALE = '55555555-5555-4555-8555-555555555555';
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, SALE, { type: 'enrol', actor: USER, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: false, requiredSearches: [] });
+  const linked = await h.svc.run(TENANT, MATTER, { type: 'link_related_matter', actor: USER, relatedMatterId: SALE, relation: 'sale' });
+  assert.ok(linked.events.some((e) => e.type === 'issue_raised' && (e.payload as { kind: string }).kind === 'chain_dependency'));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.relatedMatter?.matterId, SALE);
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }), /Cannot exchange: the linked sale is at "instruction"/);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(openIssues(s).some((i) => i.kind === 'chain_dependency'), 'the chain issue still holds');
+});
+
+test('a documented name change is one person to the cross-checks; the Right to Buy, flying freehold and commonhold shapes raise their checklists', async () => {
+  const { crossCheck } = await import('../../../lib/server/engine/crosscheck');
+  const record = { propertyAddress: null, purchasePricePennies: null, buyerNames: ['Priya Patel'], sellerNames: [], lender: null, completionDate: null };
+  const rows = [{ documentId: 'd1', documentLabel: 'ID check', key: 'id.subject.1', value: 'Priya Shah', page: 1 }];
+  assert.equal(crossCheck(record, rows).find((r) => r.check === 'buyer_names')!.status, 'mismatch');
+  assert.equal(crossCheck({ ...record, nameAliases: [{ from: 'Priya Shah', to: 'Priya Patel' }] }, rows).find((r) => r.check === 'buyer_names')!.status, 'match');
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'], shapes: ['right_to_buy', 'flying_freehold', 'commonhold'] });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.deepEqual(openIssues(s).map((i) => i.kind).sort(), ['commonhold_terms', 'flying_freehold', 'right_to_buy_terms']);
+  await h.svc.run(TENANT, MATTER, { type: 'name_change_evidenced', actor: USER, from: 'Priya Shah', to: 'Priya Patel', reason: 'Marriage certificate on file' });
+  assert.deepEqual((await h.svc.getState(TENANT, MATTER)).nameAliases, [{ from: 'Priya Shah', to: 'Priya Patel', party: null }]);
+});

@@ -27,6 +27,9 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('enrol'), transactionType: z.enum(TRANSACTION_TYPES).nullish(), requireProofOfFunds: z.boolean().nullish(), requireExchangeAuthority: z.boolean().nullish(), parties: z.number().int().min(1).max(4).nullish(), hasExistingMortgage: z.boolean().nullish(), considerationPennies: z.number().int().nonnegative().nullish(), hasLender: z.boolean(), requiredSearches: z.array(searchType).optional(), targetExchangeDate: isoDate.nullish(), targetCompletionDate: isoDate.nullish(), counterpartyType: z.enum(['internal', 'external']).nullish(), shadowMode: z.boolean().optional(), shapes: z.array(z.enum(CASE_SHAPES)).max(8).optional(), partyNames: z.array(z.string().min(1).max(120)).max(4).optional(), attorneys: z.array(z.string().min(1).max(120)).max(4).optional(), officers: z.array(z.string().min(1).max(120)).max(10).optional(), executors: z.array(z.string().min(1).max(120)).max(6).optional(), occupiers: z.array(z.string().min(1).max(120)).max(6).optional(), sdlt: z.object({ firstTimeBuyer: z.boolean(), additionalProperty: z.boolean(), nonUkResident: z.boolean() }).nullish() }),
   z.object({ type: z.literal('add_party'), name: z.string().min(1).max(120), role: z.enum(['buyer', 'seller', 'owner', 'donor', 'attorney', 'director', 'executor']) }),
+  z.object({ type: z.literal('link_related_matter'), relatedMatterId: z.string().uuid(), relation: z.enum(['sale', 'purchase']), note: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('record_lender_requirements'), minUnexpiredYears: z.number().int().min(0).max(999).nullish(), maxSearchAgeMonths: z.number().int().min(1).max(24).nullish(), acceptsNonFamilyGift: z.boolean().nullish(), requiresEws1: z.boolean().nullish(), note: z.string().max(1000).nullish() }),
+  z.object({ type: z.literal('name_change_evidenced'), party: z.string().max(80).nullish(), from: z.string().min(1).max(120), to: z.string().min(1).max(120), reason: z.string().min(1).max(300), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('buildings_insurance_confirmed'), insurer: z.string().max(120).nullish(), fromDate: isoDate.nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('priority_search_made'), expiresAt: isoDate, documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('bankruptcy_search_clear'), subjects: z.array(z.string().max(120)).max(6).nullish(), documentId: z.string().uuid().nullish() }),
@@ -146,6 +149,7 @@ export const ingestSchema = z.discriminatedUnion('role', [
   z.object({ role: z.literal('title'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('id_check'), documentId: z.string().uuid(), party: z.string().max(80).nullish() }),
   z.object({ role: z.literal('management_pack'), documentId: z.string().uuid() }),
+  z.object({ role: z.literal('property_forms'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('lease'), documentId: z.string().uuid() }),
   z.object({ role: z.literal('survey'), documentId: z.string().uuid(), surveyType: z.enum(['level1', 'level2', 'level3', 'valuation']).nullish() }),
   z.object({ role: z.literal('specialist_report'), documentId: z.string().uuid(), forIssueId: z.string().max(60).nullish() }),

@@ -23,6 +23,7 @@ import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from 
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
+import { propertyFormsIssues } from './property-forms';
 import { evaluateProofOfFunds, gbp, holderNames, riskRating, samePerson, templateBriefing, type PofQuery, type ProofOfFundsFacts, type StatementTransaction, type TransactionReview } from './proof-of-funds';
 import { profileOf, type TransactionProfile } from './transactions';
 import {
@@ -186,6 +187,10 @@ type CommandBody =
   | { type: 'mortgage_deed_executed'; actor: Actor; lender?: string | null; witnessed?: boolean }
   | { type: 'certificate_of_title_sent'; actor: Actor; lender?: string | null; completionDate?: string | null }
   | { type: 'add_party'; actor: Actor; name: string; role: IdPartyCheck['role'] }
+  | { type: 'seller_forms_received'; actor: Actor; documentId: string; forms?: string[] | null; facts: PropertyFormsFacts | null }
+  | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
+  | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
+  | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'buildings_insurance_confirmed'; actor: Actor; insurer?: string | null; fromDate?: string | null; documentId?: string | null }
   | { type: 'priority_search_made'; actor: Actor; expiresAt: string; documentId?: string | null }
   | { type: 'bankruptcy_search_clear'; actor: Actor; subjects?: string[] | null; documentId?: string | null }
@@ -267,6 +272,10 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'mortgage_deed_executed',
   'certificate_of_title_sent',
   'add_party',
+  'seller_forms_received',
+  'link_related_matter',
+  'record_lender_requirements',
+  'name_change_evidenced',
   'buildings_insurance_confirmed',
   'priority_search_made',
   'bankruptcy_search_clear',
@@ -672,6 +681,21 @@ export function decide(state: MatterState, cmd: Command, ctx: DecideContext): De
   return { events: all, state: applyNew(state, all, ctx.now) };
 }
 
+/** The seller's forms read into issues: one per answer that changes what the file needs, cited to the page, never duplicated. */
+function formsIssueEvents(s: MatterState, facts: PropertyFormsFacts, side: 'buyer' | 'seller', documentId: string | null): NewEvent[] {
+  const out: NewEvent[] = [];
+  let n = 0;
+  const existing = new Set(Object.values(s.issues).map((i) => i.title));
+  for (const fi of propertyFormsIssues(facts, side)) {
+    if (existing.has(fi.title)) continue;
+    existing.add(fi.title);
+    const gate: IssueGate = s.exchange.exchangedAt ? 'completion' : ISSUE_KIND_SPEC[fi.kind].gate;
+    const id = `${nextIssueId(s).replace(/\d+$/, '')}${Number(nextIssueId(s).replace(/\D+/g, '')) + n++}`;
+    out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind: fi.kind, title: fi.title, detail: fi.detail, gate, stage: s.stage, sourceDocumentId: documentId, origin: null, party: null, severity: fi.flag.severity === 'high' ? 'warning' : 'info', causedBy: null } });
+  }
+  return out;
+}
+
 function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[] {
   switch (cmd.type) {
     case 'enrol': {
@@ -938,7 +962,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing the lease now needs manual handling.');
       const extracted: NewEvent = { type: 'lease_extracted', actor: SYSTEM, payload: { facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence ?? null };
       // The lease's flags are title flags: one decision, one sub-flow, the official copy and the lease side by side.
-      const verdict = evaluateLease(cmd.facts);
+      const verdict = evaluateLease(cmd.facts, s.lenderRequirements?.minUnexpiredYears ?? null);
       return [
         extracted,
         ...verdictEvents({ verdict, cleared: 'title_cleared', flagged: 'title_flagged', kind: 'title', level: levelFor(ctx.levels, 'auto_clear', 'title'), subjectLabel: `Lease${cmd.facts.demise ? ` of ${cmd.facts.demise}` : ''}`, sourceDocumentId: cmd.documentId, summary: cmd.summary, extra: {}, confidence: cmd.facts.confidence ?? 0 }),
@@ -1013,6 +1037,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (profile(s).side === 'buyer' && s.hasLender && !isResolved(s.mortgage.status)) reject(`Cannot exchange: the mortgage offer is ${s.mortgage.status} (withdrawn / awaiting re-issue).`);
       const open = profile(s).side === 'buyer' ? unresolvedSearches(s, false) : [];
       if (open.length) reject(`Cannot exchange: ${open.join('; ')}.`);
+      const maxAge = s.lenderRequirements?.maxSearchAgeMonths ?? null;
+      if (maxAge != null && profile(s).side === 'buyer') {
+        const stale = Object.values(s.searches).filter((sr) => sr.returnedAt && (ctx.now.getTime() - Date.parse(sr.returnedAt)) / (30.44 * 86_400_000) > maxAge).map((sr) => `${sr.searchType} (${sr.returnedAt!.slice(0, 10)})`);
+        if (stale.length) reject(`Cannot exchange: the lender requires searches under ${maxAge} months old and ${stale.join(', ')} ${stale.length === 1 ? 'is' : 'are'} older; re-order.`);
+      }
       if (proofOfFundsHolds(s)) reject(`Cannot exchange: proof of funds ${s.proofOfFunds.status === 'submitted' ? 'is awaiting the conveyancer\'s sign-off' : s.proofOfFunds.status === 'requested' ? 'is still with the client' : proofOfFundsHoldReason(s)}.`);
       if (surveyHolds(s)) reject(`Cannot exchange: the client has not confirmed they are satisfied with the physical condition (survey ${s.survey.status.replace(/_/g, ' ')}). Record the client's decision.`);
       if (exchangeAuthorityHolds(s)) reject('Cannot exchange: the client has not authorised exchange. Record the client\'s decision (exchange_authority).');
@@ -1488,7 +1517,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         out.push({ type: 'proof_of_funds_query_answered', actor: cmd.actor, payload: { requestId: cmd.requestId, queryId: q.id, answer: a.answer?.trim() || '', evidenceDocumentIds: a.evidenceDocumentIds } });
       }
       // 2. Declaration-level rules, then the transaction-level review (each transaction flag drafts a query, deduplicated by key).
-      const verdict = evaluateProofOfFunds(cmd.facts);
+      const verdict = evaluateProofOfFunds(cmd.facts, { coBuyers: s.partyNames.slice(1), hasLinkedSale: s.relatedMatter?.relation === 'sale' ? true : s.relatedMatter ? undefined : false, acceptsNonFamilyGift: s.lenderRequirements?.acceptsNonFamilyGift ?? null });
       const flags: Flag[] = verdict.outcome === 'flag' ? [...verdict.flags] : [];
       const review = cmd.review ?? null;
       if (review) {
@@ -1634,7 +1663,43 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireSide(s, ['seller'], 'Property forms');
       if (s.propertyForms.status === 'received') reject('The property forms are already in.');
-      return [{ type: 'property_forms_received', actor: cmd.actor, payload: { forms: cmd.forms, facts: cmd.facts ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      const formsEvents: NewEvent[] = [{ type: 'property_forms_received', actor: cmd.actor, payload: { forms: cmd.forms, facts: cmd.facts ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      if (cmd.facts) formsEvents.push(...formsIssueEvents(s, cmd.facts, 'seller', cmd.documentId ?? null));
+      return formsEvents;
+    }
+    case 'seller_forms_received': {
+      requireEnrolled(s);
+      requireSide(s, ['buyer'], "The seller's property forms");
+      requireStageAtLeast(s, 'pre_contract', "Reading the seller's forms");
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; the forms are filed under Documents.');
+      const forms = cmd.forms?.length ? cmd.forms : cmd.facts?.forms?.length ? cmd.facts.forms : ['TA6'];
+      const out: NewEvent[] = [{ type: 'seller_forms_received', actor: cmd.actor, payload: { forms, facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
+      if (cmd.facts) out.push(...formsIssueEvents(s, cmd.facts, 'buyer', cmd.documentId));
+      return out;
+    }
+    case 'link_related_matter': {
+      requireEnrolled(s);
+      if (cmd.relatedMatterId === s.matterId) reject('A matter cannot be linked to itself.', 400);
+      if (s.relatedMatter?.matterId === cmd.relatedMatterId) reject('That matter is already linked.');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; a link now changes nothing.');
+      const out: NewEvent[] = [{ type: 'related_matter_linked', actor: cmd.actor, payload: { relatedMatterId: cmd.relatedMatterId, relation: cmd.relation, note: cmd.note ?? null } }];
+      // The chain is real now: exchange holds until the linked matter can exchange with us (the service checks the other file).
+      if (!Object.values(s.issues).some((i) => i.kind === 'chain_dependency' && i.title.startsWith('Linked ') && (i.status === 'open' || i.status === 'negotiating'))) {
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'chain_dependency', title: `Linked ${cmd.relation}: exchange is simultaneous with the related matter`, detail: `Our client's ${cmd.relation} (${cmd.relatedMatterId}) must exchange at the same time: the same completion date in both contracts, the deposit ${cmd.relation === 'sale' ? 'received on the sale used towards this purchase, and the sale proceeds towards completion' : 'from the purchase side'}. The engine refuses exchange here until the linked matter is ready to exchange too, and clears this issue when it is.`, gate: 'exchange', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'warning', causedBy: null } });
+      }
+      return out;
+    }
+    case 'record_lender_requirements': {
+      requireEnrolled(s);
+      if (!s.hasLender) reject('No lender on this matter.');
+      if (cmd.minUnexpiredYears == null && cmd.maxSearchAgeMonths == null && cmd.acceptsNonFamilyGift == null && cmd.requiresEws1 == null && !cmd.note?.trim()) reject('Nothing to record.', 400);
+      return [{ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: cmd.minUnexpiredYears ?? null, maxSearchAgeMonths: cmd.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: cmd.acceptsNonFamilyGift ?? null, requiresEws1: cmd.requiresEws1 ?? null, note: cmd.note?.trim() || null } }];
+    }
+    case 'name_change_evidenced': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A name change is recorded by a person from the evidence.', 403);
+      if (!cmd.from.trim() || !cmd.to.trim() || !cmd.reason.trim()) reject('The name before, the name after and the reason (marriage certificate, deed poll, decree) are required.', 400);
+      return [{ type: 'name_change_evidenced', actor: cmd.actor, payload: { party: cmd.party ?? null, from: cmd.from.trim(), to: cmd.to.trim(), reason: cmd.reason.trim(), documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'contract_pack_sent': {
       requireEnrolled(s);

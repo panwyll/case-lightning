@@ -7,7 +7,7 @@
 import type { Side } from './transactions';
 import type { IssueGate, IssueKind } from './issues';
 
-export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer'] as const;
+export const CASE_SHAPES = ['company_buyer', 'buy_to_let', 'new_build', 'auction', 'lifetime_isa', 'help_to_buy_isa', 'second_charge', 'shared_ownership', 'unrepresented_counterparty', 'court_order_transfer', 'right_to_buy', 'flying_freehold', 'commonhold'] as const;
 export type CaseShape = (typeof CASE_SHAPES)[number];
 
 export type FundsRole = 'lender' | 'client' | 'buyer_solicitor' | 'incoming_owner' | 'isa_provider';
@@ -77,6 +77,21 @@ export const SHAPE_SPEC: Record<CaseShape, ShapeSpec> = {
     id: 'court_order_transfer', label: 'Transfer Under A Court Order', sides: ['owner'],
     summary: 'A transfer of equity on divorce, dissolution or separation under a court order: the order seen, no consideration, the SDLT exemption, the outgoing owner released by the lender.',
     issue: { kind: 'court_order_transfer', title: 'Court order transfer: the order, the lender\'s release, SDLT exemption', detail: 'A sealed copy of the order (or the consent order / financial remedy order) on file and the transfer drawn to give effect to it. The lender releases the outgoing owner from the mortgage covenant and consents to the transfer; if it will not, a remortgage in the remaining owner\'s name is needed. Transfers in connection with divorce or dissolution are exempt from SDLT (FA 2003 Sch 3 para 3): record sdlt_not_required with that reason. The outgoing owner should have independent advice.', gate: 'completion' },
+  },
+  right_to_buy: {
+    id: 'right_to_buy', label: 'Right To Buy', sides: ['buyer', 'seller'],
+    summary: 'Bought from the council or housing association under the Right to Buy: the discount repayment charge for five years and the right of first refusal for ten.',
+    issue: { kind: 'right_to_buy_terms', title: 'Right to Buy: discount repayment and the right of first refusal', detail: 'Selling: within five years of the Right to Buy purchase the discount is repaid on a sliding scale (100% in year one, 80% in year two … 20% in year five) as a charge on the title; within ten years the former landlord has the right of first refusal and must be served notice before the property is marketed, and the restriction on the title needs its certificate. Buying: check the charge and the restriction are discharged or complied with, or the price allows for them; some lenders will not lend while a repayment charge subsists.', gate: 'exchange' },
+  },
+  flying_freehold: {
+    id: 'flying_freehold', label: 'Flying Freehold', sides: ['buyer'],
+    summary: 'Part of the property lies over or under someone else\'s land: the lender\'s limit, rights of support and access, an indemnity policy.',
+    issue: { kind: 'flying_freehold', title: 'Flying freehold: extent, rights of support and access, the lender\'s requirements', detail: 'Establish from the plans how much of the property is flying (a room over a passageway, a cellar under a neighbour). The lender\'s Part 2 usually sets a maximum proportion (often 15–25%) and requires the title to carry mutual rights of support and protection and a right of access to repair; where the title does not, an indemnity policy is the usual answer and the lender must confirm it accepts it.', gate: 'exchange' },
+  },
+  commonhold: {
+    id: 'commonhold', label: 'Commonhold', sides: ['buyer', 'seller'],
+    summary: 'A commonhold unit: the commonhold community statement and the association take the place of the lease and the management pack.',
+    issue: { kind: 'commonhold_terms', title: 'Commonhold: the community statement, the association and the lender', detail: 'Obtain the commonhold community statement (the rules, the commonhold assessment and reserve fund contributions), the association\'s memorandum, accounts and the unit information certificate (the equivalent of the LPE1). Confirm the lender lends on commonhold before relying on the offer: many do not. There is no ground rent, no forfeiture and no lease term.', gate: 'exchange' },
   },
   help_to_buy_isa: {
     id: 'help_to_buy_isa', label: 'Help To Buy ISA', sides: ['buyer'],

@@ -92,7 +92,7 @@ const DECISION_LABEL: Record<string, string> = {
   proof_of_funds: 'the source of funds', management_pack: 'the management pack',
 };
 /** What we are waiting for them to do, as the second half of "waiting on X to …". */
-const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel' };
+const SEARCH_NAME: Record<string, string> = { LLC1: 'LLC1', CON29: 'CON29', DRAINAGE_WATER: 'drainage and water', ENVIRONMENTAL: 'environmental', CHANCEL: 'chancel', MINING: 'coal mining', FLOOD: 'flood risk', HIGHWAYS: 'highways', PLANNING: 'planning history' };
 const WAIT_ACTION: Record<string, (subject: string) => string> = {
   search: (sub) => `return the ${sub ? `${SEARCH_NAME[sub] ?? sub.toLowerCase().replace(/_/g, ' ')} ` : ''}search`, enquiry: (sub) => `reply to ${sub ? `enquiry ${sub}` : 'our enquiries'}`, id_check: () => 'return the ID / AML result',
   funds: () => 'release the completion funds', registration: () => 'complete the registration', proof_of_funds: () => 'complete the proof of funds form',

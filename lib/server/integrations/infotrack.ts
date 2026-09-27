@@ -84,6 +84,10 @@ export const SEARCH_PRODUCT: Record<SearchType, string> = {
   DRAINAGE_WATER: 'CON29DW',
   ENVIRONMENTAL: 'ENVIRO',
   CHANCEL: 'CHANCEL',
+  MINING: 'CON29M',
+  FLOOD: 'FLOOD',
+  HIGHWAYS: 'HIGHWAYS',
+  PLANNING: 'PLANNING',
 };
 
 export interface OrderResult {

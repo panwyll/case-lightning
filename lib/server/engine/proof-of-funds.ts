@@ -114,6 +114,8 @@ export interface FundSource {
 /** The whole form as the client submitted it (stored verbatim on proof_of_funds_request.submission). */
 export interface ProofOfFundsSubmission {
   declarant: { fullName: string; email?: string | null; phone?: string | null };
+  /** Co-buyers who confirm this declaration is theirs too (each ticked on the form); a co-buyer who is neither is flagged. */
+  coDeclarants?: string[];
   purchasePricePennies: number | null;
   mortgageAdvancePennies: number | null;
   sources: FundSource[];
@@ -136,6 +138,7 @@ export interface ProofOfFundsSubmission {
 export interface ProofOfFundsFacts {
   requestId: string;
   declarantName: string;
+  coDeclarants?: string[];
   purchasePricePennies: number | null;
   mortgageAdvancePennies: number | null;
   /** price − mortgage: what the client has to find (null when the price is unknown). */
@@ -159,6 +162,7 @@ export function factsFromSubmission(requestId: string, sub: ProofOfFundsSubmissi
   return {
     requestId,
     declarantName: sub.declarant.fullName,
+    coDeclarants: (sub.coDeclarants ?? []).map((n) => n.trim()).filter(Boolean),
     purchasePricePennies: price,
     mortgageAdvancePennies: mortgage,
     requiredPennies: required,
@@ -179,8 +183,16 @@ export const gbp = (p: number): string => `£${(p / 100).toLocaleString('en-GB',
  * The deterministic part. Every flag is a fact about the declaration, never a judgement:
  * the conveyancer decides what each means for this client.
  */
-export function evaluateProofOfFunds(f: ProofOfFundsFacts): Verdict {
+/** What the matter knows that the form does not: who else is buying, whether a linked sale exists, what the lender accepts. */
+export interface PofMatterContext { coBuyers?: string[]; hasLinkedSale?: boolean; acceptsNonFamilyGift?: boolean | null }
+
+export function evaluateProofOfFunds(f: ProofOfFundsFacts, m: PofMatterContext = {}): Verdict {
   const flags: Flag[] = [];
+  // Every co-buyer either signs this declaration or has a round of their own; one buyer cannot declare for another.
+  const declared = [f.declarantName, ...(f.coDeclarants ?? [])];
+  const missing = (m.coBuyers ?? []).filter((n) => !samePerson(n, declared));
+  if (missing.length) flags.push({ code: 'POF_MISSING_DECLARANT', severity: 'medium', description: `${missing.join(' and ')} ${missing.length === 1 ? 'is a buyer who has' : 'are buyers who have'} not confirmed this declaration: each buyer's source of funds is their own to declare (a co-buyer ticks the confirmation on the form, or completes a round of their own).`, locator: { section: 'Declarant' } });
+  if (m.hasLinkedSale === false && f.sources.some((s) => s.kind === 'sale_proceeds')) flags.push({ code: 'POF_SALE_PROCEEDS_UNLINKED', severity: 'medium', description: 'Proceeds of a sale are declared but no sale matter is linked to this purchase: link the sale (so exchange is simultaneous and the proceeds are traced) or obtain the other firm\'s completion statement.', locator: { section: 'Sources' } });
   const d = f.declarations;
   if (!d.accurate || !d.noThirdPartyInterest || !d.noUndisclosedBorrowing) {
     flags.push({ code: 'POF_DECLARATION_INCOMPLETE', severity: 'high', description: `The client did not confirm: ${[!d.accurate && 'the information is complete and accurate', !d.noThirdPartyInterest && 'no third party has an interest', !d.noUndisclosedBorrowing && 'no undisclosed borrowing'].filter(Boolean).join('; ')}.`, locator: { section: 'Declarations' } });
@@ -201,7 +213,7 @@ export function evaluateProofOfFunds(f: ProofOfFundsFacts): Verdict {
         flags.push({ code: 'POF_GIFT', severity: 'medium', description: `Gifted deposit of ${gbp(s.amountPennies)} from ${g.donorName} (${g.donorRelationship}). Donor ID, a gift letter and the donor's statements are required, and the lender must be told.`, locator: where });
         if (g.repayable) flags.push({ code: 'POF_GIFT_REPAYABLE', severity: 'high', description: `The "gift" from ${g.donorName} is stated to be repayable: it is a loan, which the lender must approve and which may affect affordability.`, locator: where });
         if (g.donorAbroad) flags.push({ code: 'POF_GIFT_DONOR_ABROAD', severity: 'medium', description: `The donor (${g.donorName}) is outside the UK: identity and source of the donor's funds need extra care.`, locator: where });
-        if (!FAMILY_RE.test(g.donorRelationship)) flags.push({ code: 'POF_GIFT_NON_FAMILY', severity: 'high', description: `The donor (${g.donorName}) is described as "${g.donorRelationship}", not a close family member. Most lenders accept gifted deposits only from family (spouse or partner, parent, grandparent, sibling, child, aunt or uncle, in-law or step relation) and refuse gifts from friends or employers: report it to the lender and wait for written instructions.`, locator: where });
+        if (!FAMILY_RE.test(g.donorRelationship) && m.acceptsNonFamilyGift !== true) flags.push({ code: 'POF_GIFT_NON_FAMILY', severity: 'high', description: `The donor (${g.donorName}) is described as "${g.donorRelationship}", not a close family member. Most lenders accept gifted deposits only from family (spouse or partner, parent, grandparent, sibling, child, aunt or uncle, in-law or step relation) and refuse gifts from friends or employers: report it to the lender and wait for written instructions.`, locator: where });
         if (g.jointDonorName?.trim()) flags.push({ code: 'POF_GIFT_JOINT_ACCOUNT', severity: 'medium', description: `The gift comes from an account ${g.donorName} holds jointly with ${g.jointDonorName.trim()}: the money is theirs too, so ${g.jointDonorName.trim()} is a donor in their own right — ID / AML check, the gift letter signed by both, and both named to the lender.`, locator: where });
         if (g.donorEvidenceDocumentIds.length === 0) flags.push({ code: 'POF_GIFT_NO_DONOR_EVIDENCE', severity: 'medium', description: `No donor documents (ID, gift letter, statements) attached for the gift from ${g.donorName}.`, locator: where });
       }
@@ -572,6 +584,8 @@ export const FLAG_GUIDANCE: Record<string, string> = {
   HOLDER_MISMATCH: 'A statement in someone else\'s name is that person\'s money until shown otherwise: their identity and source of funds are needed.',
   JOINT_ACCOUNT_UNDECLARED: 'Money in a joint account belongs to both holders. The other holder is a contributor: they are identified like a donor, sign the gift letter (or confirm they claim no interest), and the lender is told.',
   POF_GIFT_NON_FAMILY: 'A gift from someone outside the family is one most lenders will not accept: report it and wait for the lender\'s written instructions before proceeding.',
+  POF_MISSING_DECLARANT: 'A co-buyer who has not confirmed the declaration has not declared their source of funds: get their confirmation or send them the form.',
+  POF_SALE_PROCEEDS_UNLINKED: 'Sale proceeds need the sale: link the matter, or the other side\'s completion statement and the memorandum of sale.',
   POF_CASH_PURCHASE: 'With no lender the firm is the only check on the money: trace every source in full and record the source of wealth where the sums are large for the client\'s circumstances.',
   SOURCE_OF_WEALTH: 'Enhanced due diligence asks how the client came to have their overall wealth, not only where these funds sit; record the answer and whether it is plausible against what is known of them.',
   POF_GIFT_JOINT_ACCOUNT: 'Both holders of the donor\'s joint account are donors: an ID / AML check and the gift letter for each, and both named to the lender.',

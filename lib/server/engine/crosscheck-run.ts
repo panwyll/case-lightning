@@ -34,6 +34,7 @@ export async function runCrossChecks(tenantId: string, matterId: string): Promis
   const svc = engine();
   const state = await svc.getState(tenantId, matterId).catch(() => null);
   if (state?.exchange.completionDate) record.completionDate = state.exchange.completionDate;
+  if (state?.nameAliases?.length) record.nameAliases = state.nameAliases.map((a) => ({ from: a.from, to: a.to }));
   const results = crossCheck(record, await loadRegister(tenantId, matterId));
   for (const r of results) {
     await query(

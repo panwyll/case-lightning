@@ -23,7 +23,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod/v4';
 import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
-import { SEARCH_TYPES } from './types';
+import { type PropertyFormsFacts, SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
 import { MIN_EXTRACTION_CONFIDENCE } from './rules';
@@ -49,7 +49,7 @@ const flagSchema = z.object({
 });
 
 export const ClassificationSchema = z.object({
-  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'lease', 'other']),
+  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'lease', 'property_forms', 'other']),
   searchType: z.enum([...SEARCH_TYPES, 'NONE']).describe('Only when role = search.'),
   enquiryReferences: z.array(z.string()).describe('Enquiry numbers/identifiers the document replies to (e.g. "E1", "3", "Additional enquiry 2"), when role = enquiry_reply.'),
   titleNumber: z.string().describe('Land Registry title number if visible, else empty string.'),
@@ -239,6 +239,39 @@ export const ManagementPackExtractionSchema = z.object({
   accountsProvided: z.string().describe('Which years\' accounts and budgets are enclosed, as written; empty string if none.'),
   entries: z.array(z.object({ code: z.string().describe('The LPE1 question number, e.g. "3.4", or the enclosure name.'), text: z.string().describe('The answer verbatim (≤ 600 chars).'), locator, confidence: conf })).describe('Every answer relied on for the fields above, verbatim with its page.'),
   flags: z.array(flagSchema).describe('Anything a conveyancer must decide on: arrears, major works or a section 20 notice, no or inadequate insurance, a reserve fund not held, a dispute, high fees, a consent that may be refused, accounts missing.'),
+  scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
+  confidence: conf,
+});
+
+/** The seller's property information forms (TA6; TA7 on a leasehold; TA10 fittings) read answer by answer. */
+export const PropertyFormsExtractionSchema = z.object({
+  pages: PageLedgerSchema,
+  forms: z.array(z.enum(['TA6', 'TA7', 'TA10', 'TA13', 'OTHER'])).describe('Which forms the document contains.'),
+  disputes: text('TA6 section 2: any dispute, complaint or notice with a neighbour or anyone else, as answered'),
+  notices: text('TA6 section 3: notices, planning proposals or letters affecting the property or a neighbour, as answered'),
+  alterations: text('TA6 section 4: building works, extensions, conversions, replacement windows or doors, as listed'),
+  alterationsConsented: z.enum(['yes', 'no', 'not_stated']).describe('Does the seller say every planning permission and building regulations approval was obtained for the works listed?'),
+  alterationsDocumentsEnclosed: z.enum(['yes', 'no', 'not_stated']).describe('Are the consents, completion certificates or FENSA / Gas Safe certificates enclosed?'),
+  listedOrConservation: z.enum(['yes', 'no', 'not_stated']).describe('Listed building or conservation area.'),
+  guaranteesOutstandingClaims: text('TA6 section 5: any outstanding claim or refused claim under a guarantee or warranty'),
+  insuranceClaims: text('TA6 section 6: buildings insurance claims made'),
+  insuranceRefused: z.enum(['yes', 'no', 'not_stated']).describe('Insurance refused, or on special terms, or with an abnormally high premium.'),
+  flooded: z.enum(['yes', 'no', 'not_stated']).describe('TA6 section 7: has the property or its land flooded?'),
+  floodDetail: text('When and what flooded, as answered'),
+  japaneseKnotweed: z.enum(['yes', 'no', 'not_known', 'not_stated']).describe('TA6 section 7: is the property affected by Japanese knotweed?'),
+  knotweedDetail: text('The management plan or treatment, as answered'),
+  radonTestAboveAction: z.enum(['yes', 'no', 'not_stated']).describe('A radon test at or above the action level, or remedial works.'),
+  occupiers: text('TA6 section 11: adults other than the seller living at the property, as named or described'),
+  sharedAccessOrServices: z.enum(['yes', 'no', 'not_stated']).describe('TA6 sections 8-9: shared drives, paths, pipes or services.'),
+  rightsOfWayOverProperty: text('Rights others have over the property (access, services, light), as answered'),
+  septicTank: z.enum(['yes', 'no', 'not_stated']).describe('Foul drainage to a septic tank or treatment plant rather than the mains.'),
+  solarPanelsLeased: z.enum(['yes', 'no', 'not_stated']).describe('Solar panels owned by a third party or the roof let under a lease.'),
+  boundariesUnclear: text('TA6 section 1: boundary features the seller is unsure of, or that have moved'),
+  leaseholdArrearsOrDispute: z.enum(['yes', 'no', 'not_stated']).describe('TA7: service charge / ground rent arrears or a dispute with the landlord or managing agent.'),
+  epcRating: z.string().describe('EPC rating letter if stated; empty string if not.'),
+  councilTaxBand: z.string().describe('Council tax band if stated; empty string if not.'),
+  sectionPages: z.object({ boundaries: z.number().int().min(0), disputes: z.number().int().min(0), notices: z.number().int().min(0), alterations: z.number().int().min(0), guarantees: z.number().int().min(0), insurance: z.number().int().min(0), environment: z.number().int().min(0), rights: z.number().int().min(0), occupiers: z.number().int().min(0), services: z.number().int().min(0), leasehold: z.number().int().min(0) }).describe('The page each section starts on; 0 if the section is absent.'),
+  disclosures: z.array(flagSchema).describe('Anything else a buyer\'s conveyancer must act on that the fields above do not capture (a covenant breach admitted, a right of pre-emption, an ongoing planning application, an outstanding invoice for works).'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
 });
@@ -482,6 +515,26 @@ export function toContractFacts(out: z.infer<typeof ContractExtractionSchema>): 
   };
 }
 
+export function toPropertyFormsFacts(out: z.infer<typeof PropertyFormsExtractionSchema>): PropertyFormsFacts {
+  const yn = (v: string): boolean | null => (v === 'yes' ? true : v === 'no' ? false : null);
+  const t = (v: string): string | null => (v.trim() ? v.trim() : null);
+  const pg = (n: number): number | undefined => (n > 0 ? n : undefined);
+  const sp = out.sectionPages;
+  return {
+    forms: out.forms,
+    disclosures: out.disclosures.map((f) => ({ code: f.code, severity: f.severity, description: f.description, locator: f.locator ?? undefined, confidence: f.confidence })),
+    confidence: out.confidence,
+    answers: {
+      disputes: t(out.disputes), notices: t(out.notices), alterations: t(out.alterations), alterationsConsented: yn(out.alterationsConsented), alterationsDocumentsEnclosed: yn(out.alterationsDocumentsEnclosed), listedOrConservation: yn(out.listedOrConservation),
+      guaranteesOutstandingClaims: t(out.guaranteesOutstandingClaims), insuranceClaims: t(out.insuranceClaims), insuranceRefused: yn(out.insuranceRefused), flooded: yn(out.flooded), floodDetail: t(out.floodDetail),
+      japaneseKnotweed: out.japaneseKnotweed === 'yes' ? true : out.japaneseKnotweed === 'no' ? false : null, knotweedDetail: t(out.knotweedDetail), radonTestAboveAction: yn(out.radonTestAboveAction), occupiers: t(out.occupiers),
+      sharedAccessOrServices: yn(out.sharedAccessOrServices), rightsOfWayOverProperty: t(out.rightsOfWayOverProperty), septicTank: yn(out.septicTank), solarPanelsLeased: yn(out.solarPanelsLeased), boundariesUnclear: t(out.boundariesUnclear),
+      leaseholdArrearsOrDispute: yn(out.leaseholdArrearsOrDispute), epcRating: t(out.epcRating), councilTaxBand: t(out.councilTaxBand),
+    },
+    pages: { boundaries: pg(sp.boundaries), disputes: pg(sp.disputes), notices: pg(sp.notices), alterations: pg(sp.alterations), guarantees: pg(sp.guarantees), insurance: pg(sp.insurance), environment: pg(sp.environment), rights: pg(sp.rights), occupiers: pg(sp.occupiers), services: pg(sp.services), leasehold: pg(sp.leasehold) },
+  };
+}
+
 export function toIdCheckFacts(out: z.infer<typeof IdCheckExtractionSchema>): IdCheckFacts {
   const { flags, minConfidence } = normaliseFlags(out.flags);
   return { provider: out.provider.trim() || 'unknown', outcome: out.outcome, flags, confidence: overallConfidence(out.confidence, [minConfidence], out.scanQuality) };
@@ -505,6 +558,7 @@ const PROMPTS = {
   lease: `Extract this residential lease (the lease itself, a counterpart, a deed of variation or the lease with its plan) for a buyer. Read the parties, the demise, the term and its start, the ground rent and every review provision, the service charge proportion, the repairing obligations of lessee and lessor, assignment and underletting, alterations, use, insurance, the notices and fees the lease fixes on assignment or charge, and forfeiture. Compute the unexpired term from today's date. Copy every clause you rely on verbatim with its page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
   management_pack: `Extract this leasehold information pack (LPE1, LPE2, the managing agent's pack or the landlord's replies) for a buyer. Read every question and enclosure: the landlord and managing agent, the service charge for this flat and the year it covers, the proportion, the ground rent, arrears, the reserve fund, major works planned or consulted on (section 20), buildings insurance and its expiry, every fee charged on sale, the consents required, any dispute or breach, and which accounts and budgets are enclosed. Copy every answer you rely on verbatim with its question number and page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
   classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), a lease (the lease deed itself, a counterpart or a deed of variation), or other. ${SCAN_NOTE}`,
+  property_forms: `Read the seller's property information forms (Law Society TA6, and TA7 on a leasehold, TA10 fittings and contents) for a buyer's conveyancer. Go section by section and copy the seller's answer to each question that matters verbatim: boundaries, disputes and complaints, notices and proposals, alterations and the consents for them, guarantees and claims, insurance, environmental matters (flooding, radon, Japanese knotweed), rights and shared services, parking, other charges, occupiers, services and drainage, solar panels, and on the TA7 the service charge, arrears and disputes. Record the page each section starts on. An answer of "no", "not known" or blank is reported as such, never inferred. ${TAXONOMY} ${SCAN_NOTE}`,
   survey: `Read this survey, valuation or specialist report for a house buyer. Extract every recommendation the author makes, verbatim where possible, and for each say whether it recommends a FURTHER specialist investigation or report before purchase (as opposed to routine maintenance or a note). Name the specialist recommended if the report does. Grade severity as the report does (high for structural / safety / "urgent", medium for "should be investigated", low for advisory). Do not judge whether the buyer should proceed. ${SCAN_NOTE}`,
   search: `Extract the findings of this property search as typed facts. ${TAXONOMY} Include informational entries so the handler can see what was checked. ${SCAN_NOTE}`,
   enquiry: `Extract the seller's solicitor's replies to pre-contract enquiries. For each reply, decide whether it fully answers the question ("answered"), only partly ("partial"), declines ("refused" — e.g. "the buyer must rely on their own survey/searches" where a factual answer was asked), or is unclear. Record any issue the reply reveals as a flag. ${TAXONOMY} ${SCAN_NOTE}`,
@@ -642,6 +696,16 @@ export class ClaudeExtractor implements DocumentExtractor {
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
     await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
+    return facts;
+  }
+
+  async extractPropertyForms(doc: DocumentRef): Promise<PropertyFormsFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<PropertyFormsFacts>(doc, 'property_forms', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'property_forms', PropertyFormsExtractionSchema, PROMPTS.property_forms, "Extract the seller's answers from these property information forms.", 'DOC_EXTRACT');
+    const facts = toPropertyFormsFacts(out);
+    await this.persist(doc, 'property_forms', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 

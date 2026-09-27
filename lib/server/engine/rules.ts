@@ -165,8 +165,11 @@ export const SHORT_LEASE_YEARS = { flag: 85, serious: 80 };
 export const GROUND_RENT_FLAG_PENNIES_PA = 25_000;
 
 /** What the rules say about a lease: the term, the rent and its review, and what the extractor flagged in the covenants. */
-export function leaseFlags(l: LeaseFacts): Flag[] {
+export function leaseFlags(l: LeaseFacts, lenderMinUnexpiredYears: number | null = null): Flag[] {
   const flags: Flag[] = [];
+  if (lenderMinUnexpiredYears != null && l.unexpiredYears != null && l.unexpiredYears < lenderMinUnexpiredYears) {
+    flags.push({ code: 'LEASE_BELOW_LENDER_MINIMUM', severity: 'high', description: `${l.unexpiredYears} years unexpired against the lender's stated minimum of ${lenderMinUnexpiredYears} (Part 2): the lender will not lend on this term without an extension or a deed of variation.`, locator: l.locator });
+  }
   if (l.unexpiredYears != null && l.unexpiredYears < SHORT_LEASE_YEARS.flag) {
     flags.push({ code: 'SHORT_LEASE', severity: l.unexpiredYears < SHORT_LEASE_YEARS.serious ? 'high' : 'medium', description: `${l.unexpiredYears} years unexpired${l.unexpiredYears < SHORT_LEASE_YEARS.serious ? ' — below 80, marriage value applies to an extension and many lenders will not lend' : ' — near the point lenders and buyers start to discount'}.`, locator: l.locator });
   }
@@ -184,8 +187,8 @@ export function leaseFlags(l: LeaseFacts): Flag[] {
 }
 
 /** The lease on its own (the lease document read before or after the official copy). */
-export function evaluateLease(l: LeaseFacts): Verdict {
-  const flags = leaseFlags(l);
+export function evaluateLease(l: LeaseFacts, lenderMinUnexpiredYears: number | null = null): Verdict {
+  const flags = leaseFlags(l, lenderMinUnexpiredYears);
   if (l.confidence != null && l.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(l.confidence, 'lease'));
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
   return { outcome: 'clear', reasons: [l.unexpiredYears != null ? `${l.unexpiredYears} years unexpired` : 'term read', l.groundRentPenniesPa != null ? `ground rent £${(l.groundRentPenniesPa / 100).toLocaleString('en-GB')} a year` : 'ground rent read', 'no restrictive alienation clause'] };

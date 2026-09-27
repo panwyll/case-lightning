@@ -37,13 +37,14 @@ test('buyer statement: price less deposit less advance, apportionments computed 
   assert.equal(by['Less mortgage advance'].pennies, 30_000_000);
   assert.equal(by['Apportionment of service charge'].pennies, Math.round((240_000 * 118) / 365));
   assert.equal(by['Apportionment of ground rent'].pennies, Math.round((25_000 * 118) / 365));
-  assert.equal(by['Stamp Duty Land Tax'].pennies, null);
-  assert.equal(st.balancePennies, 38_500_000 - 3_850_000 - 30_000_000 + Math.round((240_000 * 118) / 365) + Math.round((25_000 * 118) / 365));
+  assert.equal(by['Stamp Duty Land Tax'].pennies, 925_000, '£385,000 at standard rates: 2% of £125,000 + 5% of £135,000');
+  assert.equal(st.balancePennies, 38_500_000 - 3_850_000 - 30_000_000 + 925_000 + Math.round((240_000 * 118) / 365) + Math.round((25_000 * 118) / 365));
   assert.match(st.text, /Purchase price\s+£385,000\.00/);
   assert.match(st.text, /Less mortgage advance \(Mock BS\)\s+\(£300,000\.00\)/);
-  assert.match(st.text, /Stamp Duty Land Tax\s+\[TO CONFIRM\]/);
+  assert.match(st.text, /Stamp Duty Land Tax \(estimate[^)]*\)\s+£9,250\.00/);
   assert.match(st.text, /BALANCE REQUIRED FROM YOU/);
-  assert.deepEqual(st.toConfirm, []);
+  assert.deepEqual(st.toConfirm.filter((x) => !x.startsWith('SDLT:')), []);
+  assert.ok(st.toConfirm.some((x) => /^SDLT: £9,250\.00 is the estimate on the standard basis/.test(x)));
   // Checked like any draft: the read figures cite, the computed ones are allowed, nothing is struck.
   const c = checkDraft(st.text, register, { allowed: [...st.allowed, record.propertyAddress, '2026-12-04', ...record.buyerNames] });
   assert.equal(c.summary.struck, 0, `struck: ${c.notFromFile.map((n) => n.text).join(', ')}`);

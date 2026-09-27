@@ -20,6 +20,7 @@ const money = z.number().int().nonnegative().max(1_000_000_000_00);
 const docId = z.string().uuid();
 const submissionSchema = z.object({
   declarant: z.object({ fullName: z.string().min(2).max(140), email: z.string().email().max(200).nullish(), phone: z.string().max(40).nullish() }),
+  coDeclarants: z.array(z.string().min(1).max(140)).max(4).optional(),
   purchasePricePennies: money.nullish(),
   mortgageAdvancePennies: money.nullish(),
   sources: z
@@ -65,6 +66,8 @@ async function context(token: string) {
       matterRef: m.matter_ref,
       firstName: (m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null,
       fullName: m.buyer_names?.[0] ?? null,
+      /** The other buyers: each confirms the declaration is theirs too, or gets a round of their own. */
+      coBuyers: (state?.partyNames ?? m.buyer_names ?? []).slice(1),
       purchasePricePennies: state?.purchasePricePennies ?? null,
       hasLender: state?.hasLender ?? null,
       noteToClient: req.note_to_client,

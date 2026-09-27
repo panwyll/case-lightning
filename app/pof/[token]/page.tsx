@@ -66,9 +66,10 @@ const CSS = `
 export default function ProofOfFundsPage() {
   const { token } = useParams<{ token: string }>();
   type Query = { id: string; question: string; transaction: { date: string; description: string; amountPennies: number } | null };
-  const [ctx, setCtx] = useState<{ status: string; firmName?: string; propertyAddress?: string; firstName?: string | null; fullName?: string | null; purchasePricePennies?: number | null; hasLender?: boolean | null; noteToClient?: string | null; followUp?: boolean; round?: number; queries?: Query[]; previous?: { purchasePricePennies: number | null; mortgageAdvancePennies: number | null; sources: Array<{ kind: string; amountPennies: number; description: string; gift: Source['gift'] extends infer G ? (G & { donorEvidenceDocumentIds?: string[] }) | null : never; overseas: { country: string; alreadyInUk: boolean } | null }> } | null } | null>(null);
+  const [ctx, setCtx] = useState<{ status: string; firmName?: string; propertyAddress?: string; firstName?: string | null; fullName?: string | null; coBuyers?: string[]; purchasePricePennies?: number | null; hasLender?: boolean | null; noteToClient?: string | null; followUp?: boolean; round?: number; queries?: Query[]; previous?: { purchasePricePennies: number | null; mortgageAdvancePennies: number | null; sources: Array<{ kind: string; amountPennies: number; description: string; gift: Source['gift'] extends infer G ? (G & { donorEvidenceDocumentIds?: string[] }) | null : never; overseas: { country: string; alreadyInUk: boolean } | null }> } | null } | null>(null);
   const [answers, setAnswers] = useState<Record<string, { answer: string; files: Array<{ id: string; fileName: string }> }>>({});
   const [fullName, setFullName] = useState('');
+  const [coDeclarants, setCoDeclarants] = useState<string[]>([]);
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [price, setPrice] = useState('');
@@ -149,6 +150,7 @@ export default function ProofOfFundsPage() {
     try {
       const body = {
         declarant: { fullName: fullName.trim(), email: email.trim() || null, phone: phone.trim() || null },
+        coDeclarants,
         purchasePricePennies: priceP || null,
         mortgageAdvancePennies: mortgage ? pennies(mortgage) : null,
         sources: sources.map((s) => ({
@@ -216,6 +218,15 @@ export default function ProofOfFundsPage() {
       <div className="card">
         <b>About you</b>
         <label htmlFor="pf-name">Your full name</label><input id="pf-name" type="text" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        {(ctx?.coBuyers?.length ?? 0) > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <label>Buying with you</label>
+            {ctx!.coBuyers!.map((n) => (
+              <div className="chk" key={n}><input id={`pf-co-${n}`} type="checkbox" checked={coDeclarants.includes(n)} onChange={(e) => setCoDeclarants((cur) => (e.target.checked ? [...cur, n] : cur.filter((x) => x !== n)))} /><label htmlFor={`pf-co-${n}`} style={{ margin: 0, fontWeight: 400 }}>{n} confirms this declaration covers their money too</label></div>
+            ))}
+            <div className="hint">Anyone not ticked will be sent their own form.</div>
+          </div>
+        )}
         <div className="row">
           <div><label htmlFor="pf-email">Email</label><input id="pf-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
           <div><label htmlFor="pf-phone">Phone</label><input id="pf-phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} /></div>
