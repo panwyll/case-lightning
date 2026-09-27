@@ -431,7 +431,7 @@ export function DecisionPanel({ eventId }: { eventId: string }) {
               {files.map((f) => (
                 <details key={f.documentId} className={`dp-file${f.warn ? ' warn' : ''}`} open={!!f.warn}>
                   <summary>
-                    <span className="name">{f.title}</span>
+                    <span className="name">{source && f.documentId === source.id && source.fileName && f.title !== 'Form responses' ? source.fileName : f.title}</span>
                     <span className="tw">{showing === f.documentId ? 'shown' : <button type="button" style={{ border: 0, background: 'none', padding: 0, font: 'inherit', color: '#5A27E0', cursor: 'pointer' }} onClick={(e) => { e.preventDefault(); void showDoc(f.documentId, null); }}>open</button>}</span>
                     <span className="what">{f.summary}</span>
                   </summary>

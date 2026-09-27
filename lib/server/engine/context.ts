@@ -459,15 +459,17 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   const docId = d.sourceDocumentId ?? null;
   if (!docId) return [];
   const rp = (raised?.payload ?? {}) as Record<string, unknown>;
-  const label = d.citations.find((c) => c.documentId === docId)?.label ?? null;
-  const title = label ? label.replace(/^[A-Z0-9_]+ — /, '') : pretty(d.kind);
+  const label = d.citations.find((c) => c.documentId === docId && !/^[A-Z0-9_]+ — /.test(c.label))?.label ?? null;
+  const KIND_TITLE: Record<string, string> = { enquiry: 'Reply', mortgage: 'Mortgage offer', title: 'Official copies', id_check: 'ID / AML result', management_pack: 'Management pack', bank_details: 'Bank details', proposal: 'Proposal', auto_clear: 'Document', escalation: 'Escalation', requisition: 'Requisition' };
+  const title = label ?? KIND_TITLE[d.kind] ?? pretty(d.kind);
   const flagLines = (flags: Flag[] | undefined): Ev[] => (flags ?? []).map((fl) => ({ text: seeTail(fl.description), documentId: docId, page: fl.locator?.page ?? null, quote: fl.locator?.quote ?? fl.locator?.section ?? null, warn: fl.severity === 'high' || fl.severity === 'medium' }));
   const rv = x.review;
   const read = rv?.pages ? `${rv.read} of ${n(rv.pages, 'page')} read` : null;
   if (d.kind === 'search') {
-    const f = rp.facts as { searchType?: string; flags?: Flag[] } | undefined;
-    const sr = f?.searchType ? s.searches[f.searchType] : null;
-    return [{ documentId: docId, title, summary: [`${f?.searchType ?? 'Search'} result`, sr?.returnedAt ? `returned ${day(sr.returnedAt)}` : null, read, f?.flags?.length ? n(f.flags.length, 'point') : 'nothing flagged'].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: !!f?.flags?.length }];
+    const st = d.subject?.replace(/^search:/, '') ?? (rp.searchType as string | undefined) ?? '';
+    const sr = s.searches[st] ?? null;
+    const flags = sr?.facts?.flags ?? (rp.facts as { flags?: Flag[] } | undefined)?.flags ?? [];
+    return [{ documentId: docId, title: `${st || 'Search'} search result`, summary: [sr?.returnedAt ? `returned ${day(sr.returnedAt)}` : null, read, flags.length ? n(flags.length, 'point') : 'nothing flagged'].filter(Boolean).join(', '), lines: flagLines(flags), warn: flags.length > 0 }];
   }
   if (d.kind === 'enquiry') {
     const f = rp.facts as { enquiryId?: string; status?: string; issues?: Flag[] } | undefined;
@@ -513,8 +515,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
   if (d.kind === 'proof_of_funds' && s.proofOfFunds.facts) return pofChecklist(s, docId, x);
 
   if (d.kind === 'search') {
-    const f = rp.facts as { flags?: Flag[] } | undefined;
-    const flags = f?.flags ?? [];
+    const st = d.subject?.replace(/^search:/, '') ?? (rp.searchType as string | undefined) ?? '';
+    const flags = s.searches[st]?.facts?.flags ?? (rp.facts as { flags?: Flag[] } | undefined)?.flags ?? flagsOf(raised);
     return attachFlags(checks, flags, docId, flags.length ? [] : [{ text: 'The search came back with nothing the rules flag' }]);
   }
   if (d.kind === 'enquiry') {
