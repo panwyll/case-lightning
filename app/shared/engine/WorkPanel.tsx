@@ -6,7 +6,7 @@ import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
-import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, User, Workflow, Zap } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, User, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -62,10 +62,6 @@ export const WORK_CSS = `
 .ep-box.blocked{border-left-color:#dc2626}
 .ep-box.idle{border-left-color:#cbd5e1;background:#fcfcfd}
 .ep-box.idle .ep-box-t{color:#64748b}
-.ep-box.ghost{border:1px dashed #cbd5e1;background:transparent;box-shadow:none;opacity:.75}
-.ep-box.ghost .ep-box-t{color:#94a3b8;font-weight:600}
-.ep-box.ghost .ep-box-t .ic{color:#cbd5e1}
-.ep-box.ghost .ep-box-m{font-size:11.5px;color:#94a3b8}
 .ep-box.on{border-color:#5A27E0;border-left-color:#5A27E0;box-shadow:0 0 0 3px #ede9fe,0 6px 20px rgba(15,23,42,.08)}
 .ep-box-h{display:grid;gap:8px;padding:11px 12px 11px 11px;cursor:pointer;border:0;background:none;width:100%;text-align:left;font-family:inherit;color:inherit;border-radius:12px}
 .ep-box-h:hover{background:#fafafa}
@@ -246,7 +242,7 @@ const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.
 /** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
 const PERSON: Array<[RegExp, 'conveyancer' | 'client']> = [[/^Contract approved/, 'conveyancer'], [/^Client's authority/, 'client'], [/^Exchange$/, 'conveyancer'], [/^Report on title/, 'conveyancer'], [/^Proof of funds/, 'conveyancer'], [/^Mortgage deed/, 'client'], [/^Certificate of title/, 'conveyancer'], [/^Completion payment/, 'conveyancer'], [/^Balance to the client/, 'conveyancer'], [/^Payment to the lender/, 'conveyancer'], [/^AP1/, 'conveyancer'], [/^SDLT/, 'conveyancer'], [/^Transfer deed/, 'client'], [/^Declaration of trust/, 'client'], [/^How they hold/, 'client'], [/^Forms/, 'client'], [/^Completion$/, 'conveyancer']];
 const personFor = (label: string) => PERSON.find(([re]) => re.test(label))?.[1] ?? null;
-export interface LaneDef { /** A conditional step: when it applies, in a person's words ('If there is a lender'). */ when?: string; /** A conditional step that does not apply on this case: drawn faded, unjoined, with why. */ ghost?: string; id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** a map, not a case: no state label, no progress bar, no status pills */ plain?: boolean; /** the gate this box holds when it is not the exit of its own band, e.g. 'Holds Exchange' */ holds?: string; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
+export interface LaneDef { id: string; title: string; state: 'done' | 'open' | 'blocked' | 'idle'; note?: string; tiles: Tile[]; actions?: ReactNode; extra?: ReactNode; /** a map, not a case: no state label, no progress bar, no status pills */ plain?: boolean; /** the gate this box holds when it is not the exit of its own band, e.g. 'Holds Exchange' */ holds?: string; /** sequence: the sub-blocks happen in this order and the last is the gate; parallel (default): they run side by side */ order?: 'sequence' | 'parallel' }
 export type Notice = { kind: 'ok' | 'warn' | 'err'; text: string; at: number } | null;
 const NoticeBox = ({ n }: { n: Notice }) => (n ? <div className={n.kind === 'ok' ? 'ep-ok' : n.kind === 'warn' ? 'ep-warn' : 'ep-err'} role={n.kind === 'err' ? 'alert' : 'status'}>{n.text}</div> : null);
 
@@ -274,18 +270,10 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
   const pct = steps.length ? Math.round((done / steps.length) * 100) : lane.state === 'done' ? 100 : 0;
   const [unfolded, setUnfolded] = useState<Set<number>>(new Set());
   const toggleFold = (n: number) => setUnfolded((cur) => { const next = new Set(cur); if (next.has(n)) next.delete(n); else next.add(n); return next; });
-  if (lane.ghost) return (
-    <div className="ep-box ghost" id={`lane-${lane.id}`} data-lane={lane.id} data-ghost="">
-      <div className="ep-box-h" style={{ cursor: 'default' }}>
-        <span className="ep-box-t"><span className="ic"><Workflow size={16} /></span>{titleCase(lane.title)}</span>
-        <span className="ep-box-m"><span>{lane.ghost}</span></span>
-      </div>
-    </div>
-  );
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id} data-unfed={unfed ? '' : undefined}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.when && <Tip label={lane.when} icon={<Workflow size={11} />} text={<><span className="k">Conditional</span> {lane.when}.</>} />}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
@@ -348,7 +336,7 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
     const bus: string[] = []; const drops: string[] = []; const arrows: string[] = []; const junctions: Array<{ x: number; y: number; from: string; to: string }> = [];
     const mid = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left - rr.left + r.width / 2, top: r.top - rr.top, bottom: r.bottom - rr.top }; };
     const feedsOf = (el: HTMLElement | undefined) => (el?.dataset.feeds ? el.dataset.feeds.split(',') : null);
-    const boxes = (el: HTMLElement, sel = '.ep-box:not([data-ghost])') => Array.from(el.querySelectorAll<HTMLElement>(sel));
+    const boxes = (el: HTMLElement, sel = '.ep-box') => Array.from(el.querySelectorAll<HTMLElement>(sel));
     for (let i = 0; i < tierEls.length - 1; i++) {
       // A band fed by named boxes only (enquiries: from title, searches, survey): only those draw into it, and the
       // rest of the band before carries past it to the band after (the mortgage goes to exchange, not to enquiries).
@@ -356,7 +344,7 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       const own = boxes(tierEls[i]).filter((el) => !into || into.includes(el.dataset.lane ?? ''));
       const carried = feedsOf(tierEls[i]) && i > 0 ? boxes(tierEls[i - 1]).filter((el) => !feedsOf(tierEls[i])!.includes(el.dataset.lane ?? '')) : [];
       const a = [...own, ...carried].map(mid);
-      const b = boxes(tierEls[i + 1], '.ep-box:not([data-unfed]):not([data-ghost])').map(mid);
+      const b = boxes(tierEls[i + 1], '.ep-box:not([data-unfed])').map(mid);
       if (!a.length || !b.length) continue;
       // The bus sits just under the boxes it leaves, inside their own band, not on the band's edge.
       const y = Math.min(Math.max(...a.map((p) => p.bottom)) + 22, (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2);
@@ -1073,21 +1061,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     return d ? `/conveyi/decisions/${d.eventId}` : undefined;
   };
   for (const l of lanes) for (const x of l.tiles) if (!x.href) x.href = linkFor(x);
-  // Conditional steps say when they apply; one that could apply but does not on this case is drawn faded with why.
-  const WHEN: Record<string, string | undefined> = {
-    source_of_funds: 'Only on a purchase',
-    property_forms: 'Only on a sale',
-    mortgage: remo ? undefined : 'Only when the buyer has a lender',
-    redemption: 'Only when a mortgage is paid off',
-    lender_consent: 'Only when the lender must consent to the transfer',
-    co_ownership: 'Only with two or more clients',
-    survey: "The client's choice: the case asks until they book one or say no",
-    leasehold: 'Only on a leasehold',
-    signing: 'Only when there are deeds to sign',
-  };
-  for (const l of lanes) if (WHEN[l.id]) l.when = WHEN[l.id];
-  if (buyer && has('mortgage') && !s.hasLender) lanes.push({ id: 'mortgage', title: 'Mortgage', state: 'idle', tiles: [], ghost: 'Not needed: a cash purchase' });
-  if (seller && has('redemption') && !redemptionApplies) lanes.push({ id: 'redemption', title: 'Redemption', state: 'idle', tiles: [], ghost: 'No mortgage to pay off' });
   const current = openLane === undefined ? (lanes.find((l) => l.state === 'blocked') ?? lanes.find((l) => l.state === 'open'))?.id ?? null : openLane;
   const toggle = (l: LaneDef) => setOpenLane(current === l.id ? null : l.id);
 
@@ -1100,7 +1073,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {section === 'flow' && (
         <div className="ep-legend" aria-label="Legend">
           <span><i className="ep-who"><User size={10} /></i>Sign-off</span>
-          <span><i className="ep-who"><Workflow size={10} /></i>Conditional</span>
           <span><i className="ep-who doc"><FileText size={10} /></i>Creates a document</span>
           <span><i className="ep-who"><Lock size={10} /></i>Holds a later gate</span>
         </div>
