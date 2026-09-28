@@ -100,7 +100,7 @@ export async function PATCH(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
-    const input = z.object({ key: z.enum(Object.keys(POLICY_DEFAULTS) as [PolicyKey, ...PolicyKey[]]), value: z.boolean() }).parse(await req.json());
+    const input = z.object({ key: z.enum(['protectOutgoingFiles', 'archiveHandledEmail']), value: z.boolean() }).parse(await req.json());
     await setPolicy(user.tenantId, input.key, input.value, user.userId);
     return ok({ saved: true, policies: await allPolicies(user.tenantId) });
   } catch (error) {

@@ -48,6 +48,8 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   const agent = contacts.find((c) => c.role === 'AGENT') ?? null;
   const lender = contacts.find((c) => c.role === 'LENDER') ?? null;
   const firstName = (client?.name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null;
+  const { getFirmProfile, firmFooter } = await import('../firm');
+  const footer = firmFooter(await getFirmProfile(tenantId));
   return {
     matterRef: m.matter_ref,
     propertyAddress: m.property_address,
@@ -59,6 +61,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
     clientEmail: client?.email ?? null,
     clientPhone: client?.phone ?? null,
     clientWhatsAppOptIn: !!client?.whatsapp_opt_in,
+    footer,
     contacts: {
       ...(other ? { seller_solicitor: { email: other.email, name: other.name } } : {}),
       ...(agent ? { estate_agent: { email: agent.email, name: agent.name } } : {}),

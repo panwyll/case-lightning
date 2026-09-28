@@ -35,6 +35,7 @@ import {
   STAGES,
   SYSTEM,
   AI,
+  EXTERNAL,
   currentBankDetails,
   pendingBankDetailsDecision,
   maskAccount,
@@ -100,6 +101,11 @@ import {
   NOTE_KINDS,
   type NoteKind,
   type NoteSender,
+  type SignedDocument,
+  type SigningMethod,
+  SIGNED_DOCUMENTS,
+  SIGNED_DOCUMENT_LABEL,
+  deedSigned,
   type AvailabilityParty,
   AVAILABILITY_PARTIES,
 } from './types';
@@ -137,6 +143,9 @@ type CommandBody =
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
+  | { type: 'set_signing_method'; actor: Actor; document: SignedDocument; method: SigningMethod; reason?: string | null }
+  | { type: 'record_signing_pack_sent'; documents: SignedDocument[]; methods: Partial<Record<SignedDocument, SigningMethod>>; attached: string[]; channel: string; messageId: string | null }
+  | { type: 'record_signing_envelope'; document: SignedDocument; provider: string; envelopeId: string }
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
   | { type: 'mortgage_offer_withdrawn'; actor: Actor; reason: string; lender?: string | null }
@@ -250,6 +259,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'set_target_dates',
   'change_completion_date',
   'record_availability',
+  'set_signing_method',
   'notice_to_complete_served',
   'mortgage_offer_withdrawn',
   'withdraw_enquiry',
@@ -1272,6 +1282,24 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (targetExchangeDate === s.targetExchangeDate && targetCompletionDate === s.targetCompletionDate) reject('Target dates are unchanged.');
       return [{ type: 'target_dates_changed', actor: cmd.actor, payload: { targetExchangeDate, targetCompletionDate, reason: cmd.reason ?? null, previous: { targetExchangeDate: s.targetExchangeDate, targetCompletionDate: s.targetCompletionDate } } }];
     }
+    case 'set_signing_method': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('How a deed is signed is set by a person.', 403);
+      if (!(SIGNED_DOCUMENTS as readonly string[]).includes(cmd.document)) reject(`Unknown document "${cmd.document}".`, 400);
+      if (cmd.method !== 'wet' && cmd.method !== 'electronic') reject('Wet ink or electronic.', 400);
+      if (deedSigned(s, cmd.document)) reject(`The ${SIGNED_DOCUMENT_LABEL[cmd.document].toLowerCase()} is already signed.`);
+      if (s.signing.envelopes[cmd.document] && cmd.method === 'wet') reject('It is out for electronic signature already; cancel that with the provider first, then switch.');
+      return [{ type: 'signing_method_set', actor: cmd.actor, payload: { document: cmd.document, method: cmd.method, reason: cmd.reason?.trim() || null } }];
+    }
+    case 'record_signing_pack_sent': {
+      requireEnrolled(s);
+      if (!cmd.documents.length) reject('Nothing to sign on this case.');
+      return [{ type: 'signing_pack_sent', actor: SYSTEM, payload: { documents: cmd.documents, methods: cmd.methods, attached: cmd.attached, channel: cmd.channel, messageId: cmd.messageId } }];
+    }
+    case 'record_signing_envelope': {
+      requireEnrolled(s);
+      return [{ type: 'signing_envelope_sent', actor: SYSTEM, payload: { document: cmd.document, provider: cmd.provider, envelopeId: cmd.envelopeId } }];
+    }
     case 'record_availability': {
       requireEnrolled(s);
       if (!isUserActor(cmd.actor)) reject('Availability is recorded by a person.', 403);
@@ -1859,6 +1887,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!s.hasLender) reject('No lender on this matter; there is no mortgage deed.');
       requireType(s, ['freehold_purchase', 'leasehold_purchase', 'remortgage'], 'A mortgage deed');
       if (s.deeds.mortgageDeedAt) reject('The mortgage deed is already executed.');
+      {
+        const doc = (cmd as { completion?: { documentId?: string | null; checklist?: Record<string, boolean> | null } }).completion;
+        if (doc !== undefined || cmd.actor === EXTERNAL) {
+          const which: SignedDocument = 'mortgage_deed';
+          const method = s.signing.methods[which] ?? 'wet';
+          if (!doc?.documentId) reject(`Upload the signed ${SIGNED_DOCUMENT_LABEL[which].toLowerCase()} first: ${method === 'wet' ? 'a scan of the wet-ink original' : 'the signed copy from the signing provider'}.`, 400);
+          if (method === 'wet' && cmd.actor !== EXTERNAL && !doc?.checklist?.original_held) reject('Confirm the wet-ink original is with us: the scan is the record, the original goes to the lender or HM Land Registry.', 400);
+        }
+      }
+
       if (cmd.witnessed === false) reject('A mortgage deed must be witnessed; an unwitnessed deed is a document-execution issue, not an execution.', 400);
       return [{ type: 'mortgage_deed_executed', actor: cmd.actor, payload: { lender: cmd.lender ?? s.mortgage.facts?.lender ?? null, witnessed: true } }];
     }
@@ -1890,12 +1928,31 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase', 'freehold_sale', 'leasehold_sale'], 'A transfer deed');
       if (s.deeds.transferDeedAt) reject('The transfer deed is already executed.');
+      {
+        const doc = (cmd as { completion?: { documentId?: string | null; checklist?: Record<string, boolean> | null } }).completion;
+        if (doc !== undefined || cmd.actor === EXTERNAL) {
+          const which: SignedDocument = 'transfer';
+          const method = s.signing.methods[which] ?? 'wet';
+          if (!doc?.documentId) reject(`Upload the signed ${SIGNED_DOCUMENT_LABEL[which].toLowerCase()} first: ${method === 'wet' ? 'a scan of the wet-ink original' : 'the signed copy from the signing provider'}.`, 400);
+          if (method === 'wet' && cmd.actor !== EXTERNAL && !doc?.checklist?.original_held) reject('Confirm the wet-ink original is with us: the scan is the record, the original goes to the lender or HM Land Registry.', 400);
+        }
+      }
+
       if (cmd.witnessed === false) reject('A transfer deed must be witnessed.', 400);
       if (!cmd.parties.length) reject('Name the parties who signed.', 400);
       return [{ type: 'transfer_deed_executed', actor: cmd.actor, payload: { parties: cmd.parties, witnessed: true } }];
     }
     case 'deed_of_trust_executed': {
       requireEnrolled(s);
+      {
+        const doc = (cmd as { completion?: { documentId?: string | null; checklist?: Record<string, boolean> | null } }).completion;
+        if (doc !== undefined || cmd.actor === EXTERNAL) {
+          const which: SignedDocument = 'deed_of_trust';
+          const method = s.signing.methods[which] ?? 'wet';
+          if (!doc?.documentId) reject(`Upload the signed ${SIGNED_DOCUMENT_LABEL[which].toLowerCase()} first: ${method === 'wet' ? 'a scan of the wet-ink original' : 'the signed copy from the signing provider'}.`, 400);
+          if (method === 'wet' && cmd.actor !== EXTERNAL && !doc?.checklist?.original_held) reject('Confirm the wet-ink original is with us: the scan is the record, the original goes to the lender or HM Land Registry.', 400);
+        }
+      }
       requireType(s, ['transfer_of_equity', 'freehold_purchase', 'leasehold_purchase'], 'A declaration of trust');
       if (s.parties < 2) reject('Only one client on this matter; a declaration of trust needs co-owners.');
       if (!s.clientDecisions.ownership_basis) reject('The clients have not decided how they hold; record the ownership_basis decision first.');

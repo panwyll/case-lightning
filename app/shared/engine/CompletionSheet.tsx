@@ -8,8 +8,10 @@ import { TASK_CONTEXT_CSS, TaskContextBody, TaskContextFacts } from './TaskConte
  * figures and dates, the checklist, who confirmed — and hands one body back to record.
  * Field keys are the command's own fields; `completion` carries the rest.
  */
-export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCancel }: {
+export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCancel, upload }: {
   contract: CompletionContract;
+  /** Upload a scan here (a signed deed back by post); the new file is chosen and counts as read. */
+  upload?: (file: File) => Promise<CaseDocument>;
   context: TaskContextView | null;
   docs: CaseDocument[] | null;
   busy: boolean;
@@ -22,10 +24,20 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
   const [ticks, setTicks] = useState<Record<string, boolean>>({});
   const [party, setParty] = useState({ who: '', channel: 'email', at: new Date().toISOString().slice(0, 10) });
   const [note, setNote] = useState('');
+  const [added, setAdded] = useState<CaseDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const onFile = async (f: File | undefined) => {
+    if (!f || !upload) return;
+    setUploading(true); setUploadErr(null);
+    try { const d = await upload(f); setAdded((a) => [d, ...a.filter((x) => x.id !== d.id)]); setDocumentId(d.id); setRead(true); }
+    catch (e: unknown) { setUploadErr(e instanceof Error ? e.message : 'Could not upload.'); }
+    finally { setUploading(false); }
+  };
 
   const roles = (contract.documentRoles ?? []).map((r) => r.toLowerCase());
   const fits = (d: CaseDocument) => !roles.length || roles.includes((d.docType ?? '').toLowerCase());
-  const sorted = useMemo(() => (docs ?? []).slice().sort((a, b) => Number(fits(b)) - Number(fits(a)) || b.createdAt.localeCompare(a.createdAt)), [docs]);
+  const sorted = useMemo(() => [...added, ...(docs ?? []).filter((d) => !added.some((a) => a.id === d.id))].sort((a, b) => Number(fits(b)) - Number(fits(a)) || b.createdAt.localeCompare(a.createdAt)), [docs, added]);
   const chosen = sorted.find((d) => d.id === documentId) ?? null;
 
   const missing: string[] = [];
@@ -72,10 +84,17 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
             <option value="">{docs === null ? 'Loading…' : contract.documentRequired ? 'Choose…' : 'None'}</option>
             {sorted.map((d) => <option key={d.id} value={d.id} disabled={!fits(d)}>{d.fileName ?? d.id}{d.docType ? ` · ${d.docType}` : ''}{fits(d) ? '' : ' (wrong kind)'}</option>)}
           </select>
+          {upload && (
+            <label className="cs-up">
+              <input type="file" accept="application/pdf,image/*" hidden onChange={(e) => void onFile(e.target.files?.[0])} disabled={uploading} />
+              <span className="ep-btn">{uploading ? 'Uploading…' : 'Upload a Scan'}</span>
+              {uploadErr && <span className="cs-err">{uploadErr}</span>}
+            </label>
+          )}
           {chosen && (
             <label className="cs-read">
               <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} />
-              {chosen.webUrl ? <a href={chosen.webUrl} target="_blank" rel="noreferrer">Open</a> : <span>Open</span>} and read before recording
+              <a href={chosen.webUrl ?? `/api/v1/documents/${chosen.id}/raw`} target="_blank" rel="noreferrer">Open</a> and read before recording
             </label>
           )}
         </div>
@@ -122,6 +141,9 @@ const CSS = `
 .cs-v .ep-input{margin:0}
 .cs-read{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;margin-top:6px;color:#334155}
 .cs-read a{color:#5A27E0}
+.cs-up{display:inline-flex;align-items:center;gap:8px;margin-left:8px;cursor:pointer}
+.cs-up .ep-btn{margin:0}
+.cs-err{font-size:12px;color:#b91c1c}
 .cs-tick{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:#0f172a}
 .cs-a{display:flex;gap:8px;margin-top:10px}
 .cs-a .ep-btn{margin:0}

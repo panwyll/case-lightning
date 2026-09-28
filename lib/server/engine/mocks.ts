@@ -236,6 +236,7 @@ export interface MockPorts extends EnginePorts {
   idCheckProvider: MockIdCheckProvider;
   clientComms: MockClientComms;
   chaser: MockChaser;
+  signing: MockSigning;
   pofForms: MockProofOfFundsForms;
   /** Test helper: move the injected clock. */
   setNow(d: Date): void;
@@ -256,6 +257,7 @@ export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
     searchProvider: new MockSearchProvider(),
     idCheckProvider: new MockIdCheckProvider(),
     clientComms: new MockClientComms(),
+    signing: new MockSigning(),
     chaser: new MockChaser(),
     pofForms: new MockProofOfFundsForms(),
     noteExtractor: new DeterministicNoteReader(),
@@ -271,3 +273,17 @@ export function mockPorts(start = new Date('2026-09-14T09:00:00Z')): MockPorts {
 // Re-exported so mocks.ts is self-contained for tests.
 import type { MatterState } from './types';
 export type { MatterState };
+
+
+/** The signing pack as a test sees it: what went where, and the envelopes. */
+export class MockSigning {
+  readonly name = 'mock-signing';
+  provider = 'none';
+  lenderAcceptsDigital: boolean | null = null;
+  packs: Array<{ wet: string[]; electronic: string[] }> = [];
+  async defaults() { return { provider: this.provider, lenderAcceptsDigital: this.lenderAcceptsDigital }; }
+  async sendPack(input: { wet: import('./types').SignedDocument[]; electronic: import('./types').SignedDocument[] }) {
+    this.packs.push({ wet: input.wet, electronic: input.electronic });
+    return { channel: 'mock', messageId: `mock-pack-${this.packs.length}`, attached: input.wet.map((d) => `${d}.pdf`), envelopes: input.electronic.map((d) => ({ document: d, provider: this.provider, envelopeId: `env-${d}` })), fellBackToWet: [] as import('./types').SignedDocument[] };
+  }
+}

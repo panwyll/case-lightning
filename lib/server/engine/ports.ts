@@ -18,7 +18,7 @@
  */
 import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
-import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SignedDocument, SearchFacts, SearchType, SurveyFacts, TitleFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview, PayslipFacts, EvidenceKind } from './proof-of-funds';
 
@@ -184,6 +184,19 @@ export interface LinkedMatterNotifier {
   enquiryRaised(input: { tenantId: string; fromMatterId: string; enquiryId: string; subject: string }): Promise<void>;
 }
 
+/**
+ * Signing: sending the client what they must sign. Wet-ink deeds go as a letter from the fee
+ * earner's mailbox with the deeds attached and the firm's postal address to return them to;
+ * electronic ones go to the firm's signing provider (InfoTrack, InTouch, LEAP), which calls back
+ * with the signed copy.
+ */
+export interface SigningPort {
+  readonly name: string;
+  /** The firm's provider ('none' = wet ink only) and whether this lender takes an e-signed mortgage deed (null: not known). */
+  defaults(tenantId: string, lender: string | null): Promise<{ provider: string; lenderAcceptsDigital: boolean | null }>;
+  sendPack(input: { tenantId: string; matterId: string; wet: SignedDocument[]; electronic: SignedDocument[]; signers: string[] }): Promise<{ channel: string; messageId: string | null; attached: string[]; envelopes: Array<{ document: SignedDocument; provider: string; envelopeId: string }>; fellBackToWet: SignedDocument[] }>;
+}
+
 export interface EnginePorts {
   /** Enrolment fires the ID / AML check and the proof-of-funds form unasked (subject to trust levels). Default on; flow fixtures turn it off to drive each step by hand. */
   autoStartOnEnrol?: boolean;
@@ -206,6 +219,8 @@ export interface EnginePorts {
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;
+  /** Optional: sending the signing pack. Without it the pack is proposed and recorded by hand. */
+  signing?: SigningPort | null;
   chaser: ThirdPartyChaser;
   /** Injectable clock so tests and replays are deterministic. */
   now: () => Date;

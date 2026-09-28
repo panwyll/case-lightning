@@ -564,6 +564,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     } catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not read it again.'); }
     finally { setRereading(null); }
   };
+  const [packBusy, setPackBusy] = useState(false);
+  const [packNote, setPackNote] = useState<string | null>(null);
+  const sendPack = async () => {
+    setPackBusy(true); setPackNote(null);
+    try { await api(`/matters/${matterId}/signing/pack`, { method: 'POST', body: '{}' }); setPackNote('Sent'); onChanged?.(); }
+    catch (e: unknown) { setPackNote(e instanceof Error ? e.message : 'Could not send the pack.'); }
+    finally { setPackBusy(false); }
+  };
   const [sheetContext, setSheetContext] = useState<TaskContextView | null>(null);
   useEffect(() => {
     if (!sheet) return;
@@ -600,6 +608,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   ) : sheet && contracts[sheet.type] ? (
     <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
       <CompletionSheet
+        upload={/_deed_executed$|deed_of_trust_executed/.test(sheet.type) ? async (file) => {
+          const base64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = () => rej(new Error('Could not read the file.')); r.readAsDataURL(file); });
+          const r = await api<{ document: CaseDocument }>(`/matters/${matterId}/documents/upload-scan`, { method: 'POST', body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64, docType: 'SIGNED_DEED' }) });
+          return r.document;
+        } : undefined}
         contract={contracts[sheet.type]}
         docs={docs}
         context={sheetContext}
@@ -750,7 +763,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ],
     actions: <>
       {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const y = ask("Lender's minimum unexpired lease term in years (blank if none):", s.lenderRequirements?.minUnexpiredYears?.toString() ?? ''); if (y === null) return; const m = ask("Maximum age of searches at exchange, in months (blank if none):", s.lenderRequirements?.maxSearchAgeMonths?.toString() ?? ''); if (m === null) return; const g = ask('Accepts a gifted deposit from outside the family? yes / no / blank', s.lenderRequirements?.acceptsNonFamilyGift == null ? '' : s.lenderRequirements.acceptsNonFamilyGift ? 'yes' : 'no'); if (g === null) return; void cmd({ type: 'record_lender_requirements', minUnexpiredYears: y.trim() ? Number(y) : null, maxSearchAgeMonths: m.trim() ? Number(m) : null, acceptsNonFamilyGift: g.trim() ? /^y/i.test(g) : null }); }}>Lender Requirements</button>}
-      {!deeds.mortgageDeedAt && resolved(s.mortgage.status) && act('mortgage', 'mortgage_deed_executed', 'Mortgage Deed Executed', { witnessed: true })}
       {!deeds.certificateOfTitleAt && resolved(s.mortgage.status) && act('mortgage', 'certificate_of_title_sent', 'Certificate of Title Sent')}
       {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && resolved(s.mortgage.status) && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why was the offer withdrawn / lapsed?'); if (r) void cmd({ type: 'mortgage_offer_withdrawn', reason: r }); }}>Offer withdrawn</button>}
     </> });
@@ -784,7 +796,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {!completed && ['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'].map((d) => (
         <span key={d}>{act('co_ownership', 'client_decision_recorded', pretty(d), { subject: 'ownership_basis', decision: d }, { primary: !s.clientDecisions?.ownership_basis, disabled: s.clientDecisions?.ownership_basis?.decision === d })}</span>
       ))}
-      {tic && !deeds.deedOfTrustAt && act('co_ownership', 'deed_of_trust_executed', 'Declaration of Trust Executed', {}, { primary: true })}
     </> });
 
   if (has('survey') && s.survey) {
@@ -857,9 +868,41 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('New contractual completion date (YYYY-MM-DD):', s.exchange.completionDate ?? ''); if (d) { const r = ask('Reason?'); if (r) void cmd({ type: 'change_completion_date', completionDate: d, reason: r }); } }}>Change completion date</button>}
     </> });
 
-  if (toe || buyer || seller) lane({ id: 'transfer_deed', title: 'Transfer deed (TR1)', holds: 'Holds Completion', state: deeds.transferDeedAt ? 'done' : s.stage === 'pre_completion' ? 'blocked' : 'idle', note: buyer ? 'usually signed with the contract' : seller ? 'signed by the seller, witnessed, held undated until completion' : 'every party signs, witnessed',
-    tiles: [{ label: 'Transfer deed', status: deeds.transferDeedAt ? 'done' : 'not_started', detail: deeds.transferDeedAt ? `executed ${fmtDay(deeds.transferDeedAt)}` : undefined }],
-    actions: !deeds.transferDeedAt && !completed ? act('transfer_deed', 'transfer_deed_executed', 'Transfer Deed Executed', { witnessed: true }, { primary: toe }) : null });
+  // Signing: every deed the client signs, wet ink or electronic, with the signed copy as the gate.
+  {
+    const sg = s.signing ?? { packSentAt: null, documents: [], methods: {}, envelopes: {} };
+    const toSign: Array<'transfer' | 'mortgage_deed' | 'deed_of_trust'> = [];
+    if (seller || toe || (buyer && parties >= 2)) toSign.push('transfer');
+    if (s.hasLender && (buyer || remo)) toSign.push('mortgage_deed');
+    if (tic) toSign.push('deed_of_trust');
+    const LABEL = { transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' } as const;
+    const CMD = { transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
+    const done = (d: keyof typeof LABEL) => (d === 'transfer' ? deeds.transferDeedAt : d === 'mortgage_deed' ? deeds.mortgageDeedAt : deeds.deedOfTrustAt);
+    const extra = (d: keyof typeof LABEL): Record<string, unknown> => (d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
+    if (toSign.length) lane({
+      id: 'signing', title: 'Signing', holds: 'Holds Completion', order: 'parallel',
+      state: toSign.every((d) => done(d)) ? 'done' : sg.packSentAt ? 'open' : 'idle',
+      note: toSign.every((d) => done(d)) ? 'every deed signed and on file' : sg.packSentAt ? `pack sent ${fmtDay(sg.packSentAt)}` : 'sent once the contract is approved',
+      tiles: toSign.map((d) => {
+        const method = sg.methods[d] ?? 'wet';
+        const env = sg.envelopes[d];
+        const signed = done(d);
+        return {
+          label: LABEL[d],
+          status: signed ? 'signed' : env ? 'out_for_e_signature' : sg.packSentAt ? 'with_client' : 'not_sent',
+          detail: signed ? `signed copy on file ${fmtDay(signed)}` : method === 'electronic' ? `electronic${env ? ` via ${env.provider}` : ''}` : 'wet ink · original posted back to us',
+          action: signed || completed ? undefined : <>
+            {act('signing', CMD[d], 'Record Signed Copy', extra(d), { primary: !!sg.packSentAt })}
+            {!env && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'set_signing_method', document: d, method: method === 'wet' ? 'electronic' : 'wet' })}>{method === 'wet' ? 'Sign Electronically' : 'Wet Ink Instead'}</button>}
+          </>,
+        };
+      }),
+      actions: !completed && toSign.some((d) => !done(d)) ? <>
+        <button className="ep-btn primary" disabled={busy || packBusy} onClick={() => void sendPack()}>{packBusy ? 'Sending…' : sg.packSentAt ? 'Send the Pack Again' : 'Send Signing Pack'}</button>
+        {packNote && <span className="ep-note">{packNote}</span>}
+      </> : null,
+    });
+  }
 
   if (buyer || remo) {
     const pc = s.preCompletion ?? { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null };

@@ -216,6 +216,9 @@ export const EVENT_TYPES = [
   'deed_of_trust_executed',
   'sdlt_not_required',
   'availability_recorded',
+  'signing_method_set',
+  'signing_pack_sent',
+  'signing_envelope_sent',
 ] as const;
 export type EventType = (typeof EVENT_TYPES)[number];
 
@@ -480,6 +483,10 @@ export type NoteCommand =
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
 
+export const SIGNED_DOCUMENTS = ['transfer', 'mortgage_deed', 'deed_of_trust'] as const;
+export type SignedDocument = (typeof SIGNED_DOCUMENTS)[number];
+export type SigningMethod = 'wet' | 'electronic';
+export const SIGNED_DOCUMENT_LABEL: Record<SignedDocument, string> = { transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' };
 export const AVAILABILITY_PARTIES = ['client', 'seller_side', 'agent', 'lender'] as const;
 export type AvailabilityParty = (typeof AVAILABILITY_PARTIES)[number];
 export interface AvailabilityWindow { id: string; party: AvailabilityParty; from: string; until: string; note: string; recordedAt: string }
@@ -612,7 +619,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents'] as const;
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
 export interface WaitState {
@@ -986,6 +993,12 @@ export interface Payloads {
   sdlt_not_required: { reason: string };
   /** Someone on the case is away for a period: chases to them wait, updates say so, target dates are checked against it. */
   availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
+  /** Wet ink or electronic, for one deed on this case (the lender's rules, or the client's circumstances). */
+  signing_method_set: { document: SignedDocument; method: SigningMethod; reason: string | null };
+  /** The client was sent what they must sign, and how. */
+  signing_pack_sent: { documents: SignedDocument[]; methods: Partial<Record<SignedDocument, SigningMethod>>; attached: string[]; channel: string; messageId: string | null };
+  /** A deed went out for electronic signature. */
+  signing_envelope_sent: { document: SignedDocument; provider: string; envelopeId: string };
 }
 
 /** The seller's protocol forms as the pipeline reads them (facts for disclosure; every "yes" is a client-advice point). */
@@ -1432,6 +1445,8 @@ export interface MatterState {
   clientToldAt: Record<string, string>;
   /** Who is away when (docs: context awareness). */
   availability: AvailabilityWindow[];
+  /** What the client signs and how: the pack sent, wet ink or electronic per deed, envelopes out. */
+  signing: { packSentAt: string | null; documents: SignedDocument[]; methods: Partial<Record<SignedDocument, SigningMethod>>; envelopes: Partial<Record<SignedDocument, { provider: string; envelopeId: string; sentAt: string }>> };
   chasesSent: number;
   /** What we have told the sender we received, so nothing is acknowledged twice. */
   acknowledgements: Array<{ forEventId: string; recipientRole: string; at: string }>;
@@ -1538,6 +1553,7 @@ export function initialState(tenantId: string, matterId: string): MatterState {
     clientUpdateLastSentAt: {},
     clientToldAt: {},
     availability: [],
+    signing: { packSentAt: null, documents: [], methods: {}, envelopes: {} },
     chasesSent: 0,
     acknowledgements: [],
     bankDetails: {},
@@ -1568,6 +1584,7 @@ export function withStateDefaults(s: MatterState): MatterState {
     ...s,
     clientUpdateLastSentAt: { ...(s.clientUpdateLastSentAt ?? {}) },
     clientToldAt: { ...(s.clientToldAt ?? {}) },
+    signing: { ...init.signing, ...(s.signing ?? {}) },
     notes: { ...(s.notes ?? {}) },
     postCompletion: merge('postCompletion'),
     proofOfFunds: merge('proofOfFunds'),
@@ -1665,3 +1682,19 @@ export class EngineError extends Error {
     this.status = status;
   }
 }
+
+
+/** The deeds our client signs on this case: the transfer when they are a party to it, the mortgage deed with a lender, the declaration when they hold as tenants in common. */
+export function deedsToSign(s: MatterState): SignedDocument[] {
+  const tt = s.transactionType ?? 'freehold_purchase';
+  const sale = tt === 'freehold_sale' || tt === 'leasehold_sale';
+  const purchase = tt === 'freehold_purchase' || tt === 'leasehold_purchase';
+  const out: SignedDocument[] = [];
+  // A buyer signs the TR1 when it holds something of theirs: joint buyers declaring how they hold (panel 10). A seller always signs.
+  if (sale || tt === 'transfer_of_equity' || (purchase && (s.parties ?? 1) >= 2)) out.push('transfer');
+  if (s.hasLender && (purchase || tt === 'remortgage')) out.push('mortgage_deed');
+  if (TENANTS_IN_COMMON.has(String(s.clientDecisions?.ownership_basis?.decision ?? ''))) out.push('deed_of_trust');
+  return out;
+}
+/** Whether a deed on the list has been signed and recorded. */
+export const deedSigned = (s: MatterState, d: SignedDocument): boolean => (d === 'transfer' ? !!s.deeds.transferDeedAt : d === 'mortgage_deed' ? !!s.deeds.mortgageDeedAt : !!s.deeds.deedOfTrustAt);

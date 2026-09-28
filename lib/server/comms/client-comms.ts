@@ -38,6 +38,15 @@ export interface MatterContactInfo {
   /** Third parties by role, for chases. */
   contacts: Partial<Record<'seller_solicitor' | 'estate_agent' | 'lender', { email: string; name: string | null }>>;
   completionDate: string | null;
+  /** Lines under the signature: address, phone, SRA status (empty until the firm sets them). */
+  footer?: string;
+}
+
+/** The firm's footer under the signature, once: a template the firm edited may already carry it. */
+function withFooter(body: string, info: MatterContactInfo): string {
+  const f = info.footer?.trim();
+  if (!f || body.includes(f.split('\n')[0])) return body;
+  return `${body.trimEnd()}\n\n${f}`;
 }
 
 export interface CommsDeps {
@@ -132,7 +141,7 @@ export class ProductionClientComms implements ClientComms {
       // fallback when no mailbox is connected, and it says so on the record.
       if (this.deps.mailbox && info.feeEarnerUserId) {
         try {
-          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
+          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(withFooter(body, info)));
           await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
           return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
         } catch (err) {
@@ -141,7 +150,7 @@ export class ProductionClientComms implements ClientComms {
         }
       }
       if (this.deps.email) {
-        const r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
+        const r = await this.deps.email.send({ to: info.clientEmail, subject, text: withFooter(body, info), fromUserId: info.feeEarnerUserId });
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
         return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
       }
@@ -179,8 +188,8 @@ export class ProductionClientComms implements ClientComms {
     const subject = `Report on title — ${info.propertyAddress} (${info.matterRef})`;
     const body = `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title below. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${content}\n\n${info.firmName}`;
     let r: { messageId: string | null };
-    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(body));
-    else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: body, fromUserId: info.feeEarnerUserId });
+    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, toHtml(withFooter(body, info)));
+    else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: withFooter(body, info), fromUserId: info.feeEarnerUserId });
     else throw new Error('No email sender configured.');
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', subject, body: subject, providerRef: r.messageId, status: 'SENT' });
     return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
@@ -262,11 +271,11 @@ export class ProductionChaser implements ThirdPartyChaser {
     if (!this.deps.mailbox || !info.feeEarnerUserId) throw new Error('No fee-earner mailbox to send the chase from.');
 
     if (this.deps.chaseMode === 'send') {
-      const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
+      const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(withFooter(r.body, info)));
       await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
       return { channel: 'email' as const, messageId: sent.messageId };
     }
-    const draft = await this.deps.mailbox.draft(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
+    const draft = await this.deps.mailbox.draft(info.feeEarnerUserId, to, r.subject, toHtml(withFooter(r.body, info)));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, subject: r.subject, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
     await this.deps.onChaseDrafted?.({ tenantId: input.tenantId, matterId: input.matterId, messageId: draft.messageId, title: `Chase drafted: ${r.subject}`, detail: `To ${to} — open Drafts to send.` });
     return { channel: 'email' as const, messageId: draft.messageId };
@@ -290,7 +299,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const r = render(t, vars);
     if (r.missing.length) throw new Error(`Notice template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
-    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, agent.email, r.subject, toHtml(r.body));
+    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, agent.email, r.subject, toHtml(withFooter(r.body, info)));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: agent.email, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };
   }
@@ -310,7 +319,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     if (!to || !this.deps.mailbox || !info.feeEarnerUserId) return null;
     const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_counterparty), vars);
     if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
-    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(r.body));
+    const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(withFooter(r.body, info)));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };
   }

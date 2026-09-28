@@ -9,6 +9,7 @@
  * Keep the reducer dumb: it records what happened. Deciding what happens NEXT is the
  * machine's job (machine.ts).
  */
+import { deedSigned } from './types';
 import {
   DECISION_EVENT_TYPES,
   initialState,
@@ -606,6 +607,22 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       for (const w of s.waits) if (w.closedAt === null) w.closedAt = e.createdAt;
       break;
     }
+    case 'signing_method_set': {
+      const p = e.payload as Payloads['signing_method_set'];
+      s.signing = { ...s.signing, methods: { ...s.signing.methods, [p.document]: p.method } };
+      break;
+    }
+    case 'signing_pack_sent': {
+      const p = e.payload as Payloads['signing_pack_sent'];
+      s.signing = { ...s.signing, packSentAt: e.createdAt, documents: p.documents, methods: { ...s.signing.methods, ...p.methods } };
+      openWait(s, 'signed_documents', '', e);
+      break;
+    }
+    case 'signing_envelope_sent': {
+      const p = e.payload as Payloads['signing_envelope_sent'];
+      s.signing = { ...s.signing, envelopes: { ...s.signing.envelopes, [p.document]: { provider: p.provider, envelopeId: p.envelopeId, sentAt: e.createdAt } } };
+      break;
+    }
     case 'availability_recorded': {
       const p = e.payload as Payloads['availability_recorded'];
       s.availability = [...(s.availability ?? []).filter((w) => w.id !== p.id), { id: p.id, party: p.party, from: p.from, until: p.until, note: p.note, recordedAt: e.createdAt }];
@@ -1049,6 +1066,10 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       break;
     }
   }
+  // The client's signed documents are all back: the wait on them closes.
+  if ((e.type === 'mortgage_deed_executed' || e.type === 'transfer_deed_executed' || e.type === 'deed_of_trust_executed') && s.signing?.packSentAt && s.signing.documents.every((d) => deedSigned(s, d))) {
+    closeWait(s, 'signed_documents', '', e);
+  }
   return s;
 }
 
@@ -1085,3 +1106,4 @@ function subjectOf(e: EngineEvent): string | null {
   }
   return null;
 }
+

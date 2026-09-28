@@ -22,6 +22,11 @@ export async function previewProposal(tenantId: string, matterId: string, action
   if (action === 'client_update' && detail.kind === 'id_check_request') {
     return { kind: 'action', title: `Ask ${str('provider') ?? 'the ID provider'} to run the ID / AML check${str('label') ? ` for ${str('label')}` : ''}`, lines: ['The provider sends the client their link; the result comes back to the case.', 'The check costs the firm a fee.'] };
   }
+  if (action === 'client_update' && detail.kind === 'signing_pack') {
+    const docs = Array.isArray(detail.documents) ? (detail.documents as string[]) : [];
+    const label: Record<string, string> = { transfer: 'the transfer (TR1)', mortgage_deed: 'the mortgage deed', deed_of_trust: 'the declaration of trust' };
+    return { kind: 'action', title: 'Send the client their signing pack', lines: [`To sign: ${docs.map((d) => label[d] ?? d).join(', ')}.`, 'Wet-ink deeds go attached to an email from your mailbox, with instructions on witnessing and the firm\'s address to post the originals to. Electronic ones go to the firm\'s signing provider.'] };
+  }
   if (action === 'client_update' && detail.kind === 'proof_of_funds_request') {
     const again = !!detail.followUpOf;
     const note = str('noteToClient');

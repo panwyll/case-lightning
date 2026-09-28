@@ -1,4 +1,5 @@
 'use client';
+import { FirmDetails } from './FirmDetails';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
@@ -1463,6 +1464,7 @@ function AdminPageInner() {
           </div>
         )}
 
+        {tab === 'team' && <FirmDetails canEdit={me?.role === 'ADMIN'} />}
         {tab === 'team' && (
           <div style={card}>
             {editing === 'new' && (

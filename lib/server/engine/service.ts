@@ -55,7 +55,7 @@ const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
-import { openPofQueries, openWaits, awayOn, awayNow } from './types';
+import { openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
@@ -189,6 +189,8 @@ export class EngineService {
       await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
       await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
+    } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'signing_pack') {
+      await this.sendSigningPack(tenantId, matterId);
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'proof_of_funds_request') {
       const d = detail as { followUpOf?: string | null; noteToClient?: string | null; requestedBy?: string | null };
       await this.requestProofOfFunds(tenantId, matterId, d.requestedBy ?? SYSTEM, { followUpOf: d.followUpOf ?? null, noteToClient: d.noteToClient ?? null });
@@ -763,6 +765,26 @@ export class EngineService {
     return totals;
   }
 
+  /**
+   * Send the client what they must sign. Each deed is wet ink or electronic: what a person set on
+   * the case, else electronic when the firm has a signing provider and (for the mortgage deed) the
+   * lender takes an e-signed deed, else wet ink. A lender not known to accept one is wet ink.
+   */
+  async sendSigningPack(tenantId: string, matterId: string): Promise<RunResult> {
+    const s = await this.getState(tenantId, matterId);
+    const docs = deedsToSign(s).filter((d) => !deedSigned(s, d));
+    if (!docs.length) throw Object.assign(new Error('Nothing on this case is waiting for the client to sign.'), { status: 409 });
+    if (!this.ports.signing) throw Object.assign(new Error('Sending the signing pack is not available here; send it by hand and record the signed copies.'), { status: 503 });
+    const def = await this.ports.signing.defaults(tenantId, s.mortgage?.facts?.lender ?? null);
+    const method = (d: SignedDocument): SigningMethod => s.signing.methods[d] ?? (def.provider !== 'none' && (d !== 'mortgage_deed' || def.lenderAcceptsDigital === true) ? 'electronic' : 'wet');
+    const wet = docs.filter((d) => method(d) === 'wet');
+    const electronic = docs.filter((d) => method(d) === 'electronic');
+    const sent = await this.ports.signing.sendPack({ tenantId, matterId, wet, electronic, signers: s.partyNames ?? [] });
+    for (const env of sent.envelopes) await this.run(tenantId, matterId, { type: 'record_signing_envelope', document: env.document, provider: env.provider, envelopeId: env.envelopeId });
+    const methods: Partial<Record<SignedDocument, SigningMethod>> = Object.fromEntries(docs.map((d) => [d, sent.fellBackToWet.includes(d) ? 'wet' : method(d)]));
+    return this.run(tenantId, matterId, { type: 'record_signing_pack_sent', documents: docs, methods, attached: sent.attached, channel: sent.channel, messageId: sent.messageId });
+  }
+
   /** One request to the seller's solicitor for access, naming every specialist the client wants in. */
   private async proposeAccess(tenantId: string, matterId: string, subflows: LevelConfig, note: string | null): Promise<void> {
     const fresh = await this.getState(tenantId, matterId);
@@ -806,6 +828,17 @@ export class EngineService {
           const fresh = await this.getState(tenantId, matterId);
           for (const i of Object.values(fresh.issues).filter((x) => x.kind === closes && (x.status === 'open' || x.status === 'negotiating'))) {
             await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: i.id, resolution: 'received', note: `${e.type.replace(/_/g, ' ')}: it arrived.` }).catch((err) => this.ports.log(`arrival could not close ${i.id}`, err));
+          }
+        }
+        // The deeds are ready to sign once the contract is approved (or, on a remortgage, the offer is cleared): the pack is proposed.
+        if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage')) {
+          const fresh = await this.getState(tenantId, matterId);
+          const docs = deedsToSign(fresh).filter((d) => !deedSigned(fresh, d));
+          if (docs.length && !fresh.signing.packSentAt) {
+            const detail = { kind: 'signing_pack', documents: docs };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'signing_pack', 'signing_pack', detail, `SIGNING PACK\n\nTo: the client\nTo sign: ${docs.map((d) => SIGNED_DOCUMENT_LABEL[d]).join(', ')}\nWet ink or electronic per deed as set on the case (a lender not known to take e-signed deeds is wet ink).`))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('signing pack could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            }
           }
         }
         // The survey was read: the surveyor's points for the legal adviser become enquiries to the seller's

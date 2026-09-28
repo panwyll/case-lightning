@@ -10,8 +10,8 @@ import { paths } from '@/lib/paths';
  * When a mortgage offer names a lender here, its requirements are recorded on the matter and
  * the rules read them: the lease review, the search-age check at exchange, the gift flag.
  */
-interface Lender { id: string; lenderName: string; minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null; updatedAt: string }
-const blank = { lenderName: '', minUnexpiredYears: '', maxSearchAgeMonths: '', acceptsNonFamilyGift: '', requiresEws1: '', note: '' };
+interface Lender { id: string; lenderName: string; minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; acceptsDigitalDeed?: boolean | null; note: string | null; updatedAt: string }
+const blank = { lenderName: '', minUnexpiredYears: '', maxSearchAgeMonths: '', acceptsNonFamilyGift: '', requiresEws1: '', acceptsDigitalDeed: '', note: '' };
 
 const CSS = `
 .ld-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:hidden;margin-bottom:14px}
@@ -35,12 +35,12 @@ export default function LendersPage() {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      await api('/engine/lenders', { method: 'PUT', body: JSON.stringify({ lenderName: form.lenderName.trim(), minUnexpiredYears: form.minUnexpiredYears.trim() ? Number(form.minUnexpiredYears) : null, maxSearchAgeMonths: form.maxSearchAgeMonths.trim() ? Number(form.maxSearchAgeMonths) : null, acceptsNonFamilyGift: form.acceptsNonFamilyGift === '' ? null : form.acceptsNonFamilyGift === 'yes', requiresEws1: form.requiresEws1 === '' ? null : form.requiresEws1 === 'yes', note: form.note.trim() || null }) });
+      await api('/engine/lenders', { method: 'PUT', body: JSON.stringify({ lenderName: form.lenderName.trim(), minUnexpiredYears: form.minUnexpiredYears.trim() ? Number(form.minUnexpiredYears) : null, maxSearchAgeMonths: form.maxSearchAgeMonths.trim() ? Number(form.maxSearchAgeMonths) : null, acceptsNonFamilyGift: form.acceptsNonFamilyGift === '' ? null : form.acceptsNonFamilyGift === 'yes', requiresEws1: form.requiresEws1 === '' ? null : form.requiresEws1 === 'yes', acceptsDigitalDeed: form.acceptsDigitalDeed === '' ? null : form.acceptsDigitalDeed === 'yes', note: form.note.trim() || null }) });
       setForm(blank);
       await load();
     } catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save.'); } finally { setBusy(false); }
   };
-  const edit = (l: Lender) => setForm({ lenderName: l.lenderName, minUnexpiredYears: l.minUnexpiredYears?.toString() ?? '', maxSearchAgeMonths: l.maxSearchAgeMonths?.toString() ?? '', acceptsNonFamilyGift: l.acceptsNonFamilyGift == null ? '' : l.acceptsNonFamilyGift ? 'yes' : 'no', requiresEws1: l.requiresEws1 == null ? '' : l.requiresEws1 ? 'yes' : 'no', note: l.note ?? '' });
+  const edit = (l: Lender) => setForm({ lenderName: l.lenderName, minUnexpiredYears: l.minUnexpiredYears?.toString() ?? '', maxSearchAgeMonths: l.maxSearchAgeMonths?.toString() ?? '', acceptsNonFamilyGift: l.acceptsNonFamilyGift == null ? '' : l.acceptsNonFamilyGift ? 'yes' : 'no', requiresEws1: l.requiresEws1 == null ? '' : l.requiresEws1 ? 'yes' : 'no', acceptsDigitalDeed: l.acceptsDigitalDeed == null ? '' : l.acceptsDigitalDeed ? 'yes' : 'no', note: l.note ?? '' });
   const remove = async (l: Lender) => {
     if (!window.confirm(`Remove ${l.lenderName} from the directory?`)) return;
     setBusy(true);
@@ -59,12 +59,12 @@ export default function LendersPage() {
       {err && <div className="eg-err">{err}</div>}
       <div className="ld-list">
         <table>
-          <thead><tr><th>Lender</th><th>Min unexpired lease (years)</th><th>Max search age (months)</th><th>Non-family gift</th><th>EWS1</th><th>Note</th><th>Updated</th><th /></tr></thead>
+          <thead><tr><th>Lender</th><th>Min unexpired lease (years)</th><th>Max search age (months)</th><th>Non-family gift</th><th>EWS1</th><th>E-signed deed</th><th>Note</th><th>Updated</th><th /></tr></thead>
           <tbody>
             {lenders.length === 0 && <tr><td colSpan={8} style={{ color: '#94a3b8' }}>No lenders yet.</td></tr>}
             {lenders.map((l) => (
               <tr key={l.id}>
-                <td><b>{l.lenderName}</b></td><td>{l.minUnexpiredYears ?? '—'}</td><td>{l.maxSearchAgeMonths ?? '—'}</td><td>{yn(l.acceptsNonFamilyGift)}</td><td>{yn(l.requiresEws1)}</td><td>{l.note ?? ''}</td><td>{fmtWhen(l.updatedAt)}</td>
+                <td><b>{l.lenderName}</b></td><td>{l.minUnexpiredYears ?? '—'}</td><td>{l.maxSearchAgeMonths ?? '—'}</td><td>{yn(l.acceptsNonFamilyGift)}</td><td>{yn(l.requiresEws1)}</td><td>{yn(l.acceptsDigitalDeed ?? null)}</td><td>{l.note ?? ''}</td><td>{fmtWhen(l.updatedAt)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}><button className="eg-btn" disabled={busy} onClick={() => edit(l)}>Edit</button> <button className="eg-btn" disabled={busy} onClick={() => void remove(l)}>Remove</button></td>
               </tr>
             ))}
@@ -77,6 +77,7 @@ export default function LendersPage() {
         <label>Max search age at exchange (months)<input type="number" min={1} max={24} value={form.maxSearchAgeMonths} onChange={(e) => setForm({ ...form, maxSearchAgeMonths: e.target.value })} /></label>
         <label>Accepts a non-family gift<select value={form.acceptsNonFamilyGift} onChange={(e) => setForm({ ...form, acceptsNonFamilyGift: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
         <label>Requires an EWS1<select value={form.requiresEws1} onChange={(e) => setForm({ ...form, requiresEws1: e.target.value })}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></label>
+        <label>E-signed mortgage deed<select value={form.acceptsDigitalDeed} onChange={(e) => setForm({ ...form, acceptsDigitalDeed: e.target.value })}><option value="">Not stated (wet ink)</option><option value="yes">Accepted</option><option value="no">Wet ink only</option></select></label>
         <label className="wide">Note (anything else from its Part 2 the handler must know)<textarea rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
         <div className="wide"><button className="eg-btn primary" disabled={busy || form.lenderName.trim().length < 2} onClick={() => void save()}>Save Lender</button></div>
       </div>

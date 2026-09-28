@@ -226,6 +226,8 @@ export interface EngineState {
   redemption?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; dailyInterestPennies: number | null; requestedAt: string | null; receivedAt: string | null; redeemedAt: string | null; dischargedAt: string | null };
   lenderConsent?: { status: 'not_applicable' | 'not_started' | 'requested' | 'received'; lender: string | null; conditions: string | null; requestedAt: string | null; receivedAt: string | null };
   deeds?: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null };
+  signing?: { packSentAt: string | null; documents: string[]; methods: Record<string, 'wet' | 'electronic'>; envelopes: Record<string, { provider: string; envelopeId: string; sentAt: string }> };
+  partyNames?: string[];
   sdltNotRequiredAt?: string | null;
   hasLender: boolean;
   shapes?: string[];

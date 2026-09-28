@@ -149,6 +149,12 @@ class PgLinkedMatterNotifier implements LinkedMatterNotifier {
 let _ports: EnginePorts | null = null;
 let _service: EngineService | null = null;
 
+function productionSigningPort(): EnginePorts['signing'] {
+  // Lazy: keeps Graph and the providers out of module graphs that never send a pack.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return (require('../signing') as typeof import('../signing')).productionSigning;
+}
+
 export function productionPorts(): EnginePorts {
   if (!_ports) {
     const log = (msg: string, detail?: unknown) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
@@ -179,6 +185,7 @@ export function productionPorts(): EnginePorts {
       idCheckProvider,
       clientComms,
       chaser,
+      signing: clientComms.name.startsWith('mock') ? null : productionSigningPort(),
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
       asAutomation: runAsAutomation,

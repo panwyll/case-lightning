@@ -13,6 +13,8 @@ export interface LenderProfile {
   maxSearchAgeMonths: number | null;
   acceptsNonFamilyGift: boolean | null;
   requiresEws1: boolean | null;
+  /** Takes an electronically signed mortgage deed (null: not known, so wet ink). */
+  acceptsDigitalDeed?: boolean | null;
   note: string | null;
   updatedAt: string;
 }
@@ -22,11 +24,11 @@ export interface LenderDirectory {
 
 const norm = (s: string): string => s.toLowerCase().replace(/\b(plc|ltd|limited|bank|building society|bs|uk|the)\b/g, ' ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
-const row = (r: { id: string; lender_name: string; min_unexpired_years: number | null; max_search_age_months: number | null; accepts_non_family_gift: boolean | null; requires_ews1: boolean | null; note: string | null; updated_at: string }): LenderProfile => ({ id: r.id, lenderName: r.lender_name, minUnexpiredYears: r.min_unexpired_years, maxSearchAgeMonths: r.max_search_age_months, acceptsNonFamilyGift: r.accepts_non_family_gift, requiresEws1: r.requires_ews1, note: r.note, updatedAt: r.updated_at });
+const row = (r: { id: string; lender_name: string; min_unexpired_years: number | null; max_search_age_months: number | null; accepts_non_family_gift: boolean | null; requires_ews1: boolean | null; accepts_digital_deed?: boolean | null; note: string | null; updated_at: string }): LenderProfile => ({ id: r.id, lenderName: r.lender_name, minUnexpiredYears: r.min_unexpired_years, maxSearchAgeMonths: r.max_search_age_months, acceptsNonFamilyGift: r.accepts_non_family_gift, requiresEws1: r.requires_ews1, acceptsDigitalDeed: r.accepts_digital_deed ?? null, note: r.note, updatedAt: r.updated_at });
 type Row = Parameters<typeof row>[0];
 
 export async function listLenders(tenantId: string): Promise<LenderProfile[]> {
-  const rows = await query<Row>(`select id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, note, updated_at::text from lender_profile where tenant_id = $1 order by lower(lender_name)`, [tenantId]);
+  const rows = await query<Row>(`select id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, accepts_digital_deed, note, updated_at::text from lender_profile where tenant_id = $1 order by lower(lender_name)`, [tenantId]).catch(() => query<Row>(`select id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, null::boolean as accepts_digital_deed, note, updated_at::text from lender_profile where tenant_id = $1 order by lower(lender_name)`, [tenantId]));
   return rows.map(row);
 }
 
@@ -38,7 +40,9 @@ export async function upsertLender(tenantId: string, userId: string, p: Omit<Len
      returning id, lender_name, min_unexpired_years, max_search_age_months, accepts_non_family_gift, requires_ews1, note, updated_at::text`,
     [tenantId, p.lenderName.trim(), p.minUnexpiredYears, p.maxSearchAgeMonths, p.acceptsNonFamilyGift, p.requiresEws1, p.note, userId]
   );
-  return row(r!);
+  // The e-signed deed flag rides a column added by migration 102; before it, the rest still saves.
+  if (p.acceptsDigitalDeed !== undefined) await query(`update lender_profile set accepts_digital_deed = $3 where tenant_id = $1 and id = $2`, [tenantId, r!.id, p.acceptsDigitalDeed]).catch(() => {});
+  return { ...row(r!), acceptsDigitalDeed: p.acceptsDigitalDeed ?? null };
 }
 
 export async function deleteLender(tenantId: string, id: string): Promise<void> {
