@@ -219,6 +219,8 @@ export interface EnginePorts {
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;
+  /** Optional: Outlook housekeeping; a completed case's mail folders move into Archive. */
+  mailFolders?: { archiveCase(tenantId: string, matterId: string): Promise<number> } | null;
   /** Optional: sending the signing pack. Without it the pack is proposed and recorded by hand. */
   signing?: SigningPort | null;
   chaser: ThirdPartyChaser;

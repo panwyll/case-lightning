@@ -143,10 +143,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
           details: said.join('\n'),
         }).catch((e) => console.error('[link-thread] could not log the filing', (e as Error).message));
         // Read and filed: now the conversation leaves the inbox, so Outlook matches the Email tab.
-        await archiveHandled(user.tenantId, owner.userId, conversationId);
+        await archiveHandled(user.tenantId, owner.userId, conversationId, matterId);
       });
     } else {
-      after(() => archiveHandled(user.tenantId, owner.userId, conversationId).then(() => {}));
+      after(() => archiveHandled(user.tenantId, owner.userId, conversationId, matterId).then(() => {}));
     }
 
     return ok({ ok: true });

@@ -225,7 +225,7 @@ export default function RulesPage() {
           <button className="eg-btn" disabled={busy === 'policy'} onClick={() => void setProtect(!(r?.policies?.protectOutgoingFiles ?? false))} style={r?.policies?.protectOutgoingFiles ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{r?.policies?.protectOutgoingFiles ? 'On' : 'Off'}</button>
         </div>
         <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <b style={{ fontSize: 13.5, flex: 1 }}>Archive Filed Email in Outlook</b>
+          <b style={{ fontSize: 13.5, flex: 1 }}>File Email into Case Folders in Outlook</b>
           <button className="eg-btn" disabled={busy === 'archive'} onClick={() => void setArchive(!(r?.policies?.archiveHandledEmail ?? true))} style={(r?.policies?.archiveHandledEmail ?? true) ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{(r?.policies?.archiveHandledEmail ?? true) ? 'On' : 'Off'}</button>
         </div>
       </section>

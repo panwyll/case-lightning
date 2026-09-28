@@ -537,9 +537,10 @@ export async function setFollowUpFlag(userId: string, messageId: string, dueDate
  */
 export async function ensureInboxSubfolder(userId: string, displayName: string): Promise<string> {
   const client = await graphClientForUser(userId);
+  // Looked up by name, not by paging: a fee earner with hundreds of case folders still finds theirs.
   const existing = await client
     .api(`/me/mailFolders/inbox/childFolders`)
-    .top(200)
+    .filter(`displayName eq '${displayName.replace(/'/g, "''")}'`)
     .select('id,displayName')
     .get();
   const match = (existing.value ?? []).find((f: any) => f.displayName === displayName);
@@ -877,13 +878,15 @@ export async function postTeamsSummary(
  * Outlook (well-known names: 'inbox', 'archive'). Used so the inbox matches the Email tab:
  * mail filed to a case, or set aside, leaves the inbox; undoing puts it back. Returns how many moved.
  */
-export async function moveConversation(userId: string, conversationId: string, from: 'inbox' | 'archive', to: 'inbox' | 'archive'): Promise<number> {
+export async function moveConversation(userId: string, conversationId: string, from: string, to: string, opts: { markRead?: boolean } = {}): Promise<number> {
   const client = await graphClientForUser(userId);
   const safe = conversationId.replace(/'/g, "''");
-  const res = await client.api(`/me/mailFolders('${from}')/messages`).filter(`conversationId eq '${safe}'`).select('id').top(50).get();
+  const res = await client.api(`/me/mailFolders/${/^[a-z]+$/.test(from) ? `('${from}')` : from}/messages`.replace('/(', '(')).filter(`conversationId eq '${safe}'`).select('id').top(50).get();
   let moved = 0;
   for (const m of (res.value ?? []) as Array<{ id: string }>) {
     try {
+      // Filed means dealt with: it leaves the inbox read, so the unread count means what is still to do.
+      if (opts.markRead) await client.api(`/me/messages/${m.id}`).patch({ isRead: true }).catch(() => {});
       await client.api(`/me/messages/${m.id}/move`).post({ destinationId: to });
       moved += 1;
     } catch (e) {
@@ -891,4 +894,12 @@ export async function moveConversation(userId: string, conversationId: string, f
     }
   }
   return moved;
+}
+
+
+/** Move a whole mail folder (a finished case's) into another, e.g. the Archive folder. */
+export async function moveMailFolder(userId: string, folderId: string, destination: string): Promise<string> {
+  const client = await graphClientForUser(userId);
+  const moved = await client.api(`/me/mailFolders/${folderId}/move`).post({ destinationId: destination });
+  return moved?.id ?? folderId;
 }

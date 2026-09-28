@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
           });
           if (message.hasAttachments && !filed.files.length && !problems.length) problems.push('The email says it has attachments, but none could be listed from the mailbox');
           // Filed to its case without anyone touching it: archived too, so it never sits in the inbox as if unhandled.
-          after(() => archiveHandled(user.tenantId, user.userId, message.conversationId).then(() => {}));
+          after(() => archiveHandled(user.tenantId, user.userId, message.conversationId, mId).then(() => {}));
           await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email filed: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: describeFiling(read, filed.files, problems).join('\n') }).catch(() => {});
           // ...and the message text itself, so the case record is genuinely shared.
           // listThreadMessages reads the CALLING user's mailbox, so without this a

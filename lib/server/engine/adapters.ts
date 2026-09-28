@@ -186,6 +186,8 @@ export function productionPorts(): EnginePorts {
       clientComms,
       chaser,
       signing: clientComms.name.startsWith('mock') ? null : productionSigningPort(),
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      mailFolders: clientComms.name.startsWith('mock') ? null : { archiveCase: (t: string, m: string) => (require('../mail/archive') as typeof import('../mail/archive')).archiveCaseFolders(t, m) },
       now: () => new Date(),
       newId: () => crypto.randomUUID(),
       asAutomation: runAsAutomation,

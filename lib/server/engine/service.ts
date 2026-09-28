@@ -846,6 +846,10 @@ export class EngineService {
             await this.run(tenantId, matterId, { type: 'resolve_issue', actor: SYSTEM, issueId: i.id, resolution: 'received', note: `${e.type.replace(/_/g, ' ')}: it arrived.` }).catch((err) => this.ports.log(`arrival could not close ${i.id}`, err));
           }
         }
+        // Completed: the case's mail folders leave the inbox for Archive.
+        if (e.type === 'completion_confirmed' && this.ports.mailFolders) {
+          await this.ports.mailFolders.archiveCase(tenantId, matterId).catch((err) => this.ports.log('case mail folders could not be archived', err));
+        }
         // The deeds are ready to sign once the contract is approved (or, on a remortgage, the offer is cleared): the pack is proposed.
         if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage')) {
           const fresh = await this.getState(tenantId, matterId);
