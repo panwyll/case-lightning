@@ -112,6 +112,7 @@ import {
   type TitlePlanFacts,
   type SupportingDocFacts,
   openIssues,
+  isManualStep,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -214,6 +215,7 @@ type CommandBody =
   | { type: 'seller_forms_received'; actor: Actor; documentId: string; forms?: string[] | null; facts: PropertyFormsFacts | null }
   | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
   | { type: 'unlink_related_matter'; actor: Actor; reason: string }
+  | { type: 'complete_step_manually'; actor: Actor; step: string; note: string; documentIds?: string[] }
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
@@ -308,6 +310,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'seller_forms_received',
   'link_related_matter',
   'unlink_related_matter',
+  'complete_step_manually',
   'record_lender_requirements',
   'name_change_evidenced',
   'client_account_receipt',
@@ -421,7 +424,8 @@ export function stageBlockers(s: MatterState): string[] {
   if (!s.enrolled) return ['not enrolled'];
   if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
   if (s.closedAt) return ['matter closed'];
-  if (s.manualHandling.required) return [`manual handling: ${s.manualHandling.reason ?? 'unspecified'}`];
+  // Manual handling pauses the automation, not the case: the person records what is done (marking steps
+  // complete by hand) and the stages move on those facts like any other.
   const p = profile(s);
   if (p.side === 'seller') return saleBlockers(s);
   if (p.side === 'owner') return ownerBlockers(s, p);
@@ -1910,6 +1914,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'chain_dependency', title: `Linked ${cmd.relation}: exchange is simultaneous with the related matter`, detail: `Our client's ${cmd.relation} (${cmd.relatedMatterId}) must exchange at the same time: the same completion date in both contracts, the deposit ${cmd.relation === 'sale' ? 'received on the sale used towards this purchase, and the sale proceeds towards completion' : 'from the purchase side'}. The engine refuses exchange here until the linked matter is ready to exchange too, and clears this issue when it is.`, gate: 'exchange', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'warning', causedBy: null } });
       }
       return out;
+    }
+    case 'complete_step_manually': {
+      requireEnrolled(s);
+      if (!s.manualHandling.required) reject('Steps are marked complete by hand only while the case is in manual handling.');
+      if (!isUserActor(cmd.actor)) reject('A step is marked complete by a person, not automation.', 403);
+      if (!isManualStep(cmd.step)) reject(`"${cmd.step}" is not a step that can be marked complete by hand.`, 400);
+      if (!cmd.note?.trim()) reject('Say what was done (how it was checked, where it came from).', 400);
+      if (cmd.step.startsWith('enquiry:') && !s.enquiries[cmd.step.slice(8)]) reject(`No enquiry ${cmd.step.slice(8)} on this case.`, 404);
+      return [{ type: 'step_completed_manually', actor: cmd.actor, payload: { step: cmd.step, note: cmd.note.trim(), documentIds: cmd.documentIds ?? [] } }];
     }
     case 'unlink_related_matter': {
       requireEnrolled(s);

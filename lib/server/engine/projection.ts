@@ -9,7 +9,7 @@
  * Keep the reducer dumb: it records what happened. Deciding what happens NEXT is the
  * machine's job (machine.ts).
  */
-import { deedSigned } from './types';
+import { deedSigned, isResolved, type SearchType } from './types';
 import {
   DECISION_EVENT_TYPES,
   initialState,
@@ -1019,6 +1019,37 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'related_matter_unlinked': {
       s.relatedMatter = null;
+      break;
+    }
+    // A person marked a step complete by hand (manual handling): it reads as reviewed, and anything waited on for it stops.
+    case 'step_completed_manually': {
+      const p = e.payload as Payloads['step_completed_manually'];
+      s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds } };
+      const close = (key: string, subject: string | null = null) => {
+        for (const w of s.waits) if (w.key === key && w.closedAt === null && (subject === null || w.subject === subject)) w.closedAt = e.createdAt;
+      };
+      const [kind, sub] = p.step.includes(':') ? [p.step.split(':')[0], p.step.split(':').slice(1).join(':')] : [p.step, null];
+      switch (kind) {
+        case 'id_check': s.idCheck.status = 'reviewed'; close('id_check'); break;
+        case 'proof_of_funds': s.proofOfFunds.status = 'reviewed'; close('proof_of_funds'); break;
+        case 'title': s.title.status = 'reviewed'; close('contract_pack'); break;
+        case 'report_on_title': s.reportOnTitle = { ...s.reportOnTitle, status: 'sent', sentAt: e.createdAt, interim: false }; break;
+        case 'mortgage': s.mortgage.status = 'reviewed'; close('mortgage_offer'); break;
+        case 'management_pack': s.managementPack.status = 'reviewed'; close('management_pack'); break;
+        case 'property_forms': s.propertyForms.status = 'received'; close('property_forms'); break;
+        case 'contract_pack': s.contractPack.sentAt = s.contractPack.sentAt ?? e.createdAt; break;
+        case 'contract_approved': s.readiness.contractApprovedAt = s.readiness.contractApprovedAt ?? e.createdAt; break;
+        case 'deposit': s.deposit = { received: true, at: e.createdAt }; break;
+        case 'redemption': if (s.redemption.status === 'not_started' || s.redemption.status === 'requested') s.redemption.status = 'received'; close('redemption'); break;
+        case 'enquiries': for (const q of Object.values(s.enquiries)) if (!isResolved(q.status)) q.status = 'reviewed' as never; close('enquiry'); break;
+        case 'enquiry': if (sub && s.enquiries[sub]) { s.enquiries[sub].status = 'reviewed' as never; close('enquiry', sub); } break;
+        case 'search': if (sub) {
+          const t = sub as SearchType;
+          const was = s.searches[t];
+          s.searches[t] = was ? { ...was, status: 'reviewed', resolution: 'approve' } : { searchType: t, cycle: 1, status: 'reviewed', orderedAt: null, returnedAt: e.createdAt, documentId: p.documentIds[0] ?? null, facts: null, flags: [], decisionEventId: null, resolution: 'approve' };
+          close('search', sub);
+        } break;
+      }
       break;
     }
     case 'lender_requirements_recorded': {

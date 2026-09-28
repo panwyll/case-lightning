@@ -47,6 +47,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('record_survey_plan'), plan: z.enum(['none', 'booked']), date: isoDate.nullish(), note: z.string().max(500).nullish() }),
   z.object({ type: z.literal('link_related_matter'), relatedMatterId: z.string().uuid(), relation: z.enum(['sale', 'purchase']).nullish(), note: z.string().max(500).nullish() }),
   z.object({ type: z.literal('unlink_related_matter'), reason: z.string().min(1).max(500) }),
+  z.object({ type: z.literal('complete_step_manually'), step: z.string().min(1).max(60), note: z.string().min(1).max(2000), documentIds: z.array(z.string().uuid()).max(20).optional() }),
   z.object({ type: z.literal('record_lender_requirements'), minUnexpiredYears: z.number().int().min(0).max(999).nullish(), maxSearchAgeMonths: z.number().int().min(1).max(24).nullish(), acceptsNonFamilyGift: z.boolean().nullish(), requiresEws1: z.boolean().nullish(), note: z.string().max(1000).nullish() }),
   z.object({ type: z.literal('client_account_receipt'), remitter: z.string().min(1).max(160), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['fees', 'deposit', 'completion', 'other']), reference: z.string().max(120).nullish() }),
   z.object({ type: z.literal('name_change_evidenced'), party: z.string().max(80).nullish(), from: z.string().min(1).max(120), to: z.string().min(1).max(120), reason: z.string().min(1).max(300), documentId: z.string().uuid().nullish() }),

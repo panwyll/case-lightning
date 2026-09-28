@@ -289,3 +289,21 @@ test('the report on title can go early as an interim report; once searches are i
   const { stageBlockers } = await import('../../../lib/server/engine/machine');
   assert.ok(stageBlockers(s).some((b) => /report on title/.test(b)), 'exchange waits for the supplementary');
 });
+
+test('manual handling: a person marks steps complete by hand (note and evidence) and the case moves on them; automation stays paused', async () => {
+  const h = harness();
+  const { svc } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
+  await svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'Unregistered land, handled by hand' } as never);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: 'system', step: 'id_check', note: 'x' }), /by a person/);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'exchange', note: 'x' }), /cannot be marked complete by hand|is not a step/);
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'id_check', note: 'Passport seen in person, certified copy on file', documentIds: [] });
+  let s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.idCheck.status, 'reviewed');
+  assert.equal(s.stage, 'pre_contract', 'the ID step marked complete moves the case on');
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'search:CON29', note: 'Personal search from another provider', documentIds: [] });
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.searches.CON29.status, 'reviewed');
+  assert.equal(s.manualSteps?.['search:CON29']?.note, 'Personal search from another provider');
+  assert.deepEqual(await svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 }, 'automation is still paused');
+});

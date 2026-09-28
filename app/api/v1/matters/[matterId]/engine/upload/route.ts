@@ -31,7 +31,8 @@ const bodySchema = z.object({
   fileName: z.string().min(1).max(200),
   base64: z.string().min(1),
   mimeType: z.string().max(100).default('application/pdf'),
-  role: z.enum(['auto', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report', 'property_forms']).default('auto'),
+  // 'evidence': filed on the case as it is (supporting a step marked complete by hand), never read or routed.
+  role: z.enum(['auto', 'evidence', 'search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'management_pack', 'lease', 'survey', 'specialist_report', 'property_forms']).default('auto'),
   /** id_check: whose result this is (a party id from the case); blank = the first client */
   party: z.string().max(80).nullish(),
   searchType: z.enum(SEARCH_TYPES).optional(),
@@ -62,7 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         body.mimeType,
         bytes.length,
         crypto.createHash('sha256').update(bytes).digest('hex'),
-        body.role === 'auto' ? null : body.role.toUpperCase(),
+        body.role === 'auto' ? null : body.role === 'evidence' ? 'MANUAL_EVIDENCE' : body.role.toUpperCase(),
         body.facts === undefined ? null : JSON.stringify(body.facts),
         body.facts === undefined ? null : 1,
         user.userId,
@@ -74,6 +75,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const ports = productionPorts();
     let action: IngestAction;
     let classification: unknown = null;
+    if (body.role === 'evidence') {
+      const state = await svc.getState(user.tenantId, matterId);
+      await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_UPLOAD', actionStatus: 'SUCCESS', payload: { documentId: doc!.id, fileName: body.fileName, role: 'evidence' } }).catch(() => {});
+      return ok({ documentId: doc!.id, action: { kind: 'skip', reason: 'filed as evidence' }, classification: null, stage: state.stage, blockers: stageBlockers(state), pendingDecisions: pendingDecisions(state) });
+    }
     if (body.role === 'auto') {
       const ref = await ports.documents.get(user.tenantId, doc!.id);
       const report = await ingestDocument(svc, ports, user.tenantId, matterId, ref!);

@@ -195,6 +195,7 @@ export const EVENT_TYPES = [
   'seller_forms_received',
   'related_matter_linked',
   'related_matter_unlinked',
+  'step_completed_manually',
   'lender_requirements_recorded',
   'name_change_evidenced',
   'client_account_receipt_recorded',
@@ -1032,6 +1033,7 @@ export interface Payloads {
   /** Our client is also selling (or buying): the other matter, so exchange can be made simultaneous and sale proceeds traced. */
   related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
   related_matter_unlinked: { relatedMatterId: string; reason: string };
+  step_completed_manually: { step: string; note: string; documentIds: string[] };
   /** The lender's Part 2 answers that change a rule on this matter. */
   lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
   /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */
@@ -1290,6 +1292,14 @@ export type EngineEvent<T extends EventType = EventType> = NewEvent<T> & {
 // ───────────────────────────── Projected state ─────────────────────────────
 
 export type ReviewStatus = 'cleared' | 'flagged' | 'reviewed';
+
+/**
+ * Steps a person may mark complete by hand while the case is in manual handling: each becomes
+ * "reviewed by a person", which every gate accepts as resolved. Exchange and completion keep their
+ * own forms (dates, money); searches and enquiries are named per item (search:CON29, enquiry:E2).
+ */
+export const MANUAL_STEPS = ['id_check', 'proof_of_funds', 'title', 'report_on_title', 'enquiries', 'mortgage', 'management_pack', 'property_forms', 'contract_pack', 'contract_approved', 'deposit', 'redemption'] as const;
+export const isManualStep = (step: string): boolean => (MANUAL_STEPS as readonly string[]).includes(step) || /^search:[A-Z0-9_]+$/.test(step) || /^enquiry:[\w-]{1,40}$/.test(step);
 /** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
 export const isResolved = (s: string | undefined): boolean => s === 'cleared' || s === 'reviewed' || s === 'withdrawn';
 
@@ -1538,6 +1548,8 @@ export interface MatterState {
   purchasePricePennies: number | null;
   /** Readiness milestones (advisory; shown as "ready to exchange?" not enforced as gates). */
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
+  /** Steps a person marked complete by hand (manual handling), with what they said and what they filed. */
+  manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[] }>;
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];

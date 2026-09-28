@@ -188,7 +188,8 @@ test('a leasehold title on a matter enrolled as freehold halts automation (tenur
   ]);
   assert.equal(state.manualHandling.required, true);
   assert.equal(state.manualHandling.reason, 'tenure_mismatch');
-  assert.deepEqual(stageBlockers(state), ['manual handling: tenure_mismatch']);
+  // Manual handling pauses the automation; the stage moves on what a person records (steps marked complete by hand), not frozen.
+  assert.ok(!stageBlockers(state).some((b) => /manual handling/.test(b)));
 });
 
 test('exchange and completion ordering invariants', () => {

@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { MarkComplete } from './MarkComplete';
 import { IssuesPanel } from './IssuesPanel';
 import { AddNote } from './NotesPanel';
 import { createPortal } from 'react-dom';
@@ -732,7 +733,33 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const detail = r ? `${r.read}/${r.pages} pages · ${r.verified}/${r.facts} facts verified${r.unreadable ? ` · ${r.unreadable} unreadable` : ''}` : docs ? 'no review on file' : undefined;
     return [t, { label: 'Document review', key: 'Document review', status, detail, documentId: t.documentId, depth: 1 as const }];
   });
-  const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, tiles: withReview(l.tiles) }); };
+  // Manual handling: every step the engine tracks can be marked complete by hand (a note, and any supporting documents).
+  const manual = !!s.manualHandling?.required;
+  const stepFor = (t: Tile): string | null => {
+    if (t.depth) return null;
+    if (t.key?.startsWith('search:')) return t.key;
+    if (t.key?.startsWith('enq:')) return `enquiry:${t.key.slice(4)}`;
+    const l = t.label;
+    if (l.startsWith('ID / AML check')) return 'id_check';
+    if (l.startsWith('Proof of funds')) return 'proof_of_funds';
+    if (l.startsWith('Official copies')) return 'title';
+    if (l === 'Report on title') return 'report_on_title';
+    if (l === 'Offer') return 'mortgage';
+    if (l.startsWith('Management pack')) return 'management_pack';
+    if (l.startsWith('Forms')) return 'property_forms';
+    if (l === 'Contract pack') return 'contract_pack';
+    if (l.startsWith('Contract approved')) return 'contract_approved';
+    if (l === 'Deposit') return 'deposit';
+    if (l === 'Redemption statement') return 'redemption';
+    return null;
+  };
+  const withManual = (tiles: Tile[]): Tile[] => !manual ? tiles : tiles.map((t) => {
+    const step = stepFor(t);
+    if (!step || DONE_STATUSES.has(t.status)) return t;
+    const mark = <MarkComplete key={`mc-${step}`} matterId={matterId} api={api} step={step} label={t.label} busy={busy} cmd={cmd} />;
+    return { ...t, action: t.action ? <>{t.action}{mark}</> : mark };
+  });
+  const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, tiles: withManual(withReview(l.tiles)) }); };
 
   const clientChecks = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role !== 'donor');
   const donorChecks = Object.values(s.partyChecks ?? {}).filter((pc) => pc.role === 'donor');
