@@ -146,6 +146,8 @@ type CommandBody =
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
+  | { type: 'record_contract_filed'; documentId: string; points: number }
+  | { type: 'raise_contract_review'; documentId: string; summary: string; citations?: Citation[] }
   | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
@@ -741,7 +743,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
 /** Issues that say something is on its way: its arrival closes them (service reactions). */
 export const CLOSED_BY_ARRIVAL: IssueKind[] = ['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding'];
 
-const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase', proposal: 'chase' };
+const SUBFLOW_FOR_KIND: Record<DecisionKind, SubFlow> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', contract: 'title', escalation: 'chase', bank_details: 'chase', auto_clear: 'chase', requisition: 'chase', proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: 'chase', proposal: 'chase' };
 
 // ───────────────────────────── decide ─────────────────────────────
 
@@ -1360,6 +1362,17 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!ABANDON_REASONS.includes(cmd.reason)) reject(`Unknown abandonment reason "${cmd.reason}".`, 400);
       if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned. Record a correction if the completion event was wrong.');
       return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }];
+    }
+    case 'record_contract_filed': {
+      requireEnrolled(s);
+      return [{ type: 'contract_filed', actor: EXTERNAL, payload: { documentId: cmd.documentId, points: cmd.points }, sourceDocumentId: cmd.documentId }];
+    }
+    case 'raise_contract_review': {
+      requireEnrolled(s);
+      if (s.exchange.exchangedAt || s.readiness.contractApprovedAt) reject('The contract is already approved.');
+      if (Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending' && d.sourceDocumentId === cmd.documentId)) reject('This contract is already waiting for approval.');
+      const decision: DecisionSpec = { kind: 'contract', summary: cmd.summary, sourceDocumentId: cmd.documentId, citations: cmd.citations ?? [], options: OPTIONS_FOR.contract, summarisedBy: 'template' };
+      return [{ type: 'contract_review_raised', actor: SYSTEM, payload: { documentId: cmd.documentId, decision }, sourceDocumentId: cmd.documentId }];
     }
     case 'set_clients': {
       requireEnrolled(s);
@@ -2474,6 +2487,18 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       out.push({ type: 'hmlr_requisition_responded', actor: userId, payload: { decisionEventId: d.eventId, option, note, engagement } });
       return out;
     }
+    case 'contract': {
+      // Approving the task is approving the contract: the same event as the button, so the deposit request and the signing pack follow.
+      if (option === 'approve') {
+        requireStageAtLeast(s, 'contract_review', 'Approving the contract');
+        out.push({ type: 'contract_approved', actor: userId, payload: { note, decisionEventId: d.eventId }, sourceDocumentId: d.sourceDocumentId });
+        return out;
+      }
+      out.push({ type: 'contract_reviewed', actor: userId, payload: { decisionEventId: d.eventId, option, note }, sourceDocumentId: d.sourceDocumentId });
+      // Points on the draft go back to the seller's solicitor as an enquiry; the amended contract comes back as a new task.
+      if (option === 'request_further') out.push({ type: 'enquiry_raised', actor: userId, payload: { enquiryId: nextEnquiryId(s, 'CONTRACT'), subject: `Points on the draft contract${note ? `: ${note}` : ''}`, origin: { decisionEventId: d.eventId }, counterpartyType: s.counterpartyType } });
+      return out;
+    }
     case 'report_on_title': {
       const draftId = subject;
       if (s.reportOnTitle.draftId !== draftId || s.reportOnTitle.status !== 'drafted') reject('This draft is no longer the current draft.');
@@ -2544,6 +2569,10 @@ function reviewedEvent(s: MatterState, d: DecisionState, option: DecisionOption,
       return { type: 'proof_of_funds_reviewed', actor: userId, payload: { ...base, requestId: subject }, sourceDocumentId: d.sourceDocumentId };
     case 'management_pack':
       return { type: 'management_pack_reviewed', actor: userId, payload: base, sourceDocumentId: d.sourceDocumentId };
+    case 'contract':
+      return option === 'approve'
+        ? { type: 'contract_approved', actor: userId, payload: { note, decisionEventId: d.eventId }, sourceDocumentId: d.sourceDocumentId }
+        : { type: 'contract_reviewed', actor: userId, payload: { decisionEventId: d.eventId, option, note }, sourceDocumentId: d.sourceDocumentId };
     case 'report_on_title':
     case 'escalation':
     case 'bank_details':

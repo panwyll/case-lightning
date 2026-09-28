@@ -286,3 +286,24 @@ test('a report on title marked done by hand while its draft waits settles the dr
   assert.equal(s.reportOnTitle.status, 'sent');
   assert.ok(!pendingDecisions(s).some((d) => d.kind === 'report_on_title'), 'the draft is settled, not left pending');
 });
+
+test('the contract is a task: filed early, it goes on the Tasks tab at contract review; approving it approves the contract and asks the client for the deposit', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
+  const contract = h.doc({ sellers: ['Sam Seller'], buyers: ['Ann Smith'], propertyAddress: '1 Test St', titleNumber: 'AB123', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [{ code: 'DEPOSIT_5PC', severity: 'warning', description: 'Deposit reduced to 5% by special condition' }], confidence: 0.9 });
+  await h.svc.contractReceived(TENANT, MATTER, contract);
+  assert.ok(!pendingDecisions(await h.svc.getState(TENANT, MATTER)).some((d) => d.kind === 'contract'), 'not before the case is at contract review');
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(['contract_review', 'pre_exchange'].includes(s.stage), s.stage);
+  const task = pendingDecisions(s).find((d) => d.kind === 'contract');
+  assert.ok(task, 'the contract is waiting for approval');
+  assert.match(task!.summary, /Deposit reduced to 5%/);
+  await resolve(h, task!.eventId, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(s.readiness.contractApprovedAt);
+  assert.ok(!pendingDecisions(s).some((d) => d.kind === 'contract'));
+});

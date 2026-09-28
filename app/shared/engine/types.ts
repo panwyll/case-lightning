@@ -326,6 +326,7 @@ export const KIND_LABEL: Record<string, string> = {
   title: 'Title register',
   id_check: 'ID / AML',
   report_on_title: 'Report on title — approve draft',
+  contract: 'Contract — approve for signature',
   escalation: 'Escalation',
   bank_details: 'Bank details — verify out-of-band',
   auto_clear: 'Auto-clear review',
@@ -350,6 +351,7 @@ export const OPTION_LABEL_BY_KIND: Record<string, Record<string, string>> = {
   proposal: { approve: 'Approve', reject: 'Decline' },
   proof_of_funds: { approve: 'Sign off — source of funds verified', request_further: 'Query the client (re-opens the form with the queries)' },
   management_pack: { request_further: 'Request further information from the managing agent' },
+  contract: { approve: 'Approve the contract', request_further: "Send points to the seller's solicitor" },
   // Nothing on a decision is "rejected": a draft goes back for redraft, a bank-details check fails, a note's reading is discarded.
   report_on_title: { approve: 'Approve — send to the client', reject: 'Send back for redraft' },
   bank_details: { reject: 'Could not verify' },

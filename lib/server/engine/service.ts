@@ -38,7 +38,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type ContractFacts, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -626,8 +626,45 @@ export class EngineService {
   async contractReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractContract(doc).catch((err) => { this.ports.log('contract extraction failed — the review table will be empty', err); return null; });
+    await this.run(tenantId, matterId, { type: 'record_contract_filed', documentId, points: facts?.flags.length ?? 0 });
+    await this.raiseContractReview(tenantId, matterId, documentId, facts).catch((err) => this.ports.log('contract approval task not raised', err));
     const state = await this.getState(tenantId, matterId);
     return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
+  }
+
+  /**
+   * The contract as a task: on a purchase, once the case is at contract review (the searches, enquiries and
+   * report are done), the latest contract on file goes on the Tasks tab to approve for signature, with what
+   * the read found. Approving it is contract_approved: the deposit request and the signing pack follow.
+   */
+  private async raiseContractReview(tenantId: string, matterId: string, documentId?: string | null, facts?: ContractFacts | null): Promise<void> {
+    const s = await this.getState(tenantId, matterId);
+    const docId = documentId ?? s.readiness.contractDocumentId ?? null;
+    if (!docId || profileOf(s.transactionType).side !== 'buyer') return;
+    if (s.readiness.contractApprovedAt || s.exchange.exchangedAt || !['contract_review', 'pre_exchange'].includes(s.stage)) return;
+    if (Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending' && d.sourceDocumentId === docId)) return;
+    const f = facts ?? (this.ports.extractor.extractContract ? await this.ports.extractor.extractContract(await this.requireDoc(tenantId, matterId, docId)).catch(() => null) : null);
+    const gbpOf = (p: number | null | undefined) => (p == null ? null : `£${(p / 100).toLocaleString('en-GB')}`);
+    const terms = f ? [
+      f.pricePennies != null ? `Price: ${gbpOf(f.pricePennies)}` : null,
+      f.depositPennies != null ? `Deposit: ${gbpOf(f.depositPennies)}${f.depositHolder ? ` (held as ${f.depositHolder})` : ''}` : null,
+      f.completionDate ? `Completion date: ${f.completionDate}` : null,
+      f.titleNumber ? `Title: ${f.titleNumber}` : null,
+      f.sellers.length ? `Sellers: ${f.sellers.join(', ')}` : null,
+      f.buyers.length ? `Buyers: ${f.buyers.join(', ')}` : null,
+      f.incorporatedConditions ? `Conditions: ${f.incorporatedConditions}` : null,
+    ].filter(Boolean) : [];
+    const points = f?.flags ?? [];
+    const mismatches = Object.values(s.issues).filter((i) => i.kind === 'document_mismatch' && (i.status === 'open' || i.status === 'negotiating'));
+    const summary = [
+      'CONTRACT FOR APPROVAL',
+      '',
+      ...(f ? [] : ['The contract could not be read: check it by hand before approving.', '']),
+      ...terms,
+      ...(points.length ? ['', `Points (${points.length}):`, ...points.map((p) => `• ${p.description}`)] : f ? ['', 'Nothing in the contract flagged.'] : []),
+      ...(mismatches.length ? ['', 'Not matching the case:', ...mismatches.map((i) => `• ${i.title}`)] : []),
+    ].join('\n');
+    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary });
   }
 
   /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */
@@ -1340,6 +1377,8 @@ export class EngineService {
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
         if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract') await this.orderMissingSearches(tenantId, matterId, subflows);
+        // At contract review the contract on file becomes a task to approve.
+        if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'contract_review') await this.raiseContractReview(tenantId, matterId).catch((err) => this.ports.log('contract approval task not raised', err));
         // Addendum: an enquiry to an INTERNAL counterparty is delivered to the other
         // side's handler as inbound correspondence — the same event pair as an external
         // exchange, with no read of the other matter's state (the wall is in the DB too).

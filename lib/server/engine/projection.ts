@@ -840,6 +840,19 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'contract_approved': {
       s.readiness.contractApprovedAt = e.createdAt;
+      // Approved by the task or by hand: the task is done either way.
+      for (const d of Object.values(s.decisions)) if (d.kind === 'contract' && d.status === 'pending') resolveDecision(s, d.eventId, 'approve', (e.payload as { note?: string | null }).note ?? null, e);
+      break;
+    }
+    case 'contract_filed': {
+      s.readiness.contractDocumentId = (e.payload as Payloads['contract_filed']).documentId;
+      break;
+    }
+    case 'contract_review_raised':
+      break;
+    case 'contract_reviewed': {
+      const p = e.payload as Payloads['contract_reviewed'];
+      resolveDecision(s, p.decisionEventId, p.option, p.note, e);
       break;
     }
     case 'signed_contract_held': {
@@ -1067,7 +1080,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         case 'management_pack': s.managementPack.status = 'reviewed'; close('management_pack'); break;
         case 'property_forms': s.propertyForms.status = 'received'; close('property_forms'); break;
         case 'contract_pack': s.contractPack.sentAt = s.contractPack.sentAt ?? e.createdAt; break;
-        case 'contract_approved': s.readiness.contractApprovedAt = s.readiness.contractApprovedAt ?? e.createdAt; break;
+        case 'contract_approved': s.readiness.contractApprovedAt = s.readiness.contractApprovedAt ?? e.createdAt;
+          for (const d of Object.values(s.decisions)) if (d.kind === 'contract' && d.status === 'pending') resolveDecision(s, d.eventId, 'approve', `Completed by hand: ${p.note}`, e);
+          break;
         case 'deposit': s.deposit = { received: true, at: e.createdAt }; break;
         case 'redemption': if (s.redemption.status === 'not_started' || s.redemption.status === 'requested') s.redemption.status = 'received'; close('redemption');
           if (p.facts) s.redemption = { ...s.redemption, redemptionPennies: p.facts.amountPennies ?? s.redemption.redemptionPennies, validUntil: p.facts.validUntil ?? s.redemption.validUntil, lender: p.facts.lender || s.redemption.lender };

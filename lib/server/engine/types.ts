@@ -153,6 +153,9 @@ export const EVENT_TYPES = [
   'matter_abandoned',
   'target_dates_changed',
   'clients_updated',
+  'contract_filed',
+  'contract_review_raised',
+  'contract_reviewed',
   'completion_date_changed',
   'notice_to_complete_served',
   'mortgage_offer_withdrawn',
@@ -636,7 +639,7 @@ export interface IdCheckFacts {
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────
 
-export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack', 'note_actions', 'proposal'] as const;
+export const DECISION_KINDS = ['id_check', 'search', 'enquiry', 'mortgage', 'title', 'report_on_title', 'contract', 'escalation', 'bank_details', 'auto_clear', 'requisition', 'proof_of_funds', 'management_pack', 'note_actions', 'proposal'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export const DECISION_OPTIONS = ['approve', 'refer_to_client', 'request_further', 'escalate', 'reject', 'verify', 'indemnity'] as const;
@@ -958,6 +961,9 @@ export interface Payloads {
   /** The transaction is over without completing: the matter is closed to further commands, timers stop. */
   matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
   /** Target exchange / completion dates re-planned (offers expire, chains move). */
+  contract_filed: { documentId: string; points: number };
+  contract_review_raised: { documentId: string; decision: DecisionSpec };
+  contract_reviewed: { decisionEventId: string; option: DecisionOption; note: string | null };
   clients_updated: { partyNames: string[]; previous: string[]; role: IdPartyCheck['role']; reason?: string | null };
   target_dates_changed: { targetExchangeDate: string | null; targetCompletionDate: string | null; reason?: string | null; previous: { targetExchangeDate: string | null; targetCompletionDate: string | null } };
   /** After exchange: the contractual completion date moved (by agreement, or a notice to complete). */
@@ -992,7 +998,7 @@ export interface Payloads {
   /** The agreed purchase price changed (renegotiation after a survey / down-valuation; recorded before exchange only). */
   price_changed: { fromPennies: number | null; toPennies: number; reason: string; issueId: string | null };
   /** The draft contract is approved as to form (readiness milestone; advisory, not a gate). */
-  contract_approved: { note?: string | null };
+  contract_approved: { note?: string | null; decisionEventId?: string | null };
   /** The client's signed contract is held on file (readiness milestone; advisory, not a gate). */
   signed_contract_held: { note?: string | null };
   // ── proof of funds (docs/proof-of-funds.md) ──
@@ -1143,6 +1149,7 @@ export const DECISION_EVENT_TYPES: ReadonlyArray<EventType> = [
   'mortgage_condition_flagged',
   'title_flagged',
   'report_on_title_drafted',
+  'contract_review_raised',
   'escalation_raised',
   'bank_details_change_flagged',
   'auto_clear_review_raised',
@@ -1259,7 +1266,7 @@ export const actsUnasked = (level: TrustLevel, action: EngineAction): boolean =>
 
 
 /** Which sub-flow a decision kind belongs to (for hiding decisions of a shadowed sub-flow). */
-export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null, proposal: null };
+export const SUBFLOW_OF_KIND: Record<DecisionKind, SubFlow | null> = { id_check: 'id_check', search: 'search', enquiry: 'enquiry', mortgage: 'mortgage', title: 'title', report_on_title: 'report_on_title', contract: null, escalation: 'chase', bank_details: null, auto_clear: null, requisition: null, proof_of_funds: 'proof_of_funds', management_pack: 'management_pack', note_actions: null, proposal: null };
 
 export type SuppressedAction = 'search_order' | 'id_check_request' | 'client_update' | 'chase' | 'acknowledgement' | 'report_send' | 'linked_enquiry_delivery' | 'stage_mirror' | 'proof_of_funds_request';
 
@@ -1566,7 +1573,7 @@ export interface MatterState {
   /** The agreed purchase price as the log knows it (null = never recorded). */
   purchasePricePennies: number | null;
   /** Readiness milestones (advisory; shown as "ready to exchange?" not enforced as gates). */
-  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
+  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null; contractDocumentId?: string | null };
   /** Steps a person marked complete by hand (manual handling), with what they said and what they filed. */
   manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[]; skipReason?: string | null }>;
 

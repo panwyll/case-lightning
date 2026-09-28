@@ -55,6 +55,8 @@ export const OPTIONS_FOR: Record<DecisionKind, DecisionOption[]> = {
   mortgage: ['approve', 'refer_to_client', 'request_further', 'escalate'],
   title: ['approve', 'refer_to_client', 'request_further', 'indemnity', 'escalate'],
   report_on_title: ['approve', 'reject', 'escalate'],
+  // The contract: approve it for signature, or send points back to the seller's solicitor (an enquiry), or escalate.
+  contract: ['approve', 'request_further', 'escalate'],
   escalation: ['approve', 'refer_to_client', 'escalate'],
   // Addendum 2: never "approve" — only an out-of-band VERIFICATION (with its method) or a failure.
   bank_details: ['verify', 'reject', 'escalate'],
