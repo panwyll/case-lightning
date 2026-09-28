@@ -1031,7 +1031,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
 
     case 'lease_extracted': {
       requireEnrolled(s);
-      requireStageAtLeast(s, 'pre_contract', 'Lease review');
+      // A document is read when it arrives: the contract pack often comes before the case leaves Instruction.
       if (!isLeasehold(s)) reject('A lease is read on a leasehold matter; this matter is freehold.');
       if (s.title.status === 'flagged') reject('A title decision is pending; resolve it before reading the lease.');
       if (s.reportOnTitle.status === 'sent') reject('The report on title has already been sent; re-reviewing the lease now needs manual handling.');
@@ -1840,7 +1840,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'seller_forms_received': {
       requireEnrolled(s);
       requireSide(s, ['buyer'], "The seller's property forms");
-      requireStageAtLeast(s, 'pre_contract', "Reading the seller's forms");
+      // A document is read when it arrives: the contract pack often comes before the case leaves Instruction.
       if (s.exchange.exchangedAt) reject('Contracts are exchanged; the forms are filed under Documents.');
       const forms = cmd.forms?.length ? cmd.forms : cmd.facts?.forms?.length ? cmd.facts.forms : ['TA6'];
       const out: NewEvent[] = [{ type: 'seller_forms_received', actor: cmd.actor, payload: { forms, facts: cmd.facts }, sourceDocumentId: cmd.documentId }];

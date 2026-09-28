@@ -250,3 +250,13 @@ test('the last open rows: a third party paying our fees; mixed-use and linked SD
   assert.ok(propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { epcRating: 'F' } }, 'buyer', { buyToLet: true }).some((i) => i.flag.code === 'TA6_EPC_MEES'));
   assert.ok(!propertyFormsIssues({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { epcRating: 'F' } }, 'buyer').some((i) => i.flag.code === 'TA6_EPC_MEES'));
 });
+
+test("the seller's forms arriving with the contract pack are read even while the case is still at Instruction", async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: ['CON29'] });
+  assert.equal((await h.svc.getState(TENANT, MATTER)).stage, 'instruction');
+  const doc = h.doc({ forms: ['TA6', 'TA10'], disclosures: [], confidence: 0.9, answers: { japaneseKnotweed: true } }, 'PROPERTY_FORMS');
+  const r = await h.svc.propertyFormsReceived(TENANT, MATTER, doc);
+  assert.ok(r.events.some((e) => e.type === 'seller_forms_received'));
+  assert.ok(r.events.some((e) => e.type === 'issue_raised'), 'what the forms disclose becomes issues at once');
+});
