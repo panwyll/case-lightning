@@ -330,6 +330,22 @@ test('an offer marked complete by hand asks for the lender, advance and expiry (
   assert.match(s.manualSteps?.mortgage?.skipReason ?? '', /Offer to follow/);
 });
 
+test('clients edited on the case: a buyer added gets an ID check of their own, one removed takes an unstarted check with them', async () => {
+  const h = harness();
+  const { svc } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: [], partyNames: ['Ann Smith'] });
+  await svc.run(TENANT, MATTER, { type: 'set_clients', actor: USER, names: ['Ann Smith', 'Ben Jones'] });
+  let s = await svc.getState(TENANT, MATTER);
+  assert.deepEqual(s.partyNames, ['Ann Smith', 'Ben Jones']);
+  assert.equal(s.parties, 2);
+  assert.ok(s.partyChecks['buyer:ben-jones'], 'the new buyer is identified in their own right');
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'set_clients', actor: USER, names: ['Ann Smith', 'Ben Jones'] }), /unchanged/);
+  await svc.run(TENANT, MATTER, { type: 'set_clients', actor: USER, names: ['Ann Smith'] });
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.partyChecks['buyer:ben-jones'], undefined);
+  assert.equal(s.parties, 1);
+});
+
 test('in manual handling nothing stops firing, but whatever would have gone out on its own is proposed to a person instead (marked manual mode)', async () => {
   const h = harness();
   const { svc, ports } = h;

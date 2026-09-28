@@ -146,7 +146,7 @@ export function sandboxCommsDeps(): CommsDeps {
     const d = await queryOne<{ id: string }>(
       `insert into document (tenant_id, matter_id, source_type, storage_path, file_name, mime_type, size_bytes, hash_sha256, doc_type, extracted_facts, extraction_confidence, created_by)
        values ($1, $2, 'SANDBOX', $3, $4, 'text/plain', $5, $6, 'SANDBOX_EMAIL', $7::jsonb, 1, $8) returning id`,
-      [tenantId, matterId, `sandbox://${matterId}/outbox/${when}`, `outbox-${when.slice(0, 19).replace(/[:T]/g, '-')}.txt`, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex'), JSON.stringify({ content: body, to: input.to, subject: input.subject, status: input.status, at: when, template: null }), input.fromUserId ?? null]
+      [tenantId, matterId, `sandbox://${matterId}/outbox/${when}`, `Email - ${input.subject.replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80)} - ${when.slice(0, 16).replace('T', ' ').replace(':', '.')}.txt`, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex'), JSON.stringify({ content: body, to: input.to, subject: input.subject, status: input.status, at: when, template: null }), input.fromUserId ?? null]
     ).catch(() => null);
     if (d) await putBlob(tenantId, d.id, bytes).catch(() => {});
     return { messageId: d?.id ?? null };
@@ -160,19 +160,20 @@ export function sandboxCommsDeps(): CommsDeps {
       return {
         ...info,
         clientEmail: info.clientEmail ?? STAND_IN.client,
+        clientEmails: info.clientEmails?.length ? info.clientEmails : [info.clientEmail ?? STAND_IN.client],
         clientWhatsAppOptIn: false,
         contacts: { seller_solicitor: info.contacts.seller_solicitor ?? STAND_IN.seller_solicitor, lender: info.contacts.lender ?? STAND_IN.lender, estate_agent: info.contacts.estate_agent ?? STAND_IN.estate_agent },
       };
     },
     whatsapp: null,
-    email: { send: async ({ to, subject, text, fromUserId }) => file(current!.tenantId, current!.matterId, { to, subject, text, status: 'SENT', fromUserId }) },
+    email: { send: async ({ to, subject, text, fromUserId }) => file(current!.tenantId, current!.matterId, { to: [to].flat().join(', '), subject, text, status: 'SENT', fromUserId }) },
     mailbox: {
-      send: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to, subject, text: htmlToText(bodyHtml), status: 'SENT', fromUserId: userId }),
-      draft: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to, subject, text: htmlToText(bodyHtml), status: 'DRAFTED', fromUserId: userId }),
+      send: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to: [to].flat().join(', '), subject, text: htmlToText(bodyHtml), status: 'SENT', fromUserId: userId }),
+      draft: async (userId, to, subject, bodyHtml) => file(current!.tenantId, current!.matterId, { to: [to].flat().join(', '), subject, text: htmlToText(bodyHtml), status: 'DRAFTED', fromUserId: userId }),
     },
     // The template name arrives with the log line; it goes onto the filed email. Nothing is written to the client-message history.
     log: async (i) => {
-      if (i.providerRef && i.template) await query(`update document set extracted_facts = extracted_facts || $3::jsonb, file_name = $4 where id = $1 and tenant_id = $2 and doc_type = 'SANDBOX_EMAIL'`, [i.providerRef, i.tenantId, JSON.stringify({ template: i.template }), `outbox-${i.template}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`]).catch(() => {});
+      if (i.providerRef && i.template) await query(`update document set extracted_facts = extracted_facts || $3::jsonb, file_name = $4 where id = $1 and tenant_id = $2 and doc_type = 'SANDBOX_EMAIL'`, [i.providerRef, i.tenantId, JSON.stringify({ template: i.template }), `Email - ${(i.subject ?? i.template).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 80)} - ${new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '.')}.txt`]).catch(() => {});
     },
     routeToHuman: async () => {},
     matterForAddress: async () => null,

@@ -38,7 +38,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, ENGINE_ACTION_LABEL, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -224,7 +224,7 @@ export class EngineService {
       tenantId,
       matterId,
       docType: 'PROPOSAL',
-      fileName: `proposal-${action}-${dedupKey.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${this.ports.now().toISOString().slice(0, 10)}.txt`,
+      fileName: readableName(proposalTitle(action, subject, detail, summary), this.ports.now()),
       content: summary,
     });
     await this.run(tenantId, matterId, { type: 'propose_action', action, subject, detail, dedupKey, summary, sourceDocumentId: doc.id });
@@ -463,7 +463,7 @@ export class EngineService {
     for (const a of sub.answers ?? []) for (const id of a.evidenceDocumentIds) await attach(id, null, null);
     const review = reviewTransactions(facts, evidence, sub.submittedAt);
     const declaration = renderDeclaration(facts, sub, evidenceNames);
-    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: `proof-of-funds-${requestId}-round-${facts.round}.txt`, content: declaration });
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'PROOF_OF_FUNDS_DECLARATION', fileName: readableName(`Proof of funds declaration${facts.round > 1 ? ` (round ${facts.round})` : ''}`, this.ports.now()), content: declaration });
     const verdict = evaluateProofOfFunds(facts, { coBuyers: state.partyNames.slice(1), hasLinkedSale: state.relatedMatter?.relation === 'sale' ? true : state.relatedMatter ? undefined : false, acceptsNonFamilyGift: state.lenderRequirements?.acceptsNonFamilyGift ?? null });
     const flags = [...(verdict.outcome === 'flag' ? verdict.flags : []), ...review.flags];
     let summary = null;
@@ -752,7 +752,7 @@ export class EngineService {
         tenantId,
         matterId,
         docType: 'BANK_DETAILS_NOTE',
-        fileName: `bank-details-${input.payeeKind}-${this.ports.now().toISOString().slice(0, 10)}.txt`,
+        fileName: readableName(`Bank details for the ${input.payeeKind.replace(/_/g, ' ')}`, this.ports.now()),
         content: [`Bank details recorded manually (${input.sourceChannel}) by ${input.actor} on ${this.ports.now().toISOString()}`, `Payee: ${input.payeeKind}${input.payeeRef ? ` — ${input.payeeRef}` : ''}`, `Account name: ${input.details.accountName}`, `Sort code: ${input.details.sortCode}  Account: ${input.details.accountNumber}`, input.details.firmName ? `Firm: ${input.details.firmName}` : '', input.note ? `Note: ${input.note}` : ''].filter(Boolean).join('\n'),
       });
       sourceDocumentId = doc.id;
@@ -800,7 +800,7 @@ export class EngineService {
       content = renderChecked(draft.content, check);
       summary = `${draft.summary}\n${draftCheckLine(check)}${check.notFromFile.length ? `\nNot from the file: ${check.notFromFile.map((n) => n.text).join('; ')}.` : ''}`;
     }
-    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'REPORT_ON_TITLE_DRAFT', fileName: `${draftId}.txt`, content });
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'REPORT_ON_TITLE_DRAFT', fileName: readableName(state.reportOnTitle.interim || state.stage === 'pre_contract' ? 'Report on title (interim draft)' : 'Report on title (draft)', this.ports.now()), content });
     if (check && this.ports.documents.writeDraftCheck) await this.ports.documents.writeDraftCheck(tenantId, doc.id, check).catch(() => {});
     const citations = [...draft.citations];
     for (const f of check?.cited ?? []) if (!citations.some((c) => c.documentId === f.documentId && c.locator?.quote === (f.quote ?? undefined))) citations.push({ documentId: f.documentId, label: `${f.documentLabel}${f.page ? ` p.${f.page}` : ''} — ${f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}: ${f.value}`, locator: { page: f.page ?? undefined, quote: f.quote ?? undefined } });
@@ -817,7 +817,7 @@ export class EngineService {
     const built = buildCompletionStatement({ state, side, register: register?.facts ?? [], record: record ?? { propertyAddress: null, purchasePricePennies: state.purchasePricePennies, buyerNames: [], sellerNames: [] } });
     const check = checkDraft(built.text, register?.facts ?? [], { allowed: [...(register?.allowed ?? []), ...built.allowed, state.exchange.completionDate ?? '', ...(record?.buyerNames ?? []), ...(record?.sellerNames ?? [])] });
     const content = renderChecked(built.text, check);
-    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'COMPLETION_STATEMENT', fileName: `completion-statement-${this.ports.now().toISOString().slice(0, 10)}.txt`, content });
+    const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'COMPLETION_STATEMENT', fileName: readableName('Completion statement', this.ports.now()), content });
     if (this.ports.documents.writeDraftCheck) await this.ports.documents.writeDraftCheck(tenantId, doc.id, check).catch(() => {});
     const warning = `Completion statement drafted under Documents: ${draftCheckLine(check)}${built.toConfirm.length ? ` ${built.toConfirm.length} line${built.toConfirm.length === 1 ? '' : 's'} for you to fill in.` : ''}`;
     return { state, events: [], warning, documentId: doc.id };
@@ -932,7 +932,7 @@ export class EngineService {
     // Deadlines we owe (offer expiry, SDLT, notice to complete, requisitions): raised once, in time, with a dossier.
     for (const d of deadlineActions(state, now)) {
       try {
-        const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'DEADLINE_DOSSIER', fileName: `deadline-${d.kind}-${d.dueDate}.txt`, content: [`DEADLINE — ${d.kind.replace(/_/g, ' ').toUpperCase()}`, `Due: ${d.dueDate}`, `Working days left: ${d.workingDaysLeft}`, `Stage: ${state.stage}`, '', d.summary].join('\n') });
+        const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'DEADLINE_DOSSIER', fileName: readableName(`Deadline - ${d.kind.replace(/_/g, ' ')} due ${d.dueDate}`, this.ports.now()), content: [`DEADLINE — ${d.kind.replace(/_/g, ' ').toUpperCase()}`, `Due: ${d.dueDate}`, `Working days left: ${d.workingDaysLeft}`, `Stage: ${state.stage}`, '', d.summary].join('\n') });
         await this.run(tenantId, matterId, { type: 'raise_deadline_escalation', kind: d.kind, dueDate: d.dueDate, subject: d.subject, summary: d.summary, sourceDocumentId: doc.id });
         escalations += 1;
       } catch (err) {
@@ -971,7 +971,7 @@ export class EngineService {
             `Chases sent: ${a.wait.chasesSentAt.length ? a.wait.chasesSentAt.join(', ') : 'none'}`,
             `Previous escalations: ${a.wait.escalations.length}`,
           ].join('\n');
-          const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'ESCALATION_DOSSIER', fileName: `escalation-${a.wait.key}-${a.wait.subject || 'wait'}-${now.toISOString().slice(0, 10)}.txt`, content: dossier });
+          const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'ESCALATION_DOSSIER', fileName: readableName(`Escalation - ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` (${a.wait.subject.replace(/_/g, ' ')})` : ''}`, now), content: dossier });
           await this.run(tenantId, matterId, { type: 'raise_escalation', waitKey: a.wait.key, subject: a.wait.subject, reason: `no response after ${a.ageWorkingDays} working days`, sourceDocumentId: doc.id });
           escalations += 1;
         }
@@ -1684,4 +1684,20 @@ export class EngineService {
       return null;
     }
   }
+}
+
+/** A file name a person reads: "Completion statement - 28 Sep 2026.txt", never a slug. */
+export function readableName(title: string, at: Date, ext = 'txt'): string {
+  const day = at.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/London' });
+  const clean = title.replace(/[\\/:*?"<>|\n\r]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 90);
+  return `${clean.charAt(0).toUpperCase()}${clean.slice(1)} - ${day}.${ext}`;
+}
+
+/** What a proposal is, in words: its own title, else the heading of its summary, else the action. */
+function proposalTitle(action: EngineAction, subject: string | null | undefined, detail: Record<string, unknown>, summary: string): string {
+  const own = typeof detail.title === 'string' ? detail.title : null;
+  const head = summary.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+  const fromHead = head && head.length <= 80 ? (head === head.toUpperCase() ? head.charAt(0) + head.slice(1).toLowerCase() : head) : null;
+  const label = ENGINE_ACTION_LABEL[action] ?? action.replace(/_/g, ' ');
+  return own ?? fromHead ?? `${label}${subject ? ` (${subject.replace(/_/g, ' ')})` : ''}`;
 }

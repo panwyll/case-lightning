@@ -91,8 +91,8 @@ function fakeDeps(info: Partial<MatterContactInfo> = {}, opts: { whatsapp?: bool
       contacts: { seller_solicitor: { email: 'other@side.law', name: 'Other Side' } }, completionDate: null, ...info,
     }),
     whatsapp: opts.whatsapp === false ? null : { sendText: async (_to, body) => { sentWa.push(body); return { messageId: 'wa-1' }; } },
-    email: opts.email ? { send: async ({ to, subject }) => { sentEmail.push({ to, subject }); return { messageId: 'em-1' }; } } : null,
-    mailbox: opts.mailbox === false ? null : { send: async (_u, to, subject) => { sentEmail.push({ to, subject }); return { messageId: 'gm-1' }; }, draft: async (_u, to, subject) => { drafts.push({ to, subject }); return { messageId: 'draft-1' }; } },
+    email: opts.email ? { send: async ({ to, subject }) => { sentEmail.push({ to: [to].flat().join(', '), subject }); return { messageId: 'em-1' }; } } : null,
+    mailbox: opts.mailbox === false ? null : { send: async (_u, to, subject) => { sentEmail.push({ to: [to].flat().join(', '), subject }); return { messageId: 'gm-1' }; }, draft: async (_u, to, subject) => { drafts.push({ to: [to].flat().join(', '), subject }); return { messageId: 'draft-1' }; } },
     log: async (i) => { logs.push({ direction: i.direction, status: i.status, template: i.template }); },
     routeToHuman: async (i) => { routed.push(i.title); },
     matterForAddress: async () => ({ matterId: 'm1' }),
@@ -117,6 +117,16 @@ test('status updates go to WhatsApp with opt-in, else email; the report on title
   assert.equal(report.channel, 'email');
   assert.equal(f.sentWa.length, 1, 'the report never goes to WhatsApp');
   await assert.rejects(new ProductionClientComms(fakeDeps({ clientEmail: null, clientPhone: null }).deps).sendStatusUpdate({ tenantId: 't1', matterId: 'm1', template: 'completed', context: {} }), /No client channel/);
+});
+
+test('joint clients: every client email goes to all of them, and the report on title too', async () => {
+  const f = fakeDeps({ clientWhatsAppOptIn: false, clientFirstName: 'Ann and Ben', clientEmails: ['ann@example.com', 'ben@example.com'] });
+  const comms = new ProductionClientComms(f.deps);
+  const r = await comms.sendStatusUpdate({ tenantId: 't1', matterId: 'm1', template: 'exchanged', context: { payload: { completionDate: '2026-11-27' } } });
+  assert.equal(r.address, 'ann@example.com, ben@example.com');
+  assert.equal(f.sentEmail[0].to, 'ann@example.com, ben@example.com');
+  await comms.sendReportOnTitle({ tenantId: 't1', matterId: 'm1', draftDocument: { id: 'd', tenantId: 't1', matterId: 'm1', docType: 'REPORT_ON_TITLE_DRAFT', fileName: 'rot.txt', webUrl: null, extractedFacts: { content: 'REPORT…' }, extractionConfidence: null } });
+  assert.equal(f.sentEmail[1].to, 'ann@example.com, ben@example.com');
 });
 
 test('chases: draft by default (worklist item), send when configured; client ID chase uses the client channel', async () => {

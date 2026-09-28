@@ -506,9 +506,9 @@ export async function setMessageCategory(userId: string, messageId: string, cate
  * the Internet Message-ID at that point), send it, and hand back that id. Sent Items keeps it,
  * so the CRM write-back can fetch the exact message as it went.
  */
-export async function sendMailTracked(userId: string, to: string, subject: string, bodyHtml: string, attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = []): Promise<{ internetMessageId: string | null }> {
+export async function sendMailTracked(userId: string, to: string | string[], subject: string, bodyHtml: string, attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = []): Promise<{ internetMessageId: string | null }> {
   const client = await graphClientForUser(userId);
-  const draft = await client.api('/me/messages').post({ subject, body: { contentType: 'HTML', content: bodyHtml }, toRecipients: [{ emailAddress: { address: to } }] });
+  const draft = await client.api('/me/messages').post({ subject, body: { contentType: 'HTML', content: bodyHtml }, toRecipients: (Array.isArray(to) ? to : [to]).map((address) => ({ emailAddress: { address } })) });
   const id = String(draft?.id ?? '');
   for (const a of attachments) await addAttachmentToMessage(userId, id, a.name, a.bytes, a.contentType);
   let internetMessageId: string | null = draft?.internetMessageId ?? null;

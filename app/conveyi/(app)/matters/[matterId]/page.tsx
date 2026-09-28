@@ -16,6 +16,7 @@ import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { ChainCard } from '@/app/shared/engine/ChainCard';
+import { CaseDetailsEdit } from '@/app/shared/engine/CaseDetailsEdit';
 import { paths } from '@/lib/paths';
 import { ArrowLeft } from '@/app/shared/icons';
 import { useRouter } from 'next/navigation';
@@ -131,6 +132,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   // Issues live on Tasks now: its count is the decisions plus the open issues (context is not a task).
   const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => (i.status === 'open' || i.status === 'negotiating') && !['seller_delay', 'buyer_delay'].includes(i.kind)).length;
   const [row, setRow] = useState<Row | null>(null);
+  const [detailsVer, setDetailsVer] = useState(0);
   const [team, setTeam] = useState<Person[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [model, setModel] = useState<Model | null>(null);
@@ -251,6 +253,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           <div className="mx-top">
             <div style={{ minWidth: 0 }}>{view ? <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} /> : <div className="eg-sub">{eng.err ?? 'Loading…'}</div>}</div>
             <div className="mx-card">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '-4px 0 4px' }}><CaseDetailsEdit matterId={matterId} api={api} matter={m} side={side} onSaved={() => { setDetailsVer((v) => v + 1); refresh(); }} /></div>
               <div className="mx-kv">
                 <Field k="Property" v={row.propertyAddress ?? String(m.property_address ?? '')} />
                 <Field k={side === 'seller' ? 'Seller' : side === 'buyer' ? 'Buyer' : 'Client'} v={clients} />
@@ -269,7 +272,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               {view && enrolled && <ChainCard matterId={matterId} api={api} view={view} busy={eng.busy} cmd={eng.cmd} />}
               <hr className="mx-hr" />
               <div className="mx-k" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Contacts</div>
-              <ContactsCard matterId={matterId} api={api} />
+              <ContactsCard key={detailsVer} matterId={matterId} api={api} />
             </div>
           </div>
           </>)}

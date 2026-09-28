@@ -34,6 +34,8 @@ export interface MatterContactInfo {
   feeEarnerUserId: string | null;
   clientFirstName: string | null;
   clientEmail: string | null;
+  /** Every client on the case with an email address (joint buyers, co-owners): client emails go to all of them. */
+  clientEmails?: string[];
   clientPhone: string | null;
   clientWhatsAppOptIn: boolean;
   /** Third parties by role, for chases. */
@@ -66,9 +68,9 @@ export interface CommsDeps {
   renderReport?(tenantId: string, matterId: string, body: string): Promise<{ bytes: Buffer; fileName: string }>;
   contactInfo(tenantId: string, matterId: string): Promise<MatterContactInfo>;
   whatsapp: { sendText(to: string, body: string): Promise<{ messageId: string | null }> } | null;
-  email: { send(input: { to: string; subject: string; text: string; fromUserId?: string | null; attachments?: MailAttachment[] }): Promise<{ messageId: string | null }> } | null;
+  email: { send(input: { to: string | string[]; subject: string; text: string; fromUserId?: string | null; attachments?: MailAttachment[] }): Promise<{ messageId: string | null }> } | null;
   /** Fee-earner mailbox: send now, or create a draft (returns the draft/message id). */
-  mailbox: { send(userId: string, to: string, subject: string, bodyHtml: string, attachments?: MailAttachment[]): Promise<{ messageId: string | null }>; draft(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }> } | null;
+  mailbox: { send(userId: string, to: string | string[], subject: string, bodyHtml: string, attachments?: MailAttachment[]): Promise<{ messageId: string | null }>; draft(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }> } | null;
   log(input: { tenantId: string; matterId: string | null; direction: 'OUT' | 'IN'; channel: string; address: string | null; template: string | null; subject?: string | null; body: string; providerRef: string | null; status: string; guard?: unknown }): Promise<void>;
   /** Put something in front of a person (a task + notification on the matter). */
   routeToHuman(input: { tenantId: string; matterId: string | null; title: string; detail: string; fromAddress: string }): Promise<void>;
@@ -109,8 +111,10 @@ async function resolveTemplate(deps: CommsDeps, tenantId: string, t: Template): 
 /** A message exactly as it would go: who it is addressed to, on which channel, with the subject and body. Nothing sent, nothing logged. */
 export interface MessagePreview { to: string; address: string | null; channel: 'whatsapp' | 'email' | 'draft' | 'none'; subject: string; body: string }
 
+/** Who a client email goes to: every client with an address, the first client when only that is known. */
+export const clientRecipients = (info: MatterContactInfo): string[] => (info.clientEmails?.length ? info.clientEmails : info.clientEmail ? [info.clientEmail] : []);
 const clientAddress = (info: MatterContactInfo): { address: string | null; channel: MessagePreview['channel'] } =>
-  info.clientPhone && info.clientWhatsAppOptIn ? { address: info.clientPhone, channel: 'whatsapp' } : info.clientEmail ? { address: info.clientEmail, channel: 'email' } : { address: null, channel: 'none' };
+  info.clientPhone && info.clientWhatsAppOptIn ? { address: info.clientPhone, channel: 'whatsapp' } : clientRecipients(info).length ? { address: clientRecipients(info).join(', '), channel: 'email' } : { address: null, channel: 'none' };
 const clientLine = (info: MatterContactInfo): string => `${info.clientFirstName ? `${info.clientFirstName} (the client)` : 'the client'}${clientAddress(info).address ? ` · ${clientAddress(info).address}` : ' · no address on the case'}`;
 
 /** The "where things stand" tail goes in before the sign-off, when there is one. */
@@ -159,23 +163,25 @@ export class ProductionClientComms implements ClientComms {
         await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'whatsapp', address: info.clientPhone, template, subject, body, providerRef: null, status: `FAILED: ${(err as Error).message}` });
       }
     }
-    if (info.clientEmail) {
+    const to = clientRecipients(info);
+    const address = to.join(', ');
+    if (to.length) {
       // The client hears from their conveyancer: the fee earner's own mailbox first. A transactional sender is only the
       // fallback when no mailbox is connected, and it says so on the record.
       if (this.deps.mailbox && info.feeEarnerUserId) {
         try {
-          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info), attachments);
-          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
-          return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
+          const r = await this.deps.mailbox.send(info.feeEarnerUserId, to, subject, emailHtml(body, info), attachments);
+          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address, template, subject, body, providerRef: r.messageId, status: 'SENT' });
+          return { channel: 'email', messageId: r.messageId, address };
         } catch (err) {
           if (!this.deps.email) throw err;
-          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: null, status: `FAILED: mailbox — ${(err as Error).message}; falling back to the transactional sender` });
+          await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address, template, subject, body, providerRef: null, status: `FAILED: mailbox — ${(err as Error).message}; falling back to the transactional sender` });
         }
       }
       if (this.deps.email) {
-        const r = await this.deps.email.send({ to: info.clientEmail, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId });
-        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
-        return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
+        const r = await this.deps.email.send({ to, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId });
+        await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address, template, subject, body, providerRef: r.messageId, status: 'SENT' });
+        return { channel: 'email', messageId: r.messageId, address };
       }
     }
     throw new Error('No client channel available (no opted-in WhatsApp number, no email address, or no sender configured).');
@@ -208,7 +214,9 @@ export class ProductionClientComms implements ClientComms {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const content = (input.draftDocument.extractedFacts as { content?: string } | null)?.content ?? '';
     if (!content) throw new Error('Report draft has no content to send.');
-    if (!info.clientEmail) throw new Error('No client email address on the matter.');
+    const to = clientRecipients(info);
+    const address = to.join(', ');
+    if (!to.length) throw new Error('No client email address on the matter.');
     const subject = `Report on title — ${info.propertyAddress} (${info.matterRef})`;
     // The report goes as the firm's Word document (their letterhead, from Doc Packs); the email is the covering note.
     const doc = this.deps.renderReport ? await this.deps.renderReport(input.tenantId, input.matterId, content) : null;
@@ -217,11 +225,11 @@ export class ProductionClientComms implements ClientComms {
       ? `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title attached. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${info.firmName}`
       : `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title below. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${content}\n\n${info.firmName}`;
     let r: { messageId: string | null };
-    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info), attachments);
-    else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId, attachments });
+    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, to, subject, emailHtml(body, info), attachments);
+    else if (this.deps.email) r = await this.deps.email.send({ to, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId, attachments });
     else throw new Error('No email sender configured.');
-    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', subject, body: subject, providerRef: r.messageId, status: 'SENT' });
-    return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address, template: 'report_on_title', subject, body: subject, providerRef: r.messageId, status: 'SENT' });
+    return { channel: 'email', messageId: r.messageId, address };
   }
 }
 

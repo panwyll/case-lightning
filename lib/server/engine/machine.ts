@@ -146,6 +146,7 @@ type CommandBody =
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
   // ── eventualities (docs/engine-eventualities.md) ──
   | { type: 'abandon_matter'; actor: Actor; reason: AbandonReason; detail?: string | null }
+  | { type: 'set_clients'; actor: Actor; names: string[]; reason?: string | null }
   | { type: 'set_target_dates'; actor: Actor; targetExchangeDate?: string | null; targetCompletionDate?: string | null; reason?: string | null }
   | { type: 'change_completion_date'; actor: Actor; completionDate: string; reason?: string | null }
   | { type: 'set_signing_method'; actor: Actor; document: SignedDocument; method: SigningMethod; reason?: string | null }
@@ -270,6 +271,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   // Eventualities a conveyancer records as they happen.
   'abandon_matter',
   'set_target_dates',
+  'set_clients',
   'change_completion_date',
   'record_availability',
   'record_survey_plan',
@@ -1358,6 +1360,20 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!ABANDON_REASONS.includes(cmd.reason)) reject(`Unknown abandonment reason "${cmd.reason}".`, 400);
       if (s.completion.confirmedAt) reject('The purchase has completed; it cannot be abandoned. Record a correction if the completion event was wrong.');
       return [{ type: 'matter_abandoned', actor: cmd.actor, payload: { reason: cmd.reason, detail: cmd.detail ?? null, stage: s.stage } }];
+    }
+    case 'set_clients': {
+      requireEnrolled(s);
+      if (s.completion.confirmedAt) reject('The matter has completed; the clients are on the record as they were.');
+      const names = [...new Set(cmd.names.map((n) => n.trim()).filter(Boolean))];
+      if (!names.length) reject('A case needs at least one client.', 400);
+      const was = s.partyNames ?? [];
+      if (names.length === was.length && names.every((n, i) => n === was[i])) reject('The clients are unchanged.');
+      const side = profileOf(s.transactionType).side;
+      const role: IdPartyCheck['role'] = side === 'seller' ? 'seller' : side === 'owner' ? 'owner' : 'buyer';
+      const out: NewEvent[] = [{ type: 'clients_updated', actor: cmd.actor, payload: { partyNames: names, previous: was, role, reason: cmd.reason?.trim() || null } }];
+      // Every client beyond the first is identified in their own right, as at enrolment.
+      for (const name of names.slice(1)) if (!s.partyChecks[partyId(role, name)]) out.push({ type: 'id_party_added', actor: cmd.actor, payload: { party: partyId(role, name), label: name, role } });
+      return out;
     }
     case 'set_target_dates': {
       requireEnrolled(s);

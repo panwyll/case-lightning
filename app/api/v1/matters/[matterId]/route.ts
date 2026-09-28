@@ -41,6 +41,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
         propertyAddress: z.string().optional(),
         addressParts: z.record(z.string()).nullable().optional(), // structured {building,street,town,postcode,country}
         purchasePrice: z.string().optional(),
+        buyerNames: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
+        sellerNames: z.array(z.string().trim().min(1).max(120)).max(8).optional(),
         counterpartySolicitor: z.string().optional(),
         counterpartyAgent: z.string().optional(),
         exchangeTargetDate: z.string().optional(),
@@ -217,6 +219,31 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       }
     }
 
+    // Buyers and sellers: the names on the record, and the engine's clients (ID checks, signers, the greeting) follow.
+    if (body.buyerNames !== undefined || body.sellerNames !== undefined) {
+      await query(`update matter set buyer_names = coalesce($1::text[], buyer_names), seller_names = coalesce($2::text[], seller_names), updated_at = now() where id = $3 and tenant_id = $4`, [body.buyerNames ?? null, body.sellerNames ?? null, matterId, user.tenantId]);
+    }
+    const engineNotes: string[] = [];
+    try {
+      const { engine } = await import('@/lib/server/engine/adapters');
+      const svc = engine();
+      const st = await svc.getState(user.tenantId, matterId);
+      if (st.enrolled) {
+        const sale = /_sale$/.test(st.transactionType ?? '');
+        const clients = sale ? body.sellerNames : body.buyerNames;
+        if (clients?.length && (clients.length !== st.partyNames.length || clients.some((n, i) => n !== st.partyNames[i]))) {
+          await svc.run(user.tenantId, matterId, { type: 'set_clients', actor: user.userId, names: clients, reason: body.reason ?? 'Edited on the case' }).catch((err) => engineNotes.push((err as Error).message));
+        }
+        const ex = body.exchangeTargetDate !== undefined ? body.exchangeTargetDate || null : undefined;
+        const co = body.completionTargetDate !== undefined ? body.completionTargetDate || null : undefined;
+        if (!st.exchange.exchangedAt && ((ex !== undefined && ex !== st.targetExchangeDate) || (co !== undefined && co !== st.targetCompletionDate))) {
+          await svc.run(user.tenantId, matterId, { type: 'set_target_dates', actor: user.userId, targetExchangeDate: ex, targetCompletionDate: co, reason: body.reason ?? 'Edited on the case' }).catch((err) => engineNotes.push((err as Error).message));
+        }
+      }
+    } catch (err) {
+      engineNotes.push((err as Error).message);
+    }
+
     // Log every figure the caller actually changed → the House-tab history (who/when/why).
     const dstr = (v: any): string | null =>
       v == null ? null : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
@@ -230,6 +257,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     track(body.counterpartyAgent !== undefined, 'counterparty_agent', 'Estate Agent', before?.counterparty_agent ?? null, body.counterpartyAgent);
     track(body.exchangeTargetDate !== undefined, 'exchange_target_date', 'Exchange Date', dstr(before?.exchange_target_date), body.exchangeTargetDate);
     track(body.completionTargetDate !== undefined, 'completion_target_date', 'Completion Date', dstr(before?.completion_target_date), body.completionTargetDate);
+    track(body.buyerNames !== undefined, 'buyer_names', 'Buyers', (before?.buyer_names ?? []).join(', ') || null, body.buyerNames?.join(', '));
+    track(body.sellerNames !== undefined, 'seller_names', 'Sellers', (before?.seller_names ?? []).join(', ') || null, body.sellerNames?.join(', '));
     track(body.lender !== undefined, 'lender', 'Lender', before?.lender ?? null, body.lender);
     track(body.chainPosition !== undefined, 'chain_position', 'Chain Position', before?.chain_position ?? null, body.chainPosition);
     track(body.status !== undefined, 'status', 'Status', before?.status ?? null, body.status);
@@ -245,7 +274,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       changes,
     });
 
-    return ok({ ok: true });
+    return ok({ ok: true, ...(engineNotes.length ? { engineNotes } : {}) });
   } catch (error) {
     return fail(error);
   }

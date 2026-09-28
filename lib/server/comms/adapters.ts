@@ -27,8 +27,8 @@ export function whatsappClient(): WhatsAppClient | null {
 }
 
 export async function contactInfo(tenantId: string, matterId: string): Promise<MatterContactInfo> {
-  const m = await queryOne<{ matter_ref: string; property_address: string; buyer_names: string[]; assigned_to: string | null; created_by: string; completion_target_date: string | null; tenant_name: string; fee_name: string | null }>(
-    `select m.matter_ref, m.property_address, m.buyer_names, m.assigned_to, m.created_by, m.completion_target_date::text, t.name as tenant_name,
+  const m = await queryOne<{ matter_ref: string; property_address: string; buyer_names: string[]; seller_names: string[] | null; transaction_type: string | null; assigned_to: string | null; created_by: string; completion_target_date: string | null; tenant_name: string; fee_name: string | null }>(
+    `select m.matter_ref, m.property_address, m.buyer_names, m.seller_names, m.transaction_type, m.assigned_to, m.created_by, m.completion_target_date::text, t.name as tenant_name,
             coalesce(u.display_name, u.email) as fee_name
        from matter m join tenant t on t.id = m.tenant_id
        left join app_user u on u.id = coalesce(m.assigned_to, m.created_by)
@@ -47,7 +47,13 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   const other = cp?.email ? { email: cp.email, name: cp.name } : contacts.find((c) => c.role === 'OTHER_SIDE') ?? null;
   const agent = contacts.find((c) => c.role === 'AGENT') ?? null;
   const lender = contacts.find((c) => c.role === 'LENDER') ?? null;
-  const firstName = (client?.name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null;
+  // Joint clients are all written to, and all greeted: "Anna and Ben".
+  const clients = contacts.filter((c) => c.role === 'CLIENT' && c.email);
+  const clientEmails = [...new Set(clients.map((c) => c.email.trim().toLowerCase()))];
+  const onFile = (/_sale$/.test(m.transaction_type ?? '') ? m.seller_names : m.buyer_names) ?? m.buyer_names ?? [];
+  const names = (clients.some((c) => c.name) ? clients.map((c) => c.name ?? '') : onFile).map((n) => n.trim().split(/\s+/)[0]).filter(Boolean);
+  const firsts = [...new Set(names)];
+  const firstName = firsts.length > 1 ? `${firsts.slice(0, -1).join(', ')} and ${firsts[firsts.length - 1]}` : firsts[0] ?? ((client?.name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null);
   const { getFirmProfile, firmFooter } = await import('../firm');
   const footer = firmFooter(await getFirmProfile(tenantId));
   const { signatureFor } = await import('../signature');
@@ -61,6 +67,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
     feeEarnerUserId: m.assigned_to ?? m.created_by,
     clientFirstName: firstName,
     clientEmail: client?.email ?? null,
+    clientEmails,
     clientPhone: client?.phone ?? null,
     clientWhatsAppOptIn: !!client?.whatsapp_opt_in,
     footer,
@@ -115,7 +122,7 @@ export function productionCommsDeps(): CommsDeps {
             return { messageId: r.internetMessageId };
           },
           draft: async (userId, to, subject, bodyHtml) => {
-            const d = await createDraftMessage(userId, subject, bodyHtml, [to]);
+            const d = await createDraftMessage(userId, subject, bodyHtml, Array.isArray(to) ? to : [to]);
             return { messageId: (d as { id?: string } | null)?.id ?? null };
           },
         }

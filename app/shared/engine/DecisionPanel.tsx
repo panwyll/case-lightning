@@ -168,7 +168,7 @@ function parseSummary(summary: string): { intro: string[]; points: Point[]; rest
 }
 const isCountLine = (s: string) => /\b(item|point|thing)s?\b.*\b(need|needs|for)\b|needs? a decision/i.test(s) && s.length < 90;
 
-const UI_DWELL_MS = 5000;
+const UI_DWELL_MS = 3300;
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
 
 export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId: string; inline?: boolean; onResolved?: () => void }) {

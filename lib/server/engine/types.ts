@@ -152,6 +152,7 @@ export const EVENT_TYPES = [
   // eventualities (docs/engine-eventualities.md)
   'matter_abandoned',
   'target_dates_changed',
+  'clients_updated',
   'completion_date_changed',
   'notice_to_complete_served',
   'mortgage_offer_withdrawn',
@@ -957,6 +958,7 @@ export interface Payloads {
   /** The transaction is over without completing: the matter is closed to further commands, timers stop. */
   matter_abandoned: { reason: AbandonReason; detail?: string | null; stage: Stage };
   /** Target exchange / completion dates re-planned (offers expire, chains move). */
+  clients_updated: { partyNames: string[]; previous: string[]; role: IdPartyCheck['role']; reason?: string | null };
   target_dates_changed: { targetExchangeDate: string | null; targetCompletionDate: string | null; reason?: string | null; previous: { targetExchangeDate: string | null; targetCompletionDate: string | null } };
   /** After exchange: the contractual completion date moved (by agreement, or a notice to complete). */
   completion_date_changed: { from: string; to: string; reason?: string | null };

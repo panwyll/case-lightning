@@ -52,9 +52,10 @@ export const productionSigning: SigningPort = {
     return { provider, lenderAcceptsDigital };
   },
   async sendPack({ tenantId, matterId, wet, electronic, signers, reminder, override }) {
-    const m = await queryOne<{ matter_ref: string; property_address: string; assigned_to: string | null; created_by: string; fee_name: string | null; client_email: string | null; client_name: string | null; buyer_names: string[] | null }>(
+    const m = await queryOne<{ matter_ref: string; property_address: string; assigned_to: string | null; created_by: string; fee_name: string | null; client_email: string | null; client_emails: string[] | null; client_name: string | null; buyer_names: string[] | null }>(
       `select m.matter_ref, m.property_address, m.assigned_to, m.created_by, coalesce(u.display_name, u.email) as fee_name,
               (select c.email from matter_contact c where c.matter_id = m.id and c.tenant_id = m.tenant_id and c.role = 'CLIENT' order by c.last_seen_at desc limit 1) as client_email,
+              (select array_agg(distinct lower(c.email)) from matter_contact c where c.matter_id = m.id and c.tenant_id = m.tenant_id and c.role = 'CLIENT' and c.email is not null) as client_emails,
               (select c.name from matter_contact c where c.matter_id = m.id and c.tenant_id = m.tenant_id and c.role = 'CLIENT' order by c.last_seen_at desc limit 1) as client_name,
               m.buyer_names
          from matter m left join app_user u on u.id = coalesce(m.assigned_to, m.created_by) where m.id = $1 and m.tenant_id = $2`,
@@ -118,12 +119,13 @@ export const productionSigning: SigningPort = {
     const sig = await signatureFor(tenantId, sender).catch(() => null);
     const body = signedText(r.body, sig);
     const html = signedHtml(r.body, sig);
-    const draft = await createDraftMessage(sender, r.subject, html, [m.client_email]);
+    // Every client signs, so every client gets the pack.
+    const draft = await createDraftMessage(sender, r.subject, html, m.client_emails?.length ? m.client_emails : [m.client_email]);
     for (const { f } of files) await addAttachmentToMessage(sender, draft.id, f.fileName, f.bytes, f.mime);
     await sendDraftMessage(sender, draft.id);
     await query(
       `insert into client_message (tenant_id, matter_id, direction, channel, address, template, subject, body, provider_ref, status) values ($1,$2,'OUT','email',$3,$7,$4,$5,$6,'SENT')`,
-      [tenantId, matterId, m.client_email, r.subject, body, draft.id ?? null, reminder ? 'chase_signed_documents' : 'signing_pack']
+      [tenantId, matterId, (m.client_emails?.length ? m.client_emails : [m.client_email]).join(', '), r.subject, body, draft.id ?? null, reminder ? 'chase_signed_documents' : 'signing_pack']
     ).catch(() => {});
     return { channel: 'email', messageId: draft.id ?? null, attached: files.map(({ f }) => f.fileName), envelopes, fellBackToWet };
   },

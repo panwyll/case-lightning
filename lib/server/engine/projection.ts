@@ -9,7 +9,7 @@
  * Keep the reducer dumb: it records what happened. Deciding what happens NEXT is the
  * machine's job (machine.ts).
  */
-import { deedSigned, isResolved, type SearchType } from './types';
+import { deedSigned, isResolved, partyId, type SearchType } from './types';
 import {
   DECISION_EVENT_TYPES,
   initialState,
@@ -692,6 +692,19 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'availability_recorded': {
       const p = e.payload as Payloads['availability_recorded'];
       s.availability = [...(s.availability ?? []).filter((w) => w.id !== p.id), { id: p.id, party: p.party, from: p.from, until: p.until, note: p.note, recordedAt: e.createdAt }];
+      break;
+    }
+    case 'clients_updated': {
+      const p = e.payload as Payloads['clients_updated'];
+      s.partyNames = [...p.partyNames];
+      s.parties = Math.max(1, p.partyNames.length);
+      // A client taken off the case takes their unfinished check with them; a finished one stays on the record.
+      const keep = new Set(p.partyNames.slice(1).map((n) => partyId(p.role, n)));
+      for (const [id, pc] of Object.entries(s.partyChecks)) {
+        if (pc.role !== p.role || keep.has(id) || isResolved(pc.status) || pc.status === 'flagged') continue;
+        delete s.partyChecks[id];
+        for (const w of s.waits) if (w.key === 'id_check' && w.subject === id && w.closedAt === null) w.closedAt = e.createdAt;
+      }
       break;
     }
     case 'target_dates_changed': {

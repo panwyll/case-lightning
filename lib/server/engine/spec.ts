@@ -187,6 +187,7 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'set_shadow_mode', actor: 'person', stages: 'any', emits: ['shadow_mode_changed'], description: 'Admin switches shadow mode.' },
   // eventualities
   { type: 'abandon_matter', actor: 'person', stages: 'any', emits: ['matter_abandoned'], description: 'Abortive: client withdrew, chain collapsed, gazumped… Waits close, timers stop, only corrections may follow.', eventuality: true },
+  { type: 'set_clients', actor: 'person', stages: 'any', emits: ['clients_updated', 'id_party_added'], description: 'The clients on the case, edited: a client added is identified in their own right; one removed takes an unfinished check with them. Signing and every client email follow the list.' },
   { type: 'set_target_dates', actor: 'either', stages: ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'], emits: ['target_dates_changed'], description: 'Re-plan target exchange / completion before exchange.', eventuality: true },
   { type: 'change_completion_date', actor: 'either', stages: ['exchanged', 'pre_completion'], emits: ['completion_date_changed'], description: 'Move the contractual completion date after exchange.', eventuality: true },
   { type: 'notice_to_complete_served', actor: 'either', stages: ['exchanged', 'pre_completion'], emits: ['notice_to_complete_served'], description: 'Either side served notice: a decision citing the notice; the timer raises the deadline.', eventuality: true },
