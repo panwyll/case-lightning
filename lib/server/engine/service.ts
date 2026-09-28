@@ -823,7 +823,7 @@ export class EngineService {
       const groups = xs.map(groupOf);
       const subject = kind === 'evidence' ? evidenceEnquiry(groups, note) : accessEnquiry(groups, note);
       const ids = xs.map((i) => i.id).sort();
-      const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
+      const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1), title: kind === 'evidence' ? 'Evidence from the seller' : 'Access for specialists' };
       const summary = `${kind === 'evidence' ? 'EVIDENCE FROM THE SELLER' : 'ACCESS FOR SPECIALISTS'}\n\nTo: the seller's solicitor\nOn the client's instruction, for: ${groups.map((g) => g.specialist).join(', ')}\n\n${subject}`;
       if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, summary)) return;
       try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log(`${kind} request could not be raised`, err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
@@ -888,15 +888,21 @@ export class EngineService {
           const batch = surveyEnquiries(seller);
           const key = `enquiry_draft:survey:${docKey}`;
           if (batch && !Object.values(fresh.enquiries).some((q) => q.subject === batch) && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
-            const detail = { subject: batch, question: null, origin: 'survey' };
+            const detail = { subject: batch, question: null, origin: 'survey', title: 'Enquiries from the survey' };
             const check = ours.length ? `\n\nNot for the seller; check these ourselves:\n${ours.map((o) => `• ${o}`).join('\n')}` : '';
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ENQUIRIES FROM THE SURVEY\n\nTo: the seller's solicitor\n${seller.length} point${seller.length === 1 ? '' : 's'} the surveyor raised for the legal adviser, as one set.\n\n${batch}${check}`))) {
               try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiries could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
             }
           }
+          // Anything proposed about inspections under the old per-item flow no longer applies: taken back.
+          await this.routeInvestigations(tenantId, matterId, subflows, null);
           if (surveyNeedsAdvice(p.facts)) {
-            const key = `survey_advice:${docKey}`;
-            if (!fresh.clientToldAt?.[key] && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
+            // A letter already went, but from a reading that failed or predates what is read now: the client gets a proper one.
+            const prior = (await this.store.listEvents(tenantId, matterId)).filter((x) => x.type === 'survey_received' && x.sourceDocumentId === e.sourceDocumentId && x.seq < e.seq).slice(-1)[0];
+            const pf = prior ? (prior.payload as { facts: SurveyFacts }).facts : null;
+            const priorWasBad = !!pf && (pf.confidence === 0 || pf.recommendations.some((r) => r.code === 'UNREAD') || pf.legalIssues === undefined);
+            const key = priorWasBad ? `survey_advice:${docKey}:${e.id}` : `survey_advice:${docKey}`;
+            if ((priorWasBad || !fresh.clientToldAt?.[key]) && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
               // The letter is written, not assembled: the model drafts it from the reading; a person reads it (and can edit it) at Propose.
               const opts = { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender };
               const drafted = this.ports.surveyAdviser ? await this.ports.surveyAdviser.draft({ tenantId, matterId, facts: p.facts, ...opts, transactionLabel: caseBrief(fresh, this.ports.now()).transactionLabel }).catch(() => null) : null;
@@ -1114,7 +1120,7 @@ export class EngineService {
                 await this.run(tenantId, matterId, { type: 'record_availability', actor: e.actor, party: c.party, from: c.from, until: c.until, note: c.note });
               } else if (c.type === 'request_from_seller') {
                 // The client told us what to get from the other side: the enquiry, drafted from their words, as a proposal a person can edit.
-                const detail = { subject: c.text.trim(), question: null, origin: 'client_instruction' };
+                const detail = { subject: c.text.trim(), question: null, origin: 'client_instruction', title: `On the client's instruction: ${c.about.trim().slice(0, 60)}` };
                 const key = `enquiry_draft:client:${p.noteId}:${id}`;
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'client_instruction', key, detail, `ENQUIRY ON THE CLIENT'S INSTRUCTION\n\nTo: the seller's solicitor\nAbout: ${c.about}\n\n${c.text.trim()}`))) {
                   await this.perform(tenantId, matterId, 'enquiry_draft', detail);

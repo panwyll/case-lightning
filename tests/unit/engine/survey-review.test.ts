@@ -254,3 +254,17 @@ test("the client's reply is read against the survey letter: their instruction be
   assert.match(String(enq[0].detail.subject), /damp-proofing guarantee[\s\S]*FENSA/);
   assert.doesNotMatch(String(enq[0].detail.subject), /\broof\b|structural|drain/i, 'only what the client asked for');
 });
+
+test('after a failed read, a good re-read proposes a proper letter and takes back leftover inspection requests', async () => {
+  const h = await enrolled();
+  const docId = h.doc(REPORT, 'SURVEY');
+  // The first reading failed; under the old flow a letter still went and an access request was proposed.
+  await h.svc.run(TENANT, MATTER, { type: 'survey_received', actor: 'external', documentId: docId, surveyType: 'level2', facts: { surveyType: 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically.', furtherInvestigation: false, severity: 'medium' }], confidence: 0 }, extractor: 'test' } as never);
+  await h.svc.run(TENANT, MATTER, { type: 'record_client_update', update: { template: 'survey_advice', recipientRole: 'client', channel: 'mock', messageId: 'old', triggeredByEventId: 'x', mentioned: [`survey_advice:${docId}`] } } as never);
+  await h.svc.run(TENANT, MATTER, { type: 'propose_action', action: 'enquiry_draft', subject: 'survey', detail: { subject: 'Our client wishes to have the following inspections carried out before exchange: 1. Damp' }, dedupKey: 'enquiry_draft:access-batch:ISS-9', summary: 'old', sourceDocumentId: docId } as never);
+  const sentBefore = h.ports.clientComms.sent.filter((m) => m.template === 'survey_advice').length;
+  await h.svc.surveyReceived(TENANT, MATTER, docId);
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(h.ports.clientComms.sent.filter((m) => m.template === 'survey_advice').length, sentBefore + 1, 'a proper letter replaces the one built on a failed read');
+  assert.ok(!Object.values(s.proposals).some((p) => p.status === 'pending' && p.dedupKey === 'enquiry_draft:access-batch:ISS-9'), 'the leftover access request is withdrawn');
+});

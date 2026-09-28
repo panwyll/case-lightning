@@ -831,6 +831,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status !== 'not_started' ? <>
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' })}
+        {act('survey', 'client_decision_recorded', `Further Checks${current(pc === 'further_investigation')}`, { subject: 'physical_condition', decision: 'further_investigation' }, { disabled: pc === 'further_investigation' })}
         {act('survey', 'client_decision_recorded', `Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
         {act('survey', 'client_decision_recorded', `Withdraw${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}
         {rereadNote && <span className="ep-note">{rereadNote}</span>}

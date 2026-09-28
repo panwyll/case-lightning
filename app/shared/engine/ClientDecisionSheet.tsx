@@ -10,7 +10,7 @@ import type { Api, CaseDocument } from './types';
 const DECISION_LABEL: Record<string, string> = {
   'physical_condition:satisfied': 'Satisfied with the property',
   'physical_condition:renegotiate': 'Wants to renegotiate',
-  'physical_condition:further_investigation': 'Wants further investigation',
+  'physical_condition:further_investigation': 'Wants further checks first (a specialist, or a fuller survey)',
   'physical_condition:withdraw': 'Withdraws',
   'further_investigation:pursue': 'Wants their specialist in',
   'further_investigation:evidence': "Ask the seller for evidence",

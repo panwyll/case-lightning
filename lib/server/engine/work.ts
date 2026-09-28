@@ -201,7 +201,18 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
       case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'}`;
       case 'chase': return `${cap(typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply')}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
       case 'search_order': return `${SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? '')}`;
-      case 'enquiry_draft': return typeof det.subject === 'string' ? det.subject.slice(0, 120) : "From the seller's forms";
+      case 'enquiry_draft': {
+        // What the enquiry is for, at a glance; the words themselves are in the task.
+        if (typeof det.title === 'string') return det.title;
+        const k = pr.dedupKey;
+        if (k.startsWith('enquiry_draft:survey:')) return 'Enquiries from the survey';
+        if (/^enquiry_draft:access/.test(k)) return 'Access for specialists';
+        if (k.startsWith('enquiry_draft:evidence')) return 'Evidence from the seller';
+        if (k.startsWith('enquiry_draft:client:')) return "On the client's instruction";
+        if (typeof det.question === 'string' && det.question) return "From the seller's forms";
+        const first = typeof det.subject === 'string' ? det.subject.split(/[.:\n]/)[0].trim() : '';
+        return first.length > 60 ? `${first.slice(0, 57).replace(/\s+\S*$/, '')}…` : first || 'Enquiry to the seller';
+      }
       case 'client_update': {
         if (det.kind === 'id_check_request') return typeof det.label === 'string' ? det.label : 'The client';
         if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Further evidence requested' : 'Proof-of-funds form';
