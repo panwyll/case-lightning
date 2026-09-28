@@ -91,7 +91,9 @@ export const WORK_CSS = `
 .ep-raise{display:grid;gap:6px;width:100%}
 .ep-raise textarea{width:100%;box-sizing:border-box;resize:vertical;font:inherit;font-size:12.5px}
 .ep-raise .ep-btn{justify-self:start;margin:0}
-.ep-sub .a{grid-column:1 / -1;display:flex;gap:6px;align-items:center;margin-top:4px}
+.ep-sub .a{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:4px;min-width:0}
+.ep-sub .a > div{flex:1 1 100%;min-width:0}
+.ep-sub .a textarea,.ep-sub .a input[type=file]{width:100%;max-width:100%;box-sizing:border-box}
 .ep-sub .a .ep-btn{margin:0;padding:3px 10px;font-size:12px}
 .ep-sub-a{color:#5A27E0;text-decoration:none}
 .ep-sub-a:hover{text-decoration:underline}

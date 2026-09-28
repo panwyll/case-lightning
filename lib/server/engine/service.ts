@@ -134,7 +134,8 @@ export class EngineService {
     this.remember(tenantId, matterId, result.state);
     const followOn = async () => {
       await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
-      await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
+      // Acknowledgements are automation too: paused while a person has the case.
+      if (!result.state.manualHandling.required) await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
       if (result.events.length && reportReady(result.state)) await this.draftReportWhenReady(tenantId, matterId);
       if (this.ports.onEvents && result.events.length) {
         const latest = await this.getState(tenantId, matterId).catch(() => result.state);
@@ -1091,7 +1092,55 @@ export class EngineService {
   // ───────────── effects ─────────────
 
   /** Post-commit reactions. Best-effort; each becomes its own command so the log records only what really happened. */
+  /** At the start of a case: the client's ID / AML check and (firm policy) proof of funds, proposed or sent as the trust level says. */
+  private async startClientChecks(tenantId: string, matterId: string, subflows: LevelConfig, key: string): Promise<void> {
+    const state = await this.getState(tenantId, matterId);
+    if (state.idCheck.status === 'not_started') {
+      const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name };
+      if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${key}`, detail, `ID / AML CHECK\n\nTo: the client, via ${this.ports.idCheckProvider.name}\nWhy: every instruction starts with identity and AML.\n\nThe check costs the firm a fee.`))) {
+        try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+      }
+    }
+    if (state.requireProofOfFunds && state.proofOfFunds.status === 'not_started' && this.ports.pofForms) {
+      const detail = { kind: 'proof_of_funds_request' };
+      if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${key}`, detail, 'PROOF OF FUNDS\n\nTo: the client\nWhy: the firm requires source of funds signed off before exchange; the form goes out at instruction so the statements arrive in time.'))) {
+        try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+      }
+    }
+  }
+
+  /** The case has reached pre-contract: every required search not yet ordered is ordered (or proposed). */
+  private async orderMissingSearches(tenantId: string, matterId: string, subflows: LevelConfig): Promise<void> {
+    const state = await this.getState(tenantId, matterId);
+    for (const searchType of state.requiredSearches) {
+      if (state.searches[searchType]) continue;
+      const detail = { searchType, provider: this.ports.searchProvider.name };
+      if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
+      try {
+        await this.perform(tenantId, matterId, 'search_order', detail);
+      } catch (err) {
+        // Provider down: the search stays un-ordered and shows as a stage blocker; a human can record it manually.
+        this.ports.log(`could not order ${searchType} search — manual fallback needed`, err);
+      }
+    }
+  }
+
+  /**
+   * Automation resumed after manual handling: whatever the engine would have started by now, it starts
+   * from where the case stands (not by replaying what happened while a person had it): checks not yet
+   * requested, searches not yet ordered, chases now due, and a report on title that can be written.
+   */
+  private async catchUpAfterManual(tenantId: string, matterId: string, subflows: LevelConfig): Promise<void> {
+    const s = await this.getState(tenantId, matterId);
+    if (s.stage === 'instruction') await this.startClientChecks(tenantId, matterId, subflows, `resume:${s.lastSeq}`);
+    if (s.stage !== 'instruction') await this.orderMissingSearches(tenantId, matterId, subflows);
+    await this.tick(tenantId, matterId).catch((err) => this.ports.log('catch-up chases failed', err));
+    if (reportReady(await this.getState(tenantId, matterId))) await this.draftReportWhenReady(tenantId, matterId);
+  }
+
   private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
+    // Manual handling pauses what the engine starts on its own (requests, orders, status updates); a person drives.
+    const paused = state.manualHandling.required;
     for (const e of events) {
       try {
         // The seller's forms: ONE enquiry to the seller's solicitor covering every point they raise and every "not known"
@@ -1231,21 +1280,9 @@ export class EngineService {
         // the provider and, on a purchase that needs one, the proof-of-funds form to the client.
         // Nobody should have to press a button for either; the trust level decides whether a
         // person is asked first.
-        if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false) {
-          const state = await this.getState(tenantId, matterId);
-          if (state.idCheck.status === 'not_started') {
-            const detail = { kind: 'id_check_request', provider: this.ports.idCheckProvider.name };
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'id_check_request', `id_check_request:${e.id}`, detail, `ID / AML CHECK\n\nTo: the client, via ${this.ports.idCheckProvider.name}\nWhy: every instruction starts with identity and AML.\n\nThe check costs the firm a fee.`))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('ID check could not be requested on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
-            }
-          }
-          if (state.requireProofOfFunds && state.proofOfFunds.status === 'not_started' && this.ports.pofForms) {
-            const detail = { kind: 'proof_of_funds_request' };
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'proof_of_funds_request', `proof_of_funds_request:${e.id}`, detail, 'PROOF OF FUNDS\n\nTo: the client\nWhy: the firm requires source of funds signed off before exchange; the form goes out at instruction so the statements arrive in time.'))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('proof-of-funds form could not be sent on enrolment', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
-            }
-          }
-        }
+        // Automation back on after manual handling: start what it would have started by now.
+        if (e.type === 'manual_handling_cleared') await this.catchUpAfterManual(tenantId, matterId, subflows);
+        if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false && !paused) await this.startClientChecks(tenantId, matterId, subflows, e.id);
         // Another person to identify (a co-client named at enrolment, a gift donor declared on the form): their own check, proposed or sent as the trust level says.
         if (e.type === 'id_party_added') {
           const p = e.payload as { party: string; label: string; role: string };
@@ -1256,20 +1293,7 @@ export class EngineService {
           }
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
-        if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract') {
-          const state = await this.getState(tenantId, matterId);
-          for (const searchType of state.requiredSearches) {
-            if (state.searches[searchType]) continue;
-            const detail = { searchType, provider: this.ports.searchProvider.name };
-            if (await this.proposeUnless(tenantId, matterId, subflows, 'search_order', searchType, searchType, detail, `SEARCH ORDER\n\nSearch: ${searchType}\nProvider: ${this.ports.searchProvider.name}\nWhy: the case has entered pre-contract and this search is on its list.\n\nOrdering costs the firm a fee.`)) continue;
-            try {
-              await this.perform(tenantId, matterId, 'search_order', detail);
-            } catch (err) {
-              // Provider down: the search stays un-ordered and shows as a stage blocker; a human can record it manually.
-              this.ports.log(`could not order ${searchType} search — manual fallback needed`, err);
-            }
-          }
-        }
+        if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract' && !paused) await this.orderMissingSearches(tenantId, matterId, subflows);
         // Addendum: an enquiry to an INTERNAL counterparty is delivered to the other
         // side's handler as inbound correspondence — the same event pair as an external
         // exchange, with no read of the other matter's state (the wall is in the DB too).
@@ -1397,7 +1421,7 @@ export class EngineService {
           }
         }
         // Automated client status updates (zero legal risk, pure admin).
-        const template = CLIENT_UPDATE_TEMPLATES[e.type];
+        const template = paused ? undefined : CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
           let context: Record<string, unknown> = { eventType: e.type, payload: e.payload };
           let dedupKey = `${template}:${e.id}`;
