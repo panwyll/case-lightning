@@ -101,3 +101,32 @@ export async function moveBlobsToStorage(limit = 50): Promise<{ moved: number; l
   const left = await queryOne<{ n: string }>(`select count(*)::text as n from document_blob where bytes is not null and storage_path is null`).then((x) => Number(x?.n ?? 0)).catch(() => 0);
   return { moved, left };
 }
+
+/**
+ * A one-time link the browser uploads a file to directly (Supabase Storage signed upload), for a
+ * file too large to pass through the web server (Vercel caps a request at 4.5 MB). Null when
+ * Storage is not configured: the caller sends the bytes the old way.
+ */
+export async function signedUploadUrl(tenantId: string, documentId: string): Promise<string | null> {
+  if (!storageConfigured()) return null;
+  await ensureBucket();
+  const path = pathOf(tenantId, documentId);
+  const r = await fetch(`${url()}/storage/v1/object/upload/sign/${BUCKET}/${path}`, { method: 'POST', headers: headers({ 'content-type': 'application/json', 'x-upsert': 'true' }), body: '{}' });
+  if (!r.ok) throw new Error(`Storage upload link failed: ${r.status} ${(await r.text()).slice(0, 200)}`);
+  const j = (await r.json()) as { url?: string };
+  if (!j.url) throw new Error('Storage returned no upload link.');
+  return `${url()}/storage/v1${j.url}`;
+}
+
+/** A file the browser put straight into Storage: its bytes (for the hash and the reading), recorded as held. */
+export async function adoptStoredBlob(tenantId: string, documentId: string): Promise<Buffer> {
+  const path = pathOf(tenantId, documentId);
+  const bytes = await download(path);
+  if (!bytes) throw Object.assign(new Error('The upload did not arrive in storage.'), { status: 409 });
+  await query(
+    `insert into document_blob (document_id, tenant_id, bytes, storage_path, size_bytes) values ($1, $2, null, $3, $4)
+     on conflict (document_id) do update set bytes = null, storage_path = excluded.storage_path, size_bytes = excluded.size_bytes`,
+    [documentId, tenantId, path, bytes.length]
+  );
+  return bytes;
+}

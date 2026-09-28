@@ -1,4 +1,5 @@
 'use client';
+import { uploadCaseFile } from './uploadCaseFile';
 import { useEffect, useMemo, useState } from 'react';
 import { PasswordInput } from './PasswordInput';
 import { ChevronRight } from '@/app/shared/icons';
@@ -151,14 +152,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     setErr(null);
     setMsg(null);
     try {
-      const buf = await file.arrayBuffer();
-      let bin = '';
-      const bytes = new Uint8Array(buf);
-      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      const r = await api<{ action: { kind: string; reason?: string }; classification: { role: string; confidence: number } | null }>(`/matters/${matterId}/engine/upload`, {
-        method: 'POST',
-        body: JSON.stringify({ fileName: file.name, mimeType: file.type || 'application/pdf', base64: btoa(bin), role, party: role === 'id_check' ? idParty || undefined : undefined, searchType: role === 'search' ? search : undefined, enquiryId: role === 'enquiry_reply' ? enquiryId.trim() : undefined }),
-      });
+      const r = await uploadCaseFile<{ action: { kind: string; reason?: string }; classification: { role: string; confidence: number } | null }>(api, matterId, file, { role, party: role === 'id_check' ? idParty || undefined : undefined, searchType: role === 'search' ? search : undefined, enquiryId: role === 'enquiry_reply' ? enquiryId.trim() : undefined });
       setMsg(r.action.kind === 'skip' ? `Filed, not routed: ${r.action.reason ?? ''}` : `Filed as ${r.action.kind.replace('_', ' ')}${r.classification ? ` (classifier ${Math.round(r.classification.confidence * 100)}% sure)` : ''} — the engine has extracted and rule-checked it.`);
       setFile(null);
       onChanged?.();

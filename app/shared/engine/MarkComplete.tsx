@@ -6,8 +6,8 @@
  */
 import { useState } from 'react';
 import type { Api } from './types';
+import { uploadCaseFile } from './uploadCaseFile';
 
-const readB64 = (f: File) => new Promise<string>((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => bad(r.error); r.readAsDataURL(f); });
 
 export function MarkComplete({ matterId, api, step, label, busy, cmd }: { matterId: string; api: Api; step: string; label: string; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown> }) {
   const [open, setOpen] = useState(false);
@@ -22,8 +22,7 @@ export function MarkComplete({ matterId, api, step, label, busy, cmd }: { matter
     try {
       const documentIds: string[] = [];
       for (const f of files) {
-        if (f.size > 25 * 1024 * 1024) throw new Error(`${f.name} is over 25 MB.`);
-        const r = await api<{ documentId: string }>(`/matters/${matterId}/engine/upload`, { method: 'POST', body: JSON.stringify({ fileName: f.name, base64: await readB64(f), mimeType: f.type || 'application/octet-stream', role: 'evidence' }) });
+        const r = await uploadCaseFile<{ documentId: string }>(api, matterId, f, { role: 'evidence' });
         documentIds.push(r.documentId);
       }
       const ok = await cmd({ type: 'complete_step_manually', step, note: note.trim(), documentIds });
