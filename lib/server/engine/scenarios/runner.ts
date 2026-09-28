@@ -98,6 +98,20 @@ function contextFor(tenantId: string, userId: string, matterId: string, flagged:
       return (r.events[0].payload as { bankDetailsId: string }).bankDetailsId;
     },
     async run(cmd) { await svc.run(tenantId, matterId, { actor: userId, ...cmd } as never); },
+    async companion() {
+      // The client's own sale in a chain scenario: one sandbox case per purchase, found again on every step.
+      let row = await queryOne<{ id: string }>(`select id from matter where tenant_id = $1 and sandbox and sandbox_scenario = $2`, [tenantId, `companion:${matterId}`]);
+      if (!row) {
+        const main = await queryOne<{ matter_ref: string; buyer_names: string[] | null }>(`select matter_ref, buyer_names from matter where id = $1 and tenant_id = $2`, [matterId, tenantId]);
+        row = await queryOne<{ id: string }>(
+          `insert into matter (tenant_id, matter_ref, property_address, buyer_names, seller_names, created_by, folder_path, transaction_type, sandbox, sandbox_scenario, assigned_to)
+           values ($1, $2, $3, '{}', $4, $5, '', 'freehold_sale', true, $6, $5) returning id`,
+          [tenantId, `${main?.matter_ref ?? 'SANDBOX'}-SALE`, "The client's current home, 5 Sample Lane, Sampletown, SB9 9ZZ", main?.buyer_names ?? ['Sandbox Buyer'], userId, `companion:${matterId}`]
+        );
+        rememberSandbox(tenantId, row!.id);
+      }
+      return contextFor(tenantId, userId, row!.id, flagged);
+    },
     async settle() {
       for (let i = 0; i < 12; i++) {
         const state = await svc.getState(tenantId, matterId);

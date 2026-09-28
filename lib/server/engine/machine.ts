@@ -641,6 +641,12 @@ const nextStage = (s: MatterState): Stage | null => {
  * Automatic follow-on events: stage advancement and derived milestones. Loops until
  * the state is quiescent so one command can carry a matter through several gates.
  */
+/**
+ * What holds exchange, other than the link to the client's other case: that one is settled at exchange
+ * itself (each side checks the other can exchange), so counting it here would leave both sides waiting on each other.
+ */
+const gatingBesidesChain = (s: MatterState) => issuesGating(s, 'exchange').filter((i) => !(i.kind === 'chain_dependency' && i.title.startsWith('Linked ')));
+
 function automatic(state: MatterState, now: Date): NewEvent[] {
   const out: NewEvent[] = [];
   let s = state;
@@ -663,9 +669,9 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.abandoned) {
       // A purchase asks the seller's solicitor for the draft contract pack at instruction, not after the client's checks: the clock on it starts the day we are instructed.
       ev = { type: 'contract_pack_requested', actor: SYSTEM, payload: { to: 'seller_solicitor' } };
-    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && (!s.hasLender || isResolved(s.mortgage.status)) && gatingBesidesChain(s).length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
-    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && issuesGating(s, 'exchange').length === 0 && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && gatingBesidesChain(s).length === 0 && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['contract pack sent', "buyer's enquiries answered", s.hasExistingMortgage ? 'redemption figure known' : 'unencumbered', 'no open issue holding exchange', s.requireExchangeAuthority ? 'client authorised exchange' : 'authority not required by policy'] } };
     } else {
       const to = nextStage(s);

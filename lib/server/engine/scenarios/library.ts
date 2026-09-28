@@ -27,6 +27,8 @@ export interface ScenarioContext {
   run(cmd: Record<string, unknown>): Promise<void>;
   /** Approve the engine's own pending proposals (auto-clears, orders), as the person would at Propose. */
   settle(): Promise<void>;
+  /** The client's other case in a chain (their sale, on a purchase): created the first time, the same case after. */
+  companion(): Promise<ScenarioContext>;
 }
 
 export interface ScenarioStep {
@@ -418,3 +420,35 @@ export const SCENARIOS: Scenario[] = [
 export const scenarioById = (id: string): Scenario | null => SCENARIOS.find((s) => s.id === id) ?? null;
 /** The steps a run performs, in order. */
 export const stepsFor = (s: Scenario, flagged: boolean): ScenarioStep[] => s.steps.filter((st) => (flagged ? !st.cleanOnly : !st.flaggedOnly));
+
+// ── a chain: one client selling their home and buying another, both with this firm ──
+/** A step run on the client's sale (the companion case), and its own proposals approved like the purchase's. */
+const onSale = (s: ScenarioStep): ScenarioStep => ({ ...s, id: `sale_${s.id}`, label: `Sale: ${s.label}`, decision: undefined, run: async (c) => { const sale = await c.companion(); await s.run(sale); await sale.settle(); } });
+const saleSteps = SCENARIOS.find((x) => x.id === 'freehold_sale')!.steps;
+const upTo = (steps: ScenarioStep[], id: string) => steps.slice(0, steps.findIndex((x) => x.id === id));
+const from = (steps: ScenarioStep[], id: string) => steps.slice(steps.findIndex((x) => x.id === id));
+const buyerExchange = exchangeBuyer(PRICE, DEPOSIT, ADVANCE).filter((x) => !x.id.startsWith('pof_') && x.id !== 'donor_id');
+
+SCENARIOS.push({
+  id: 'chain', label: 'Chain: Sale And Purchase', transactionType: 'freehold_purchase', hasLender: true,
+  summary: "One client selling their home and buying another, both with us: the two cases linked, each holding exchange for the other, exchanged together on the same completion date, the sale completing first because its money funds the purchase.",
+  steps: [
+    step('enrol', 'Purchase enrolled (the client also sells with us)', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_purchase', hasLender: true, requireProofOfFunds: false, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29'] }); }),
+    ...upTo(saleSteps, 'exchange').map(onSale),
+    step('link', 'The sale and the purchase linked as one chain', async (c) => { const sale = await c.companion(); await c.svc.linkChain(c.tenantId, c.matterId, sale.matterId, c.userId); }),
+    ...idCheck(),
+    ...searches(['LLC1', 'CON29']),
+    ...mortgage(),
+    ...title(false),
+    ...sellerForms(false),
+    ...enquiries(),
+    ...reportOnTitle(),
+    ...upTo(buyerExchange, 'exchange'),
+    // The sale exchanges only once the purchase can; the purchase then exchanges on the same completion date.
+    onSale(saleSteps.find((x) => x.id === 'exchange')!),
+    ...from(buyerExchange, 'exchange').filter((x) => ['exchange'].includes(x.id)),
+    // The sale completes first: its money funds the purchase.
+    ...from(saleSteps, 'statement').map(onSale),
+    ...from(buyerExchange, 'statement'),
+  ],
+});

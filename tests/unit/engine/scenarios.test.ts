@@ -2,13 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SCENARIOS, stepsFor, type ScenarioContext } from '../../../lib/server/engine/scenarios/library';
 import { blockingDecisions } from '../../../lib/server/engine/types';
-import { harness, TENANT, MATTER, USER } from './helpers';
+import { harness, TENANT, MATTER as MAIN, USER } from './helpers';
 
 /** The scripts over the in-memory harness: the same steps the runner performs on a sandbox matter, without a database. */
-function context(h: ReturnType<typeof harness>, flagged: boolean): ScenarioContext {
+const SALE = '99999999-9999-4999-8999-999999999999';
+
+function context(h: ReturnType<typeof harness>, flagged: boolean, MATTER = MAIN, others: Record<string, ScenarioContext> = {}): ScenarioContext {
   const ctx: ScenarioContext = {
     svc: h.svc, tenantId: TENANT, matterId: MATTER, userId: USER, flagged,
-    async doc({ docType, facts }) { return h.doc(facts, docType); },
+    async doc({ docType, facts }) { return h.ports.documents.seed({ tenantId: TENANT, matterId: MATTER, docType, extractedFacts: facts }).id; },
+    async companion() { return (others[SALE] ??= context(h, flagged, SALE, others)); },
     async resolve(kind, option, note) {
       const s = await h.svc.getState(TENANT, MATTER);
       const d = blockingDecisions(s).find((x) => x.kind === kind);
@@ -17,7 +20,7 @@ function context(h: ReturnType<typeof harness>, flagged: boolean): ScenarioConte
       await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, option, note);
     },
     async verifiedDetails(payeeKind, account, name) {
-      const r = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind, payeeRef: name, details: { sortCode: '200000', accountNumber: account, accountName: name, firmName: name }, sourceChannel: 'letter', sourceDocumentId: h.doc({ content: `${name} letter` }) });
+      const r = await h.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind, payeeRef: name, details: { sortCode: '200000', accountNumber: account, accountName: name, firmName: name }, sourceChannel: 'letter', sourceDocumentId: h.ports.documents.seed({ tenantId: TENANT, matterId: MATTER, docType: 'PDF', extractedFacts: { content: `${name} letter` } }).id });
       const d = Object.values(r.state.decisions).find((x) => x.kind === 'bank_details' && x.status === 'pending');
       if (d) {
         await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
@@ -49,12 +52,18 @@ for (const scenario of SCENARIOS) {
           await step.run(ctx);
           await ctx.settle();
         } catch (err) {
-          const s = await h.svc.getState(TENANT, MATTER);
+          const s = await h.svc.getState(TENANT, MAIN);
           throw new Error(`${scenario.id}${flagged ? ' flagged' : ''} · step "${step.label}" failed at stage ${s.stage}: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
-      const s = await h.svc.getState(TENANT, MATTER);
+      const s = await h.svc.getState(TENANT, MAIN);
       assert.ok(s.closedAt, `${scenario.id}: the matter closes`);
+      if (scenario.id === 'chain') {
+        const sale = await h.svc.getState(TENANT, SALE);
+        assert.ok(sale.closedAt, 'the client\'s sale closes too');
+        assert.equal(sale.exchange.completionDate, s.exchange.completionDate, 'the two complete the same day');
+        assert.ok(sale.completion.confirmedAt! <= s.completion.confirmedAt!, 'the sale completes first');
+      }
       assert.equal(blockingDecisions(s).length, 0, 'nothing is left for a person');
     });
   }
