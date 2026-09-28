@@ -141,7 +141,8 @@ test('service: the lease read raises the title decision, stays with the official
   assert.equal(s.title.facts?.lease?.unexpiredYears, 96, 'the lease facts ride with the title facts');
   assert.equal(s.title.lease?.groundRentPenniesPa, 25_000);
   // The management pack: read by the extractor, the decision carries the fees and the insurance.
-  await h.svc.run(TENANT, MATTER, { type: 'management_pack_requested', actor: USER, from: 'Block Managers Ltd' });
+  // Requested by the engine on entering pre-contract.
+  await h.svc.run(TENANT, MATTER, { type: 'management_pack_requested', actor: USER, from: 'Block Managers Ltd' }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   const pack: ManagementPackFacts = toManagementPackFacts(packOut());
   await h.svc.managementPackReceived(TENANT, MATTER, h.doc(pack));
   s = await h.svc.getState(TENANT, MATTER);

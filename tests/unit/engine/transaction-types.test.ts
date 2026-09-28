@@ -40,8 +40,9 @@ test('profiles: every type has one; the sides agree with the helpers; a sale nev
   assert.equal(s.requireProofOfFunds, false, 'proof of funds is a purchase-side policy');
   assert.equal(s.requireExchangeAuthority, true, 'the client still authorises exchange on a sale');
   assert.deepEqual(s.requiredSearches, [], 'no searches on a sale by default');
-  assert.equal(s.propertyForms.status, 'not_started');
-  assert.equal(s.redemption.status, 'not_started');
+  // Asked for by the engine at instruction, not left for someone to press a button.
+  assert.equal(s.propertyForms.status, 'requested');
+  assert.equal(s.redemption.status, 'requested');
   assert.equal(s.mortgage.status, 'not_required');
 });
 
@@ -51,7 +52,7 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   await idCleared(h);
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_contract');
-  assert.match(stageBlockers(s).join(' | '), /property forms not requested/);
+  assert.match(stageBlockers(s).join(' | '), /property forms awaited from the client/);
   assert.match(stageBlockers(s).join(' | '), /contract pack not sent/);
   assert.equal(lifecycle(s), 'pre_exchange');
 
@@ -61,7 +62,8 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'request_lender_consent', actor: USER }), /does not apply to a freehold sale/);
 
   // Forms: a wait the timers chase (client SLA).
-  await h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER });
+  // Requested by the engine at instruction; asking again is refused.
+  await h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.waits.some((w) => w.key === 'property_forms' && w.closedAt === null));
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER }), /already been requested/);
@@ -102,8 +104,9 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
 
   // Exchange needs the redemption figure on a charged property.
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' }), /redemption figure is not known/);
-  assert.match(stageBlockers(s).join(' | '), /redemption statement not requested/);
-  await h.svc.run(TENANT, MATTER, { type: 'request_redemption_statement', actor: USER, lender: 'Big Bank plc' });
+  assert.match(stageBlockers(s).join(' | '), /redemption statement awaited/);
+  // Requested by the engine at instruction; asking again is refused.
+  await h.svc.run(TENANT, MATTER, { type: 'request_redemption_statement', actor: USER, lender: 'Big Bank plc' }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   h.advanceDays(6);
   await h.svc.tick(TENANT, MATTER);
   assert.ok(h.ports.chaser.chases.some((c) => c.template === 'chase_redemption_statement' && c.recipientRole === 'lender'));
@@ -167,7 +170,8 @@ test('sale: enquiries that arrive before the file moves on hold contract review;
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: false, requireExchangeAuthority: false });
   await idCleared(h);
-  await h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER });
+  // Requested by the engine at instruction; asking again is refused.
+  await h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   await h.svc.run(TENANT, MATTER, { type: 'property_forms_received', actor: USER, forms: ['TA6', 'TA10'] });
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
   // The pack and the first enquiries land in one sync (the pack was recorded late): the stage stops at contract review.
@@ -193,8 +197,9 @@ test('leasehold sale: the TA7 joins the forms, the management pack gates the pac
   await idCleared(h);
   let s = await h.svc.getState(TENANT, MATTER);
   assert.match(stageBlockers(s).join(' | '), /management pack not requested/);
-  const r = await h.svc.run(TENANT, MATTER, { type: 'request_property_forms', actor: USER });
-  assert.deepEqual((r.events[0].payload as { forms: string[] }).forms, ['TA6', 'TA10', 'TA7']);
+  // The engine asked for the forms at instruction: the TA7 joins them on a leasehold.
+  const asked = (await h.store.listEvents(TENANT, MATTER)).find((ev) => ev.type === 'property_forms_requested');
+  assert.deepEqual((asked!.payload as { forms: string[] }).forms, ['TA6', 'TA10', 'TA7']);
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleLeasehold()));
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.title.status, 'flagged', 'the lease has not been read (no lease facts) — a person reviews; the tenure itself is as expected');
@@ -217,13 +222,14 @@ test('remortgage end to end: no exchange — title, offer and redemption figure 
   const blockers = stageBlockers(s).join(' | ');
   assert.match(blockers, /title awaiting/);
   assert.match(blockers, /mortgage offer awaiting/);
-  assert.match(blockers, /redemption statement not requested/);
+  assert.match(blockers, /redemption statement awaited/);
 
   await h.svc.mortgageOfferReceived(TENANT, MATTER, h.doc(offerClear()));
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleWithCharge()));
   s = await h.svc.getState(TENANT, MATTER);
   await resolve(h, firstDecision(s, 'title').eventId, 'approve', USER, 'existing charge to be redeemed from the advance');
-  await h.svc.run(TENANT, MATTER, { type: 'request_redemption_statement', actor: USER, lender: 'Old Lender plc' });
+  // Requested by the engine at instruction; asking again is refused.
+  await h.svc.run(TENANT, MATTER, { type: 'request_redemption_statement', actor: USER, lender: 'Old Lender plc' }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   await h.svc.run(TENANT, MATTER, { type: 'redemption_statement_received', actor: USER, redemptionPennies: 12_000_000, validUntil: '2026-12-31' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_completion', 'no exchange phases: investigation → execution');
@@ -280,16 +286,17 @@ test('transfer of equity end to end: every party identified, lender\'s consent, 
   await idCleared(h);
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_contract');
-  assert.equal(s.lenderConsent.status, 'not_started');
+  assert.equal(s.lenderConsent.status, 'requested', "the lender's consent is asked for at instruction");
   let blockers = stageBlockers(s).join(' | ');
-  assert.match(blockers, /lender's consent not requested/);
+  assert.match(blockers, /lender's consent (awaited|outstanding|not received)/);
   assert.match(blockers, /basis of co-ownership not yet decided/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'request_redemption_statement', actor: USER }), /does not apply to a transfer of equity/);
 
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleWithCharge()));
   s = await h.svc.getState(TENANT, MATTER);
   await resolve(h, firstDecision(s, 'title').eventId, 'approve', USER, 'charge stays; lender to consent');
-  await h.svc.run(TENANT, MATTER, { type: 'request_lender_consent', actor: USER, lender: 'Big Bank plc' });
+  // Asked for by the engine at instruction.
+  await h.svc.run(TENANT, MATTER, { type: 'request_lender_consent', actor: USER, lender: 'Big Bank plc' }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   h.advanceDays(9);
   await h.svc.tick(TENANT, MATTER);
   assert.ok(h.ports.chaser.chases.some((c) => c.template === 'chase_lender_consent'));

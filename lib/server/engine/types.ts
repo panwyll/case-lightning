@@ -699,7 +699,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents', 'mortgage_offer', 'survey'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance'] as const;
 /** Things the client arranges in their own time (their mortgage, their survey): opened by the timer, not by a request of ours, so they are checked on rather than left to drift. */
 export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
 export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
@@ -1218,6 +1218,10 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'registration', label: 'Registration at HM Land Registry' },
     { key: 'discharge', label: 'Discharge from the lender' },
     { key: 'contract_pack', label: "Draft contract pack from the seller's solicitor" },
+    { key: 'signed_documents', label: 'Signed documents from the client' },
+    { key: 'deposit', label: 'The deposit from the client' },
+    { key: 'client_decision', label: "The client's decisions" },
+    { key: 'insurance', label: 'Buildings insurance from the client' },
   ],
   client_update: [
     { key: 'id_check_request', label: 'ID / AML check request' },
@@ -1232,6 +1236,10 @@ export const ENGINE_ACTION_SUBJECTS: Record<EngineAction, ReadonlyArray<{ key: s
     { key: 'exchanged', label: 'Exchanged' },
     { key: 'completed', label: 'Completed' },
     { key: 'registration_complete', label: 'Registration complete' },
+    { key: 'ownership_basis_request', label: 'How they will own it (joint buyers)' },
+    { key: 'exchange_authority_request', label: 'Authority to exchange' },
+    { key: 'buildings_insurance_request', label: 'Buildings insurance from exchange' },
+    { key: 'balance_request', label: 'The balance for completion' },
   ],
   search_order: [
     { key: 'LLC1', label: 'LLC1' },

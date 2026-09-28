@@ -119,7 +119,7 @@ test('dates: target dates re-planned before exchange; after exchange the contrac
   // The certificate of title is due too (the lender's notice before completion); only the notice is under test here.
   assert.deepEqual(acts.map((a) => a.kind).filter((k) => k !== 'certificate_of_title'), ['notice_to_complete']);
   const tick = await h.svc.tick(TENANT, MATTER);
-  assert.equal(tick.escalations, 2, "the notice and the certificate of title");
+  assert.equal(tick.escalations, 3, "the notice, the certificate of title and the buildings insurance still not evidenced");
   assert.deepEqual(await h.svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 }, 'raised once');
   const dl = pendingDecisions(await h.svc.getState(TENANT, MATTER)).find((x) => x.subject === 'deadline:notice_to_complete:2027-01-06')!;
   assert.match(dl.summary, /expires on 2027-01-06/);

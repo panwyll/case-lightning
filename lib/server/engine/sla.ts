@@ -56,6 +56,10 @@ export const DEFAULT_SLA: SlaConfig = {
   survey: { waitKey: 'survey', chaseAfter: 5, chaseEvery: 7, escalateAfter: 20, reEscalateAfter: 10, recipientRole: 'client', template: 'chase_survey' },
   contract_pack: { waitKey: 'contract_pack', chaseAfter: 5, chaseEvery: 3, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_contract_pack' },
   lender_consent: { waitKey: 'lender_consent', chaseAfter: 5, chaseEvery: 5, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'lender', template: 'chase_lender_consent' },
+  // The client owes us: the deposit before exchange, their answers (how they own it, authority to exchange), insurance from exchange.
+  deposit: { waitKey: 'deposit', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_deposit' },
+  client_decision: { waitKey: 'client_decision', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'client', template: 'chase_ownership_basis' },
+  insurance: { waitKey: 'insurance', chaseAfter: 3, chaseEvery: 2, escalateAfter: 6, reEscalateAfter: 2, recipientRole: 'client', template: 'chase_buildings_insurance' },
   discharge: { waitKey: 'discharge', chaseAfter: 10, chaseEvery: 10, escalateAfter: 30, reEscalateAfter: 10, recipientRole: 'lender', template: 'chase_discharge' },
 };
 
@@ -74,8 +78,12 @@ export interface DueAction {
 export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAULT_SLA, cal: WorkingCalendar = EW_CALENDAR): DueAction[] {
   const out: DueAction[] = [];
   for (const wait of openWaits(state)) {
-    const rule = sla[wait.key];
-    if (!rule) continue;
+    const base = sla[wait.key];
+    if (!base) continue;
+    // One wait key, several things owed: the client's balance is chased with the client, not the lender; each decision in its own words.
+    const rule: SlaRule = wait.key === 'funds' && wait.subject !== 'lender' ? { ...base, recipientRole: 'client', template: 'chase_client_funds' }
+      : wait.key === 'client_decision' ? { ...base, template: wait.subject === 'exchange_authority' ? 'chase_exchange_authority' : 'chase_ownership_basis' }
+      : base;
     const age = workingDaysBetween(new Date(wait.openedAt), now, cal);
 
     // A survey the client has booked is not chased before the date (and a few days for the report).

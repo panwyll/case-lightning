@@ -271,7 +271,7 @@ export const SCENARIOS: Scenario[] = [
       ...idCheck(),
       ...proofOfFunds(PRICE, ADVANCE),
       ...searches(['LLC1', 'CON29']),
-      step('pack_request', 'Management pack requested from the managing agent', async (c) => { await c.run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }); }),
+      step('pack_request', 'Management pack requested from the managing agent', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.managementPack.status === 'not_started') await c.run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }); }),
       step('pack', 'Management pack (LPE1) received and read', async (c) => {
         const doc = await c.doc({ docType: 'MANAGEMENT_PACK', fileName: 'LPE1-management-pack.txt', facts: F.managementPack(c.flagged), body: F.body('Leasehold information (LPE1)', ['Service charge £2,400 a year (1 April 2026 to 31 March 2027)', 'Ground rent £350 a year', 'Reserve fund £12,000', ...(c.flagged ? ['Major works: roof renewal 2027, estimated £48,000; section 20 consultation started'] : ['No major works planned']), 'Buildings insurance in place with Aviva to 28 February 2027']) });
         await c.svc.managementPackReceived(c.tenantId, c.matterId, doc);
@@ -298,7 +298,7 @@ export const SCENARIOS: Scenario[] = [
     steps: [
       step('enrol', 'Enrolled as a freehold sale with an existing mortgage', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: true, requireExchangeAuthority: false, targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); }),
       ...idCheck(),
-      step('forms_request', 'Property forms requested from the client', async (c) => { await c.run({ type: 'request_property_forms' }); }),
+      step('forms_request', 'Property forms requested from the client', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.propertyForms.status === 'not_started') await c.run({ type: 'request_property_forms' }); }),
       step('forms', 'Property forms received (TA6, TA10) and read for what must be disclosed', async (c) => {
         const facts = F.propertyForms(c.flagged);
         const doc = await c.doc({ docType: 'PROPERTY_FORMS', fileName: 'ta6-our-client.txt', facts, body: F.body('TA6 property information form', ['Completed by the seller']) });
@@ -316,7 +316,7 @@ export const SCENARIOS: Scenario[] = [
       step('pack', 'Contract pack sent to the buyer\'s solicitor', async (c) => { await c.run({ type: 'contract_pack_sent' }); }),
       step('buyer_enquiries', 'The buyer\'s enquiries received', async (c) => { await c.run({ type: 'buyer_enquiries_received', enquiries: [{ question: 'Please confirm the boiler service history.' }, { id: 'BE-Boundary', question: 'Who maintains the rear fence?' }] }); }),
       step('replies', 'Replies sent to the buyer\'s enquiries', async (c) => { await c.run({ type: 'enquiry_replies_sent', enquiryIds: ['BE1', 'BE-Boundary'] }); }),
-      step('redemption_request', 'Redemption statement requested from the lender', async (c) => { await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
+      step('redemption_request', 'Redemption statement requested from the lender', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 18_250_000, validUntil: F.completionDate(3), dailyInterestPennies: 2_100 }); }),
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
@@ -336,9 +336,9 @@ export const SCENARIOS: Scenario[] = [
     steps: [
       step('enrol', 'Enrolled as a leasehold sale with an existing mortgage', async (c) => { await c.run({ type: 'enrol', transactionType: 'leasehold_sale', hasLender: false, hasExistingMortgage: true, requireExchangeAuthority: false, targetExchangeDate: F.exchangeDate(), targetCompletionDate: F.completionDate() }); }),
       ...idCheck(),
-      step('forms_request', 'Property forms requested from the client', async (c) => { await c.run({ type: 'request_property_forms' }); }),
+      step('forms_request', 'Property forms requested from the client', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.propertyForms.status === 'not_started') await c.run({ type: 'request_property_forms' }); }),
       step('forms', 'Property forms received (TA6, TA7, TA10)', async (c) => { await c.run({ type: 'property_forms_received', forms: ['TA6', 'TA7', 'TA10'] }); }),
-      step('pack_request', 'Management pack requested from the managing agent', async (c) => { await c.run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }); }),
+      step('pack_request', 'Management pack requested from the managing agent', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.managementPack.status === 'not_started') await c.run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }); }),
       step('pack', 'Management pack received', async (c) => {
         const doc = await c.doc({ docType: 'MANAGEMENT_PACK', fileName: 'LPE1-management-pack.txt', facts: F.managementPack(false), body: F.body('Leasehold information (LPE1)', ['Service charge £2,400 a year', 'Ground rent £250 a year', 'No major works planned', 'Buildings insurance in place']) });
         await c.svc.managementPackReceived(c.tenantId, c.matterId, doc);
@@ -350,7 +350,7 @@ export const SCENARIOS: Scenario[] = [
       }),
       step('title_decision', 'The registered charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Registered charge: to be redeemed on completion.'); }, { decision: 'title' }),
       step('pack_sent', 'Contract pack sent to the buyer\'s solicitor', async (c) => { await c.run({ type: 'contract_pack_sent' }); }),
-      step('redemption_request', 'Redemption statement requested', async (c) => { await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
+      step('redemption_request', 'Redemption statement requested', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 9_000_000, validUntil: F.completionDate(3) }); }),
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
@@ -376,7 +376,7 @@ export const SCENARIOS: Scenario[] = [
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
       step('title_decision', 'The existing charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Existing charge to be redeemed from the advance.'); }, { decision: 'title' }),
-      step('redemption_request', 'Redemption statement requested from the old lender', async (c) => { await c.run({ type: 'request_redemption_statement', lender: 'Old Lender plc' }); }),
+      step('redemption_request', 'Redemption statement requested from the old lender', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Old Lender plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 12_000_000, validUntil: F.completionDate(5) }); }),
       step('deed', 'Mortgage deed executed and witnessed', async (c) => { await c.run({ type: 'mortgage_deed_executed', witnessed: true }); }),
       step('certificate', 'Certificate of title sent to the new lender', async (c) => { await c.run({ type: 'certificate_of_title_sent', completionDate: F.completionDate() }); }),
@@ -402,7 +402,7 @@ export const SCENARIOS: Scenario[] = [
         await c.svc.titleReceived(c.tenantId, c.matterId, doc);
       }),
       step('title_decision', 'The charge is decided by a person', async (c) => { await c.resolve('title', 'approve', 'Charge stays; lender to consent.'); }, { decision: 'title' }),
-      step('consent_request', 'Lender\'s consent requested', async (c) => { await c.run({ type: 'request_lender_consent', lender: 'Big Bank plc' }); }),
+      step('consent_request', 'Lender\'s consent requested', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.lenderConsent.status === 'not_started') await c.run({ type: 'request_lender_consent', lender: 'Big Bank plc' }); }),
       step('consent', 'Lender\'s consent received', async (c) => { await c.run({ type: 'lender_consent_received', conditions: 'Outgoing borrower released on completion; deed of substituted security.' }); }),
       step('basis', 'The clients decide how they hold', async (c) => { await c.run({ type: 'client_decision_recorded', subject: 'ownership_basis', decision: 'tenants_in_common_unequal', note: '70/30 reflecting contributions; advised separately.' }); }),
       step('transfer_deed', 'Transfer deed executed', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Owner A', 'Sandbox Owner B'] }); }),

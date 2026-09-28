@@ -435,6 +435,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     // ── Exchange ──
     case 'deposit_received':
       s.deposit = { received: true, at: e.createdAt };
+      closeWait(s, 'deposit', null, e);
       break;
     case 'exchange_conditions_met':
       s.exchange.conditionsMet = true;
@@ -544,6 +545,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['client_update_sent'];
       if (p.template) s.clientUpdateLastSentAt[p.template] = e.createdAt;
       for (const k of p.mentioned ?? []) s.clientToldAt[k] = e.createdAt;
+      // Asking the client for something opens a wait for it, chased until it is recorded.
+      if (p.template === 'deposit_request' && !s.deposit.received) openWait(s, 'deposit', '', e);
+      if (p.template === 'ownership_basis_request' && !s.clientDecisions.ownership_basis) openWait(s, 'client_decision', 'ownership_basis', e);
+      if (p.template === 'exchange_authority_request' && s.clientDecisions.exchange_authority?.decision !== 'authorised') openWait(s, 'client_decision', 'exchange_authority', e);
+      if (p.template === 'buildings_insurance_request' && !s.preCompletion.insuranceConfirmedAt) openWait(s, 'insurance', '', e);
       break;
     }
     case 'chase_sent': {
@@ -961,6 +967,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     case 'client_decision_recorded': {
       const p = e.payload as Payloads['client_decision_recorded'];
       s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
+      closeWait(s, 'client_decision', p.subject, e);
       // Which investigations the instruction covers: those named, or every open one.
       if (p.subject === 'further_investigation') {
         for (const i of Object.values(s.issues)) if (i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating') && (!p.scope?.length || p.scope.includes(i.id))) i.route = p.decision as 'evidence' | 'pursue' | 'waive';
@@ -1120,6 +1127,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['buildings_insurance_confirmed'];
       s.preCompletion.insuranceConfirmedAt = e.createdAt;
       s.preCompletion.insurer = p.insurer ?? null;
+      closeWait(s, 'insurance', null, e);
       break;
     }
     case 'priority_search_made': {

@@ -81,7 +81,7 @@ const DOCUMENT: PlaybookRule[] = [
 ];
 
 const WAIT_SIGNAL: Record<WaitKey, string> = {
-  id_check: 'ID check outstanding', search: 'Search result overdue', enquiry: 'Replies to enquiries overdue', funds: 'Completion funds not received', registration: 'Registration outstanding', proof_of_funds: 'Proof-of-funds form not returned', management_pack: 'Management pack overdue', property_forms: 'Property forms not returned', redemption: 'Redemption statement overdue', lender_consent: "Lender's consent outstanding", discharge: 'Discharge not confirmed', contract_pack: 'Contract pack overdue', signed_documents: 'Signed deeds not returned', mortgage_offer: 'Mortgage offer not yet issued', survey: 'No word on the survey',
+  id_check: 'ID check outstanding', search: 'Search result overdue', enquiry: 'Replies to enquiries overdue', funds: 'Completion funds not received', registration: 'Registration outstanding', proof_of_funds: 'Proof-of-funds form not returned', management_pack: 'Management pack overdue', property_forms: 'Property forms not returned', redemption: 'Redemption statement overdue', lender_consent: "Lender's consent outstanding", discharge: 'Discharge not confirmed', contract_pack: 'Contract pack overdue', signed_documents: 'Signed deeds not returned', mortgage_offer: 'Mortgage offer not yet issued', survey: 'No word on the survey', deposit: 'Deposit not received', client_decision: 'Client has not decided', insurance: 'Buildings insurance not evidenced',
 };
 const RECIPIENT: Record<string, string> = { seller_solicitor: "the other side's solicitor", search_provider: 'the search provider', lender: 'the lender', client: 'the client', id_provider: 'the client', hmlr: 'HM Land Registry' };
 

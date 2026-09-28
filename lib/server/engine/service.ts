@@ -31,6 +31,7 @@ import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, reportReady, type Command } from './machine';
 import { profileOf } from './transactions';
+import { SHAPE_SPEC } from './shapes';
 import { applyEvent, project } from './projection';
 import { deferral, outsideDeferral } from './defer';
 
@@ -86,9 +87,10 @@ export interface RunResult {
  * Third parties go at the chase trust level, the client at the client-update level. `optional`: no
  * address for them on the case is not a failure (an agent is not always involved).
  */
-export const FIRST_REQUESTS: Partial<Record<EventType, { to: 'seller_solicitor' | 'lender' | 'estate_agent' | 'client'; template: string; buyerOnly?: boolean; optional?: boolean }>> = {
+export interface FirstRequest { to: 'seller_solicitor' | 'lender' | 'estate_agent' | 'client'; template: string; buyerOnly?: boolean; optional?: boolean }
+export const FIRST_REQUESTS: Partial<Record<EventType, FirstRequest>> = {
   contract_pack_requested: { to: 'seller_solicitor', template: 'request_contract_pack' },
-  management_pack_requested: { to: 'seller_solicitor', template: 'request_management_pack' },
+  management_pack_requested: { to: 'seller_solicitor', template: 'request_management_pack', buyerOnly: true },
   redemption_statement_requested: { to: 'lender', template: 'request_redemption_statement' },
   lender_consent_requested: { to: 'lender', template: 'request_lender_consent' },
   property_forms_requested: { to: 'client', template: 'property_forms_request' },
@@ -637,6 +639,96 @@ export class EngineService {
     return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
   }
 
+
+  /** The signing pack, proposed (or sent) for whatever is still to sign; again when something new joins it (the contract once approved). */
+  private async proposeSigningPack(tenantId: string, matterId: string, subflows: LevelConfig): Promise<void> {
+    const fresh = await this.getState(tenantId, matterId);
+    const docs = deedsToSign(fresh).filter((d) => !deedSigned(fresh, d));
+    if (!docs.length || (fresh.signing.packSentAt && docs.every((d) => fresh.signing.documents.includes(d)))) return;
+    const detail = { kind: 'signing_pack', documents: docs };
+    if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'signing_pack', 'signing_pack', detail, `SIGNING PACK\n\nTo: the client\nTo sign: ${docs.map((d) => SIGNED_DOCUMENT_LABEL[d]).join(', ')}\nWet ink or electronic per deed as set on the case (a lender not known to take e-signed deeds is wet ink).`))) {
+      try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('signing pack could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+    }
+  }
+
+  /**
+   * The steps the engine takes itself the moment they fall due, so a case never waits on someone finding a
+   * button: requests go out, the client is asked (and chased) for what only they can give, the report goes
+   * once approved, the completion statement is drafted on exchange and the funds are called for. What only a
+   * person can do is on the Tasks tab (dueSteps).
+   */
+  private async automaticSteps(tenantId: string, matterId: string, subflows: LevelConfig, e: EngineEvent): Promise<void> {
+    const s = await this.getState(tenantId, matterId);
+    if (!s.enrolled || s.abandoned || s.closedAt) return;
+    const tt = s.transactionType ?? 'freehold_purchase';
+    const side = profileOf(tt).side;
+    const to = e.type === 'stage_advanced' ? (e.payload as { to: string }).to : null;
+    const safe = async (what: string, f: () => Promise<unknown>) => { try { await f(); } catch (err) { this.ports.log(`${what}: not done automatically`, err); } };
+    const askClient = (template: string, extra: Record<string, unknown> = {}) => this.sendFirstRequest(tenantId, matterId, subflows, { to: 'client', template }, e, extra);
+    const asked = (template: string) => !!s.clientUpdateLastSentAt[template];
+
+    if (e.type === 'matter_created') {
+      if (side === 'seller' && s.propertyForms.status === 'not_started') await safe('property forms request', () => this.run(tenantId, matterId, { type: 'request_property_forms', actor: SYSTEM }));
+      if (s.redemption.status === 'not_started') await safe('redemption statement request', () => this.run(tenantId, matterId, { type: 'request_redemption_statement', actor: SYSTEM }));
+      if (s.lenderConsent.status === 'not_started') await safe("lender's consent request", () => this.run(tenantId, matterId, { type: 'request_lender_consent', actor: SYSTEM }));
+    }
+    // Joint buyers: how they will own it, asked at the start (or when a second buyer joins).
+    if ((e.type === 'matter_created' || e.type === 'clients_updated') && side === 'buyer' && s.parties > 1 && !s.clientDecisions.ownership_basis && !asked('ownership_basis_request')) await askClient('ownership_basis_request');
+    if (to === 'pre_contract' && tt === 'leasehold_purchase' && s.managementPack.status === 'not_started') await safe('management pack request', () => this.run(tenantId, matterId, { type: 'management_pack_requested', actor: SYSTEM, from: "the seller's solicitor" }));
+    if (to === 'pre_exchange' && s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised' && !asked('exchange_authority_request')) {
+      await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '' });
+    }
+    // Approved is the check: the report goes to the client as soon as it is signed off.
+    if (e.type === 'report_on_title_approved' && s.reportOnTitle.status === 'approved') await safe('report on title send', () => this.sendReportOnTitle(tenantId, matterId, e.actor));
+    if (e.type === 'contracts_exchanged') {
+      if (side === 'buyer' && s.hasLender && !s.preCompletion.insuranceConfirmedAt && !asked('buildings_insurance_request')) await askClient('buildings_insurance_request');
+      if (!s.completion.statementGeneratedAt) await safe('completion statement draft', () => this.draftCompletionStatement(tenantId, matterId));
+    }
+    // Completion is coming: the money is called for from everyone who sends it (through our verified client account).
+    if (to === 'pre_completion' && !s.completion.fundsReceivedAt) {
+      const account = Object.values(s.bankDetails).find((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
+      if (account) for (const role of profileOf(tt).fundsFrom) {
+        if (role !== 'lender' && role !== 'client' && role !== 'isa_provider') continue;
+        if (role === 'lender' && !s.hasLender) continue;
+        if (role === 'isa_provider' && !s.shapes.some((sh) => SHAPE_SPEC[sh]?.fundsFrom === 'isa_provider')) continue;
+        await safe(`funds request (${role})`, () => this.run(tenantId, matterId, { type: 'funds_requested', actor: SYSTEM, fromRole: role, bankDetailsId: account.id }));
+      }
+    }
+    if (e.type === 'funds_requested' && (e.payload as { fromRole?: string }).fromRole === 'client') await askClient('balance_request');
+    if (e.type === 'mortgage_redeemed') await this.sendFirstRequest(tenantId, matterId, subflows, { to: 'lender', template: 'request_discharge' }, e);
+  }
+
+  /** A first request (or a request to the client) a step sends when it becomes due: proposed or sent per the trust level; a failure becomes a task. */
+  private async sendFirstRequest(tenantId: string, matterId: string, subflows: LevelConfig, first: FirstRequest, e: EngineEvent, extra: Record<string, unknown> = {}): Promise<void> {
+    const fresh = await this.getState(tenantId, matterId);
+    const side = profileOf(fresh.transactionType ?? 'freehold_purchase').side;
+    if (!first.buyerOnly || side === 'buyer') {
+      const p = (e.payload ?? {}) as Record<string, unknown>;
+      const leasehold = /leasehold/.test(fresh.transactionType ?? '');
+      const price = fresh.purchasePricePennies;
+      const context: Record<string, unknown> = {
+        ...extra,
+        eventType: e.type, payload: e.payload,
+        leaseholdForms: leasehold ? ' and the Leasehold Information Form (TA7)' : '',
+        completionDate: typeof p.completionDate === 'string' ? p.completionDate : fresh.exchange.completionDate ?? '',
+        depositAmount: price ? ` (normally 10% of the price: £${Math.round(price / 1000).toLocaleString('en-GB')})` : '',
+        transaction: side === 'seller' ? 'sale' : 'purchase',
+      };
+      const toClient = first.to === 'client';
+      const detail = toClient
+        ? { template: first.template, context, triggeredByEventId: e.id, ...(e.type === 'completion_statement_generated' && typeof p.documentId === 'string' ? { attachDocumentId: p.documentId } : {}) }
+        : { kind: 'request', recipientRole: first.to, template: first.template, context, triggeredByEventId: e.id, optional: !!first.optional };
+      const action: EngineAction = toClient ? 'client_update' : 'chase';
+      const who = first.to === 'seller_solicitor' ? "the seller's solicitor" : first.to === 'estate_agent' ? 'the estate agent' : `the ${first.to}`;
+      if (!(await this.proposeUnless(tenantId, matterId, subflows, action, first.template, `first:${first.template}:${e.id}`, detail, `${toClient ? 'CLIENT UPDATE' : 'REQUEST'}\n\nTo: ${who}\nTemplate: ${first.template}`))) {
+        try { await this.perform(tenantId, matterId, action, detail); } catch (err) {
+          if (first.optional && /no email address/i.test((err as Error).message)) this.ports.log(`${first.template}: nobody to tell`, err);
+          else { this.ports.log(`${first.template} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
+        }
+      }
+    }
+  }
+
   /**
    * A contract with signatures on it. When every one of our clients has signed and it is undated, it is the
    * signed contract held for exchange; a part signed by only some of them, or dated, is a task to put right.
@@ -963,6 +1055,8 @@ export class EngineService {
   async sendReportOnTitle(tenantId: string, matterId: string, actor: string): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
     const draftId = state.reportOnTitle.draftId ?? '';
+    // It goes by itself once approved: a later Send finds it gone and does nothing.
+    if (state.reportOnTitle.status === 'sent' && state.reportOnTitle.draftId === draftId && state.reportOnTitle.sentAt) return { state, events: [] };
     assertCanSendReport(state, draftId);
     const doc = await this.requireDoc(tenantId, matterId, state.reportOnTitle.draftDocumentId as string);
     const sent = await this.ports.clientComms.sendReportOnTitle({ tenantId, matterId, draftDocument: doc });
@@ -1299,17 +1393,9 @@ export class EngineService {
         if (e.type === 'completion_confirmed' && this.ports.mailFolders) {
           await this.ports.mailFolders.archiveCase(tenantId, matterId).catch((err) => this.ports.log('case mail folders could not be archived', err));
         }
-        // The deeds are ready to sign once the contract is approved (or, on a remortgage, the offer is cleared): the pack is proposed.
-        if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage')) {
-          const fresh = await this.getState(tenantId, matterId);
-          const docs = deedsToSign(fresh).filter((d) => !deedSigned(fresh, d));
-          // A pack already out before the contract was approved goes again with the contract in it.
-          if (docs.length && (!fresh.signing.packSentAt || (docs.includes('contract') && !fresh.signing.documents.includes('contract')))) {
-            const detail = { kind: 'signing_pack', documents: docs };
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'signing_pack', 'signing_pack', detail, `SIGNING PACK\n\nTo: the client\nTo sign: ${docs.map((d) => SIGNED_DOCUMENT_LABEL[d]).join(', ')}\nWet ink or electronic per deed as set on the case (a lender not known to take e-signed deeds is wet ink).`))) {
-              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('signing pack could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
-            }
-          }
+        // The deeds are ready to sign once the contract is approved (on a remortgage, the offer is cleared; on a transfer of equity, the lender consents): the pack is proposed.
+        if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage') || e.type === 'lender_consent_received') {
+          await this.proposeSigningPack(tenantId, matterId, subflows);
         }
         // A survey read for the first time: its letter and enquiries are proposed. A re-read only refreshes the reading;
         // new recommendations are a person's choice (Read Again and Replace Tasks, or Send Recommendations).
@@ -1434,34 +1520,8 @@ export class EngineService {
         // A stage the client was waiting on has been signed off: tell them, say where everything else stands and what comes next.
         // The first request a step sends (the contract pack, the redemption statement, the deposit…): the chase only ever follows it.
         const first = FIRST_REQUESTS[e.type];
-        if (first) {
-          const fresh = await this.getState(tenantId, matterId);
-          const side = profileOf(fresh.transactionType ?? 'freehold_purchase').side;
-          if (!first.buyerOnly || side === 'buyer') {
-            const p = (e.payload ?? {}) as Record<string, unknown>;
-            const leasehold = /leasehold/.test(fresh.transactionType ?? '');
-            const price = fresh.purchasePricePennies;
-            const context: Record<string, unknown> = {
-              eventType: e.type, payload: e.payload,
-              leaseholdForms: leasehold ? ' and the Leasehold Information Form (TA7)' : '',
-              completionDate: typeof p.completionDate === 'string' ? p.completionDate : fresh.exchange.completionDate ?? '',
-              depositAmount: price ? ` (normally 10% of the price: £${Math.round(price / 1000).toLocaleString('en-GB')})` : '',
-              transaction: side === 'seller' ? 'sale' : 'purchase',
-            };
-            const toClient = first.to === 'client';
-            const detail = toClient
-              ? { template: first.template, context, triggeredByEventId: e.id, ...(e.type === 'completion_statement_generated' && typeof p.documentId === 'string' ? { attachDocumentId: p.documentId } : {}) }
-              : { kind: 'request', recipientRole: first.to, template: first.template, context, triggeredByEventId: e.id, optional: !!first.optional };
-            const action: EngineAction = toClient ? 'client_update' : 'chase';
-            const who = first.to === 'seller_solicitor' ? "the seller's solicitor" : first.to === 'estate_agent' ? 'the estate agent' : `the ${first.to}`;
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, action, first.template, `first:${first.template}:${e.id}`, detail, `${toClient ? 'CLIENT UPDATE' : 'REQUEST'}\n\nTo: ${who}\nTemplate: ${first.template}`))) {
-              try { await this.perform(tenantId, matterId, action, detail); } catch (err) {
-                if (first.optional && /no email address/i.test((err as Error).message)) this.ports.log(`${first.template}: nobody to tell`, err);
-                else { this.ports.log(`${first.template} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
-              }
-            }
-          }
-        }
+        if (first) await this.sendFirstRequest(tenantId, matterId, subflows, first, e);
+        await this.automaticSteps(tenantId, matterId, subflows, e);
         // The searches: one email when they have all come back and been through (not one per search).
         if (e.type === 'search_cleared' || e.type === 'search_reviewed' || (e.type === 'step_completed_manually' && String((e.payload as { step?: string }).step).startsWith('search:'))) {
           const fresh = await this.getState(tenantId, matterId);

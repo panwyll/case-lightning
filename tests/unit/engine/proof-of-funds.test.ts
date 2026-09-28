@@ -248,8 +248,9 @@ test('leasehold purchase: the management pack gates pre_contract, lease facts fl
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_contract');
-  assert.deepEqual(stageBlockers(s), ['management pack not requested']);
-  await h.svc.run(TENANT, MATTER, { type: 'management_pack_requested', actor: USER, from: 'Seller\'s solicitor / Block Managers Ltd' });
+  assert.ok(stageBlockers(s).every((b) => /management pack/.test(b)), 'only the management pack holds it (asked for by the engine on entering pre-contract)');
+  // Requested by the engine on entering pre-contract.
+  await h.svc.run(TENANT, MATTER, { type: 'management_pack_requested', actor: USER, from: 'Seller\'s solicitor / Block Managers Ltd' }).catch((e: Error) => { if (!/already been requested/.test(e.message)) throw e; });
   s = await h.svc.getState(TENANT, MATTER);
   assert.deepEqual(stageBlockers(s), ['management pack awaiting']);
   h.advanceDays(16);
