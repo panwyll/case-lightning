@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
+import { ClientDecisionSheet } from './ClientDecisionSheet';
 import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, User, Zap } from '@/app/shared/icons';
 
 /**
@@ -79,6 +80,8 @@ export const WORK_CSS = `
 .ep-sub .ep-pill{margin-top:0;justify-self:end;max-width:100%;white-space:normal;text-align:right}
 .ep-sub b{overflow-wrap:anywhere}
 .ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
+.ep-sub .a{grid-column:1 / -1;display:flex;gap:6px;align-items:center;margin-top:4px}
+.ep-sub .a .ep-btn{margin:0;padding:3px 10px;font-size:12px}
 .ep-sub-a{color:#5A27E0;text-decoration:none}
 .ep-sub-a:hover{text-decoration:underline}
 .ep-i{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:99px;border:1px solid #cbd5e1;color:#94a3b8;font-size:9.5px;font-weight:800;font-style:normal;margin-left:6px;vertical-align:1px;cursor:help}
@@ -169,7 +172,7 @@ const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)',
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
 
-export interface Tile { label: string; status: string; detail?: string; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
+export interface Tile { label: string; status: string; detail?: string; /** a control that belongs to this step (e.g. Read Again on a report's findings) */ action?: ReactNode; /** what this sub-block is, for the ⓘ; keyed into ABOUT when set */ key?: string; href?: string; /** the document behind it, for the Documents link */ documentId?: string | null; /** the subject its events carry, for the Timeline link */ focus?: string; /** 1 = nested under the sub-block above */ depth?: 0 | 1 }
 /** When each sub-block starts, when it is done, and what it talks to. Written for the conveyancer, not the client. */
 interface About { starts: string; done: string; note?: string; via?: string; /** the document this step produces, from the firm's Doc Packs */ creates?: string }
 const ABOUT: Record<string, About> = {
@@ -273,6 +276,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
                 </b>
                 {!lane.plain && <Pill s={x.status} />}
                 {x.detail && <span className="d">{x.detail}</span>}
+                {x.action && <span className="a">{x.action}</span>}
               </div>
             );
           })}
@@ -548,14 +552,15 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   // Read a filed report again from scratch (new questions, or a bad first read).
   const [rereading, setRereading] = useState<string | null>(null);
   const [rereadNote, setRereadNote] = useState<string | null>(null);
-  const readAgain = async (documentId: string) => {
+  /** A report being read again: its document, the reading it had before, and when it started. Cleared when a new reading lands. */
+  const [readingNow, setReadingNow] = useState<{ documentId: string; before: string | null; since: number } | null>(null);
+  const readAgain = async (documentId: string, before: string | null) => {
     setRereading(documentId); setRereadNote(null);
     try {
       await api(`/documents/${documentId}/read-again`, { method: 'POST', body: '{}' });
-      setRereadNote('Reading it again in the background; this card updates when it is done.');
-      // A long report takes a minute or two: look again a few times, then stop.
-      for (const ms of [20_000, 45_000, 90_000, 150_000]) setTimeout(() => onChanged?.(), ms);
-      setTimeout(() => setRereadNote(null), 160_000);
+      setReadingNow({ documentId, before, since: Date.now() });
+      // A long report takes a minute or two: look again until the new reading lands.
+      for (const ms of [20_000, 40_000, 60_000, 90_000, 120_000, 180_000, 240_000]) setTimeout(() => onChanged?.(), ms);
     } catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not read it again.'); }
     finally { setRereading(null); }
   };
@@ -576,7 +581,23 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       .catch(() => {});
     return () => { live = false; };
   }, [sheet, api, matterId]);
-  const sheetDialog = sheet && contracts[sheet.type] ? (
+  const sheetDialog = sheet && sheet.type === 'client_decision_recorded' ? (
+    <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
+      <ClientDecisionSheet
+        matterId={matterId}
+        api={api}
+        subject={String(sheet.extra.subject ?? '')}
+        decision={String(sheet.extra.decision ?? '')}
+        docs={docs}
+        busy={busy}
+        onCancel={() => setSheet(null)}
+        onSubmit={async (body) => {
+          await cmd({ type: sheet.type, ...sheet.extra, ...body });
+          setSheet(null);
+        }}
+      />
+    </div>
+  ) : sheet && contracts[sheet.type] ? (
     <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
       <CompletionSheet
         contract={contracts[sheet.type]}
@@ -772,8 +793,25 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const lastReport = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0];
     const clientView = pc ?? (fi === 'pursue' ? 'investigating' : fi === 'waive' ? 'waived_investigation' : s.survey.status === 'not_started' ? 'not_started' : 'awaiting_client');
     const current = (on: boolean) => (on ? ' ✓' : '');
+    const readingThis = !!readingNow && readingNow.documentId === lastReport?.documentId && (lastReport?.receivedAt ?? null) === readingNow.before;
+    const stuck = readingThis && Date.now() - (readingNow?.since ?? 0) > 5 * 60_000;
+    const found = lastReport && !lastReport.unread ? [
+      lastReport.urgent ? `${lastReport.urgent} urgent` : null,
+      lastReport.toInvestigate ? `${lastReport.toInvestigate} to investigate` : null,
+      lastReport.legalPoints ? `${lastReport.legalPoints} legal point${lastReport.legalPoints === 1 ? '' : 's'} for us` : null,
+    ].filter(Boolean).join(' · ') : '';
+    const findings: Tile | null = lastReport ? {
+      label: 'Findings',
+      depth: 1,
+      status: readingThis ? (stuck ? 'stuck' : 'reading') : lastReport.unread ? 'not_read' : 'read',
+      detail: readingThis
+        ? (stuck ? 'Still reading after five minutes; the Timeline will say if it failed.' : 'Reading the report again; this updates by itself.')
+        : lastReport.unread ? 'The report could not be read. Read it again, or record the findings by hand.'
+        : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
+      action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
+    } : null;
     lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
-      tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started', documentId: lastReport?.documentId ?? null, href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, { label: "Client's view", status: clientView }],
+      tiles: [{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : []), { label: "Client's view", status: clientView }],
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status !== 'not_started' ? <>
         {(s.survey.reports.some((r) => r.furtherInvestigation) || fi) && <>
@@ -783,7 +821,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}
         {act('survey', 'client_decision_recorded', `Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
         {act('survey', 'client_decision_recorded', `Withdraw${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}
-        {lastReport?.documentId && <button className="ep-btn" disabled={busy || rereading === lastReport.documentId} onClick={() => void readAgain(lastReport.documentId!)}>{rereading === lastReport.documentId ? 'Starting…' : 'Read Again'}</button>}
         {rereadNote && <span className="ep-note">{rereadNote}</span>}
       </> : null });
   }

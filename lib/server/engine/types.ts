@@ -1383,7 +1383,7 @@ export interface MatterState {
   /** The survey workstream (docs/case-model.md §7): facts from the reports; the client's satisfaction is a client decision. */
   survey: {
     status: 'not_started' | 'received' | 'further_investigation' | 'awaiting_client' | 'client_satisfied' | 'client_renegotiating' | 'client_withdrawing';
-    reports: Array<{ eventId: string; documentId: string | null; surveyType: SurveyType; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null }>;
+    reports: Array<{ eventId: string; documentId: string | null; surveyType: SurveyType; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }>;
   };
   /** Client decisions on record, by subject (the latest wins; the log has them all). */
   clientDecisions: Partial<Record<ClientDecisionSubject, { decision: string; at: string; by: Actor; note: string | null }>>;

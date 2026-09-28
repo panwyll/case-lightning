@@ -17,8 +17,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     const user = await requireUser();
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);
-    const documents = await query<{ id: string; file_name: string | null; doc_type: string | null; web_url: string | null; created_at: string; checked: boolean; locked: boolean }>(
-      `select id, file_name, doc_type, web_url, created_at, (draft_check is not null) as checked, coalesce((extracted_facts->>'locked')::boolean, false) as locked from document where tenant_id = $1 and matter_id = $2 and superseded_at is null order by created_at desc limit 300`,
+    const documents = await query<{ id: string; file_name: string | null; doc_type: string | null; web_url: string | null; created_at: string; checked: boolean; locked: boolean; head: string | null }>(
+      `select id, file_name, doc_type, web_url, created_at, (draft_check is not null) as checked, coalesce((extracted_facts->>'locked')::boolean, false) as locked, case when doc_type = 'EMAIL' then substring(extracted_facts->>'content' from 1 for 600) end as head from document where tenant_id = $1 and matter_id = $2 and superseded_at is null order by created_at desc limit 300`,
       [user.tenantId, matterId]
     );
     const ids = documents.map((d) => d.id);
@@ -36,7 +36,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ mat
     return ok({ messages: messages.map((m) => ({ id: m.id, at: m.created_at, direction: m.direction, channel: m.channel, address: m.address, template: m.template, subject: m.subject, status: m.status, providerRef: m.provider_ref })), crosschecks, documents: documents.map((d) => {
       const p = pg.get(d.id); const f = fc.get(d.id);
       const review = p ? { pages: Number(p.pages), read: Number(p.read), withFacts: Number(p.with_facts), unreadable: Number(p.unreadable), unattested: Number(p.unattested), complete: Number(p.unattested) === 0, facts: Number(f?.facts ?? 0), verified: Number(f?.verified ?? 0) } : null;
-      return { id: d.id, fileName: d.file_name, docType: d.doc_type, webUrl: d.web_url, createdAt: d.created_at, review, checked: d.checked, locked: d.locked };
+      // An email reads as who sent it and its subject, not its file name.
+      const line = (k: string) => d.head?.match(new RegExp(`^${k}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? null;
+      const from = line('From')?.replace(/\s*<[^>]+>/, '') ?? null;
+      return { id: d.id, fileName: d.file_name, docType: d.doc_type, webUrl: d.web_url, createdAt: d.created_at, review, checked: d.checked, locked: d.locked, emailFrom: from, emailFromAddress: line('From')?.match(/<([^>]+)>/)?.[1] ?? line('From'), emailSubject: line('Subject') };
     }) });
   } catch (error) {
     return fail(error);

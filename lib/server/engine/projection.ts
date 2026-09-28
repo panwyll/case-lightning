@@ -833,7 +833,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const further = p.facts.recommendations.some((r) => r.furtherInvestigation);
       // Read again (the same document): the new reading replaces the old one.
       s.survey.reports = s.survey.reports.filter((r) => !(e.sourceDocumentId && r.documentId === e.sourceDocumentId && r.forIssueId === null));
-      s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null });
+      const unread = p.facts.confidence === 0 || p.facts.recommendations.some((r) => r.code === 'UNREAD');
+      s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: unread ? 0 : p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null, urgent: p.facts.recommendations.filter((r) => r.rating === 3 || (r.rating == null && r.severity === 'high')).length, toInvestigate: p.facts.recommendations.filter((r) => r.furtherInvestigation).length, legalPoints: p.facts.legalIssues?.length ?? 0, unread });
       s.survey.status = further ? 'further_investigation' : 'awaiting_client';
       break;
     }

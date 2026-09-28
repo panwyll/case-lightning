@@ -256,7 +256,7 @@ export interface EngineState {
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
   requireProofOfFunds?: boolean;
   requireExchangeAuthority?: boolean;
-  survey?: { status: string; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null }> };
+  survey?: { status: string; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }> };
   clientDecisions?: Partial<Record<string, { decision: string; at: string; by: string; note: string | null }>>;
   /** Notes and call transcripts (docs/intake.md). */
   notes?: Record<string, NoteRow>;
@@ -296,7 +296,7 @@ export interface CompletionField { key: string; label: string; kind: 'money' | '
 export interface CompletionContract { label: string; documentRoles?: string[]; documentLabel?: string; documentRequired?: boolean; fields?: CompletionField[]; checklist?: Array<{ key: string; label: string }>; party?: { label: string }; effect: string }
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {
-  review?: DocumentReviewSummary | null; id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string }
+  review?: DocumentReviewSummary | null; id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string; emailFrom?: string | null; emailFromAddress?: string | null; emailSubject?: string | null }
 export interface EngineView { sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
