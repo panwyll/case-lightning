@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isLockedPdf, unlockPdf, protectPdf, passwordCandidates, generatePassword } from '../../lib/server/pdf-lock';
+import { isLockedPdf, unlockPdf, protectPdf, passwordCandidates, generatePassword } from '../../../lib/server/pdf-lock';
 
 async function tinyPdf(): Promise<Buffer> {
   const m = await import('mupdf');
@@ -24,4 +24,12 @@ test('password candidates are read from the covering message; generated password
   assert.ok(passwordCandidates('Password: AB12cd34\n\nThanks').includes('AB12cd34'));
   assert.ok(passwordCandidates('Please find attached.\n\nXk29pq77\n\nRegards').includes('Xk29pq77'));
   assert.match(generatePassword(), /^[a-z]+-[a-z]+-\d{4}$/);
+});
+
+test('a PDF encrypted only to restrict printing or copying opens without a password: it is not locked', async () => {
+  const m = await import('mupdf');
+  const doc = m.Document.openDocument(await tinyPdf(), 'application/pdf') as import('mupdf').PDFDocument;
+  const restricted = Buffer.from(doc.saveToBuffer('encrypt=aes-256,owner-password=owner-only,permissions=0').asUint8Array());
+  assert.ok(restricted.includes('/Encrypt'), 'it carries encryption');
+  assert.equal(await isLockedPdf(restricted), false, 'but asks for no password');
 });

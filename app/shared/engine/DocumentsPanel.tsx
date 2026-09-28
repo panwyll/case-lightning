@@ -65,10 +65,16 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [pw, setPw] = useState<Record<string, string>>({});
   const [unlocking, setUnlocking] = useState<string | null>(null);
   const [unlockErr, setUnlockErr] = useState<Record<string, string>>({});
+  const [unlockNote, setUnlockNote] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { if (!unlockNote) return; const t = setTimeout(() => setUnlockNote(null), 8000); return () => clearTimeout(t); }, [unlockNote]);
   const unlock = async (id: string) => {
     setUnlocking(id);
     setUnlockErr((m) => ({ ...m, [id]: '' }));
-    try { await api(`/documents/${id}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw[id] ?? '' }) }); setLockTick((t) => t + 1); onChanged?.(); }
+    try {
+      const r = await api<{ note: string | null; warning: string | null }>(`/documents/${id}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw[id] ?? '' }) });
+      setUnlockNote({ ok: !r.warning, text: r.warning ?? r.note ?? 'Unlocked.' });
+      setLockTick((t) => t + 1); onChanged?.();
+    }
     catch (e: unknown) { setUnlockErr((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not unlock.' })); }
     finally { setUnlocking(null); }
   };
@@ -291,6 +297,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
           </div>
         </>
       )}
+      {unlockNote && <div className={unlockNote.ok ? 'ep-ok' : 'ep-warn'} role="status">{unlockNote.text}</div>}
       {lockedDocs.length > 0 && (
         <>
           <div className="ep-sec">Password-Protected ({lockedDocs.length})</div>

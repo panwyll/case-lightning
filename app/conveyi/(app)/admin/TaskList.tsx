@@ -47,6 +47,8 @@ const CSS = `
 .tl-for{font-size:11.5px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:4px 10px;white-space:nowrap}
 .tl-pw{display:inline-flex;gap:6px;align-items:center}
 .tl-pw input{border:1px solid #cbd5e1;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;width:150px}
+.tl-out{padding:10px 14px;border-radius:10px;margin-bottom:10px;font-size:13px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.tl-out.warn{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .tl-clear{display:flex;align-items:center;gap:8px;padding:14px;font-size:13px;color:#166534;background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px}
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 `;
@@ -79,10 +81,18 @@ export default function TaskList({ who }: { who: string }) {
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [pwd, setPwd] = useState('');
   const [unlockBusy, setUnlockBusy] = useState(false);
+  /** What the last unlock did, said plainly for a few seconds. */
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { if (!outcome) return; const t = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(t); }, [outcome]);
   /** A locked file opened from its task: the right password unlocks it, closes the task and reads the file. */
   const unlock = async (i: WorkItem) => {
     setUnlockBusy(true); setQuickErr(null);
-    try { await api(`/documents/${i.documentId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pwd, from: 'task' }) }); setUnlockingId(null); setPwd(''); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
+    try {
+      const r = await api<{ note: string | null; warning: string | null }>(`/documents/${i.documentId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pwd, from: 'task' }) });
+      setUnlockingId(null); setPwd('');
+      setOutcome({ ok: !r.warning, text: r.warning ?? r.note ?? 'Unlocked.' });
+      await load(); window.dispatchEvent(new Event('conveyi:counts'));
+    }
     catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); }
     finally { setUnlockBusy(false); }
   };
@@ -137,6 +147,7 @@ export default function TaskList({ who }: { who: string }) {
         <label>Case<select value={caseId} onChange={(e) => setCaseId(e.target.value)}><option value="">All cases</option>{cases.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
         <span className="n">{tasks.length} task{tasks.length === 1 ? '' : 's'}{groups.length > 1 ? ` across ${groups.length} cases` : ''}</span>
       </div>
+      {outcome && <div className={`tl-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
       {tasks.length === 0 && checkedAt && (
         <div className="tl-clear"><CheckCircle size={16} /><span>All clear</span><span className="t">checked {checkedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span></div>
       )}

@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -20,9 +20,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ doc
     const row = await queryOne<{ matter_id: string }>(`select matter_id from document where id = $1 and tenant_id = $2`, [documentId, user.tenantId]);
     if (!row) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
     await assertMatterAccess(user, row.matter_id);
-    const r = await tryUnlockDocument(user.tenantId, documentId, password, { userId: user.userId, how: from === 'task' ? 'password entered on the task' : 'password entered on the Documents tab' });
+    // The file is read after the response goes: the person sees the outcome at once, not after the model has read it.
+    const r = await tryUnlockDocument(user.tenantId, documentId, password, { userId: user.userId, how: from === 'task' ? 'password entered on the task' : 'password entered on the Documents tab', readInBackground: (read) => after(async () => { await read; }) });
     if (!r.unlocked) return fail(Object.assign(new Error(r.reason ?? 'That password does not open the file.'), { status: 422 }));
-    return ok({ unlocked: true });
+    return ok({ unlocked: true, note: r.note ?? null, warning: r.warning ?? null });
   } catch (error) {
     return fail(error);
   }

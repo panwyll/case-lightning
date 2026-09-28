@@ -38,6 +38,8 @@ const CSS = `
 .is-res .r{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .is-res .fx{font-size:11.5px;color:#64748b}
 .is-ctx .is-t{font-weight:600;color:#334155}
+.is-out{padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.is-out.warn{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .is-empty{padding:12px 14px;font-size:12.5px;color:#64748b}
 .is-closed{font-size:12px;color:#64748b}
 .is-closed button{border:0;background:none;padding:0;font:inherit;font-size:12px;font-weight:700;color:#475569;cursor:pointer}
@@ -68,9 +70,16 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
   const [pw, setPw] = useState('');
   const [pwErr, setPwErr] = useState<string | null>(null);
   const [unlockingNow, setUnlockingNow] = useState(false);
+  const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => { if (!outcome) return; const t = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(t); }, [outcome]);
   const unlock = async (docId: string) => {
     setPwErr(null); setUnlockingNow(true);
-    try { await api(`/documents/${docId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw, from: 'task' }) }); setPwFor(null); setPw(''); onChanged?.(); }
+    try {
+      const r = await api<{ note: string | null; warning: string | null }>(`/documents/${docId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw, from: 'task' }) });
+      setPwFor(null); setPw('');
+      setOutcome({ ok: !r.warning, text: r.warning ?? r.note ?? 'Unlocked.' });
+      onChanged?.();
+    }
     catch (e: unknown) { setPwErr(e instanceof Error ? e.message : 'That password does not open the file.'); }
     finally { setUnlockingNow(false); }
   };
@@ -192,6 +201,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
         <span className="n">{open.length ? `${open.length} open${open.some((i) => i.gate !== 'none') ? ` · ${open.filter((i) => i.gate !== 'none').length} holding ${exchanged ? 'completion' : 'exchange'}` : ''}` : 'None open'}</span>
         {!done && <button className="ep-btn sp" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => setRaising(true)}>Raise Issue</button>}
       </div>
+      {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
       <div className="is-list">{open.length ? open.map((i) => row(i, false)) : <div className="is-empty">Nothing is wrong on this case.</div>}</div>
 
       {context.length > 0 && (
