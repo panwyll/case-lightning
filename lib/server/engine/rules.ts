@@ -88,8 +88,8 @@ export function evaluateSearch(facts: SearchFacts): Verdict {
   if (facts.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(facts.confidence, `${facts.searchType} search`));
   flags.push(...actionable(facts.flags));
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
-  const info = facts.flags.length ? [`${facts.flags.length} informational entr${facts.flags.length === 1 ? 'y' : 'ies'} noted`] : [];
-  return { outcome: 'clear', reasons: ['no actionable flags', `confidence ${facts.confidence.toFixed(2)}`, ...info] };
+  const info = facts.flags.length ? [`${facts.flags.length} ${facts.flags.length === 1 ? 'entry' : 'entries'} noted for information`] : [];
+  return { outcome: 'clear', reasons: ['Nothing in it needs action', ...info] };
 }
 
 // ───────────────────────────── Enquiry replies ─────────────────────────────
@@ -119,7 +119,7 @@ export function evaluateEnquiryReply(facts: EnquiryReplyFacts | null | undefined
   }
   flags.push(...actionable(facts.issues));
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
-  return { outcome: 'clear', reasons: ['answered', 'no issues', `confidence ${facts.confidence.toFixed(2)}`] };
+  return { outcome: 'clear', reasons: ['The reply answers the question', 'It raises nothing new'] };
 }
 
 // ───────────────────────────── Mortgage offers ─────────────────────────────
@@ -157,7 +157,7 @@ export function evaluateMortgageOffer(facts: MortgageOfferFacts, targetExchangeD
     }
   }
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
-  return { outcome: 'clear', reasons: [`${facts.conditions.length} standard condition(s)`, `confidence ${facts.confidence.toFixed(2)}`] };
+  return { outcome: 'clear', reasons: [facts.conditions.length ? `Only standard conditions (${facts.conditions.length})` : 'No special conditions'] };
 }
 
 // ───────────────────────────── Title register ─────────────────────────────
@@ -223,13 +223,19 @@ export function evaluateTitle(facts: TitleFacts, expectedTenure: 'freehold' | 'l
     flags.push({ code: `COVENANT:${c.code}`, severity: 'low', description: `Covenant: ${c.text}`, locator: c.locator });
   }
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
-  return { outcome: 'clear', reasons: ['freehold', 'no restrictions, charges or covenants', `confidence ${facts.confidence.toFixed(2)}`] };
+  return { outcome: 'clear', reasons: ['Freehold', 'No restrictions, charges or covenants'] };
 }
 
 // ───────────────────────────── ID / AML ─────────────────────────────
 
 export function evaluateIdCheck(facts: IdCheckFacts): Verdict {
   const flags: Flag[] = [];
+  // A photo of the document is read, never taken as a check: it always goes to a person, with what it shows.
+  if (facts.source === 'document') {
+    if (facts.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(facts.confidence, 'ID document'));
+    flags.push(...facts.flags, { code: 'ID_DOCUMENT_ONLY', severity: 'low', description: 'A photo of the document, not an electronic ID/AML check: confirm it against the original, or run the check.' });
+    return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
+  }
   if (facts.confidence < MIN_EXTRACTION_CONFIDENCE) flags.push(lowConfidenceFlag(facts.confidence, 'ID check result'));
   if (facts.outcome !== 'clear') {
     flags.push({
@@ -240,7 +246,7 @@ export function evaluateIdCheck(facts: IdCheckFacts): Verdict {
   }
   flags.push(...actionable(facts.flags));
   if (flags.length) return { outcome: 'flag', flags, reasons: flags.map((f) => f.code) };
-  return { outcome: 'clear', reasons: [`${facts.provider}: clear`, `confidence ${facts.confidence.toFixed(2)}`] };
+  return { outcome: 'clear', reasons: [`${facts.provider} passed the check`] };
 }
 
 // ───────────────────────────── Deterministic summaries ─────────────────────────────

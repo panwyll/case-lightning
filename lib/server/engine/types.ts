@@ -605,11 +605,30 @@ export interface ContractFacts {
   confidence: number;
 }
 
+export interface IdentityDocumentFacts {
+  documentType: 'passport' | 'driving_licence' | 'national_identity_card' | 'residence_permit' | 'other';
+  fullName: string;
+  dateOfBirth: string | null;
+  expiryDate: string | null;
+  issuingCountry: string | null;
+  photoPresent: boolean;
+  wholeDocumentVisible: boolean;
+  signsOfAlteration: string[];
+  legibility?: 'good' | 'fair' | 'poor' | 'unreadable';
+}
+
 export interface IdCheckFacts {
   provider: string;
   outcome: 'clear' | 'refer' | 'fail';
   flags: Flag[];
   confidence: number;
+  /** 'document': a photo or scan of the ID itself, read by us; never a completed check (a person confirms it). Absent: a provider's report. */
+  source?: 'document';
+  identity?: IdentityDocumentFacts | null;
+  /** The file sent as ID is not an identity document at all. */
+  notIdentity?: boolean;
+  /** Who the document names, against the clients on the case (set by the service). */
+  nameCheck?: { client: string | null; matches: boolean } | null;
 }
 
 // ───────────────────────────── Decisions (2.2 DecisionEvent) ─────────────────────────────

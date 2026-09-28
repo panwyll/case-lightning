@@ -107,7 +107,9 @@ test('routeClassification: deterministic routing against the matter state', () =
   s.hasLender = false;
   assert.equal(routeClassification(s, cls({ role: 'mortgage_offer' })).kind, 'skip');
   assert.equal(routeClassification(s, cls({ role: 'title' })).kind, 'title');
-  assert.equal(routeClassification(s, cls({ role: 'id_check' })).kind, 'skip');
+  // An ID (or a result) that arrives before anything was requested is read; one after the check is done is not.
+  assert.equal(routeClassification({ ...s, idCheck: { ...s.idCheck, status: 'not_started' } }, cls({ role: 'id_check' })).kind, 'id_check');
+  assert.equal(routeClassification({ ...s, idCheck: { ...s.idCheck, status: 'cleared' } }, cls({ role: 'id_check' })).kind, 'skip');
   s.manualHandling = { required: true, reason: 'leasehold_unsupported' };
   assert.equal(routeClassification(s, cls({ role: 'title' })).kind, 'skip');
 });

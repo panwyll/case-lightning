@@ -16,7 +16,7 @@
  */
 import type pg from 'pg';
 import { query as dbQuery, transaction as dbTransaction } from '../db';
-import { project } from './projection';
+import { plainSummary, project } from './projection';
 import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
 import { caseHealth, summariseHealth, type HealthSummary } from './health';
@@ -394,7 +394,7 @@ interface PgDecisionRow {
   stage: string;
   shadow_mode: boolean | null;
 }
-const pgDecisionRow = (r: PgDecisionRow): PendingDecisionRow => ({ ...r.decision, tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to ?? null, stage: r.stage, shadowMode: !!r.shadow_mode });
+const pgDecisionRow = (r: PgDecisionRow): PendingDecisionRow => ({ ...r.decision, summary: plainSummary(r.decision), tenantId: r.tenant_id, matterId: r.matter_id, matterRef: r.matter_ref, propertyAddress: r.property_address, assignedTo: r.assigned_to ?? null, stage: r.stage, shadowMode: !!r.shadow_mode });
 
 export class PgEventStore implements EventStore {
   async withMatterLock<T>(tenantId: string, matterId: string, fn: (tx: MatterTx) => Promise<T>): Promise<T> {

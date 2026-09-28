@@ -54,9 +54,20 @@ function closeWait(state: MatterState, key: WaitKey, subject: string | null, e: 
 const findOpenWait = (state: MatterState, key: WaitKey, subject: string): WaitState | undefined =>
   state.waits.find((w) => w.key === key && w.subject === subject && w.closedAt === null);
 
+/** A rules' clear recorded before its summary was written in plain words reads as one now. */
+const OLD_AUTO_CLEAR = /^(.*) was auto-cleared by the rule layer \((.*)\)\. This sub-flow is at ASSIST level: confirm the engine got it right, or escalate\. The matter is not held up by this review\.$/;
+export function plainSummary(spec: Pick<DecisionSpec, 'kind' | 'summary'>): string {
+  const m = spec.kind === 'auto_clear' ? OLD_AUTO_CLEAR.exec(spec.summary) : null;
+  if (!m) return spec.summary;
+  const reasons = m[2].split('; ').filter((r) => !/^confidence [\d.]+$/.test(r)).map((r) => r.replace(/^(.+): clear$/, '$1 passed the check').replace(/^no actionable flags$/, 'nothing in it needs action'));
+  const what = m[1].replace(/^([A-Z0-9_]+) search$/, (_x, t: string) => `${t === 'LLC1' || t === 'CON29' ? t : t.replace(/_/g, ' ').toLowerCase()} search`).replace(/^ID\/AML check \((.+)\)$/, 'ID and AML check ($1)');
+  return `${what.replace(/^./, (c) => c.toUpperCase())} passed the rules${reasons.length ? `: ${reasons.join('; ')}` : ''}. Confirm it, or send it back. The case carries on meanwhile.`;
+}
+
 function addDecision(state: MatterState, e: EngineEvent, spec: DecisionSpec, subject: string | null): void {
   state.decisions[e.id] = {
     ...spec,
+    summary: plainSummary(spec),
     eventId: e.id,
     seq: e.seq,
     createdAt: e.createdAt,

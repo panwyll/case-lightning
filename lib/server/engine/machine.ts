@@ -698,7 +698,7 @@ function verdictEvents<C extends EventType, F extends EventType>(input: {
     }
     const decision: DecisionSpec = {
       kind: 'auto_clear',
-      summary: `${input.subjectLabel} was auto-cleared by the rule layer (${input.verdict.reasons.join('; ')}). This sub-flow is at ASSIST level: confirm the engine got it right, or escalate. The matter is not held up by this review.`,
+      summary: `${input.subjectLabel} passed the rules${input.verdict.reasons.length ? `: ${input.verdict.reasons.join('; ')}` : ''}. Confirm it, or send it back. The case carries on meanwhile.`,
       sourceDocumentId: input.sourceDocumentId,
       citations: [{ documentId: input.sourceDocumentId, label: `${input.subjectLabel} — full document` }],
       options: OPTIONS_FOR.auto_clear,
@@ -906,14 +906,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const pc = cmd.party ? s.partyChecks[cmd.party] : null;
       if (cmd.party && !pc) reject(`No such party on this matter: ${cmd.party}.`, 404);
       const status = pc ? pc.status : s.idCheck.status;
-      if (status !== 'requested') reject(`No ID check${pc ? ` for ${pc.label}` : ''} is awaiting a result (status: ${status}).`);
+      // A result (or the client's own photo of their ID) may arrive before anything was requested.
+      if (status !== 'requested' && status !== 'not_started') reject(`No ID check${pc ? ` for ${pc.label}` : ''} is awaiting a result (status: ${status}).`);
       return verdictEvents({
         verdict: evaluateIdCheck(cmd.facts),
         cleared: 'id_check_cleared',
         flagged: 'id_check_flagged',
         kind: 'id_check',
         level: levelFor(ctx.levels, 'auto_clear', 'id_check'),
-        subjectLabel: pc ? `ID/AML check — ${pc.label} (${cmd.facts.provider})` : `ID/AML check (${cmd.facts.provider})`,
+        subjectLabel: cmd.facts.source === 'document' ? `ID document${pc ? ` — ${pc.label}` : ''}` : pc ? `ID/AML check — ${pc.label} (${cmd.facts.provider})` : `ID/AML check (${cmd.facts.provider})`,
         sourceDocumentId: cmd.documentId,
         summary: cmd.summary,
         extra: { facts: cmd.facts, party: cmd.party ?? null },
@@ -952,7 +953,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
           flagged: 'search_flagged',
           kind: 'search',
         level: levelFor(ctx.levels, 'auto_clear', 'search'),
-          subjectLabel: `${cmd.searchType} search`,
+          subjectLabel: `${cmd.searchType === 'LLC1' || cmd.searchType === 'CON29' ? cmd.searchType : cmd.searchType.replace(/_/g, ' ').toLowerCase().replace(/^./, (c) => c.toUpperCase())} search`,
           sourceDocumentId: sr.documentId,
           summary: cmd.summary,
           extra: { searchType: cmd.searchType },

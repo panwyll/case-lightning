@@ -38,7 +38,7 @@ import { deferral, outsideDeferral } from './defer';
 const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
-import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, type NoteSender, actsUnasked, levelFor, pendingProposal } from './types';
+import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, type NoteSender, type IdCheckFacts, actsUnasked, levelFor, pendingProposal } from './types';
 import type { DocumentRef, EnginePorts } from './ports';
 
 /** A rejected proposal keeps the same action quiet for this long, so the timer does not re-ask daily. */
@@ -58,6 +58,7 @@ export const ACKNOWLEDGE: Partial<Record<EventType, { recipient: 'seller_solicit
 const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
+import { describeIdDocument, reviewIdDocument } from './id-document';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
 import { openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
@@ -461,12 +462,21 @@ export class EngineService {
       return { state: await this.getState(tenantId, matterId), events: [], warning: 'The ID check result is already on the case; this copy was filed but not read again.' };
     }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
-    const facts = await this.ports.extractor.extractIdCheck(doc).catch((err) => {
+    const read = await this.ports.extractor.extractIdCheck(doc).catch((err) => {
       this.ports.log('id check extraction failed — routing to human', err);
-      return { provider: 'unknown', outcome: 'refer' as const, flags: [], confidence: 0 };
+      return { provider: 'unknown', outcome: 'refer' as const, flags: [], confidence: 0 } as IdCheckFacts;
     });
-    const label = party ? (await this.getState(tenantId, matterId)).partyChecks[party]?.label : null;
-    const summary = await this.summarise('id_check', label ? `ID/AML check — ${label} (${facts.provider})` : `ID/AML check (${facts.provider})`, evaluateIdCheck(facts), doc, tenantId, matterId);
+    const state = await this.getState(tenantId, matterId);
+    const label = party ? state.partyChecks[party]?.label ?? null : null;
+    // A photo of the ID is checked against whoever it should belong to: the named party, or the clients.
+    let facts = read;
+    if (read.source === 'document') {
+      const record = label ? null : await this.caseRecord(tenantId, matterId);
+      const clients = label ? [label] : profileOf(state.transactionType ?? 'freehold_purchase').side === 'seller' ? record?.sellerNames ?? [] : record?.buyerNames ?? [];
+      facts = reviewIdDocument(read, clients, this.ports.now());
+    }
+    const what = facts.source === 'document' ? `ID document${label ? ` — ${label}` : ''}: ${describeIdDocument(facts)}` : label ? `ID/AML check — ${label} (${facts.provider})` : `ID/AML check (${facts.provider})`;
+    const summary = await this.summarise('id_check', what, evaluateIdCheck(facts), doc, tenantId, matterId);
     return this.run(tenantId, matterId, { type: 'id_check_result', actor: EXTERNAL, documentId, facts, summary, party });
   }
 

@@ -71,7 +71,7 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
     case 'id_check': {
       // A result with no name on it goes to the one check that is waiting; two waiting means a person says whose it is.
       const waiting = Object.values(state.partyChecks).filter((pc) => pc.status === 'requested');
-      if (state.idCheck.status === 'requested') return waiting.length ? { kind: 'skip', reason: `${waiting.length + 1} ID checks are awaiting results; file it against the right person` } : { kind: 'id_check', party: null };
+      if (state.idCheck.status === 'requested' || (state.idCheck.status === 'not_started' && !waiting.length)) return waiting.length ? { kind: 'skip', reason: `${waiting.length + 1} ID checks are awaiting results; file it against the right person` } : { kind: 'id_check', party: null };
       if (waiting.length === 1) return { kind: 'id_check', party: waiting[0].party };
       if (waiting.length > 1) return { kind: 'skip', reason: `${waiting.length} ID checks are awaiting results; file it against the right person` };
       return { kind: 'skip', reason: `ID check is ${state.idCheck.status}, not awaiting a result` };

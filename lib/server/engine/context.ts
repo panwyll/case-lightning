@@ -10,6 +10,7 @@
  * for that task; they are prompts, not rules.
  */
 import { profileOf } from './transactions';
+import { describeIdDocument, idDay, ID_DOCUMENT_TYPE } from './id-document';
 import { whyNot, gate, type GateId } from './graph';
 import { openIssues, openWaits, pendingDecisions, type DecisionState, type EngineEvent, type Flag, type IdCheckFacts, type MatterState, type Payloads, type SearchType } from './types';
 
@@ -89,6 +90,38 @@ const SEARCH_CHECKS: Record<SearchType, string[]> = {
   PLANNING: ['Applications and decisions for the property and its neighbours', 'Consents for every alteration the seller disclosed', 'Enforcement action'],
 };
 
+/** What the rules cleared, as a person would say it: "The CON29 search", "The ID and AML check". */
+function clearedWhat(subFlow: string | undefined, subject: string | undefined): string {
+  const tail = (subject ?? '').split(':').pop()?.trim() ?? '';
+  switch (subFlow) {
+    case 'id_check': return 'The ID and AML check';
+    case 'search': return `The ${tail ? `${(SEARCH_LABEL as Record<string, string>)[tail] ?? tail.replace(/_/g, ' ').toLowerCase()} ` : ''}search`;
+    case 'enquiry': return `The reply to enquiry ${tail}`.trim();
+    case 'mortgage': return 'The mortgage offer';
+    case 'title': return 'The official copies';
+    case 'proof_of_funds': return 'Proof of funds';
+    case 'management_pack': return 'The management pack';
+    default: return (subFlow ?? 'It').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+  }
+}
+
+/** The rules' reasons in plain words, including those recorded before they were written that way. */
+function plainReason(r: string): string | null {
+  if (/^confidence [\d.]+$/i.test(r)) return null;
+  if (r === 'no actionable flags') return 'Nothing in it needs action';
+  if (r === 'answered') return 'The reply answers the question';
+  if (r === 'no issues') return 'It raises nothing new';
+  if (r === 'freehold') return 'Freehold';
+  let m = /^(.+): clear$/.exec(r);
+  if (m) return `${m[1]} passed the check`;
+  m = /^(\d+) standard condition\(s\)$/.exec(r);
+  if (m) return Number(m[1]) ? `Only standard conditions (${m[1]})` : 'No special conditions';
+  m = /^(\d+) informational entr(?:y|ies) noted$/.exec(r);
+  if (m) return `${m[1]} ${m[1] === '1' ? 'entry' : 'entries'} noted for information`;
+  return r.replace(/^./, (c) => c.toUpperCase());
+}
+const plainReasons = (rs: string[] | undefined) => (rs ?? []).map(plainReason).filter((x): x is string => !!x);
+
 const KIND_CHECKS: Record<string, string[]> = {
   id_check: ['Names on the ID match the instruction, the contract and the title exactly', 'Address on the proof of address matches the correspondence address', 'Document in date and not flagged as tampered', 'PEP or sanctions hit: escalate, never approve alone', 'Does the source of funds position change the risk'],
   enquiry: ['Does the reply answer the question actually asked', 'Is what it says backed by a document (certificate, consent, policy)', 'Does the answer create a new issue or a lender point', 'Further enquiry, indemnity, or report to the client: which is the right next step'],
@@ -101,7 +134,7 @@ const KIND_CHECKS: Record<string, string[]> = {
   requisition: ['What HM Land Registry is asking for, exactly', 'The reply deadline and the priority period', 'Whether the answer needs the other side, the lender or the client'],
   escalation: ['What the handler decided and why they escalated', 'The same source they saw', 'Whether the position needs the client or the lender told'],
   proposal: [],
-  auto_clear: ['Does the document say what the rule layer found', 'Anything the rules do not check that a person would notice'],
+  auto_clear: ['The document says what the rules found', 'Nothing else in it a person would pick up on'],
   note_actions: ['Does each proposed line say what the note actually says', 'Nothing recorded that the client did not say'],
 };
 
@@ -270,12 +303,21 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       checks = KIND_CHECKS.title;
     } else if (d.kind === 'id_check') {
       const f = raised?.type === 'id_check_flagged' ? (rp as Payloads['id_check_flagged']).facts : null;
+      if (f?.source === 'document') {
+        const problems = f.flags.filter((x) => x.code !== 'ID_DOCUMENT_ONLY' && x.severity !== 'low' && x.severity !== 'info');
+        headline = f.notIdentity || !f.identity ? 'The file sent as ID is not an identity document.' : problems.length ? `${ID_DOCUMENT_TYPE[f.identity.documentType]} received: ${problems.map((x) => x.description.replace(/\.$/, '')).join('; ')}.` : `${ID_DOCUMENT_TYPE[f.identity.documentType]} for ${f.identity.fullName} received; it matches the client and is in date. Confirm it against the original.`;
+        addT('Document', describeIdDocument(f), !!f.notIdentity);
+        addT('Name', f.identity ? `${f.identity.fullName}${f.nameCheck?.matches ? ` · matches ${f.nameCheck.client}` : ' · does not match the client'}` : null, !f.nameCheck?.matches);
+        addT('Clients', (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || null);
+        checks = ['It is an identity document', "The name is the client's", 'In date', 'Readable, with the photo and the whole document visible', 'Seen against the original, or an electronic check run'];
+      } else {
       headline = `ID and AML check: ${f?.outcome ?? 'referred'}${f?.flags?.length ? ` — ${flagWords(f.flags)}` : ''}${f?.provider ? ` (${f.provider})` : ''}.`;
       addT('Provider', f?.provider ?? null);
       addT('Outcome', f?.outcome ?? null, f?.outcome === 'fail');
       addT('Points', flagLines(f?.flags), (f?.flags ?? []).some((x) => x.severity === 'high'));
       addT('Clients', (p.side === 'seller' ? m.sellerNames : m.buyerNames)?.filter(Boolean).join(' & ') || null);
       checks = KIND_CHECKS.id_check;
+      }
     } else if (d.kind === 'proof_of_funds') {
       const f = s.proofOfFunds.facts;
       headline = f ? `Declared ${gbp(f.totalDeclaredPennies)}${f.requiredPennies != null ? ` against ${gbp(f.requiredPennies)} needed` : ''}${f.shortfallPennies ? `; shortfall ${gbp(f.shortfallPennies)}` : ''}${f.giftedPennies ? `; ${gbp(f.giftedPennies)} gifted` : ''}.` : 'Proof of funds submitted.';
@@ -331,9 +373,8 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       checks = KIND_CHECKS.proposal;
     } else if (d.kind === 'auto_clear') {
       const ac = raised?.type === 'auto_clear_review_raised' ? (rp as Payloads['auto_clear_review_raised']) : null;
-      headline = `The rules cleared ${ac ? pretty(ac.subFlow) : pretty(d.subject ?? '')}${ac?.subject ? ` (${ac.subject.split(':').pop()})` : ''}; confirm or send it back.`;
-      addT('Cleared', ac ? `${pretty(ac.subFlow)} · ${ac.subject.split(':').pop()}` : null);
-      addT('Because', ac?.reasons?.length ? ac.reasons.join(' · ') : null);
+      headline = `${clearedWhat(ac?.subFlow, ac?.subject ?? d.subject ?? '')} passed the rules. Confirm it, or send it back.`;
+      addT('Found', plainReasons(ac?.reasons).join('; ') || null);
       checks = KIND_CHECKS.auto_clear;
     } else if (d.kind === 'escalation') {
       const es = raised?.type === 'escalation_raised' ? (rp as Record<string, unknown>) : {};
@@ -488,6 +529,10 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
     if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, l.flags?.length ? n(l.flags.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(l.flags), warn: !!l.flags?.length });
     return cards;
   }
+  if (d.kind === 'id_check' && (rp.facts as IdCheckFacts | undefined)?.source === 'document') {
+    const f = rp.facts as IdCheckFacts;
+    return [{ documentId: docId, title: 'ID document', summary: describeIdDocument(f), lines: flagLines(f.flags.filter((x) => x.code !== 'ID_DOCUMENT_ONLY')), warn: f.flags.some((x) => x.severity === 'high' || x.severity === 'medium') }];
+  }
   if (d.kind === 'id_check') {
     const f = rp.facts as IdCheckFacts | undefined;
     return [{ documentId: docId, title, summary: [`${f?.provider ?? 'ID / AML'} result: ${f?.outcome ?? 'referred'}`, f?.flags?.length ? n(f.flags.length, 'flag') : null].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: f?.outcome !== 'clear' }];
@@ -604,6 +649,20 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     }
     return out;
   }
+  if (d.kind === 'id_check' && (rp.facts as IdCheckFacts | undefined)?.source === 'document') {
+    const f = rp.facts as IdCheckFacts;
+    const i = f.identity;
+    const has = (code: string) => f.flags.find((x) => x.code === code);
+    const ev = (code: string) => { const fl = has(code); return fl ? [flagEv(fl)] : []; };
+    if (f.notIdentity || !i) return [item('It is an identity document', 'flag', [{ text: 'The file sent as ID is not a passport, licence or identity card.', documentId: docId, warn: true }])];
+    return [
+      item('It is an identity document', 'ok', [{ text: `${ID_DOCUMENT_TYPE[i.documentType]}${i.issuingCountry ? `, ${i.issuingCountry}` : ''}`, documentId: docId }]),
+      item("The name is the client's", has('ID_NAME_MISMATCH') ? 'flag' : 'ok', has('ID_NAME_MISMATCH') ? ev('ID_NAME_MISMATCH') : [{ text: `${i.fullName}, the client ${f.nameCheck?.client ?? ''}`.trim(), documentId: docId }]),
+      item('In date', has('ID_DOCUMENT_EXPIRED') ? 'flag' : i.expiryDate ? 'ok' : 'open', has('ID_DOCUMENT_EXPIRED') ? ev('ID_DOCUMENT_EXPIRED') : i.expiryDate ? [{ text: `Expires ${idDay(i.expiryDate)}`, documentId: docId }] : [{ text: 'No expiry date could be read', documentId: docId }]),
+      item('Readable, with the photo and the whole document visible', has('ID_DOCUMENT_UNCLEAR') || has('ID_DOCUMENT_ALTERED') ? 'flag' : 'ok', [...ev('ID_DOCUMENT_UNCLEAR'), ...ev('ID_DOCUMENT_ALTERED')]),
+      item('Seen against the original, or an electronic check run', 'open'),
+    ];
+  }
   if (d.kind === 'id_check') {
     const f = rp.facts as IdCheckFacts | undefined;
     const party = d.subject && s.partyChecks[d.subject] ? s.partyChecks[d.subject].label : x.matter.buyerNames?.[0] ?? x.matter.sellerNames?.[0] ?? 'the client';
@@ -673,8 +732,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
   if (d.kind === 'auto_clear') {
     const ac = raised?.type === 'auto_clear_review_raised' ? (rp as { subFlow?: string; subject?: string; reasons?: string[] }) : null;
     return [
-      item('Does the document say what the rule layer found', 'open', [{ text: `${ac ? pretty(ac.subFlow ?? '') : pretty(d.subject ?? '')}${ac?.subject ? ` · ${ac.subject.split(':').pop()}` : ''}`, documentId: docId }, ...(ac?.reasons ?? []).map((r) => ({ text: r, documentId: docId }))]),
-      item('Anything the rules do not check that a person would notice', 'open'),
+      item('The document says what the rules found', 'open', plainReasons(ac?.reasons).map((r) => ({ text: r, documentId: docId }))),
+      item('Nothing else in it a person would pick up on', 'open'),
     ];
   }
   // Escalations, requisitions, note actions and anything else: the summary's own lines under the kind's checks.
