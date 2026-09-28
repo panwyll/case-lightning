@@ -169,7 +169,8 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const role = typeof det.recipientRole === 'string' ? det.recipientRole : null;
     const who = role === 'seller_solicitor' ? "seller's solicitor" : role === 'buyer_solicitor' ? "buyer's solicitor" : role === 'search_provider' ? 'search provider' : role === 'lender' ? 'lender' : role === 'hmlr' ? 'HMLR' : role ? role.replace(/_/g, ' ') : null;
     const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
-    return { kind: `proposal:${sub}`, chip };
+    // Proposed only because the case is in manual handling (it would otherwise have gone on its own): the chip says so.
+    return { kind: `proposal:${sub}`, chip: det.manualMode ? `Manual Mode · ${chip}` : chip };
   }
   if (d.kind === 'note_actions') {
     const note = Object.values(s.notes).find((n) => n.decisionEventId === d.eventId);

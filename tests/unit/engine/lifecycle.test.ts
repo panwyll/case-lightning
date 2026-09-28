@@ -305,20 +305,18 @@ test('manual handling: a person marks steps complete by hand (note and evidence)
   s = await svc.getState(TENANT, MATTER);
   assert.equal(s.searches.CON29.status, 'reviewed');
   assert.equal(s.manualSteps?.['search:CON29']?.note, 'Personal search from another provider');
-  assert.deepEqual(await svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 }, 'automation is still paused');
 });
 
-test('resuming automation after manual handling starts what it would have started by now (searches ordered), and nothing was started while a person had it', async () => {
+test('in manual handling nothing stops firing, but whatever would have gone out on its own is proposed to a person instead (marked manual mode)', async () => {
   const h = harness();
   const { svc, ports } = h;
   await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29', 'LLC1'] });
   await svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'Handled by hand for now' } as never);
   await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'id_check', note: 'Seen in person' });
-  let s = await svc.getState(TENANT, MATTER);
+  const s = await svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_contract');
-  assert.equal(ports.searchProvider.orders.length, 0, 'nothing ordered while paused');
-  await svc.run(TENANT, MATTER, { type: 'resume_automation', actor: USER, reason: 'Back to normal' } as never);
-  s = await svc.getState(TENANT, MATTER);
-  assert.deepEqual(ports.searchProvider.orders.map((o) => o.searchType).sort(), ['CON29', 'LLC1'], 'ordered on resume');
-  assert.ok(s.searches.CON29 && s.searches.LLC1);
+  assert.equal(ports.searchProvider.orders.length, 0, 'nothing ordered unasked');
+  const proposed = Object.values(s.proposals).filter((p) => p.action === 'search_order' && p.status === 'pending');
+  assert.deepEqual(proposed.map((p) => p.subject).sort(), ['CON29', 'LLC1'], 'both searches proposed');
+  assert.ok(proposed.every((p) => (p.detail as { manualMode?: boolean }).manualMode), 'marked as manual mode');
 });

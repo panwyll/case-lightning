@@ -134,8 +134,7 @@ export class EngineService {
     this.remember(tenantId, matterId, result.state);
     const followOn = async () => {
       await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
-      // Acknowledgements are automation too: paused while a person has the case.
-      if (!result.state.manualHandling.required) await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
+      await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
       if (result.events.length && reportReady(result.state)) await this.draftReportWhenReady(tenantId, matterId);
       if (this.ports.onEvents && result.events.length) {
         const latest = await this.getState(tenantId, matterId).catch(() => result.state);
@@ -192,8 +191,11 @@ export class EngineService {
    * the timer does not nag.
    */
   private async proposeUnless(tenantId: string, matterId: string, levels: LevelConfig, action: EngineAction, subject: string | null, dedupKey: string, detail: Record<string, unknown>, summary: string): Promise<boolean> {
-    if (actsUnasked(levelFor(levels, action, subject), action)) return false;
     const state = await this.getState(tenantId, matterId);
+    // Manual handling: whatever would have gone out on its own is proposed instead, for the person who has the case.
+    const manual = state.manualHandling.required;
+    if (!manual && actsUnasked(levelFor(levels, action, subject), action)) return false;
+    if (manual) detail = { ...detail, manualMode: true };
     if (pendingProposal(state, action, dedupKey)) return true;
     const quietUntil = this.ports.now().getTime() - REJECTED_QUIET_MS;
     if (Object.values(state.proposals).some((p) => p.action === action && p.dedupKey === dedupKey && p.status === 'rejected' && new Date(p.resolvedAt ?? p.proposedAt).getTime() > quietUntil)) return true;
@@ -855,7 +857,8 @@ export class EngineService {
 
   private async tickInner(tenantId: string, matterId: string, now: Date): Promise<{ chases: number; escalations: number }> {
     let state = await this.getState(tenantId, matterId);
-    if (!state.enrolled || state.manualHandling.required || state.abandoned || state.closedAt) return { chases: 0, escalations: 0 };
+    // Manual handling does not stop the clock: chases due are proposed to the person who has the case.
+    if (!state.enrolled || state.abandoned || state.closedAt) return { chases: 0, escalations: 0 };
     const sla = await this.store.loadSla(tenantId);
     const subflows = await this.levels(tenantId);
     let chases = 0;
@@ -1125,22 +1128,8 @@ export class EngineService {
     }
   }
 
-  /**
-   * Automation resumed after manual handling: whatever the engine would have started by now, it starts
-   * from where the case stands (not by replaying what happened while a person had it): checks not yet
-   * requested, searches not yet ordered, chases now due, and a report on title that can be written.
-   */
-  private async catchUpAfterManual(tenantId: string, matterId: string, subflows: LevelConfig): Promise<void> {
-    const s = await this.getState(tenantId, matterId);
-    if (s.stage === 'instruction') await this.startClientChecks(tenantId, matterId, subflows, `resume:${s.lastSeq}`);
-    if (s.stage !== 'instruction') await this.orderMissingSearches(tenantId, matterId, subflows);
-    await this.tick(tenantId, matterId).catch((err) => this.ports.log('catch-up chases failed', err));
-    if (reportReady(await this.getState(tenantId, matterId))) await this.draftReportWhenReady(tenantId, matterId);
-  }
 
   private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
-    // Manual handling pauses what the engine starts on its own (requests, orders, status updates); a person drives.
-    const paused = state.manualHandling.required;
     for (const e of events) {
       try {
         // The seller's forms: ONE enquiry to the seller's solicitor covering every point they raise and every "not known"
@@ -1280,9 +1269,7 @@ export class EngineService {
         // the provider and, on a purchase that needs one, the proof-of-funds form to the client.
         // Nobody should have to press a button for either; the trust level decides whether a
         // person is asked first.
-        // Automation back on after manual handling: start what it would have started by now.
-        if (e.type === 'manual_handling_cleared') await this.catchUpAfterManual(tenantId, matterId, subflows);
-        if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false && !paused) await this.startClientChecks(tenantId, matterId, subflows, e.id);
+        if (e.type === 'matter_created' && this.ports.autoStartOnEnrol !== false) await this.startClientChecks(tenantId, matterId, subflows, e.id);
         // Another person to identify (a co-client named at enrolment, a gift donor declared on the form): their own check, proposed or sent as the trust level says.
         if (e.type === 'id_party_added') {
           const p = e.payload as { party: string; label: string; role: string };
@@ -1293,7 +1280,7 @@ export class EngineService {
           }
         }
         // Stage entry into pre_contract → order every required search (spec 2.4 step 1).
-        if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract' && !paused) await this.orderMissingSearches(tenantId, matterId, subflows);
+        if (e.type === 'stage_advanced' && (e.payload as { to: string }).to === 'pre_contract') await this.orderMissingSearches(tenantId, matterId, subflows);
         // Addendum: an enquiry to an INTERNAL counterparty is delivered to the other
         // side's handler as inbound correspondence — the same event pair as an external
         // exchange, with no read of the other matter's state (the wall is in the DB too).
@@ -1421,7 +1408,7 @@ export class EngineService {
           }
         }
         // Automated client status updates (zero legal risk, pure admin).
-        const template = paused ? undefined : CLIENT_UPDATE_TEMPLATES[e.type];
+        const template = CLIENT_UPDATE_TEMPLATES[e.type];
         if (template) {
           let context: Record<string, unknown> = { eventType: e.type, payload: e.payload };
           let dedupKey = `${template}:${e.id}`;

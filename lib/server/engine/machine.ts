@@ -614,7 +614,7 @@ function issueBlockers(s: MatterState, gate: IssueGate): string[] {
  * (a draft only: a conveyancer approves it before anything goes to the client).
  */
 export function reportReady(s: MatterState): boolean {
-  if (!s.enrolled || s.closedAt || s.abandoned || s.manualHandling.required) return false;
+  if (!s.enrolled || s.closedAt || s.abandoned) return false;
   if (profileOf(s.transactionType ?? 'freehold_purchase').side !== 'buyer') return false;
   if (s.stage !== 'contract_review' || s.reportOnTitle.status !== 'not_started') return false;
   return isResolved(s.title.status) && !unresolvedSearches(s, true).length && Object.values(s.enquiries).every((q) => isResolved(q.status));
@@ -660,12 +660,12 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     } else if (staleChase) {
       // The thing we were going to chase for has arrived: the proposal is withdrawn, not left for a person to reject.
       ev = { type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: staleChase.eventId, action: staleChase.action, detail: staleChase.detail, note: 'Withdrawn by the engine: what was being chased has arrived.' } };
-    } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.manualHandling.required && !s.abandoned) {
+    } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.abandoned) {
       // A purchase asks the seller's solicitor for the draft contract pack at instruction, not after the client's checks: the clock on it starts the day we are instructed.
       ev = { type: 'contract_pack_requested', actor: SYSTEM, payload: { to: 'seller_solicitor' } };
-    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && (!s.hasLender || isResolved(s.mortgage.status)) && issuesGating(s, 'exchange').length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
-    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && !s.manualHandling.required && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && issuesGating(s, 'exchange').length === 0 && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && issuesGating(s, 'exchange').length === 0 && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['contract pack sent', "buyer's enquiries answered", s.hasExistingMortgage ? 'redemption figure known' : 'unencumbered', 'no open issue holding exchange', s.requireExchangeAuthority ? 'client authorised exchange' : 'authority not required by policy'] } };
     } else {
       const to = nextStage(s);
