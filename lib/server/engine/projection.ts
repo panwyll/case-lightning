@@ -244,11 +244,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     // ── Enquiries ──
     case 'enquiry_raised': {
       const p = e.payload as Payloads['enquiry_raised'];
-      const fromIssue = p.origin?.issueId ? s.issues[p.origin.issueId] : null;
-      if (fromIssue) {
+      for (const id of [p.origin?.issueId, ...(p.origin?.alsoIssueIds ?? [])].filter(Boolean) as string[]) {
+        const fromIssue = s.issues[id];
+        if (!fromIssue) continue;
         fromIssue.enquiryIds.push(p.enquiryId);
         fromIssue.updatedAt = e.createdAt;
-        fromIssue.history.push({ at: e.createdAt, by: e.actor, what: `enquiry ${p.enquiryId} raised: ${p.subject}` });
+        fromIssue.history.push({ at: e.createdAt, by: e.actor, what: `enquiry ${p.enquiryId} raised: ${p.subject.split('\n')[0]}` });
       }
       s.enquiries[p.enquiryId] = {
         enquiryId: p.enquiryId,

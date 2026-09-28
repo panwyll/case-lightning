@@ -54,7 +54,7 @@ test('survey: facts are automated (report received, further investigation recomm
   assert.equal(lifecycle(s), 'pre_exchange', 'no longer ready');
   const fi = openIssues(s).filter((i) => i.kind === 'survey_further_investigation');
   assert.equal(fi.length, 2);
-  assert.match(fi[0].title, /Damp and timber report recommended/);
+  assert.match(fi[0].title, /Further investigation: Damp and timber specialist/);
   assert.equal(fi[0].raisedBy, 'system');
   const ws = workstreams(s).find((w) => w.id === 'survey')!;
   assert.equal(ws.status, 'blocked');

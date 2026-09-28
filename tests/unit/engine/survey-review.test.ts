@@ -46,8 +46,8 @@ test('the client letter covers what is urgent, what to investigate, what we are 
   const b = surveyAdvice(REPORT, { purchasePricePennies: 43_500_000, freehold: true, hasLender: true });
   assert.match(b.urgentBlock, /condition rating 3[\s\S]*Slipped and missing roof tiles[\s\S]*written quotations[\s\S]*before you are legally committed/);
   assert.doesNotMatch(b.urgentBlock, /sealed units/, 'a rating 2 item is not urgent');
-  assert.match(b.investigateBlock, /Damp to the rear wall.*\(damp and timber specialist\)/);
-  assert.match(b.legalBlock, /3 points[\s\S]*raising these with the seller's solicitor/);
+  assert.match(b.investigateBlock, /Damp and timber specialist: Damp to the rear wall/);
+  assert.match(b.legalBlock, /3 points with the seller[\s\S]*raising them with the seller's solicitor/);
   assert.match(b.valueBlock, /£420,000, below the £435,000/);
   assert.match(b.insuranceBlock, /£315,000[\s\S]*from exchange/);
   const leasehold = surveyAdvice(REPORT, { purchasePricePennies: 43_500_000, freehold: false, hasLender: true });
@@ -59,7 +59,8 @@ test('a survey on file gives the conveyancer tasks: the enquiries are proposed a
   const res = await h.svc.surveyReceived(TENANT, MATTER, h.doc(REPORT, 'SURVEY'));
   const s = await h.svc.getState(TENANT, MATTER);
   const enquiries = Object.values(s.proposals).filter((p) => p.action === 'enquiry_draft' && p.status === 'pending');
-  assert.equal(enquiries.length, 3, 'one proposed enquiry per legal point (a person approves each at Propose)');
+  assert.equal(enquiries.length, 1, 'one numbered set of enquiries, not one per point');
+  assert.match(String(enquiries[0].detail.subject), /1\. The rear extension[\s\S]*2\. Replacement windows[\s\S]*3\. Confirm the right of way/);
   const sent = h.ports.clientComms.sent.find((m) => m.template === 'survey_advice');
   assert.ok(sent, 'the client letter (client updates are unasked in the fixture)');
   assert.match(String(sent!.context.urgentBlock), /roof tiles/);
@@ -96,14 +97,74 @@ test('the client can change their mind: waive the investigation, then want it af
   assert.equal(s.survey.status, 'further_investigation');
 });
 
-test('a good reading clears the placeholder a failed one left', async () => {
+test('a failed reading raises no placeholder investigation, and a good one reads normally', async () => {
   const h = await enrolled();
   const docId = h.doc(REPORT, 'SURVEY');
-  // What an earlier, failed read recorded.
   await h.svc.run(TENANT, MATTER, { type: 'survey_received', actor: 'external', documentId: docId, surveyType: 'level2', facts: { surveyType: 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' }], confidence: 0 }, extractor: 'test' } as never);
   let s = await h.svc.getState(TENANT, MATTER);
-  assert.ok(Object.values(s.issues).some((i) => /could not be read automatically/.test(i.title) && i.status === 'open'));
+  assert.ok(!Object.values(s.issues).some((i) => /could not be read automatically/.test(i.title)), 'no investigation called "could not be read"');
+  assert.equal(s.survey.reports[0].unread, true);
   await h.svc.surveyReceived(TENANT, MATTER, docId);
   s = await h.svc.getState(TENANT, MATTER);
-  assert.ok(!Object.values(s.issues).some((i) => /could not be read automatically/.test(i.title) && i.status === 'open'), 'withdrawn once the report is read');
+  assert.equal(s.survey.reports.length, 1);
+  assert.equal(s.survey.reports[0].unread, false);
+  assert.equal(Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'open').length, 1);
+});
+
+test('a failed reading never becomes a letter to the client', async () => {
+  const { surveyNeedsAdvice } = await import('../../../lib/server/engine/survey-review');
+  assert.equal(surveyNeedsAdvice({ surveyType: 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' }], confidence: 0 }), false);
+  const h = await enrolled();
+  await h.svc.run(TENANT, MATTER, { type: 'survey_received', actor: 'external', documentId: h.doc(null, 'SURVEY'), surveyType: 'level2', facts: { surveyType: 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' }], confidence: 0 }, extractor: 'test' } as never);
+  assert.equal(h.ports.clientComms.sent.filter((m) => m.template === 'survey_advice').length, 0);
+});
+
+test('the guard holds a message that looks wrong, whatever produced it', async () => {
+  const { messageProblem } = await import('../../../lib/server/comms/templates');
+  const ok = { subject: 'Your purchase of 9 Arthur Road — your survey', body: 'Hello Peter,\n\nWe have read your survey and raised three points with the seller\'s solicitor.\n\nPeter Anwyll' };
+  assert.equal(messageProblem(ok), null);
+  assert.match(messageProblem({ ...ok, body: ok.body + '\n• The report could not be read automatically; a person must read it' })!, /could not read/);
+  assert.match(messageProblem({ ...ok, body: 'Hello {{firstName}}, your offer is attached and all is well with the purchase.' })!, /placeholder/);
+  assert.match(messageProblem({ ...ok, body: 'Hello Peter, the deposit of undefined is due before exchange next week.' })!, /undefined/);
+  assert.match(messageProblem({ ...ok, body: 'Hello Peter, please transfer £0 to our client account before completion.' })!, /£0/);
+  assert.match(messageProblem({ ...ok, missing: ['property'] })!, /missing property/);
+});
+
+test('twenty sentences about the same things become one set of enquiries and one issue per specialist', async () => {
+  const { investigationGroups, surveyEnquiries, sortLegalPoints } = await import('../../../lib/server/engine/survey-review');
+  const recs = [
+    { code: 'A', text: 'There are signs of movement noted; a structural engineer should inspect.', furtherInvestigation: true, severity: 'high' as const, rating: 3 as const },
+    { code: 'B', text: 'Cracking/leaning indicative of movement stress to the garden wall.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'C', text: 'Localised dampness and musty smells were noted.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'D', text: 'Penetrative damp staining to the ceiling.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'E', text: 'Obtain a CCTV survey of the underground drains.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'F', text: 'A test of the electrical installation by an NICEIC contractor.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'G', text: 'We would recommend the resistance of the cabling is tested.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+    { code: 'H', text: 'A test of the heating, boiler and hot water cylinder by a Gas Safe engineer.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+  ];
+  const groups = investigationGroups(recs).map((g) => [g.specialist, g.items.length, g.urgent]);
+  assert.deepEqual(groups.sort(), [['Damp and timber specialist', 2, false], ['Drainage (CCTV) survey', 1, false], ['Electrician', 2, false], ['Gas and heating engineer', 1, false], ['Structural engineer', 2, true]].sort());
+  const { seller, ours } = sortLegalPoints([
+    { category: 'regulation', text: 'Confirm Local Authority approval for the removal of the chimney breast.' },
+    { category: 'regulation', text: 'Confirm local authority approval for the removal of the chimney breast' },
+    { category: 'guarantee', text: 'Obtain the guarantees for double glazing.' },
+    { category: 'other', text: 'Ensure home insurance is available on standard terms.' },
+    { category: 'other', text: 'Enquire of the Local Authority as to whether the property stands on made ground.' },
+  ]);
+  assert.equal(seller.length, 2, 'the duplicate is dropped; insurance and the search point are not for the seller');
+  assert.equal(ours.length, 2);
+  const batch = surveyEnquiries(seller)!;
+  assert.match(batch, /^Additional enquiries arising from our client's survey:\n1\. Confirm Local Authority approval[\s\S]*\n2\. Obtain the guarantees for double glazing\. Please supply the guarantee/);
+});
+
+test('a survey on file proposes one set of enquiries and, when the client wants the specialists, one access request', async () => {
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc(REPORT, 'SURVEY'));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s.proposals).filter((p) => p.action === 'enquiry_draft' && p.status === 'pending').length, 1);
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'pursue', note: 'Wants the damp specialist in' });
+  s = await h.svc.getState(TENANT, MATTER);
+  const access = Object.values(s.proposals).filter((p) => p.action === 'enquiry_draft' && p.status === 'pending' && p.dedupKey.startsWith('enquiry_draft:access-batch:'));
+  assert.equal(access.length, 1);
+  assert.match(String(access[0].detail.subject), /1\. Damp and timber specialist/);
 });

@@ -59,7 +59,7 @@ import { openPofQueries, openWaits, awayOn, awayNow } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
-import { surveyAdvice, surveyEnquiry, surveyNeedsAdvice } from './survey-review';
+import { accessEnquiry, sortLegalPoints, surveyAdvice, surveyEnquiries, surveyNeedsAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
@@ -127,6 +127,7 @@ export class EngineService {
     for (const e of events) {
       const rule = ACKNOWLEDGE[e.type];
       if (!rule) continue;
+      if ((e.payload as { reread?: boolean }).reread) continue; // the same report read again is not a new arrival
       try {
         const current = await this.getState(tenantId, matterId);
         if (current.acknowledgements.some((a) => a.forEventId === e.id)) continue;
@@ -207,8 +208,8 @@ export class EngineService {
         if (party) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: partyTemplate, recipientRole: partyRole, channel: party.channel, messageId: party.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
     } else if (action === 'enquiry_draft') {
-      const d = detail as { subject: string; question?: string | null; issueId?: string | null };
-      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: d.issueId ? { issueId: d.issueId } : { formsQuestion: d.question ?? undefined } });
+      const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[] };
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [] } : { formsQuestion: d.question ?? undefined } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -762,6 +763,25 @@ export class EngineService {
     return totals;
   }
 
+  /** One request to the seller's solicitor for access, naming every specialist the client wants in. */
+  private async proposeAccess(tenantId: string, matterId: string, subflows: LevelConfig, note: string | null): Promise<void> {
+    const fresh = await this.getState(tenantId, matterId);
+    const open = Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && !x.enquiryIds.length);
+    // Older per-issue requests (and an earlier batch that no longer covers every open investigation) are taken back.
+    for (const x of Object.values(fresh.proposals).filter((x) => x.status === 'pending' && x.action === 'enquiry_draft' && (x.dedupKey.startsWith('enquiry_draft:access:ISS-') || x.dedupKey.startsWith('enquiry_draft:access-batch:')))) {
+      await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: 'replaced by one access request' }).catch(() => {});
+    }
+    if (!open.length) return;
+    const groups = open.map((i) => ({ specialist: i.title.replace(/^Further investigation:\s*/, '').replace(/ report recommended:.*$/, ''), items: (i.detail ?? i.title).split('\n').map((t) => ({ text: t.replace(/^•\s*/, '') })).filter((t) => t.text.trim()) }));
+    const subject = accessEnquiry(groups, note);
+    const ids = open.map((i) => i.id).sort();
+    const key = `enquiry_draft:access-batch:${ids.join(',')}`;
+    if (Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status === 'pending')) return;
+    const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
+    if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ACCESS FOR SPECIALISTS\n\nTo: the seller's solicitor\n${groups.length} inspection${groups.length === 1 ? '' : 's'}: ${groups.map((g) => g.specialist).join(', ')}\n\n${subject}`)) return;
+    try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('access request could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+  }
+
   // ───────────── effects ─────────────
 
   /** Post-commit reactions. Best-effort; each becomes its own command so the log records only what really happened. */
@@ -795,16 +815,21 @@ export class EngineService {
           const p = e.payload as { facts: SurveyFacts };
           const fresh = await this.getState(tenantId, matterId);
           const docKey = e.sourceDocumentId ?? e.id;
-          const raised = new Set(Object.values(fresh.enquiries).map((q) => q.subject));
-          for (const [n, li] of (p.facts.legalIssues ?? []).entries()) {
-            const subject = surveyEnquiry(li);
-            if (raised.has(subject)) continue;
-            const detail = { subject, question: null, origin: 'survey' };
-            const key = `enquiry_draft:survey:${docKey}:${n}`;
-            if (Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) continue;
-            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ENQUIRY FROM THE SURVEY\n\nTo: the seller's solicitor\nThe surveyor's point for the legal adviser: ${li.text}\n\n${subject}`)) continue;
-            try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+          // What an earlier reading proposed one sentence at a time is taken back: one numbered set replaces it.
+          for (const x of Object.values(fresh.proposals).filter((x) => x.status === 'pending' && x.action === 'enquiry_draft' && (x.dedupKey.startsWith(`enquiry_draft:survey:${docKey}:`) || x.dedupKey.startsWith('enquiry_draft:access:ISS-')))) {
+            await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: 'replaced by one set of enquiries from the survey' }).catch((err) => this.ports.log('could not withdraw a superseded enquiry', err));
           }
+          const { seller, ours } = sortLegalPoints(p.facts.legalIssues ?? []);
+          const batch = surveyEnquiries(seller);
+          const key = `enquiry_draft:survey:${docKey}`;
+          if (batch && !Object.values(fresh.enquiries).some((q) => q.subject === batch) && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
+            const detail = { subject: batch, question: null, origin: 'survey' };
+            const check = ours.length ? `\n\nNot for the seller; check these ourselves:\n${ours.map((o) => `• ${o}`).join('\n')}` : '';
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ENQUIRIES FROM THE SURVEY\n\nTo: the seller's solicitor\n${seller.length} point${seller.length === 1 ? '' : 's'} the surveyor raised for the legal adviser, as one set.\n\n${batch}${check}`))) {
+              try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiries could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+            }
+          }
+          if (fresh.clientDecisions?.further_investigation?.decision === 'pursue') await this.proposeAccess(tenantId, matterId, subflows, null);
           if (surveyNeedsAdvice(p.facts)) {
             const blocks = surveyAdvice(p.facts, { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender });
             const key = `survey_advice:${docKey}`;
@@ -861,15 +886,7 @@ export class EngineService {
         }
         // The client wants the specialist in: ask the seller's solicitor for access, one enquiry per recommendation, proposed or raised as the trust level says.
         if (e.type === 'client_decision_recorded' && (e.payload as { subject: string; decision: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'pursue') {
-          const fresh = await this.getState(tenantId, matterId);
-          const note = (e.payload as { note?: string | null }).note;
-          for (const i of Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && !x.enquiryIds.length)) {
-            const what = i.title.replace(/^.*?recommended:\s*/i, '');
-            const subject = `Access for a specialist inspection: the survey recommends ${what}. Our client wishes to proceed with this. Please confirm your client will permit access for the specialist, on what dates, and on what conditions (including whether any lifting of floor coverings or minor opening-up is acceptable and who makes good).${note ? ` Our client adds: ${note}` : ''}`;
-            const detail = { subject, issueId: i.id };
-            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', `enquiry_draft:access:${i.id}`, detail, `ENQUIRY — ACCESS FOR A SPECIALIST\n\nTo: the seller's solicitor\nFor: ${i.title}\n\n${subject}`)) continue;
-            await this.perform(tenantId, matterId, 'enquiry_draft', detail);
-          }
+          await this.proposeAccess(tenantId, matterId, subflows, (e.payload as { note?: string | null }).note ?? null);
         }
         // The seller's solicitor has answered an access enquiry: the client hears the conditions and can book the specialist.
         if (e.type === 'enquiry_reply_received') {
@@ -879,7 +896,9 @@ export class EngineService {
           if (q && issue?.kind === 'survey_further_investigation') {
             const dec = q.decisionEventId ? fresh.decisions[q.decisionEventId] : null;
             const conditions = (dec?.summary ?? '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 8).join(' ');
-            const context = { eventType: e.type, payload: e.payload, specialist: issue.title.replace(/ recommended:.*$/i, ''), conditions: conditions || "see their reply, which we will forward" };
+            const names = [q.origin?.issueId, ...(q.origin?.alsoIssueIds ?? [])].map((id) => (id ? fresh.issues[id]?.title : null)).filter(Boolean).map((t) => String(t).replace(/^Further investigation:\s*/, '').replace(/ report recommended:.*$/i, '').replace(/ recommended:.*$/i, ''));
+            const specialist = names.length <= 1 ? (names[0] ?? 'specialist') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+            const context = { eventType: e.type, payload: e.payload, specialist, conditions: conditions || "see their reply, which we will forward" };
             const detail = { template: 'access_conditions', context, triggeredByEventId: e.id };
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'access_conditions', `access_conditions:${e.id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: the seller's reply on access for the ${issue.title}\nTemplate: access_conditions`))) {
               try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('access conditions could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }

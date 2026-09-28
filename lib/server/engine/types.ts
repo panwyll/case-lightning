@@ -781,7 +781,7 @@ export interface Payloads {
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
   search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null; counterpartyType?: CounterpartyType | null };
+  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
@@ -926,7 +926,7 @@ export interface Payloads {
   notice_of_assignment_served: { servedOn: string; reference?: string | null };
   // ── case model ──
   /** The client's survey (or valuation) arrived and was read: recommendations are facts; each "further investigation" one raises an issue. */
-  survey_received: { surveyType: SurveyType; facts: SurveyFacts; extractor: string };
+  survey_received: { surveyType: SurveyType; facts: SurveyFacts; extractor: string; reread?: boolean };
   /** A specialist's report arrived for a further-investigation issue: read; "no further investigation" resolves that issue (a fact), a new recommendation chains a new one. */
   specialist_report_received: { facts: SurveyFacts; forIssueId: string | null; extractor: string; furtherInvestigation: boolean };
   /** The client's decision on something only the client decides — recorded by a person, never inferred. */
@@ -1226,7 +1226,7 @@ export interface EnquiryState {
   decisionEventId: string | null;
   resolution: DecisionOption | null;
   /** Where it came from: a decision, a follow-up, an issue, or a "not known" answer on the seller's forms. */
-  origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null;
+  origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null;
 }
 
 export interface IssueState {

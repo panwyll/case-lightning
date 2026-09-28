@@ -178,6 +178,7 @@ export const COMMAND_SPECS: CommandSpec[] = [
   { type: 'sdlt_submitted', actor: 'either', stages: ['completed', 'post_completion'], emits: ['sdlt_submitted', 'stage_advanced'], description: 'SDLT return filed.' },
   { type: 'ap1_submitted', actor: 'either', stages: ['completed', 'post_completion'], emits: ['ap1_submitted', 'stage_advanced'], description: 'AP1 lodged; opens the registration wait.' },
   { type: 'ap1_confirmed', actor: 'either', stages: 'any', emits: ['ap1_confirmed'], description: 'Registered (terminal). Refused while a requisition is unanswered.' },
+  { type: 'withdraw_proposal', actor: 'automation', stages: 'any', emits: ['action_rejected'], description: 'The system takes back a pending proposal that a better one replaced (one batched enquiry instead of twenty).' },
   { type: 'record_chase', actor: 'automation', stages: 'any', emits: ['chase_sent'], description: 'Timer: a template chase was sent (recorded only after the send).' },
   { type: 'record_acknowledgement', actor: 'automation', stages: 'any', emits: ['acknowledgement_sent'], description: 'Something arrived from the other side or the client and they were told so (recorded only after the send).' },
   { type: 'raise_escalation', actor: 'automation', stages: 'any', emits: ['escalation_raised'], description: 'Timer: a wait aged past its SLA → decision with the chase dossier.' },

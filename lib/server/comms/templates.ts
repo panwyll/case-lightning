@@ -107,3 +107,27 @@ export function render(t: Template, vars: Record<string, string | number | null 
 export function templateFor(key: string): Template | null {
   return CLIENT_UPDATES[key] ?? CHASES[key] ?? null;
 }
+
+
+/**
+ * Why a rendered message must not be sent, or null. The last line of defence between a bad
+ * reading or a missing value and someone's inbox: a message that fails goes to a person as a
+ * task with the reason, never out. Deliberately blunt: a false alarm costs a click, a false pass
+ * costs the firm's credibility.
+ */
+export function messageProblem(r: { subject: string; body: string; missing?: string[] }): string | null {
+  if (r.missing?.length) return `it is missing ${r.missing.join(', ')}`;
+  const text = `${r.subject}\n${r.body}`;
+  const checks: Array<[RegExp, string]> = [
+    [/\{\{|\}\}/, 'a placeholder was not filled in'],
+    [/\bundefined\b|\bNaN\b|\[object Object\]/, 'a value is missing (it reads "undefined")'],
+    [/(^|[\s:(])null([\s.,)]|$)/m, 'a value is missing (it reads "null")'],
+    [/could not be read automatically|a person must read it|\bUNREAD\b/i, 'it quotes a document the system could not read'],
+    [/£0(\.00)?\b/, 'it states an amount of £0'],
+    [/\b(Tenant|MATTER)-[0-9a-f-]{8,}/i, 'it contains an internal reference'],
+    [/(^|\n)\s*•\s*(\n|$)/, 'it has an empty bullet'],
+  ];
+  for (const [re, why] of checks) if (re.test(text)) return why;
+  if (r.body.trim().length < 40) return 'it is almost empty';
+  return null;
+}

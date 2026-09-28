@@ -31,7 +31,7 @@ test('pursue: access is asked of the seller, their conditions reach the client, 
   s = await h.svc.getState(TENANT, MATTER);
   const q = Object.values(s.enquiries).find((x) => x.origin?.issueId === issue.id);
   assert.ok(q, 'an access enquiry was raised against the recommendation');
-  assert.match(q!.subject, /Access for a specialist inspection/);
+  assert.match(q!.subject, /inspections carried out before exchange[\s\S]*1\. Damp and timber specialist/);
   assert.match(q!.subject, /Client will pay/);
   assert.ok(s.issues[issue.id].enquiryIds.includes(q!.enquiryId));
 
@@ -39,7 +39,7 @@ test('pursue: access is asked of the seller, their conditions reach the client, 
   await h.svc.enquiryReplyReceived(TENANT, MATTER, q!.enquiryId, h.doc({ enquiryId: q!.enquiryId, status: 'answered', issues: [], confidence: 0.9 }));
   const told = h.ports.clientComms.sent.find((m) => m.template === 'access_conditions');
   assert.ok(told, "the seller's reply on access is told to the client");
-  assert.match(String((told!.context as { specialist: string }).specialist), /Damp and timber surveyor report/);
+  assert.match(String((told!.context as { specialist: string }).specialist), /Damp and timber specialist/);
 
   await h.svc.specialistReportReceived(TENANT, MATTER, h.doc({ surveyType: 'specialist', recommendations: [], confidence: 0.9 }), issue.id);
   s = await h.svc.getState(TENANT, MATTER);

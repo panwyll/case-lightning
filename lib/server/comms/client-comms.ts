@@ -15,6 +15,7 @@
  * The persistence and mail/whatsapp sending are behind small interfaces so the whole
  * layer is unit-tested with fakes.
  */
+import { messageProblem } from './templates';
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
@@ -165,6 +166,7 @@ export class ProductionClientComms implements ClientComms {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.vars(info, input.context));
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, withOverview(r.body, input.context));
   }
 
@@ -245,6 +247,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.chaseVars(info, input.context));
     if (r.missing.length) throw new Error(`Chase template ${t.key} missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
 
     // The client's own chase (ID documents) goes down the client channel.
     if (input.recipientRole === 'client' || input.recipientRole === 'id_provider') {
@@ -286,6 +289,7 @@ export class ProductionChaser implements ThirdPartyChaser {
     };
     const r = render(t, vars);
     if (r.missing.length) throw new Error(`Notice template ${t.key} missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     const sent = await this.deps.mailbox.send(info.feeEarnerUserId, agent.email, r.subject, toHtml(r.body));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: agent.email, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };
@@ -403,5 +407,14 @@ export class ClientQaService {
       await this.deps.log({ tenantId, matterId: m?.matterId ?? null, direction: 'OUT', channel: 'whatsapp', address: input.fromAddress, template: outcome.faqId ? `faq:${outcome.faqId}` : 'qa_routed_to_human', body: outcome.reply, providerRef: r.messageId, status: r.messageId ? 'SENT' : 'FAILED' });
     }
     return outcome;
+  }
+}
+
+
+/** A message the guard would not let out: the send becomes a task for a person with this reason. */
+export class MessageHeldError extends Error {
+  constructor(public why: string) {
+    super(`Not sent: the message looks wrong (${why}). Check it and send it by hand, or fix the case and try again.`);
+    this.name = 'MessageHeldError';
   }
 }

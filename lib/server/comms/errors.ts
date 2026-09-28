@@ -7,6 +7,8 @@ export interface SendFailure { reason: string; steps: string[]; raw: string }
 export function explainSendError(err: unknown): SendFailure {
   const raw = (err instanceof Error ? err.message : String(err)).trim();
   const m = (re: RegExp) => re.test(raw);
+  const held = raw.match(/^Not sent: the message looks wrong \((.+?)\)\./);
+  if (held) return { reason: `The message was held back because ${held[1]}. Nothing was sent.`, steps: ['Read the message below and correct what is wrong', 'Send it yourself from Outlook, or fix the case (read the document again, fill the missing detail) and use Try Again'], raw };
   const reconnect = ['Open the Team page and use Connect Microsoft 365 (if it still fails, "Reconnect with fresh permissions": /api/v1/auth/login?consent=1), signing in as the fee earner on this case', 'Come back to Tasks and approve the message again'];
   if (m(/Graph account not connected|Refresh token missing|reconnect required|InvalidAuthenticationToken|token.*(expired|invalid)|AADSTS|\b401\b|Unauthori[sz]ed|consent/i)) {
     return { reason: 'Your Microsoft 365 connection has expired or been revoked, so the mailbox could not send.', steps: reconnect, raw };

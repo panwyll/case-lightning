@@ -20,6 +20,7 @@ import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
+import { investigationGroups, investigationTitle } from './survey-review';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
@@ -119,7 +120,7 @@ type CommandBody =
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
-  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; formsQuestion?: string } | null }
+  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null }
   | { type: 'enquiry_reply_received'; actor: Actor; enquiryId: string; documentId: string; facts?: EnquiryReplyFacts | null; summary?: SummaryOverride | null }
   | { type: 'mortgage_offer_received'; actor: Actor; documentId: string; lender?: string | null }
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }
@@ -213,6 +214,7 @@ type CommandBody =
   | { type: 'raise_escalation'; waitKey: WaitKey; subject: string; reason: string; sourceDocumentId: string; summary?: SummaryOverride | null }
   | { type: 'record_client_update'; update: ClientUpdateSpec }
   /** PROPOSE level: the service asks before acting. `sourceDocumentId` is the generated dossier the person reads. */
+  | { type: 'withdraw_proposal'; proposalEventId: string; reason: string }
   | { type: 'propose_action'; action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; summary: string; sourceDocumentId: string }
   | { type: 'record_action_failed'; proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string }
   | { type: 'record_action_retried'; actor: Actor; proposalEventId: string; action: EngineAction };
@@ -1382,21 +1384,35 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'survey_received': {
       requireEnrolled(s);
       if (s.exchange.exchangedAt) reject('Contracts are exchanged; a survey now is a post-exchange matter for manual handling.');
-      const out: NewEvent[] = [{ type: 'survey_received', actor: cmd.actor, payload: { surveyType: cmd.surveyType, facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+      // A second reading of the same report is a re-read: it is not a new arrival to acknowledge or advise on afresh.
+      const reread = s.survey.reports.some((r) => r.documentId === cmd.documentId && !r.forIssueId);
+      const out: NewEvent[] = [{ type: 'survey_received', actor: cmd.actor, payload: { surveyType: cmd.surveyType, facts: cmd.facts, extractor: cmd.extractor, reread }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
       // A good reading clears what a failed one left: the placeholder "could not be read" issue.
       if (cmd.facts.confidence > 0) {
         for (const i of Object.values(s.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && /could not be read automatically/.test(x.title))) {
           out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: 'The report has now been read.' } });
         }
       }
-      // Objective fact: the surveyor recommends further investigation → one issue per recommendation (holds exchange).
+      // Objective fact: the surveyor recommends further investigation → one issue per SPECIALIST (holds
+      // exchange): ten sentences about damp are one damp specialist, not ten issues.
+      const groups = investigationGroups(cmd.facts.recommendations);
+      const titles = new Set(groups.map((g) => investigationTitle(g.specialist)));
+      const openFi = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
+      // Read again: what this report raised before, sentence by sentence, is regrouped.
+      for (const i of openFi.filter((x) => x.sourceDocumentId === cmd.documentId && !titles.has(x.title) && !x.enquiryIds.length)) {
+        out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: 'Regrouped by specialist when the report was read again.' } });
+      }
+      // A Level 3 survey arriving is the answer to "commission a Level 3".
+      if (cmd.surveyType === 'level3') for (const i of openFi.filter((x) => x.title === investigationTitle('Level 3 building survey') && x.sourceDocumentId !== cmd.documentId)) {
+        out.push({ type: 'issue_resolved', actor: SYSTEM, payload: { issueId: i.id, resolution: 'specialist_report_clear', note: 'The Level 3 survey has been received and read; its own recommendations follow.', costPennies: null, paidBy: null }, sourceDocumentId: cmd.documentId });
+      }
       let n = Object.keys(s.issues).length;
-      for (const r of cmd.facts.recommendations.filter((x) => x.furtherInvestigation)) {
-        const title = `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`;
-        if (Object.values(s.issues).some((i) => i.kind === 'survey_further_investigation' && i.title === title)) continue; // read again: already raised
+      for (const g of groups) {
+        const title = investigationTitle(g.specialist);
+        if (openFi.some((i) => i.title === title)) continue; // this specialist is already being tracked (a re-read, or an earlier report)
         n += 1;
         // Critical only for what the surveyor rates urgent (condition rating 3); otherwise it holds exchange as a warning.
-        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.rating === 3 || (r.rating == null && r.severity === 'high') ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: g.items.map((r) => `• ${r.text}`).join('\n'), gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: g.urgent ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
       }
       return out;
     }
@@ -1977,6 +1993,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'shadow_mode_changed', actor: cmd.actor, payload: { shadowMode: cmd.shadowMode, reason: cmd.reason ?? null } }];
     }
 
+    case 'withdraw_proposal': {
+      // The system takes back a proposal that no longer makes sense (superseded by a better one); a person never has to reject it.
+      const p = s.proposals[cmd.proposalEventId];
+      if (!p) reject('Proposal not found.', 404);
+      if (p.status !== 'pending') return [];
+      return [{ type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: p.eventId, action: p.action, detail: p.detail, note: `Withdrawn by the system: ${cmd.reason}` } }];
+    }
     case 'propose_action': {
       requireEnrolled(s);
       if (Object.values(s.proposals).some((p) => p.action === cmd.action && p.dedupKey === cmd.dedupKey && p.status === 'pending')) reject(`That ${cmd.action.replace(/_/g, ' ')} is already proposed and waiting.`, 409);
