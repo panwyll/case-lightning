@@ -210,6 +210,8 @@ export const ContractExtractionSchema = z.object({
   specialConditions: z.array(z.object({ code: z.string().describe('The condition\'s own number, e.g. "SC 5".'), text: z.string().describe('Verbatim (≤ 600 chars).'), locator, confidence: conf })),
   indemnities: z.array(z.object({ text: z.string().describe('Verbatim indemnity or indemnity-insurance term (≤ 400 chars).'), locator, confidence: conf })),
   flags: z.array(flagSchema).describe('Anything a conveyancer must decide on: a non-standard special condition, an unusual deposit, a completion date fixed already, a retention, a conditional contract, VAT, missing fixtures list.'),
+  signedBy: z.array(z.string()).describe('Everyone whose signature actually appears on the contract (handwritten, or an electronic signature block), by the name printed with it. Empty if the contract is unsigned. Never infer a signature from a typed name in the parties clause.'),
+  dated: z.boolean().describe('True only if the contract date has been filled in.'),
   scanQuality: z.enum(['good', 'fair', 'poor', 'unreadable']),
   confidence: conf,
 });
@@ -560,6 +562,8 @@ export function toContractFacts(out: z.infer<typeof ContractExtractionSchema>): 
     specialConditions: out.specialConditions.map((c) => ({ code: normaliseCode(c.code), text: c.text.trim(), locator: loc(c.locator) })),
     indemnities: out.indemnities.map((c) => ({ text: c.text.trim(), locator: loc(c.locator) })),
     flags,
+    signedBy: (out.signedBy ?? []).map((s) => s.trim()).filter(Boolean),
+    dated: !!out.dated,
     confidence: overallConfidence(out.confidence, [minConfidence, ...out.specialConditions.map((c) => c.confidence)], out.scanQuality),
   };
 }

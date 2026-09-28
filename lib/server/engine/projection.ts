@@ -1228,7 +1228,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
   }
   // The client's signed documents are all back: the wait on them closes.
-  if ((e.type === 'mortgage_deed_executed' || e.type === 'transfer_deed_executed' || e.type === 'deed_of_trust_executed') && s.signing?.packSentAt && s.signing.documents.every((d) => deedSigned(s, d))) {
+  if ((e.type === 'signed_contract_held' || e.type === 'mortgage_deed_executed' || e.type === 'transfer_deed_executed' || e.type === 'deed_of_trust_executed') && s.signing?.packSentAt && s.signing.documents.every((d) => deedSigned(s, d))) {
     closeWait(s, 'signed_documents', '', e);
   }
   return s;

@@ -19,7 +19,7 @@ const Body = z.object({
   reason: z.string().max(500).optional(),
 });
 
-const CMD: Record<SignedDocument, 'transfer_deed_executed' | 'mortgage_deed_executed' | 'deed_of_trust_executed'> = { transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' };
+const CMD: Record<SignedDocument, 'signed_contract_held' | 'transfer_deed_executed' | 'mortgage_deed_executed' | 'deed_of_trust_executed'> = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' };
 
 export async function handleSigningWebhook(provider: 'infotrack' | 'intouch' | 'leap', secretHeader: string | null, raw: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
   const secret = process.env[`${provider.toUpperCase()}_SIGNING_WEBHOOK_SECRET`];
@@ -51,8 +51,8 @@ export async function handleSigningWebhook(provider: 'infotrack' | 'intouch' | '
     type: CMD[env.document],
     actor: EXTERNAL,
     witnessed: true,
-    ...(env.document !== 'mortgage_deed' ? { parties: state.partyNames?.length ? state.partyNames : ['the client'] } : {}),
-    completion: { documentId: doc!.id, checklist: { witnessed: true, every_borrower: true, original_held: true }, party: null, note: `Signed electronically via ${provider}`, readDocument: null },
+    ...(env.document !== 'mortgage_deed' && env.document !== 'contract' ? { parties: state.partyNames?.length ? state.partyNames : ['the client'] } : {}),
+    completion: { documentId: doc!.id, checklist: { witnessed: true, every_borrower: true, original_held: true, every_signatory: true, dated: true }, party: null, note: `Signed electronically via ${provider}`, readDocument: null },
   } as never);
   return { status: 200, body: { ok: true, recorded: 'signed' } };
 }

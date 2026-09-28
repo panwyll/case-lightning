@@ -626,10 +626,42 @@ export class EngineService {
   async contractReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractContract(doc).catch((err) => { this.ports.log('contract extraction failed — the review table will be empty', err); return null; });
+    // Our clients' signed part coming back is the signed contract, not a new draft to approve.
+    if (facts?.signedBy?.length && (await this.signedContractReturned(tenantId, matterId, documentId, facts))) {
+      const st = await this.getState(tenantId, matterId);
+      return { state: st, events: [], warning: st.readiness.signedContractHeldAt ? 'Signed contract on file.' : 'A signed contract arrived; see the task.' };
+    }
     await this.run(tenantId, matterId, { type: 'record_contract_filed', documentId, points: facts?.flags.length ?? 0 });
     await this.raiseContractReview(tenantId, matterId, documentId, facts).catch((err) => this.ports.log('contract approval task not raised', err));
     const state = await this.getState(tenantId, matterId);
     return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
+  }
+
+  /**
+   * A contract with signatures on it. When every one of our clients has signed and it is undated, it is the
+   * signed contract held for exchange; a part signed by only some of them, or dated, is a task to put right.
+   * Signatures that are all the other side's are theirs (their signed part), and it is read as a contract.
+   */
+  private async signedContractReturned(tenantId: string, matterId: string, documentId: string, facts: ContractFacts): Promise<boolean> {
+    const s = await this.getState(tenantId, matterId);
+    if (s.exchange.exchangedAt || s.readiness.signedContractHeldAt) return false;
+    const key = (n: string) => n.toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(Boolean);
+    const signedBy = facts.signedBy ?? [];
+    // A client has signed when a signature carries their surname and their first name (or its initial).
+    const signedByClient = (name: string) => { const want = key(name); if (!want.length) return false; const first = want[0], last = want[want.length - 1]; return signedBy.some((x) => { const have = key(x); return have.includes(last) && (want.length === 1 || have.some((w) => w === first || w === first[0])); }); };
+    const clients = s.partyNames?.length ? s.partyNames : [];
+    const ours = clients.filter(signedByClient);
+    if (clients.length && !ours.length) return false; // the other side's signed part
+    const missing = clients.filter((n) => !signedByClient(n));
+    if (!missing.length && !facts.dated) {
+      await this.run(tenantId, matterId, { type: 'signed_contract_held', actor: EXTERNAL, note: `Signed by ${signedBy.join(', ')}; undated`, completion: { documentId, checklist: { every_signatory: true, dated: true }, party: null, note: null, readDocument: null } } as never);
+      return true;
+    }
+    const title = missing.length ? `Contract signed by ${ours.join(', ') || signedBy.join(', ')} only` : 'Signed contract came back dated';
+    if (!Object.values(s.issues).some((i) => i.title === title && (i.status === 'open' || i.status === 'negotiating'))) {
+      await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'document_execution_problem', title, detail: missing.length ? `Still to sign: ${missing.join(', ')}. Every client signs their part before we can exchange. [doc:${documentId}]` : `The contract is dated; it should be left undated until exchange. Ask for a fresh signed, undated part (or confirm the date is struck through). [doc:${documentId}]`, gate: 'exchange', severity: 'warning', documentId } as never);
+    }
+    return true;
   }
 
   /**
@@ -1271,7 +1303,8 @@ export class EngineService {
         if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage')) {
           const fresh = await this.getState(tenantId, matterId);
           const docs = deedsToSign(fresh).filter((d) => !deedSigned(fresh, d));
-          if (docs.length && !fresh.signing.packSentAt) {
+          // A pack already out before the contract was approved goes again with the contract in it.
+          if (docs.length && (!fresh.signing.packSentAt || (docs.includes('contract') && !fresh.signing.documents.includes('contract')))) {
             const detail = { kind: 'signing_pack', documents: docs };
             if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'signing_pack', 'signing_pack', detail, `SIGNING PACK\n\nTo: the client\nTo sign: ${docs.map((d) => SIGNED_DOCUMENT_LABEL[d]).join(', ')}\nWet ink or electronic per deed as set on the case (a lender not known to take e-signed deeds is wet ink).`))) {
               try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('signing pack could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }

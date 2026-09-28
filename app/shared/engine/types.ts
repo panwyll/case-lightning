@@ -259,7 +259,7 @@ export interface EngineState {
   /** Issues layer (docs/engine-issues.md). */
   issues: Record<string, IssueRow>;
   purchasePricePennies: number | null;
-  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
+  readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null; contractDocumentId?: string | null };
   requireProofOfFunds?: boolean;
   requireExchangeAuthority?: boolean;
   survey?: { status: string; plan?: { plan: 'none' | 'booked'; date: string | null; at: string } | null; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }> };

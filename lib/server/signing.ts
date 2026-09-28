@@ -17,6 +17,7 @@ import { messageProblem, render, templateFor } from './comms/templates';
 
 /** Which file on the case is which deed: its type, or failing that its name. */
 const FIND: Record<SignedDocument, { types: string[]; name: RegExp }> = {
+  contract: { types: ['CONTRACT', 'DRAFT_CONTRACT'], name: /\bcontract\b/i },
   transfer: { types: ['TR1', 'TRANSFER_DEED', 'TP1', 'TR2'], name: /\b(tr1|tp1|transfer)\b/i },
   mortgage_deed: { types: ['MORTGAGE_DEED', 'CHARGE'], name: /mortgage\s*deed|legal charge|\bcharge\b/i },
   deed_of_trust: { types: ['DEED_OF_TRUST', 'DECLARATION_OF_TRUST'], name: /(deed|declaration) of trust/i },
@@ -94,7 +95,7 @@ export const productionSigning: SigningPort = {
     for (const d of inInk) { const f = await deedFile(tenantId, matterId, d); if (f) files.push({ d, f }); else missing.push(d); }
     if (missing.length) throw new Error(`The ${list(missing.map((d) => SIGNED_DOCUMENT_LABEL[d].toLowerCase()))} ${missing.length === 1 ? 'is' : 'are'} not on the case yet. Add ${missing.length === 1 ? 'it' : 'them'} to the case (Documents), then send the pack again.`);
 
-    const labels = (ds: SignedDocument[]) => list(ds.map((d) => SIGNED_DOCUMENT_LABEL[d].replace('Transfer (TR1)', 'the transfer (TR1)').replace(/^Mortgage deed$/, 'the mortgage deed').replace(/^Declaration of trust$/, 'the declaration of trust')));
+    const labels = (ds: SignedDocument[]) => list(ds.map((d) => SIGNED_DOCUMENT_LABEL[d].replace('Transfer (TR1)', 'the transfer (TR1)').replace(/^Mortgage deed$/, 'the mortgage deed').replace(/^Declaration of trust$/, 'the declaration of trust').replace(/^Contract$/, 'the contract')));
     const firstName = (m.client_name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || 'there';
     const t = templateFor('signing_pack');
     if (!t) throw new Error('Signing letter template missing.');
@@ -105,7 +106,7 @@ export const productionSigning: SigningPort = {
       signingIntro: reminder
         ? `A reminder that we still need ${labels([...inInk, ...envelopes.map((e) => e.document), ...withProvider])} signed. We cannot complete without ${inInk.length + envelopes.length + withProvider.size === 1 ? 'it' : 'them'}${[...inInk, ...envelopes.map((e) => e.document), ...withProvider].includes('mortgage_deed') ? ', and your lender will not release the mortgage money until we hold the signed mortgage deed' : ''}. Everything is below again, so you do not have to look for our earlier email.`
         : `Here ${inInk.length + envelopes.length === 1 ? 'is the document' : 'are the documents'} you need to sign: ${labels([...inInk, ...envelopes.map((e) => e.document)])}.`,
-      wetBlock: inInk.length ? `To sign in ink (${labels(inInk)}, attached):\n• Print ${inInk.length === 1 ? 'it' : 'them'} single-sided and sign where marked.\n• Sign in front of an independent adult witness: not a relative, not your partner, and not anyone with an interest in the property. The witness signs and adds their name and address.\n• Post the signed originals to:\n${address!.join('\n')}\n\n` : '',
+      wetBlock: inInk.length ? `To sign in ink (${labels(inInk)}, attached):\n• Print ${inInk.length === 1 ? 'it' : 'them'} single-sided and sign where marked.\n${inInk.some((d) => d !== 'contract') ? '• Sign the deeds in front of an independent adult witness: not a relative, not your partner, and not anyone with an interest in the property. The witness signs and adds their name and address.\n' : ''}${inInk.includes('contract') ? '• The contract needs no witness. Do not date it: we date it when contracts are exchanged.\n' : ''}• Post the signed originals to:\n${address!.join('\n')}\n\n` : '',
       electronicBlock: (withProvider.size ? `To sign electronically (${labels([...withProvider])}): use the link in the email ${adapter?.label ?? 'our signing provider'} sent you. If you cannot find it (it is worth looking in junk), reply to this email and we will have it sent again.\n\n` : '') + (envelopes.length ? `To sign electronically (${labels(envelopes.map((e) => e.document))}): you will receive an email from ${adapter?.label ?? 'our signing provider'} with a link. Your witness must be with you in person when you sign, and will get their own link to sign as witness.\n\n` : ''),
       feeEarner: m.fee_name ?? firm.name,
       firmName: firm.name,

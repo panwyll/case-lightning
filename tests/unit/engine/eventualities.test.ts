@@ -289,7 +289,7 @@ test('a report on title marked done by hand while its draft waits settles the dr
 
 test('the contract is a task: filed early, it goes on the Tasks tab at contract review; approving it approves the contract and asks the client for the deposit', async () => {
   const h = harness();
-  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'], partyNames: ['Ann Smith'] });
   const contract = h.doc({ sellers: ['Sam Seller'], buyers: ['Ann Smith'], propertyAddress: '1 Test St', titleNumber: 'AB123', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [{ code: 'DEPOSIT_5PC', severity: 'warning', description: 'Deposit reduced to 5% by special condition' }], confidence: 0.9 });
   await h.svc.contractReceived(TENANT, MATTER, contract);
   assert.ok(!pendingDecisions(await h.svc.getState(TENANT, MATTER)).some((d) => d.kind === 'contract'), 'not before the case is at contract review');
@@ -306,4 +306,19 @@ test('the contract is a task: filed early, it goes on the Tasks tab at contract 
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(s.readiness.contractApprovedAt);
   assert.ok(!pendingDecisions(s).some((d) => d.kind === 'contract'));
+  // The contract goes out with the signing pack.
+  const pack = Object.values(s.proposals).find((p) => (p.detail as { kind?: string }).kind === 'signing_pack');
+  assert.ok(s.signing.packSentAt || pack, 'the signing pack is proposed or sent');
+  assert.ok(((pack?.detail as { documents?: string[] })?.documents ?? s.signing.documents).includes('contract'), 'the contract is in the signing pack');
+  // Our client's signed part comes back, undated: it is the signed contract held.
+  const other = h.doc({ ...contractFacts(), signedBy: ['Sam Seller'], dated: false });
+  await h.svc.contractReceived(TENANT, MATTER, other);
+  assert.equal((await h.svc.getState(TENANT, MATTER)).readiness.signedContractHeldAt, null, "the other side's signed part is not ours");
+  await h.svc.contractReceived(TENANT, MATTER, h.doc({ ...contractFacts(), signedBy: ['A. Smith'], dated: false }));
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(s.readiness.signedContractHeldAt, 'the signed contract is on file');
 });
+
+function contractFacts() {
+  return { sellers: ['Sam Seller'], buyers: ['Ann Smith'], propertyAddress: '1 Test St', titleNumber: 'AB123', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: null, noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [], confidence: 0.9 };
+}

@@ -1064,39 +1064,44 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {buyer && completed && !s.postCompletion.noticeOfAssignmentAt && act('leasehold', 'notice_of_assignment_served', 'Notice of Assignment Served')}
     </> });
 
-  if (p.hasExchange) lane({ id: 'exchange', order: 'sequence', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
-    tiles: [
-      ...(seller ? [{ label: 'Contract pack', status: s.contractPack?.sentAt ? 'sent' : 'not_started', detail: s.contractPack?.sentAt ? `sent ${fmtDay(s.contractPack.sentAt)}` : undefined }] : []),
-      { label: 'Contract approved / signed', status: s.readiness.signedContractHeldAt ? 'done' : s.readiness.contractApprovedAt ? 'approved' : 'not_started' },
-      ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting' }] : []),
-      ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started' }] : []),
-      { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead' },
-      ...(exchanged ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started' }] : []),
-    ],
-    actions: <>
-      {seller && !s.contractPack?.sentAt && atLeast('pre_contract') && act('exchange', 'contract_pack_sent', 'Contract Pack Sent', {}, { primary: true, disabled: forms.status !== 'received' || s.title.status === 'awaiting', title: forms.status !== 'received' ? 'The property forms are not in' : s.title.status === 'awaiting' ? 'Official copies are not on file' : undefined })}
-      {buyer && !exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const p = ask(s.purchasePricePennies != null ? `Agreed price is £${(s.purchasePricePennies / 100).toLocaleString('en-GB')}. New agreed price (£)? A change on a lender-funded purchase tells the lender.` : 'Agreed price (£)?'); if (!p) return; const r = ask('Why did it change?'); if (r) void cmd({ type: 'record_price_change', toPennies: Math.round(Number(p.replace(/[^0-9.]/g, '')) * 100), reason: r }); }}>Change Price</button>}
-      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.contractApprovedAt && act('exchange', 'contract_approved', 'Contract Approved')}
-      {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.signedContractHeldAt && act('exchange', 'signed_contract_held', 'Signed Contract Held')}
-      {buyer && ['contract_review', 'pre_exchange'].includes(s.stage) && !s.deposit.received && act('exchange', 'deposit_received', 'Deposit Received')}
-      {!exchanged && s.requireExchangeAuthority && s.clientDecisions?.exchange_authority?.decision !== 'authorised' && ['contract_review', 'pre_exchange'].includes(s.stage) && act('exchange', 'client_decision_recorded', 'Client Authorises Exchange', { subject: 'exchange_authority', decision: 'authorised' }, { primary: true })}
-      {s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged && act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true })}
-      {['pre_exchange', 'exchanged'].includes(s.stage) && !s.completion.statementGeneratedAt && <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'draft_completion_statement' })}>Draft Completion Statement</button>}
-      {s.stage === 'exchanged' && act('exchange', 'completion_statement_generated', 'Completion Statement Produced', {}, { primary: true })}
-      {exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('New contractual completion date (YYYY-MM-DD):', s.exchange.completionDate ?? ''); if (d) { const r = ask('Reason?'); if (r) void cmd({ type: 'change_completion_date', completionDate: d, reason: r }); } }}>Change completion date</button>}
-    </> });
+  if (p.hasExchange) {
+    const contractTask = Object.values(s.decisions ?? {}).some((d) => d.kind === 'contract' && d.status === 'pending');
+    const openSigning = <button type="button" className="ep-btn" disabled={busy} onClick={() => { setOpenLane('signing'); requestAnimationFrame(() => document.getElementById('lane-signing')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); }}>Open Signing</button>;
+    const live = !exchanged && !completed && ['contract_review', 'pre_exchange'].includes(s.stage);
+    lane({ id: 'exchange', order: 'sequence', title: seller ? 'Contract pack & exchange' : 'Contract & exchange', state: exchanged ? 'done' : s.stage === 'pre_exchange' ? (s.exchange.conditionsMet ? 'open' : 'blocked') : 'idle', note: exchanged ? `exchanged ${fmtDay(s.exchange.exchangedAt)} · completion ${s.exchange.completionDate}` : s.targetExchangeDate ? `target exchange ${fmtDay(s.targetExchangeDate)}` : undefined,
+      tiles: [
+        ...(seller ? [{ label: 'Contract pack', status: s.contractPack?.sentAt ? 'sent' : 'not_started', detail: s.contractPack?.sentAt ? `sent ${fmtDay(s.contractPack.sentAt)}` : forms.status !== 'received' ? 'waits for the property forms' : s.title.status === 'awaiting' ? 'waits for the official copies' : undefined,
+          action: !s.contractPack?.sentAt && atLeast('pre_contract') && !completed ? act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true, disabled: forms.status !== 'received' || s.title.status === 'awaiting' }) : undefined }] : []),
+        { label: 'Contract approved', status: s.readiness.contractApprovedAt ? 'approved' : contractTask ? 'awaiting' : 'not_started',
+          detail: s.readiness.contractApprovedAt ? fmtDay(s.readiness.contractApprovedAt) : buyer ? (contractTask ? 'on the Tasks tab to approve' : s.readiness.contractDocumentId ? 'goes on the Tasks tab at contract review' : 'waits for the contract') : undefined,
+          action: seller && live && !s.readiness.contractApprovedAt ? act('exchange', 'contract_approved', 'Record Approved') : undefined },
+        { label: 'Contract signed', status: s.readiness.signedContractHeldAt ? 'signed' : s.signing?.packSentAt ? 'with_client' : 'not_started', detail: s.readiness.signedContractHeldAt ? `signed copy on file ${fmtDay(s.readiness.signedContractHeldAt)}` : 'goes out in the signing pack once approved; recorded under Signing',
+          action: !s.readiness.signedContractHeldAt && !exchanged && s.readiness.contractApprovedAt ? openSigning : undefined },
+        ...(buyer ? [{ label: 'Deposit', status: s.deposit.received ? 'received' : 'awaiting', action: live && !s.deposit.received ? act('exchange', 'deposit_received', 'Record Received') : undefined }] : []),
+        ...(s.requireExchangeAuthority ? [{ label: "Client's authority to exchange", status: s.clientDecisions?.exchange_authority?.decision === 'authorised' ? 'done' : 'not_started',
+          action: live && s.clientDecisions?.exchange_authority?.decision !== 'authorised' ? act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' }) : undefined }] : []),
+        { label: 'Exchange', status: exchanged ? 'done' : s.exchange.conditionsMet ? 'approved' : 'awaiting', detail: exchanged ? undefined : s.exchange.conditionsMet ? 'everything is in place; exchange when the client instructs' : 'waits on every item above and the client\'s go-ahead',
+          action: s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged ? act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true }) : undefined },
+        ...(exchanged || s.stage === 'pre_exchange' ? [{ label: 'Completion statement', status: s.completion.statementGeneratedAt ? 'done' : 'not_started',
+          action: completed || s.completion.statementGeneratedAt ? undefined : <>
+            <button className="ep-btn" disabled={busy} onClick={() => cmd({ type: 'draft_completion_statement' })}>Draft</button>
+            {s.stage === 'exchanged' && act('exchange', 'completion_statement_generated', 'Record Produced', {}, { primary: true })}
+          </> }] : []),
+      ] });
+  }
 
   // Signing: every deed the client signs, wet ink or electronic, with the signed copy as the gate.
   {
     const sg = s.signing ?? { packSentAt: null, documents: [], methods: {}, envelopes: {} };
-    const toSign: Array<'transfer' | 'mortgage_deed' | 'deed_of_trust'> = [];
+    const toSign: Array<'contract' | 'transfer' | 'mortgage_deed' | 'deed_of_trust'> = [];
+    if (p.hasExchange && (buyer || seller) && (s.readiness.contractApprovedAt || s.readiness.signedContractHeldAt)) toSign.push('contract');
     if (seller || toe || (buyer && parties >= 2)) toSign.push('transfer');
     if (s.hasLender && (buyer || remo)) toSign.push('mortgage_deed');
     if (tic) toSign.push('deed_of_trust');
-    const LABEL = { transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' } as const;
-    const CMD = { transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
-    const done = (d: keyof typeof LABEL) => (d === 'transfer' ? deeds.transferDeedAt : d === 'mortgage_deed' ? deeds.mortgageDeedAt : deeds.deedOfTrustAt);
-    const extra = (d: keyof typeof LABEL): Record<string, unknown> => (d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
+    const LABEL = { contract: 'Contract', transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' } as const;
+    const CMD = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
+    const done = (d: keyof typeof LABEL) => (d === 'contract' ? s.readiness.signedContractHeldAt : d === 'transfer' ? deeds.transferDeedAt : d === 'mortgage_deed' ? deeds.mortgageDeedAt : deeds.deedOfTrustAt);
+    const extra = (d: keyof typeof LABEL): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
     if (toSign.length) lane({
       id: 'signing', title: 'Signing', holds: 'Holds Completion', order: 'parallel',
       state: toSign.every((d) => done(d)) ? 'done' : sg.packSentAt ? 'open' : 'idle',

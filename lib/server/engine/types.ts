@@ -541,10 +541,10 @@ export type NoteCommand =
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
 
-export const SIGNED_DOCUMENTS = ['transfer', 'mortgage_deed', 'deed_of_trust'] as const;
+export const SIGNED_DOCUMENTS = ['contract', 'transfer', 'mortgage_deed', 'deed_of_trust'] as const;
 export type SignedDocument = (typeof SIGNED_DOCUMENTS)[number];
 export type SigningMethod = 'wet' | 'electronic';
-export const SIGNED_DOCUMENT_LABEL: Record<SignedDocument, string> = { transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' };
+export const SIGNED_DOCUMENT_LABEL: Record<SignedDocument, string> = { contract: 'Contract', transfer: 'Transfer (TR1)', mortgage_deed: 'Mortgage deed', deed_of_trust: 'Declaration of trust' };
 export const AVAILABILITY_PARTIES = ['client', 'seller_side', 'agent', 'lender'] as const;
 export type AvailabilityParty = (typeof AVAILABILITY_PARTIES)[number];
 export interface AvailabilityWindow { id: string; party: AvailabilityParty; from: string; until: string; note: string; recordedAt: string }
@@ -608,6 +608,9 @@ export interface ContractFacts {
   specialConditions: Array<{ code: string; text: string; locator?: SourceLocator }>;
   indemnities: Array<{ text: string; locator?: SourceLocator }>;
   flags: Flag[];
+  /** Whose signatures are on it (empty: unsigned). Missing on readings from before this was asked. */
+  signedBy?: string[];
+  dated?: boolean;
   confidence: number;
 }
 
@@ -1835,6 +1838,8 @@ export function deedsToSign(s: MatterState): SignedDocument[] {
   const sale = tt === 'freehold_sale' || tt === 'leasehold_sale';
   const purchase = tt === 'freehold_purchase' || tt === 'leasehold_purchase';
   const out: SignedDocument[] = [];
+  // Each side signs its own part of the contract, once it is approved; it is held undated until exchange.
+  if ((sale || purchase) && (s.readiness.contractApprovedAt || s.readiness.signedContractHeldAt)) out.push('contract');
   // A buyer signs the TR1 when it holds something of theirs: joint buyers declaring how they hold (panel 10). A seller always signs.
   if (sale || tt === 'transfer_of_equity' || (purchase && (s.parties ?? 1) >= 2)) out.push('transfer');
   if (s.hasLender && (purchase || tt === 'remortgage')) out.push('mortgage_deed');
@@ -1842,4 +1847,4 @@ export function deedsToSign(s: MatterState): SignedDocument[] {
   return out;
 }
 /** Whether a deed on the list has been signed and recorded. */
-export const deedSigned = (s: MatterState, d: SignedDocument): boolean => (d === 'transfer' ? !!s.deeds.transferDeedAt : d === 'mortgage_deed' ? !!s.deeds.mortgageDeedAt : !!s.deeds.deedOfTrustAt);
+export const deedSigned = (s: MatterState, d: SignedDocument): boolean => (d === 'contract' ? !!s.readiness.signedContractHeldAt : d === 'transfer' ? !!s.deeds.transferDeedAt : d === 'mortgage_deed' ? !!s.deeds.mortgageDeedAt : !!s.deeds.deedOfTrustAt);
