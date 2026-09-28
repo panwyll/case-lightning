@@ -102,6 +102,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
   }
+  // Whether to have a survey is the client's call: anyone else saying so is put to the client.
+  if (action.command?.type === 'record_survey_plan' && relation !== 'client' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (from ${RELATION_LABEL[relation]}, not the client; not recorded)` }];
+  }
   // Only our client (or someone in the firm) tells us what to ask the other side for.
   if (action.command?.type === 'request_from_seller' && relation !== 'client' && relation !== 'colleague') {
     return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (asked by ${RELATION_LABEL[relation]}, not the client; nothing goes to the seller on their say-so)` }];
@@ -260,6 +264,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'resolve_issue': return `Close: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
     case 'request_from_seller': return `Ask the seller: ${c.about.trim().slice(0, 80) || 'as the client instructed'}`;
     case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
+    case 'record_survey_plan': return c.plan === 'none' ? 'No survey: the client\'s choice' : `Survey booked${c.date ? ` for ${dayShort(c.date)}` : ''}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
   }
 }
@@ -279,6 +284,7 @@ export function effectText(c: NoteCommand): string {
     case 'record_price_change': return c.toPennies ? `Records the price as ${pounds(c.toPennies)}${c.reductionPennies ? '' : ''} and tells the lender if there is one` : `Records a price reduction of ${pounds(c.reductionPennies ?? 0)} and tells the lender if there is one`;
     case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
     case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
+    case 'record_survey_plan': return c.plan === 'none' ? 'Records that the client has chosen not to have a survey; they are no longer asked about one' : `Records the survey as booked${c.date ? ` for ${prettyDate(c.date)}` : ''}; the client is not asked about it again until after that date`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
     case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
   }
@@ -389,6 +395,11 @@ export function commandProblem(c: NoteCommand): string | null {
   if (c.type === 'request_from_seller') {
     if (!c.text?.trim() || c.text.trim().length < 20) return 'the request says nothing';
     if (c.text.length > 4000) return 'the request is too long for one enquiry';
+    return null;
+  }
+  if (c.type === 'record_survey_plan') {
+    if (c.plan !== 'none' && c.plan !== 'booked') return `"${c.plan}" is not a survey plan`;
+    if (c.date && !/^\d{4}-\d{2}-\d{2}$/.test(c.date)) return `"${c.date}" is not a date (YYYY-MM-DD)`;
     return null;
   }
   if (c.type === 'record_availability') {

@@ -216,6 +216,9 @@ export const EVENT_TYPES = [
   'deed_of_trust_executed',
   'sdlt_not_required',
   'availability_recorded',
+  'expectation_opened',
+  'funding_changed',
+  'survey_plan_recorded',
   'signing_method_set',
   'signing_pack_sent',
   'signing_envelope_sent',
@@ -483,6 +486,8 @@ export type NoteCommand =
   | { type: 'resolve_issue'; kind: IssueKind; resolution: IssueResolution; note: string }
   /** The client asked us to get something from the seller's side (evidence, access, a document): the enquiry, drafted. */
   | { type: 'request_from_seller'; text: string; about: string }
+  /** The client's survey plan: not having one (their choice), or booked for a date. */
+  | { type: 'record_survey_plan'; plan: 'none' | 'booked'; date: string | null; note: string }
   /** Someone is away between two dates. */
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };
@@ -623,7 +628,10 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents', 'mortgage_offer', 'survey'] as const;
+/** Things the client arranges in their own time (their mortgage, their survey): opened by the timer, not by a request of ours, so they are checked on rather than left to drift. */
+export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
+export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
 export type WaitKey = (typeof WAIT_KEYS)[number];
 
 export interface WaitState {
@@ -997,6 +1005,11 @@ export interface Payloads {
   sdlt_not_required: { reason: string };
   /** Someone on the case is away for a period: chases to them wait, updates say so, target dates are checked against it. */
   availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
+  expectation_opened: { key: ExpectationKey };
+  /** The buyer now has a mortgage, or is now buying without one. */
+  funding_changed: { hasLender: boolean; reason: string };
+  /** The client's plan for a survey: none (their choice, recorded) or booked for a date. */
+  survey_plan_recorded: { plan: 'none' | 'booked'; date: string | null; note: string | null };
   /** Wet ink or electronic, for one deed on this case (the lender's rules, or the client's circumstances). */
   signing_method_set: { document: SignedDocument; method: SigningMethod; reason: string | null };
   /** The client was sent what they must sign, and how. */
@@ -1404,6 +1417,8 @@ export interface MatterState {
   /** The survey workstream (docs/case-model.md §7): facts from the reports; the client's satisfaction is a client decision. */
   survey: {
     status: 'not_started' | 'received' | 'further_investigation' | 'awaiting_client' | 'client_satisfied' | 'client_renegotiating' | 'client_withdrawing';
+    /** What the client told us before any report: no survey (their choice), or booked for a date. */
+    plan?: { plan: 'none' | 'booked'; date: string | null; at: string } | null;
     reports: Array<{ eventId: string; documentId: string | null; surveyType: SurveyType; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }>;
   };
   /** Client decisions on record, by subject (the latest wins; the log has them all). */

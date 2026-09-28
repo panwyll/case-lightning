@@ -305,6 +305,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
 
     // ── Mortgage ──
     case 'mortgage_offer_received': {
+      closeWait(s, 'mortgage_offer', null, e);
       s.mortgage.status = 'received';
       s.mortgage.documentId = e.sourceDocumentId ?? s.mortgage.documentId;
       s.mortgage.decisionEventId = null;
@@ -414,6 +415,9 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['contracts_exchanged'];
       s.exchange.exchangedAt = p.exchangedAt ?? e.createdAt;
       s.exchange.completionDate = p.completionDate;
+      // Exchanged: the offer and the survey are behind us.
+      closeWait(s, 'mortgage_offer', null, e);
+      closeWait(s, 'survey', null, e);
       break;
     }
 
@@ -621,6 +625,26 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'signing_envelope_sent': {
       const p = e.payload as Payloads['signing_envelope_sent'];
       s.signing = { ...s.signing, envelopes: { ...s.signing.envelopes, [p.document]: { provider: p.provider, envelopeId: p.envelopeId, sentAt: e.createdAt } } };
+      break;
+    }
+    case 'funding_changed': {
+      const p = e.payload as Payloads['funding_changed'];
+      s.hasLender = p.hasLender;
+      // A mortgage is its own step: there when there is a lender, gone (with anything waiting on it) when there is not.
+      if (p.hasLender) { if (s.mortgage.status === 'not_required') s.mortgage = { status: 'awaiting', documentId: null, facts: null, decisionEventId: null }; }
+      else { s.mortgage = { status: 'not_required', documentId: null, facts: null, decisionEventId: null }; closeWait(s, 'mortgage_offer', null, e); }
+      break;
+    }
+    case 'expectation_opened': {
+      const p = e.payload as Payloads['expectation_opened'];
+      openWait(s, p.key, '', e);
+      break;
+    }
+    case 'survey_plan_recorded': {
+      const p = e.payload as Payloads['survey_plan_recorded'];
+      s.survey = { ...s.survey, plan: { plan: p.plan, date: p.date, at: e.createdAt } };
+      // Not having one is the client's choice, recorded: nothing more to check on.
+      if (p.plan === 'none') closeWait(s, 'survey', null, e);
       break;
     }
     case 'availability_recorded': {
@@ -850,6 +874,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const further = p.facts.recommendations.some((r) => r.furtherInvestigation);
       // Read again (the same document): the new reading replaces the old one.
       s.survey.reports = s.survey.reports.filter((r) => !(e.sourceDocumentId && r.documentId === e.sourceDocumentId && r.forIssueId === null));
+      closeWait(s, 'survey', null, e);
       const unread = p.facts.confidence === 0 || p.facts.recommendations.some((r) => r.code === 'UNREAD');
       s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: unread ? 0 : p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null, urgent: p.facts.recommendations.filter((r) => r.rating === 3 || (r.rating == null && r.severity === 'high')).length, toInvestigate: p.facts.recommendations.filter((r) => r.furtherInvestigation).length, legalPoints: p.facts.legalIssues?.length ?? 0, unread });
       // The client decides, once, how to proceed: the surveyor's suggestions inform that, they do not each hold exchange.

@@ -233,6 +233,9 @@ export class ProductionChaser implements ThirdPartyChaser {
       transaction: typeof ctx.transaction === 'string' ? ctx.transaction : 'purchase',
       // The thing we asked for, again (engine/chase-content.ts): the link, the form, or what is still outstanding.
       resend: typeof ctx.resend === 'string' ? ctx.resend : '',
+      // Said only when there is a lender: a cash buyer never reads about a mortgage.
+      lenderLine: typeof ctx.lenderLine === 'string' ? ctx.lenderLine : '',
+      valuationLine: typeof ctx.valuationLine === 'string' ? ctx.valuationLine : '',
     };
   }
 

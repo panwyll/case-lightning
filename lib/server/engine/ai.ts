@@ -367,6 +367,7 @@ const NoteSchema = z.object({
           z.object({ type: z.literal('record_price_change'), toPennies: z.number().int().nullable().describe('the new price in pennies, or null when only a reduction is given'), reductionPennies: z.number().int().nullable(), reason: z.string() }),
           z.object({ type: z.literal('resolve_issue'), kind: z.string(), resolution: z.string(), note: z.string() }),
           z.object({ type: z.literal('request_from_seller'), text: z.string().describe("The enquiry to the seller's solicitor, in a conveyancer's words, covering ONLY what the client asked for"), about: z.string().describe('What it is about, in a few words ("damp and electrics evidence", "access for a structural engineer")') }),
+          z.object({ type: z.literal('record_survey_plan'), plan: z.enum(['none', 'booked']).describe('none: the client says they are not having a survey; booked: they have booked one'), date: z.string().nullable().describe('booked: the survey date, YYYY-MM-DD, or null'), note: z.string() }),
           z.object({ type: z.literal('record_availability'), party: z.enum(['client', 'seller_side', 'agent', 'lender']), from: z.string().describe('YYYY-MM-DD'), until: z.string().describe('YYYY-MM-DD'), note: z.string() }),
         ])
         .nullable(),

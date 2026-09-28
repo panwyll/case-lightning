@@ -37,6 +37,7 @@ const SUBJECT: Record<string, string> = {
   search: 'the property searches',
   contract_pack: 'the draft contract papers',
   mortgage_offer: 'your mortgage offer',
+  survey: 'news of your survey',
   enquiry: 'replies to our enquiries',
   id_check: 'your identity check',
   funds: 'completion funds',
@@ -247,7 +248,7 @@ export function clientStatusAnswer(b: CaseBrief, now: Date = new Date()): Client
   }
 
   if (onClient.length) {
-    parts.push(`We do still need ${list(onClient.map((w) => w.what))} from you — that is the one thing holding us up at your end.`);
+    parts.push(`We do still need ${list(onClient.map((w) => w.what))} from you.`);
     facts.push(`from the client: ${onClient.map((w) => w.what).join(', ')}`);
   } else {
     parts.push('There is nothing you need to do at the moment.');

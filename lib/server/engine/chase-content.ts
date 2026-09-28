@@ -65,7 +65,7 @@ export function chaseContent(s: MatterState, waitKey: string, subject: string | 
       const deeds = unsignedDeeds(s);
       if (!deeds.length) return { resend: '' };
       const line = (d: (typeof deeds)[number]) => `${d.label}: ${d.method === 'electronic' ? 'to sign electronically, from the email our signing provider sent you' : 'to print, sign in ink in front of an independent adult witness, and post the original back to us'}`;
-      return { resend: `Still to sign:\n${bullets(deeds.map(line))}\n\nPlease do not date anything; we date the documents on completion.` };
+      return { resend: `Still to sign:\n${bullets(deeds.map(line))}\n\nPlease do not date anything; we date the documents on completion.`, lenderLine: deeds.some((d) => d.document === 'mortgage_deed') ? ', and your lender will not release the mortgage money until we hold the signed mortgage deed' : '' };
     }
     case 'enquiry': {
       const open = Object.values(s.enquiries).filter((q) => q.status === 'raised').sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
@@ -79,6 +79,8 @@ export function chaseContent(s: MatterState, waitKey: string, subject: string | 
       items.push('any planning permissions, building regulations certificates and guarantees referred to in the forms');
       return { resend: `What we need:\n${bullets(items)}` };
     }
+    case 'survey':
+      return { resend: '', valuationLine: s.hasLender ? 'A mortgage valuation is for the lender, not for you, and does not look at the condition of the property. ' : '' };
     case 'management_pack':
       return { resend: `What we need:\n${bullets(['the LPE1 (or the managing agent\'s own form)', 'service charge accounts for the last three years and the current budget', 'the buildings insurance schedule', 'details of any planned major works and any section 20 notices'])}` };
     case 'search': {

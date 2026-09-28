@@ -18,6 +18,8 @@ async function midFlight() {
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29', 'LLC1'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  // The client has told us they are not having a survey: nothing is left at their end.
+  await h.svc.run(TENANT, MATTER, { type: 'record_survey_plan', actor: USER, plan: 'none' });
   await h.svc.searchReturned(TENANT, MATTER, 'LLC1', h.doc(searchClear('LLC1')));
   h.advanceDays(Math.ceil(DEFAULT_SLA.search.chaseAfter * 1.4) + 1);
   await h.svc.tick(TENANT, MATTER); // the timer chases the outstanding CON29

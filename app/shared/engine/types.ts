@@ -243,7 +243,7 @@ export interface EngineState {
   manualHandling: { required: boolean; reason: string | null };
   idCheck: { status: string; requestedAt: string | null; documentId?: string | null };
   searches: Record<string, { searchType: string; status: string; orderedAt: string | null; returnedAt: string | null; flags: Array<{ code: string; severity: string; description: string }>; resolution: string | null; documentId?: string | null }>;
-  enquiries: Record<string, { enquiryId: string; subject: string; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null; documentId?: string | null }>;
+  enquiries: Record<string, { enquiryId: string; subject: string; origin?: { about?: string; purpose?: string } | null; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null; documentId?: string | null }>;
   mortgage: { status: string; facts: { lender?: string } | null; documentId?: string | null };
   title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null; lease?: { unexpiredYears?: number | null; groundRentPenniesPa?: number | null; demise?: string | null } | null; leaseDocumentId?: string | null };
   reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
@@ -261,7 +261,7 @@ export interface EngineState {
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
   requireProofOfFunds?: boolean;
   requireExchangeAuthority?: boolean;
-  survey?: { status: string; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }> };
+  survey?: { status: string; plan?: { plan: 'none' | 'booked'; date: string | null; at: string } | null; reports: Array<{ eventId: string; documentId: string | null; surveyType: string; receivedAt: string; recommendations: number; furtherInvestigation: boolean; forIssueId: string | null; urgent?: number; legalPoints?: number; toInvestigate?: number; unread?: boolean }> };
   clientDecisions?: Partial<Record<string, { decision: string; at: string; by: string; note: string | null }>>;
   /** Notes and call transcripts (docs/intake.md). */
   notes?: Record<string, NoteRow>;

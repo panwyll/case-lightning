@@ -108,6 +108,7 @@ import {
   deedSigned,
   type AvailabilityParty,
   AVAILABILITY_PARTIES,
+  type ExpectationKey,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -147,6 +148,9 @@ type CommandBody =
   | { type: 'record_signing_pack_sent'; documents: SignedDocument[]; methods: Partial<Record<SignedDocument, SigningMethod>>; attached: string[]; channel: string; messageId: string | null }
   | { type: 'record_signing_envelope'; document: SignedDocument; provider: string; envelopeId: string }
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
+  | { type: 'open_expectation'; key: ExpectationKey }
+  | { type: 'set_funding'; actor: Actor; hasLender: boolean; reason: string }
+  | { type: 'record_survey_plan'; actor: Actor; plan: 'none' | 'booked'; date?: string | null; note?: string | null }
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
   | { type: 'mortgage_offer_withdrawn'; actor: Actor; reason: string; lender?: string | null }
   | { type: 'withdraw_enquiry'; actor: Actor; enquiryId: string; reason: string }
@@ -259,6 +263,8 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'set_target_dates',
   'change_completion_date',
   'record_availability',
+  'record_survey_plan',
+  'set_funding',
   'set_signing_method',
   'notice_to_complete_served',
   'mortgage_offer_withdrawn',
@@ -311,6 +317,20 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'management_pack_received',
   'notice_of_assignment_served',
 ];
+
+const isPurchase = (s: MatterState): boolean => s.transactionType === 'freehold_purchase' || s.transactionType === 'leasehold_purchase';
+
+/**
+ * Whether the timer should open this expectation: the mortgage offer on a purchase with a lender
+ * (never for a cash buyer) until it arrives; the survey on a purchase until a report arrives or
+ * the client says they are not having one. Neither once exchanged, closed or abandoned.
+ */
+export function expectationDue(s: MatterState, key: ExpectationKey): boolean {
+  if (!s.enrolled || !isPurchase(s) || s.exchange.exchangedAt || s.abandoned || s.closedAt) return false;
+  if (s.waits.some((w) => w.key === key && w.closedAt === null)) return false;
+  if (key === 'mortgage_offer') return !!s.hasLender && s.mortgage.status === 'awaiting' && !s.mortgage.documentId;
+  return s.survey.status === 'not_started' && !s.survey.reports.length && s.survey.plan?.plan !== 'none';
+}
 
 export interface DecideContext {
   now: Date;
@@ -1301,6 +1321,27 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_signing_envelope': {
       requireEnrolled(s);
       return [{ type: 'signing_envelope_sent', actor: SYSTEM, payload: { document: cmd.document, provider: cmd.provider, envelopeId: cmd.envelopeId } }];
+    }
+    case 'open_expectation': {
+      requireEnrolled(s);
+      if (!expectationDue(s, cmd.key)) reject(`Nothing to expect for ${cmd.key.replace(/_/g, ' ')} on this case.`);
+      return [{ type: 'expectation_opened', actor: SYSTEM, payload: { key: cmd.key } }];
+    }
+    case 'set_funding': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('How the purchase is funded is set by a person.', 403);
+      if (!isPurchase(s)) reject('Only a purchase changes between cash and a mortgage.');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; the funding is fixed.');
+      if (!!s.hasLender === cmd.hasLender) reject(cmd.hasLender ? 'This purchase already has a mortgage.' : 'This is already a cash purchase.');
+      if (!cmd.reason?.trim()) reject('Say why the funding changed.', 400);
+      return [{ type: 'funding_changed', actor: cmd.actor, payload: { hasLender: cmd.hasLender, reason: cmd.reason.trim() } }];
+    }
+    case 'record_survey_plan': {
+      requireEnrolled(s);
+      if (!isPurchase(s)) reject('A survey is the buyer\'s.');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; the survey no longer changes anything.');
+      if (cmd.plan === 'booked' && cmd.date && !/^\d{4}-\d{2}-\d{2}$/.test(cmd.date)) reject('The date must be YYYY-MM-DD.', 400);
+      return [{ type: 'survey_plan_recorded', actor: cmd.actor, payload: { plan: cmd.plan, date: cmd.plan === 'booked' ? cmd.date ?? null : null, note: cmd.note?.trim() || null } }];
     }
     case 'record_availability': {
       requireEnrolled(s);

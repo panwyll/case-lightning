@@ -51,6 +51,9 @@ export const DEFAULT_SLA: SlaConfig = {
   redemption: { waitKey: 'redemption', chaseAfter: 3, chaseEvery: 3, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'lender', template: 'chase_redemption_statement' },
   // Purchase: the seller's solicitor owes us the draft contract pack from the day we ask; a week is generous, then every three working days.
   signed_documents: { waitKey: 'signed_documents', chaseAfter: 4, chaseEvery: 3, escalateAfter: 12, reEscalateAfter: 5, recipientRole: 'client', template: 'chase_signed_documents' },
+  // The client's own arrangements, checked on so they never drift: the mortgage offer every two weeks from a fortnight in, the survey from a week in.
+  mortgage_offer: { waitKey: 'mortgage_offer', chaseAfter: 10, chaseEvery: 10, escalateAfter: 25, reEscalateAfter: 10, recipientRole: 'client', template: 'chase_mortgage_offer' },
+  survey: { waitKey: 'survey', chaseAfter: 5, chaseEvery: 7, escalateAfter: 20, reEscalateAfter: 10, recipientRole: 'client', template: 'chase_survey' },
   contract_pack: { waitKey: 'contract_pack', chaseAfter: 5, chaseEvery: 3, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_contract_pack' },
   lender_consent: { waitKey: 'lender_consent', chaseAfter: 5, chaseEvery: 5, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'lender', template: 'chase_lender_consent' },
   discharge: { waitKey: 'discharge', chaseAfter: 10, chaseEvery: 10, escalateAfter: 30, reEscalateAfter: 10, recipientRole: 'lender', template: 'chase_discharge' },
@@ -75,8 +78,10 @@ export function dueActions(state: MatterState, now: Date, sla: SlaConfig = DEFAU
     if (!rule) continue;
     const age = workingDaysBetween(new Date(wait.openedAt), now, cal);
 
+    // A survey the client has booked is not chased before the date (and a few days for the report).
+    const booked = wait.key === 'survey' && state.survey.plan?.plan === 'booked' && state.survey.plan.date ? new Date(`${state.survey.plan.date}T00:00:00Z`).getTime() + 7 * 86_400_000 > now.getTime() : false;
     // Chase: first at chaseAfter, then every chaseEvery working days since the last chase.
-    if (age >= rule.chaseAfter) {
+    if (age >= rule.chaseAfter && !booked) {
       const last = wait.chasesSentAt[wait.chasesSentAt.length - 1];
       if (!last) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });
       else if (rule.chaseEvery !== null && workingDaysBetween(new Date(last), now, cal) >= rule.chaseEvery) out.push({ kind: 'chase', wait, rule, ageWorkingDays: age });

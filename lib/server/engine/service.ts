@@ -63,6 +63,8 @@ import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
 import { chaseContent, unsignedDeeds } from './chase-content';
+import { EXPECTATION_KEYS } from './types';
+import { expectationDue } from './machine';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
 
@@ -736,6 +738,11 @@ export class EngineService {
         this.ports.log(`deadline escalation failed (${d.kind} ${d.dueDate})`, err);
       }
     }
+    // The client's own arrangements (the mortgage offer, the survey) are expected from the start, so they are checked on, not forgotten.
+    for (const key of EXPECTATION_KEYS) {
+      if (!expectationDue(state, key)) continue;
+      try { await this.run(tenantId, matterId, { type: 'open_expectation', key }); state = await this.getState(tenantId, matterId); } catch (err) { this.ports.log(`could not open the ${key} expectation`, err); }
+    }
     const due = dueActions(state, now, sla);
     // Every enquiry due a chase goes in one letter to the seller's solicitor, not one letter each.
     const enquiryChases = due.filter((a) => a.kind === 'chase' && a.wait.key === 'enquiry');
@@ -1182,6 +1189,8 @@ export class EngineService {
                 const open = Object.values(fresh.issues).find((i) => i.kind === c.kind && (i.status === 'open' || i.status === 'negotiating'));
                 if (!open) throw new Error(`No open ${c.kind.replace(/_/g, ' ')} issue on the case.`);
                 await this.run(tenantId, matterId, { type: 'resolve_issue', actor: e.actor, issueId: open.id, resolution: c.resolution, note: c.note });
+              } else if (c.type === 'record_survey_plan') {
+                await this.run(tenantId, matterId, { type: 'record_survey_plan', actor: e.actor, plan: c.plan, date: c.date, note: c.note });
               } else if (c.type === 'record_availability') {
                 await this.run(tenantId, matterId, { type: 'record_availability', actor: e.actor, party: c.party, from: c.from, until: c.until, note: c.note });
               } else if (c.type === 'request_from_seller') {

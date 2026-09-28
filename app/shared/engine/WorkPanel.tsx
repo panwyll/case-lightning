@@ -80,6 +80,14 @@ export const WORK_CSS = `
 .ep-sub .ep-pill{margin-top:0;justify-self:end;max-width:100%;white-space:normal;text-align:right}
 .ep-sub b{overflow-wrap:anywhere}
 .ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
+.ep-sub .d.fold{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;position:relative;padding-right:0}
+.ep-sub .d.fold.open{display:block}
+.ep-more{display:block;border:0;background:none;padding:2px 0 0;margin:0;font:inherit;font-size:11.5px;font-weight:700;color:#5A27E0;cursor:pointer}
+.ep-sub .d.fold:not(.open) .ep-more{position:absolute;right:0;bottom:0;background:#fff;padding-left:6px}
+.ep-tree.long,.ep-seq.long{max-height:380px;overflow-y:auto;padding-right:4px}
+.ep-raise{display:grid;gap:6px;width:100%}
+.ep-raise textarea{width:100%;box-sizing:border-box;resize:vertical;font:inherit;font-size:12.5px}
+.ep-raise .ep-btn{justify-self:start;margin:0}
 .ep-sub .a{grid-column:1 / -1;display:flex;gap:6px;align-items:center;margin-top:4px}
 .ep-sub .a .ep-btn{margin:0;padding:3px 10px;font-size:12px}
 .ep-sub-a{color:#5A27E0;text-decoration:none}
@@ -259,6 +267,8 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
   const steps = lane.tiles.filter((x) => !x.depth);
   const done = steps.filter((x) => DONE_STATUSES.has(x.status)).length;
   const pct = steps.length ? Math.round((done / steps.length) * 100) : lane.state === 'done' ? 100 : 0;
+  const [unfolded, setUnfolded] = useState<Set<number>>(new Set());
+  const toggleFold = (n: number) => setUnfolded((cur) => { const next = new Set(cur); if (next.has(n)) next.delete(n); else next.add(n); return next; });
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id} data-unfed={unfed ? '' : undefined}>
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
@@ -269,7 +279,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
       {open && (
         <div className="ep-box-b">
           {lane.note && <div className="ep-note" style={{ padding: '4px 0 6px' }}>{lane.note}</div>}
-          <div className={lane.order === 'sequence' ? 'ep-seq' : 'ep-tree'}>
+          <div className={`${lane.order === 'sequence' ? 'ep-seq' : 'ep-tree'}${lane.tiles.length > 6 ? ' long' : ''}`}>
           {lane.tiles.map((x, n) => {
             const about = aboutFor(x);
             const who = personFor(x.label);
@@ -287,7 +297,9 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
                 {!lane.plain && <Pill s={x.status} />}
-                {x.detail && <span className="d">{x.detail}</span>}
+                {x.detail && (x.detail.length > 160
+                  ? <span className={`d fold${unfolded.has(n) ? ' open' : ''}`}>{x.detail}<button type="button" className="ep-more" onClick={() => toggleFold(n)}>{unfolded.has(n) ? 'Show Less' : 'Read More'}</button></span>
+                  : <span className="d">{x.detail}</span>)}
                 {x.action && <span className="a">{x.action}</span>}
               </div>
             );
@@ -305,13 +317,14 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
 /** What sits between two phases: an automatic hand-off, or a person who has to sign. */
 const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: string }> = {
   'instruction->investigation': { kind: 'auto', label: 'Automatic', text: 'Once the ID check clears the case moves to pre-contract and every search on its list is ordered from InfoTrack. At Propose each order is put to you first.' },
+  'enquiries->contract': { kind: 'person', label: 'Conveyancer', text: 'Nothing exchanges until each strand above is cleared by the rules or accepted by a conveyancer, every enquiry is answered to our satisfaction, the report on title has gone and source of funds is signed off.' },
   'investigation->contract': { kind: 'person', label: 'Conveyancer', text: 'Nothing exchanges until each strand above is cleared by the rules or accepted by a conveyancer, the report on title has gone and source of funds is signed off.' },
   'contract->completion': { kind: 'person', label: 'Conveyancer and client', text: 'Exchange. The client authorises it in writing; a conveyancer exchanges with the signed contract and deposit held, and records the completion date.' },
   'completion->registration': { kind: 'person', label: 'Conveyancer', text: 'Completion. Every payment out is authorised by a person against bank details verified out of band; the rules never move money.' },
 };
 
 /** The flowchart: tiers top to bottom, every box in a tier joined by a bus to every box in the next, so fan-out and fan-in read as concurrency. */
-export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[]; unfed?: Set<string> }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
+export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id: string; label: string; items: LaneDef[]; unfed?: Set<string>; feeds?: string[] }>; current: string | null; toggle: (l: LaneDef) => void; noticeFor: (id: string) => Notice }) {
   const ref = useRef<HTMLDivElement>(null);
   const [lines, setLines] = useState<{ bus: string[]; drops: string[]; arrows: string[]; junctions: Array<{ x: number; y: number; from: string; to: string }> }>({ bus: [], drops: [], arrows: [], junctions: [] });
   const measure = useCallback(() => {
@@ -321,9 +334,16 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
     const tierEls = Array.from(root.querySelectorAll<HTMLElement>('[data-tier]'));
     const bus: string[] = []; const drops: string[] = []; const arrows: string[] = []; const junctions: Array<{ x: number; y: number; from: string; to: string }> = [];
     const mid = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return { x: r.left - rr.left + r.width / 2, top: r.top - rr.top, bottom: r.bottom - rr.top }; };
+    const feedsOf = (el: HTMLElement | undefined) => (el?.dataset.feeds ? el.dataset.feeds.split(',') : null);
+    const boxes = (el: HTMLElement, sel = '.ep-box') => Array.from(el.querySelectorAll<HTMLElement>(sel));
     for (let i = 0; i < tierEls.length - 1; i++) {
-      const a = Array.from(tierEls[i].querySelectorAll<HTMLElement>('.ep-box')).map(mid);
-      const b = Array.from(tierEls[i + 1].querySelectorAll<HTMLElement>('.ep-box:not([data-unfed])')).map(mid);
+      // A band fed by named boxes only (enquiries: from title, searches, survey): only those draw into it, and the
+      // rest of the band before carries past it to the band after (the mortgage goes to exchange, not to enquiries).
+      const into = feedsOf(tierEls[i + 1]);
+      const own = boxes(tierEls[i]).filter((el) => !into || into.includes(el.dataset.lane ?? ''));
+      const carried = feedsOf(tierEls[i]) && i > 0 ? boxes(tierEls[i - 1]).filter((el) => !feedsOf(tierEls[i])!.includes(el.dataset.lane ?? '')) : [];
+      const a = [...own, ...carried].map(mid);
+      const b = boxes(tierEls[i + 1], '.ep-box:not([data-unfed])').map(mid);
       if (!a.length || !b.length) continue;
       const y = (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2;
       const from = tierEls[i].dataset.tier ?? ''; const to = tierEls[i + 1].dataset.tier ?? '';
@@ -370,7 +390,7 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       {tiers.map((tier) => {
         const ps = phaseState(tier.items);
         return (
-          <div key={tier.id} className="ep-tier" data-tier={tier.id}>
+          <div key={tier.id} className="ep-tier" data-tier={tier.id} data-feeds={tier.feeds?.join(',') || undefined}>
             <div className="ep-tier-b">
               {tier.items.map((l) => <Box key={l.id} lane={l} open={current === l.id} onToggle={() => toggle(l)} notice={noticeFor(l.id)} unfed={tier.unfed?.has(l.id)} />)}
             </div>
@@ -387,9 +407,12 @@ const WAIT_PARTY: Record<string, string> = { client: 'the client', seller_solici
 
 /** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
 /** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the contract pack asked for at enrolment, the offer, the survey), not when the tier before is done. */
-const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[] }> = [
+/** `feeds`: the band is fed only by these boxes of the band before; the others carry past it to the band after. */
+const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[]; feeds?: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
-  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'enquiries', 'mortgage', 'survey', 'leasehold', 'redemption', 'lender_consent'], unfed: ['title', 'mortgage', 'survey'] },
+  { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'survey', 'leasehold', 'mortgage', 'redemption', 'lender_consent'], unfed: ['title', 'mortgage', 'survey'] },
+  // Our enquiries come out of what the title, the searches, the survey and the lease turn up; the buyer's, out of our contract pack.
+  { id: 'enquiries', label: 'Enquiries', lanes: ['enquiries'], feeds: ['title', 'searches', 'survey', 'leasehold'] },
   { id: 'contract', label: 'Contract & Exchange', lanes: ['exchange', 'transfer_deed'] },
   { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
@@ -702,6 +725,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {s.stage === 'instruction' && s.idCheck.status === 'not_started' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'request_id_check' })}>Request ID / AML check</button>}
       {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const name = ask('Name of the person to identify:'); if (!name) return; const role = ask('Their role: buyer, seller, owner, donor, attorney, director or executor', buyer ? 'buyer' : seller ? 'seller' : 'owner'); if (role) void cmd({ type: 'add_party', name, role }); }}>Add Party</button>}
       {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const from = ask('Name as it appears on the older document:'); if (!from) return; const to = ask('Name now:'); if (!to) return; const reason = ask('Evidence of the change (marriage certificate, deed poll, decree absolute):'); if (reason) void cmd({ type: 'name_change_evidenced', from, to, reason }); }}>Name Change Evidenced</button>}
+      {!exchanged && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask(s.hasLender ? 'The buyer is now buying without a mortgage. Why?' : 'The buyer now has a mortgage. Lender or broker, and why?'); if (r) void cmd({ type: 'set_funding', hasLender: !s.hasLender, reason: r }); }}>{s.hasLender ? 'Now A Cash Purchase' : 'Now With A Mortgage'}</button>}
       {!exchanged && (buyer || seller) && !s.relatedMatter && <button className="ep-btn" disabled={busy} onClick={() => { const id = ask(`Matter id of the client's linked ${buyer ? 'sale' : 'purchase'}:`); if (id) void cmd({ type: 'link_related_matter', relatedMatterId: id.trim(), relation: buyer ? 'sale' : 'purchase' }); }}>Link Related {buyer ? 'Sale' : 'Purchase'}</button>}
     </> });
 
@@ -781,9 +805,21 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', 
     tiles: s.requiredSearches.map((t) => ({ key: `search:${t}`, label: SEARCH_NAME[t] ?? t, documentId: s.searches[t]?.documentId, focus: t, status: s.searches[t]?.status ?? 'not_started', detail: s.searches[t]?.flags.length ? s.searches[t].flags.map((f) => cap(f.code.toLowerCase())).join(', ') : undefined })) });
 
-  if (has('enquiries') && buyer) lane({ id: 'enquiries', title: 'Our Enquiries', state: Object.values(s.enquiries).length === 0 ? 'idle' : Object.values(s.enquiries).every((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)) ? 'done' : Object.values(s.enquiries).some((q) => q.status === 'flagged') ? 'blocked' : 'open', note: Object.values(s.enquiries).length === 0 ? 'None raised yet — the engine raises them from search and title flags, or you add them below' : `${Object.values(s.enquiries).filter((q) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status)).length} of ${Object.values(s.enquiries).length} resolved`,
-    tiles: Object.values(s.enquiries).map((q) => ({ label: `Enquiry ${q.enquiryId}`, documentId: q.documentId, focus: q.enquiryId, status: q.status, detail: q.subject })),
-    actions: (s.stage === 'pre_contract' || s.stage === 'contract_review') ? <><input className="ep-input" placeholder="Enquiry id (E3)" value={enquiry.id} onChange={(e) => setEnquiry({ ...enquiry, id: e.target.value })} style={{ width: 110 }} /><input className="ep-input" placeholder="Subject" value={enquiry.subject} onChange={(e) => setEnquiry({ ...enquiry, subject: e.target.value })} style={{ width: 220 }} /><button className="ep-btn" disabled={busy || !enquiry.id || !enquiry.subject} onClick={() => { void cmd({ type: 'raise_enquiry', enquiryId: enquiry.id.trim(), subject: enquiry.subject.trim() }); setEnquiry({ id: '', subject: '' }); }}>Raise enquiry</button></> : null });
+  if (has('enquiries') && buyer) {
+    const qs = Object.values(s.enquiries).sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
+    const closed = (q: (typeof qs)[number]) => ['cleared', 'reviewed', 'withdrawn'].includes(q.status);
+    // A short name for each: what it is about, else its first words; the whole enquiry sits under it, folded when long.
+    const shortName = (q: (typeof qs)[number]) => { const about = q.origin?.about?.trim(); const first = (about || q.subject).split(/(?<=[.?!])\s|\n/)[0].trim(); return first.length > 70 ? `${first.slice(0, 67).trimEnd()}…` : first; };
+    const nextId = `E${qs.reduce((m, q) => Math.max(m, Number(/^E(\d+)$/i.exec(q.enquiryId)?.[1] ?? 0)), 0) + 1}`;
+    lane({ id: 'enquiries', title: 'Our Enquiries', state: qs.length === 0 ? 'idle' : qs.every(closed) ? 'done' : qs.some((q) => q.status === 'flagged') ? 'blocked' : 'open', note: qs.length === 0 ? 'None raised yet.' : `${qs.filter(closed).length} of ${qs.length} resolved`,
+      tiles: qs.map((q) => ({ key: `enq:${q.enquiryId}`, label: shortName(q), documentId: q.documentId, focus: q.enquiryId, status: q.status, detail: shortName(q) === q.subject.trim() ? undefined : q.subject })),
+      actions: !exchanged && ['instruction', 'pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) ? (
+        <div className="ep-raise">
+          <textarea className="ep-input" rows={2} placeholder="A new enquiry for the seller's solicitor" value={enquiry.subject} onChange={(e) => setEnquiry({ ...enquiry, subject: e.target.value })} />
+          <button className="ep-btn" disabled={busy || enquiry.subject.trim().length < 5} onClick={() => { void cmd({ type: 'raise_enquiry', enquiryId: nextId, subject: enquiry.subject.trim() }); setEnquiry({ id: '', subject: '' }); }}>Raise Enquiry</button>
+        </div>
+      ) : null });
+  }
 
   if (has('enquiries') && seller) lane({ id: 'enquiries', title: "Buyer's Enquiries", state: inboundAll.length === 0 ? (s.contractPack?.sentAt ? 'open' : 'idle') : inboundOpen.length ? 'blocked' : 'done', note: inboundAll.length ? `${inboundAll.length} received · ${inboundOpen.length} awaiting our reply` : s.contractPack?.sentAt ? "pack out — awaiting the buyer's enquiries" : 'arrive once the pack is out',
     tiles: inboundAll.map((q) => ({ label: q.id, status: q.repliedAt ? 'replied' : 'raised', detail: `round ${q.round} · ${fmtDay(q.receivedAt)}${q.repliedAt ? ` · replied ${fmtDay(q.repliedAt)}` : ''}` })),
@@ -800,7 +836,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
-      { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage' },
+      { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage', detail: (() => { const w = (s.waits ?? []).find((x) => x.key === 'mortgage_offer' && x.closedAt === null); return w ? `The client is asked how it is going every two weeks until it arrives${w.chasesSentAt.length ? ` (asked ${w.chasesSentAt.length}×)` : ''}.` : undefined; })() },
       { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : 'not_started', detail: deeds.mortgageDeedAt ? `executed ${fmtDay(deeds.mortgageDeedAt)} (witnessed)` : undefined },
       { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : undefined },
     ],
@@ -867,10 +903,15 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
       action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
     } : null;
-    lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
+    const plan = s.survey.plan ?? null;
+    const surveyWait = (s.waits ?? []).find((w) => w.key === 'survey' && w.closedAt === null) ?? null;
+    lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' || (s.survey.status === 'not_started' && plan?.plan === 'none') ? 'done' : s.survey.status === 'not_started' ? (plan?.plan === 'booked' ? 'open' : 'idle') : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? (plan?.plan === 'none' ? 'Not having one: the client\'s choice.' : plan?.plan === 'booked' ? `Booked${plan.date ? ` for ${fmtDay(plan.date)}` : ''}; the client is not asked again before then.` : surveyWait ? `The client is asked every week or so until they book one or say they are not having one${surveyWait.chasesSentAt.length ? ` (asked ${surveyWait.chasesSentAt.length}×)` : ''}.` : 'The client arranges this.') : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
       tiles: [...([{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : [])] as Tile[]), ...investigations, { label: "Client's view", status: clientView }],
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
-      actions: !exchanged && s.survey.status !== 'not_started' ? <>
+      actions: !exchanged && s.survey.status === 'not_started' ? <>
+        <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('Survey date (YYYY-MM-DD, blank if not known):', plan?.date ?? ''); if (d !== null) void cmd({ type: 'record_survey_plan', plan: 'booked', date: d.trim() || null }); }}>Survey Booked</button>
+        {plan?.plan !== 'none' && <button className="ep-btn" disabled={busy} onClick={() => { if (confirm('Record that the client has chosen not to have a survey? They will no longer be asked about one.')) void cmd({ type: 'record_survey_plan', plan: 'none' }); }}>No Survey</button>}
+      </> : !exchanged && s.survey.status !== 'not_started' ? <>
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' })}
         {act('survey', 'client_decision_recorded', `Further Checks${current(pc === 'further_investigation')}`, { subject: 'physical_condition', decision: 'further_investigation' }, { disabled: pc === 'further_investigation' })}
         {act('survey', 'client_decision_recorded', `Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
@@ -1023,7 +1064,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       <style>{WORK_CSS}</style>
       {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
 
-      {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []) })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
+      {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []), feeds: ph.feeds })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
       {section === 'flow' && (
         <div className="ep-legend" aria-label="Legend">
           <span><i className="ep-who"><User size={10} /></i>Sign-off</span>

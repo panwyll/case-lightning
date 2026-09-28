@@ -200,6 +200,7 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   assert.equal((await svc.getState(TENANT, MATTER)).searches.LLC1.status, 'ordered');
   // The seller's solicitor sends the pack straight away, so the only clock running is the search's.
   await svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await svc.run(TENANT, MATTER, { type: 'record_survey_plan', actor: USER, plan: 'none' });
 
   ports.setNow(new Date('2026-09-25T09:00:00Z')); // 9 working days
   assert.deepEqual(await svc.tickAll(TENANT), { matters: 1, chases: 0, escalations: 0 });
