@@ -116,3 +116,38 @@ function Note({ n, open, onToggle, who }: { n: NoteRow; open: boolean; onToggle:
     </div>
   );
 }
+
+/** Add a note or a call from the case's Tasks: the words are filed and read back as things to confirm. */
+export function AddNote({ busy, cmd }: { busy: boolean; cmd: (body: Record<string, unknown>) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [kind, setKind] = useState('typed');
+  const file = async () => {
+    const body = text.trim();
+    if (body.length < 10) return;
+    await cmd({ type: 'record_note', text: body, kind });
+    setText(''); setOpen(false);
+  };
+  return (
+    <>
+      <button className="ep-btn" style={{ margin: 0 }} disabled={busy} onClick={() => setOpen(true)}>Add Note</button>
+      {open && (
+        <div onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.38)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' }}>
+          <div role="dialog" aria-label="Add Note" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 24px 64px rgba(15,23,42,.24)', padding: '18px 20px', display: 'grid', gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Add Note</h2>
+            <textarea className="ep-input" rows={6} autoFocus style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13 }} value={text} onChange={(e) => setText(e.target.value)} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select className="ep-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+                {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(false)}>Cancel</button>
+                <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || text.trim().length < 10} onClick={() => void file()}>{busy ? 'Filing…' : 'File'}</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

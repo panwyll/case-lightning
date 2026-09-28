@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { PasswordInput } from './PasswordInput';
+import { ChevronRight } from '@/app/shared/icons';
 import { WORK_CSS } from './WorkPanel';
 import { Grouped, ListToolbar, useListTools, whenIn, type Filter } from './ListTools';
 import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type DraftCheckView, type EngineEvent, type EngineView } from './types';
@@ -21,15 +22,26 @@ const DOC_FILTERS: Filter<DocRow>[] = [
   { key: 'unread', label: 'Filed Only', match: (x) => x.events.length === 0 },
   { key: 'signed', label: 'Signed Deeds', match: (x) => x.doc.docType === 'SIGNED_DEED' },
 ];
-type MsgRow = { status: string | null; direction: string };
-const MSG_FILTERS: Filter<MsgRow>[] = [
-  { key: 'failed', label: 'Failed', match: (m) => /FAIL|BOUNCE/i.test(m.status ?? '') },
-  { key: 'out', label: 'Sent', match: (m) => m.direction === 'OUT' && !/FAIL/i.test(m.status ?? '') },
-  { key: 'in', label: 'Received', match: (m) => m.direction !== 'OUT' },
-];
 
 /** Log entries that cite a generated text file are not documents to a person; the timeline has them. */
 const NOT_PAPER = new Set(['FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL']);
+
+const SECTION_CSS = `.ep-sec-btn{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;padding:0;cursor:pointer;font:inherit;text-align:left}.ep-sec-btn .chev{display:inline-flex;color:#94a3b8;transition:transform .15s}.ep-sec-btn .n{font-weight:600;color:#94a3b8;margin-left:4px}`;
+
+/** A collapsible section of the Documents tab; each remembers whether it was left open. */
+function Section({ id, title, count, defaultOpen = false, children }: { id: string; title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
+  const key = `docs-section:${id}`;
+  const [open, setOpen] = useState<boolean>(() => { try { const v = window.localStorage.getItem(key); return v === null ? defaultOpen : v === '1'; } catch { return defaultOpen; } });
+  const toggle = () => setOpen((o) => { try { window.localStorage.setItem(key, o ? '0' : '1'); } catch { /* per-viewer convenience only */ } return !o; });
+  return (
+    <div className="ep-secwrap">
+      <button type="button" className="ep-sec ep-sec-btn" onClick={toggle} aria-expanded={open}>
+        <span className="chev" style={{ transform: open ? 'rotate(90deg)' : undefined }}><ChevronRight size={16} /></span>{title}{count != null ? <span className="n">{count}</span> : null}
+      </button>
+      {open && children}
+    </div>
+  );
+}
 
 export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onChanged, doc = null }: { matterId: string; api: Api; view: EngineView; events: EngineEvent[]; busy: boolean; setBusy: (b: boolean) => void; onChanged?: () => void; doc?: string | null }) {
   const [role, setRole] = useState<Role>('auto');
@@ -88,18 +100,6 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   };
   const docTools = useListTools(filed, { date: (x) => x.doc.createdAt, text: (x) => `${x.doc.fileName ?? ''} ${x.doc.docType ?? ''} ${x.events.map((e) => e.type).join(' ')}` });
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
-  // Every message the case has sent (or drafted, or failed to send), with the address and the provider's reference: the first place to look when someone says they did not get it.
-  const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }>>([]);
-  const msgTools = useListTools(messages, { date: (m) => m.at, text: (m) => `${m.subject ?? ''} ${m.template ?? ''} ${m.address ?? ''} ${m.status ?? ''}`, filters: MSG_FILTERS });
-  const [resending, setResending] = useState<string | null>(null);
-  const [resendNote, setResendNote] = useState<Record<string, string>>({});
-  const resend = async (id: string) => {
-    setResending(id);
-    setResendNote((m) => ({ ...m, [id]: '' }));
-    try { const r = await api<{ address: string; channel: string }>(`/matters/${matterId}/messages/${id}/resend`, { method: 'POST', body: '{}' }); setResendNote((m) => ({ ...m, [id]: `Sent again to ${r.address}` })); setLockTick((t) => t + 1); }
-    catch (e: unknown) { setResendNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not send.' })); }
-    finally { setResending(null); }
-  };
   const [openMail, setOpenMail] = useState<string | null>(null);
   const [mailBody, setMailBody] = useState<Record<string, string>>({});
   const readMail = async (id: string) => {
@@ -130,7 +130,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     await loadTable(table.id);
   };
   useEffect(() => {
-    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setMessages(r.messages ?? []); setAllDocs(r.documents.map((dd) => ({ id: dd.id, fileName: dd.fileName, docType: dd.docType, createdAt: dd.createdAt, locked: dd.locked }))); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
+    api<{ documents: Array<{ id: string; fileName: string | null; docType: string | null; createdAt: string; review?: DocumentReviewSummary | null; checked?: boolean; locked?: boolean }>; crosschecks?: typeof checks; messages?: Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }> }>(`/matters/${matterId}/engine/documents`).then((r) => { setAllDocs(r.documents.map((dd) => ({ id: dd.id, fileName: dd.fileName, docType: dd.docType, createdAt: dd.createdAt, locked: dd.locked }))); setLockedDocs(r.documents.filter((d) => d.locked).map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setReviews(Object.fromEntries(r.documents.map((d) => [d.id, d.review ?? null]))); setChecked(new Set(r.documents.filter((d) => d.checked).map((d) => d.id))); setDrafts(r.documents.filter((d) => d.checked && !events.some((e) => e.sourceDocumentId === d.id)).map((d) => ({ id: d.id, fileName: d.fileName, docType: d.docType, createdAt: d.createdAt }))); setOutbox(r.documents.filter((d) => d.docType === 'SANDBOX_EMAIL').map((d) => ({ id: d.id, fileName: d.fileName, createdAt: d.createdAt }))); setChecks(r.crosschecks ?? []); }).catch(() => {});
   }, [api, matterId, filed.length, lockTick]);
   const reviewOf = (id: string | null | undefined) => (id ? reviews[id] : null) ?? null;
   const badge = (r: DocumentReviewSummary | null) => {
@@ -171,136 +171,11 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
 
   return (
     <div className="ep">
-      <style>{WORK_CSS}</style>
-      <div className="ep-sec">File a Document</div>
-      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input type="file" accept="application/pdf,image/*,.txt" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12.5 }} />
-          <select className="ep-input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            <option value="auto">Classify it automatically</option>
-            <option value="title">Official copy of the register</option>
-            <option value="id_check">ID / AML report</option>
-            {(buyer || p?.type === 'remortgage') && <option value="search">Search result</option>}
-            {buyer && <option value="enquiry_reply">Reply to our enquiries</option>}
-            {(buyer || p?.type === 'remortgage') && <option value="mortgage_offer">Mortgage offer</option>}
-            {leasehold && <option value="lease">Lease</option>}
-            {leasehold && <option value="management_pack">Management pack (LPE1)</option>}
-            {buyer && <option value="property_forms">Seller's property forms (TA6 / TA7 / TA10)</option>}
-            {buyer && <option value="survey">Survey / valuation report</option>}
-            {buyer && <option value="specialist_report">Specialist report (damp, timber, structural…)</option>}
-          </select>
-          {role === 'search' && <select className="ep-input" value={search} onChange={(e) => setSearch(e.target.value)}>{['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL', 'MINING', 'FLOOD', 'HIGHWAYS', 'PLANNING'].map((t) => <option key={t} value={t}>{t}</option>)}</select>}
-          {role === 'id_check' && Object.keys(s.partyChecks ?? {}).length > 0 && <select className="ep-input" value={idParty} onChange={(e) => setIdParty(e.target.value)} aria-label="Whose result"><option value="">First client</option>{Object.values(s.partyChecks ?? {}).map((pc) => <option key={pc.party} value={pc.party}>{pc.label}</option>)}</select>}
-          {role === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={enquiryId} onChange={(e) => setEnquiryId(e.target.value)} style={{ width: 120 }} />}
-          <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !file || (role === 'enquiry_reply' && !enquiryId.trim())} onClick={upload}>File into engine</button>
-        </div>
-        {msg && <div style={{ fontSize: 12.5, color: '#14532d', marginTop: 6 }}>{msg}</div>}
-        {err && <div className="ep-err">{err}</div>}
-      </div>
-
-      {filed.length > 0 && (
-        <>
-          <div className="ep-sec">Ask The File</div>
-          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input className="ep-input" style={{ flex: 1 }} placeholder="Where does the lease say who repairs the roof?" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(); }} />
-              <button className="ep-btn primary" style={{ margin: 0 }} disabled={asking || !question.trim()} onClick={() => void ask()}>Ask</button>
-            </div>
-            {answer && (
-              <div style={{ marginTop: 8, fontSize: 12.5 }}>
-                {answer.facts.length === 0 && answer.passages.length === 0 && <div className="ep-note">Nothing on the file answers “{answer.q}”.</div>}
-                {answer.facts.map((f) => (
-                  <div key={f.id} className="ep-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0', minWidth: 44, textAlign: 'center' }}>Fact</span>
-                    <b style={{ minWidth: 160 }}>{f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}</b>
-                    <span style={{ flex: 1 }}>{f.value}{f.quote ? <i style={{ color: '#64748b' }}> — “{f.quote.slice(0, 140)}{f.quote.length > 140 ? '…' : ''}”</i> : null}</span>
-                    <a href={`/api/v1/documents/${f.documentId}/raw#page=${f.page ?? 1}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{f.fileName ?? 'Document'}{f.page ? ` p.${f.page}` : ''}</a>
-                  </div>
-                ))}
-                {answer.passages.map((p, i) => (
-                  <div key={i} className="ep-row" style={{ alignItems: 'flex-start' }}>
-                    <span className="ep-pill" style={{ background: '#f1f5f9', color: '#334155', minWidth: 44, textAlign: 'center' }}>Page</span>
-                    <span style={{ flex: 1, color: '#334155' }}>{p.text}</span>
-                    <a href={`/api/v1/documents/${p.documentId}/raw#page=${p.page}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{p.fileName ?? 'Document'} p.{p.page}</a>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-      {checks.length > 0 && (
-        <>
-          <div className="ep-sec">Cross-Checks</div>
-          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            {checks.map((c) => (
-              <div key={c.check} className="ep-row" style={{ alignItems: 'flex-start' }}>
-                <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
-                <b style={{ minWidth: 130 }}>{c.label}</b>
-                <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {messages.length > 0 && (
-        <>
-          <div className="ep-sec">Messages ({messages.length})</div>
-          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            <ListToolbar tools={msgTools} filters={MSG_FILTERS} placeholder="Search messages" />
-            <Grouped tools={msgTools} render={(m, g) => (
-              <div key={m.id} className="ep-row">
-                <span className="ep-note" style={{ minWidth: 120 }}>{whenIn(m.at, g)}</span>
-                <b>{m.subject || (m.template ?? '').replace(/_/g, ' ') || m.channel}</b>
-                <span className="ep-note">{m.direction === 'OUT' ? 'to' : 'from'} {m.address ?? 'no address'} · {m.channel}</span>
-                {m.direction === 'OUT' && m.address && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={resending === m.id} onClick={() => void resend(m.id)}>{resending === m.id ? 'Sending…' : 'Send Again'}</button>}
-                {resendNote[m.id] && <span className="ep-note" style={{ width: '100%', color: /^Sent again/.test(resendNote[m.id]) ? '#166534' : '#b91c1c' }}>{resendNote[m.id]}</span>}
-                <span className="ep-pill" style={m.status === 'SENT' ? { background: '#dcfce7', color: '#166534' } : /FAIL/i.test(m.status ?? '') ? { background: '#fee2e2', color: '#991b1b' } : { background: '#fef3c7', color: '#78350f' }}>{(m.status ?? 'unknown').replace(/^FAILED: /, 'Failed: ')}</span>
-                {m.providerRef && <span className="ep-note" title="The provider's reference for this message">{m.providerRef.slice(0, 18)}…</span>}
-              </div>
-            )} />
-          </div>
-        </>
-      )}
-      {outbox.length > 0 && (
-        <>
-          <div className="ep-sec">Outbox ({outbox.length})</div>
-          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            {outbox.map((m) => (
-              <div key={m.id}>
-                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => void readMail(m.id)}>
-                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.createdAt)}</span>
-                  <b>{(m.fileName ?? '').replace(/^outbox-/, '').replace(/-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.txt$/, '').replace(/_/g, ' ') || 'email'}</b>
-                  <span className="ep-pill" style={{ background: '#fef3c7', color: '#78350f' }}>Rendered, Not Sent</span>
-                </div>
-                {openMail === m.id && <pre style={{ margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #e6e8ee', borderRadius: 10, whiteSpace: 'pre-wrap', fontSize: 12.5, fontFamily: 'inherit', background: '#fafafa' }}>{mailBody[m.id] ?? 'Reading…'}</pre>}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-      {drafts.length > 0 && (
-        <>
-          <div className="ep-sec">Drafts ({drafts.length})</div>
-          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            {drafts.map((d) => (
-              <div key={d.id}>
-                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => { if (openReview === d.id) { setOpenReview(null); setTable(null); } else void loadTable(d.id); }}>
-                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(d.createdAt)}</span>
-                  <b>{pretty((d.docType ?? 'draft').toLowerCase())}</b>
-                  <span className="ep-note">{d.fileName}</span>
-                  <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>
-                </div>
-                {openReview === d.id && table && table.id === d.id && table.draftCheck && <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, padding: '10px 12px' }}><CheckedDraft check={table.draftCheck} /></div>}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+      <style>{WORK_CSS + SECTION_CSS}</style>
       {unlockNote && <div className={unlockNote.ok ? 'ep-ok' : 'ep-warn'} role="status">{unlockNote.text}</div>}
       {lockedDocs.length > 0 && (
         <>
-          <div className="ep-sec">Password-Protected ({lockedDocs.length})</div>
+          <Section id="locked" title="Locked" count={lockedDocs.length} defaultOpen>
           <div className="ep-block" style={{ background: '#fffbeb', borderColor: '#fde68a' }}>
             {lockedDocs.map((d) => (
               <div key={d.id} className="ep-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
@@ -312,9 +187,10 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
               </div>
             ))}
           </div>
+          </Section>
         </>
       )}
-      <div className="ep-sec">Filed on this case ({filed.length})</div>
+      <Section id="files" title="Files" count={filed.length} defaultOpen>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
         {filed.length > 0 && <ListToolbar tools={docTools} filters={DOC_FILTERS} placeholder="Search documents" />}
         <Grouped tools={docTools} empty={`Nothing has been filed yet${s.enrolled ? '' : ' — enrol the case first'}.`} render={({ doc: dd, events: evs }, g) => {
@@ -330,7 +206,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             <button className="ep-btn" style={{ padding: '2px 8px', fontSize: 12 }} disabled={rereading === id} onClick={(ev) => { ev.stopPropagation(); void readAgain(id); }}>{rereading === id ? 'Reading…' : 'Read Again'}</button>
             {reread[id] && <span className="ep-note">{reread[id]}</span>}
             {badge(reviewOf(id))}
-            {checked.has(id) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>}
+            {checked.has(id) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked</span>}
           </div>
           {openReview === id && table && table.id === id && (
             <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, overflow: 'hidden' }}>
@@ -367,6 +243,118 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
           </div>
         );}} />
       </div>
+      </Section>
+      <Section id="upload" title="Upload">
+      <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input type="file" accept="application/pdf,image/*,.txt" onChange={(e) => setFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12.5 }} />
+          <select className="ep-input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <option value="auto">Detect Type</option>
+            <option value="title">Official copy of the register</option>
+            <option value="id_check">ID / AML report</option>
+            {(buyer || p?.type === 'remortgage') && <option value="search">Search result</option>}
+            {buyer && <option value="enquiry_reply">Reply to our enquiries</option>}
+            {(buyer || p?.type === 'remortgage') && <option value="mortgage_offer">Mortgage offer</option>}
+            {leasehold && <option value="lease">Lease</option>}
+            {leasehold && <option value="management_pack">Management pack (LPE1)</option>}
+            {buyer && <option value="property_forms">Seller's property forms (TA6 / TA7 / TA10)</option>}
+            {buyer && <option value="survey">Survey / valuation report</option>}
+            {buyer && <option value="specialist_report">Specialist report (damp, timber, structural…)</option>}
+          </select>
+          {role === 'search' && <select className="ep-input" value={search} onChange={(e) => setSearch(e.target.value)}>{['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL', 'MINING', 'FLOOD', 'HIGHWAYS', 'PLANNING'].map((t) => <option key={t} value={t}>{t}</option>)}</select>}
+          {role === 'id_check' && Object.keys(s.partyChecks ?? {}).length > 0 && <select className="ep-input" value={idParty} onChange={(e) => setIdParty(e.target.value)} aria-label="Whose result"><option value="">First client</option>{Object.values(s.partyChecks ?? {}).map((pc) => <option key={pc.party} value={pc.party}>{pc.label}</option>)}</select>}
+          {role === 'enquiry_reply' && <input className="ep-input" placeholder="Enquiry id (E1)" value={enquiryId} onChange={(e) => setEnquiryId(e.target.value)} style={{ width: 120 }} />}
+          <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !file || (role === 'enquiry_reply' && !enquiryId.trim())} onClick={upload}>Upload</button>
+        </div>
+        {msg && <div style={{ fontSize: 12.5, color: '#14532d', marginTop: 6 }}>{msg}</div>}
+        {err && <div className="ep-err">{err}</div>}
+      </div>
+      </Section>
+
+      {filed.length > 0 && (
+        <>
+          <Section id="ask" title="Ask">
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input className="ep-input" style={{ flex: 1 }} placeholder="Where does the lease say who repairs the roof?" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(); }} />
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={asking || !question.trim()} onClick={() => void ask()}>Ask</button>
+            </div>
+            {answer && (
+              <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                {answer.facts.length === 0 && answer.passages.length === 0 && <div className="ep-note">Nothing on the file answers “{answer.q}”.</div>}
+                {answer.facts.map((f) => (
+                  <div key={f.id} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0', minWidth: 44, textAlign: 'center' }}>Fact</span>
+                    <b style={{ minWidth: 160 }}>{f.key.replace(/^[a-z_]+\./, '').replace(/[._]/g, ' ')}</b>
+                    <span style={{ flex: 1 }}>{f.value}{f.quote ? <i style={{ color: '#64748b' }}> — “{f.quote.slice(0, 140)}{f.quote.length > 140 ? '…' : ''}”</i> : null}</span>
+                    <a href={`/api/v1/documents/${f.documentId}/raw#page=${f.page ?? 1}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{f.fileName ?? 'Document'}{f.page ? ` p.${f.page}` : ''}</a>
+                  </div>
+                ))}
+                {answer.passages.map((p, i) => (
+                  <div key={i} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="ep-pill" style={{ background: '#f1f5f9', color: '#334155', minWidth: 44, textAlign: 'center' }}>Page</span>
+                    <span style={{ flex: 1, color: '#334155' }}>{p.text}</span>
+                    <a href={`/api/v1/documents/${p.documentId}/raw#page=${p.page}`} target="_blank" rel="noopener noreferrer" style={{ whiteSpace: 'nowrap' }}>{p.fileName ?? 'Document'} p.{p.page}</a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          </Section>
+        </>
+      )}
+      {checks.length > 0 && (
+        <>
+          <Section id="checks" title="Cross-Checks" count={checks.length}>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {checks.map((c) => (
+              <div key={c.check} className="ep-row" style={{ alignItems: 'flex-start' }}>
+                <span className="ep-pill" style={{ marginTop: 2, background: c.status === 'match' ? '#dcfce7' : '#fee2e2', color: c.status === 'match' ? '#14532d' : '#7f1d1d', minWidth: 64, textAlign: 'center' }}>{c.status === 'match' ? 'Agree' : 'Differ'}</span>
+                <b style={{ minWidth: 130 }}>{c.label}</b>
+                <span style={{ flex: 1, minWidth: 200 }}>{c.status === 'match' ? `${c.values.length} sources` : c.values.map((v) => `${v.source}${v.page ? ` p.${v.page}` : ''}: ${v.value}`).join(' · ')}</span>
+              </div>
+            ))}
+          </div>
+          </Section>
+        </>
+      )}
+      {outbox.length > 0 && (
+        <>
+          <Section id="outbox" title="Outbox" count={outbox.length}>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {outbox.map((m) => (
+              <div key={m.id}>
+                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => void readMail(m.id)}>
+                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.createdAt)}</span>
+                  <b>{(m.fileName ?? '').replace(/^outbox-/, '').replace(/-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.txt$/, '').replace(/_/g, ' ') || 'email'}</b>
+                  <span className="ep-pill" style={{ background: '#fef3c7', color: '#78350f' }}>Not Sent</span>
+                </div>
+                {openMail === m.id && <pre style={{ margin: '4px 0 10px', padding: '10px 12px', border: '1px solid #e6e8ee', borderRadius: 10, whiteSpace: 'pre-wrap', fontSize: 12.5, fontFamily: 'inherit', background: '#fafafa' }}>{mailBody[m.id] ?? 'Reading…'}</pre>}
+              </div>
+            ))}
+          </div>
+          </Section>
+        </>
+      )}
+      {drafts.length > 0 && (
+        <>
+          <Section id="drafts" title="Drafts" count={drafts.length}>
+          <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
+            {drafts.map((d) => (
+              <div key={d.id}>
+                <div className="ep-row" style={{ cursor: 'pointer' }} onClick={() => { if (openReview === d.id) { setOpenReview(null); setTable(null); } else void loadTable(d.id); }}>
+                  <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(d.createdAt)}</span>
+                  <b>{pretty((d.docType ?? 'draft').toLowerCase())}</b>
+                  <span className="ep-note">{d.fileName}</span>
+                  <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked Against The File</span>
+                </div>
+                {openReview === d.id && table && table.id === d.id && table.draftCheck && <div style={{ margin: '4px 0 10px', border: '1px solid #e6e8ee', borderRadius: 10, padding: '10px 12px' }}><CheckedDraft check={table.draftCheck} /></div>}
+              </div>
+            ))}
+          </div>
+          </Section>
+        </>
+      )}
     </div>
   );
 }

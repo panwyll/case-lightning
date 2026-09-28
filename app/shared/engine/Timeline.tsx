@@ -31,7 +31,7 @@ function issueLabel(e: EngineEvent, state: EngineState): string | null {
 function noteLabel(e: EngineEvent, state: EngineState): string | null {
   const p = e.payload as Record<string, unknown>;
   const n = state.notes?.[String(p.noteId ?? '')];
-  if (e.type === 'note_recorded') return `${firstLine(String(p.text ?? '')).slice(0, 110)}…`;
+  if (e.type === 'note_recorded') { const from = p.from as { name?: string | null; address?: string } | null | undefined; return `${from ? `${from.name || from.address}: ` : ''}${firstLine(String(p.text ?? '')).slice(0, 110)}…`; }
   if (e.type === 'note_extracted') {
     const count = Array.isArray(p.actions) ? p.actions.filter((a) => (a as { command?: unknown }).command).length : 0;
     return count ? `${count} thing${count === 1 ? '' : 's'} to confirm` : 'nothing on the file in it';
@@ -60,6 +60,30 @@ function readable(e: EngineEvent): string | null {
   if (e.type === 'note_extracted' && Array.isArray(p.actions)) return (p.actions as Array<{ summary: string; quote: string }>).map((a) => `${a.summary}\n“${a.quote}”`).join('\n\n') || null;
   return null;
 }
+
+/** What an entry is, at a glance: the chip at the head of each line. */
+const CHIP_STYLE: Record<string, { bg: string; fg: string }> = {
+  Email: { bg: '#e0f2fe', fg: '#075985' }, Call: { bg: '#fae8ff', fg: '#86198f' }, Note: { bg: '#f1f5f9', fg: '#334155' }, Document: { bg: '#ede9fe', fg: '#5b21b6' },
+  Sent: { bg: '#dcfce7', fg: '#166534' }, Chase: { bg: '#fef3c7', fg: '#92400e' }, Issue: { bg: '#fee2e2', fg: '#991b1b' }, Task: { bg: '#f5f3ff', fg: '#5A27E0' }, Stage: { bg: '#e0e7ff', fg: '#3730a3' },
+};
+function chipOf(e: EngineEvent, state: EngineState): string | null {
+  const t = e.type;
+  const p = e.payload as Record<string, unknown>;
+  if (t === 'log:EMAIL_FILED') return 'Email';
+  if (t === 'log:DOC_RECEIVED') return 'Document';
+  if (t.startsWith('note_')) {
+    const n = state.notes?.[String(p.noteId ?? '')];
+    return n?.kind === 'email' ? 'Email' : n?.kind === 'call' ? 'Call' : 'Note';
+  }
+  if (t === 'chase_sent') return 'Chase';
+  if (/^(client_update_sent|acknowledgement_sent|signing_pack_sent|party_notice_sent)$/.test(t)) return 'Sent';
+  if (t.startsWith('issue_')) return 'Issue';
+  if (t === 'stage_advanced' || t === 'stage_changed') return 'Stage';
+  if (/^action_|^decision_|_reviewed$|^proposal/.test(t)) return 'Task';
+  if (e.sourceDocumentId && /_(received|returned|extracted|submitted|read)$/.test(t)) return 'Document';
+  return null;
+}
+const Chip = ({ label }: { label: string }) => <span style={{ display: 'inline-block', fontSize: 10.5, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', borderRadius: 999, padding: '1px 7px', marginRight: 8, background: CHIP_STYLE[label]?.bg ?? '#f1f5f9', color: CHIP_STYLE[label]?.fg ?? '#334155', verticalAlign: 1 }}>{label}</span>;
 
 /** A line from the case log (email filed, document received): shown in time order among the engine's events. */
 export interface CaseLogEntry { id: string; at: string; type: string; title: string; details: string | null }
@@ -111,7 +135,7 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
               <div key={e.id}>
                 <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} >
                   <span className="t">{whenIn(e.createdAt, g)}</span>
-                  <span className="ty">{e.type.startsWith('log:') ? String((e.payload as { title?: string }).title ?? '') : pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
+                  <span className="ty">{chipOf(e, state) && <Chip label={chipOf(e, state)!} />}{e.type.startsWith('log:') ? String((e.payload as { title?: string }).title ?? '') : pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
                   <span className="ac">{who(e.actor)} · {actorKind(e.actor)}</span>
                   <span style={{ marginLeft: 'auto', fontSize: 11 }}>{e.type.startsWith('log:') ? '' : `#${e.seq}`}</span>
                 </div>

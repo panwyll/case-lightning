@@ -56,6 +56,13 @@ const CSS = `
 type Sort = 'urgency' | 'due' | 'case';
 const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
 const dayMs = 86_400_000;
+/** When a task arose, as a time: today and yesterday by clock time, older by date. */
+const stamp = (iso: string): string => {
+  const d = new Date(iso);
+  const days = Math.floor((new Date().setHours(0, 0, 0, 0) - new Date(iso).setHours(0, 0, 0, 0)) / 86_400_000);
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  return days <= 0 ? `Today ${time}` : days === 1 ? `Yesterday ${time}` : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' as const } : {}) });
+};
 const dueIn = (i: WorkItem, now: number): number | null => (i.dueBy ? Math.floor((new Date(`${i.dueBy}T23:59:59`).getTime() - now) / dayMs) : null);
 const ageDays = (i: WorkItem, now: number): number | null => (i.since ? Math.floor((now - new Date(i.since).getTime()) / dayMs) : null);
 /** The task in a sentence, without the engine's prefixes. */
@@ -170,7 +177,6 @@ export default function TaskList({ who }: { who: string }) {
             const key = `${i.matterId}:${i.id}`;
             const isOpen = open === key;
             const due = dueIn(i, now);
-            const age = ageDays(i, now);
             return (
               <div key={key} className={`tl-item${isOpen ? ' open' : ''}`}>
                 <div className="tl-task">
@@ -179,7 +185,7 @@ export default function TaskList({ who }: { who: string }) {
                     {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
                   </div>
-                  <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : age != null ? (age === 0 ? 'since today' : `waiting ${age}d`) : ''}</span>
+                  <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : i.since ? stamp(i.since) : ''}</span>
                   {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
                   {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
                   {isDecision

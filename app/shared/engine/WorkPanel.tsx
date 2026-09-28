@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { IssuesPanel } from './IssuesPanel';
+import { AddNote } from './NotesPanel';
 import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
@@ -1082,7 +1083,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {readDialog}
 
       {section === 'tasks' && (<>
-      <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length})</div><AddNote busy={busy} cmd={cmd} /></div>
       <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
       <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>
 
