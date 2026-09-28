@@ -93,3 +93,32 @@ export function chaseContent(s: MatterState, waitKey: string, subject: string | 
       return { resend: '' };
   }
 }
+
+/**
+ * One line a client update carries for something waiting on the client, so it can be done from
+ * this message: the link, the form, or what to send. Null when there is nothing to hand them.
+ */
+export function clientToHand(s: MatterState, waitKey: string, subject: string | null, opts: ChaseContentOptions = {}): string | null {
+  const sub = subject ?? '';
+  switch (waitKey) {
+    case 'id_check': {
+      const target = sub ? s.partyChecks[sub] : s.idCheck;
+      const who = sub && s.partyChecks[sub] ? ` for ${s.partyChecks[sub].label}` : '';
+      if (target?.link) return `Identity check${who}: ${target.link}`;
+      if (opts.idProviderSendsLink) return `Identity check${who}: the link is in the email from ${opts.idProviderLabel ?? 'our ID provider'}; reply if you cannot find it`;
+      return `Identity check${who}: reply with clear photos of a passport or driving licence and a recent bank statement or utility bill`;
+    }
+    case 'proof_of_funds':
+      return s.proofOfFunds.formUrl ? `Proof-of-funds form: ${s.proofOfFunds.formUrl}` : null;
+    case 'property_forms': {
+      const forms = (s.propertyForms.forms.length ? s.propertyForms.forms : isLeasehold(s) ? ['TA6', 'TA10', 'TA7'] : ['TA6', 'TA10']).map((f) => FORM_NAMES[f] ?? f);
+      return `Property forms: ${forms.join(', ')}; reply with them attached`;
+    }
+    case 'signed_documents': {
+      const deeds = unsignedDeeds(s);
+      return deeds.length ? `To sign: ${deeds.map((d) => d.label.toLowerCase()).join(', ')}; reply if you need the documents sent again` : null;
+    }
+    default:
+      return null;
+  }
+}

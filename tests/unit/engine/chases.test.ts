@@ -63,3 +63,15 @@ test('every chase template carries the resend block where there is something to 
     assert.ok(r.body.includes('RESEND-BLOCK'), key);
   }
 });
+
+test('a status update that says we are waiting on the client hands them the link too', async () => {
+  const { clientOverview } = await import('../../../lib/server/engine/client-overview');
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: [] } as never);
+  await h.svc.requestProofOfFunds(TENANT, MATTER, USER);
+  h.advanceDays(3);
+  const s = await h.svc.getState(TENANT, MATTER);
+  const ov = clientOverview(s, h.ports.now());
+  assert.match(ov.text, /Still waiting on you/);
+  assert.ok(ov.text.includes(`Proof-of-funds form: ${s.proofOfFunds.formUrl}`), ov.text);
+});

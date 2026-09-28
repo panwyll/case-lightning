@@ -10,6 +10,7 @@
 import { caseBrief, type BriefWait } from './brief';
 import { activeAvailability, awayNow, type MatterState } from './types';
 import { prettyDate } from './notes';
+import { clientToHand, type ChaseContentOptions } from './chase-content';
 
 const TOLD_QUIET_MS = 3 * 24 * 3_600_000;
 const JUST_RAISED_MS = 24 * 60 * 60_000;
@@ -31,7 +32,7 @@ export interface ClientOverview { text: string; mentioned: string[] }
 const list = (xs: string[]): string => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 const since = (w: BriefWait): string => (w.sinceCalendarDays <= 0 ? 'today' : w.sinceCalendarDays === 1 ? 'yesterday' : `${w.sinceCalendarDays} days ago`);
 
-export function clientOverview(s: MatterState, now: Date): ClientOverview {
+export function clientOverview(s: MatterState, now: Date, opts: ChaseContentOptions = {}): ClientOverview {
   const brief = caseBrief(s, now);
   const told = s.clientToldAt ?? {};
   const keep: BriefWait[] = [];
@@ -63,7 +64,9 @@ export function clientOverview(s: MatterState, now: Date): ClientOverview {
       mentioned.push(`away:${away.id}`);
     }
   } else if (onYou.length) {
-    parts.push(`Still waiting on you: ${list(onYou.map((w) => `${w.what} (asked ${since(w)})`))}${soon ? `; if you can, before you go away on ${prettyDate(soon.from)}` : ''}.`);
+    // What they need to do it, in this message: the link, the form, what to send.
+    const toHand = onYou.map((w) => clientToHand(s, w.key, w.subject, opts)).filter((x): x is string => !!x);
+    parts.push(`Still waiting on you: ${list(onYou.map((w) => `${w.what} (asked ${since(w)})`))}${soon ? `; if you can, before you go away on ${prettyDate(soon.from)}` : ''}.${toHand.length ? `\n${toHand.map((x) => `• ${x}`).join('\n')}\n` : ''}`);
   } else if (soon && allOnYou.length) {
     parts.push(`Before you go away on ${prettyDate(soon.from)} we still need ${list(allOnYou.map((w) => w.what))}.`);
   }

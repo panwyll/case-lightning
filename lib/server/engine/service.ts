@@ -228,7 +228,7 @@ export class EngineService {
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
-      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
+      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), this.idProviderOpts());
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null });
       // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
       const aboutKey = (d as { about?: unknown }).about;
@@ -777,8 +777,13 @@ export class EngineService {
   /** What a chase carries beyond the reminder: the link, the form, or the list of what is still outstanding (chase-content.ts). */
   private chaseExtras(state: MatterState, waitKey: string, subject: string | null): Record<string, string> {
     const sale = state.transactionType === 'freehold_sale' || state.transactionType === 'leasehold_sale';
+    return { transaction: sale ? 'sale' : 'purchase', ...chaseContent(state, waitKey, subject, this.idProviderOpts()) };
+  }
+
+  /** How the ID provider reaches the client, for the words a chase or an update uses. */
+  private idProviderOpts(): { idProviderSendsLink: boolean; idProviderLabel: string } {
     const idp = this.ports.idCheckProvider;
-    return { transaction: sale ? 'sale' : 'purchase', ...chaseContent(state, waitKey, subject, { idProviderSendsLink: !!idp.sendsClientLink, idProviderLabel: idp.name === 'infotrack' ? 'InfoTrack' : idp.name }) };
+    return { idProviderSendsLink: !!idp.sendsClientLink, idProviderLabel: idp.name === 'infotrack' ? 'InfoTrack' : idp.name };
   }
 
   /** A person sends the chase for a wait now rather than when the timer would; the same template and record as the timer's. */
