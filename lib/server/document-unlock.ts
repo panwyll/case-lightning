@@ -101,3 +101,23 @@ export async function tryPasswordsFromMessage(tenantId: string, matterId: string
   }
   return opened;
 }
+
+/**
+ * Files flagged as password-protected that open without one (flagged while the PDF library was
+ * failing, or by an older, stricter check): each is re-checked, and one that needs no password is
+ * marked open, its task closed and it is read. Bounded per run; safe to run often.
+ */
+export async function recheckLockedDocuments(tenantId: string | null, limit = 20, readInBackground?: (read: Promise<unknown>) => void): Promise<{ checked: number; cleared: number }> {
+  const rows = await query<{ id: string; tenant_id: string }>(
+    `select id, tenant_id from document where (extracted_facts->>'locked')::boolean = true and superseded_at is null${tenantId ? ' and tenant_id = $2' : ''} order by created_at desc limit $1`,
+    tenantId ? [limit, tenantId] : [limit]
+  ).catch(() => []);
+  let cleared = 0;
+  for (const r of rows) {
+    const src = await bytesFor(r.tenant_id, r.id).catch(() => null);
+    if (!src || (await isLockedPdf(src.bytes))) continue;
+    const out = await tryUnlockDocument(r.tenant_id, r.id, '', { userId: null, how: 're-checked: no password needed', readInBackground }).catch(() => null);
+    if (out?.unlocked) cleared += 1;
+  }
+  return { checked: rows.length, cleared };
+}

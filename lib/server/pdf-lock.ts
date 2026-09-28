@@ -15,13 +15,26 @@ async function mupdf() {
 export async function isLockedPdf(bytes: Buffer): Promise<boolean> {
   if (!bytes.subarray(0, HEAD).toString('latin1').startsWith('%PDF') && !bytes.toString('latin1').includes('%PDF')) return false;
   if (!bytes.includes('/Encrypt')) return false;
+  // Encryption alone is not a password: most bank statements and official copies are encrypted only to
+  // restrict printing or copying, and open for anyone. Only a reader that actually asks for a password
+  // makes the file locked. A reader that fails is never taken as "locked": a second reader is asked,
+  // and if neither can tell, the file is treated as open (reading it will then say what is wrong).
   try {
     const m = await mupdf();
     const doc = m.Document.openDocument(bytes, 'application/pdf');
     return doc.needsPassword();
-  } catch {
-    // An encrypted file that will not even open is locked for every purpose we have.
-    return true;
+  } catch (err) {
+    console.warn('[pdf-lock] mupdf could not open the file; asking pdf.js instead', (err as Error).message);
+  }
+  try {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+    try { await task.promise; return false; } finally { await task.destroy().catch(() => {}); }
+  } catch (err) {
+    const e = err as { name?: string; code?: number };
+    if (e?.name === 'PasswordException') return true;
+    console.warn('[pdf-lock] pdf.js could not open the file either; treating it as not password-protected', (err as Error).message);
+    return false;
   }
 }
 

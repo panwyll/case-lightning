@@ -1573,7 +1573,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       // The timer may close the issues it raised itself (a search that arrived, an offer that was exchanged inside); everything else is a person's act.
       // The timer may close the issues it raised itself, and the arrival of the thing itself closes an "it is coming" issue whoever raised it.
       const closedByArrival = CLOSED_BY_ARRIVAL.includes(i.kind) && cmd.resolution === 'received';
-      if (!isUserActor(cmd.actor) && !(cmd.actor === SYSTEM && (closedByArrival || (/\[[a-z-]+:[^\]]*\]/.test(i.title) && (cmd.resolution === 'received' || cmd.resolution === 'other'))))) reject('Issues are resolved by people.', 403);
+      // A locked-file task the system raised closes when the file is opened: by its password, or on finding it never needed one.
+      const lockedFileOpened = i.kind === 'file_locked' && i.raisedBy === SYSTEM;
+      if (!isUserActor(cmd.actor) && !(cmd.actor === SYSTEM && (closedByArrival || lockedFileOpened || (/\[[a-z-]+:[^\]]*\]/.test(i.title) && (cmd.resolution === 'received' || cmd.resolution === 'other'))))) reject('Issues are resolved by people.', 403);
       const spec = ISSUE_KIND_SPEC[i.kind];
       if (!spec.resolutions.includes(cmd.resolution)) reject(`"${spec.label}" is not resolved by "${RESOLUTION_LABEL[cmd.resolution] ?? cmd.resolution}". Realistic outcomes: ${spec.resolutions.map((r) => RESOLUTION_LABEL[r]).join('; ')}.`, 400);
       const note = cmd.note?.trim() || null;

@@ -5,6 +5,7 @@ import { engine } from '@/lib/server/engine/adapters';
 import { runAsAutomation } from '@/lib/server/db';
 import { readSubmission, unreadSubmissions } from '@/lib/server/engine/pof-store';
 import { moveBlobsToStorage } from '@/lib/server/blob-store';
+import { recheckLockedDocuments } from '@/lib/server/document-unlock';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,6 +29,8 @@ export async function GET(req: NextRequest) {
     for (const id of await unreadSubmissions()) { const r = await readSubmission(id).catch(() => ({ read: false })); if (r.read) reread += 1; }
     // Files still held in the database move to Supabase Storage, a batch a day.
     await moveBlobsToStorage(200).catch((e) => console.warn('[cron] storage move failed', (e as Error).message));
+    // Files wrongly flagged as password-protected are cleared and read.
+    await recheckLockedDocuments(null, 50).catch((e) => console.warn('[cron] locked-file re-check failed', (e as Error).message));
     return ok({ ...result, proofOfFundsReread: reread });
   } catch (error) {
     return fail(error);

@@ -284,3 +284,16 @@ test('a delay is context, not an issue: it holds nothing, makes no task, and is 
   const a = clientStatusAnswer(b, h.ports.now());
   if (a.canAnswer) assert.match(a.text, /seller's side is running behind/);
 });
+
+test('the system closes a locked-file task it raised itself, and still cannot close anything a person must', async () => {
+  const h = harness();
+  await toPreExchange(h);
+  const { SYSTEM } = await import('../../../lib/server/engine/types');
+  const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title: 'Password-protected file: x.pdf', detail: 'x [doc:00000000-0000-0000-0000-000000000000]', gate: 'none' });
+  const id = (r.events[0].payload as { issueId: string }).issueId;
+  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: SYSTEM, issueId: id, resolution: 'evidence_provided', note: 'Opens without a password' });
+  assert.equal((await h.svc.getState(TENANT, MATTER)).issues[id].status, 'resolved');
+  const other = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'title_defect', title: 'Missing easement' });
+  const oid = (other.events[0].payload as { issueId: string }).issueId;
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: SYSTEM, issueId: oid, resolution: 'other', note: 'x' }), /resolved by people/);
+});

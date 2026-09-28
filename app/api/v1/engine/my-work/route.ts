@@ -1,4 +1,5 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
+import { recheckLockedDocuments } from '@/lib/server/document-unlock';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -47,6 +48,8 @@ export async function GET(req: NextRequest) {
       for (const i of items) if (i.openedBy && name.has(i.openedBy)) i.openedBy = name.get(i.openedBy)!;
     }
     for (const i of items) (i as { assistantCan?: boolean }).assistantCan = assistantMay(i.kind);
+    // A file wrongly flagged as password-protected clears itself in the background (reading goes after the response).
+    after(async () => { await recheckLockedDocuments(user.tenantId, 10).catch(() => null); });
     return ok({ ...buckets(items), viewerRole: user.role, scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters, ownerLabels: OWNER_LABEL });
   } catch (error) {
     return fail(error);
