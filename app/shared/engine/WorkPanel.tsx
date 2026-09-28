@@ -479,12 +479,19 @@ const WAIT_PARTY: Record<string, string> = { client: 'the client', seller_solici
 /** Instruction first, the investigation strands in parallel, then contract, completion and registration. */
 /** `unfed` lanes sit in the tier's row but nothing is drawn into them: they start when something arrives from someone else (the contract pack asked for at enrolment, the offer, the survey), not when the tier before is done. */
 /** `feeds`: the band is fed only by these boxes of the band before; the others carry past it to the band after. */
+/** A date n working days earlier (weekends only; the server's deadline also skips bank holidays). */
+function workingDaysBefore(iso: string, n: number): string {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`);
+  let left = n;
+  while (left > 0) { d.setUTCDate(d.getUTCDate() - 1); if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) left -= 1; }
+  return d.toISOString();
+}
 const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?: string[]; feeds?: string[] }> = [
   { id: 'instruction', label: 'Instruction', lanes: ['id_aml', 'source_of_funds', 'co_ownership', 'property_forms'] },
   { id: 'investigation', label: 'Investigation', lanes: ['title', 'searches', 'survey', 'leasehold', 'mortgage', 'redemption', 'lender_consent'], unfed: ['title', 'mortgage', 'survey'] },
   // Our enquiries come out of what the title, the searches, the survey and the lease turn up; the buyer's, out of our contract pack.
   { id: 'enquiries', label: 'Enquiries', lanes: ['enquiries'], feeds: ['title', 'searches', 'survey', 'leasehold'] },
-  { id: 'contract', label: 'Contract & Exchange', lanes: ['exchange', 'transfer_deed'] },
+  { id: 'contract', label: 'Contract & Exchange', lanes: ['exchange', 'signing'] },
   { id: 'completion', label: 'Completion', lanes: ['pre_completion_checks', 'completion'] },
   { id: 'registration', label: 'Registration', lanes: ['registration'] },
 ];
@@ -814,7 +821,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const withManual = (tiles: Tile[]): Tile[] => !manual ? tiles : tiles.map((t) => {
     const step = stepFor(t);
     if (!step || DONE_STATUSES.has(t.status)) return t;
-    const mark = <MarkComplete key={`mc-${step}`} matterId={matterId} api={api} step={step} label={t.label} busy={busy} cmd={cmd} />;
+    const mark = <MarkComplete key={`mc-${step}`} matterId={matterId} api={api} step={step} label={t.label} busy={busy} cmd={cmd} lender={step === 'mortgage' ? s.mortgage.facts?.lender ?? null : step === 'redemption' ? s.redemption?.lender ?? null : null} />;
     return { ...t, action: t.action ? <>{t.action}{mark}</> : mark };
   });
   const lane = (l: LaneDef | null | false) => { if (l) lanes.push({ ...l, tiles: withManual(withReview(l.tiles)) }); };
@@ -956,15 +963,23 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
   if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
-      { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage', detail: (() => { const w = (s.waits ?? []).find((x) => x.key === 'mortgage_offer' && x.closedAt === null); return w ? `The client is asked how it is going every two weeks until it arrives${w.chasesSentAt.length ? ` (asked ${w.chasesSentAt.length}×)` : ''}.` : undefined; })() },
-      { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : 'not_started', detail: deeds.mortgageDeedAt ? `executed ${fmtDay(deeds.mortgageDeedAt)} (witnessed)` : undefined },
-      { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : undefined },
-    ],
-    actions: <>
-      {!completed && <button className="ep-btn" disabled={busy} onClick={() => { const y = ask("Lender's minimum unexpired lease term in years (blank if none):", s.lenderRequirements?.minUnexpiredYears?.toString() ?? ''); if (y === null) return; const m = ask("Maximum age of searches at exchange, in months (blank if none):", s.lenderRequirements?.maxSearchAgeMonths?.toString() ?? ''); if (m === null) return; const g = ask('Accepts a gifted deposit from outside the family? yes / no / blank', s.lenderRequirements?.acceptsNonFamilyGift == null ? '' : s.lenderRequirements.acceptsNonFamilyGift ? 'yes' : 'no'); if (g === null) return; void cmd({ type: 'record_lender_requirements', minUnexpiredYears: y.trim() ? Number(y) : null, maxSearchAgeMonths: m.trim() ? Number(m) : null, acceptsNonFamilyGift: g.trim() ? /^y/i.test(g) : null }); }}>Lender Requirements</button>}
-      {!deeds.certificateOfTitleAt && resolved(s.mortgage.status) && act('mortgage', 'certificate_of_title_sent', 'Certificate of Title Sent')}
-      {['pre_contract', 'contract_review', 'pre_exchange'].includes(s.stage) && resolved(s.mortgage.status) && buyer && <button className="ep-btn" disabled={busy} onClick={() => { const r = ask('Why was the offer withdrawn / lapsed?'); if (r) void cmd({ type: 'mortgage_offer_withdrawn', reason: r }); }}>Offer withdrawn</button>}
-    </> });
+      { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage', detail: (() => {
+        const w = (s.waits ?? []).find((x) => x.key === 'mortgage_offer' && x.closedAt === null);
+        if (w) return `The client is asked how it is going every two weeks until it arrives${w.chasesSentAt.length ? ` (asked ${w.chasesSentAt.length}×)` : ''}.`;
+        const f = s.mortgage.facts as { lender?: string; amountPennies?: number; expiryDate?: string } | null;
+        const skipped = s.manualSteps?.mortgage?.skipReason;
+        return [f?.amountPennies ? gbp(f.amountPennies) : null, f?.expiryDate ? `expires ${f.expiryDate}` : null, skipped ? `details skipped: ${skipped}` : null].filter(Boolean).join(' · ') || undefined;
+      })() },
+      ...(resolved(s.mortgage.status) || s.lenderRequirements ? [{ label: 'Lender requirements', depth: 1 as const, status: s.lenderRequirements ? 'noted' : 'not_started', detail: (() => {
+        const r = s.lenderRequirements;
+        if (!r) return 'none recorded for this lender';
+        return [r.minUnexpiredYears != null ? `lease ${r.minUnexpiredYears}+ years` : null, r.maxSearchAgeMonths != null ? `searches under ${r.maxSearchAgeMonths} months old` : null, r.acceptsNonFamilyGift != null ? `non-family gifts ${r.acceptsNonFamilyGift ? 'accepted' : 'not accepted'}` : null, r.requiresEws1 ? 'EWS1 required' : null].filter(Boolean).join(' · ') || (r.note ?? 'recorded');
+      })(), action: <a className="ep-sub-a" href="/conveyi/engine/lenders" style={{ fontSize: 12 }}>Lender Directory</a> }] : []),
+      { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : s.signing?.packSentAt ? 'with_client' : 'not_started', detail: deeds.mortgageDeedAt ? `signed copy on file ${fmtDay(deeds.mortgageDeedAt)}` : 'goes out in the signing pack; its signed copy is recorded under Signing',
+        action: deeds.mortgageDeedAt || completed ? undefined : <button type="button" className="ep-btn" disabled={busy} onClick={() => { setOpenLane('signing'); requestAnimationFrame(() => document.getElementById('lane-signing')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); }}>Open Signing</button> },
+      { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : s.exchange.completionDate ? `due ${fmtDay(workingDaysBefore(s.exchange.completionDate, 5))}, 5 working days before completion` : 'due 5 working days before completion, through the lender\'s portal',
+        action: !deeds.certificateOfTitleAt && !completed && resolved(s.mortgage.status) ? act('mortgage', 'certificate_of_title_sent', 'Record Sent', {}, { primary: !!s.exchange.exchangedAt }) : undefined },
+    ] });
 
   if (has('redemption') && redemptionApplies) lane({ id: 'redemption', order: 'sequence', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
     tiles: [
@@ -1183,7 +1198,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   return (
     <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
-      {s.manualHandling.required && <div className="ep-err" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span>Automation paused: {pretty(s.manualHandling.reason ?? '')}.</span><button className="ep-btn" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { const r = window.prompt('Resume automation on this case? Say why (e.g. the tenure is confirmed freehold).'); if (r && r.trim().length >= 3) void cmd({ type: 'resume_automation', reason: r.trim() }); }}>Resume Automation</button></div>}
+      {s.manualHandling.required && <div className="ep-err" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span>Manual mode: {pretty(s.manualHandling.reason ?? '')}.</span><button className="ep-btn" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { const r = window.prompt('Resume automation on this case? Say why (e.g. the tenure is confirmed freehold).'); if (r && r.trim().length >= 3) void cmd({ type: 'resume_automation', reason: r.trim() }); }}>Resume Automation</button></div>}
 
       {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []), feeds: ph.feeds })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
       {section === 'flow' && (

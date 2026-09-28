@@ -1024,7 +1024,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     // A person marked a step complete by hand (manual handling): it reads as reviewed, and anything waited on for it stops.
     case 'step_completed_manually': {
       const p = e.payload as Payloads['step_completed_manually'];
-      s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds } };
+      s.manualSteps = { ...(s.manualSteps ?? {}), [p.step]: { at: e.createdAt, by: e.actor, note: p.note, documentIds: p.documentIds, skipReason: p.skipReason ?? null } };
       const close = (key: string, subject: string | null = null) => {
         for (const w of s.waits) if (w.key === key && w.closedAt === null && (subject === null || w.subject === subject)) w.closedAt = e.createdAt;
       };
@@ -1032,15 +1032,24 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       switch (kind) {
         case 'id_check': s.idCheck.status = 'reviewed'; close('id_check'); break;
         case 'proof_of_funds': s.proofOfFunds.status = 'reviewed'; close('proof_of_funds'); break;
-        case 'title': s.title.status = 'reviewed'; close('contract_pack'); break;
+        case 'title': s.title.status = 'reviewed'; close('contract_pack');
+          if (p.facts?.titleNumber) s.title.facts = s.title.facts ? { ...s.title.facts, titleNumber: p.facts.titleNumber } : { titleNumber: p.facts.titleNumber, tenure: s.transactionType?.startsWith('leasehold') ? 'leasehold' : 'freehold', restrictions: [], charges: [], covenants: [], confidence: 1 };
+          break;
         case 'report_on_title': s.reportOnTitle = { ...s.reportOnTitle, status: 'sent', sentAt: e.createdAt, interim: false }; break;
-        case 'mortgage': s.mortgage.status = 'reviewed'; close('mortgage_offer'); break;
+        case 'mortgage': s.mortgage.status = 'reviewed'; close('mortgage_offer');
+          if (p.facts && (p.facts.lender || p.facts.amountPennies != null || p.facts.expiryDate)) {
+            const was = s.mortgage.facts;
+            s.mortgage.facts = { lender: p.facts.lender || was?.lender || 'unknown', amountPennies: p.facts.amountPennies ?? was?.amountPennies, expiryDate: p.facts.expiryDate ?? was?.expiryDate, conditions: was?.conditions ?? [], confidence: was?.confidence ?? 1 };
+          }
+          break;
         case 'management_pack': s.managementPack.status = 'reviewed'; close('management_pack'); break;
         case 'property_forms': s.propertyForms.status = 'received'; close('property_forms'); break;
         case 'contract_pack': s.contractPack.sentAt = s.contractPack.sentAt ?? e.createdAt; break;
         case 'contract_approved': s.readiness.contractApprovedAt = s.readiness.contractApprovedAt ?? e.createdAt; break;
         case 'deposit': s.deposit = { received: true, at: e.createdAt }; break;
-        case 'redemption': if (s.redemption.status === 'not_started' || s.redemption.status === 'requested') s.redemption.status = 'received'; close('redemption'); break;
+        case 'redemption': if (s.redemption.status === 'not_started' || s.redemption.status === 'requested') s.redemption.status = 'received'; close('redemption');
+          if (p.facts) s.redemption = { ...s.redemption, redemptionPennies: p.facts.amountPennies ?? s.redemption.redemptionPennies, validUntil: p.facts.validUntil ?? s.redemption.validUntil, lender: p.facts.lender || s.redemption.lender };
+          break;
         case 'enquiries': for (const q of Object.values(s.enquiries)) if (!isResolved(q.status)) q.status = 'reviewed' as never; close('enquiry'); break;
         case 'enquiry': if (sub && s.enquiries[sub]) { s.enquiries[sub].status = 'reviewed' as never; close('enquiry', sub); } break;
         case 'search': if (sub) {

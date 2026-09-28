@@ -14,7 +14,7 @@ import type { MatterState, WaitKey, WaitState } from './types';
 import { openIssues, openWaits } from './types';
 import { ISSUE_KIND_SPEC, MORTGAGE_EXPIRY_CRITICAL_DAYS, MORTGAGE_EXPIRY_WARNING_DAYS, type IssueKind, type IssueSeverity } from './issues';
 import { openIssues as openIssuesOf } from './types';
-import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays } from './working-days';
+import { workingDaysBetween, type WorkingCalendar, EW_CALENDAR, addWorkingDays, subtractWorkingDays } from './working-days';
 import { computeSdlt, sdltLabel } from './sdlt';
 
 export interface SlaRule {
@@ -119,7 +119,7 @@ function stripUndefined<T extends object>(o: T): Partial<T> {
 
 // ───────────────────────────── deadlines (eventualities) ─────────────────────────────
 
-export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry';
+export type DeadlineKind = 'mortgage_offer_expiry' | 'sdlt_filing' | 'notice_to_complete' | 'requisition_reply' | 'stale_issue' | 'priority_period_expiry' | 'certificate_of_title';
 
 export interface DeadlineAction {
   kind: DeadlineKind;
@@ -135,7 +135,9 @@ export interface DeadlineAction {
  * How many working days before a deadline the engine raises it (one escalation per deadline, by subject).
  * `stale_issue` is the other way round: an open issue nobody has touched for this many working days is raised.
  */
-export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2 };
+export const DEADLINE_LEAD: Record<DeadlineKind, number> = { mortgage_offer_expiry: 15, sdlt_filing: 5, notice_to_complete: 2, requisition_reply: 5, stale_issue: 10, priority_period_expiry: 2, certificate_of_title: 3 };
+/** Working days before completion a lender usually needs the certificate of title (UK Finance Handbook practice). */
+export const CERTIFICATE_OF_TITLE_NOTICE = 5;
 
 /**
  * Hard dates a conveyancer must not sail past. Unlike waits (something is owed to us),
@@ -156,6 +158,11 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   const expiry = state.mortgage.facts?.expiryDate;
   if (state.hasLender && expiry && !state.exchange.exchangedAt && (state.mortgage.status === 'cleared' || state.mortgage.status === 'reviewed')) {
     push('mortgage_offer_expiry', expiry, `The mortgage offer expires on ${expiry} and contracts are not exchanged. Exchange before then, or ask the lender for an extension / re-issue now — a lapsed offer reopens the mortgage sub-flow and blocks exchange.`);
+  }
+  // The certificate of title: our certificate to the lender, through its portal, so the advance arrives for completion.
+  if (state.hasLender && state.exchange.exchangedAt && state.exchange.completionDate && !state.deeds.certificateOfTitleAt && !state.completion.confirmedAt) {
+    const due = subtractWorkingDays(new Date(state.exchange.completionDate), CERTIFICATE_OF_TITLE_NOTICE, cal).toISOString().slice(0, 10);
+    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${state.exchange.completionDate}, so the mortgage advance arrives in time. Record it on the Mortgage step once it has gone.`);
   }
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt) {
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);

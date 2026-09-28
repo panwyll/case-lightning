@@ -52,6 +52,17 @@ export function workingDaysBetween(from: Date, to: Date, cal: WorkingCalendar = 
 }
 
 /** The date `n` working days after `from` (n ≥ 0). */
+/** The working day n working days before a date (a lender's notice period before completion). */
+export function subtractWorkingDays(from: Date, n: number, cal: WorkingCalendar = EW_CALENDAR): Date {
+  let cursor = startOfUtcDay(from);
+  let left = n;
+  while (left > 0) {
+    cursor = new Date(cursor.getTime() - 86_400_000);
+    if (isWorkingDay(cursor, cal)) left -= 1;
+  }
+  return cursor;
+}
+
 export function addWorkingDays(from: Date, n: number, cal: WorkingCalendar = EW_CALENDAR): Date {
   let cursor = startOfUtcDay(from);
   let left = n;

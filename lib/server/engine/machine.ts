@@ -112,8 +112,7 @@ import {
   type TitlePlanFacts,
   type SupportingDocFacts,
   openIssues,
-  isManualStep,
-} from './types';
+  isManualStep, type ManualStepFacts, MANUAL_STEP_REQUIRED } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
 export interface SummaryOverride {
@@ -215,7 +214,7 @@ type CommandBody =
   | { type: 'seller_forms_received'; actor: Actor; documentId: string; forms?: string[] | null; facts: PropertyFormsFacts | null }
   | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
   | { type: 'unlink_related_matter'; actor: Actor; reason: string }
-  | { type: 'complete_step_manually'; actor: Actor; step: string; note: string; documentIds?: string[] }
+  | { type: 'complete_step_manually'; actor: Actor; step: string; note: string; documentIds?: string[]; facts?: ManualStepFacts | null; skipReason?: string | null }
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
@@ -1929,7 +1928,14 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!isManualStep(cmd.step)) reject(`"${cmd.step}" is not a step that can be marked complete by hand.`, 400);
       if (!cmd.note?.trim()) reject('Say what was done (how it was checked, where it came from).', 400);
       if (cmd.step.startsWith('enquiry:') && !s.enquiries[cmd.step.slice(8)]) reject(`No enquiry ${cmd.step.slice(8)} on this case.`, 404);
-      return [{ type: 'step_completed_manually', actor: cmd.actor, payload: { step: cmd.step, note: cmd.note.trim(), documentIds: cmd.documentIds ?? [] } }];
+      const f: ManualStepFacts = cmd.facts ?? {};
+      const missing = (MANUAL_STEP_REQUIRED[cmd.step] ?? []).filter((r) => f[r.key] == null || f[r.key] === '');
+      if (missing.length && !cmd.skipReason?.trim()) reject(`Enter ${missing.map((m) => m.label).join(', ')}, or skip ${missing.length === 1 ? 'it' : 'them'} with a reason.`, 400);
+      const out: NewEvent[] = [{ type: 'step_completed_manually', actor: cmd.actor, payload: { step: cmd.step, note: cmd.note.trim(), documentIds: cmd.documentIds ?? [], facts: Object.keys(f).length ? f : null, skipReason: missing.length ? cmd.skipReason!.trim() : null } }];
+      // The lender's requirements go where the rules read them, as the directory would have put them.
+      if (cmd.step === 'mortgage' && (f.minUnexpiredYears != null || f.maxSearchAgeMonths != null || f.acceptsNonFamilyGift != null || f.requiresEws1 != null))
+        out.push({ type: 'lender_requirements_recorded', actor: cmd.actor, payload: { minUnexpiredYears: f.minUnexpiredYears ?? null, maxSearchAgeMonths: f.maxSearchAgeMonths ?? null, acceptsNonFamilyGift: f.acceptsNonFamilyGift ?? null, requiresEws1: f.requiresEws1 ?? null, note: f.lender ? `${f.lender} (entered by hand)` : 'entered by hand' } });
+      return out;
     }
     case 'unlink_related_matter': {
       requireEnrolled(s);

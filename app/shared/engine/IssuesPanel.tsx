@@ -207,6 +207,10 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
   };
 
   const sel = byKind[draft.kind];
+  // The lender withdrawing (or the offer lapsing) resets the mortgage: its own command, raised here like any other problem.
+  const WITHDRAWN = '__offer_withdrawn';
+  const offerOnFile = !!state.hasLender && !state.exchange?.exchangedAt && !['awaiting', 'not_required'].includes(state.mortgage?.status ?? 'awaiting');
+  const withdrawing = draft.kind === WITHDRAWN;
   return (
     <div className="is">
       <style>{CSS}</style>
@@ -240,14 +244,15 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
             <h2>Raise Issue</h2>
             <label>Kind
               <select className="ep-input" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value, gate: 'default' })}>
+                {offerOnFile && <optgroup label="Mortgage"><option value={WITHDRAWN}>Mortgage offer withdrawn or lapsed</option></optgroup>}
                 {(cat?.groups ?? []).map((g) => (
                   <optgroup key={g.id} label={g.label}>{kinds.filter((k) => k.group === g.id && k.kind !== 'lender_approval').map((k) => <option key={k.kind} value={k.kind}>{k.label}{k.context ? ' (context)' : ''}</option>)}</optgroup>
                 ))}
               </select>
             </label>
-            <label>What is wrong<input className="ep-input" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} autoFocus /></label>
+            <label>{withdrawing ? 'Why the offer was withdrawn' : 'What is wrong'}<input className="ep-input" value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} autoFocus /></label>
             <label>Detail<textarea className="ep-input" rows={3} value={draft.detail} onChange={(e) => setDraft({ ...draft, detail: e.target.value })} /></label>
-            {!sel?.context && (
+            {!sel?.context && !withdrawing && (
               <label>Holds
                 <select className="ep-input" value={draft.gate} onChange={(e) => setDraft({ ...draft, gate: e.target.value as typeof draft.gate })}>
                   <option value="default">{sel ? `${sel.gate === 'none' ? 'Nothing' : sel.gate === 'exchange' && exchanged ? 'Completion' : sel.gate === 'exchange' ? 'Exchange' : 'Completion'} (usual for this kind)` : 'The usual for this kind'}</option>
@@ -259,7 +264,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
             )}
             <div className="f">
               <button className="ep-btn" style={{ margin: 0 }} onClick={() => setRaising(false)}>Cancel</button>
-              <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !draft.title.trim()} onClick={() => { void cmd({ type: 'raise_issue', kind: draft.kind, title: draft.title.trim(), detail: draft.detail.trim() || null, gate: sel?.context ? 'none' : draft.gate === 'default' ? null : draft.gate }); setRaising(false); setDraft({ kind: draft.kind, title: '', detail: '', gate: 'default' }); }}>Raise Issue</button>
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || !draft.title.trim()} onClick={() => { if (withdrawing) { void cmd({ type: 'mortgage_offer_withdrawn', reason: [draft.title.trim(), draft.detail.trim()].filter(Boolean).join(': ') }); setRaising(false); setDraft({ kind: 'survey_defect', title: '', detail: '', gate: 'default' }); return; } void cmd({ type: 'raise_issue', kind: draft.kind, title: draft.title.trim(), detail: draft.detail.trim() || null, gate: sel?.context ? 'none' : draft.gate === 'default' ? null : draft.gate }); setRaising(false); setDraft({ kind: draft.kind, title: '', detail: '', gate: 'default' }); }}>Raise Issue</button>
             </div>
           </div>
         </div>

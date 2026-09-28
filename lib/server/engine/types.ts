@@ -1033,7 +1033,7 @@ export interface Payloads {
   /** Our client is also selling (or buying): the other matter, so exchange can be made simultaneous and sale proceeds traced. */
   related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
   related_matter_unlinked: { relatedMatterId: string; reason: string };
-  step_completed_manually: { step: string; note: string; documentIds: string[] };
+  step_completed_manually: { step: string; note: string; documentIds: string[]; facts?: ManualStepFacts | null; skipReason?: string | null };
   /** The lender's Part 2 answers that change a rule on this matter. */
   lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
   /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */
@@ -1297,6 +1297,24 @@ export type ReviewStatus = 'cleared' | 'flagged' | 'reviewed';
  * "reviewed by a person", which every gate accepts as resolved. Exchange and completion keep their
  * own forms (dates, money); searches and enquiries are named per item (search:CON29, enquiry:E2).
  */
+/** What a step completed by hand records in place of the reading it skipped: the facts later rules and deadlines run on. */
+export interface ManualStepFacts {
+  lender?: string | null;
+  amountPennies?: number | null;
+  expiryDate?: string | null;
+  validUntil?: string | null;
+  titleNumber?: string | null;
+  minUnexpiredYears?: number | null;
+  maxSearchAgeMonths?: number | null;
+  acceptsNonFamilyGift?: boolean | null;
+  requiresEws1?: boolean | null;
+}
+/** The facts a step cannot sensibly be completed without (a person may still skip them, with a reason). */
+export const MANUAL_STEP_REQUIRED: Record<string, Array<{ key: keyof ManualStepFacts; label: string }>> = {
+  mortgage: [{ key: 'lender', label: 'the lender' }, { key: 'amountPennies', label: 'the amount of the advance' }, { key: 'expiryDate', label: 'the offer expiry date' }],
+  redemption: [{ key: 'amountPennies', label: 'the redemption figure' }, { key: 'validUntil', label: 'the date the figure is good to' }],
+  title: [{ key: 'titleNumber', label: 'the title number' }],
+};
 export const MANUAL_STEPS = ['id_check', 'proof_of_funds', 'title', 'report_on_title', 'enquiries', 'mortgage', 'management_pack', 'property_forms', 'contract_pack', 'contract_approved', 'deposit', 'redemption'] as const;
 export const isManualStep = (step: string): boolean => (MANUAL_STEPS as readonly string[]).includes(step) || /^search:[A-Z0-9_]+$/.test(step) || /^enquiry:[\w-]{1,40}$/.test(step);
 /** cleared (auto), reviewed (human) and withdrawn (enquiries) all count as resolved for stage gating. */
@@ -1548,7 +1566,7 @@ export interface MatterState {
   /** Readiness milestones (advisory; shown as "ready to exchange?" not enforced as gates). */
   readiness: { contractApprovedAt: string | null; signedContractHeldAt: string | null };
   /** Steps a person marked complete by hand (manual handling), with what they said and what they filed. */
-  manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[] }>;
+  manualSteps?: Record<string, { at: string; by: string; note: string; documentIds: string[]; skipReason?: string | null }>;
 
   decisions: Record<string, DecisionState>;
   waits: WaitState[];

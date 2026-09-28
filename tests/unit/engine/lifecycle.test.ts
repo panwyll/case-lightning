@@ -307,6 +307,29 @@ test('manual handling: a person marks steps complete by hand (note and evidence)
   assert.equal(s.manualSteps?.['search:CON29']?.note, 'Personal search from another provider');
 });
 
+test('an offer marked complete by hand asks for the lender, advance and expiry (or a reason to skip them), and records the lender requirements where the rules read them', async () => {
+  const h = harness();
+  const { svc } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: [] });
+  await svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'Offer came by post' } as never);
+  await assert.rejects(svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'mortgage', note: 'Offer by post' }), /Enter the lender, the amount of the advance, the offer expiry date/);
+  await svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'mortgage', note: 'Offer by post', facts: { lender: 'Nationwide', amountPennies: 20_000_000, expiryDate: '2027-03-01', minUnexpiredYears: 85, acceptsNonFamilyGift: false } });
+  let s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.mortgage.status, 'reviewed');
+  assert.equal(s.mortgage.facts?.lender, 'Nationwide');
+  assert.equal(s.mortgage.facts?.expiryDate, '2027-03-01', 'the expiry deadline has a date to run on');
+  assert.equal(s.lenderRequirements?.minUnexpiredYears, 85);
+  assert.equal(s.lenderRequirements?.acceptsNonFamilyGift, false);
+  // Skipped with a reason: the step still completes, and the reason is kept.
+  const h2 = harness();
+  await h2.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: [] });
+  await h2.svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'x' } as never);
+  await h2.svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'mortgage', note: 'Lender confirmed by phone', skipReason: 'Offer to follow; lender confirmed the advance by phone' });
+  s = await h2.svc.getState(TENANT, MATTER);
+  assert.equal(s.mortgage.status, 'reviewed');
+  assert.match(s.manualSteps?.mortgage?.skipReason ?? '', /Offer to follow/);
+});
+
 test('in manual handling nothing stops firing, but whatever would have gone out on its own is proposed to a person instead (marked manual mode)', async () => {
   const h = harness();
   const { svc, ports } = h;
