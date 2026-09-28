@@ -80,11 +80,11 @@ export async function getBlob(tenantId: string, documentId: string): Promise<Buf
 }
 
 /** The move itself: files still held in the database go to Storage, a batch at a time. */
-export async function moveBlobsToStorage(limit = 50): Promise<{ moved: number; left: number }> {
+export async function moveBlobsToStorage(limit = 50, tenantId: string | null = null): Promise<{ moved: number; left: number }> {
   if (!storageConfigured()) return { moved: 0, left: 0 };
   const rows = await query<{ document_id: string; tenant_id: string; bytes: Buffer; mime: string | null }>(
-    `select b.document_id, b.tenant_id, b.bytes, d.mime_type as mime from document_blob b join document d on d.id = b.document_id where b.bytes is not null and b.storage_path is null limit $1`,
-    [limit]
+    `select b.document_id, b.tenant_id, b.bytes, d.mime_type as mime from document_blob b join document d on d.id = b.document_id where b.bytes is not null and b.storage_path is null ${tenantId ? 'and b.tenant_id = $2' : ''} limit $1`,
+    tenantId ? [limit, tenantId] : [limit]
   );
   let moved = 0;
   for (const r of rows) {
@@ -98,8 +98,45 @@ export async function moveBlobsToStorage(limit = 50): Promise<{ moved: number; l
       console.warn('[blob] could not move a file to storage', r.document_id, (e as Error).message);
     }
   }
-  const left = await queryOne<{ n: string }>(`select count(*)::text as n from document_blob where bytes is not null and storage_path is null`).then((x) => Number(x?.n ?? 0)).catch(() => 0);
+  const left = await queryOne<{ n: string }>(`select count(*)::text as n from document_blob where bytes is not null and storage_path is null ${tenantId ? 'and tenant_id = $1' : ''}`, tenantId ? [tenantId] : []).then((x) => Number(x?.n ?? 0)).catch(() => 0);
   return { moved, left };
+}
+
+/** Files we hold only in a case's OneDrive folder (filed before we kept our own copy). */
+const ONEDRIVE_ONLY = `from document d where d.tenant_id = $1 and d.graph_item_id is not null and d.superseded_at is null and not exists (select 1 from document_blob b where b.document_id = d.id)`;
+
+/** Copy OneDrive-only files into storage (downloaded as the case's drive owner), so every file is ours to read. */
+export async function copyDriveFilesToStorage(tenantId: string, limit = 20): Promise<{ copied: number; failed: number; left: number }> {
+  if (!storageConfigured()) return { copied: 0, failed: 0, left: 0 };
+  const { driveUserFor } = await import('./matter-drive');
+  const { downloadDriveItem } = await import('./graph');
+  const rows = await query<{ id: string; matter_id: string; graph_item_id: string; created_by: string | null; mime_type: string | null }>(`select d.id, d.matter_id, d.graph_item_id, d.created_by, d.mime_type ${ONEDRIVE_ONLY} order by d.created_at desc limit $2`, [tenantId, limit]);
+  let copied = 0;
+  let failed = 0;
+  for (const r of rows) {
+    try {
+      const owner = await driveUserFor(tenantId, r.matter_id, r.created_by ?? '');
+      if (!owner) throw new Error('no drive owner');
+      const bytes = await downloadDriveItem(owner, r.graph_item_id);
+      await putBlob(tenantId, r.id, bytes, { mime: r.mime_type });
+      copied += 1;
+    } catch (e) {
+      failed += 1;
+      console.warn('[blob] could not copy a OneDrive file to storage', r.id, (e as Error).message);
+    }
+  }
+  const left = await queryOne<{ n: string }>(`select count(*)::text as n ${ONEDRIVE_ONLY}`, [tenantId]).then((x) => Number(x?.n ?? 0)).catch(() => 0);
+  return { copied, failed, left };
+}
+
+/** Where this firm's files are held: in storage, still in the database, only in OneDrive. */
+export async function storageCounts(tenantId: string): Promise<{ inStorage: number; inDatabase: number; oneDriveOnly: number; configured: boolean }> {
+  const [a, b, c] = await Promise.all([
+    queryOne<{ n: string }>(`select count(*)::text as n from document_blob where tenant_id = $1 and storage_path is not null`, [tenantId]),
+    queryOne<{ n: string }>(`select count(*)::text as n from document_blob where tenant_id = $1 and bytes is not null and storage_path is null`, [tenantId]),
+    queryOne<{ n: string }>(`select count(*)::text as n ${ONEDRIVE_ONLY}`, [tenantId]),
+  ]);
+  return { inStorage: Number(a?.n ?? 0), inDatabase: Number(b?.n ?? 0), oneDriveOnly: Number(c?.n ?? 0), configured: storageConfigured() };
 }
 
 /**

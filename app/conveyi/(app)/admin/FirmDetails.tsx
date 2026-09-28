@@ -100,3 +100,32 @@ const CSS = `
 .fd-note{font-size:12.5px;color:#166534}
 @media (max-width:560px){.fd-row{grid-template-columns:1fr}}
 `;
+
+/** Where the firm's files are held, and moving them all into storage (from the database, and from OneDrive-only). */
+export function StorageCard() {
+  const [c, setC] = useState<{ inStorage: number; inDatabase: number; oneDriveOnly: number; configured: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  useEffect(() => { api<NonNullable<typeof c>>('/admin/storage/move').then(setC).catch(() => setC(null)); }, []);
+  const move = async () => {
+    setBusy(true); setNote(null);
+    try {
+      const r = await api<NonNullable<typeof c> & { moved: number; copied: number; failed: number }>('/admin/storage/move', { method: 'POST' });
+      setC(r);
+      setNote(`${r.moved + r.copied} moved${r.failed ? `; ${r.failed} could not be fetched from OneDrive` : ''}${r.inDatabase + r.oneDriveOnly - r.failed > 0 ? '. Run again for the rest.' : '.'}`);
+    } catch (e: unknown) { setNote(e instanceof Error ? e.message : 'Could not move them.'); }
+    finally { setBusy(false); }
+  };
+  if (!c) return null;
+  const left = c.inDatabase + c.oneDriveOnly;
+  return (
+    <div className="fd">
+      <div className="fd-h">Storage</div>
+      <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.6 }}>
+        {c.inStorage} in storage · {c.inDatabase} in the database · {c.oneDriveOnly} only in OneDrive
+      </div>
+      {left > 0 && c.configured && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void move()}>{busy ? 'Moving…' : 'Move To Storage'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+      {left === 0 && note && <div className="fd-a"><span className="fd-note">{note}</span></div>}
+    </div>
+  );
+}

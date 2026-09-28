@@ -1,5 +1,5 @@
 'use client';
-import { FirmDetails, MySignature } from './FirmDetails';
+import { FirmDetails, MySignature, StorageCard } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
@@ -1475,7 +1475,7 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'firm' && <><FirmDetails canEdit={me?.role === 'ADMIN'} /><MySignature /></>}
+        {tab === 'firm' && <><FirmDetails canEdit={me?.role === 'ADMIN'} /><MySignature />{me?.role === 'ADMIN' && <StorageCard />}</>}
         {tab === 'rules' && <RulesPanel canApprove={me?.role === 'ADMIN'} canPropose={me?.role === 'ADMIN' || me?.role === 'CONVEYANCER'} />}
         {tab === 'team' && (
           <div style={card}>
