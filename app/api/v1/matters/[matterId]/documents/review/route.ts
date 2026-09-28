@@ -128,6 +128,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
 
     // ── Review ─────────────────────────────────────────────────────────────────────
     const { review, model } = await reviewDocument({
+      tier: 'draft',
       userId: user.userId,
       tenantId: user.tenantId,
       matterId,

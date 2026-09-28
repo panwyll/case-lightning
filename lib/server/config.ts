@@ -63,7 +63,7 @@ export const config = {
   //   classify (triage) → Haiku 4.5 (fast + cheap; perfect for a label)
   anthropicApiKey: env('ANTHROPIC_API_KEY'),
   anthropicModel: env('ANTHROPIC_MODEL') ?? 'claude-opus-4-8',
-  anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-4-6',
+  anthropicFastModel: env('ANTHROPIC_FAST_MODEL') ?? 'claude-sonnet-5',
   anthropicClassifyModel: env('ANTHROPIC_CLASSIFY_MODEL') ?? 'claude-haiku-4-5',
 
   // Conveyancing engine models. Extraction reads scanned PDFs and must be right —

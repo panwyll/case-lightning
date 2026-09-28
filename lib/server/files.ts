@@ -329,6 +329,13 @@ async function buildDocIndexText(
     }
     const isPdf = ct === 'application/pdf' || lower.endsWith('.pdf');
     const isImage = /^image\/(png|jpe?g|gif|webp)$/i.test(ct) || /\.(png|jpe?g|gif|webp)$/i.test(lower);
+    // A PDF that carries its own text is indexed from that text: no model call. Only scans and pictures are read.
+    if (isPdf) {
+      const { pdfPageTexts } = await import('./engine/review');
+      const t = await pdfPageTexts(Buffer.from(base64, 'base64')).catch(() => ({ pages: [] as string[], textLayer: false }));
+      const thin = t.pages.filter((p) => p.trim().length < 40).length;
+      if (t.pages.length && thin / t.pages.length <= 0.2) return t.pages.join('\n\n').slice(0, 40000);
+    }
     if (isPdf || isImage) {
       const { review } = await reviewDocument({
         userId: user.userId,

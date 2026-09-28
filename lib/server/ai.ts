@@ -606,6 +606,8 @@ export async function reviewDocument(input: {
   documentText?: string;
   expectations: string;
   retrievedContext: string;
+  /** 'draft' only when a person asked for a review; everything automatic reads on the fast tier. */
+  tier?: 'draft' | 'fast';
 }): Promise<{ review: DocReview; model: string }> {
   // Content-addressed review cache: the same document on the same matter is reviewed
   // once and shared across ingest indexing, draft-time review and regenerates. Keyed
@@ -630,7 +632,16 @@ export async function reviewDocument(input: {
       'Document review needs Claude. Set ANTHROPIC_API_KEY (the firm key or your own) to enable reading documents.'
     );
   }
-  const model = modelFor('anthropic', 'draft');
+  const model = modelFor('anthropic', input.tier ?? 'fast');
+  // A PDF with a text layer is read as its text, not as page images: the same words for a fraction of the tokens.
+  if (input.pdfBase64 && !input.documentText) {
+    const { pdfPageTexts } = await import('./engine/review');
+    const t = await pdfPageTexts(Buffer.from(input.pdfBase64, 'base64')).catch(() => ({ pages: [] as string[], textLayer: false }));
+    const thin = t.pages.filter((p) => p.trim().length < 40).length;
+    if (t.pages.length && thin / t.pages.length <= 0.2) {
+      input = { ...input, pdfBase64: undefined, mimeType: 'text/plain', documentText: t.pages.map((p, i) => `=== Page ${i + 1} ===\n${p.trim()}`).join('\n\n').slice(0, 200_000) };
+    }
+  }
   const ctx: UsageContext = { tenantId: input.tenantId, matterId: input.matterId, userId: input.userId, feature: 'DOC_REVIEW' };
   const startedAt = Date.now();
 
@@ -718,10 +729,10 @@ export async function reviewDocument(input: {
       messages: [{ role: 'user', content }],
     });
   } catch (err) {
-    await recordAiUsage({ ctx, provider, model, tier: 'draft', usage: { inputTokens: 0, outputTokens: 0 }, byok, status: 'FAILED', latencyMs: Date.now() - startedAt });
+    await recordAiUsage({ ctx, provider, model, tier: input.tier ?? 'fast', usage: { inputTokens: 0, outputTokens: 0 }, byok, status: 'FAILED', latencyMs: Date.now() - startedAt });
     throw err;
   }
-  await recordAiUsage({ ctx, provider, model, tier: 'draft', usage: anthropicUsage(resp.usage), byok, status: 'SUCCESS', latencyMs: Date.now() - startedAt, meta: { fileName: input.fileName } });
+  await recordAiUsage({ ctx, provider, model, tier: input.tier ?? 'fast', usage: anthropicUsage(resp.usage), byok, status: 'SUCCESS', latencyMs: Date.now() - startedAt, meta: { fileName: input.fileName } });
   const block = resp.content.find((b) => b.type === 'tool_use');
   if (!block || block.type !== 'tool_use') throw new Error('Model did not return a structured review');
   const review = block.input as DocReview;
