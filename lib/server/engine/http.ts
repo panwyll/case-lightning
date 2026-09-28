@@ -52,6 +52,7 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('buildings_insurance_confirmed'), insurer: z.string().max(120).nullish(), fromDate: isoDate.nullish(), documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('priority_search_made'), expiresAt: isoDate, documentId: z.string().uuid().nullish() }),
   z.object({ type: z.literal('bankruptcy_search_clear'), subjects: z.array(z.string().max(120)).max(6).nullish(), documentId: z.string().uuid().nullish() }),
+  z.object({ type: z.literal('resume_automation'), reason: z.string().min(3).max(500) }),
   z.object({ type: z.literal('mark_manual_handling'), reason: z.string().min(1).max(200), detail: z.string().max(2000).optional() }),
   z.object({ type: z.literal('resend_proof_of_funds') }),
   z.object({ type: z.literal('retry_action'), proposalEventId: z.string().uuid() }),

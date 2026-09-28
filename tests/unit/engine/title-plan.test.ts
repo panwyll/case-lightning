@@ -40,3 +40,15 @@ test('the title step flags a plan for a different title, and markings beyond the
   assert.ok(lines.some((l) => /^flag: Title plan ZZ999: a different title from the register \(AB123456\)/.test(l)), lines.join('\n'));
   assert.ok(lines.some((l) => /^flag: Title plan ZZ999: other markings.*tinted brown: a right of way over the drive/.test(l)), lines.join('\n'));
 });
+
+test('a tenure that cannot be read flags the title but does not pause the case; a pause can be resumed by a person with a reason', async () => {
+  const h = await purchase();
+  await h.svc.titleReceived(TENANT, MATTER, h.doc({ ...titleClear(), tenure: 'unknown' }));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.manualHandling.required, false);
+  await h.svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'tenure_mismatch' });
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resume_automation', actor: USER, reason: '' }), /Say why/);
+  await h.svc.run(TENANT, MATTER, { type: 'resume_automation', actor: USER, reason: 'Tenure confirmed freehold from the register' });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.manualHandling.required, false);
+});

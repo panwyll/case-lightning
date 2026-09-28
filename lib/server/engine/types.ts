@@ -218,6 +218,7 @@ export const EVENT_TYPES = [
   'availability_recorded',
   'expectation_opened',
   'title_plan_read',
+  'manual_handling_cleared',
   'funding_changed',
   'survey_plan_recorded',
   'signing_method_set',
@@ -1023,6 +1024,8 @@ export interface Payloads {
   availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
   expectation_opened: { key: ExpectationKey };
   title_plan_read: { facts: TitlePlanFacts };
+  /** A person resumed automation after a pause, with why. */
+  manual_handling_cleared: { reason: string; was: string | null };
   /** The buyer now has a mortgage, or is now buying without one. */
   funding_changed: { hasLender: boolean; reason: string };
   /** The client's plan for a survey: none (their choice, recorded) or booked for a date. */

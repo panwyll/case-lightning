@@ -134,6 +134,9 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.stageHistory.push({ stage: p.to, at: e.createdAt, seq: e.seq });
       break;
     }
+    case 'manual_handling_cleared':
+      s.manualHandling = { required: false, reason: null };
+      break;
     case 'manual_handling_required': {
       const p = e.payload as Payloads['manual_handling_required'];
       s.manualHandling = { required: true, reason: p.reason };

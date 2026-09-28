@@ -1094,7 +1094,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   return (
     <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
-      {s.manualHandling.required && <div className="ep-err">Manual handling required: {pretty(s.manualHandling.reason ?? '')}. Automation is paused on this case.</div>}
+      {s.manualHandling.required && <div className="ep-err" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span>Automation paused: {pretty(s.manualHandling.reason ?? '')}.</span><button className="ep-btn" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { const r = window.prompt('Resume automation on this case? Say why (e.g. the tenure is confirmed freehold).'); if (r && r.trim().length >= 3) void cmd({ type: 'resume_automation', reason: r.trim() }); }}>Resume Automation</button></div>}
 
       {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []), feeds: ph.feeds })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
       {section === 'flow' && (

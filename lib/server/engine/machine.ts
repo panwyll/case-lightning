@@ -123,6 +123,7 @@ export type Command = CommandBody & { completion?: Completion | null };
 type CommandBody =
   | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
+  | { type: 'resume_automation'; actor: Actor; reason: string }
   | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null; link?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null; party?: string | null }
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
@@ -240,6 +241,7 @@ export type CommandType = CommandBody['type'];
 export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'enrol',
   'mark_manual_handling',
+  'resume_automation',
   'request_id_check',
   'raise_enquiry',
   'open_decision_source',
@@ -851,6 +853,13 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       return [{ type: 'bankruptcy_search_clear', actor: cmd.actor, payload: { subjects: subjects.length ? subjects : [...(s.partyNames ?? [])], documentId: cmd.documentId ?? null }, sourceDocumentId: cmd.documentId ?? null }];
     }
 
+    case 'resume_automation': {
+      requireEnrolled(s);
+      if (!isUserActor(cmd.actor)) reject('A person resumes automation.', 403);
+      if (!s.manualHandling.required) reject('Automation is not paused on this case.');
+      if (!cmd.reason?.trim()) reject('Say why automation can resume.', 400);
+      return [{ type: 'manual_handling_cleared', actor: cmd.actor, payload: { reason: cmd.reason.trim(), was: s.manualHandling.reason } }];
+    }
     case 'mark_manual_handling': {
       requireEnrolled(s);
       if (s.manualHandling.required) reject('Matter is already marked for manual handling.');
@@ -1012,9 +1021,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.facts.unregistered && !s.manualHandling.required) {
         out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: 'unregistered_land', detail: 'The title is unregistered: an epitome / deeds bundle rather than official copies. Investigate the root of title (15 years), the index map search (SIM) and the land charges searches (K15) by hand; first registration follows completion.' } });
       }
-      // A tenure the matter was not enrolled for: flag for the human AND halt automation until it is re-enrolled correctly.
-      if (expectedTenure !== 'any' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
-        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: cmd.facts.tenure === 'unknown' ? 'tenure_unknown' : 'tenure_mismatch', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}; the matter is a ${txType.replace('_', ' ')}.` } });
+      // A tenure the matter was not enrolled for (read clearly as the other one): flag it AND halt automation until a person resolves it.
+      // A tenure that could not be read is only a flag on the title for a person; it does not stop the case.
+      if (expectedTenure !== 'any' && cmd.facts.tenure !== 'unknown' && cmd.facts.tenure !== expectedTenure && !s.manualHandling.required) {
+        out.push({ type: 'manual_handling_required', actor: SYSTEM, payload: { reason: 'tenure_mismatch', detail: `Title ${cmd.facts.titleNumber} is ${cmd.facts.tenure}; the matter is a ${txType.replace('_', ' ')}.` } });
       }
       return out;
     }
