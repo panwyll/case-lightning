@@ -823,6 +823,8 @@ export class EngineService {
       }
       state = await this.getState(tenantId, matterId);
     }
+    // Anything that should have happened on an event and did not (a rule added later, a failed draft) is caught here.
+    if (reportReady(state)) { await this.draftReportWhenReady(tenantId, matterId); state = await this.getState(tenantId, matterId); }
     // Time as a source of events (docs/case-model.md §6): offer expiry, aged waits, sitting issues — first, so the deadlines below see the result.
     let timed = 0;
     for (const t of timedIssueActions(state, now)) {
