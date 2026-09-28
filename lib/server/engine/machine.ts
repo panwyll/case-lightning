@@ -750,17 +750,39 @@ function strangersAmong(s: MatterState, remitter: string): string[] {
 }
 
 /** The seller's forms read into issues: one per answer that changes what the file needs, cited to the page, never duplicated. */
+/** The title of the one issue the seller's forms raise, and how to recognise it (and the per-point issues it replaces). */
+export const FORMS_ISSUE_PREFIX = "Seller's forms:";
+const isPerPointFormsIssue = (title: string) => /^(TA\d+|Forms|EPC)( |:)/.test(title);
+
+/**
+ * What the forms disclose, as ONE issue listing every point (like the survey), not an issue per
+ * point. The forms come in several files: each arrival rebuilds the list from the whole set, the
+ * previous list and any per-point issues from before are withdrawn into it.
+ */
 function formsIssueEvents(s: MatterState, facts: PropertyFormsFacts, side: 'buyer' | 'seller', documentId: string | null): NewEvent[] {
+  const prev = s.sellerForms?.facts;
+  const merged: PropertyFormsFacts = prev && side === 'buyer'
+    ? { ...facts, forms: [...new Set([...(prev.forms ?? []), ...(facts.forms ?? [])])], answers: { ...(prev.answers ?? {}), ...Object.fromEntries(Object.entries(facts.answers ?? {}).filter(([, v]) => v !== null && v !== undefined)) }, disclosures: [...(prev.disclosures ?? []), ...(facts.disclosures ?? [])].filter((d, i, a) => a.findIndex((x) => x.code === d.code && x.description === d.description) === i) }
+    : facts;
+  const points = propertyFormsIssues(merged, side, { buyToLet: s.shapes?.includes('buy_to_let') ?? false });
   const out: NewEvent[] = [];
-  let n = 0;
-  const existing = new Set(Object.values(s.issues).map((i) => i.title));
-  for (const fi of propertyFormsIssues(facts, side, { buyToLet: s.shapes?.includes('buy_to_let') ?? false })) {
-    if (existing.has(fi.title)) continue;
-    existing.add(fi.title);
-    const gate: IssueGate = s.exchange.exchangedAt ? 'completion' : ISSUE_KIND_SPEC[fi.kind].gate;
-    const id = `${nextIssueId(s).replace(/\d+$/, '')}${Number(nextIssueId(s).replace(/\D+/g, '')) + n++}`;
-    out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: id, kind: fi.kind, title: fi.title, detail: fi.detail, gate, stage: s.stage, sourceDocumentId: documentId, origin: null, party: null, severity: fi.flag.severity === 'high' ? 'warning' : 'info', causedBy: null } });
-  }
+  const open = openIssues(s);
+  // Nothing new in this file: the list stands as it is.
+  const whoNow = side === 'buyer' ? "the seller's solicitor" : 'the client';
+  const titleNow = `${FORMS_ISSUE_PREFIX} ${points.length} point${points.length === 1 ? '' : 's'} to raise with ${whoNow}`;
+  const detailNow = points.map((p, n) => `${n + 1}. ${p.title}${p.page ? ` (p.${p.page})` : ''}\n   ${p.detail}`).join('\n');
+  const current = open.find((i) => i.title.startsWith(FORMS_ISSUE_PREFIX));
+  if (current && current.title === titleNow && current.detail === detailNow && !open.some((i) => isPerPointFormsIssue(i.title))) return [];
+  const superseded = open.filter((i) => i.title.startsWith(FORMS_ISSUE_PREFIX) || isPerPointFormsIssue(i.title));
+  for (const i of superseded) out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: `Merged into one list of the points from the ${side === 'buyer' ? "seller's" : "client's"} forms.` } });
+  if (!points.length) return out;
+  const rank: Record<string, number> = { high: 3, medium: 2, low: 1, info: 0 };
+  const worst = points.reduce((m, p) => Math.max(m, rank[p.flag.severity] ?? 1), 0);
+  const who = side === 'buyer' ? "the seller's solicitor" : 'the client';
+  const title = `${FORMS_ISSUE_PREFIX} ${points.length} point${points.length === 1 ? '' : 's'} to raise with ${who}`;
+  const detail = points.map((p, n) => `${n + 1}. ${p.title}${p.page ? ` (p.${p.page})` : ''}\n   ${p.detail}`).join('\n');
+  const gate: IssueGate = s.exchange.exchangedAt ? 'completion' : 'exchange';
+  out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'disclosure_concern', title, detail, gate, stage: s.stage, sourceDocumentId: documentId, origin: null, party: null, severity: worst >= 3 ? 'warning' : 'info' }, sourceDocumentId: documentId ?? undefined });
   return out;
 }
 
@@ -1341,7 +1363,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       const out: NewEvent[] = [{ type: 'supporting_document_read', actor: SYSTEM, payload: { facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
       // An open issue it may answer (works without consents, a missing certificate or guarantee) is pointed at it; a person decides.
-      const answers: Record<string, string[]> = { planning_permission: ['building_regs_missing', 'planning_breach', 'document_missing'], building_regs: ['building_regs_missing', 'document_missing'], certificate: ['document_missing', 'building_regs_missing'], guarantee: ['document_missing'], indemnity_policy: ['building_regs_missing', 'planning_breach', 'restrictive_covenant_breach', 'document_missing'] };
+      const answers: Record<string, string[]> = { planning_permission: ['building_regs_missing', 'planning_breach', 'document_missing', 'disclosure_concern'], building_regs: ['building_regs_missing', 'document_missing', 'disclosure_concern'], certificate: ['document_missing', 'building_regs_missing', 'disclosure_concern'], guarantee: ['document_missing', 'disclosure_concern'], indemnity_policy: ['building_regs_missing', 'planning_breach', 'restrictive_covenant_breach', 'document_missing', 'disclosure_concern'] };
       for (const i of openIssues(s).filter((x) => (answers[cmd.facts.kind] ?? []).includes(x.kind))) {
         out.push({ type: 'issue_updated', actor: SYSTEM, payload: { issueId: i.id, status: i.status as 'open' | 'negotiating', note: `A document on the file may answer this: ${cmd.facts.title || cmd.facts.kind.replace(/_/g, ' ')}${cmd.facts.covers ? ` (${cmd.facts.covers.slice(0, 120)})` : ''}.`, gate: null } });
       }

@@ -1413,7 +1413,8 @@ export interface MatterState {
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   /** Purchase side: the seller's forms as read. */
-  sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null };
+  /** The seller's forms as a set: they come as separate files (TA6, TA10, TA7), each adding forms and answers. */
+  sellerForms: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: PropertyFormsFacts | null; documents?: Array<{ documentId: string; forms: string[] }> };
   /** Our client's linked sale or purchase (one client, one chain). */
   relatedMatter: { matterId: string; relation: 'sale' | 'purchase'; linkedAt: string } | null;
   /** The lender's own (Part 2) requirements recorded on this matter; null = the defaults. */

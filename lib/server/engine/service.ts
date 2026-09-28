@@ -55,7 +55,7 @@ const ACK_WINDOW_MS = 4 * 60 * 60 * 1000;
 import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
-import { openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
+import { openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
@@ -64,7 +64,7 @@ import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyCo
 import type { SurveyFacts } from './types';
 import { chaseContent, unsignedDeeds } from './chase-content';
 import { EXPECTATION_KEYS } from './types';
-import { expectationDue } from './machine';
+import { expectationDue, FORMS_ISSUE_PREFIX } from './machine';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
 
@@ -247,7 +247,7 @@ export class EngineService {
       // What it was for travels with it, so the client hears it in those terms.
       const purpose = d.origin === 'client_instruction' ? 'client_instruction' : d.origin === 'survey' ? 'survey' : d.title === 'Access for specialists' ? 'access' : d.title === 'Evidence from the seller' ? 'evidence' : d.question ? 'forms' : 'general';
       const about = d.about ?? (typeof d.title === 'string' && d.title.startsWith("On the client's instruction: ") ? d.title.slice("On the client's instruction: ".length) : undefined);
-      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [], purpose, about } : { formsQuestion: d.question ?? undefined, purpose, about } });
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [], purpose, about, ...(d.question && d.question !== 'forms' ? { formsQuestion: d.question } : {}) } : { formsQuestion: d.question ?? undefined, purpose, about } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -968,15 +968,26 @@ export class EngineService {
   private async effects(tenantId: string, matterId: string, events: EngineEvent[], state: MatterState, subflows: LevelConfig): Promise<void> {
     for (const e of events) {
       try {
-        // The seller answered "not known": each such question is an enquiry to the seller's solicitor, proposed (never sent unasked below auto).
+        // The seller's forms: ONE enquiry to the seller's solicitor covering every point they raise and every "not known"
+        // answer, numbered, proposed (never sent unasked below auto) and tied to the one issue that lists them.
         if (e.type === 'seller_forms_received') {
-          const facts = (e.payload as { facts: { notKnown?: Array<{ question: string; section: string | null; page: number | null }> | null } | null }).facts;
-          for (const q of facts?.notKnown ?? []) {
-            const subject = `TA6 ${q.question.replace(/\s+/g, ' ').trim()}: the seller answered "not known". Please make enquiries of your client and confirm the position, with any documents held.`;
-            if (Object.values(state.enquiries).some((x) => x.origin?.formsQuestion === q.question)) continue;
-            const detail = { subject, question: q.question, section: q.section, page: q.page };
-            if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'ta6', `enquiry_draft:${q.question}`, detail, `ENQUIRY FROM THE SELLER'S FORMS\n\nQuestion: ${q.question}${q.section ? `\nSection: ${q.section}` : ''}${q.page ? `\nPage: ${q.page}` : ''}\nAnswer given: not known\n\nProposed enquiry to the seller's solicitor:\n${subject}`)) continue;
-            await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject, origin: { formsQuestion: q.question } });
+          const fresh = await this.getState(tenantId, matterId);
+          const listIssue = openIssues(fresh).find((i) => i.title.startsWith(FORMS_ISSUE_PREFIX));
+          const facts = fresh.sellerForms?.facts as { notKnown?: Array<{ question: string; section: string | null; page: number | null }> | null } | null;
+          const asked = new Set(Object.values(fresh.enquiries).map((x) => x.origin?.formsQuestion).filter(Boolean));
+          const notKnown = (facts?.notKnown ?? []).filter((q) => !asked.has(q.question));
+          const points = listIssue ? (listIssue.detail ?? '').split('\n').filter((l) => /^\d+\. /.test(l)).map((l) => l.replace(/^\d+\. /, '').replace(/ \(p\.\d+\)$/, '')) : [];
+          const lines = [
+            ...points.map((p) => `${p.replace(/^(TA\d+|Forms|EPC): /, '')}: please provide full details, with copies of any documents.`),
+            ...notKnown.map((q) => `${q.question.replace(/\s+/g, ' ').trim()}: your client answered "not known". Please make enquiries of your client and confirm the position.`),
+          ];
+          if (lines.length) {
+            const subject = `Arising from your client's property information forms:\n\n${lines.map((l, n) => `${n + 1}. ${l}`).join('\n')}`;
+            const detail = { subject, question: notKnown[0]?.question ?? 'forms', issueId: listIssue?.id ?? null, alsoIssueIds: [], title: "From the seller's forms", about: 'the seller\'s forms' };
+            const key = `enquiry_draft:forms:${e.sourceDocumentId ?? e.id}`;
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'ta6', key, detail, `ENQUIRIES FROM THE SELLER'S FORMS\n\nTo: the seller's solicitor\n\n${subject}`))) {
+              await this.perform(tenantId, matterId, 'enquiry_draft', detail);
+            }
           }
         }
         // The thing itself arrived: whatever said it was coming is closed.

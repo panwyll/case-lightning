@@ -145,8 +145,10 @@ test("the seller's TA6 read into issues on a purchase; our client's on a sale; n
   const doc = h.doc({ forms: ['TA6'], disclosures: [], confidence: 0.9, answers: { japaneseKnotweed: true, flooded: true, floodDetail: 'Garden flooded in 2021' } }, 'PROPERTY_FORMS');
   const r = await h.svc.propertyFormsReceived(TENANT, MATTER, doc);
   assert.ok(r.events.some((e) => e.type === 'seller_forms_received'));
+  // One issue listing every point (not an issue per point), cited to the document.
   const raised = r.events.filter((e) => e.type === 'issue_raised');
-  assert.equal(raised.length, 2);
+  assert.equal(raised.length, 1);
+  assert.match((raised[0].payload as { title: string }).title, /^Seller's forms: 2 points to raise/);
   assert.ok(raised.every((e) => e.sourceDocumentId === doc || (e.payload as { sourceDocumentId: string }).sourceDocumentId === doc));
   const again = await h.svc.propertyFormsReceived(TENANT, MATTER, doc).catch((e: Error) => e);
   assert.ok(again instanceof Error ? true : again.events.filter((e) => e.type === 'issue_raised').length === 0, 'the same answers do not raise the same issues twice');

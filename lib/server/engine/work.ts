@@ -297,7 +297,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // A locked file is opened from the task itself: the password goes against this document.
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       chip: i.kind === 'send_failed' ? 'Send failed' : i.kind === 'file_locked' ? 'Locked file' : 'Issue',
-      what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
+      // A list issue (the seller's forms) already says what to do; others lead with the kind's first action.
+      what: spec.actions[0] && !i.title.startsWith("Seller's forms:") ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
       urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',

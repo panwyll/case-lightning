@@ -14,6 +14,10 @@ import type { IssueKind } from './issues';
 export interface FormsIssue { kind: IssueKind; title: string; detail: string; page: number | null; flag: Flag }
 
 const yes = (v: boolean | null | undefined): boolean => v === true;
+/** Shortened on a word, never mid-word. */
+const clip = (s: string, n: number): string => { const t = s.replace(/\s+/g, ' ').trim(); if (t.length <= n) return t; const cut = t.slice(0, n); return `${cut.slice(0, Math.max(cut.lastIndexOf(' '), n - 20)).replace(/[,;:.\s]+$/, '')}…`; };
+/** A remark about the document itself (which forms it holds or lacks) is not something the seller disclosed. */
+const aboutTheDocument = (s: string): boolean => /\b(this|the) (document|file|pdf|form)\b.*\b(only|does not|doesn't|contains no|is not|lacks|missing)\b|\bdoes not contain\b|\bonly (a|the) TA ?\d+\b|\bnot (included|present) in this (document|file)\b/i.test(s);
 const some = (v: string | null | undefined): v is string => !!v && v.trim().length > 0 && !/^(none|no|n\/a|not applicable|not known|nil)\.?$/i.test(v.trim());
 
 /** Deterministic rules over the TA6 / TA7 answers. `side` says whose forms they are. */
@@ -41,6 +45,7 @@ export function propertyFormsIssues(f: PropertyFormsFacts, side: 'buyer' | 'sell
   // Energy performance: a seller must have commissioned an EPC before marketing; F or G cannot be let (MEES), which matters to a buy-to-let buyer and their lender.
   if (side === 'seller' && !some(a.epcRating)) push('document_missing', 'TA6_EPC_MISSING', 'EPC: no energy performance certificate stated on the forms', 'The seller must have commissioned an EPC before marketing (Energy Performance of Buildings Regulations 2012) and the buyer\'s solicitor will ask for it with the pack. Check the EPC register and put the certificate in the pack; if the property is to be let, a rating of F or G bars a new tenancy (MEES).', null, 'low');
   if (side === 'buyer' && some(a.epcRating) && /^[FG]$/i.test(a.epcRating!.trim()) && opts.buyToLet) push('buy_to_let_conditions', 'TA6_EPC_MEES', `EPC rating ${a.epcRating!.trim().toUpperCase()}: the property cannot be let without improvement (MEES)`, 'A domestic property rated F or G cannot be let under the Minimum Energy Efficiency Standards unless an exemption is registered; the buy-to-let lender will not accept the rental cover until it is improved to E or better. Advise the client on the cost and tell the lender.', null, 'high');
-  for (const fl of f.disclosures ?? []) if (!out.some((x) => x.flag.code === fl.code)) push('disclosure_concern', fl.code, `Forms: ${fl.description.slice(0, 160)}`, fl.description, fl.locator?.page ?? null, fl.severity);
+  const form = f.forms?.find((x) => x !== 'TA10' && x !== 'OTHER') ?? f.forms?.[0] ?? 'Forms';
+  for (const fl of f.disclosures ?? []) if (!aboutTheDocument(fl.description) && !out.some((x) => x.flag.code === fl.code)) push('disclosure_concern', fl.code, `${form === 'OTHER' ? 'Forms' : form}: ${clip(fl.description, 110)}`, fl.description, fl.locator?.page ?? null, fl.severity);
   return out;
 }

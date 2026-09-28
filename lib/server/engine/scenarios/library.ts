@@ -94,7 +94,7 @@ const sellerForms = (leasehold: boolean): ScenarioStep[] => [
   }),
   step('seller_forms_issues', "The TA6 issues resolved: consents obtained by indemnity, the knotweed guarantee on file", async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
-    for (const i of Object.values(s.issues).filter((i) => i.title.startsWith('TA6:') && (i.status === 'open' || i.status === 'negotiating'))) {
+    for (const i of Object.values(s.issues).filter((i) => (i.title.startsWith('TA6:') || i.title.startsWith("Seller's forms:")) && (i.status === 'open' || i.status === 'negotiating'))) {
       await c.run({ type: 'resolve_issue', issueId: i.id, resolution: i.kind === 'building_regs_missing' ? 'indemnity_policy' : 'evidence_provided', note: i.kind === 'building_regs_missing' ? 'Building regulations indemnity policy quoted and accepted by the lender.' : 'Treatment plan and insurance-backed guarantee received; lender content.' });
     }
     // An indemnity policy tells the lender (the engine raises that itself); the lender confirms.
@@ -120,7 +120,9 @@ const enquiries = (): ScenarioStep[] => [
     await c.run({ type: 'raise_enquiry', enquiryId: 'E2', subject: 'Please confirm who maintains the rear boundary fence.' });
   }),
   step('enquiry_replies', 'Replies to enquiries received', async (c) => {
-    for (const id of ['E1', 'E2']) {
+    // Every enquiry out, including the one the seller's forms drafted.
+    const open = Object.values((await c.svc.getState(c.tenantId, c.matterId)).enquiries).filter((q) => q.status === 'raised').map((q) => q.enquiryId);
+    for (const id of [...new Set(['E1', 'E2', ...open])]) {
       const partial = c.flagged && id === 'E2';
       const doc = await c.doc({ docType: 'ENQUIRY_REPLY', fileName: `reply-${id}.txt`, facts: partial ? F.replyPartial(id) : F.replyClear(id), body: F.body(`Reply to enquiry ${id}`, [partial ? 'The seller does not know who maintains the fence.' : 'Answered in full; documents enclosed.']) });
       await c.svc.enquiryReplyReceived(c.tenantId, c.matterId, id, doc);
@@ -302,7 +304,7 @@ export const SCENARIOS: Scenario[] = [
       }),
       step('forms_issues', 'What the TA6 discloses is dealt with before the pack goes out', async (c) => {
         const s = await c.svc.getState(c.tenantId, c.matterId);
-        for (const i of Object.values(s.issues).filter((i) => i.title.startsWith('TA6:') && (i.status === 'open' || i.status === 'negotiating'))) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Disclosed in full with the paperwork in the pack.' });
+        for (const i of Object.values(s.issues).filter((i) => (i.title.startsWith('TA6:') || i.title.startsWith("Seller's forms:")) && (i.status === 'open' || i.status === 'negotiating'))) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Disclosed in full with the paperwork in the pack.' });
       }, { flaggedOnly: true }),
       step('title', 'Official copies received (with the charge to redeem)', async (c) => {
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });

@@ -977,7 +977,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     }
     case 'seller_forms_received': {
       const p = e.payload as Payloads['seller_forms_received'];
-      s.sellerForms = { receivedAt: e.createdAt, forms: p.forms, documentId: e.sourceDocumentId ?? null, facts: p.facts };
+      // The forms come as separate files: each adds its forms and its answers to the set (a later answer to the same question wins).
+      const prev = s.sellerForms;
+      const docs = [...(prev.documents ?? (prev.documentId ? [{ documentId: prev.documentId, forms: prev.forms }] : [])).filter((d) => d.documentId !== e.sourceDocumentId), ...(e.sourceDocumentId ? [{ documentId: e.sourceDocumentId, forms: p.forms }] : [])];
+      const answers = { ...(prev.facts?.answers ?? {}), ...Object.fromEntries(Object.entries(p.facts?.answers ?? {}).filter(([, v]) => v !== null && v !== undefined)) };
+      const merged = p.facts ? { ...p.facts, forms: [...new Set([...(prev.facts?.forms ?? []), ...(p.facts.forms ?? [])])], answers, disclosures: [...(prev.facts?.disclosures ?? []), ...(p.facts.disclosures ?? [])] } : prev.facts;
+      s.sellerForms = { receivedAt: e.createdAt, forms: [...new Set(docs.flatMap((d) => d.forms))], documentId: e.sourceDocumentId ?? prev.documentId, facts: merged as typeof prev.facts, documents: docs };
       // Read before as a supporting document: it is the forms, and only the forms.
       if (e.sourceDocumentId && s.title.supporting?.some((x) => x.documentId === e.sourceDocumentId)) s.title = { ...s.title, supporting: s.title.supporting.filter((x) => x.documentId !== e.sourceDocumentId) };
       break;
