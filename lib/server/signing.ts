@@ -51,7 +51,7 @@ export const productionSigning: SigningPort = {
     }
     return { provider, lenderAcceptsDigital };
   },
-  async sendPack({ tenantId, matterId, wet, electronic, signers }) {
+  async sendPack({ tenantId, matterId, wet, electronic, signers, reminder, override }) {
     const m = await queryOne<{ matter_ref: string; property_address: string; assigned_to: string | null; created_by: string; fee_name: string | null; client_email: string | null; client_name: string | null; buyer_names: string[] | null }>(
       `select m.matter_ref, m.property_address, m.assigned_to, m.created_by, coalesce(u.display_name, u.email) as fee_name,
               (select c.email from matter_contact c where c.matter_id = m.id and c.tenant_id = m.tenant_id and c.role = 'CLIENT' order by c.last_seen_at desc limit 1) as client_email,
@@ -70,7 +70,10 @@ export const productionSigning: SigningPort = {
     const adapter = SIGNING_PROVIDERS[provider] ?? null;
     const envelopes: Array<{ document: SignedDocument; provider: string; envelopeId: string }> = [];
     const fellBackToWet: SignedDocument[] = [];
+    const withProvider = new Set(reminder?.alreadyWithProvider ?? []);
     for (const d of electronic) {
+      // A reminder does not open a second envelope for a deed the provider already has.
+      if (withProvider.has(d)) continue;
       const file = await deedFile(tenantId, matterId, d);
       if (!adapter || !file) { fellBackToWet.push(d); continue; }
       try {
@@ -98,12 +101,17 @@ export const productionSigning: SigningPort = {
       firstName,
       property: m.property_address,
       transaction: 'purchase',
-      signingIntro: `Here ${inInk.length + envelopes.length === 1 ? 'is the document' : 'are the documents'} you need to sign: ${labels([...inInk, ...envelopes.map((e) => e.document)])}.`,
+      signingIntro: reminder
+        ? `A reminder that we still need ${labels([...inInk, ...envelopes.map((e) => e.document), ...withProvider])} signed. We cannot complete without ${inInk.length + envelopes.length + withProvider.size === 1 ? 'it' : 'them'}, and your lender will not release the mortgage money until we hold the signed mortgage deed. Everything is below again, so you do not have to look for our earlier email.`
+        : `Here ${inInk.length + envelopes.length === 1 ? 'is the document' : 'are the documents'} you need to sign: ${labels([...inInk, ...envelopes.map((e) => e.document)])}.`,
       wetBlock: inInk.length ? `To sign in ink (${labels(inInk)}, attached):\n• Print ${inInk.length === 1 ? 'it' : 'them'} single-sided and sign where marked.\n• Sign in front of an independent adult witness: not a relative, not your partner, and not anyone with an interest in the property. The witness signs and adds their name and address.\n• Post the signed originals to:\n${address!.join('\n')}\n\n` : '',
-      electronicBlock: envelopes.length ? `To sign electronically (${labels(envelopes.map((e) => e.document))}): you will receive an email from ${adapter?.label ?? 'our signing provider'} with a link. Your witness must be with you in person when you sign, and will get their own link to sign as witness.\n\n` : '',
+      electronicBlock: (withProvider.size ? `To sign electronically (${labels([...withProvider])}): use the link in the email ${adapter?.label ?? 'our signing provider'} sent you. If you cannot find it (it is worth looking in junk), reply to this email and we will have it sent again.\n\n` : '') + (envelopes.length ? `To sign electronically (${labels(envelopes.map((e) => e.document))}): you will receive an email from ${adapter?.label ?? 'our signing provider'} with a link. Your witness must be with you in person when you sign, and will get their own link to sign as witness.\n\n` : ''),
       feeEarner: m.fee_name ?? firm.name,
       firmName: firm.name,
     });
+    if (reminder) r.subject = `Reminder: ${r.subject}`;
+    if (override?.subject?.trim()) r.subject = override.subject.trim();
+    if (override?.body?.trim()) r.body = override.body.trim();
     const held = messageProblem(r);
     if (held) throw new Error(`Not sent: the message looks wrong (${held}).`);
     const { firmFooter } = await import('./firm');
@@ -114,8 +122,8 @@ export const productionSigning: SigningPort = {
     for (const { f } of files) await addAttachmentToMessage(sender, draft.id, f.fileName, f.bytes, f.mime);
     await sendDraftMessage(sender, draft.id);
     await query(
-      `insert into client_message (tenant_id, matter_id, direction, channel, address, template, subject, body, provider_ref, status) values ($1,$2,'OUT','email',$3,'signing_pack',$4,$5,$6,'SENT')`,
-      [tenantId, matterId, m.client_email, r.subject, body, draft.id ?? null]
+      `insert into client_message (tenant_id, matter_id, direction, channel, address, template, subject, body, provider_ref, status) values ($1,$2,'OUT','email',$3,$7,$4,$5,$6,'SENT')`,
+      [tenantId, matterId, m.client_email, r.subject, body, draft.id ?? null, reminder ? 'chase_signed_documents' : 'signing_pack']
     ).catch(() => {});
     return { channel: 'email', messageId: draft.id ?? null, attached: files.map(({ f }) => f.fileName), envelopes, fellBackToWet };
   },

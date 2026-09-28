@@ -94,6 +94,8 @@ export interface OrderResult {
   reference: string;
   status: string;
   estimatedReturn?: string | null;
+  /** ID checks: the person's own link, when the order returns one. */
+  link?: string | null;
 }
 
 export interface WebhookEvent {
@@ -192,13 +194,14 @@ export class InfoTrackClient {
   }
 
   async orderIdCheck(input: { matterRef: string; party: { name: string; email?: string | null; phone?: string | null } }): Promise<OrderResult> {
-    const r = await this.request<{ orderId: string; status: string }>('POST', ENDPOINTS.orderIdCheck, {
+    const r = await this.request<{ orderId: string; status: string; link?: string; url?: string; clientUrl?: string; inviteUrl?: string }>('POST', ENDPOINTS.orderIdCheck, {
       clientReference: input.matterRef,
       subject: input.party,
       checks: ['IDENTITY', 'PEP_SANCTIONS', 'ADDRESS'],
       callbackUrl: this.cfg.callbackUrl,
     });
-    return { reference: r.orderId, status: r.status };
+    const link = [r.clientUrl, r.inviteUrl, r.link, r.url].find((u) => typeof u === 'string' && /^https:\/\//.test(u)) ?? null;
+    return { reference: r.orderId, status: r.status, link };
   }
 
   async getOrder(reference: string): Promise<{ status: string; documentUrl?: string | null; raw: unknown }> {
@@ -306,18 +309,19 @@ export class InfoTrackSearchProvider implements SearchProvider {
 
 export class InfoTrackIdCheckProvider implements IdCheckProvider {
   readonly name = 'infotrack';
+  readonly sendsClientLink = true;
   constructor(
     private client: InfoTrackClient,
     private orders: IntegrationOrderStore,
     private lookup: MatterLookup
   ) {}
-  async requestCheck(input: { tenantId: string; matterId: string }): Promise<{ reference: string }> {
+  async requestCheck(input: { tenantId: string; matterId: string }): Promise<{ reference: string; link?: string | null }> {
     const m = await this.lookup(input.tenantId, input.matterId);
     const name = m.buyerNames[0];
     if (!name) throw new InfoTrackError('No buyer name on the matter to run an ID check for.', 400, false);
     const r = await this.client.orderIdCheck({ matterRef: m.matterRef, party: { name, email: m.clientEmail ?? null, phone: m.clientPhone ?? null } });
     await this.orders.record({ tenantId: input.tenantId, matterId: input.matterId, provider: 'infotrack', kind: 'id_check', subject: name, providerRef: r.reference, status: 'ORDERED' }, { name });
-    return { reference: r.reference };
+    return { reference: r.reference, link: r.link ?? null };
   }
 }
 

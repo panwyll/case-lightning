@@ -111,7 +111,10 @@ export interface SearchProvider {
 
 export interface IdCheckProvider {
   readonly name: string;
-  requestCheck(input: { tenantId: string; matterId: string; /** a named party beyond the first client (co-buyer, donor); absent = the first client */ party?: string | null; label?: string | null }): Promise<{ reference: string }>;
+  /** True when the provider emails the person their own link (so a chase can say where to look). */
+  readonly sendsClientLink?: boolean;
+  /** `link`: the person's own link to the check, when the provider gives one back — kept so a chase can send it again. */
+  requestCheck(input: { tenantId: string; matterId: string; /** a named party beyond the first client (co-buyer, donor); absent = the first client */ party?: string | null; label?: string | null }): Promise<{ reference: string; link?: string | null }>;
 }
 
 /** Component #5, status updates only — the safe-to-automate half. Q&A is deliberately NOT a port here. */
@@ -199,7 +202,8 @@ export interface SigningPort {
   readonly name: string;
   /** The firm's provider ('none' = wet ink only) and whether this lender takes an e-signed mortgage deed (null: not known). */
   defaults(tenantId: string, lender: string | null): Promise<{ provider: string; lenderAcceptsDigital: boolean | null }>;
-  sendPack(input: { tenantId: string; matterId: string; wet: SignedDocument[]; electronic: SignedDocument[]; signers: string[] }): Promise<{ channel: string; messageId: string | null; attached: string[]; envelopes: Array<{ document: SignedDocument; provider: string; envelopeId: string }>; fellBackToWet: SignedDocument[] }>;
+  /** `reminder`: a chase — the same letter again with the unsigned deeds re-attached; deeds already with the provider get no new envelope. `override`: a person's edit of the words. */
+  sendPack(input: { tenantId: string; matterId: string; wet: SignedDocument[]; electronic: SignedDocument[]; signers: string[]; reminder?: { alreadyWithProvider: SignedDocument[] } | null; override?: { subject?: string | null; body?: string | null } | null }): Promise<{ channel: string; messageId: string | null; attached: string[]; envelopes: Array<{ document: SignedDocument; provider: string; envelopeId: string }>; fellBackToWet: SignedDocument[] }>;
 }
 
 export interface EnginePorts {

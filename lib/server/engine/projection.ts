@@ -149,7 +149,7 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'id_check_requested': {
       const p = e.payload as Payloads['id_check_requested'];
       const target = p.party ? s.partyChecks[p.party] : s.idCheck;
-      if (target) { target.status = 'requested'; target.requestedAt = e.createdAt; }
+      if (target) { target.status = 'requested'; target.requestedAt = e.createdAt; if (p.link) target.link = p.link; }
       openWait(s, 'id_check', p.party ?? '', e);
       break;
     }

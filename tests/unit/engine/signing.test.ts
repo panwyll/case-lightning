@@ -56,5 +56,8 @@ test('the client is chased for signed documents, but not while away', async () =
   await h.svc.sendSigningPack(TENANT, MATTER);
   h.advanceDays(8);
   await h.svc.tick(TENANT, MATTER);
-  assert.ok(h.ports.chaser.chases.some((c) => c.template === 'chase_signed_documents'));
+  // The chase is the pack again, the unsigned deed re-attached, not a note saying "we are still waiting".
+  assert.deepEqual(h.ports.signing.reminders, [{ wet: ['mortgage_deed'], electronic: [], alreadyWithProvider: [] }]);
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.waits.find((w) => w.key === 'signed_documents' && w.closedAt === null)?.chasesSentAt.length, 1, 'recorded as a chase');
 });

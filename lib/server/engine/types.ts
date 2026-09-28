@@ -340,6 +340,8 @@ export interface IdPartyCheck {
   requestedAt: string | null;
   documentId: string | null;
   decisionEventId: string | null;
+  /** Their own link to the check, when the provider gave one. */
+  link?: string | null;
 }
 /** The party id for a named person: stable, readable, safe as a wait subject. */
 export const partyId = (role: IdPartyCheck['role'], name: string): string => `${role}:${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
@@ -778,7 +780,7 @@ export interface Payloads {
 
   /** Another person to identify: a co-buyer / co-owner named at enrolment, or a gift donor declared on the proof-of-funds form. */
   id_party_added: { party: string; label: string; role: IdPartyCheck['role'] };
-  id_check_requested: { provider: string; reference?: string | null; /** null / absent = the first client */ party?: string | null };
+  id_check_requested: { provider: string; reference?: string | null; /** the person's own link to the check, when the provider gave one */ link?: string | null; /** null / absent = the first client */ party?: string | null };
   id_check_cleared: { facts: IdCheckFacts; reasons: string[]; party?: string | null };
   id_check_flagged: { facts: IdCheckFacts; flags: Flag[]; decision: DecisionSpec; party?: string | null };
   id_check_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null; party?: string | null };
@@ -1311,6 +1313,8 @@ export interface MatterState {
     requestedAt: string | null;
     documentId: string | null;
     decisionEventId: string | null;
+    /** The client's own link to the check, when the provider gave one: a chase sends it again. */
+    link?: string | null;
     /** When the first client's check last cleared or was reviewed: the clock for ongoing monitoring (LSAG 6.21). */
     resolvedAt?: string | null;
   };

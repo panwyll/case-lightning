@@ -121,7 +121,7 @@ export type Command = CommandBody & { completion?: Completion | null };
 type CommandBody =
   | { type: 'enrol'; actor: Actor; transactionType?: TransactionType | null; attorneys?: string[] | null; officers?: string[] | null; executors?: string[] | null; occupiers?: string[] | null; sdlt?: { firstTimeBuyer: boolean; additionalProperty: boolean; nonUkResident: boolean } | null; requireProofOfFunds?: boolean | null; requireExchangeAuthority?: boolean | null; parties?: number | null; hasExistingMortgage?: boolean | null; considerationPennies?: number | null; hasLender: boolean; requiredSearches?: SearchType[]; targetExchangeDate?: string | null; targetCompletionDate?: string | null; counterpartyType?: CounterpartyType | null; shadowMode?: boolean; shapes?: CaseShape[] | null; partyNames?: string[] | null }
   | { type: 'mark_manual_handling'; actor: Actor; reason: string; detail?: string }
-  | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null }
+  | { type: 'request_id_check'; actor: Actor; provider: string; reference?: string | null; party?: string | null; link?: string | null }
   | { type: 'id_check_result'; actor: Actor; documentId: string; facts: IdCheckFacts; summary?: SummaryOverride | null; party?: string | null }
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
@@ -843,7 +843,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const status = pc ? pc.status : s.idCheck.status;
       if (status === 'requested') reject(`An ID check${pc ? ` for ${pc.label}` : ''} is already in progress.`);
       if (isResolved(status)) reject(`The ID check${pc ? ` for ${pc.label}` : ''} is already resolved.`);
-      return [{ type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null, party: cmd.party ?? null } }];
+      return [{ type: 'id_check_requested', actor: cmd.actor, payload: { provider: cmd.provider, reference: cmd.reference ?? null, party: cmd.party ?? null, ...(cmd.link ? { link: cmd.link } : {}) } }];
     }
     case 'id_check_result': {
       requireEnrolled(s);

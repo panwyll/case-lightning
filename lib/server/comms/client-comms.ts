@@ -222,8 +222,11 @@ export class ProductionChaser implements ThirdPartyChaser {
       searchName: SEARCH_NAMES[subject] ?? subject,
       orderedDate: typeof ctx.openedAt === 'string' ? ctx.openedAt.slice(0, 10) : '',
       ageWorkingDays: String(ctx.ageWorkingDays ?? ''),
-      priorChaseNote: prior > 0 ? ` and despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
+      priorChaseNote: prior > 0 ? `, despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
       completionDate: info.completionDate ?? '',
+      transaction: typeof ctx.transaction === 'string' ? ctx.transaction : 'purchase',
+      // The thing we asked for, again (engine/chase-content.ts): the link, the form, or what is still outstanding.
+      resend: typeof ctx.resend === 'string' ? ctx.resend : '',
     };
   }
 

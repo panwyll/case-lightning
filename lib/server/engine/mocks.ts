@@ -180,9 +180,11 @@ export class MockSearchProvider implements SearchProvider {
 export class MockIdCheckProvider implements IdCheckProvider {
   readonly name = 'mock-id-provider (stub for AML/ID #4)';
   requests: string[] = [];
+  /** Set to have the provider hand back the client's own link to the check. */
+  link: string | null = null;
   async requestCheck(input: { matterId: string }) {
     this.requests.push(input.matterId);
-    return { reference: `MOCK-ID-${this.requests.length}` };
+    return { reference: `MOCK-ID-${this.requests.length}`, link: this.link };
   }
 }
 
@@ -213,11 +215,11 @@ export class MockProofOfFundsForms implements ProofOfFundsForms {
 
 export class MockChaser implements ThirdPartyChaser {
   readonly name = 'mock-chaser (stub for template chase emails #5)';
-  chases: Array<{ matterId: string; recipientRole: string; template: string }> = [];
+  chases: Array<{ matterId: string; recipientRole: string; template: string; context?: Record<string, unknown> }> = [];
   acks: Array<{ matterId: string; recipientRole: string; what: string }> = [];
   notices: Array<{ matterId: string; recipientRole: string; template: string }> = [];
-  async sendChase(input: { matterId: string; recipientRole: string; template: string }) {
-    this.chases.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template });
+  async sendChase(input: { matterId: string; recipientRole: string; template: string; context?: Record<string, unknown> }) {
+    this.chases.push({ matterId: input.matterId, recipientRole: input.recipientRole, template: input.template, context: input.context });
     return { channel: 'mock' as const, messageId: `mock-chase-${this.chases.length}` };
   }
   async sendPartyNotice(input: { matterId: string; recipientRole: string; template: string }) {
@@ -282,7 +284,10 @@ export class MockSigning {
   lenderAcceptsDigital: boolean | null = null;
   packs: Array<{ wet: string[]; electronic: string[] }> = [];
   async defaults() { return { provider: this.provider, lenderAcceptsDigital: this.lenderAcceptsDigital }; }
-  async sendPack(input: { wet: import('./types').SignedDocument[]; electronic: import('./types').SignedDocument[] }) {
+  /** Reminders (a chase): the same pack again, deeds already with the provider named. */
+  reminders: Array<{ wet: string[]; electronic: string[]; alreadyWithProvider: string[] }> = [];
+  async sendPack(input: { wet: import('./types').SignedDocument[]; electronic: import('./types').SignedDocument[]; reminder?: { alreadyWithProvider: import('./types').SignedDocument[] } | null }) {
+    if (input.reminder) { this.reminders.push({ wet: input.wet, electronic: input.electronic, alreadyWithProvider: input.reminder.alreadyWithProvider }); return { channel: 'mock', messageId: `mock-reminder-${this.reminders.length}`, attached: input.wet.map((d) => `${d}.pdf`), envelopes: [], fellBackToWet: [] as import('./types').SignedDocument[] }; }
     this.packs.push({ wet: input.wet, electronic: input.electronic });
     return { channel: 'mock', messageId: `mock-pack-${this.packs.length}`, attached: input.wet.map((d) => `${d}.pdf`), envelopes: input.electronic.map((d) => ({ document: d, provider: this.provider, envelopeId: `env-${d}` })), fellBackToWet: [] as import('./types').SignedDocument[] };
   }

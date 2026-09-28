@@ -62,6 +62,7 @@ import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
 import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
+import { chaseContent, unsignedDeeds } from './chase-content';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
 
@@ -197,9 +198,26 @@ export class EngineService {
       if (!sent) return;
       await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
     } else if (action === 'chase') {
-      const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown> };
-      const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context, override: (detail as { edited?: MessageOverride }).edited ?? null });
-      await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
+      const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown>; alsoSubjects?: string[] };
+      const edited = (detail as { edited?: MessageOverride }).edited ?? null;
+      // What the chase puts back in front of them is read from the case now, not from when it was proposed.
+      const state = await this.getState(tenantId, matterId);
+      const context = { ...d.context, ...this.chaseExtras(state, d.waitKey, d.subject) };
+      let sent: { channel: string; messageId: string | null };
+      if (d.waitKey === 'signed_documents' && this.ports.signing && unsignedDeeds(state).length) {
+        // The deeds themselves, again: the same letter with the unsigned ones re-attached.
+        const deeds = unsignedDeeds(state);
+        sent = await this.ports.signing.sendPack({ tenantId, matterId, wet: deeds.filter((x) => x.method === 'wet').map((x) => x.document), electronic: deeds.filter((x) => x.method === 'electronic').map((x) => x.document), signers: state.partyNames ?? [], reminder: { alreadyWithProvider: deeds.filter((x) => state.signing.envelopes[x.document]).map((x) => x.document) }, override: edited });
+      } else {
+        sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context, override: edited });
+      }
+      // One chase can cover several waits (every unanswered enquiry to the same solicitor): each is recorded as chased.
+      const subjects = [d.subject, ...(d.alsoSubjects ?? [])];
+      const open = new Set(openWaits(state).filter((w) => w.key === d.waitKey).map((w) => w.subject));
+      for (const subj of subjects) {
+        if (subj !== d.subject && !open.has(subj)) continue;
+        await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: subj, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel as never, messageId: sent.messageId } });
+      }
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
       await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'signing_pack') {
@@ -267,8 +285,8 @@ export class EngineService {
     const pc = party ? before.partyChecks[party] : null;
     if ((pc ? pc.status : before.idCheck.status) === 'requested') return { state: before, events: [] };
     // A person asked for this: their click is the approval, whatever the trust levels say.
-    const { reference } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
-    return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference, party });
+    const { reference, link } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
+    return this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference, party, link: link ?? null });
   }
 
   // ───────────── proof of funds (docs/proof-of-funds.md) ─────────────
@@ -718,16 +736,22 @@ export class EngineService {
         this.ports.log(`deadline escalation failed (${d.kind} ${d.dueDate})`, err);
       }
     }
-    for (const a of dueActions(state, now, sla)) {
+    const due = dueActions(state, now, sla);
+    // Every enquiry due a chase goes in one letter to the seller's solicitor, not one letter each.
+    const enquiryChases = due.filter((a) => a.kind === 'chase' && a.wait.key === 'enquiry');
+    const actions = enquiryChases.length > 1 ? due.filter((a) => !(a.kind === 'chase' && a.wait.key === 'enquiry') || a === enquiryChases[0]) : due;
+    for (const a of actions) {
       try {
         if (a.kind === 'chase') {
           // Nobody is chased while they are away: the reminder waits for them to be back.
           const awayParty = a.rule.recipientRole === 'client' ? 'client' : a.rule.recipientRole === 'seller_solicitor' ? 'seller_side' : a.rule.recipientRole === 'lender' ? 'lender' : null;
           if (awayParty && awayNow(state, awayParty, now)) continue;
-          const context = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length };
-          const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context };
-          const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\nTemplate: ${a.rule.template}\n\nA polite reminder asking for what is outstanding, in the firm's standard wording.`;
-          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.wait.key, `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
+          const grouped = a.wait.key === 'enquiry';
+          const also = grouped ? openWaits(state).filter((w) => w.key === 'enquiry' && w.subject !== a.wait.subject).map((w) => w.subject) : [];
+          const context: Record<string, unknown> = { waitKey: a.wait.key, subject: a.wait.subject, openedAt: a.wait.openedAt, ageWorkingDays: a.ageWorkingDays, priorChases: a.wait.chasesSentAt.length, ...this.chaseExtras(state, a.wait.key, a.wait.subject) };
+          const detail = { waitKey: a.wait.key, subject: a.wait.subject, recipientRole: a.rule.recipientRole, template: a.rule.template, context, ...(also.length ? { alsoSubjects: also } : {}) };
+          const summary = `CHASE\n\nTo: ${a.rule.recipientRole.replace(/_/g, ' ')}\nAbout: ${grouped ? `${1 + also.length} unanswered ${also.length ? 'enquiries' : 'enquiry'}` : `${a.wait.key.replace(/_/g, ' ')}${a.wait.subject ? ` ${a.wait.subject}` : ''}`}\nWaiting since: ${a.wait.openedAt.slice(0, 10)} (${a.ageWorkingDays} working days)\nPrevious chases: ${a.wait.chasesSentAt.length}\n\nA reminder that puts what we asked for back in front of them: ${String(context.resend ?? '').split('\n')[0] || 'what is outstanding'}.`;
+          if (await this.proposeUnless(tenantId, matterId, subflows, 'chase', a.wait.key, grouped ? 'enquiry:replies' : `${a.wait.key}:${a.wait.subject}`, detail, summary)) continue;
           try { await this.perform(tenantId, matterId, 'chase', detail); } catch (err) { this.ports.log(`chase could not be sent (${a.wait.key})`, err); await this.recordSendFailure(tenantId, matterId, 'chase', detail, err); continue; }
           chases += 1;
         } else {
@@ -750,6 +774,13 @@ export class EngineService {
     return { chases, escalations };
   }
 
+  /** What a chase carries beyond the reminder: the link, the form, or the list of what is still outstanding (chase-content.ts). */
+  private chaseExtras(state: MatterState, waitKey: string, subject: string | null): Record<string, string> {
+    const sale = state.transactionType === 'freehold_sale' || state.transactionType === 'leasehold_sale';
+    const idp = this.ports.idCheckProvider;
+    return { transaction: sale ? 'sale' : 'purchase', ...chaseContent(state, waitKey, subject, { idProviderSendsLink: !!idp.sendsClientLink, idProviderLabel: idp.name === 'infotrack' ? 'InfoTrack' : idp.name }) };
+  }
+
   /** A person sends the chase for a wait now rather than when the timer would; the same template and record as the timer's. */
   async chaseNow(tenantId: string, matterId: string, waitKey: WaitKey, subject: string | null, actor: string): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
@@ -760,7 +791,9 @@ export class EngineService {
     if (!rule) throw Object.assign(new Error(`No chase rule for ${waitKey}.`), { status: 400 });
     const ageWorkingDays = workingDaysBetween(new Date(wait.openedAt), this.ports.now());
     const context = { waitKey: wait.key, subject: wait.subject, openedAt: wait.openedAt, ageWorkingDays, priorChases: wait.chasesSentAt.length, sentBy: actor };
-    await this.perform(tenantId, matterId, 'chase', { waitKey: wait.key, subject: wait.subject, recipientRole: rule.recipientRole, template: rule.template, context });
+    // An enquiry chase lists every unanswered enquiry, and records each as chased.
+    const also = wait.key === 'enquiry' ? openWaits(state).filter((w) => w.key === 'enquiry' && w.subject !== wait.subject).map((w) => w.subject) : [];
+    await this.perform(tenantId, matterId, 'chase', { waitKey: wait.key, subject: wait.subject, recipientRole: rule.recipientRole, template: rule.template, context, ...(also.length ? { alsoSubjects: also } : {}) });
     const after = await this.getState(tenantId, matterId);
     return { state: after, events: [], warning: `Chase sent to the ${rule.recipientRole.replace(/_/g, ' ')} (${rule.template.replace(/_/g, ' ')}).` };
   }
