@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import { WORK_CSS } from './WorkPanel';
+import { Grouped, ListToolbar, useListTools, whenIn, type Filter } from './ListTools';
 import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type DraftCheckView, type EngineEvent, type EngineView } from './types';
 import { CheckedDraft } from './CheckedDraft';
 
@@ -12,6 +13,19 @@ type RegisterDiffView = { previousAt: string; added: Array<{ key: string; value:
  * event on the log that cites a source document, newest first.
  */
 type Role = 'auto' | 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'management_pack' | 'lease' | 'survey' | 'specialist_report' | 'property_forms';
+
+type DocRow = { doc: { id: string; fileName: string | null; docType: string | null; createdAt: string }; events: EngineEvent[] };
+const DOC_FILTERS: Filter<DocRow>[] = [
+  { key: 'read', label: 'Read Into the Case', match: (x) => x.events.length > 0 },
+  { key: 'unread', label: 'Filed Only', match: (x) => x.events.length === 0 },
+  { key: 'signed', label: 'Signed Deeds', match: (x) => x.doc.docType === 'SIGNED_DEED' },
+];
+type MsgRow = { status: string | null; direction: string };
+const MSG_FILTERS: Filter<MsgRow>[] = [
+  { key: 'failed', label: 'Failed', match: (m) => /FAIL|BOUNCE/i.test(m.status ?? '') },
+  { key: 'out', label: 'Sent', match: (m) => m.direction === 'OUT' && !/FAIL/i.test(m.status ?? '') },
+  { key: 'in', label: 'Received', match: (m) => m.direction !== 'OUT' },
+];
 
 /** Log entries that cite a generated text file are not documents to a person; the timeline has them. */
 const NOT_PAPER = new Set(['FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL']);
@@ -65,9 +79,11 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
     catch (e: unknown) { setReread((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' })); }
     finally { setRereading(null); }
   };
+  const docTools = useListTools(filed, { date: (x) => x.doc.createdAt, text: (x) => `${x.doc.fileName ?? ''} ${x.doc.docType ?? ''} ${x.events.map((e) => e.type).join(' ')}` });
   const [outbox, setOutbox] = useState<Array<{ id: string; fileName: string | null; createdAt: string }>>([]);
   // Every message the case has sent (or drafted, or failed to send), with the address and the provider's reference: the first place to look when someone says they did not get it.
   const [messages, setMessages] = useState<Array<{ id: string; at: string; direction: string; channel: string; address: string | null; template: string | null; status: string | null; providerRef: string | null; subject?: string | null }>>([]);
+  const msgTools = useListTools(messages, { date: (m) => m.at, text: (m) => `${m.subject ?? ''} ${m.template ?? ''} ${m.address ?? ''} ${m.status ?? ''}`, filters: MSG_FILTERS });
   const [resending, setResending] = useState<string | null>(null);
   const [resendNote, setResendNote] = useState<Record<string, string>>({});
   const resend = async (id: string) => {
@@ -224,9 +240,10 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
         <>
           <div className="ep-sec">Messages ({messages.length})</div>
           <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-            {messages.map((m) => (
+            <ListToolbar tools={msgTools} filters={MSG_FILTERS} placeholder="Search messages" />
+            <Grouped tools={msgTools} render={(m, g) => (
               <div key={m.id} className="ep-row">
-                <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(m.at)}</span>
+                <span className="ep-note" style={{ minWidth: 120 }}>{whenIn(m.at, g)}</span>
                 <b>{m.subject || (m.template ?? '').replace(/_/g, ' ') || m.channel}</b>
                 <span className="ep-note">{m.direction === 'OUT' ? 'to' : 'from'} {m.address ?? 'no address'} · {m.channel}</span>
                 {m.direction === 'OUT' && m.address && <button className="ep-btn" style={{ margin: '0 0 0 auto', padding: '2px 8px', fontSize: 11.5 }} disabled={resending === m.id} onClick={() => void resend(m.id)}>{resending === m.id ? 'Sending…' : 'Send Again'}</button>}
@@ -234,7 +251,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                 <span className="ep-pill" style={m.status === 'SENT' ? { background: '#dcfce7', color: '#166534' } : /FAIL/i.test(m.status ?? '') ? { background: '#fee2e2', color: '#991b1b' } : { background: '#fef3c7', color: '#78350f' }}>{(m.status ?? 'unknown').replace(/^FAILED: /, 'Failed: ')}</span>
                 {m.providerRef && <span className="ep-note" title="The provider's reference for this message">{m.providerRef.slice(0, 18)}…</span>}
               </div>
-            ))}
+            )} />
           </div>
         </>
       )}
@@ -291,14 +308,14 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
       )}
       <div className="ep-sec">Filed on this case ({filed.length})</div>
       <div className="ep-block" style={{ background: '#fff', borderColor: '#e6e8ee' }}>
-        {filed.length === 0 && <div className="ep-note">Nothing has been filed yet{s.enrolled ? '' : ' — enrol the case first'}.</div>}
-        {filed.map(({ doc: dd, events: evs }) => {
+        {filed.length > 0 && <ListToolbar tools={docTools} filters={DOC_FILTERS} placeholder="Search documents" />}
+        <Grouped tools={docTools} empty={`Nothing has been filed yet${s.enrolled ? '' : ' — enrol the case first'}.`} render={({ doc: dd, events: evs }, g) => {
           const e = evs[0] ?? null;
           const id = dd.id;
           return (
           <div key={id}>
           <div id={`doc-${id}`} className="ep-row" style={{ cursor: reviewOf(id) || checked.has(id) ? 'pointer' : undefined, ...(doc && id === doc ? { background: '#faf8ff', boxShadow: 'inset 3px 0 0 #5A27E0', paddingLeft: 8, borderRadius: 6 } : {}) }} onClick={() => { if (!reviewOf(id) && !checked.has(id)) return; if (openReview === id) { setOpenReview(null); setTable(null); } else void loadTable(id); }}>
-            <span className="ep-note" style={{ minWidth: 120 }}>{fmtWhen(dd.createdAt)}</span>
+            <span className="ep-note" style={{ minWidth: 120 }}>{whenIn(dd.createdAt, g)}</span>
             <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{dd.fileName ?? pretty((dd.docType ?? 'document').toLowerCase())}</b>
             <span className="ep-note">{e ? `${pretty(e.type)}${typeof e.payload.searchType === 'string' ? ` ${e.payload.searchType}` : ''}${typeof e.payload.enquiryId === 'string' ? ` ${e.payload.enquiryId}` : ''}${e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}` : 'Filed'}</span>
             <a className="ep-note" href={`/api/v1/documents/${id}/raw`} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}>Open</a>
@@ -340,7 +357,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             </div>
           )}
           </div>
-        );})}
+        );}} />
       </div>
     </div>
   );

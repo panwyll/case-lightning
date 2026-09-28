@@ -1,5 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
+import { Grouped, ListToolbar, useListTools, whenIn, type Filter } from './ListTools';
 import { DECISION_EVENT_TYPES, KIND_LABEL, actorKind, pretty, type EngineEvent, type EngineState } from './types';
 
 /**
@@ -9,8 +10,6 @@ import { DECISION_EVENT_TYPES, KIND_LABEL, actorKind, pretty, type EngineEvent, 
  * decision panel — resolved ones too, read-only.
  */
 const firstLine = (s: string) => (s.split('\n').find((l) => l.trim()) ?? '').trim();
-const dayKey = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
-const hhmm = (iso: string) => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
 /** One line for an issue-layer event: which issue, and what happened to it. */
 function issueLabel(e: EngineEvent, state: EngineState): string | null {
@@ -71,15 +70,9 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
     const logged: EngineEvent[] = focus ? [] : log.map((l) => ({ id: `log:${l.id}`, seq: 0, type: `log:${l.type}`, actor: 'system', createdAt: l.at, sourceDocumentId: null, confidenceScore: null, payload: { title: l.title, details: l.details } }) as unknown as EngineEvent);
     return [...events.filter((e) => !focus || touches(e, focus)), ...logged].sort((a, b) => (a.createdAt === b.createdAt ? b.seq - a.seq : a.createdAt < b.createdAt ? 1 : -1));
   }, [events, focus, log]);
-  const days = useMemo(() => {
-    const out: Array<[string, EngineEvent[]]> = [];
-    for (const e of ordered) {
-      const k = dayKey(e.createdAt);
-      if (!out.length || out[out.length - 1][0] !== k) out.push([k, []]);
-      out[out.length - 1][1].push(e);
-    }
-    return out;
-  }, [ordered]);
+  // Searchable, filterable, grouped by when: Today, Yesterday, This Week open; older folded.
+  const filters = useMemo(() => TIMELINE_FILTERS(state), [state]);
+  const tools = useListTools(ordered, { date: (e) => e.createdAt, text: (e) => searchText(e, state), filters });
   const who = (a: string) => (a === 'system' ? 'engine' : a === 'ai' ? 'AI' : a === 'external' ? 'external' : (people[a] ?? 'handler'));
 
   if (!events.length) return <div className="eg-empty">No events yet.</div>;
@@ -92,10 +85,8 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
           {onClearFocus && <button className="eg-btn" style={{ marginLeft: 'auto' }} onClick={onClearFocus}>Show All</button>}
         </div>
       )}
-      {days.map(([day, list]) => (
-        <div key={day}>
-          <div className="tl-day">{day}</div>
-          {list.map((e) => {
+      <ListToolbar tools={tools} filters={filters} placeholder="Search the timeline" />
+      <Grouped tools={tools} render={(e, g) => {
             const d = state.decisions[e.id];
             if (DECISION_EVENT_TYPES.has(e.type) && d) {
               const cls = d.kind === 'bank_details' ? ' bank' : d.kind === 'auto_clear' ? ' review' : '';
@@ -110,7 +101,7 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
                     </span>
                   </div>
                   <div className="tl-first">{firstLine(d.summary)}</div>
-                  <div className="tl-meta">{hhmm(e.createdAt)} · raised by {who(e.actor)}{d.resolvedBy ? ` · ${d.status} by ${who(d.resolvedBy)}` : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</div>
+                  <div className="tl-meta">{whenIn(e.createdAt, g)} · raised by {who(e.actor)}{d.resolvedBy ? ` · ${d.status} by ${who(d.resolvedBy)}` : ''}{e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}</div>
                 </a>
               );
             }
@@ -119,7 +110,7 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
             return (
               <div key={e.id}>
                 <div className={`tl-ev${sup ? ' sup' : ''}`} onClick={() => setOpen((o) => ({ ...o, [e.id]: !o[e.id] }))} >
-                  <span className="t">{hhmm(e.createdAt)}</span>
+                  <span className="t">{whenIn(e.createdAt, g)}</span>
                   <span className="ty">{e.type.startsWith('log:') ? String((e.payload as { title?: string }).title ?? '') : pretty(e.type)}{sup ? ` — ${pretty(String((e.payload as { action?: string }).action ?? ''))} (not performed)` : ''}{issueLine ? ` — ${issueLine}` : ''}</span>
                   <span className="ac">{who(e.actor)} · {actorKind(e.actor)}</span>
                   <span style={{ marginLeft: 'auto', fontSize: 11 }}>{e.type.startsWith('log:') ? '' : `#${e.seq}`}</span>
@@ -129,9 +120,22 @@ export function Timeline({ events, state, people = {}, focus = null, onClearFocu
                   : <pre className="tl-raw">{JSON.stringify({ id: e.id, seq: e.seq, type: e.type, actor: e.actor, createdAt: e.createdAt, sourceDocumentId: e.sourceDocumentId, confidenceScore: e.confidenceScore, payload: e.payload }, null, 2)}</pre>)}
               </div>
             );
-          })}
-        </div>
-      ))}
+      }} />
     </div>
   );
 }
+
+/** What a search on the timeline looks through: the type, the words of the event, and the decision or issue it is about. */
+function searchText(e: EngineEvent, state: EngineState): string {
+  const p = e.payload as Record<string, unknown>;
+  const d = state.decisions[e.id];
+  return [pretty(e.type), typeof p.title === 'string' ? p.title : '', typeof p.details === 'string' ? p.details : '', typeof p.text === 'string' ? p.text : '', d ? `${d.kind} ${d.summary}` : '', issueLabel(e, state) ?? '', JSON.stringify(p).slice(0, 2000)].join(' ');
+}
+
+const TIMELINE_FILTERS = (state: EngineState): Filter<EngineEvent>[] => [
+  { key: 'mail', label: 'Emails & Notes', match: (e) => e.type === 'log:EMAIL_FILED' || e.type.startsWith('note_') },
+  { key: 'docs', label: 'Documents', match: (e) => !!e.sourceDocumentId && /_(received|returned|extracted|submitted)$|^survey|^title|^search|^mortgage_offer|^lease|^management_pack/.test(e.type) || e.type === 'log:DOC_RECEIVED' },
+  { key: 'decisions', label: 'Decisions & Tasks', match: (e) => !!state.decisions[e.id] || /^action_|^decision_|_reviewed$|resolved_decision/.test(e.type) },
+  { key: 'issues', label: 'Issues', match: (e) => e.type.startsWith('issue_') },
+  { key: 'sent', label: 'Messages Sent', match: (e) => /^(client_update_sent|chase_sent|acknowledgement_sent|signing_pack_sent)$/.test(e.type) },
+];

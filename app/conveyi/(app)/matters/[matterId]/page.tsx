@@ -10,6 +10,7 @@ import { IssuesPanel } from '@/app/shared/engine/IssuesPanel';
 import { NotesPanel } from '@/app/shared/engine/NotesPanel';
 import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
 import { Timeline, type CaseLogEntry } from '@/app/shared/engine/Timeline';
+import { Grouped, ListToolbar, useListTools } from '@/app/shared/engine/ListTools';
 
 /** Case-log lines the timeline shows: filings, not the engine's own mirror of its events. */
 const FILING_LOG = new Set(['EMAIL_FILED', 'DOC_RECEIVED', 'EMAIL_SAVED_TO_MATTER', 'ENGINE_INGEST_SKIPPED']);
@@ -130,8 +131,11 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const [detail, setDetail] = useState<Detail | null>(null);
   const [model, setModel] = useState<Model | null>(null);
   const [emails, setEmails] = useState<Array<{ id: string; subject: string; lastMessageAt: string | null }> | null>(null);
-  const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null; documentId?: string | null }> | null>(null);
+  const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null; documentId?: string | null; lastModified?: string | null }> | null>(null);
   const [rereadingFile, setRereadingFile] = useState<string | null>(null);
+  // The case's emails and files are searched and grouped by when, never cut off at a dozen.
+  const emailTools = useListTools(emails ?? [], { date: (t) => t.lastMessageAt ?? '1970-01-01', text: (t) => t.subject ?? '' });
+  const fileTools = useListTools(files ?? [], { date: (f) => f.lastModified ?? '1970-01-01', text: (f) => f.name });
   const [fileNote, setFileNote] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
@@ -222,13 +226,13 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {(emails?.length ?? 0) > 0 && (
                   <div>
                     <h2 className="mx-h">Emails</h2>
-                    <div className="mx-list">{emails!.slice(0, 12).map((t) => <div key={t.id} className="mx-row"><span className="mx-ellip">{t.subject || '(no subject)'}</span><span className="d">{short(t.lastMessageAt)}</span></div>)}</div>
+                    <div className="mx-list"><ListToolbar tools={emailTools} placeholder="Search emails" /><Grouped tools={emailTools} render={(t) => <div key={t.id} className="mx-row"><span className="mx-ellip">{t.subject || '(no subject)'}</span><span className="d">{short(t.lastMessageAt)}</span></div>} /></div>
                   </div>
                 )}
                 {(files?.length ?? 0) > 0 && (
                   <div>
                     <h2 className="mx-h">Files</h2>
-                    <div className="mx-list">{files!.slice(0, 12).map((f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}{f.documentId && <button className="mx-sel" style={{ cursor: 'pointer', marginLeft: 8, padding: '2px 8px', fontSize: 12 }} disabled={rereadingFile === f.documentId} onClick={() => { const id = f.documentId!; setRereadingFile(id); void api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }).then((r) => setFileNote((m) => ({ ...m, [id]: r.said }))).catch((e: unknown) => setFileNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' }))).finally(() => { setRereadingFile(null); void eng.load(); }); }}>{rereadingFile === f.documentId ? 'Reading…' : 'Read Again'}</button>}{f.documentId && fileNote[f.documentId] && <span className="d" style={{ marginLeft: 8 }}>{fileNote[f.documentId]}</span>}</div>)}</div>
+                    <div className="mx-list"><ListToolbar tools={fileTools} placeholder="Search files" /><Grouped tools={fileTools} render={(f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}{f.documentId && <button className="mx-sel" style={{ cursor: 'pointer', marginLeft: 8, padding: '2px 8px', fontSize: 12 }} disabled={rereadingFile === f.documentId} onClick={() => { const id = f.documentId!; setRereadingFile(id); void api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }).then((r) => setFileNote((m) => ({ ...m, [id]: r.said }))).catch((e: unknown) => setFileNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' }))).finally(() => { setRereadingFile(null); void eng.load(); }); }}>{rereadingFile === f.documentId ? 'Reading…' : 'Read Again'}</button>}{f.documentId && fileNote[f.documentId] && <span className="d" style={{ marginLeft: 8 }}>{fileNote[f.documentId]}</span>}</div>} /></div>
                   </div>
                 )}
               </div>

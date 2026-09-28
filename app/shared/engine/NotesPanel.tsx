@@ -1,6 +1,14 @@
 'use client';
 import { useState } from 'react';
 import { fmtWhen, pretty, type Api, type EngineState, type NoteRow } from './types';
+import { Grouped, ListToolbar, useListTools, type Filter } from './ListTools';
+
+const NOTE_FILTERS: Filter<NoteRow>[] = [
+  { key: 'email', label: 'From Emails', match: (x) => x.kind === 'email' },
+  { key: 'call', label: 'Calls', match: (x) => x.kind === 'call' },
+  { key: 'typed', label: 'Typed', match: (x) => x.kind === 'typed' || x.kind === 'dictated' || x.kind === 'meeting' },
+  { key: 'todo', label: 'To Confirm', match: (x) => x.status === 'proposed' },
+];
 
 /**
  * Notes and call transcripts on a matter (docs/intake.md).
@@ -33,6 +41,7 @@ export function NotesPanel({
   const [kind, setKind] = useState('typed');
   const [open, setOpen] = useState<string | null>(null);
   const notes = Object.values(state.notes ?? {}).sort((a, b) => b.at.localeCompare(a.at));
+  const noteTools = useListTools(notes, { date: (x) => x.at, text: (x) => `${x.text} ${x.kind} ${(x as { from?: { name?: string | null; address?: string } | null }).from?.name ?? ''}`, filters: NOTE_FILTERS });
   const who = (id: string) => people?.[id] ?? (id === 'ai' ? 'the reader' : id === 'system' ? 'the system' : id.slice(0, 8));
 
   const file = async () => {
@@ -63,9 +72,9 @@ export function NotesPanel({
         {text.trim().length > 0 && text.trim().length < 10 && <span style={{ color: '#94a3b8', fontSize: 12 }}>A little more than that.</span>}
       </div>
 
-      {notes.length === 0 && <div style={{ color: '#94a3b8', marginTop: 12, fontSize: 12.5 }}>No notes on this case yet.</div>}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-        {notes.map((n) => <Note key={n.id} n={n} open={open === n.id} onToggle={() => setOpen(open === n.id ? null : n.id)} who={who} />)}
+      <div style={{ marginTop: 12 }}>
+        {notes.length > 0 && <ListToolbar tools={noteTools} filters={NOTE_FILTERS} placeholder="Search notes" />}
+        <Grouped tools={noteTools} empty="No notes on this case yet." render={(n) => <div key={n.id} style={{ marginBottom: 6 }}><Note n={n} open={open === n.id} onToggle={() => setOpen(open === n.id ? null : n.id)} who={who} /></div>} />
       </div>
     </div>
   );
