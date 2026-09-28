@@ -1435,8 +1435,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const titles = new Set(groups.map((g) => investigationTitle(g.specialist)));
       const openFi = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
       // Read again: what this report raised before, sentence by sentence, is regrouped.
-      for (const i of openFi.filter((x) => x.sourceDocumentId === cmd.documentId && !titles.has(x.title) && !x.enquiryIds.length)) {
-        out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: 'Regrouped by specialist when the report was read again.' } });
+      // Also replaced: ones raised under the old rule, when each suggestion held exchange by itself.
+      const replaced = openFi.filter((x) => x.sourceDocumentId === cmd.documentId && !x.enquiryIds.length && (!titles.has(x.title) || x.gate !== 'none'));
+      for (const i of replaced) {
+        out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: 'Regrouped when the report was read again; the survey now waits on the client\'s one decision.' } });
       }
       // A Level 3 survey arriving is the answer to "commission a Level 3".
       if (cmd.surveyType === 'level3') for (const i of openFi.filter((x) => x.title === investigationTitle('Level 3 building survey') && x.sourceDocumentId !== cmd.documentId)) {
@@ -1445,7 +1447,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       let n = Object.keys(s.issues).length;
       for (const g of groups) {
         const title = investigationTitle(g.specialist);
-        if (openFi.some((i) => i.title === title)) continue; // this specialist is already being tracked (a re-read, or an earlier report)
+        if (openFi.some((i) => i.title === title && !replaced.includes(i))) continue; // this specialist is already being tracked (a re-read, or an earlier report)
         n += 1;
         // Critical only for what the surveyor rates urgent (condition rating 3); otherwise it holds exchange as a warning.
         // A record of what the surveyor suggested, not a gate: the survey holds exchange until the client says how to proceed, once.
