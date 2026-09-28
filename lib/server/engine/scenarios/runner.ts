@@ -4,6 +4,7 @@
  * no CRM), flagged sandbox before the first event so every port guard sees it that way.
  */
 import crypto from 'node:crypto';
+import { putBlob } from '../../blob-store';
 import { query, queryOne } from '../../db';
 import { engine } from '../adapters';
 import { rememberSandbox } from '../sandbox';
@@ -76,7 +77,7 @@ function contextFor(tenantId: string, userId: string, matterId: string, flagged:
          values ($1, $2, 'SANDBOX', $3, $4, 'text/plain', $5, $6, $7, $8::jsonb, 1, $9) returning id`,
         [tenantId, matterId, `sandbox://${matterId}/${fileName}`, fileName, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex'), docType, JSON.stringify(facts), userId]
       );
-      await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [d!.id, tenantId, bytes]).catch(() => {});
+      await putBlob(tenantId, d!.id, bytes).catch(() => {});
       return d!.id;
     },
     async resolve(kind: DecisionKind, option: DecisionOption, note?: string) {

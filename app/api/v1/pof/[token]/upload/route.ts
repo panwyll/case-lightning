@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { putBlob } from '@/lib/server/blob-store';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import { ok, fail } from '@/lib/server/http';
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ tok
          values ($1,$2,'CLIENT_UPLOAD',$3,$4,$5,$6,$7,'PROOF_OF_FUNDS_EVIDENCE') returning id`,
         [pof.tenant_id, pof.matter_id, `pof://${pof.id}/${crypto.randomUUID()}/${safeName}`, safeName, body.mimeType, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex')]
       );
-      await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1,$2,$3)`, [row!.id, pof.tenant_id, bytes]);
+      await putBlob(pof.tenant_id, row!.id, bytes);
       return { id: row!.id, fileName: safeName, size: bytes.length };
     });
     return ok(doc);

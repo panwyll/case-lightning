@@ -9,6 +9,7 @@
  * triggers a false "we've got the contract" email. Drafts are never sent.
  */
 import crypto from 'node:crypto';
+import { putBlob } from './blob-store';
 import PizZip from 'pizzip';
 import { query, queryOne } from './db';
 import { downloadDriveItem, createDraftMessage, listMessageAttachments, listMessageAttachmentsMeta, uploadToMatterKb, matterKbPath } from './graph';
@@ -126,7 +127,7 @@ export async function processMatterFile(
     // An edited OneDrive file (the same item) or a revised copy of a document already on the case becomes its current version.
     const prior = doc?.id ? await supersedeAsVersion(user.tenantId, matterId, doc.id, { fileName: opts.fileName, graphItemId: opts.itemId }).catch(() => null) : null;
     if (doc?.id && locked) {
-      if (opts.bytes) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, opts.bytes]).catch(() => {});
+      if (opts.bytes) await putBlob(user.tenantId, doc.id, opts.bytes).catch(() => {});
       await recordLockedDocument(user.tenantId, matterId, doc.id, opts.fileName);
       return { documentType: null, substantive: false, drafted: false, draftSubject: null, reason: 'password-protected: a task asks for the password' };
     }
@@ -524,7 +525,9 @@ export async function fileEmailAttachments(
     if (exists) {
       // Identical content already filed. The copy we hold must open: if its bytes live only in a
       // OneDrive item (which may have been moved or deleted), keep these bytes against it now.
-      await query(`insert into document_blob (document_id, tenant_id, bytes) select d.id, d.tenant_id, $3 from document d where d.tenant_id = $1 and d.matter_id = $4 and d.hash_sha256 = $2 on conflict (document_id) do nothing`, [user.tenantId, hash, buffer, matterId]).catch((e) => console.error('[files] could not keep the bytes for a repeat file', (e as Error).message));
+      for (const twin of await query<{ id: string }>(`select d.id from document d where d.tenant_id = $1 and d.matter_id = $3 and d.hash_sha256 = $2 and not exists (select 1 from document_blob b where b.document_id = d.id)`, [user.tenantId, hash, matterId]).catch(() => [])) {
+        await putBlob(user.tenantId, twin.id, buffer, { mime: att.contentType ?? null }).catch((e) => console.error('[files] could not keep the bytes for a repeat file', (e as Error).message));
+      }
       // If it was never read into the case (an earlier attempt filed it but the read failed or
       // was skipped), read it now instead of stopping at "duplicate".
       const cited = await queryOne<{ n: string; type: string | null; at: string | null }>(`select count(*)::text as n, max(type) as type, max(created_at)::text as at from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3`, [user.tenantId, matterId, exists.id]).catch(() => ({ n: '1', type: null, at: null }));
@@ -558,7 +561,7 @@ export async function fileEmailAttachments(
         user.userId,
       ]
     );
-    if (!uploaded && doc?.id) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, buffer]).catch((e) => console.error('[files] attachment bytes could not be kept', (e as Error).message));
+    if (!uploaded && doc?.id) await putBlob(user.tenantId, doc.id, buffer).catch((e) => console.error('[files] attachment bytes could not be kept', (e as Error).message));
     // Index the document's CONTENT (not just its filename) so the drafter is
     // case-aware across the matter's documents, not only the current email.
     const indexText = await buildDocIndexText(user, matterId, att.name, att.contentType, att.contentBytes);
@@ -578,7 +581,7 @@ export async function fileEmailAttachments(
     if (doc?.id) {
       const isPdf = /pdf/i.test(att.contentType ?? '') || /\.pdf$/i.test(att.name);
       if (isPdf && (await isLockedPdf(buffer).catch(() => false))) {
-        await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [doc.id, user.tenantId, buffer]).catch(() => {});
+        await putBlob(user.tenantId, doc.id, buffer).catch(() => {});
         await recordLockedDocument(user.tenantId, matterId, doc.id, att.name);
         files.push({ name: att.name, outcome: 'locked', as: null, reason: null });
       } else {

@@ -4,6 +4,7 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { runAsAutomation } from '@/lib/server/db';
 import { readSubmission, unreadSubmissions } from '@/lib/server/engine/pof-store';
+import { moveBlobsToStorage } from '@/lib/server/blob-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,6 +26,8 @@ export async function GET(req: NextRequest) {
     // Proof-of-funds submissions whose after-response read did not finish.
     let reread = 0;
     for (const id of await unreadSubmissions()) { const r = await readSubmission(id).catch(() => ({ read: false })); if (r.read) reread += 1; }
+    // Files still held in the database move to Supabase Storage, a batch a day.
+    await moveBlobsToStorage(200).catch((e) => console.warn('[cron] storage move failed', (e as Error).message));
     return ok({ ...result, proofOfFundsReread: reread });
   } catch (error) {
     return fail(error);

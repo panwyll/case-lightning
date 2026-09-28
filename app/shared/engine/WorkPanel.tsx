@@ -167,6 +167,18 @@ const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 
 export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMALL.has(w) ? w : /[A-Z0-9]/.test(w.slice(1)) ? w : w.replace(/^([^A-Za-z]*)([a-z])/, (_m, a: string, b: string) => a + b.toUpperCase()))).join(' ');
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
 const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Needs You' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
+const READ_DIALOG_CSS = `
+.rd{background:#fff;border-radius:14px;padding:18px 20px;width:min(460px,92vw);box-shadow:0 20px 50px rgba(15,23,42,.25)}
+.rd-h{font-size:16px;font-weight:800;color:#0f172a;margin-bottom:12px}
+.rd-opt{display:block;width:100%;text-align:left;border:1px solid #e2e8f0;background:#fff;border-radius:10px;padding:11px 13px;margin-bottom:8px;cursor:pointer;font:inherit}
+.rd-opt:hover{border-color:#a78bfa;background:#faf8ff}
+.rd-opt.primary{border-color:#5A27E0}
+.rd-opt b{display:block;font-size:14px;color:#0f172a}
+.rd-opt span{display:block;font-size:12.5px;color:#64748b;margin-top:2px}
+.rd-opt:disabled{opacity:.6;cursor:default}
+.rd-a{display:flex;justify-content:flex-end;margin-top:4px}
+.rd-a .ep-btn{margin:0}
+`;
 const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read', 'on_file', 'satisfied', 'signed']);
 const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair', MINING: 'Coal Mining (CON29M)', FLOOD: 'Flood Risk', HIGHWAYS: 'Highways', PLANNING: 'Planning History' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
@@ -597,6 +609,27 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       .catch(() => {});
     return () => { live = false; };
   }, [sheet, api, matterId]);
+  const lastSurvey = (s.survey?.reports ?? []).filter((r) => !r.forIssueId).slice(-1)[0];
+  const readDialog = readChoice ? (
+    <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget) setReadChoice(null); }}>
+      <div className="rd" role="dialog" aria-label="Read the survey again">
+        <style>{READ_DIALOG_CSS}</style>
+        <div className="rd-h">Read the Survey Again</div>
+        <button className="rd-opt" disabled={busy} onClick={() => void readAgain(readChoice, lastSurvey?.receivedAt ?? null, false)}>
+          <b>Just Read Again</b><span>Refresh what was read. Tasks stay as they are.</span>
+        </button>
+        <button className="rd-opt primary" disabled={busy} onClick={() => void readAgain(readChoice, lastSurvey?.receivedAt ?? null, true)}>
+          <b>Read Again and Replace Tasks</b><span>Withdraw the pending survey tasks and draft a new letter and enquiries from the new reading.</span>
+        </button>
+        {lastSurvey && !lastSurvey.unread && (
+          <button className="rd-opt" disabled={busy || recoBusy} onClick={() => { const id = readChoice; setReadChoice(null); void sendRecommendations(id); }}>
+            <b>Send Recommendations</b><span>Keep this reading; draft a new letter and enquiries from it, replacing pending ones.</span>
+          </button>
+        )}
+        <div className="rd-a"><button className="ep-btn" onClick={() => setReadChoice(null)}>Cancel</button></div>
+      </div>
+    </div>
+  ) : null;
   const sheetDialog = sheet && sheet.type === 'client_decision_recorded' ? (
     <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
       <ClientDecisionSheet
@@ -832,14 +865,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ? (stuck ? 'Still reading after five minutes; the Timeline will say if it failed.' : 'Reading the report again; this updates by itself.')
         : lastReport.unread ? 'The report could not be read. Read it again, or record the findings by hand.'
         : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
-      action: lastReport.documentId ? (readChoice === lastReport.documentId ? <>
-        <button className="ep-btn" disabled={busy} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt, false)}>Just Read Again</button>
-        <button className="ep-btn primary" disabled={busy} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt, true)}>Read Again and Replace Tasks</button>
-        <button className="ep-btn" onClick={() => setReadChoice(null)}>Cancel</button>
-      </> : <>
-        <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button>
-        {!lastReport.unread && !readingThis && <button className="ep-btn" disabled={busy || recoBusy} onClick={() => void sendRecommendations(lastReport.documentId!)}>{recoBusy ? 'Drafting…' : 'Send Recommendations'}</button>}
-      </>) : undefined,
+      action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
     } : null;
     lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
       tiles: [...([{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : [])] as Tile[]), ...investigations, { label: "Client's view", status: clientView }],
@@ -1008,6 +1034,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       )}
 
       {sheetDialog}
+      {readDialog}
 
       {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>

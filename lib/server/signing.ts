@@ -4,6 +4,7 @@
  * with the firm's signing provider. Called by the engine through its signing port.
  */
 import { query, queryOne } from './db';
+import { getBlob } from './blob-store';
 import { addAttachmentToMessage, createDraftMessage, downloadDriveItem, sendDraftMessage } from './graph';
 import { getFirmProfile, postalAddress } from './firm';
 import { getPolicy } from './policy';
@@ -31,7 +32,7 @@ async function deedFile(tenantId: string, matterId: string, d: SignedDocument): 
   );
   const hit = rows.find((r) => f.types.includes((r.doc_type ?? '').toUpperCase())) ?? rows.find((r) => r.file_name && f.name.test(r.file_name) && !/signed/i.test(r.file_name));
   if (!hit) return null;
-  let bytes = hit.blob;
+  let bytes = hit.blob ?? (await getBlob(tenantId, hit.id).catch(() => null));
   if (!bytes && hit.graph_item_id) bytes = await downloadDriveItem(await driveUserFor(tenantId, matterId, hit.created_by ?? ''), hit.graph_item_id).catch(() => null);
   if (!bytes) return null;
   return { id: hit.id, fileName: hit.file_name ?? `${SIGNED_DOCUMENT_LABEL[d]}.pdf`, bytes, mime: hit.mime_type ?? 'application/pdf' };

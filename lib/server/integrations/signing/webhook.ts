@@ -5,6 +5,7 @@
  * Authenticated by a shared secret per provider until each provider's own signature scheme is known.
  */
 import crypto from 'node:crypto';
+import { putBlob } from '../../blob-store';
 import { z } from 'zod';
 import { query, queryOne } from '../../db';
 import { engine } from '../../engine/adapters';
@@ -44,7 +45,7 @@ export async function handleSigningWebhook(provider: 'infotrack' | 'intouch' | '
      values ($1,$2,'E_SIGNATURE',$3,$4,'application/pdf',$5,$6,'SIGNED_DEED') returning id`,
     [env.tenant_id, env.matter_id, `esign://${provider}/${b.envelopeId}`, name, bytes.length, hash]
   );
-  await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1,$2,$3)`, [doc!.id, env.tenant_id, bytes]);
+  await putBlob(env.tenant_id, doc!.id, bytes);
   const state = await svc.getState(env.tenant_id, env.matter_id);
   await svc.run(env.tenant_id, env.matter_id, {
     type: CMD[env.document],

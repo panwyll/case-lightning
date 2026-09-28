@@ -5,6 +5,7 @@
  * the engine wiring so there is no import cycle.
  */
 import crypto from 'node:crypto';
+import { getBlob } from '../blob-store';
 import { query, queryOne } from '../db';
 import { downloadDriveItem } from '../graph';
 import { driveUserFor } from '../matter-drive';
@@ -99,7 +100,7 @@ export class PgDocumentBytesLoader implements DocumentBytesLoader {
       [doc.id, doc.tenantId]
     ).catch(() => null);
     if (!row) return null;
-    let bytes: Buffer | null = row.blob ?? null;
+    let bytes: Buffer | null = row.blob ?? (await getBlob(doc.tenantId, doc.id).catch(() => null));
     if (!bytes && row.graph_item_id) {
       const owner = await driveUserFor(doc.tenantId, doc.matterId, row.created_by ?? '');
       if (!owner) return null;

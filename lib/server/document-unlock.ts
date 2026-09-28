@@ -5,6 +5,7 @@
  * password itself is used once and never stored.
  */
 import { query, queryOne } from './db';
+import { getBlob, putBlob } from './blob-store';
 import { writeAudit } from './audit';
 import { downloadDriveItem } from './graph';
 import { driveUserFor } from './matter-drive';
@@ -41,7 +42,7 @@ async function bytesFor(tenantId: string, documentId: string): Promise<{ bytes: 
     [documentId, tenantId]
   );
   if (!row) return null;
-  let bytes: Buffer | null = row.blob;
+  let bytes: Buffer | null = row.blob ?? (await getBlob(tenantId, documentId).catch(() => null));
   if (!bytes && row.graph_item_id) {
     const owner = await driveUserFor(tenantId, row.matter_id, row.created_by ?? '');
     if (owner) bytes = await downloadDriveItem(owner, row.graph_item_id).catch(() => null);
@@ -56,7 +57,7 @@ export async function tryUnlockDocument(tenantId: string, documentId: string, pa
   if (!(await isLockedPdf(src.bytes))) return { unlocked: true, reason: 'The file is not password-protected.' };
   const open = await unlockPdf(src.bytes, password).catch(() => null);
   if (!open) return { unlocked: false, reason: 'That password does not open the file.' };
-  await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do update set bytes = excluded.bytes`, [documentId, tenantId, open]);
+  await putBlob(tenantId, documentId, open, { mime: 'application/pdf', replace: true });
   await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || $3::jsonb, size_bytes = $4 where id = $1 and tenant_id = $2`, [documentId, tenantId, JSON.stringify({ locked: false, unlockedAt: new Date().toISOString(), unlockedBy: by.userId ?? 'system', unlockedHow: by.how }), open.length]);
   await writeAudit({ tenantId, matterId: src.matterId, actorUserId: by.userId, actionType: 'DOCUMENT_UNLOCKED', actionStatus: 'SUCCESS', payload: { documentId, fileName: src.fileName, how: by.how } }).catch(() => {});
   // The task closes and the file is read into the case.

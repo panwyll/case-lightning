@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { putBlob } from '@/lib/server/blob-store';
 import { z } from 'zod';
 import crypto from 'node:crypto';
 import { assertFeature } from '@/lib/server/config';
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
         user.userId,
       ]
     );
-    await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1,$2,$3)`, [doc!.id, user.tenantId, bytes]);
+    await putBlob(user.tenantId, doc!.id, bytes);
 
     const svc = engine();
     const ports = productionPorts();

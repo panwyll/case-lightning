@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { putBlob } from '@/lib/server/blob-store';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
        values ($1,$2,'SCAN_UPLOAD',$3,$4,$5,$6,$7,$8,$9) returning id, created_at::text`,
       [user.tenantId, matterId, `scan://${matterId}/${b.fileName}`, b.fileName, b.mimeType, bytes.length, hash, b.docType, user.userId]
     );
-    await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1,$2,$3)`, [doc!.id, user.tenantId, bytes]);
+    await putBlob(user.tenantId, doc!.id, bytes);
     return ok({ document: { id: doc!.id, fileName: b.fileName, docType: b.docType, createdAt: doc!.created_at, webUrl: null } });
   } catch (error) {
     return fail(error);

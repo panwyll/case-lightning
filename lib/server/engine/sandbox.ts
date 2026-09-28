@@ -13,6 +13,7 @@
  * different service.
  */
 import { query, queryOne, runOutsideAutomation } from '../db';
+import { putBlob } from '../blob-store';
 import type { EnginePorts } from './ports';
 import crypto from 'node:crypto';
 import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
@@ -145,7 +146,7 @@ export function sandboxCommsDeps(): CommsDeps {
        values ($1, $2, 'SANDBOX', $3, $4, 'text/plain', $5, $6, 'SANDBOX_EMAIL', $7::jsonb, 1, $8) returning id`,
       [tenantId, matterId, `sandbox://${matterId}/outbox/${when}`, `outbox-${when.slice(0, 19).replace(/[:T]/g, '-')}.txt`, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex'), JSON.stringify({ content: body, to: input.to, subject: input.subject, status: input.status, at: when, template: null }), input.fromUserId ?? null]
     ).catch(() => null);
-    if (d) await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1, $2, $3) on conflict (document_id) do nothing`, [d.id, tenantId, bytes]).catch(() => {});
+    if (d) await putBlob(tenantId, d.id, bytes).catch(() => {});
     return { messageId: d?.id ?? null };
   };
   // The senders only hand the tenant and matter to contactInfo and log; the file needs both, so they ride along per call.

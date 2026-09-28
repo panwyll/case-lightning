@@ -4,6 +4,7 @@
  * OneDrive folder (falling back to document_blob), and the singleton client.
  */
 import crypto from 'node:crypto';
+import { putBlob } from '../blob-store';
 import { config } from '../config';
 import { query, queryOne } from '../db';
 import { uploadToMatterKb } from '../graph';
@@ -66,7 +67,7 @@ export class PgResultFiler implements ResultFiler {
       [input.tenantId, input.matterId, graphItemId, graphItemId ? `${m.folder_path}/${input.fileName}` : `infotrack://${input.providerRef}/${input.fileName}`, webUrl, input.fileName, input.mimeType, input.bytes.length, hash, input.docType]
     );
     if (!graphItemId) {
-      await query(`insert into document_blob (document_id, tenant_id, bytes) values ($1,$2,$3) on conflict (document_id) do nothing`, [doc!.id, input.tenantId, input.bytes]);
+      await putBlob(input.tenantId, doc!.id, input.bytes);
     }
     return doc!.id;
   }

@@ -7,6 +7,7 @@
  * nothing arriving from InTouch can write a payment or a send event however it is shaped.
  */
 import { query, queryOne, runAsSystem } from '../../db';
+import { putBlob } from '../../blob-store';
 import { encryptSecret, decryptSecret } from '../../crypto';
 import { config } from '../../config';
 import { paths } from '../../../paths';
@@ -232,7 +233,7 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
       // InTouch is not guaranteed to still hold it when someone opens the panel next year.
       try {
         const { bytes } = await fetchBytes();
-        await query(`insert into document_blob (document_id, bytes) values ($1,$2) on conflict (document_id) do nothing`, [r!.id, bytes]);
+        await putBlob(tenantId, r!.id, bytes);
       } catch {
         /* the row stands without bytes; the panel falls back to a link, and the next sync retries */
       }

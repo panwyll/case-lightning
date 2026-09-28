@@ -1,4 +1,5 @@
 import { downloadDriveItem } from '@/lib/server/graph';
+import { getBlob } from '@/lib/server/blob-store';
 import { driveUserFor } from '@/lib/server/matter-drive';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -29,7 +30,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     );
     if (!doc) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
     await assertMatterAccess(user, doc.matter_id);
-    let bytes: Buffer | null = doc.bytes;
+    let bytes: Buffer | null = doc.bytes ?? (await getBlob(user.tenantId, documentId).catch(() => null));
     let mime = doc.mime_type;
     if (!bytes) {
       // LEAP as the backend: mirrored documents keep their bytes in LEAP; fetch on demand.
@@ -41,8 +42,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ doc
     }
     // Identical contents filed on the case under another record (a repeat email): those bytes are this file.
     if (!bytes && doc.hash_sha256) {
-      const twin = await queryOne<{ bytes: Buffer }>(`select b.bytes from document d join document_blob b on b.document_id = d.id where d.tenant_id = $1 and d.matter_id = $2 and d.hash_sha256 = $3 limit 1`, [user.tenantId, doc.matter_id, doc.hash_sha256]).catch(() => null);
-      if (twin?.bytes) bytes = twin.bytes;
+      const twin = await queryOne<{ id: string }>(`select d.id from document d join document_blob b on b.document_id = d.id where d.tenant_id = $1 and d.matter_id = $2 and d.hash_sha256 = $3 and d.id <> $4 limit 1`, [user.tenantId, doc.matter_id, doc.hash_sha256, documentId]).catch(() => null);
+      if (twin) bytes = await getBlob(user.tenantId, twin.id).catch(() => null);
     }
     if (!bytes && doc.content) { bytes = Buffer.from(doc.content, 'utf8'); mime = mime ?? 'text/plain; charset=utf-8'; }
     if (!bytes && doc.graph_item_id) {
