@@ -1183,6 +1183,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           <span><i className="ep-who"><User size={10} /></i>Sign-off</span>
           <span><i className="ep-who doc"><FileText size={10} /></i>Creates a document</span>
           <span><i className="ep-who"><Lock size={10} /></i>Holds a later gate</span>
+          <span><i className="ep-who"><Mail size={10} /></i>Sends an email</span>
         </div>
       )}
 

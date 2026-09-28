@@ -1031,8 +1031,11 @@ export class EngineService {
     const stamp = opts.replace ? `:${this.ports.now().getTime()}` : '';
     const after = await this.getState(tenantId, matterId);
     const already = (key: string) => Object.values(after.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected');
-    const { seller, ours } = sortLegalPoints(facts.legalIssues ?? []);
-    const batch = surveyEnquiries(seller);
+    const { seller, ours: oursRaw } = sortLegalPoints(facts.legalIssues ?? []);
+    // Written up as a conveyancer sends them (merged, trimmed, the buyer's own points set aside); the raw list when that is not available.
+    const written = seller.length && this.ports.enquiryWriter ? await this.ports.enquiryWriter.write({ tenantId, matterId, points: seller.map((p) => p.text), source: 'survey' }).catch(() => null) : null;
+    const ours = [...oursRaw, ...(written?.notForTheSeller ?? []).map((x) => `Client: ${x}`)];
+    const batch = written ? [`Additional enquiries arising from our client's survey:`, '', ...written.enquiries.map((q, i) => `${i + 1}. ${q}`)].join('\n') : surveyEnquiries(seller);
     const enqKey = `enquiry_draft:survey:${docKey}${stamp}`;
     if (batch && (opts.replace || (!Object.values(after.enquiries).some((q) => q.subject === batch) && !already(enqKey)))) {
       const detail = { subject: batch, question: null, origin: 'survey', title: 'Enquiries from the survey' };
@@ -1160,10 +1163,14 @@ export class EngineService {
           const asked = new Set(Object.values(fresh.enquiries).map((x) => x.origin?.formsQuestion).filter(Boolean));
           const notKnown = (facts?.notKnown ?? []).filter((q) => !asked.has(q.question));
           const points = listIssue ? (listIssue.detail ?? '').split('\n').filter((l) => /^\d+\. /.test(l)).map((l) => l.replace(/^\d+\. /, '').replace(/ \(p\.\d+\)$/, '')) : [];
-          const lines = [
+          const rawLines = [
             ...points.map((p) => `${p.replace(/^(TA\d+|Forms|EPC): /, '')}: please provide full details, with copies of any documents.`),
             ...notKnown.map((q) => `${q.question.replace(/\s+/g, ' ').trim()}: your client answered "not known". Please make enquiries of your client and confirm the position.`),
           ];
+          // Written up as a conveyancer sends them (duplicates merged, points the answers rule out dropped); the raw list when that is not available.
+          const writerPoints = [...points.map((p) => p.replace(/^(TA\d+|Forms|EPC): /, '')), ...notKnown.map((q) => `The seller answered "not known" to: ${q.question.replace(/\s+/g, ' ').trim()}`)];
+          const written = writerPoints.length && this.ports.enquiryWriter ? await this.ports.enquiryWriter.write({ tenantId, matterId, points: writerPoints, source: 'forms' }).catch(() => null) : null;
+          const lines = written ? written.enquiries : rawLines;
           // A draft from an earlier forms file covers less than the set now does: it is withdrawn for the one below.
           for (const old of Object.values(fresh.proposals).filter((x) => x.action === 'enquiry_draft' && x.status === 'pending' && x.dedupKey.startsWith('enquiry_draft:forms'))) {
             await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: old.eventId, reason: 'Replaced by one enquiry covering the whole set of the seller\'s forms.' }).catch((err) => this.ports.log('stale forms enquiry could not be withdrawn', err));

@@ -242,6 +242,8 @@ export interface EnginePorts {
   /** The firm's reminder window for client updates, in hours (Rules > Timers); absent = the default. */
   clientReminderHours?(tenantId: string): Promise<number>;
   /** Optional: drafts the letter after the survey (a person reads and can edit it). Without it, the template letter. */
+  /** Raw points (forms, survey) written up as the enquiries a conveyancer sends: merged, trimmed, the buyer's own points set aside. Null = use the points as they are. */
+  enquiryWriter?: { write(input: { tenantId: string; matterId: string; points: string[]; source: 'forms' | 'survey' }): Promise<{ enquiries: string[]; notForTheSeller: string[] } | null> } | null;
   surveyAdviser?: { draft(input: { tenantId: string; matterId: string; facts: SurveyFacts; purchasePricePennies: number | null; freehold: boolean; hasLender: boolean; transactionLabel: string }): Promise<string | null> } | null;
   /** Optional: Outlook housekeeping; a completed case's mail folders move into Archive. */
   mailFolders?: { archiveCase(tenantId: string, matterId: string): Promise<number> } | null;

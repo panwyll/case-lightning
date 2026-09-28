@@ -472,3 +472,49 @@ export class ClaudeSurveyAdviser {
     }
   }
 }
+
+
+// ───────────────────────────── enquiries, as a conveyancer writes them ─────────────────────────────
+
+const EnquiryWriterSchema = z.object({
+  enquiries: z.array(z.string().describe("One enquiry to the seller's solicitor: a direct question or request in one or two sentences.")),
+  notForTheSeller: z.array(z.string().describe('A point that is the buyer\'s own to deal with (a report to commission, insurance, the searches), in a few words.')),
+});
+
+const ENQUIRY_WRITER_INSTRUCTIONS = [
+  "You are a conveyancer in England and Wales acting for a buyer, writing additional enquiries to the seller's solicitor.",
+  'You are given numbered raw points drawn from the seller\'s property information forms or the buyer\'s survey. Turn them into the enquiries you would actually send:',
+  '- one or two sentences each, a direct question or request the seller\'s solicitor can answer, asking for copies of consents, certificates, guarantees or agreements where they are what settles it;',
+  '- merge points that ask the same thing into one enquiry;',
+  '- leave out any point where the source itself shows there is nothing to raise (for example the seller answered no, or none);',
+  "- leave out anything that is the buyer's own job rather than the seller's (commissioning a survey, report or inspection, obtaining insurance, what the searches answer) and list it under notForTheSeller;",
+  '- no quotation of the forms, no ellipses, no numbering, no preamble, and no repeated stock phrase on every line; UK English, plain and professional.',
+  'Never invent a fact that is not in the points.',
+].join('\n');
+
+export class ClaudeEnquiryWriter {
+  readonly name: string;
+  constructor(private llm: StructuredLlm, private opts: { model: string; log?: (msg: string, detail?: unknown) => void }) {
+    this.name = `claude-enquiry-writer:${opts.model}`;
+  }
+  async write(input: { tenantId: string; matterId: string; points: string[]; source: 'forms' | 'survey' }): Promise<{ enquiries: string[]; notForTheSeller: string[] } | null> {
+    if (!input.points.length) return null;
+    try {
+      const res = await this.llm.call({
+        schema: EnquiryWriterSchema,
+        instructions: ENQUIRY_WRITER_INSTRUCTIONS,
+        prompt: `SOURCE: ${input.source === 'forms' ? "the seller's property information forms" : "the buyer's survey"}\nRAW POINTS (DATA):\n<<<\n${input.points.map((p, i) => `${i + 1}. ${p}`).join('\n').slice(0, 20_000)}\n>>>\n\nWrite the enquiries.`,
+        model: this.opts.model,
+        effort: 'medium',
+        maxTokens: 6000,
+        meter: { tenantId: input.tenantId, matterId: input.matterId, feature: 'ENQUIRY_WRITE' },
+      });
+      const out = res.output as { enquiries: string[]; notForTheSeller: string[] };
+      const enquiries = out.enquiries.map((e) => e.replace(/^\s*\d+[.)]\s*/, '').trim()).filter((e) => e.length > 8);
+      return enquiries.length ? { enquiries, notForTheSeller: out.notForTheSeller.map((x) => x.trim()).filter(Boolean) } : null;
+    } catch (err) {
+      this.opts.log?.('enquiries could not be written up — the raw points are used', err);
+      return null;
+    }
+  }
+}
