@@ -870,3 +870,25 @@ export async function postTeamsSummary(
     body: { contentType: 'html', content: html },
   });
 }
+
+
+/**
+ * Move every message of a conversation out of one folder into another in the mailbox owner's
+ * Outlook (well-known names: 'inbox', 'archive'). Used so the inbox matches the Email tab:
+ * mail filed to a case, or set aside, leaves the inbox; undoing puts it back. Returns how many moved.
+ */
+export async function moveConversation(userId: string, conversationId: string, from: 'inbox' | 'archive', to: 'inbox' | 'archive'): Promise<number> {
+  const client = await graphClientForUser(userId);
+  const safe = conversationId.replace(/'/g, "''");
+  const res = await client.api(`/me/mailFolders('${from}')/messages`).filter(`conversationId eq '${safe}'`).select('id').top(50).get();
+  let moved = 0;
+  for (const m of (res.value ?? []) as Array<{ id: string }>) {
+    try {
+      await client.api(`/me/messages/${m.id}/move`).post({ destinationId: to });
+      moved += 1;
+    } catch (e) {
+      console.warn('[graph] could not move a message', (e as Error).message);
+    }
+  }
+  return moved;
+}

@@ -65,7 +65,7 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
   assert.ok(r.suggested, 'it suggests something');
 });
 
-test('health: a wait walks attention → delayed → critical as its SLA passes, and always explains itself', async () => {
+test('health: a wait walks attention → delayed as its SLA passes, and always explains itself; a slow third party is never critical', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
@@ -95,10 +95,10 @@ test('health: a wait walks attention → delayed → critical as its SLA passes,
   const overdue = health.reasons.find((r) => r.code === 'wait_overdue' || r.code === 'wait_escalated')!;
   assert.match(overdue.why.join(' '), /chase(s)? sent|No chase/);
 
-  // An unresolved escalation is critical — a person has been told and it is still open.
+  // Escalated and still open: delayed. Critical is for a transaction in jeopardy or our own delay, not someone else's slowness.
   s = await h.svc.getState(TENANT, MATTER);
   if (s.waits.some((w) => w.escalations.some((e) => !e.resolvedAt))) {
-    assert.equal(caseHealth(s, now).band, 'critical');
+    assert.equal(caseHealth(s, now).band, 'delayed');
   }
 });
 
@@ -109,7 +109,11 @@ test('health: an issue holding exchange reads as blocked; a critical issue outra
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'title_defect', title: 'Restriction in the register requires a certificate on transfer', gate: 'exchange' });
   const s = await h.svc.getState(TENANT, MATTER);
-  const health = caseHealth(s, h.ports.now());
+  // Just raised: a job to pick up, not an alarm.
+  const fresh = caseHealth(s, h.ports.now());
+  assert.equal(fresh.band, 'attention');
+  assert.match(fresh.reasons[0].headline, /^Title defect \/ discrepancy to review — Restriction/);
+  const health = caseHealth(s, h.advanceDays(5));
   assert.equal(health.band, 'blocked');
   const r = health.reasons[0];
   assert.match(r.headline, /^Exchange blocked — Restriction in the register/);
@@ -289,4 +293,17 @@ test('work: the client\'s authority to exchange is not waited on until the case 
   assert.ok(ready, 'at pre-exchange it is the client\'s to give');
   assert.equal(ready!.what, 'authorise exchange');
   assert.equal(ready!.actionOwner, 'client');
+});
+
+test('health: critical means jeopardy or our own delay — a survey needing review is not critical; a party pulling out is; a decision we sit on for two weeks is', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: true, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  // A survey rated urgent comes in: work to do, not a crisis.
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc({ surveyType: 'level3', surveyor: 'J Bloggs MRICS', summary: 'x', recommendations: [{ code: 'STRUCT', text: 'Cracking to the rear wall; structural engineer before exchange.', furtherInvestigation: true, specialist: 'structural engineer', severity: 'high', rating: 3 }], confidence: 0.9 }, 'SURVEY'));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.notEqual(caseHealth(s, h.ports.now()).band, 'critical');
+  // The seller pulling out: the transaction is in jeopardy.
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'transaction_at_risk', title: 'The seller has pulled out', gate: 'exchange' });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(caseHealth(s, h.ports.now()).band, 'critical');
 });

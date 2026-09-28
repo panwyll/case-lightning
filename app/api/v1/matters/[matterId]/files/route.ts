@@ -34,8 +34,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 
     const [items, processed] = await Promise.all([
       listMatterFiles(user.userId, matter.folder_path).catch(() => [] as any[]),
-      query<{ graph_item_id: string | null; created_at: string }>(
-        `select graph_item_id, created_at from document where matter_id = $1 and tenant_id = $2 and graph_item_id is not null and superseded_at is null`,
+      query<{ id: string; graph_item_id: string | null; created_at: string }>(
+        `select id, graph_item_id, created_at from document where matter_id = $1 and tenant_id = $2 and graph_item_id is not null and superseded_at is null`,
         [matterId, user.tenantId]
       ),
     ]);
@@ -56,6 +56,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
         lastModified: (it.lastModifiedDateTime as string) ?? null,
         mimeType: (it.file?.mimeType as string) ?? null,
         processed: isRead(it),
+        documentId: processed.find((d) => d.graph_item_id === it.id)?.id ?? null,
       }));
 
     return ok({ files, folderProvisioned: true });

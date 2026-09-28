@@ -13,6 +13,7 @@ import { emitMatterEvent } from '@/lib/server/events';
 import { ok, fail } from '@/lib/server/http';
 import { resolveConversation } from '@/lib/server/mail/queue';
 import { resolveMailbox, grantCaseIfAssistant } from '@/lib/server/access';
+import { archiveHandled } from '@/lib/server/mail/archive';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -141,7 +142,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
           title: `Email filed: ${subject?.trim() || '(no subject)'}`,
           details: said.join('\n'),
         }).catch((e) => console.error('[link-thread] could not log the filing', (e as Error).message));
+        // Read and filed: now the conversation leaves the inbox, so Outlook matches the Email tab.
+        await archiveHandled(user.tenantId, owner.userId, conversationId);
       });
+    } else {
+      after(() => archiveHandled(user.tenantId, owner.userId, conversationId).then(() => {}));
     }
 
     return ok({ ok: true });

@@ -130,7 +130,9 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const [detail, setDetail] = useState<Detail | null>(null);
   const [model, setModel] = useState<Model | null>(null);
   const [emails, setEmails] = useState<Array<{ id: string; subject: string; lastMessageAt: string | null }> | null>(null);
-  const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null }> | null>(null);
+  const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null; documentId?: string | null }> | null>(null);
+  const [rereadingFile, setRereadingFile] = useState<string | null>(null);
+  const [fileNote, setFileNote] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
   // The row, the summary and the model arrive with the engine view in one request; a command reloads all of them together.
@@ -226,7 +228,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {(files?.length ?? 0) > 0 && (
                   <div>
                     <h2 className="mx-h">Files</h2>
-                    <div className="mx-list">{files!.slice(0, 12).map((f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}</div>)}</div>
+                    <div className="mx-list">{files!.slice(0, 12).map((f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}{f.documentId && <button className="mx-sel" style={{ cursor: 'pointer', marginLeft: 8, padding: '2px 8px', fontSize: 12 }} disabled={rereadingFile === f.documentId} onClick={() => { const id = f.documentId!; setRereadingFile(id); void api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }).then((r) => setFileNote((m) => ({ ...m, [id]: r.said }))).catch((e: unknown) => setFileNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' }))).finally(() => { setRereadingFile(null); void eng.load(); }); }}>{rereadingFile === f.documentId ? 'Reading…' : 'Read Again'}</button>}{f.documentId && fileNote[f.documentId] && <span className="d" style={{ marginLeft: 8 }}>{fileNote[f.documentId]}</span>}</div>)}</div>
                   </div>
                 )}
               </div>

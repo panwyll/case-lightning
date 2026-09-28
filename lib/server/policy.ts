@@ -1,9 +1,11 @@
 /** Firm-level policy switches (migration 098). Missing rows are the default. */
 import { query, queryOne } from './db';
 
-export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean } = {
+export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean } = {
   /** Outgoing files go as a password-protected zip, with the password sent separately (WhatsApp where the client has opted in, otherwise its own message). */
   protectOutgoingFiles: false,
+  /** Email filed to a case or set aside here is archived in the mailbox, so the Outlook inbox matches the Email tab. */
+  archiveHandledEmail: true,
 };
 export type PolicyKey = keyof typeof POLICY_DEFAULTS;
 

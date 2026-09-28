@@ -544,6 +544,15 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </button>
     );
   };
+  // Read a filed report again from scratch (new questions, or a bad first read).
+  const [rereading, setRereading] = useState<string | null>(null);
+  const [rereadNote, setRereadNote] = useState<string | null>(null);
+  const readAgain = async (documentId: string) => {
+    setRereading(documentId); setRereadNote(null);
+    try { const r = await api<{ said: string }>(`/documents/${documentId}/read-again`, { method: 'POST', body: '{}' }); setRereadNote(r.said); onChanged?.(); }
+    catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not read it again.'); }
+    finally { setRereading(null); }
+  };
   const [sheetContext, setSheetContext] = useState<TaskContextView | null>(null);
   useEffect(() => {
     if (!sheet) return;
@@ -759,6 +768,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </>}
       {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status !== 'further_investigation', disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
       {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
+      {(() => { const last = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0]; return last?.documentId ? <button className="ep-btn" disabled={busy || rereading === last.documentId} onClick={() => void readAgain(last.documentId!)}>{rereading === last.documentId ? 'Reading…' : 'Read the Survey Again'}</button> : null; })()}
+      {rereadNote && <span className="ep-note">{rereadNote}</span>}
     </> : null });
 
   if (has('leasehold')) lane({ id: 'leasehold', order: 'sequence', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',

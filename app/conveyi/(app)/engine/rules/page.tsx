@@ -15,7 +15,7 @@ interface Timer { waitKey: string; label: string; to: string; chaseAfter: number
 interface Message { id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: TrustLevel }
 interface DocRule { id: string; document: string; rule: string; value: string }
 interface CaseRule { id: string; group: string; when: string; then: string; holds?: string; tells?: string; source: string }
-interface Rules { policies?: { protectOutgoingFiles: boolean }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
+interface Rules { policies?: { protectOutgoingFiles: boolean; archiveHandledEmail?: boolean }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
 
 const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['cases', 'Case Rules'], ['documents', 'Document Rules']] as const;
 const KIND_LABEL: Record<Message['kind'], string> = { acknowledgement: 'Acknowledgement', update: 'Client update', chase: 'Chase', request: 'Request' };
@@ -61,6 +61,11 @@ export default function RulesPage() {
   const setProtect = async (value: boolean) => {
     setBusy('policy');
     try { await api('/admin/rules', { method: 'PATCH', body: JSON.stringify({ key: 'protectOutgoingFiles', value }) }); await load(); }
+    finally { setBusy(null); }
+  };
+  const setArchive = async (value: boolean) => {
+    setBusy('archive');
+    try { await api('/admin/rules', { method: 'PATCH', body: JSON.stringify({ key: 'archiveHandledEmail', value }) }); await load(); }
     finally { setBusy(null); }
   };
   const load = useCallback(async () => {
@@ -218,6 +223,10 @@ export default function RulesPage() {
           <b style={{ fontSize: 13.5 }}>Protect Outgoing Files</b>
           <span className="ru-sub" style={{ flex: 1, minWidth: 240 }}>Files go inside a password-protected zip; the password goes separately (WhatsApp where the client has opted in, otherwise its own message). Both are on the case log.</span>
           <button className="eg-btn" disabled={busy === 'policy'} onClick={() => void setProtect(!(r?.policies?.protectOutgoingFiles ?? false))} style={r?.policies?.protectOutgoingFiles ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{r?.policies?.protectOutgoingFiles ? 'On' : 'Off'}</button>
+        </div>
+        <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13.5, flex: 1 }}>Archive Filed Email in Outlook</b>
+          <button className="eg-btn" disabled={busy === 'archive'} onClick={() => void setArchive(!(r?.policies?.archiveHandledEmail ?? true))} style={(r?.policies?.archiveHandledEmail ?? true) ? { background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' } : undefined}>{(r?.policies?.archiveHandledEmail ?? true) ? 'On' : 'Off'}</button>
         </div>
       </section>
 

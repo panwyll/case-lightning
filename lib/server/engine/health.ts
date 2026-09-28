@@ -23,6 +23,21 @@ import { profileOf } from './transactions';
 import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
 
 export const HEALTH_BANDS = ['normal', 'attention', 'delayed', 'blocked', 'critical'] as const;
+
+/**
+ * Critical means one of two things, and nothing else:
+ *   - the transaction is in jeopardy (a party pulling out, the mortgage gone or going, money
+ *     missing on the day, a deadline passed or about to pass, a payment stopped on unverified
+ *     bank details); or
+ *   - we are the delay, badly: a decision or an issue that is ours has sat far past its time.
+ * A report that has just come in and needs reading is a job, not a crisis: it "needs attention".
+ * A third party that is slow is "delayed", however slow.
+ */
+const JEOPARDY: ReadonlySet<string> = new Set(['transaction_at_risk', 'mortgage_offer_expired', 'mortgage_at_risk', 'completion_failure', 'completion_funds_shortfall', 'lender_funds_delayed', 'bankruptcy_insolvency', 'aml_kyc_problem']);
+/** Working days a decision of ours may wait before it is our delay, then a serious one. */
+const OUR_DELAY = { late: 5, severe: 10 };
+/** A newly raised issue is read first: it holds a gate, but for its first days it is a job to pick up. */
+const FRESH_ISSUE_DAYS = 3;
 export type HealthBand = (typeof HEALTH_BANDS)[number];
 
 /** Worst wins. Critical outranks blocked: a blocked case with a deadline on Friday is the one to ring today. */
@@ -166,7 +181,7 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
       chases ? `${plural(chases, 'chase')} sent, most recently ${w.chasesSentAt[chases - 1].slice(0, 10)}.` : 'No chase has gone out yet.',
     ];
     if (escalated) {
-      reasons.push({ code: 'wait_escalated', band: 'critical', headline: `${what} — ${party} is ${plural(age - rule.escalateAfter, 'working day')} past escalation`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
+      reasons.push({ code: 'wait_escalated', band: 'delayed', headline: `${what} — ${party} is ${plural(age - rule.escalateAfter, 'working day')} past escalation`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
     } else if (age >= rule.escalateAfter || chases >= 2) {
       reasons.push({ code: 'wait_overdue', band: 'delayed', headline: `${what} — ${party} is ${plural(age - rule.chaseAfter, 'working day')} overdue`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
     } else if (age >= rule.chaseAfter || chases >= 1) {
@@ -189,8 +204,14 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
     // title already opens with the kind, the title alone is the better headline.
     const title = clean(i.title);
     const named = title.toLowerCase().startsWith(spec.label.split(' ')[0].toLowerCase()) ? title : `${spec.label} — ${title}`;
-    if (i.severity === 'critical') {
-      reasons.push({ code: 'issue_critical', band: 'critical', headline: named, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
+    const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro';
+    const oursTooLong = ours && spec.escalateAfterWorkingDays != null && age >= spec.escalateAfterWorkingDays * 2;
+    const raisedAge = dayAge(i.raisedAt, now, cal);
+    if (JEOPARDY.has(i.kind) || oursTooLong) {
+      reasons.push({ code: 'issue_critical', band: 'critical', headline: oursTooLong && !JEOPARDY.has(i.kind) ? `${named} — ours, untouched for ${plural(age, 'working day')}` : named, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
+    } else if (holds && raisedAge < FRESH_ISSUE_DAYS) {
+      // Just in (a survey read, a search back): the job is to read it and act, not an alarm.
+      reasons.push({ code: 'issue_blocking', band: 'attention', headline: `${spec.label} to review — ${clean(i.title)}`, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     } else if (holds) {
       reasons.push({ code: 'issue_blocking', band: 'blocked', headline: `${holds === 'exchange' ? 'Exchange' : 'Completion'} blocked — ${clean(i.title)}`, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     } else if (age >= DEADLINE_LEAD.stale_issue) {
@@ -212,7 +233,8 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
     if (hardStop) {
       reasons.push({ code: 'hard_stop', band: 'critical', headline, why, suggested: 'Verify the details by a call back to a number you already hold, then resolve the decision', workstream: 'completion', ref: { type: 'decision', id: d.eventId }, ageWorkingDays: age });
     } else if (age >= 2) {
-      reasons.push({ code: 'decision_pending', band: 'attention', headline, why, suggested: 'Open the source and decide', workstream: null, ref: { type: 'decision', id: d.eventId }, ageWorkingDays: age });
+      const band: HealthBand = age >= OUR_DELAY.severe ? 'critical' : age >= OUR_DELAY.late ? 'delayed' : 'attention';
+      reasons.push({ code: 'decision_pending', band, headline: band === 'attention' ? headline : `${headline} — ours, ${plural(age, 'working day')}`, why, suggested: 'Open the source and decide', workstream: null, ref: { type: 'decision', id: d.eventId }, ageWorkingDays: age });
     }
   }
 
