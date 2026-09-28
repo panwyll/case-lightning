@@ -286,5 +286,6 @@ test('the report on title can go early as an interim report; once searches are i
   assert.ok(s.reportOnTitle.interimSentAt, 'the interim report is remembered');
   assert.equal(s.reportOnTitle.status, 'drafted', 'the supplementary drafted itself');
   assert.equal(s.reportOnTitle.interim, false);
-  assert.ok(s.reportOnTitle.status !== 'sent' && !(await import('../../../lib/server/engine/machine')).stageBlockers(s).every((b) => !/report on title/.test(b)), 'exchange waits for the supplementary');
+  const { stageBlockers } = await import('../../../lib/server/engine/machine');
+  assert.ok(stageBlockers(s).some((b) => /report on title/.test(b)), 'exchange waits for the supplementary');
 });
