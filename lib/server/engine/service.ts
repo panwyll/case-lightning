@@ -31,7 +31,11 @@ import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
 import { decide, assertCanSendReport, type Command } from './machine';
 import { profileOf } from './transactions';
-import { project } from './projection';
+import { applyEvent, project } from './projection';
+import { deferral, outsideDeferral } from './defer';
+
+/** A known state with later events applied (a copy; the known state is untouched). */
+const foldOnto = (state: MatterState, events: EngineEvent[]): MatterState => events.reduce((s, e) => applyEvent(s, e), state);
 import { dueActions, deadlineActions, timedIssueActions, type SlaConfig } from './sla';
 import { addWorkingDays } from './working-days';
 import { EXTERNAL, SYSTEM, DEFAULT_LEVELS, type Actor, type WaitKey, type LeaseFacts, type TitleFacts, type BankDetails, type DecisionOption, type EngineEvent, type Engagement, type EnquiryReplyFacts, type EventType, type MatterState, type PayeeKind, type SearchFacts, type SearchType, type SourceChannel, type SubFlow, type LevelConfig, type EngineAction, type NoteKind, type NoteSender, actsUnasked, levelFor, pendingProposal } from './types';
@@ -115,21 +119,29 @@ export class EngineService {
     // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
     if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor);
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
-      const log = await tx.load();
-      const state = project(tenantId, matterId, log);
+      // The state as last known plus whatever was appended since, under the lock; the whole log only the first time.
+      const known = this.stateCache.get(`${tenantId}:${matterId}`);
+      const state = known && tx.loadAfter ? foldOnto(known, await tx.loadAfter(known.lastSeq)) : project(tenantId, matterId, await tx.load());
       const now = this.ports.now();
       const { events } = decide(state, cmd, { now, levels: subflows });
       const appended = await tx.append(events, state.lastSeq, now, this.ports.newId);
-      const next = project(tenantId, matterId, [...log, ...appended]);
+      const next = foldOnto(state, appended);
       await tx.afterAppend(next, appended);
       return { events: appended, state: next };
     });
-    await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
-    await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
-    if (this.ports.onEvents && result.events.length) {
-      const latest = await this.getState(tenantId, matterId).catch(() => result.state);
-      await this.asAutomation(() => this.ports.onEvents!({ tenantId, matterId, events: result.events, state: latest })).catch((err) => this.ports.log('post-commit observer failed', err));
-    }
+    this.remember(tenantId, matterId, result.state);
+    const followOn = async () => {
+      await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
+      await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
+      if (this.ports.onEvents && result.events.length) {
+        const latest = await this.getState(tenantId, matterId).catch(() => result.state);
+        await this.asAutomation(() => this.ports.onEvents!({ tenantId, matterId, events: result.events, state: latest })).catch((err) => this.ports.log('post-commit observer failed', err));
+      }
+    };
+    // A person's click is answered once the command is recorded; what it sets off runs after the response.
+    const later = deferral();
+    if (later && result.events.length) later(() => outsideDeferral(() => followOn().catch((err) => this.ports.log('follow-on work failed', err))));
+    else await followOn();
     return result;
   }
 
@@ -244,6 +256,13 @@ export class EngineService {
       }
     } else if (action === 'enquiry_draft') {
       const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[]; edited?: MessageOverride; origin?: string; title?: string; about?: string };
+      // The issue it was drafted for may have been withdrawn since (the forms list rebuilt): tie it to the list as it is now, or to nothing.
+      if (d.issueId) {
+        const now = await this.getState(tenantId, matterId);
+        const live = (id: string) => now.issues[id] && (now.issues[id].status === 'open' || now.issues[id].status === 'negotiating');
+        if (!live(d.issueId)) d.issueId = d.title === "From the seller's forms" ? openIssues(now).find((i) => i.title.startsWith(FORMS_ISSUE_PREFIX))?.id ?? null : null;
+        d.alsoIssueIds = (d.alsoIssueIds ?? []).filter(live);
+      }
       // What it was for travels with it, so the client hears it in those terms.
       const purpose = d.origin === 'client_instruction' ? 'client_instruction' : d.origin === 'survey' ? 'survey' : d.title === 'Access for specialists' ? 'access' : d.title === 'Evidence from the seller' ? 'evidence' : d.question ? 'forms' : 'general';
       const about = d.about ?? (typeof d.title === 'string' && d.title.startsWith("On the client's instruction: ") ? d.title.slice("On the client's instruction: ".length) : undefined);
@@ -261,7 +280,27 @@ export class EngineService {
   }
 
   async getState(tenantId: string, matterId: string): Promise<MatterState> {
-    return project(tenantId, matterId, await this.store.listEvents(tenantId, matterId));
+    const known = this.stateCache.get(`${tenantId}:${matterId}`);
+    const state = known ? foldOnto(known, await this.store.listEvents(tenantId, matterId, { afterSeq: known.lastSeq })) : project(tenantId, matterId, await this.store.listEvents(tenantId, matterId));
+    this.remember(tenantId, matterId, state);
+    // A copy: callers never share (or change) the remembered state.
+    return JSON.parse(JSON.stringify(state)) as MatterState;
+  }
+
+  /**
+   * The last state seen per case. The log only ever grows, so a remembered state plus the events
+   * after it is the current state; this saves reading and replaying the whole log on every read
+   * and every command (which made each action slower the longer the case ran). Bounded.
+   */
+  private stateCache = new Map<string, MatterState>();
+  private remember(tenantId: string, matterId: string, state: MatterState): void {
+    const k = `${tenantId}:${matterId}`;
+    const cur = this.stateCache.get(k);
+    if (cur && cur.lastSeq > state.lastSeq) return;
+    this.stateCache.delete(k);
+    // Its own copy: nothing handed to a caller can change what is remembered.
+    this.stateCache.set(k, JSON.parse(JSON.stringify(state)) as MatterState);
+    if (this.stateCache.size > 500) this.stateCache.delete(this.stateCache.keys().next().value as string);
   }
 
   async listEvents(tenantId: string, matterId: string, opts?: { afterSeq?: number; limit?: number }): Promise<EngineEvent[]> {
@@ -981,6 +1020,10 @@ export class EngineService {
             ...points.map((p) => `${p.replace(/^(TA\d+|Forms|EPC): /, '')}: please provide full details, with copies of any documents.`),
             ...notKnown.map((q) => `${q.question.replace(/\s+/g, ' ').trim()}: your client answered "not known". Please make enquiries of your client and confirm the position.`),
           ];
+          // A draft from an earlier forms file covers less than the set now does: it is withdrawn for the one below.
+          for (const old of Object.values(fresh.proposals).filter((x) => x.action === 'enquiry_draft' && x.status === 'pending' && x.dedupKey.startsWith('enquiry_draft:forms'))) {
+            await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: old.eventId, reason: 'Replaced by one enquiry covering the whole set of the seller\'s forms.' }).catch((err) => this.ports.log('stale forms enquiry could not be withdrawn', err));
+          }
           if (lines.length) {
             const subject = `Arising from your client's property information forms:\n\n${lines.map((l, n) => `${n + 1}. ${l}`).join('\n')}`;
             const detail = { subject, question: notKnown[0]?.question ?? 'forms', issueId: listIssue?.id ?? null, alsoIssueIds: [], title: "From the seller's forms", about: 'the seller\'s forms' };

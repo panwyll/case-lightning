@@ -276,7 +276,7 @@ test('a re-read only refreshes the reading; Send Recommendations replaces what i
 
 test('the client hears what was asked for them, in plain words, not "pre-contract enquiries"', async () => {
   const h = await enrolled();
-  await h.svc.store.setLevel(TENANT, 'enquiry_draft', 'auto', null);
+  await h.store.setLevel(TENANT, 'enquiry_draft', 'auto', null);
   const CLIENT = { address: 'jo@example.com', name: 'Jo Client', relation: 'client' as const };
   h.ports.noteExtractor = { name: 'test', extract: async () => [{ kind: 'client_decision', summary: 'wants the damp guarantee', quote: 'ask them for the damp guarantee', command: { type: 'request_from_seller', about: 'the damp guarantee and the FENSA certificate', text: 'Please supply the damp-proofing guarantee and the FENSA certificate for the windows.' } }] };
   await h.svc.recordNote(TENANT, MATTER, { text: 'Please ask them for the damp guarantee and the FENSA.', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT });

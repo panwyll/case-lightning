@@ -25,6 +25,8 @@ import { DEFAULT_LEVELS, ENGINE_ACTIONS, TRUST_LEVELS, type EngineAction, LEGACY
 
 export interface MatterTx {
   load(): Promise<EngineEvent[]>;
+  /** Only the events after `seq` (the caller holds the state up to it). */
+  loadAfter?(seq: number): Promise<EngineEvent[]>;
   /** Append in order. `expectedLastSeq` must equal the current max seq or the append fails (concurrent writer). */
   append(events: NewEvent[], expectedLastSeq: number, now: Date, newId: () => string): Promise<EngineEvent[]>;
   /** Refresh read models from the freshly projected state. */
@@ -220,6 +222,7 @@ export class MemoryEventStore implements EventStore {
       const log = this.logs.get(k) ?? [];
       const tx: MatterTx = {
         load: async () => [...log],
+        loadAfter: async (seq) => log.filter((e) => e.seq > seq),
         append: async (events, expectedLastSeq, now, newId) => {
           const current = this.logs.get(k) ?? [];
           const last = current.length ? current[current.length - 1].seq : 0;
@@ -401,6 +404,10 @@ export class PgEventStore implements EventStore {
       const tx: MatterTx = {
         load: async () => {
           const r = await client.query<EventRow>(`select ${EVENT_COLS} from matter_event where tenant_id = $1 and matter_id = $2 order by seq`, [tenantId, matterId]);
+          return r.rows.map(rowToEvent);
+        },
+        loadAfter: async (seq) => {
+          const r = await client.query<EventRow>(`select ${EVENT_COLS} from matter_event where tenant_id = $1 and matter_id = $2 and seq > $3 order by seq`, [tenantId, matterId, seq]);
           return r.rows.map(rowToEvent);
         },
         append: async (events, expectedLastSeq, now, newId) => {

@@ -262,3 +262,14 @@ test("the seller's forms arriving with the contract pack are read even while the
   assert.ok(r.events.some((e) => e.type === 'seller_forms_received'));
   assert.ok(r.events.some((e) => e.type === 'issue_raised'), 'what the forms disclose becomes issues at once');
 });
+
+test('an enquiry drafted against an issue that has since been withdrawn is still raised (not refused as "already withdrawn")', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [] } as never);
+  const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'disclosure_concern', title: "Seller's forms: 1 point to raise with the seller's solicitor" });
+  const id = (r.events[0].payload as { issueId: string }).issueId;
+  await h.svc.run(TENANT, MATTER, { type: 'withdraw_issue', actor: USER, issueId: id, reason: 'rebuilt' });
+  await (h.svc as unknown as { perform: (t: string, m: string, a: string, d: Record<string, unknown>) => Promise<void> }).perform(TENANT, MATTER, 'enquiry_draft', { subject: 'Please confirm the drainage arrangements.', issueId: id, title: "From the seller's forms" });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(Object.values(s.enquiries).some((q) => /drainage/.test(q.subject)));
+});

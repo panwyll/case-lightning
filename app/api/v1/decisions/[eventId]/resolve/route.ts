@@ -1,4 +1,5 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, after } from 'next/server';
+import { withDeferredEffects } from '@/lib/server/engine/defer';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -13,6 +14,7 @@ import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 /** Resolve a pending decision. 412 if this user has not opened / engaged with the source; 400 without a reason for a non-approve action; 409 if it is no longer pending or the matter/sub-flow is in shadow. */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ eventId: string }> }) {
@@ -35,7 +37,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
     // It guards decisions whose source is somebody else's document. A proposal or a held clear is the engine's own
     // text: the summary is the whole of it, so there is nothing to read before deciding.
     const engagement = d.kind === 'proposal' || d.kind === 'auto_clear' ? (input.engagement ?? { scrolledSource: false, dwellMs: 0 }) : assertEngaged(input.engagement ?? null);
-    const result = await svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null, input.edited ?? null);
+    // Answer once the decision is recorded; what it sets off (drafting, sending) runs after the response.
+    const result = await withDeferredEffects((work) => after(work), () => svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null, input.edited ?? null));
     await writeAudit({ tenantId: user.tenantId, matterId: d.matterId, actorUserId: user.userId, actionType: 'ENGINE_DECISION_RESOLVED', actionStatus: 'SUCCESS', payload: { decisionEventId: eventId, kind: d.kind, option: input.option, hasNote: !!input.note, verificationMethod: input.verification?.method ?? null, engagement, selection: input.selection ?? null } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {

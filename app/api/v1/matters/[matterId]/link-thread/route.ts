@@ -87,10 +87,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     // The thread is on a case: its rows leave the filing queue.
     await resolveConversation(user.tenantId, conversationId, 'FILED', matterId).catch(() => {});
 
-    // Stamp the matter-name category onto the actual Outlook message (best-effort).
+    // Stamp the matter-name category onto the actual Outlook message (best-effort, after the response).
     if (body.messageId) {
-      await ensureMasterCategory(owner.userId, label, matterColor(label)).catch(() => {});
-      await addMessageCategories(owner.userId, body.messageId, [label]).catch(() => {});
+      const stampId = body.messageId;
+      after(async () => {
+        await ensureMasterCategory(owner.userId, label, matterColor(label)).catch(() => {});
+        await addMessageCategories(owner.userId, stampId, [label]).catch(() => {});
+      });
     }
 
     // Linking the email to a matter saves its attachments to the matter folder

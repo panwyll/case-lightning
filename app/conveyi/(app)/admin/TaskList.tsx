@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
@@ -76,7 +76,13 @@ export default function TaskList({ who }: { who: string }) {
   const [sort, setSort] = useState<Sort>('urgency');
   const [caseId, setCaseId] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
+  // Several approvals can be in flight at once; each row tracks its own.
+  const [approving, setApproving] = useState<Set<string>>(new Set());
+  const busyOn = (id: string, on: boolean) => setApproving((cur) => { const n = new Set(cur); if (on) n.add(id); else n.delete(id); return n; });
+  /** Tasks dealt with here: hidden at once, and kept hidden until a fresh list no longer has them (a slow reload cannot bring one back). */
+  const [done, setDone] = useState<Map<string, number>>(new Map());
+  const markDone = (id: string) => setDone((cur) => new Map(cur).set(id, Date.now()));
+  const loadSeq = useRef(0);
   const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
   const [retrying, setRetrying] = useState<string | null>(null);
   const retry = async (matterId: string, issueId: string) => {
@@ -103,15 +109,30 @@ export default function TaskList({ who }: { who: string }) {
     catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); }
     finally { setUnlockBusy(false); }
   };
-  const quickApprove = async (key: string, eventId: string) => {
-    setApproving(eventId);
+  const quickApprove = async (_key: string, eventId: string) => {
+    busyOn(eventId, true);
     setQuickErr(null);
-    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); await load(); }
-    catch (e: unknown) { setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' }); setOpen(key); }
-    finally { setApproving(null); }
+    markDone(eventId);
+    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); void load(); }
+    catch (e: unknown) {
+      if ((e as { status?: number }).status !== 409) {
+        setDone((cur) => { const n = new Map(cur); n.delete(eventId); return n; });
+        setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' });
+      }
+    }
+    finally { busyOn(eventId, false); }
   };
   const load = useCallback(async () => {
-    try { setData(await api(who ? `/engine/my-work?user=${who}` : '/engine/my-work?all=1')); setCheckedAt(new Date()); } catch { setData(null); }
+    // Only the newest reload is applied: an older, slower one landing after it cannot put things back.
+    const mine = ++loadSeq.current;
+    try {
+      const fresh = await api<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[]; viewerRole?: string }>(who ? `/engine/my-work?user=${who}` : '/engine/my-work?all=1');
+      if (mine !== loadSeq.current) return;
+      setData(fresh); setCheckedAt(new Date());
+      // Forget what the server no longer lists (or after two minutes, whatever it says).
+      const ids = new Set([...fresh.do, ...fresh.escalate].map((i) => i.ref?.id).filter(Boolean) as string[]);
+      setDone((cur) => { const n = new Map([...cur].filter(([id, at]) => ids.has(id) && Date.now() - at < 120_000)); return n.size === cur.size ? cur : n; });
+    } catch { /* a failed reload keeps the list as it was */ }
   }, [who]);
   useEffect(() => { void load(); }, [load]);
   // The Refresh beside the heading asks the list to reload in place; it says when it is done.
@@ -124,7 +145,7 @@ export default function TaskList({ who }: { who: string }) {
   const now = Date.now();
   const tasks = useMemo(() => {
     if (!data) return [];
-    const all = [...data.do, ...data.escalate];
+    const all = [...data.do, ...data.escalate].filter((i) => !(i.ref?.id && done.has(i.ref.id)));
     const filtered = caseId ? all.filter((i) => i.matterId === caseId) : all;
     const by: Record<Sort, (a: WorkItem, b: WorkItem) => number> = {
       urgency: (a, b) => (RANK[a.urgency] ?? 9) - (RANK[b.urgency] ?? 9) || (ageDays(b, now) ?? 0) - (ageDays(a, now) ?? 0),
@@ -132,7 +153,7 @@ export default function TaskList({ who }: { who: string }) {
       case: (a, b) => (a.propertyAddress ?? a.matterRef ?? '').localeCompare(b.propertyAddress ?? b.matterRef ?? '') || (RANK[a.urgency] ?? 9) - (RANK[b.urgency] ?? 9),
     };
     return filtered.slice().sort(by[sort]);
-  }, [data, caseId, sort, now]);
+  }, [data, caseId, sort, now, done]);
 
   // Grouped by case, in the order the sort puts their first task.
   const groups = useMemo(() => {
@@ -187,7 +208,7 @@ export default function TaskList({ who }: { who: string }) {
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : i.since ? stamp(i.since) : ''}</span>
                   {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
-                  {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
+                  {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving.has(i.ref.id)} onClick={() => void quickApprove(key, i.ref.id)}>{approving.has(i.ref.id) ? 'Approving…' : 'Approve'}</button>}
                   {isDecision
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
@@ -200,7 +221,7 @@ export default function TaskList({ who }: { who: string }) {
                 </div>
                 {isOpen && isDecision && (
                   <div className="tl-open">
-                    <DecisionPanel eventId={i.ref.id} inline onResolved={() => { setOpen(null); void load(); }} />
+                    <DecisionPanel eventId={i.ref.id} inline onResolved={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}
               </div>

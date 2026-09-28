@@ -26,8 +26,11 @@ import {
 
 /** Fold a whole log (must be ordered by seq). */
 export function project(tenantId: string, matterId: string, events: EngineEvent[]): MatterState {
-  let state = initialState(tenantId, matterId);
-  for (const e of events) state = applyEvent(state, e);
+  // One copy of the log, then every event applied in place: copying the whole state per event made a
+  // rebuild quadratic in the case's size. The copy keeps the caller's events untouched by the fold.
+  const log = clone(events);
+  const state = initialState(tenantId, matterId);
+  for (const e of log) applyInPlace(state, e);
   return state;
 }
 
@@ -86,8 +89,13 @@ const decisionOf = <T extends EventType>(e: EngineEvent<T>): DecisionSpec | null
 };
 
 /** Apply one event. Returns a new state; never mutates the input. */
+/** One event onto a state, without touching the state passed in. */
 export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
-  const s = clone(prev);
+  return applyInPlace(clone(prev), clone(e));
+}
+
+/** One event onto this state, in place (the fold's own copy; see project). */
+function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
   s.lastSeq = e.seq;
   s.lastEventAt = e.createdAt;
 

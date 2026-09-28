@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api';
 import { ENGINE_CSS } from './ui';
 import { KIND_LABEL, OPTION_HELP, OPTION_LABEL, OPTION_LABEL_BY_KIND, STAGE_LABEL, VERIFICATION_METHOD_LABEL, fmtWhen, pretty, type Citation, type DecisionDetail, type Engagement, type SourceDoc } from './types';
-import { Check } from '@/app/shared/icons';
+import { X, Check } from '@/app/shared/icons';
 
 /**
  * Addendum 3 §3 — the decision panel. A fixed three-part vertical layout:
@@ -390,10 +390,13 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
       await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? editedBody() : null }) });
       setEditing(false);
       setDone(option);
-      await load();
-      window.dispatchEvent(new Event('conveyi:counts'));
+      // The list moves on at once; the panel's own refresh happens behind it.
       onResolved?.();
+      window.dispatchEvent(new Event('conveyi:counts'));
+      void load().catch(() => {});
     } catch (e: unknown) {
+      // Already dealt with (another tab, a double click): nothing is wrong, the item just goes.
+      if ((e as { status?: number }).status === 409) { onResolved?.(); window.dispatchEvent(new Event('conveyi:counts')); return; }
       setErr(e instanceof Error ? e.message : 'Could not record the decision.');
     } finally {
       setBusy(false);
@@ -588,7 +591,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
 
         {/* ── The decision, always in reach ── */}
         <div className="dp-actions" aria-label="Actions">
-          {err && <div className="eg-err" style={{ margin: 0 }}>{err}</div>}
+          {err && <div className="eg-err" style={{ margin: 0, display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1 }}>{err}</span><button type="button" aria-label="Dismiss" onClick={() => setErr(null)} style={{ border: 0, background: 'none', cursor: 'pointer', color: 'inherit', padding: 0, display: 'inline-flex' }}><X size={16} /></button></div>}
           {detail.shadowed && <div className="dp-shadow">Shadow mode ({detail.shadowed === 'matter' ? 'this case' : 'this sub-flow'}): logged for comparison only. <a href={`/conveyi/engine/${d.matterId}/shadow`} style={{ color: '#c7d2fe' }}>Shadow queue →</a></div>}
           {!detail.shadowed && !pending && (
             <div className="dp-out">
