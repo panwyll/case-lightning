@@ -9,10 +9,26 @@ import { archiveHandled } from './archive';
 import { emitMatterEvent } from '../events';
 import { describeFiling, fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter } from '../files';
 import { markMatterDraftsStale } from '../worklist';
+import { queryOne } from '../db';
+
+/**
+ * Claim an email for filing: true for the first caller only. A repeated notification and the inbox
+ * sweep can reach the same message at the same moment; only one files it. Before migration 110 the
+ * claim cannot be recorded, and filing goes ahead as it always did.
+ */
+export async function claimFiling(tenantId: string, messageId: string, matterId: string | null): Promise<boolean> {
+  try {
+    const row = await queryOne<{ graph_message_id: string }>(`insert into mail_filing_claim (tenant_id, graph_message_id, matter_id) values ($1, $2, $3) on conflict do nothing returning graph_message_id`, [tenantId, messageId, matterId]);
+    return !!row;
+  } catch {
+    return true;
+  }
+}
 import type { SessionUser } from '../types';
 
 export async function autoFileToCase(user: SessionUser, message: any, matterId: string, opts: { later?: (fn: () => Promise<unknown>) => void } = {}): Promise<void> {
   const messageId: string = message.id;
+  if (!(await claimFiling(user.tenantId, messageId, matterId))) return; // already being filed by another path
   const problems: string[] = [];
   // Attachments are listed whatever hasAttachments says: Outlook sets it false when a file is marked inline.
   const filed = await fileEmailAttachments(user, matterId, messageId, message.subject).catch((e) => {

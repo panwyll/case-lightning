@@ -827,8 +827,13 @@ export async function fileEmailBodyAsDocument(
     const title = `Files referred to but not attached: ${String(message?.subject ?? 'an email').replace(/^(re|fw|fwd):\s*/gi, '').slice(0, 80)}`;
     const { engine } = await import('./engine/adapters');
     const s = await engine().getState(user.tenantId, matterId).catch(() => null);
-    if (s?.enrolled && !Object.values(s.issues).some((i) => i.title === title && (i.status === 'open' || i.status === 'negotiating'))) {
-      await engine().run(user.tenantId, matterId, { type: 'raise_issue', actor: user.userId, kind: 'other', gate: 'none', title, detail: `${missing} Ask the sender to send the files themselves, or forward the earlier emails that carry them.` }).catch(() => {});
+    // One per conversation, whatever races to raise it: the id is fixed, so a second raise is refused.
+    const issueId = `FILES-${crypto.createHash('sha1').update(String(message?.conversationId ?? message?.id ?? title)).digest('hex').slice(0, 8).toUpperCase()}`;
+    const carried = !attachments.length
+      ? 'The email itself carried no attachments.'
+      : `Its attachments could not be filed: ${attachments.map((a) => `${a.name}${(a as { reason?: string | null }).reason ? ` (${(a as { reason?: string | null }).reason})` : ''}`).join('; ')}.`;
+    if (s?.enrolled && !s.issues[issueId] && !Object.values(s.issues).some((i) => i.title === title && (i.status === 'open' || i.status === 'negotiating'))) {
+      await engine().run(user.tenantId, matterId, { type: 'raise_issue', actor: user.userId, issueId, kind: 'other', gate: 'none', title, detail: `${missing} ${carried} Ask the sender to send the files themselves, or forward the earlier emails that carry them.` }).catch(() => {});
     }
   }
   const fresh = newWordsOf(message ?? {});

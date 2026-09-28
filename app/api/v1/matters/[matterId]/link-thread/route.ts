@@ -115,6 +115,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     const subject = body.subject;
     if (messageId) {
       after(async () => {
+        // Filed by hand: recorded, so the sweep or a late notification does not file it again.
+        const { claimFiling } = await import('@/lib/server/mail/auto-file');
+        await claimFiling(user.tenantId, messageId, matterId);
         let attachments: { saved: number; files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }> } = { saved: 0, files: [] };
         let email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null = null;
         const problems: string[] = [];
