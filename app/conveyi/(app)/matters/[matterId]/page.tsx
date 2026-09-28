@@ -15,6 +15,7 @@ const FILING_LOG = new Set(['EMAIL_FILED', 'DOC_RECEIVED', 'EMAIL_SAVED_TO_MATTE
 import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
+import { ChainCard } from '@/app/shared/engine/ChainCard';
 import { paths } from '@/lib/paths';
 import { ArrowLeft } from '@/app/shared/icons';
 import { useRouter } from 'next/navigation';
@@ -190,6 +191,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <button type="button" className="mx-back" aria-label="Back" title="Back" onClick={goBack}><ArrowLeft size={18} /></button>
                 {band && <House band={band} size={28} />}{row.propertyAddress ?? row.matterRef}
                 {view?.state.transactionType && <span className="eg-chip muted">{TRANSACTION_LABEL[view.state.transactionType] ?? view.state.transactionType}</span>}
+                {view?.chain && <a className="eg-chip" href={`/conveyi/matters/${view.chain.matterId}`} style={{ background: '#f3efff', color: '#5A27E0', border: '1px solid #c7b8f5', textDecoration: 'none' }} title={`The client's linked ${view.chain.relation}`}>Linked {view.chain.relation}{view.chain.propertyAddress ? ` · ${view.chain.propertyAddress.split(',')[0]}` : ''}</a>}
                 {view && enrolled && <span className="eg-chip stage">{view.state.closedAt ? 'Closed' : view.state.abandoned ? 'Abandoned' : stageLabel(view.state.stage, view.profile)}</span>}
                 {view && !enrolled && <span className="eg-chip muted">not enrolled</span>}
                 {view?.state.manualHandling.required && <span className="eg-chip bad">manual handling</span>}
@@ -264,6 +266,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 <Field k="Handler" v={nameOf(row.assignedTo)} />
                 <Field k="Reference" v={row.matterRef ?? ''} />
               </div>
+              {view && enrolled && <ChainCard matterId={matterId} api={api} view={view} busy={eng.busy} cmd={eng.cmd} />}
               <hr className="mx-hr" />
               <div className="mx-k" style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#64748b', margin: '0 0 8px' }}>Contacts</div>
               <ContactsCard matterId={matterId} api={api} />

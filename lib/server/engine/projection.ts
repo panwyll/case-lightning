@@ -1011,6 +1011,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       s.relatedMatter = { matterId: p.relatedMatterId, relation: p.relation, linkedAt: e.createdAt };
       break;
     }
+    case 'related_matter_unlinked': {
+      s.relatedMatter = null;
+      break;
+    }
     case 'lender_requirements_recorded': {
       const p = e.payload as Payloads['lender_requirements_recorded'];
       const prev = s.lenderRequirements;

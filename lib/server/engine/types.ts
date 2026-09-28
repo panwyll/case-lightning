@@ -194,6 +194,7 @@ export const EVENT_TYPES = [
   'property_forms_received',
   'seller_forms_received',
   'related_matter_linked',
+  'related_matter_unlinked',
   'lender_requirements_recorded',
   'name_change_evidenced',
   'client_account_receipt_recorded',
@@ -1030,6 +1031,7 @@ export interface Payloads {
   seller_forms_received: { forms: string[]; facts: PropertyFormsFacts | null };
   /** Our client is also selling (or buying): the other matter, so exchange can be made simultaneous and sale proceeds traced. */
   related_matter_linked: { relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null };
+  related_matter_unlinked: { relatedMatterId: string; reason: string };
   /** The lender's Part 2 answers that change a rule on this matter. */
   lender_requirements_recorded: { minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null };
   /** A credit on client account that is not the completion money: recorded so the sender is checked (LSAG 5.6.3.2, 6.17.2). */

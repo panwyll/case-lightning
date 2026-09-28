@@ -45,7 +45,8 @@ export const userCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('add_party'), name: z.string().min(1).max(120), role: z.enum(['buyer', 'seller', 'owner', 'donor', 'attorney', 'director', 'executor']) }),
   z.object({ type: z.literal('set_funding'), hasLender: z.boolean(), reason: z.string().min(3).max(300) }),
   z.object({ type: z.literal('record_survey_plan'), plan: z.enum(['none', 'booked']), date: isoDate.nullish(), note: z.string().max(500).nullish() }),
-  z.object({ type: z.literal('link_related_matter'), relatedMatterId: z.string().uuid(), relation: z.enum(['sale', 'purchase']), note: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('link_related_matter'), relatedMatterId: z.string().uuid(), relation: z.enum(['sale', 'purchase']).nullish(), note: z.string().max(500).nullish() }),
+  z.object({ type: z.literal('unlink_related_matter'), reason: z.string().min(1).max(500) }),
   z.object({ type: z.literal('record_lender_requirements'), minUnexpiredYears: z.number().int().min(0).max(999).nullish(), maxSearchAgeMonths: z.number().int().min(1).max(24).nullish(), acceptsNonFamilyGift: z.boolean().nullish(), requiresEws1: z.boolean().nullish(), note: z.string().max(1000).nullish() }),
   z.object({ type: z.literal('client_account_receipt'), remitter: z.string().min(1).max(160), amountPennies: z.number().int().nonnegative().nullish(), purpose: z.enum(['fees', 'deposit', 'completion', 'other']), reference: z.string().max(120).nullish() }),
   z.object({ type: z.literal('name_change_evidenced'), party: z.string().max(80).nullish(), from: z.string().min(1).max(120), to: z.string().min(1).max(120), reason: z.string().min(1).max(300), documentId: z.string().uuid().nullish() }),
@@ -158,7 +159,9 @@ export function toCommand(input: UserCommandInput, userId: string): Command | nu
     case 'send_report_on_title':
     case 'record_bank_details':
     case 'record_note':
-      return null; // handled by EngineService methods (they talk to a port first)
+    case 'link_related_matter':
+    case 'unlink_related_matter':
+      return null; // handled by EngineService methods (they talk to a port first, or write two matters)
     default:
       return { ...input, actor: userId } as Command;
   }

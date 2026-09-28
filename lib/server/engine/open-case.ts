@@ -20,6 +20,31 @@ import { matterWork } from './work';
 import { caseHud } from './hud';
 import type { EngineService } from './service';
 
+/** The other half of the client's chain, as this case's page shows it: where it is, what holds its exchange, when it completes. */
+export async function chainView(svc: EngineService, tenantId: string, state: MatterState) {
+  const link = state.relatedMatter;
+  if (!link) return null;
+  const [other, row] = await Promise.all([
+    svc.getState(tenantId, link.matterId).catch(() => null),
+    queryOne<{ matter_ref: string | null; property_address: string | null; completion_target_date: string | null }>(`select matter_ref, property_address, completion_target_date::text from matter where id = $1 and tenant_id = $2`, [link.matterId, tenantId]).catch(() => null),
+  ]);
+  return {
+    matterId: link.matterId,
+    relation: link.relation,
+    matterRef: row?.matter_ref ?? null,
+    propertyAddress: row?.property_address ?? null,
+    readable: !!other,
+    stage: other?.stage ?? null,
+    exchangedAt: other?.exchange.exchangedAt ?? null,
+    exchangeReady: !!other && (!!other.exchange.exchangedAt || (other.stage === 'pre_exchange' && other.exchange.conditionsMet && !other.abandoned)),
+    holding: other ? stageBlockers(other).slice(0, 3) : [],
+    completionDate: other?.exchange.completionDate ?? null,
+    targetCompletion: other?.targetCompletionDate ?? row?.completion_target_date ?? null,
+    completedAt: other?.completion.confirmedAt ?? null,
+    abandoned: !!other?.abandoned,
+  };
+}
+
 /** The engine's view of a matter: state, profile, blockers, waits, decisions, levels, the matter row and its charge. */
 export async function engineView(svc: EngineService, tenantId: string, matterId: string, state: MatterState) {
   // The people named on the page (who asked for what): only ids that are users.
@@ -38,8 +63,10 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     personIds.length ? query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, personIds]).catch(() => []) : Promise.resolve([] as Array<{ id: string; name: string }>),
   ]);
   const profile = profileOf(state.transactionType);
+  const chain = await chainView(svc, tenantId, state).catch(() => null);
   return {
     state,
+    chain,
     // The transaction profile (docs/transaction-types.md): which phases, workstreams and gates this type has — the UI draws from it.
     profile: { ...profile, fundsFrom: fundsFromFor(profile.fundsFrom, state.shapes ?? []), lifecycle: lifecycleFor(profile), gates: gatesFor(state) },
     sdlt: profile.side === 'buyer' && state.purchasePricePennies ? (() => { const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false }; const est = computeSdlt(state.purchasePricePennies, basis); return { estimatePennies: est.totalPennies, scheme: est.scheme, basis: sdltLabel(basis), declared: !!state.sdltBasis }; })() : null,

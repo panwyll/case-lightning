@@ -213,6 +213,7 @@ type CommandBody =
   | { type: 'add_party'; actor: Actor; name: string; role: IdPartyCheck['role'] }
   | { type: 'seller_forms_received'; actor: Actor; documentId: string; forms?: string[] | null; facts: PropertyFormsFacts | null }
   | { type: 'link_related_matter'; actor: Actor; relatedMatterId: string; relation: 'sale' | 'purchase'; note?: string | null }
+  | { type: 'unlink_related_matter'; actor: Actor; reason: string }
   | { type: 'record_lender_requirements'; actor: Actor; minUnexpiredYears?: number | null; maxSearchAgeMonths?: number | null; acceptsNonFamilyGift?: boolean | null; requiresEws1?: boolean | null; note?: string | null }
   | { type: 'name_change_evidenced'; actor: Actor; party?: string | null; from: string; to: string; reason: string; documentId?: string | null }
   | { type: 'client_account_receipt'; actor: Actor; remitter: string; amountPennies?: number | null; purpose: 'fees' | 'deposit' | 'completion' | 'other'; reference?: string | null }
@@ -306,6 +307,7 @@ export const USER_COMMANDS: ReadonlyArray<CommandType> = [
   'add_party',
   'seller_forms_received',
   'link_related_matter',
+  'unlink_related_matter',
   'record_lender_requirements',
   'name_change_evidenced',
   'client_account_receipt',
@@ -1905,6 +1907,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!Object.values(s.issues).some((i) => i.kind === 'chain_dependency' && i.title.startsWith('Linked ') && (i.status === 'open' || i.status === 'negotiating'))) {
         out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: nextIssueId(s), kind: 'chain_dependency', title: `Linked ${cmd.relation}: exchange is simultaneous with the related matter`, detail: `Our client's ${cmd.relation} (${cmd.relatedMatterId}) must exchange at the same time: the same completion date in both contracts, the deposit ${cmd.relation === 'sale' ? 'received on the sale used towards this purchase, and the sale proceeds towards completion' : 'from the purchase side'}. The engine refuses exchange here until the linked matter is ready to exchange too, and clears this issue when it is.`, gate: 'exchange', stage: s.stage, sourceDocumentId: null, origin: null, party: null, severity: 'warning', causedBy: null } });
       }
+      return out;
+    }
+    case 'unlink_related_matter': {
+      requireEnrolled(s);
+      if (!s.relatedMatter) reject('This matter is not linked to another.');
+      if (s.exchange.exchangedAt) reject('Contracts are exchanged; the link stays on the record.');
+      if (!cmd.reason?.trim()) reject('Say why the link is removed (linked in error, the other transaction fell through).', 400);
+      const out: NewEvent[] = [{ type: 'related_matter_unlinked', actor: cmd.actor, payload: { relatedMatterId: s.relatedMatter.matterId, reason: cmd.reason.trim() } }];
+      for (const i of Object.values(s.issues)) if (i.kind === 'chain_dependency' && i.title.startsWith('Linked ') && (i.status === 'open' || i.status === 'negotiating')) out.push({ type: 'issue_withdrawn', actor: cmd.actor, payload: { issueId: i.id, reason: `Unlinked: ${cmd.reason.trim()}` } });
       return out;
     }
     case 'record_lender_requirements': {

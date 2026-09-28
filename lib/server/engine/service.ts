@@ -118,7 +118,8 @@ export class EngineService {
   async run(tenantId: string, matterId: string, cmd: Command): Promise<RunResult> {
     const subflows = await this.levels(tenantId);
     // A linked sale or purchase exchanges with us: the other file must be able to exchange too, and its chain issue here clears when it can.
-    if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor);
+    if (cmd.type === 'contracts_exchanged') await this.assertLinkedMatterReady(tenantId, matterId, cmd.actor as Actor, cmd.completionDate);
+    if (cmd.type === 'completion_confirmed') await this.assertLinkedSaleCompleted(tenantId, matterId);
     const result = await this.store.withMatterLock(tenantId, matterId, async (tx) => {
       // The state as last known plus whatever was appended since, under the lock; the whole log only the first time.
       const known = this.stateCache.get(`${tenantId}:${matterId}`);
@@ -768,13 +769,58 @@ export class EngineService {
   }
 
   /** The case record as the drafters see it: what the matter row says about the parties, the property and the price. */
-  private async assertLinkedMatterReady(tenantId: string, matterId: string, actor: Actor): Promise<void> {
+  /**
+   * One client's sale and purchase, linked both ways at once: each holds exchange until the
+   * other can exchange too, the completion dates must agree, and the purchase does not complete
+   * before the sale whose money funds it. Refused when the other file is not this firm's, is on
+   * the same side, is already linked elsewhere, or has exchanged.
+   */
+  async linkChain(tenantId: string, matterId: string, otherId: string, actor: string, note: string | null = null): Promise<RunResult> {
+    if (otherId === matterId) throw Object.assign(new Error('A case cannot be linked to itself.'), { status: 400 });
+    const [here, there] = await Promise.all([this.getState(tenantId, matterId), this.getState(tenantId, otherId)]);
+    if (!there.enrolled) throw Object.assign(new Error('That case is not on the system yet (not enrolled).'), { status: 409 });
+    const sideHere = profileOf(here.transactionType ?? 'freehold_purchase').side;
+    const sideThere = profileOf(there.transactionType ?? 'freehold_purchase').side;
+    if (!((sideHere === 'buyer' && sideThere === 'seller') || (sideHere === 'seller' && sideThere === 'buyer'))) throw Object.assign(new Error('A chain links a sale to a purchase; these two are on the same side.'), { status: 409 });
+    if (here.relatedMatter && here.relatedMatter.matterId !== otherId) throw Object.assign(new Error('This case is already linked to another; unlink it first.'), { status: 409 });
+    if (there.relatedMatter && there.relatedMatter.matterId !== matterId) throw Object.assign(new Error('That case is already linked to another; unlink it first.'), { status: 409 });
+    if (here.exchange.exchangedAt || there.exchange.exchangedAt) throw Object.assign(new Error('One of the two has exchanged; linking now changes nothing.'), { status: 409 });
+    const kind = (side: string) => (side === 'seller' ? 'sale' : 'purchase') as 'sale' | 'purchase';
+    let result: RunResult = { state: here, events: [] };
+    if (!here.relatedMatter) result = await this.run(tenantId, matterId, { type: 'link_related_matter', actor: actor as Actor, relatedMatterId: otherId, relation: kind(sideThere), note });
+    if (!there.relatedMatter) await this.run(tenantId, otherId, { type: 'link_related_matter', actor: actor as Actor, relatedMatterId: matterId, relation: kind(sideHere), note });
+    return result;
+  }
+
+  /** Both sides unlinked together; their chain holds are withdrawn. */
+  async unlinkChain(tenantId: string, matterId: string, actor: string, reason: string): Promise<RunResult> {
+    const here = await this.getState(tenantId, matterId);
+    const otherId = here.relatedMatter?.matterId ?? null;
+    const result = await this.run(tenantId, matterId, { type: 'unlink_related_matter', actor: actor as Actor, reason });
+    if (otherId) {
+      const there = await this.getState(tenantId, otherId).catch(() => null);
+      if (there?.relatedMatter?.matterId === matterId && !there.exchange.exchangedAt) await this.run(tenantId, otherId, { type: 'unlink_related_matter', actor: actor as Actor, reason }).catch((err) => this.ports.log('the other side of the chain could not be unlinked', err));
+    }
+    return result;
+  }
+
+  /** The purchase waits for the sale that funds it: the sale completes first, the same day. */
+  private async assertLinkedSaleCompleted(tenantId: string, matterId: string): Promise<void> {
+    const state = await this.getState(tenantId, matterId);
+    if (state.relatedMatter?.relation !== 'sale') return;
+    const sale = await this.getState(tenantId, state.relatedMatter.matterId).catch(() => null);
+    if (sale && !sale.completion.confirmedAt) throw Object.assign(new Error("Cannot confirm completion: the client's linked sale has not completed, and its proceeds fund this purchase. Confirm the sale's completion first."), { status: 409 });
+  }
+
+  private async assertLinkedMatterReady(tenantId: string, matterId: string, actor: Actor, completionDate?: string): Promise<void> {
     const state = await this.getState(tenantId, matterId);
     const link = state.relatedMatter;
     if (!link) return;
     const other = await this.getState(tenantId, link.matterId).catch(() => null);
     if (!other) throw Object.assign(new Error(`The linked ${link.relation} (${link.matterId}) cannot be read; unlink it or check the matter.`), { status: 409 });
     const ready = !!other.exchange.exchangedAt || (other.stage === 'pre_exchange' && other.exchange.conditionsMet && !other.abandoned);
+    // Exchanged on the other side already: this side must complete the same day.
+    if (other.exchange.exchangedAt && completionDate && other.exchange.completionDate && other.exchange.completionDate !== completionDate) throw Object.assign(new Error(`Cannot exchange: the linked ${link.relation} completes on ${other.exchange.completionDate}; the two must complete the same day.`), { status: 409 });
     if (!ready) throw Object.assign(new Error(`Cannot exchange: the linked ${link.relation} is at "${other.stage}"${other.exchange.conditionsMet ? '' : ' and its exchange conditions are not met'}; exchange is simultaneous.`), { status: 409 });
     for (const i of Object.values(state.issues)) {
       if (i.kind === 'chain_dependency' && i.title.startsWith('Linked ') && (i.status === 'open' || i.status === 'negotiating')) await this.run(tenantId, matterId, { type: 'resolve_issue', actor, issueId: i.id, resolution: 'other', note: `The linked ${link.relation} is ready to exchange (${other.exchange.exchangedAt ? 'exchanged' : 'conditions met'}); exchanging together.` });

@@ -197,6 +197,28 @@ test('co-declarants: a co-buyer who neither confirms nor declares is flagged; li
   assert.ok(openIssues(s).some((i) => i.kind === 'chain_dependency'), 'the chain issue still holds');
 });
 
+test("one client's sale and purchase link both ways at once; the same side, a second link or a self-link is refused; unlinking clears both", async () => {
+  const h = harness();
+  const SALE = '55555555-5555-4555-8555-555555555555';
+  const OTHER = '66666666-6666-4666-8666-666666666666';
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await h.svc.run(TENANT, SALE, { type: 'enrol', actor: USER, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: false, requiredSearches: [] });
+  await h.svc.run(TENANT, OTHER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
+  await assert.rejects(h.svc.linkChain(TENANT, MATTER, MATTER, USER), /cannot be linked to itself/);
+  await assert.rejects(h.svc.linkChain(TENANT, MATTER, OTHER, USER), /same side/);
+  await h.svc.linkChain(TENANT, MATTER, SALE, USER);
+  const [p, sl] = await Promise.all([h.svc.getState(TENANT, MATTER), h.svc.getState(TENANT, SALE)]);
+  assert.deepEqual([p.relatedMatter?.matterId, p.relatedMatter?.relation], [SALE, 'sale']);
+  assert.deepEqual([sl.relatedMatter?.matterId, sl.relatedMatter?.relation], [MATTER, 'purchase']);
+  assert.ok(openIssues(sl).some((i) => i.kind === 'chain_dependency'), 'the sale is held too');
+  await assert.rejects(h.svc.run(TENANT, SALE, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-01' }), /Cannot exchange/);
+  await h.svc.unlinkChain(TENANT, SALE, USER, 'Linked in error');
+  const [p2, s2] = await Promise.all([h.svc.getState(TENANT, MATTER), h.svc.getState(TENANT, SALE)]);
+  assert.equal(p2.relatedMatter, null);
+  assert.equal(s2.relatedMatter, null);
+  assert.ok(!openIssues(p2).some((i) => i.kind === 'chain_dependency') && !openIssues(s2).some((i) => i.kind === 'chain_dependency'), 'both holds withdrawn');
+});
+
 test('a documented name change is one person to the cross-checks; the Right to Buy, flying freehold and commonhold shapes raise their checklists', async () => {
   const { crossCheck } = await import('../../../lib/server/engine/crosscheck');
   const record = { propertyAddress: null, purchasePricePennies: null, buyerNames: ['Priya Patel'], sellerNames: [], lender: null, completionDate: null };

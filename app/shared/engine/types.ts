@@ -302,7 +302,10 @@ export interface CompletionContract { label: string; documentRoles?: string[]; d
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {
   review?: DocumentReviewSummary | null; id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string; emailFrom?: string | null; emailFromAddress?: string | null; emailSubject?: string | null }
-export interface EngineView { sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; people?: Record<string, string>; documentCount?: number; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
+/** The other half of the client's chain (lib/server/engine/open-case.ts chainView). */
+export interface ChainView { matterId: string; relation: 'sale' | 'purchase'; matterRef: string | null; propertyAddress: string | null; readable: boolean; stage: string | null; exchangedAt: string | null; exchangeReady: boolean; holding: string[]; completionDate: string | null; targetCompletion: string | null; completedAt: string | null; abandoned: boolean }
+
+export interface EngineView { chain?: ChainView | null; sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; people?: Record<string, string>; documentCount?: number; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 
