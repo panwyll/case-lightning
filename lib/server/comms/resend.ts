@@ -6,6 +6,7 @@
 import { queryOne } from '../db';
 import { writeAudit } from '../audit';
 import { commsDeps } from './adapters';
+import { signedHtml, signedText } from '../signature';
 import { isSandboxMatter, sandboxCommsDeps } from '../engine/sandbox';
 
 const escapeHtml = (s: string) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string);
@@ -30,10 +31,10 @@ export async function resendClientMessage(tenantId: string, matterId: string, me
       if (!deps.whatsapp) throw new Error('WhatsApp is not configured.');
       out = { channel: 'whatsapp', ...(await deps.whatsapp.sendText(row.address, row.body)) };
     } else if (deps.mailbox && info.feeEarnerUserId) {
-      try { out = { channel: 'email', ...(await deps.mailbox.send(info.feeEarnerUserId, row.address, subject, toHtml(row.body))) }; }
-      catch (err) { if (!deps.email) throw err; out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: row.body, fromUserId: info.feeEarnerUserId })) }; }
+      try { out = { channel: 'email', ...(await deps.mailbox.send(info.feeEarnerUserId, row.address, subject, (info.signature ? signedHtml(row.body, info.signature) : toHtml(row.body)))) }; }
+      catch (err) { if (!deps.email) throw err; out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: info.signature ? signedText(row.body, info.signature) : row.body, fromUserId: info.feeEarnerUserId })) }; }
     } else if (deps.email) {
-      out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: row.body, fromUserId: info.feeEarnerUserId })) };
+      out = { channel: 'email', ...(await deps.email.send({ to: row.address, subject, text: info.signature ? signedText(row.body, info.signature) : row.body, fromUserId: info.feeEarnerUserId })) };
     } else {
       throw new Error('No email sender configured.');
     }

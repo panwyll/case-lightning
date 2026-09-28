@@ -13,19 +13,23 @@ export interface FirmProfile {
   phone: string | null;
   sraNumber: string | null;
   website: string | null;
+  /** An https image the signature shows beside the firm's details. */
+  logoUrl?: string | null;
+  /** A standing line under every signature (e.g. "We will never change our bank details by email"). */
+  signatureNotice?: string | null;
 }
 
 export async function getFirmProfile(tenantId: string): Promise<FirmProfile> {
-  const r = await queryOne<{ name: string; address_line1: string | null; address_line2: string | null; town: string | null; postcode: string | null; phone: string | null; sra_number: string | null; website: string | null }>(
-    `select name, address_line1, address_line2, town, postcode, phone, sra_number, website from tenant where id = $1`,
-    [tenantId]
-  ).catch(() => null);
+  type Row = { name: string; address_line1: string | null; address_line2: string | null; town: string | null; postcode: string | null; phone: string | null; sra_number: string | null; website: string | null; logo_url?: string | null; signature_notice?: string | null };
+  const base = `name, address_line1, address_line2, town, postcode, phone, sra_number, website`;
+  // After migration 105 the logo and notice too; before it, without them; before 102, the name alone.
+  const r = (await queryOne<Row>(`select ${base}, logo_url, signature_notice from tenant where id = $1`, [tenantId]).catch(() => null))
+    ?? (await queryOne<Row>(`select ${base} from tenant where id = $1`, [tenantId]).catch(() => null));
   if (!r) {
-    // Before migration 102 the columns do not exist: the name alone.
     const n = await queryOne<{ name: string }>(`select name from tenant where id = $1`, [tenantId]).catch(() => null);
-    return { name: n?.name ?? '', addressLine1: null, addressLine2: null, town: null, postcode: null, phone: null, sraNumber: null, website: null };
+    return { name: n?.name ?? '', addressLine1: null, addressLine2: null, town: null, postcode: null, phone: null, sraNumber: null, website: null, logoUrl: null, signatureNotice: null };
   }
-  return { name: r.name, addressLine1: r.address_line1, addressLine2: r.address_line2, town: r.town, postcode: r.postcode, phone: r.phone, sraNumber: r.sra_number, website: r.website };
+  return { name: r.name, addressLine1: r.address_line1, addressLine2: r.address_line2, town: r.town, postcode: r.postcode, phone: r.phone, sraNumber: r.sra_number, website: r.website, logoUrl: r.logo_url ?? null, signatureNotice: r.signature_notice ?? null };
 }
 
 export async function saveFirmProfile(tenantId: string, p: Partial<FirmProfile>): Promise<FirmProfile> {
@@ -36,6 +40,10 @@ export async function saveFirmProfile(tenantId: string, p: Partial<FirmProfile>)
     `update tenant set name = $2, address_line1 = $3, address_line2 = $4, town = $5, postcode = $6, phone = $7, sra_number = $8, website = $9 where id = $1`,
     [tenantId, v.name.trim() || cur.name, blank(v.addressLine1), blank(v.addressLine2), blank(v.town), blank(v.postcode)?.toUpperCase() ?? null, blank(v.phone), blank(v.sraNumber), blank(v.website)]
   );
+  if (p.logoUrl !== undefined || p.signatureNotice !== undefined) {
+    await query(`update tenant set logo_url = $2, signature_notice = $3 where id = $1`, [tenantId, blank(v.logoUrl ?? null), blank(v.signatureNotice ?? null)])
+      .catch((e) => { throw Object.assign(new Error(`Could not save the logo or notice (has migration 105 been run?): ${(e as Error).message}`), { status: 500 }); });
+  }
   return getFirmProfile(tenantId);
 }
 

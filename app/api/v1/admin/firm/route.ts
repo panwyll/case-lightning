@@ -30,6 +30,8 @@ export async function PATCH(req: NextRequest) {
       name: z.string().min(2).max(160).optional(),
       addressLine1: text(160), addressLine2: text(160), town: text(80), postcode: z.string().max(10).regex(/^[A-Za-z0-9 ]*$/).nullish(),
       phone: z.string().max(30).regex(/^[0-9 +()-]*$/).nullish(), sraNumber: z.string().max(12).regex(/^[0-9]*$/).nullish(), website: text(200),
+      logoUrl: z.string().max(500).regex(/^(https:\/\/\S+)?$/, 'An https:// link to the logo image').nullish(),
+      signatureNotice: text(400),
       signingProvider: z.enum(['none', 'infotrack', 'intouch', 'leap', 'mock']).optional(),
     }).parse(await req.json());
     const { signingProvider, ...firm } = b;

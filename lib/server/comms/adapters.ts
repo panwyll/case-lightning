@@ -50,6 +50,8 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   const firstName = (client?.name ?? m.buyer_names?.[0] ?? '').split(/\s+/)[0] || null;
   const { getFirmProfile, firmFooter } = await import('../firm');
   const footer = firmFooter(await getFirmProfile(tenantId));
+  const { signatureFor } = await import('../signature');
+  const signature = await signatureFor(tenantId, m.assigned_to ?? m.created_by).catch(() => null);
   return {
     matterRef: m.matter_ref,
     propertyAddress: m.property_address,
@@ -62,6 +64,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
     clientPhone: client?.phone ?? null,
     clientWhatsAppOptIn: !!client?.whatsapp_opt_in,
     footer,
+    signature,
     contacts: {
       ...(other ? { seller_solicitor: { email: other.email, name: other.name } } : {}),
       ...(agent ? { estate_agent: { email: agent.email, name: agent.name } } : {}),

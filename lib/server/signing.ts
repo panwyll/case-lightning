@@ -114,10 +114,10 @@ export const productionSigning: SigningPort = {
     if (override?.body?.trim()) r.body = override.body.trim();
     const held = messageProblem(r);
     if (held) throw new Error(`Not sent: the message looks wrong (${held}).`);
-    const { firmFooter } = await import('./firm');
-    const footer = firmFooter(firm);
-    const body = footer ? `${r.body}\n\n${footer}` : r.body;
-    const html = body.split('\n').map((l) => l.replace(/&/g, '&amp;').replace(/</g, '&lt;')).join('<br>');
+    const { signatureFor, signedHtml, signedText } = await import('./signature');
+    const sig = await signatureFor(tenantId, sender).catch(() => null);
+    const body = signedText(r.body, sig);
+    const html = signedHtml(r.body, sig);
     const draft = await createDraftMessage(sender, r.subject, html, [m.client_email]);
     for (const { f } of files) await addAttachmentToMessage(sender, draft.id, f.fileName, f.bytes, f.mime);
     await sendDraftMessage(sender, draft.id);

@@ -75,3 +75,15 @@ test('a status update that says we are waiting on the client hands them the link
   assert.match(ov.text, /Still waiting on you/);
   assert.ok(ov.text.includes(`Proof-of-funds form: ${s.proofOfFunds.formUrl}`), ov.text);
 });
+
+test('the signature replaces the bare name lines and carries the firm, the SRA line and the notice', async () => {
+  const { buildSignature, signedText, signedHtml } = await import('../../../lib/server/signature');
+  const sig = buildSignature({ name: 'Smith & Co', addressLine1: '1 High St', addressLine2: null, town: 'Leeds', postcode: 'LS1 1AA', phone: '0113 000', sraNumber: '123456', website: 'smith.co.uk', logoUrl: null, signatureNotice: 'We will never change our bank details by email.' }, { name: 'Jo Bloggs', jobTitle: 'Conveyancer', phone: null, email: 'jo@smith.co.uk' });
+  const text = signedText('Hello Ann,\n\nA reminder.\n\nKind regards,\nJo Bloggs\nSmith & Co', sig);
+  assert.equal(text.match(/Jo Bloggs/g)?.length, 1, 'the name once');
+  assert.match(text, /Kind regards,\n\nJo Bloggs, Conveyancer\nSmith & Co/);
+  assert.match(text, /SRA number 123456/);
+  const html = signedHtml('Hi <b>\n\nJo Bloggs', sig);
+  assert.ok(html.includes('Hi &lt;b&gt;'), 'the body is escaped');
+  assert.ok(html.includes('bank details by email'));
+});

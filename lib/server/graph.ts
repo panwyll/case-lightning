@@ -315,8 +315,18 @@ export async function createReplyDraft(
   }
 
   const reply = draft ?? (await client.api(`/me/messages/${messageId}/createReply`).post({ comment: '' }));
+  // A draft made through Graph gets no Outlook signature: the app's own goes under the words (once).
+  let signed = bodyHtml;
+  try {
+    const t = await queryOne<{ tenant_id: string }>(`select tenant_id from app_user where id = $1`, [userId]);
+    if (t && !bodyHtml.includes('data-conveyi-signature')) {
+      const { signatureFor } = await import('./signature');
+      const sig = await signatureFor(t.tenant_id, userId);
+      if (sig.text) signed = `${bodyHtml}<div data-conveyi-signature="1">${sig.html}</div>`;
+    }
+  } catch { /* the words go without a signature rather than not at all */ }
   const updateBody: Record<string, unknown> = {
-    body: { contentType: 'HTML', content: bodyHtml },
+    body: { contentType: 'HTML', content: signed },
   };
 
   // Recipient safety net: Graph's createReply addresses the reply to the SENDER of the source

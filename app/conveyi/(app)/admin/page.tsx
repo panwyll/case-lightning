@@ -1,5 +1,5 @@
 'use client';
-import { FirmDetails } from './FirmDetails';
+import { FirmDetails, MySignature } from './FirmDetails';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
@@ -231,6 +231,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   templates: { label: 'Email Templates', subtitle: '' },
   docpacks: { label: 'Doc Packs', subtitle: '' },
   team: { label: 'Team', subtitle: '' },
+  firm: { label: 'Firm Details', subtitle: '' },
   policy: { label: 'Policy', subtitle: '' },
   actions: { label: 'Tools', subtitle: '' },
   audit: { label: 'Audit Log', subtitle: '' },
@@ -1464,7 +1465,7 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'team' && <FirmDetails canEdit={me?.role === 'ADMIN'} />}
+        {tab === 'firm' && <><FirmDetails canEdit={me?.role === 'ADMIN'} /><MySignature /></>}
         {tab === 'team' && (
           <div style={card}>
             {editing === 'new' && (
