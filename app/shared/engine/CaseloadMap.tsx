@@ -69,11 +69,10 @@ export const CASELOAD_CSS = `
 .cm-compact .cm-row{display:block;min-height:0;padding:8px 10px 6px}
 .cm-compact .cm-lab{border-right:0;padding:0 0 4px;font-size:9.5px;letter-spacing:.08em;align-self:auto}
 .cm-compact .cm-houses{padding:0;gap:3px}
-.cm-zoom{display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:999px;background:#fff;overflow:hidden;margin-left:auto}
-.cm-zoom button{border:0;background:none;padding:5px 9px;display:inline-flex;align-items:center;color:#475569;cursor:pointer}
+.cm-zoom{display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:999px;background:#fff;overflow:hidden;margin-left:auto;padding:0 4px}
+.cm-zoom button{border:0;background:none;padding:5px 4px;display:inline-flex;align-items:center;color:#475569;cursor:pointer}
 .cm-zoom button:hover:not(:disabled){background:#f5f3ff;color:#5A27E0}
 .cm-zoom button:disabled{color:#cbd5e1;cursor:default}
-.cm-zoom .mag{border-left:1px solid #eef1f5;border-right:1px solid #eef1f5}
 .cm-house{background:none;border:0;padding:0;cursor:pointer;line-height:0;border-radius:4px;transition:transform .08s ease}
 .cm-house:hover,.cm-house:focus-visible{transform:translateY(-3px);outline:none}
 .cm-house.dim{opacity:.18}
