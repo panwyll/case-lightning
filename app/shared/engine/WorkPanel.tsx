@@ -264,6 +264,7 @@ const STEP_EMAILS: Record<string, Email[]> = {
   Forms: [E('ack_client', 'Client', 'When their completed forms come in')],
 };
 const LANE_EMAILS: Record<string, { start?: Email[]; exit?: Email[] }> = {
+  id_aml: { start: [E('id_check_request', 'Client', 'When the ID check is requested (why, and the link to start it)')] },
   searches: { start: [E('searches_ordered', 'Client', 'When every search is ordered')], exit: [E('searches_all_back', 'Client', 'When every search is back and approved')] },
   enquiries: { start: [E('enquiries_raised', 'Client', 'When we raise enquiries with the seller\'s solicitor')] },
   source_of_funds: { start: [E('proof_of_funds_request', 'Client', 'When proof of funds is asked for (the form link)')], exit: [E('progress_update', 'Client', 'When proof of funds is signed off')] },

@@ -91,8 +91,10 @@ test('assist: acks, chases and search orders go unasked; a client update is stil
   assert.equal(blockingDecisions(r.state).filter((d) => d.kind !== 'proposal').length, 0, 'without holding the case');
   const s = await h.svc.getState(TENANT, MATTER);
   const updates = Object.values(s.proposals).filter((p) => p.action === 'client_update');
-  assert.ok(updates.length >= 1 || h.ports.clientComms.sent.length === 0, 'client updates are proposed at assist, never sent unasked');
-  assert.equal(h.ports.clientComms.sent.length, 0);
+  // The ID check email went because a person requested the check (their click is the approval); nothing else went unasked.
+  const unasked = h.ports.clientComms.sent.filter((m) => m.template !== 'id_check_request');
+  assert.ok(updates.length >= 1 || unasked.length === 0, 'client updates are proposed at assist, never sent unasked');
+  assert.equal(unasked.length, 0);
 });
 
 test('auto: auto-clears proceed silently; a flagged search still surfaces to a person', async () => {
