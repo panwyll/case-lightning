@@ -76,7 +76,8 @@ export const WORK_CSS = `
 .ep-sub{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;padding:7px 0;border-top:1px solid #f8fafc;font-size:12.5px}
 .ep-sub:first-child{border-top:0}
 .ep-sub b{font-weight:600;font-size:12.5px;min-width:0}
-.ep-sub .ep-pill{margin-top:0;justify-self:end}
+.ep-sub .ep-pill{margin-top:0;justify-self:end;max-width:100%;white-space:normal;text-align:right}
+.ep-sub b{overflow-wrap:anywhere}
 .ep-sub .d{grid-column:1 / -1;font-size:11.5px;color:#64748b;line-height:1.4}
 .ep-sub-a{color:#5A27E0;text-decoration:none}
 .ep-sub-a:hover{text-decoration:underline}
@@ -549,8 +550,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const [rereadNote, setRereadNote] = useState<string | null>(null);
   const readAgain = async (documentId: string) => {
     setRereading(documentId); setRereadNote(null);
-    try { const r = await api<{ said: string }>(`/documents/${documentId}/read-again`, { method: 'POST', body: '{}' }); setRereadNote(r.said); onChanged?.(); }
-    catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not read it again.'); }
+    try {
+      await api(`/documents/${documentId}/read-again`, { method: 'POST', body: '{}' });
+      setRereadNote('Reading it again in the background; this card updates when it is done.');
+      // A long report takes a minute or two: look again a few times, then stop.
+      for (const ms of [20_000, 45_000, 90_000, 150_000]) setTimeout(() => onChanged?.(), ms);
+      setTimeout(() => setRereadNote(null), 160_000);
+    } catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not read it again.'); }
     finally { setRereading(null); }
   };
   const [sheetContext, setSheetContext] = useState<TaskContextView | null>(null);
@@ -599,6 +605,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const withReview = (tiles: Tile[]): Tile[] => tiles.flatMap((t) => {
     if (!t.documentId || t.depth) return [t];
     const r = reviewOf(t.documentId);
+    if (!r) return [t]; // nothing was page-reviewed (a survey is read for its findings): no empty "not read" line
     const status = !r ? 'not_read' : r.complete && r.unreadable === 0 ? 'read' : 'partly_read';
     const detail = r ? `${r.read}/${r.pages} pages · ${r.verified}/${r.facts} facts verified${r.unreadable ? ` · ${r.unreadable} unreadable` : ''}` : docs ? 'no review on file' : undefined;
     return [t, { label: 'Document review', key: 'Document review', status, detail, documentId: t.documentId, depth: 1 as const }];
@@ -759,18 +766,27 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {tic && !deeds.deedOfTrustAt && act('co_ownership', 'deed_of_trust_executed', 'Declaration of Trust Executed', {}, { primary: true })}
     </> });
 
-  if (has('survey') && s.survey) lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
-    tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started', documentId: s.survey.reports[s.survey.reports.length - 1]?.documentId ?? null, href: s.survey.reports.length && s.survey.reports[s.survey.reports.length - 1]?.documentId ? `/api/v1/documents/${s.survey.reports[s.survey.reports.length - 1].documentId}/raw` : undefined }, { label: "Client's view", status: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status }],
-    actions: !exchanged && s.survey.status !== 'client_satisfied' ? <>
-      {s.survey.status === 'further_investigation' && !s.clientDecisions?.further_investigation && <>
-        {act('survey', 'client_decision_recorded', 'Client Wants the Specialist In', { subject: 'further_investigation', decision: 'pursue' }, { primary: true })}
-        {act('survey', 'client_decision_recorded', 'Client Waives Further Investigation', { subject: 'further_investigation', decision: 'waive' })}
-      </>}
-      {act('survey', 'client_decision_recorded', 'Client Satisfied with the Property', { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status !== 'further_investigation', disabled: s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Further investigation is outstanding' : undefined })}
-      {act('survey', 'client_decision_recorded', 'Client Wants to Renegotiate', { subject: 'physical_condition', decision: 'renegotiate' })}
-      {(() => { const last = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0]; return last?.documentId ? <button className="ep-btn" disabled={busy || rereading === last.documentId} onClick={() => void readAgain(last.documentId!)}>{rereading === last.documentId ? 'Reading…' : 'Read the Survey Again'}</button> : null; })()}
-      {rereadNote && <span className="ep-note">{rereadNote}</span>}
-    </> : null });
+  if (has('survey') && s.survey) {
+    const fi = s.clientDecisions?.further_investigation?.decision ?? null;
+    const pc = s.clientDecisions?.physical_condition?.decision ?? null;
+    const lastReport = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0];
+    const clientView = pc ?? (fi === 'pursue' ? 'investigating' : fi === 'waive' ? 'waived_investigation' : s.survey.status === 'not_started' ? 'not_started' : 'awaiting_client');
+    const current = (on: boolean) => (on ? ' ✓' : '');
+    lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
+      tiles: [{ label: 'Report', status: s.survey.reports.length ? 'read' : 'not_started', documentId: lastReport?.documentId ?? null, href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, { label: "Client's view", status: clientView }],
+      // The client can change their mind until exchange: every option stays, the one on record is ticked.
+      actions: !exchanged && s.survey.status !== 'not_started' ? <>
+        {(s.survey.reports.some((r) => r.furtherInvestigation) || fi) && <>
+          {act('survey', 'client_decision_recorded', `Client Wants the Specialist In${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { primary: !fi, disabled: fi === 'pursue' })}
+          {act('survey', 'client_decision_recorded', `Client Waives Further Investigation${current(fi === 'waive')}`, { subject: 'further_investigation', decision: 'waive' }, { disabled: fi === 'waive' })}
+        </>}
+        {act('survey', 'client_decision_recorded', `Client Satisfied with the Property${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}
+        {act('survey', 'client_decision_recorded', `Client Wants to Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
+        {act('survey', 'client_decision_recorded', `Client Withdraws${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}
+        {lastReport?.documentId && <button className="ep-btn" disabled={busy || rereading === lastReport.documentId} onClick={() => void readAgain(lastReport.documentId!)}>{rereading === lastReport.documentId ? 'Starting…' : 'Read the Survey Again'}</button>}
+        {rereadNote && <span className="ep-note">{rereadNote}</span>}
+      </> : null });
+  }
 
   if (has('leasehold')) lane({ id: 'leasehold', order: 'sequence', title: 'Leasehold', state: resolved(s.managementPack?.status ?? '') ? (buyer && completed && !s.postCompletion.noticeOfAssignmentAt ? 'open' : 'done') : s.managementPack?.status === 'flagged' ? 'blocked' : s.managementPack?.status === 'requested' ? 'open' : 'idle', note: seller ? 'the pack is obtained from the freeholder / agent for the buyer' : 'LPE1 reviewed as client-advice points',
     tiles: [

@@ -1427,7 +1427,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
       if (cmd.subject === 'further_investigation') {
         const open = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
-        if (!open.length) reject('No further investigation is outstanding on this survey.');
+        // Changing their mind after waiving: the waived investigations are raised again.
+        const waived = cmd.decision === 'pursue' && !open.length ? Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'resolved' && i.resolution === 'accepted_as_is') : [];
+        if (!open.length && !waived.length) reject('No further investigation is outstanding on this survey.');
+        let k = Object.keys(s.issues).length;
+        for (const i of waived) { k += 1; out.push({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `ISS-${k}`, kind: 'survey_further_investigation', title: i.title, detail: i.detail, gate: 'exchange', stage: s.stage, sourceDocumentId: i.sourceDocumentId ?? null, origin: null, party: null, severity: i.severity, causedBy: i.id }, sourceDocumentId: i.sourceDocumentId ?? null }); }
         // Waiving is the client accepting the risk, advised in writing: each recommendation's issue closes as accepted as is.
         if (cmd.decision === 'waive') for (const i of open) out.push({ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: 'accepted_as_is', note: `Client waives further investigation (advised in writing)${cmd.note ? `: ${cmd.note.trim()}` : ''}` } });
       }

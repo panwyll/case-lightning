@@ -661,6 +661,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     // ── issues (docs/engine-issues.md) ──
     case 'issue_raised': {
       const p = e.payload as Payloads['issue_raised'];
+      // An investigation (re)opened on the survey puts the survey back to waiting on it.
+      if (p.kind === 'survey_further_investigation' && s.survey.status !== 'not_started') s.survey.status = 'further_investigation';
       s.issues[p.issueId] = {
         id: p.issueId,
         kind: p.kind,

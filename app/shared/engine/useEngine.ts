@@ -43,6 +43,13 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
     void load();
   }, [load]);
 
+  // A confirmation is read once and goes; a warning lingers a little longer; an error stays until the next action.
+  useEffect(() => {
+    if (!notice || notice.kind === 'err') return;
+    const t = setTimeout(() => setNotice(null), notice.kind === 'warn' ? 10_000 : 4_000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
   const cmd = useCallback(async (body: Record<string, unknown>) => {
     setBusy(true);
     setErr(null);

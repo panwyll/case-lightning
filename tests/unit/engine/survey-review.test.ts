@@ -82,3 +82,16 @@ test('reading the same survey again replaces the reading and repeats nothing', a
   assert.equal(Object.values(again.proposals).filter((p) => p.action === 'enquiry_draft').length, Object.values(first.proposals).filter((p) => p.action === 'enquiry_draft').length);
   assert.equal(h.ports.clientComms.sent.filter((m) => m.template === 'survey_advice').length, 1);
 });
+
+test('the client can change their mind: waive the investigation, then want it after all', async () => {
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc(REPORT, 'SURVEY'));
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'waive', note: 'Client happy to proceed without the damp survey' });
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'open').length, 0);
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'pursue', note: 'Client has changed their mind; wants the damp specialist in' });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'open').length, 1, 'the investigation is back');
+  assert.equal(s.clientDecisions.further_investigation?.decision, 'pursue');
+  assert.equal(s.survey.status, 'further_investigation');
+});
