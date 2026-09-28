@@ -175,7 +175,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
       onMouseLeave={() => setTip(null)}
       aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Case'} — ${HEALTH_LABEL[t.health.band]}`}
     >
-      <House band={t.health.band} size={Math.max(6, Math.round(28 * zoom))} title={t.propertyAddress ?? t.matterRef ?? undefined} />
+      <House band={t.health.band} size={Math.max(6, Math.round(28 * zoom))} />
     </button>
   ));
   const chip = (key: HealthBand | 'all', n: number, label: string) => (
