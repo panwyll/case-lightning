@@ -26,10 +26,21 @@ const seller = (s: MatterState) => profileOf(s.transactionType ?? 'freehold_purc
 const READY: Record<string, (s: MatterState) => string | null> = {
   'Client care letter': (s) => (s.enrolled ? null : 'Not enrolled yet'),
   'Deposit request letter': (s) => (!buyer(s) ? 'Only on a purchase' : s.readiness.contractApprovedAt ? null : 'Contract not approved yet'),
-  'Exchange confirmation letter': (s) => (s.exchange.exchangedAt ? null : 'Not exchanged yet'),
+  'Exchange confirmation letter': (s) => (!buyer(s) ? 'Only on a purchase (a sale has its own)' : s.exchange.exchangedAt ? null : 'Not exchanged yet'),
   'Completion statement': (s) => (atLeast(s, 'pre_exchange') ? null : 'Not at pre-exchange yet'),
-  'Completion letter': (s) => (s.completion.confirmedAt ? null : 'Completion not confirmed yet'),
+  'Completion letter': (s) => (!buyer(s) ? 'Only on a purchase (other cases have their own)' : s.completion.confirmedAt ? null : 'Completion not confirmed yet'),
   'Contract pack covering letter': (s) => (!seller(s) ? 'Only on a sale' : s.title.documentId ? null : 'Official copies not in yet'),
+  'Property forms letter': (s) => (!seller(s) ? 'Only on a sale' : null),
+  'Replies to enquiries covering letter': (s) => (!seller(s) ? 'Only on a sale' : Object.keys(s.inboundEnquiries ?? {}).length ? null : "No buyer's enquiries yet"),
+  'Redemption statement request': (s) => (!s.hasExistingMortgage || !(seller(s) || s.transactionType === 'remortgage') ? 'Only on a sale or remortgage with a mortgage' : null),
+  'Exchange confirmation letter (sale)': (s) => (!seller(s) ? 'Only on a sale' : s.exchange.exchangedAt ? null : 'Not exchanged yet'),
+  'Completion statement (sale)': (s) => (!seller(s) ? 'Only on a sale' : s.exchange.exchangedAt ? null : 'Not exchanged yet'),
+  'Completion letter (sale)': (s) => (!seller(s) ? 'Only on a sale' : s.completion.confirmedAt ? null : 'Completion not confirmed yet'),
+  'Signing pack covering letter': (s) => (s.readiness.contractApprovedAt || s.transactionType === 'remortgage' || s.transactionType === 'transfer_of_equity' ? null : 'Contract not approved yet'),
+  'Completion statement (remortgage)': (s) => (s.transactionType !== 'remortgage' ? 'Only on a remortgage' : isResolved(s.mortgage.status) ? null : 'New offer not resolved yet'),
+  'Completion letter (remortgage)': (s) => (s.transactionType !== 'remortgage' ? 'Only on a remortgage' : s.completion.confirmedAt ? null : 'Completion not confirmed yet'),
+  'Lender consent request': (s) => (s.transactionType !== 'transfer_of_equity' || !s.hasExistingMortgage ? 'Only on a transfer of equity of a mortgaged property' : null),
+  'Completion letter (transfer of equity)': (s) => (s.transactionType !== 'transfer_of_equity' ? 'Only on a transfer of equity' : s.completion.confirmedAt ? null : 'Completion not confirmed yet'),
   'Report on title': (s) => {
     if (!buyer(s)) return 'Only on a purchase';
     if (s.reportOnTitle.status === 'drafted') return 'A draft is waiting for approval in Tasks';

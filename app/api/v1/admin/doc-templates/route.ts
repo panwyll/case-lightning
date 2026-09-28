@@ -45,6 +45,18 @@ export async function GET() {
       }
       return GET();
     }
+    // A standard document added since the firm started (a sale's, a remortgage's…) joins their set.
+    const have = new Set(rows.map((r: { name: string }) => r.name));
+    const missing = EXAMPLE_TEMPLATES.filter((t) => !have.has(t.name));
+    // Once per request: a failed insert must not loop.
+    if (missing.length && !(globalThis as { __docSeedTried?: Set<string> }).__docSeedTried?.has(user.tenantId)) {
+      ((globalThis as { __docSeedTried?: Set<string> }).__docSeedTried ??= new Set()).add(user.tenantId);
+      for (const tpl of missing) {
+        const content = createMinimalDocx(tpl.paragraphs);
+        await query(`insert into doc_template (tenant_id, name, description, file_name, file_content, file_size_bytes, has_llm_prompts, sort_order, created_by) select $1,$2,$3,$4,$5,$6,$7,$8,$9 where not exists (select 1 from doc_template where tenant_id = $1 and name = $2)`, [user.tenantId, tpl.name, tpl.description, tpl.fileName, content, content.length, tpl.hasLlmPrompts, EXAMPLE_TEMPLATES.indexOf(tpl), user.userId]).catch(() => {});
+      }
+      return GET();
+    }
     return ok({ templates: rows.map((r) => ({ ...r, usage: DOC_USAGE[r.name] ?? null })) });
   } catch (error) {
     return fail(error);

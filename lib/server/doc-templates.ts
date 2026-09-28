@@ -50,6 +50,8 @@ export interface MatterRow {
   property_address: string | null;
   buyer_names: string[] | null;
   seller_names: string[] | null;
+  transaction_type?: string | null;
+  purchase_price?: string | null;
   exchange_target_date: string | null;
   completion_target_date: string | null;
   counterparty_solicitor: string | null;
@@ -70,6 +72,11 @@ export function buildMatterVars(
     property_address: matter.property_address ?? '',
     buyer_names: (matter.buyer_names ?? []).join(', '),
     seller_names: (matter.seller_names ?? []).join(', '),
+    // Our clients and the other side's, whichever way round the case is; and what kind of case it is, in words.
+    client_names: ((/_sale$/.test(matter.transaction_type ?? '') || matter.track === 'SALE' ? matter.seller_names : matter.buyer_names) ?? []).join(' and '),
+    other_names: ((/_sale$/.test(matter.transaction_type ?? '') || matter.track === 'SALE' ? matter.buyer_names : matter.seller_names) ?? []).join(' and '),
+    transaction: /_sale$/.test(matter.transaction_type ?? '') ? 'sale' : matter.transaction_type === 'remortgage' ? 'remortgage' : matter.transaction_type === 'transfer_of_equity' ? 'transfer of equity' : 'purchase',
+    price: matter.purchase_price ? '£' + Number(String(matter.purchase_price).replace(/[£,\s]/g, '')).toLocaleString('en-GB') : '£[PRICE]',
     exchange_date: fmt(matter.exchange_target_date),
     completion_date: fmt(matter.completion_target_date),
     counterparty_solicitor: matter.counterparty_solicitor ?? '',
@@ -482,11 +489,11 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '',
       '{{today}}',
       '',
-      'Dear {{buyer_names}},',
+      'Dear {{client_names}},',
       '',
       'RE: {{property_address}}   Our ref: {{matter_ref}}',
       '',
-      'Thank you for instructing us on your {{track}} of the above property. ' +
+      'Thank you for instructing us on your {{transaction}} of the above property. ' +
         'We are pleased to act on your behalf and write to confirm the terms of our retainer.',
       '',
       'Your case is being handled by {{assigned_to}}. ' +
@@ -512,7 +519,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '',
       'Case:       {{matter_ref}}',
       'Property:   {{property_address}}',
-      'Client(s):  {{buyer_names}}',
+      'Client(s):  {{client_names}}',
       'Completion: {{completion_date}}',
       '',
       'FUNDS REQUIRED ON COMPLETION',
@@ -547,7 +554,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '',
       'Case:      {{matter_ref}}',
       'Property:  {{property_address}}',
-      'Client(s): {{buyer_names}}',
+      'Client(s): {{client_names}}',
       'Date:      {{today}}',
       '',
       '{{report_body}}',
@@ -562,7 +569,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
     fileName: 'deposit-request-letter.docx',
     hasLlmPrompts: false,
     paragraphs: [
-      '{{firm_name}}', '', '{{today}}', '', 'Dear {{buyer_names}},', '',
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
       'RE: {{property_address}}   Our ref: {{matter_ref}}', '',
       'We have approved the contract and are working towards exchange on {{exchange_date}}. To exchange we need the deposit of £[DEPOSIT] in cleared funds on our client account by [DATE].',
       '', 'Our client account details are set out below. We will never change these by email; if you receive a message asking you to pay elsewhere, telephone us on a number you already hold before doing anything.',
@@ -577,7 +584,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
     fileName: 'exchange-confirmation-letter.docx',
     hasLlmPrompts: false,
     paragraphs: [
-      '{{firm_name}}', '', '{{today}}', '', 'Dear {{buyer_names}},', '',
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
       'RE: {{property_address}}   Our ref: {{matter_ref}}', '',
       'We are pleased to confirm that contracts were exchanged today. Completion is fixed for {{completion_date}}.',
       '', 'From today you are legally bound to complete and the property is at your risk: please make sure buildings insurance is in place from now.',
@@ -591,7 +598,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
     fileName: 'completion-letter.docx',
     hasLlmPrompts: false,
     paragraphs: [
-      '{{firm_name}}', '', '{{today}}', '', 'Dear {{buyer_names}},', '',
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
       'RE: {{property_address}}   Our ref: {{matter_ref}}', '',
       'Congratulations: your purchase completed today. The keys can be collected from {{agent}}.',
       '', 'We will now pay the Stamp Duty Land Tax and apply to HM Land Registry to register you as the owner. Registration can take several weeks; we will send you the updated title when it arrives.',
@@ -610,7 +617,173 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       '', 'Please let us have any enquiries in one batch. We look forward to hearing from you.',
       '', 'Yours faithfully,', '', '{{firm_name}}',
     ],
-  }
+  },
+  // ── A sale ──
+  {
+    name: 'Property forms letter',
+    description: 'Sends the client the property forms to complete at the start of a sale.',
+    fileName: 'property-forms-letter.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: Sale of {{property_address}}   Our ref: {{matter_ref}}', '',
+      'To prepare the contract for your sale we need you to complete the enclosed Property Information Form (TA6) and Fittings and Contents Form (TA10)[, and the Leasehold Information Form (TA7)]. Please answer every question as fully as you can; "not known" is a proper answer where you genuinely do not know, but a wrong answer can lead to a claim after completion.',
+      '', 'Please return them with copies of any planning permissions, building regulations completion certificates, guarantees and warranties (damp proofing, windows, roof), the boiler service record, and any FENSA or electrical certificates you hold.',
+      '', "We cannot send the contract to the buyer's solicitor until they are back.",
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
+  {
+    name: 'Replies to enquiries covering letter',
+    description: "Covers our client's replies to the buyer's solicitor's enquiries on a sale.",
+    fileName: 'replies-to-enquiries-letter.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', '{{counterparty_solicitor}}', '', 'Dear Sirs,', '',
+      'RE: {{property_address}}   Our ref: {{matter_ref}}   Seller: {{client_names}}   Buyer: {{other_names}}', '',
+      "We enclose our client's replies to your enquiries, with the documents referred to. Our client's answers are given from their own knowledge and on the basis of the documents they hold.",
+      '', 'Please confirm that you are now in a position to exchange, or let us have any further enquiries in one batch.',
+      '', 'Yours faithfully,', '', '{{firm_name}}',
+    ],
+  },
+  {
+    name: 'Redemption statement request',
+    description: "Asks the client's lender for the figure to pay off the mortgage (a sale or a remortgage).",
+    fileName: 'redemption-statement-request.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', '[LENDER NAME AND ADDRESS]', '', 'Dear Sirs,', '',
+      'RE: {{property_address}}   Borrower(s): {{client_names}}   Account: [ACCOUNT NUMBER]   Our ref: {{matter_ref}}', '',
+      'We act for your borrower(s) on the {{transaction}} of the above property. Please let us have a redemption statement for every charge you hold over it, calculated to {{completion_date}}, showing the daily rate of interest after that date and any early repayment charge.',
+      '', "We enclose our client's signed authority to release this information to us.",
+      '', 'Yours faithfully,', '', '{{firm_name}}',
+    ],
+  },
+  {
+    name: 'Exchange confirmation letter (sale)',
+    description: 'Tells the seller contracts have exchanged and what they must do before completion.',
+    fileName: 'exchange-confirmation-sale.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: Sale of {{property_address}}   Our ref: {{matter_ref}}', '',
+      'We are pleased to confirm that contracts were exchanged today. Completion is fixed for {{completion_date}}, and from today you are legally bound to sell.',
+      '', 'Before completion:',
+      '• Arrange your removals so that the property is empty by 1pm on the completion date, leaving everything the Fittings and Contents Form says is included.',
+      "• Leave every set of keys with {{counterparty_agent}}; they release them once we confirm the buyer's money has arrived.",
+      '• Take final meter readings on the day and give them to your utility suppliers; tell your council tax office and insurer of the date.',
+      '• Keep your buildings insurance in place until completion.',
+      '', 'On completion we pay off your mortgage from the sale proceeds and send you the balance, with a completion statement showing every figure. We will need your bank details for that: we will take them by phone, never by email.',
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
+  {
+    name: 'Completion statement (sale)',
+    description: "The seller's statement of the sale money: the price, the mortgage paid off, fees and the balance to them.",
+    fileName: 'completion-statement-sale.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', 'COMPLETION STATEMENT (SALE)', '',
+      'Case:       {{matter_ref}}', 'Property:   {{property_address}}', 'Seller(s):  {{client_names}}', 'Completion: {{completion_date}}', '',
+      'Sale price:                                 {{price}}',
+      'Less deposit held on exchange:             (£[DEPOSIT])',
+      'Balance received on completion:             £[BALANCE]',
+      '',
+      'Less: redemption of mortgage ({{lender}}):  (£[REDEMPTION])',
+      "Less: estate agent's fee ({{counterparty_agent}}): (£[AGENT FEE])",
+      'Less: our fees and disbursements (inc. VAT): (£[FEES])',
+      '',
+      'BALANCE DUE TO YOU:                          £[BALANCE TO CLIENT]',
+      '', 'Sent to the account you gave us by phone, on the day of completion.',
+    ],
+  },
+  {
+    name: 'Completion letter (sale)',
+    description: 'Confirms the sale has completed, the mortgage is paid off and the balance sent.',
+    fileName: 'completion-letter-sale.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: Sale of {{property_address}}   Our ref: {{matter_ref}}', '',
+      "Your sale completed today. The buyer's money has arrived and the estate agent has been told to release the keys.",
+      '', "We have paid off your mortgage with {{lender}} and will send the lender's confirmation of discharge to HM Land Registry when it arrives. The balance due to you, shown on the enclosed completion statement, has been sent to your account.",
+      '', 'This completes our work on your sale. Thank you for instructing us.',
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
+  // ── Signing ──
+  {
+    name: 'Signing pack covering letter',
+    description: 'Sends the client the contract and deeds to sign, with how to sign and witness each.',
+    fileName: 'signing-pack-letter.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: {{property_address}}   Our ref: {{matter_ref}}', '',
+      'We enclose the documents you need to sign for your {{transaction}}: [the contract][, the transfer (TR1)][, the mortgage deed][, the declaration of trust].',
+      '', 'The contract: sign where marked. It needs no witness. Do not date it: we date it when contracts are exchanged.',
+      '', 'Each deed (the transfer, the mortgage deed, the declaration of trust): sign where marked in front of an independent adult witness, who must not be a relative, your partner or anyone with an interest in the property. The witness signs and prints their name and address. Do not date them.',
+      '', 'Please post the signed originals to us at the address above. Your lender will not release the mortgage money until we hold the signed mortgage deed.',
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
+  // ── A remortgage ──
+  {
+    name: 'Completion statement (remortgage)',
+    description: 'The remortgage statement: the new advance, the old mortgage paid off, fees, and any balance either way.',
+    fileName: 'completion-statement-remortgage.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', 'COMPLETION STATEMENT (REMORTGAGE)', '',
+      'Case:        {{matter_ref}}', 'Property:    {{property_address}}', 'Borrower(s): {{client_names}}', 'Completion:  {{completion_date}}', '',
+      'Advance from {{lender}}:                     £[ADVANCE]',
+      'Less: redemption of existing mortgage:     (£[REDEMPTION])',
+      'Less: our fees and disbursements (inc. VAT): (£[FEES])',
+      'Less: HM Land Registry fee:                 (£[LR FEE])',
+      '',
+      'BALANCE [DUE TO YOU / DUE FROM YOU]:         £[BALANCE]',
+      '', 'Any balance due from you must reach our client account as cleared funds two working days before completion.',
+    ],
+  },
+  {
+    name: 'Completion letter (remortgage)',
+    description: 'Confirms the remortgage has completed and the old mortgage is paid off.',
+    fileName: 'completion-letter-remortgage.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: Remortgage of {{property_address}}   Our ref: {{matter_ref}}', '',
+      'Your remortgage completed today. Your new lender, {{lender}}, released the advance and we have used it to pay off your previous mortgage, as shown on the enclosed completion statement.',
+      '', "We will now register your new lender's charge at HM Land Registry and have the old one removed. We will write when registration is complete.",
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
+  // ── A transfer of equity ──
+  {
+    name: 'Lender consent request',
+    description: 'Asks the lender to consent to a transfer of equity of a mortgaged property.',
+    fileName: 'lender-consent-request.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', '[LENDER NAME AND ADDRESS]', '', 'Dear Sirs,', '',
+      'RE: {{property_address}}   Borrower(s): {{client_names}}   Account: [ACCOUNT NUMBER]   Our ref: {{matter_ref}}', '',
+      'We act for your borrower(s) on a transfer of equity of the above property: [the transfer to be made and to whom]. Please confirm your consent, and let us know any conditions (a deed of covenant, a new mortgage deed, or a release of the outgoing borrower) and the documents you require.',
+      '', 'Yours faithfully,', '', '{{firm_name}}',
+    ],
+  },
+  {
+    name: 'Completion letter (transfer of equity)',
+    description: 'Confirms the transfer has completed and what happens with registration and SDLT.',
+    fileName: 'completion-letter-transfer.docx',
+    hasLlmPrompts: false,
+    paragraphs: [
+      '{{firm_name}}', '', '{{today}}', '', 'Dear {{client_names}},', '',
+      'RE: Transfer of equity of {{property_address}}   Our ref: {{matter_ref}}', '',
+      'The transfer of the above property completed today.',
+      '', 'We will now file any Stamp Duty Land Tax return due and apply to HM Land Registry to register the new ownership. We will send you the updated title when registration is complete.',
+      '', 'Yours sincerely,', '', '{{assigned_to}}', '{{firm_name}}',
+    ],
+  },
 ];
 
 /** Where each standard document is produced in the flow and who receives it. Matched by name; a firm's own upload with the same name inherits it. */
@@ -621,6 +794,17 @@ export const DOC_USAGE: Record<string, { step: string; to: string }> = {
   'Completion statement': { step: 'Completion, after exchange', to: 'Client' },
   'Completion letter': { step: 'Completion, when completion is confirmed', to: 'Client' },
   'Contract pack covering letter': { step: 'Contract, when the pack goes out on a sale', to: "Buyer's solicitor" },
+  'Property forms letter': { step: 'Instruction, on a sale', to: 'Client' },
+  'Replies to enquiries covering letter': { step: 'Enquiries, when the replies go on a sale', to: "Buyer's solicitor" },
+  'Redemption statement request': { step: 'Instruction, on a sale or remortgage of a mortgaged property', to: 'Lender' },
+  'Exchange confirmation letter (sale)': { step: 'Contract & Exchange, on exchange (sale)', to: 'Client' },
+  'Completion statement (sale)': { step: 'Completion, after exchange (sale)', to: 'Client' },
+  'Completion letter (sale)': { step: 'Completion, when completion is confirmed (sale)', to: 'Client' },
+  'Signing pack covering letter': { step: 'Signing, once the contract is approved', to: 'Client' },
+  'Completion statement (remortgage)': { step: 'Completion, before the advance is drawn (remortgage)', to: 'Client' },
+  'Completion letter (remortgage)': { step: 'Completion, when completion is confirmed (remortgage)', to: 'Client' },
+  'Lender consent request': { step: 'Instruction, on a transfer of equity of a mortgaged property', to: 'Lender' },
+  'Completion letter (transfer of equity)': { step: 'Completion, when completion is confirmed (transfer of equity)', to: 'Client' },
   'Report on title': { step: 'Title, once the title is resolved (interim) or everything is in; a conveyancer approves it, and it goes as this Word document with the report where {{report_body}} is', to: 'Client' },
 };
 
