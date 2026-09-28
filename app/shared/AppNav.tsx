@@ -4,7 +4,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import { paths, APP_BASE } from '@/lib/paths';
 import type { ComponentType } from 'react';
-import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
+import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Scale, Wrench, CreditCard, LifeBuoy } from '@/app/shared/icons';
 
 /**
  * The CONVEYi app shell: a top bar and a full-height sidebar, one piece, on every page.
@@ -14,7 +14,7 @@ import { Mail, ClipboardList, Home, MailPlus, FileText, Users, Building, Wrench,
  * between pages swaps the content and leaves the shell exactly where it was. The admin
  * centre's tabs are ordinary links to ?tab=…; it reads the URL and switches in place.
  */
-export type AdminTab = 'mywork' | 'billing' | 'workload' | 'templates' | 'docpacks' | 'team' | 'firm' | 'policy' | 'actions' | 'audit' | 'help';
+export type AdminTab = 'mywork' | 'billing' | 'workload' | 'templates' | 'docpacks' | 'team' | 'firm' | 'rules' | 'policy' | 'actions' | 'audit' | 'help';
 
 export interface Me { role: string; displayName: string | null; email: string; actor?: { displayName: string | null; email: string } | null }
 
@@ -58,6 +58,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
       { key: 'firm', label: 'Firm Details', icon: Building, href: `${paths.admin}?tab=firm`, adminTab: 'firm' },
+      { key: 'rules', label: 'Rules', icon: Scale, href: `${paths.admin}?tab=rules`, adminTab: 'rules' },
       { key: 'tools', label: 'Tools', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`), adminTabs: ['actions', 'audit', 'policy'] },
     ],
   },
