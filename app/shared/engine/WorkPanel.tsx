@@ -252,12 +252,20 @@ const STATE_ICON: Record<LaneDef['state'], { Icon: typeof Circle; colour: string
 /** The ⓘ: a description rendered on the top layer, so no box or band can sit over it. */
 function Tip({ text, label, icon, href }: { text: ReactNode; label: string; icon?: ReactNode; href?: string }) {
   const ref = useRef<HTMLElement>(null);
-  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-  const show = () => { const r = ref.current?.getBoundingClientRect(); if (r) setPos({ x: Math.min(r.left, window.innerWidth - 280), y: r.bottom + 6 }); };
+  const tip = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ x: number; y: number; above: number } | null>(null);
+  // Below the anchor by default; above it when there is no room below, so it is always in view.
+  const show = () => { const r = ref.current?.getBoundingClientRect(); if (r) setPos({ x: Math.max(8, Math.min(r.left, window.innerWidth - 288)), y: r.bottom + 6, above: r.top - 6 }); };
+  useLayoutEffect(() => {
+    const el = tip.current;
+    if (!el || !pos) return;
+    const h = el.offsetHeight;
+    if (pos.y + h > window.innerHeight - 8 && pos.above - h >= 8) el.style.top = `${pos.above - h}px`;
+  }, [pos]);
   return (
     <>
       {href ? <a ref={ref as never} href={href} className={`ep-who${href ? ' doc' : ''}`} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon}</a> : <span ref={ref} className={icon ? 'ep-who' : 'ep-i'} tabIndex={0} aria-label={label} onMouseEnter={show} onMouseLeave={() => setPos(null)} onFocus={show} onBlur={() => setPos(null)}>{icon ?? 'i'}</span>}
-      {pos && createPortal(<div className="ep-tip" role="tooltip" style={{ left: pos.x, top: pos.y }}>{text}</div>, document.body)}
+      {pos && createPortal(<div ref={tip} className="ep-tip" role="tooltip" style={{ left: pos.x, top: pos.y }}>{text}</div>, document.body)}
     </>
   );
 }
@@ -820,8 +828,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],
     actions: has('report_on_title') ? <>
-      {s.stage === 'contract_review' && ['not_started', 'rejected'].includes(s.reportOnTitle.status) && resolved(s.title.status) && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'draft_report_on_title' })}>Draft report on title (AI, needs your approval)</button>}
-      {s.reportOnTitle.status === 'approved' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send approved report to client</button>}
+      {['not_started', 'rejected'].includes(s.reportOnTitle.status) && (() => {
+        // Always shown, so it can be found; greyed out with the reason until the case has reached the point it can be written.
+        const why = !resolved(s.title.status) ? (s.title.documentId ? 'The title is not resolved yet' : 'The official copies are not in yet') : s.stage !== 'contract_review' ? 'Searches, enquiries or the mortgage offer are still open' : null;
+        return <button className="ep-btn primary" disabled={busy || !!why} title={why ?? 'Drafted from the file; a conveyancer approves it before it goes'} onClick={() => cmd({ type: 'draft_report_on_title' })}>{s.reportOnTitle.status === 'rejected' ? 'Draft Report On Title Again' : 'Draft Report On Title'}</button>;
+      })()}
+      {s.reportOnTitle.status === 'drafted' && <a className="ep-btn" href="?tab=tasks">Review Draft In Tasks</a>}
+      {s.reportOnTitle.status === 'approved' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send Report To Client</button>}
     </> : null });
 
   if (has('searches') && s.requiredSearches.length > 0) lane({ id: 'searches', title: 'Searches', state: s.requiredSearches.every((t) => resolved(s.searches[t]?.status ?? '')) ? 'done' : s.requiredSearches.some((t) => s.searches[t]?.status === 'flagged') ? 'blocked' : 'open', 

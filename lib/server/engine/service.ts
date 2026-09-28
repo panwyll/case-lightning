@@ -812,19 +812,6 @@ export class EngineService {
     const subflows = await this.levels(tenantId);
     let chases = 0;
     let escalations = 0;
-    // No search provider connected: a search still waiting (ordered before placeholders came straight back) gets its placeholder now.
-    if (this.ports.searchProvider.placeholderResult) {
-      for (const sr of Object.values(state.searches).filter((x) => x.status === 'ordered' && !x.documentId)) {
-        try {
-          const stub = this.ports.searchProvider.placeholderResult({ searchType: sr.searchType, reference: `${sr.searchType}-${sr.cycle}`, orderedAt: sr.orderedAt ? new Date(sr.orderedAt) : now });
-          const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'SEARCH_RESULT', fileName: stub.fileName, content: stub.content });
-          await this.searchReturned(tenantId, matterId, sr.searchType, doc.id, this.ports.searchProvider.name, stub.facts);
-        } catch (err) { this.ports.log(`placeholder ${sr.searchType} search could not be filed`, err); }
-      }
-      state = await this.getState(tenantId, matterId);
-    }
-    // Anything that should have happened on an event and did not (a rule added later, a failed draft) is caught here.
-    if (reportReady(state)) { await this.draftReportWhenReady(tenantId, matterId); state = await this.getState(tenantId, matterId); }
     // Time as a source of events (docs/case-model.md §6): offer expiry, aged waits, sitting issues — first, so the deadlines below see the result.
     let timed = 0;
     for (const t of timedIssueActions(state, now)) {

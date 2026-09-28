@@ -14,6 +14,7 @@ import { paths } from '@/lib/paths';
 import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
 import { decisionTask } from './EngineWork';
 import TaskList from './TaskList';
+import { DocGenerate } from './DocGenerate';
 
 interface MatterHit {
   id: string;
@@ -655,6 +656,7 @@ function AdminPageInner() {
   }, []);
   const [status, setStatus] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
+  const [genFor, setGenFor] = useState<{ id: string; name: string; to: string | null } | null>(null);
   const [docUpload, setDocUpload] = useState({ name: '', description: '' });
   const docFocus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc') : null;
   useEffect(() => {
@@ -1279,6 +1281,7 @@ function AdminPageInner() {
 
         {tab === 'docpacks' && (
           <>
+            {genFor && <DocGenerate templateId={genFor.id} templateName={genFor.name} sendTo={genFor.to} onClose={() => setGenFor(null)} />}
             {/* Template list */}
 
             {docTemplates.map((tpl) => (
@@ -1305,6 +1308,9 @@ function AdminPageInner() {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button type="button" onClick={() => setGenFor({ id: tpl.id, name: tpl.name, to: tpl.usage?.to ?? null })} style={{ padding: '4px 12px', background: '#5A27E0', color: '#fff', border: '1px solid #5A27E0', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
+                      Generate
+                    </button>
                     <a
                       href={`/api/v1/admin/doc-templates/${tpl.id}`}
                       download={tpl.file_name}
