@@ -10,7 +10,7 @@ import { caseBrief } from '../../../lib/server/engine/brief';
 import { initialState } from '../../../lib/server/engine/types';
 
 test('templates render deterministically and report missing required vars', () => {
-  const r = render(CLIENT_UPDATES.search_back_all_clear, { firstName: 'Ann', property: '1 Test St', searchName: 'local authority search (CON29)', firmName: 'Firm LLP' });
+  const r = render(CLIENT_UPDATES.search_back_all_clear, { firstName: 'Ann', property: '1 Test St', searchName: 'local authority search (CON29)', firmName: 'Firm LLP', transaction: 'purchase' });
   assert.equal(r.subject, 'Your purchase of 1 Test St — search received');
   assert.match(r.body, /^Hello Ann,/);
   assert.deepEqual(r.missing, []);
