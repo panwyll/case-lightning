@@ -217,6 +217,7 @@ export const EVENT_TYPES = [
   'sdlt_not_required',
   'availability_recorded',
   'expectation_opened',
+  'title_plan_read',
   'funding_changed',
   'survey_plan_recorded',
   'signing_method_set',
@@ -359,6 +360,21 @@ export interface TitleFacts {
   lease?: LeaseFacts | null;
   /** The document is an epitome / deeds bundle, not an official copy: unregistered land, first registration on completion. */
   unregistered?: boolean | null;
+  /** The document was a title plan (a map), not the register: nothing here is a reading of the register. */
+  planOnly?: boolean | null;
+  confidence: number;
+}
+
+/** A title plan: the map, not the register. What it shows a buyer's conveyancer needs to check against the register and the property. */
+export interface TitlePlanFacts {
+  titleNumber: string;
+  /** What the red edging encloses, as drawn. */
+  edgedRed: string;
+  /** Every other colour, hatching or numbered marking, and what the plan or the register says it marks. */
+  otherMarkings: Array<{ marking: string; marks: string }>;
+  notes: string[];
+  /** The plan's date, scale or OS reference, as printed. */
+  reference: string;
   confidence: number;
 }
 
@@ -1006,6 +1022,7 @@ export interface Payloads {
   /** Someone on the case is away for a period: chases to them wait, updates say so, target dates are checked against it. */
   availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
   expectation_opened: { key: ExpectationKey };
+  title_plan_read: { facts: TitlePlanFacts };
   /** The buyer now has a mortgage, or is now buying without one. */
   funding_changed: { hasLender: boolean; reason: string };
   /** The client's plan for a survey: none (their choice, recorded) or booked for a date. */
@@ -1349,6 +1366,8 @@ export interface MatterState {
     /** The lease as read from the lease itself (leasehold); also mirrored onto facts.lease once the title is read. */
     lease: LeaseFacts | null;
     leaseDocumentId: string | null;
+    /** Title plans read on the case, each against its own title number. */
+    plans?: Array<{ documentId: string; facts: TitlePlanFacts; at: string }>;
   };
   reportOnTitle: {
     status: 'not_started' | 'drafted' | 'approved' | 'rejected' | 'sent';

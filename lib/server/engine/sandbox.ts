@@ -60,6 +60,7 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
       extractEnquiryReply: async (doc, id) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractEnquiryReply(doc, id),
       extractMortgageOffer: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractMortgageOffer(doc),
       extractTitle: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractTitle(doc),
+      extractTitlePlan: async (doc) => { const x = await pick(doc.tenantId, doc.matterId, base.extractor, fixture); if (!x.extractTitlePlan) throw new Error('No title plan reader here.'); return x.extractTitlePlan(doc); },
       extractIdCheck: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractIdCheck(doc),
       extractContract: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractContract(doc),
       extractLease: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractLease(doc),

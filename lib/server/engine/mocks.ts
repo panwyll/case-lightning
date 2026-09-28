@@ -84,6 +84,9 @@ export class FixtureExtractor implements DocumentExtractor {
   async extractTitle(doc: DocumentRef): Promise<TitleFacts> {
     return this.facts(doc, 'title');
   }
+  async extractTitlePlan(doc: DocumentRef): Promise<import('./types').TitlePlanFacts> {
+    return this.facts(doc, 'title plan');
+  }
   async extractContract(doc: DocumentRef): Promise<ContractFacts> {
     return this.facts<ContractFacts>(doc, 'contract');
   }

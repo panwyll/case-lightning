@@ -22,7 +22,7 @@
  */
 import crypto from 'node:crypto';
 import { z } from 'zod/v4';
-import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, TitlePlanFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
 import { type PropertyFormsFacts, SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
 import { ENGINE_SYSTEM_GUARD, leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
@@ -52,7 +52,7 @@ const flagSchema = z.object({
 });
 
 export const ClassificationSchema = z.object({
-  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'lease', 'property_forms', 'other']),
+  role: z.enum(['search', 'enquiry_reply', 'mortgage_offer', 'title', 'title_plan', 'id_check', 'contract', 'survey', 'specialist_report', 'management_pack', 'lease', 'property_forms', 'other']),
   searchType: z.enum([...SEARCH_TYPES, 'NONE']).describe('Only when role = search.'),
   enquiryReferences: z.array(z.string()).describe('Enquiry numbers/identifiers the document replies to (e.g. "E1", "3", "Additional enquiry 2"), when role = enquiry_reply.'),
   titleNumber: z.string().describe('Land Registry title number if visible, else empty string.'),
@@ -119,10 +119,21 @@ const titleEntry = z.object({
   locator,
   confidence: conf,
 });
+export const TitlePlanSchema = z.object({
+  pages: PageLedgerSchema,
+  titleNumber: z.string(),
+  edgedRed: z.string().describe('What the red edging encloses, as drawn.'),
+  otherMarkings: z.array(z.object({ marking: z.string().describe('The colour, hatching or number, e.g. "tinted brown", "edged green", "1"'), marks: z.string().describe("What the plan or its key says it marks, or 'not stated on the plan'") })),
+  notes: z.array(z.string()),
+  reference: z.string().describe('Date, scale or OS reference as printed, or empty'),
+  confidence: z.number(),
+});
+
 export const TitleExtractionSchema = z.object({
   pages: PageLedgerSchema,
   titleNumber: z.string(),
   tenure: z.enum(['freehold', 'leasehold', 'unknown']),
+  planOnly: z.boolean().describe('True if this document is only a title plan (a map with a title number and edging) with no register entries at all; then leave the register fields empty.'),
   unregistered: z.boolean().describe('True if the document is an epitome of title / abstract / deeds bundle for UNREGISTERED land rather than an official copy of a registered title.'),
   editionDate: z.string().describe('Edition/official copy date, ISO or empty.'),
   registeredProprietors: z.array(z.string()),
@@ -429,6 +440,7 @@ export function toTitleFacts(out: z.infer<typeof TitleExtractionSchema>): TitleF
   return {
     titleNumber: out.titleNumber.trim().toUpperCase() || 'UNKNOWN',
     tenure: out.tenure,
+    planOnly: out.planOnly,
     unregistered: out.unregistered,
     restrictions: out.restrictions.map(entry),
     charges: out.charges.map(entry),
@@ -568,12 +580,13 @@ const PROMPTS = {
   contract: `Extract this contract for the sale and purchase of land (a draft, an approved draft or an engrossment). Name every seller and buyer exactly as printed, the property, the title number, the price, the deposit and who holds it, any fixed completion date, chattels, VAT wording, the standard conditions incorporated and the notice-to-complete period. Copy every special condition verbatim with its number and page, and every indemnity term. Flag anything a conveyancer must decide on before approval. Return a verdict for every page.`,
   lease: `Extract this residential lease (the lease itself, a counterpart, a deed of variation or the lease with its plan) for a buyer. Read the parties, the demise, the term and its start, the ground rent and every review provision, the service charge proportion, the repairing obligations of lessee and lessor, assignment and underletting, alterations, use, insurance, the notices and fees the lease fixes on assignment or charge, and forfeiture. Compute the unexpired term from today's date. Copy every clause you rely on verbatim with its page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
   management_pack: `Extract this leasehold information pack (LPE1, LPE2, the managing agent's pack or the landlord's replies) for a buyer. Read every question and enclosure: the landlord and managing agent, the service charge for this flat and the year it covers, the proportion, the ground rent, arrears, the reserve fund, major works planned or consulted on (section 20), buildings insurance and its expiry, every fee charged on sale, the consents required, any dispute or breach, and which accounts and budgets are enclosed. Copy every answer you rely on verbatim with its question number and page. State facts, never advice. ${TAXONOMY} ${SCAN_NOTE}`,
-  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), a lease (the lease deed itself, a counterpart or a deed of variation), or other. ${SCAN_NOTE}`,
+  classify: `Classify this conveyancing document. Decide which engine sub-flow it belongs to: a search result (LLC1 local land charges, CON29 local authority enquiries, drainage & water, environmental, chancel), replies to enquiries from the seller's solicitor, a mortgage offer, an official copy of the register of title (HM Land Registry: the A, B and C registers as text), a title plan (the Land Registry plan: a map of the land with a title number, edged red, and no register entries; classify it as title_plan, never as title), an ID/AML check report, a contract/transfer, a survey or valuation report (RICS level 1/2/3, homebuyer, building survey, mortgage valuation), a specialist's report following a survey (damp, timber, drainage, structural, electrical, roofing, asbestos, Japanese knotweed), a leasehold management pack (LPE1 / leasehold information form), a lease (the lease deed itself, a counterpart or a deed of variation), or other. ${SCAN_NOTE}`,
   property_forms: `Read the seller's property information forms (Law Society TA6, and TA7 on a leasehold, TA10 fittings and contents) for a buyer's conveyancer. Go section by section and copy the seller's answer to each question that matters verbatim: boundaries, disputes and complaints, notices and proposals, alterations and the consents for them, guarantees and claims, insurance, environmental matters (flooding, radon, Japanese knotweed), rights and shared services, parking, other charges, occupiers, services and drainage, solar panels, and on the TA7 the service charge, arrears and disputes. Record the page each section starts on. An answer of "no", "not known" or blank is reported as such, never inferred. ${TAXONOMY} ${SCAN_NOTE}`,
   survey: `Read this survey, valuation or specialist report for a house buyer. Extract every recommendation the author makes that needs something done: every element rated 3 or 2, every further investigation, every urgent or safety point. Leave out elements rated 1 or not inspected, and general maintenance advice. Keep each item to one or two sentences in the report's own words (not whole paragraphs). For each say whether it recommends a FURTHER specialist investigation or report before purchase (as opposed to routine maintenance or a note). Name the specialist recommended if the report does. Grade severity as the report does (high for structural / safety / "urgent", medium for "should be investigated", low for advisory), and give the RICS condition rating (3 / 2 / 1) where the report rates the element; include every condition rating 3 item. Separately, list every point the surveyor raises for the legal adviser (the "Issues for your legal advisers" section: regulation, guarantees, other matters such as rights of way, boundaries, shared services, tenancies), the risks section, the market value and the reinstatement cost. Do not judge whether the buyer should proceed. ${SCAN_NOTE}`,
   search: `Extract the findings of this property search as typed facts. ${TAXONOMY} Include informational entries so the handler can see what was checked. ${SCAN_NOTE}`,
   enquiry: `Extract the seller's solicitor's replies to pre-contract enquiries. For each reply, decide whether it fully answers the question ("answered"), only partly ("partial"), declines ("refused" — e.g. "the buyer must rely on their own survey/searches" where a factual answer was asked), or is unclear. Record any issue the reply reveals as a flag. ${TAXONOMY} ${SCAN_NOTE}`,
   mortgage: `Extract the terms and conditions of this mortgage offer. Mark a condition as standard ONLY if it is boilerplate that appears in every offer from this lender (general conditions); anything specific to this borrower or property — retentions, repairs, occupier consents, evidence of deposit source, valuation conditions, lease requirements — is NOT standard. ${SCAN_NOTE}`,
+  titlePlan: `Read this HM Land Registry title plan for a buyer's conveyancer. Give its title number; describe what the red edging encloses (the building and garden, a garage, a strip, a drive), and every other colour, hatching, tinting or numbered marking with what the plan's key or notes say it marks (green = land removed from the title, brown or blue tinting = rights, numbered = a note or a lease). Copy any notes on the plan and its date, scale or OS reference. Do not invent a meaning the plan does not state: say 'not stated on the plan'. ${SCAN_NOTE}`,
   title: `Extract the register of title. Capture every entry from the proprietorship (B) and charges (C) registers verbatim, and every covenant, easement or right from the property (A) register. Tenure must be read from the register heading. ${SCAN_NOTE}`,
   idCheck: `Extract the outcome of this identity / anti-money-laundering check report. Record any PEP, sanctions, adverse media, address or document flags. ${SCAN_NOTE}`,
   statement: `This document was attached by a house buyer as evidence of where their money comes from. If it is a bank, building society or e-money account statement, extract EVERY transaction line in the period exactly as printed (date, description including references, signed amount in pennies, running balance if shown, the counterparty name if the line shows one) and identify credits that are clearly salary or regular income. Never extract the full account number — the last four digits only. If it is not a statement, say what it is. A payslip: give the employee's name, the employer, the pay date and the net and gross pay in pennies, and leave the transactions empty. Anything else (a gift letter, an identity document, a contract): say so and leave the transactions empty. ${SCAN_NOTE}`,
@@ -716,6 +729,16 @@ export class ClaudeExtractor implements DocumentExtractor {
     const { out, model, promptHash } = await this.run(doc, 'title', TitleExtractionSchema, PROMPTS.title, 'Extract this register of title.', 'DOC_EXTRACT');
     const facts = toTitleFacts(out);
     await this.persist(doc, 'title', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
+    return facts;
+  }
+
+  async extractTitlePlan(doc: DocumentRef): Promise<TitlePlanFacts> {
+    const { contentHash } = await this.input(doc);
+    const hit = this.cached<TitlePlanFacts>(doc, 'title_plan', contentHash);
+    if (hit) return hit;
+    const { out, model, promptHash } = await this.run(doc, 'titlePlan', TitlePlanSchema, PROMPTS.titlePlan, 'Read this title plan.', 'DOC_EXTRACT');
+    const facts: TitlePlanFacts = { titleNumber: out.titleNumber.trim().toUpperCase() || 'UNKNOWN', edgedRed: out.edgedRed.trim(), otherMarkings: out.otherMarkings.filter((m) => m.marking.trim()), notes: out.notes.filter((x) => x.trim()), reference: out.reference.trim(), confidence: out.confidence };
+    await this.persist(doc, 'title_plan', facts, facts.confidence, { model, promptHash, contentHash }, out.pages, out);
     return facts;
   }
 

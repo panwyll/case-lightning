@@ -569,6 +569,16 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
       item('Charges to be discharged on completion', f?.charges.length ? 'flag' : 'ok', f?.charges.length ? entries('charge', f.charges) : [{ text: 'No registered charge' }]),
       item("Covenants and easements: do they affect the client's use or the lender", f?.covenants.length ? 'flag' : 'ok', f?.covenants.length ? entries('covenant', f.covenants) : [{ text: 'No covenant or easement noted' }]),
     ];
+    // The title plans: the map beside the register. Each is checked against the register's title number and for what it marks beyond the red edging.
+    for (const pl of s.title.plans ?? []) {
+      const p = pl.facts;
+      const other = f?.titleNumber && p.titleNumber && p.titleNumber !== 'UNKNOWN' && f.titleNumber !== 'UNKNOWN' && p.titleNumber !== f.titleNumber;
+      out.push(item(`Title plan ${p.titleNumber}: ${other ? `a different title from the register (${f!.titleNumber}); what is it and does the client need it?` : 'the land edged red is the property being bought'}`, other ? 'flag' : 'open', [
+        { text: `Edged red: ${p.edgedRed || 'not described'}${p.reference ? ` · ${p.reference}` : ''}`, documentId: pl.documentId },
+        ...p.notes.map((n) => ({ text: `Note on the plan: ${n}`, documentId: pl.documentId })),
+      ]));
+      if (p.otherMarkings.length) out.push(item(`Title plan ${p.titleNumber}: other markings, and what each means for the client`, 'flag', p.otherMarkings.map((m) => ({ text: `${m.marking}: ${m.marks}`, documentId: pl.documentId }))));
+    }
     const l = f?.lease;
     if (l) {
       const lf = (l.flags ?? []).map((fl) => flagEv(fl, s.title.leaseDocumentId ?? docId));

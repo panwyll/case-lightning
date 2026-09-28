@@ -914,7 +914,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       depth: 1,
       status: readingThis ? (stuck ? 'stuck' : 'reading') : lastReport.unread ? 'not_read' : 'read',
       detail: readingThis
-        ? (stuck ? 'Still reading after five minutes; the Timeline will say if it failed.' : 'Reading the report again; this updates by itself.')
+        ? (stuck ? 'Still reading after five minutes.' : 'Reading…')
         : lastReport.unread ? 'The report could not be read. Read it again, or record the findings by hand.'
         : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
       action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,

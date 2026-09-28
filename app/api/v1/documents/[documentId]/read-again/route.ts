@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ doc
       `update document set read_again_at = now() where id = $1 and tenant_id = $2 and (read_again_at is null or read_again_at < now() - interval '5 minutes') returning id`,
       [documentId, user.tenantId]
     ).catch(() => ({ id: documentId })); // before migration 101 the column is missing: no lock, still works
-    if (!claimed) return fail(Object.assign(new Error('It is already being read; this updates by itself when it is done.'), { status: 409 }));
+    if (!claimed) return fail(Object.assign(new Error('Already being read.'), { status: 409 }));
     // What it was read as last time: read it as that again, without paying to classify it again.
     const last = await queryOne<{ type: string; payload: Record<string, unknown> }>(
       `select type, payload from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3 and type = any($4::text[]) order by seq desc limit 1`,
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ doc
       const said = !report ? 'It could not be read.' : report.action.kind === 'skip' ? `Read${role && role !== 'other' ? ` as ${role.replace(/_/g, ' ')}` : ''}, not acted on: ${report.action.reason}` : `Read again as ${(role ?? report.action.kind).replace(/_/g, ' ')}.`;
       await emitMatterEvent({ tenantId: user.tenantId, matterId: row.matter_id, eventType: 'EMAIL_FILED', title: 'Read again', details: said }).catch(() => {});
     });
-    return ok({ ok: true, said: 'Reading it again in the background.' });
+    return ok({ ok: true, said: 'Reading…' });
   } catch (error) {
     return fail(error);
   }

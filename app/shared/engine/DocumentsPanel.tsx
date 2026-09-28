@@ -82,7 +82,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
   const [reread, setReread] = useState<Record<string, string>>({});
   const readAgain = async (id: string) => {
     setRereading(id);
-    try { await api(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }); setReread((m) => ({ ...m, [id]: 'Reading it again in the background; the Timeline says what came of it.' })); for (const ms of [30_000, 90_000]) setTimeout(() => onChanged?.(), ms); }
+    try { await api(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }); setReread((m) => ({ ...m, [id]: 'Reading…' })); for (const ms of [30_000, 90_000]) setTimeout(() => onChanged?.(), ms); }
     catch (e: unknown) { setReread((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' })); }
     finally { setRereading(null); }
   };

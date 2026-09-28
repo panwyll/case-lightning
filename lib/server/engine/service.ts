@@ -516,6 +516,14 @@ export class EngineService {
     return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
   }
 
+  /** A title plan: read as the map it is, beside the register (never as the register), checked against it on the title step. */
+  async titlePlanReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    if (!this.ports.extractor.extractTitlePlan) return { state: await this.getState(tenantId, matterId), events: [], warning: 'A title plan: filed with the title.' };
+    const facts = await this.ports.extractor.extractTitlePlan(doc);
+    return this.run(tenantId, matterId, { type: 'record_title_plan', documentId, facts });
+  }
+
   async titleReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     if (await this.alreadyHave(tenantId, matterId, 'official_copies', null)) {
       this.ports.log('official copies already on the case; duplicate ignored', { matterId, documentId });
@@ -526,6 +534,8 @@ export class EngineService {
       this.ports.log('title extraction failed — routing to human', err);
       return { titleNumber: 'unknown', tenure: 'unknown' as const, restrictions: [], charges: [], covenants: [], confidence: 0 };
     });
+    // A title plan filed as the title: it is read as a plan, and never stands in for the register.
+    if (facts.planOnly) return this.titlePlanReceived(tenantId, matterId, documentId);
     // A lease already read stays with the title: the rules see both.
     const before = await this.getState(tenantId, matterId);
     if (before.title.lease && !facts.lease) facts.lease = before.title.lease;

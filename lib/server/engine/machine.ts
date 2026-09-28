@@ -109,6 +109,7 @@ import {
   type AvailabilityParty,
   AVAILABILITY_PARTIES,
   type ExpectationKey,
+  type TitlePlanFacts,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -149,6 +150,7 @@ type CommandBody =
   | { type: 'record_signing_envelope'; document: SignedDocument; provider: string; envelopeId: string }
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'open_expectation'; key: ExpectationKey }
+  | { type: 'record_title_plan'; documentId: string; facts: TitlePlanFacts }
   | { type: 'set_funding'; actor: Actor; hasLender: boolean; reason: string }
   | { type: 'record_survey_plan'; actor: Actor; plan: 'none' | 'booked'; date?: string | null; note?: string | null }
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
@@ -1321,6 +1323,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_signing_envelope': {
       requireEnrolled(s);
       return [{ type: 'signing_envelope_sent', actor: SYSTEM, payload: { document: cmd.document, provider: cmd.provider, envelopeId: cmd.envelopeId } }];
+    }
+    case 'record_title_plan': {
+      requireEnrolled(s);
+      return [{ type: 'title_plan_read', actor: SYSTEM, payload: { facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
     }
     case 'open_expectation': {
       requireEnrolled(s);
