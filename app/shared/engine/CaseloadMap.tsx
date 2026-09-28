@@ -129,27 +129,30 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
   const [tip, setTip] = useState<{ t: CaseToken; x: number; y: number } | null>(null);
 
   const shows = (t: CaseToken) => filter === 'all' || (isTracked(t) && t.health.band === filter);
+  // A filter shows only what matches: on a board of hundreds, greying the rest out does not help anyone find anything.
+  const visible = useMemo(() => rows.filter(shows), [rows, filter]);
 
   const byBand = useMemo(() => {
     const m = new Map<Band, CaseToken[]>(BANDS.map((b) => [b, [] as CaseToken[]]));
     const rank: Record<HealthBand, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
-    for (const r of rows) m.get(bandOf(r.lifecycle))!.push(r);
+    for (const r of visible) m.get(bandOf(r.lifecycle))!.push(r);
     // Tracked matters first (they carry news), worst first; untracked after, oldest first.
     for (const list of m.values()) list.sort((a, b) => Number(!isTracked(a)) - Number(!isTracked(b)) || rank[a.health.band] - rank[b.health.band] || b.dayOfCase - a.dayOfCase);
     return m;
-  }, [rows]);
+  }, [visible]);
 
   const handlers = useMemo(() => {
     if (!byHandler) return [] as string[];
     const names = new Set<string>();
-    for (const r of rows) names.add(r.assignedToName ?? 'Unassigned');
+    // With a filter on, only the people who have matching cases get a column.
+    for (const r of visible) names.add(r.assignedToName ?? 'Unassigned');
     return Array.from(names).sort((a, b) => (a === 'Unassigned' ? 1 : b === 'Unassigned' ? -1 : a.localeCompare(b)));
-  }, [rows, byHandler]);
+  }, [visible, byHandler]);
   const houses = (list: CaseToken[]) => list.map((t) => (
     <button
       key={t.matterId}
       type="button"
-      className={`cm-house${shows(t) ? '' : ' dim'}`}
+      className="cm-house"
       onClick={() => onOpen(t.matterId)}
       onMouseEnter={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
       onMouseMove={(e) => setTip({ t, x: e.clientX, y: e.clientY })}
@@ -186,7 +189,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
           <div className="cm-row cm-names">
             <div className="cm-lab" />
             <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${handlers.length}, minmax(0, 1fr))` }}>
-              {handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{rows.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
+              {handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
             </div>
           </div>
         )}
