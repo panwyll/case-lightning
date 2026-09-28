@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { Minus, Plus } from '@/app/shared/icons';
 
 /**
  * A PDF drawn page by page with pdf.js, so a quoted line can be found in the text layer and
@@ -18,6 +19,12 @@ export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: {
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [pages, setPages] = useState<Array<{ n: number; w: number; h: number }>>([]);
   const docRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null);
+  // Zoom (redrawn sharp at each level) and drag to move around a zoomed page.
+  const [zoom, setZoom] = useState(1);
+  const ZOOMS = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+  const step = (dir: 1 | -1) => setZoom((z) => { const i = ZOOMS.findIndex((x) => x >= z - 0.001); const next = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, (i < 0 ? 1 : i) + dir))]; return next; });
+  const drag = useRef<{ x: number; y: number; left: number; top: number; el: HTMLElement } | null>(null);
+  const scrollerOf = () => (host.current?.closest('.dp-srcbody') as HTMLElement | null) ?? host.current;
   const libRef = useRef<Pdfjs | null>(null);
 
   // Load the document once and draw every page at the pane's width.
@@ -58,9 +65,9 @@ export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: {
     (async () => {
       for (const pg of pages) {
         const canvas = host.current?.querySelector<HTMLCanvasElement>(`canvas[data-page="${pg.n}"]`);
-        if (!canvas || canvas.dataset.drawn) continue;
+        if (!canvas || canvas.dataset.drawn === String(zoom)) continue;
         const p = await doc.getPage(pg.n);
-        const vp = p.getViewport({ scale: pg.w / p.getViewport({ scale: 1 }).width });
+        const vp = p.getViewport({ scale: (pg.w * zoom) / p.getViewport({ scale: 1 }).width });
         const dpr = window.devicePixelRatio || 1;
         canvas.width = Math.floor(vp.width * dpr); canvas.height = Math.floor(vp.height * dpr);
         canvas.style.width = `${vp.width}px`; canvas.style.height = `${vp.height}px`;
@@ -69,11 +76,11 @@ export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         await p.render({ canvasContext: ctx, viewport: vp, canvas }).promise;
         if (!live) return;
-        canvas.dataset.drawn = '1';
+        canvas.dataset.drawn = String(zoom);
       }
     })();
     return () => { live = false; };
-  }, [pages]);
+  }, [pages, zoom]);
 
   // Find the quote in the text layer: the n-th run of items whose text contains it, on the cited page first, then anywhere.
   useEffect(() => {
@@ -141,18 +148,40 @@ export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: {
     const el = host.current?.querySelector<HTMLElement>(`[data-pg="${n}"]`);
     if (!el) return;
     const scroller = host.current?.closest('.dp-srcbody') as HTMLElement | null;
-    if (scroller) scroller.scrollTo({ top: el.offsetTop + (y ?? 0) - 80, behavior: 'smooth' });
+    if (scroller) scroller.scrollTo({ top: el.offsetTop + (y ?? 0) * zoom - 80, behavior: 'smooth' });
     else el.scrollIntoView({ block: 'start' });
   };
 
   if (failed) return <iframe className="dp-frame" title="Source document" src={`${url}#page=${page ?? 1}&view=FitH`} />;
+  const onDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || zoom <= 1) return;
+    const el = scrollerOf();
+    if (!el) return;
+    drag.current = { x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, el };
+    e.preventDefault();
+  };
+  const onMove = (e: React.MouseEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    d.el.scrollLeft = d.left - (e.clientX - d.x);
+    d.el.scrollTop = d.top - (e.clientY - d.y);
+  };
+  const onUp = () => { drag.current = null; };
+  const onWheel = (e: React.WheelEvent) => { if (e.ctrlKey || e.metaKey) { e.preventDefault(); step(e.deltaY < 0 ? 1 : -1); } };
   return (
-    <div ref={host} className="pdfv">
+    <div ref={host} className={`pdfv${zoom > 1 ? ' pan' : ''}`} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} onWheel={onWheel}>
+      {pages.length > 0 && (
+        <div className="pdfv-zoom" onMouseDown={(e) => e.stopPropagation()}>
+          <button type="button" aria-label="Zoom out" disabled={zoom <= ZOOMS[0]} onClick={() => step(-1)}><Minus size={16} /></button>
+          <button type="button" className="pct" onClick={() => setZoom(1)} title="Fit to width">{Math.round(zoom * 100)}%</button>
+          <button type="button" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]} onClick={() => step(1)}><Plus size={16} /></button>
+        </div>
+      )}
       {pages.length === 0 && <div className="eg-sub" style={{ padding: 12 }}>Drawing the document…</div>}
       {pages.map((pg) => (
-        <div key={pg.n} className="pdfv-page" data-pg={pg.n} style={{ width: pg.w, height: pg.h }}>
+        <div key={pg.n} className="pdfv-page" data-pg={pg.n} style={{ width: pg.w * zoom, height: pg.h * zoom }}>
           <canvas data-page={pg.n} />
-          {boxes.filter((b) => b.page === pg.n).map((b, i) => <div key={i} className="pdfv-hl" style={{ left: b.x, top: b.y, width: b.w, height: b.h }} />)}
+          {boxes.filter((b) => b.page === pg.n).map((b, i) => <div key={i} className="pdfv-hl" style={{ left: b.x * zoom, top: b.y * zoom, width: b.w * zoom, height: b.h * zoom }} />)}
           <span className="pdfv-n">{pg.n}</span>
         </div>
       ))}
@@ -161,9 +190,16 @@ export function PdfView({ url, page, quote, quotes, quoteIndex = 0, onFound }: {
 }
 
 export const PDF_CSS = `
-.pdfv{display:grid;gap:10px;padding:8px}
+.pdfv{display:grid;gap:10px;padding:8px;position:relative;justify-content:start}
+.pdfv.pan{cursor:grab}
+.pdfv.pan:active{cursor:grabbing}
+.pdfv-zoom{position:sticky;top:6px;left:6px;z-index:5;justify-self:start;display:inline-flex;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:9px;box-shadow:0 4px 14px rgba(15,23,42,.12);overflow:hidden;margin-bottom:-38px}
+.pdfv-zoom button{border:0;background:#fff;color:#334155;height:30px;min-width:30px;padding:0 6px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font:inherit;font-size:12px;font-weight:700}
+.pdfv-zoom button:hover:not(:disabled){background:#f5f3ff;color:#5A27E0}
+.pdfv-zoom button:disabled{color:#cbd5e1;cursor:default}
+.pdfv-zoom .pct{min-width:48px;border-left:1px solid #f1f5f9;border-right:1px solid #f1f5f9}
 .pdfv-page{position:relative;background:#fff;box-shadow:0 1px 3px rgba(16,24,40,.12);margin:0 auto}
-.pdfv-page canvas{display:block}
-.pdfv-hl{position:absolute;background:rgba(253,224,71,.55);outline:2px solid rgba(202,138,4,.8);border-radius:2px;pointer-events:none}
+.pdfv-page canvas{display:block;width:100%;height:100%}
+.pdfv-hl{position:absolute;background:rgba(255,221,0,.42);mix-blend-mode:multiply;border-radius:1px;pointer-events:none}
 .pdfv-n{position:absolute;right:6px;bottom:4px;font-size:10px;color:#94a3b8}
 `;
