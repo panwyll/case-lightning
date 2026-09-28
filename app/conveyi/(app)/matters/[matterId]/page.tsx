@@ -14,7 +14,7 @@ import { Grouped, ListToolbar, useListTools } from '@/app/shared/engine/ListTool
 
 /** Case-log lines the timeline shows: filings, not the engine's own mirror of its events. */
 const FILING_LOG = new Set(['EMAIL_FILED', 'DOC_RECEIVED', 'EMAIL_SAVED_TO_MATTER', 'ENGINE_INGEST_SKIPPED']);
-import { CaseView, type CaseModel } from '@/app/shared/engine/CaseView';
+import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { paths } from '@/lib/paths';
@@ -23,11 +23,10 @@ import { paths } from '@/lib/paths';
  * One case, whole. The Overview tab is where it is: the stages, what is running inside
  * each and what each is waiting on, with the facts of the case beside it and the tasks,
  * emails, files and history below. The other tabs are the doing: Work (every action a
- * person records), Issues, Notes, Documents, Timeline, and Diagnostics for the engine's
- * own readiness and dependency views. There is no second page for a case.
+ * person records), Issues, Notes, Documents and Timeline. There is no second page for a case.
  */
-type Tab = 'overview' | 'tasks' | 'issues' | 'notes' | 'documents' | 'timeline' | 'diagnostics';
-const TABS: Tab[] = ['overview', 'tasks', 'issues', 'notes', 'documents', 'timeline', 'diagnostics'];
+type Tab = 'overview' | 'tasks' | 'issues' | 'notes' | 'documents' | 'timeline';
+const TABS: Tab[] = ['overview', 'tasks', 'issues', 'notes', 'documents', 'timeline'];
 interface Row { id: string; matterRef: string | null; propertyAddress: string | null; stage: string; assignee: string | null; assignedTo: string | null }
 interface Person { id: string; email: string; display_name: string | null }
 interface Detail {
@@ -214,7 +213,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')} disabled={!enrolled}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')} disabled={!enrolled}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
-            <button className={`eg-tab${tab === 'diagnostics' ? ' on' : ''}`} onClick={() => setTab('diagnostics')} disabled={!enrolled}>Diagnostics</button>
           </div>
 
           {tab === 'tasks' && view && enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} section="tasks" />}
@@ -238,22 +236,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
               </div>
           )}
           {tab === 'timeline' && view && enrolled && <Timeline events={eng.events} state={view.state} focus={focus} onClearFocus={() => setTab('timeline')} log={caseLog} />}
-          {tab === 'diagnostics' && enrolled && (
-            <>
-              <CaseView matterId={matterId} api={api} view="readiness" model={model} />
-              <CaseView matterId={matterId} api={api} view="dependencies" model={model} />
-              {(detail?.timeline ?? []).length > 0 && (
-              <div className="mx-sec">
-                <h2 className="mx-h">History</h2>
-                <div className="mx-list">
-                  {detail!.timeline.slice(0, 25).map((e) => (
-                    <div key={e.id} className="mx-row" style={{ justifyContent: 'flex-start' }}><span className="d" style={{ width: 70 }}>{short(e.event_at ?? e.created_at)}</span><span>{e.title.replace(/^Engine:\s*/, '').replace(/_/g, ' ')}</span></div>
-                  ))}
-                </div>
-              </div>
-              )}
-            </>
-          )}
 
           {tab === 'overview' && (<>
           <div className="mx-top">
