@@ -217,7 +217,7 @@ export default function EmailToFile() {
       await api(`/matters/${matterId}/link-thread`, { method: 'POST', body: JSON.stringify({ graphThreadId: item.conversationId ?? item.id, graphConversationId: item.conversationId ?? undefined, messageId: item.id, subject: item.subject, participants: [item.from.address].filter(Boolean), mailboxUserId: mailbox ?? undefined }) });
       const s = item.suggestions.find((x) => x.matterId === matterId);
       const where = s ? `${s.matterRef} · ${shortAddress(s)}` : 'the case';
-      setInfo(`Filed to ${where}.${item.hasAttachments ? ' Attachments are being processed; outcomes will appear in the case timeline.' : ' Processing outcome will appear in the case timeline.'}`);
+      setInfo(`Filed to ${where}.`);
       retire([item.id]);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not file that email.');
