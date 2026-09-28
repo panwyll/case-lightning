@@ -67,7 +67,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       else if (input.type === 'resend_proof_of_funds') return await svc.resendProofOfFunds(user.tenantId, matterId, user.userId);
       else if (input.type === 'retry_action') return await svc.retryFailedAction(user.tenantId, matterId, input.proposalEventId, user.userId);
       else if (input.type === 'retry_issue') return await svc.retryIssue(user.tenantId, matterId, input.issueId, user.userId);
-      else if (input.type === 'link_related_matter') return await svc.linkChain(user.tenantId, matterId, input.relatedMatterId, user.userId, input.note ?? null);
+      else if (input.type === 'link_related_matter') {
+        await assertMatterAccess(user, input.relatedMatterId);
+        // A sandbox case is quarantined: it links only to another sandbox case, and a real case only to a real one.
+        const { query: q } = await import('@/lib/server/db');
+        const both = await q<{ sandbox: boolean | null }>(`select sandbox from matter where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, [matterId, input.relatedMatterId]]);
+        if (both.length === 2 && !!both[0].sandbox !== !!both[1].sandbox) throw Object.assign(new Error('A sandbox case can only be linked to another sandbox case.'), { status: 409 });
+        return await svc.linkChain(user.tenantId, matterId, input.relatedMatterId, user.userId, input.note ?? null);
+      }
       else if (input.type === 'unlink_related_matter') return await svc.unlinkChain(user.tenantId, matterId, user.userId, input.reason);
       else if (input.type === 'chase_now') return await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId, user.displayName ?? user.email);
       else if (input.type === 'draft_completion_statement') {

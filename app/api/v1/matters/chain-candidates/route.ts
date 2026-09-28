@@ -14,7 +14,9 @@ export async function GET(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const side = z.enum(['buyer', 'seller']).parse(req.nextUrl.searchParams.get('side'));
-    return ok({ candidates: await chainCandidates(user, side) });
+    const q = req.nextUrl.searchParams;
+    const list = (k: string) => q.getAll(k).flatMap((v) => v.split(',')).map((v) => v.trim()).filter(Boolean).slice(0, 12);
+    return ok({ candidates: await chainCandidates(user, side, null, { names: list('name'), emails: list('email') }) });
   } catch (error) {
     return fail(error);
   }

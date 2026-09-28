@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import { composeAddress, EMPTY_ADDR, UK_POSTCODE_RE, type AddrParts } from '@/lib/address';
 import { X } from '@/app/shared/icons';
+import { ChainPicker, type ChainOption } from '@/app/shared/engine/ChainPicker';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -54,13 +55,26 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
   const [agentEmail, setAgentEmail] = useState('');
   const [lender, setLender] = useState('');
   // The client's chain: on a purchase, their sale (and the reverse), if the firm acts on it too. Linked as the case is created.
-  const [chainOptions, setChainOptions] = useState<Array<{ matterId: string; matterRef: string | null; propertyAddress: string | null; client: string | null }>>([]);
+  const [chainOptions, setChainOptions] = useState<ChainOption[]>([]);
   const [linkTo, setLinkTo] = useState('');
+  // None, an existing case, or the other half created now alongside this one.
+  const [chainMode, setChainMode] = useState<'none' | 'existing' | 'new'>('none');
+  const [otherAddress, setOtherAddress] = useState('');
+  const clientKey = clients.map((c) => `${c.name.trim()}|${c.email.trim().toLowerCase()}`).join(';');
   useEffect(() => {
-    setLinkTo('');
-    if (track === 'REMORTGAGE') { setChainOptions([]); return; }
-    api<{ candidates: typeof chainOptions }>(`/matters/chain-candidates?side=${track === 'SALE' ? 'buyer' : 'seller'}`).then((r) => setChainOptions(r.candidates)).catch(() => setChainOptions([]));
-  }, [track]);
+    if (track === 'REMORTGAGE') { setChainOptions([]); setChainMode('none'); return; }
+    const t = setTimeout(() => {
+      const qs = new URLSearchParams({ side: track === 'SALE' ? 'buyer' : 'seller' });
+      for (const c of clients) { if (c.name.trim()) qs.append('name', c.name.trim()); if (c.email.trim()) qs.append('email', c.email.trim().toLowerCase()); }
+      api<{ candidates: ChainOption[] }>(`/matters/chain-candidates?${qs}`).then((r) => {
+        setChainOptions(r.candidates);
+        // The client's own case on the other side: suggested, not assumed.
+        const same = r.candidates.filter((x) => x.sameClient);
+        if (same.length === 1 && chainMode === 'none' && !linkTo) { setChainMode('existing'); setLinkTo(same[0].matterId); }
+      }).catch(() => setChainOptions([]));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [track, clientKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [exchange, setExchange] = useState('');
   const [completion, setCompletion] = useState('');
   const [ref, setRef] = useState('');
@@ -79,6 +93,8 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
   if (!addr.street.trim()) problems.street = 'The street is needed.';
   if (!UK_POSTCODE_RE.test(addr.postcode.trim())) problems.postcode = 'A UK postcode is needed.';
   if (!addr.town.trim()) problems.town = 'The town is needed.';
+  if (track !== 'REMORTGAGE' && chainMode === 'new' && !/[A-Z]{1,2}\d/i.test(otherAddress)) problems.otherAddress = 'The other property\'s address, with its postcode, is needed.';
+  if (track !== 'REMORTGAGE' && chainMode === 'existing' && !linkTo) problems.linkTo = `Choose the client\'s ${track === 'SALE' ? 'purchase' : 'sale'}, or pick Not With Us.`;
   clients.forEach((c, i) => {
     if (!c.name.trim()) problems[`c${i}name`] = 'Name needed.';
     if (!EMAIL_RE.test(c.email.trim())) problems[`c${i}email`] = 'A valid email is needed: the ID check, the forms and every update go here.';
@@ -140,9 +156,24 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           lender: lender.trim() || undefined,
           exchangeTargetDate: exchange || undefined,
           completionTargetDate: completion || undefined,
-          linkedMatterId: track !== 'REMORTGAGE' && linkTo ? linkTo : undefined,
+          linkedMatterId: track !== 'REMORTGAGE' && chainMode === 'existing' && linkTo ? linkTo : undefined,
         }),
       });
+      // The client's other half, set up now for the same clients and linked to this one.
+      if (track !== 'REMORTGAGE' && chainMode === 'new' && otherAddress.trim()) {
+        await api('/matters', {
+          method: 'POST',
+          body: JSON.stringify({
+            matterRef: `${(shownRef.trim() || fallbackMatterRef())}-${track === 'SALE' ? 'P' : 'S'}`,
+            propertyAddress: otherAddress.trim(),
+            track: track === 'SALE' ? 'PURCHASE' : 'SALE',
+            parties: clients.map((c) => ({ name: c.name.trim(), email: c.email.trim().toLowerCase(), phone: c.phone.trim() || undefined })),
+            completionTargetDate: completion || undefined,
+            exchangeTargetDate: exchange || undefined,
+            linkedMatterId: created.id,
+          }),
+        });
+      }
       onCreated(created.id);
     } catch (e: any) {
       setErr(e?.message?.includes('graph') || e?.message?.toLowerCase?.().includes('token')
@@ -222,15 +253,6 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
             <input value={shownRef} onChange={(e) => { setRef(e.target.value); setRefTouched(true); }} placeholder="auto" style={S.input} />
           </div>
         </div>
-        {track !== 'REMORTGAGE' && chainOptions.length > 0 && (
-          <div>
-            <label style={S.lbl}>Client's {track === 'SALE' ? 'purchase' : 'sale'} (if we act on it)</label>
-            <select value={linkTo} onChange={(e) => setLinkTo(e.target.value)} style={S.input}>
-              <option value="">None</option>
-              {chainOptions.map((c) => <option key={c.matterId} value={c.matterId}>{[c.propertyAddress, c.client, c.matterRef].filter(Boolean).join(' · ')}</option>)}
-            </select>
-          </div>
-        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Exchange target</label><input type="date" value={exchange} onChange={(e) => setExchange(e.target.value)} style={S.input} /></div>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Completion target</label><input type="date" value={completion} min={exchange || undefined} onChange={(e) => setCompletion(e.target.value)} style={S.input} />{show('completion')}</div>
@@ -240,6 +262,19 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         {clients.map(person)}
         <button type="button" onClick={() => setClients((cs) => [...cs, blank()])} style={{ ...S.link, marginTop: 6 }}>+ Add another {weAre.toLowerCase()}</button>
 
+        {track !== 'REMORTGAGE' && (
+          <>
+            <div style={S.sec}>Client's {track === 'SALE' ? 'Purchase' : 'Sale'}</div>
+            <div style={{ display: 'inline-flex', border: '1px solid #cbd5e1', borderRadius: 8, overflow: 'hidden', alignSelf: 'flex-start' }} role="group" aria-label={`Client's ${track === 'SALE' ? 'purchase' : 'sale'}`}>
+              {([['none', 'Not With Us'], ['existing', 'Already A Case'], ['new', 'Create It Now']] as const).map(([v, l], n) => (
+                <button key={v} type="button" onClick={() => setChainMode(v)} style={{ border: 0, borderLeft: n ? '1px solid #e2e8f0' : 0, background: chainMode === v ? '#5A27E0' : '#fff', color: chainMode === v ? '#fff' : '#334155', padding: '6px 12px', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>{l}</button>
+              ))}
+            </div>
+            {chainMode === 'existing' && <ChainPicker options={chainOptions} value={linkTo} onChange={setLinkTo} want={track === 'SALE' ? 'purchase' : 'sale'} />}
+            {chainMode === 'existing' && show('linkTo')}
+            {chainMode === 'new' && <div><label style={S.lbl}>Address of the {track === 'SALE' ? 'property they are buying' : 'property they are selling'}</label><input value={otherAddress} onChange={(e) => setOtherAddress(e.target.value)} placeholder="Full address with postcode" style={S.input} />{show('otherAddress')}</div>}
+          </>
+        )}
         {track !== 'REMORTGAGE' && (
           <>
             <div style={S.sec}>Other Side</div>

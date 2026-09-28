@@ -6,8 +6,9 @@
  */
 import { useState } from 'react';
 import { stageLabel, fmtDay, type Api, type EngineView } from './types';
+import { ChainPicker, type ChainOption } from './ChainPicker';
 
-interface Candidate { matterId: string; matterRef: string | null; propertyAddress: string | null; client: string | null }
+type Candidate = ChainOption;
 
 const CSS = `
 .ch{margin-top:12px}
@@ -46,7 +47,13 @@ export function ChainCard({ matterId, api, view, busy, cmd }: { matterId: string
 
   const openPicker = async () => {
     setErr(null);
-    try { setPicking((await api<{ candidates: Candidate[] }>(`/matters/${matterId}/chain`)).candidates); }
+    try {
+      const c = (await api<{ candidates: Candidate[] }>(`/matters/${matterId}/chain`)).candidates;
+      setPicking(c);
+      // The one case for this client is the likely answer: chosen, ready to link.
+      const same = c.filter((x) => x.sameClient);
+      if (same.length === 1) setPick(same[0].matterId);
+    }
     catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not load cases.'); }
   };
   const link = async () => {
@@ -76,13 +83,8 @@ export function ChainCard({ matterId, api, view, busy, cmd }: { matterId: string
       </div>
       {!chain && picking && (
         <div>
-          {picking.length ? (
-            <select className="ch-sel" value={pick} onChange={(e) => setPick(e.target.value)} aria-label={`The client's ${want.toLowerCase()}`}>
-              <option value="">Choose the client's {want.toLowerCase()}…</option>
-              {picking.map((c) => <option key={c.matterId} value={c.matterId}>{[c.propertyAddress, c.client, c.matterRef].filter(Boolean).join(' · ')}</option>)}
-            </select>
-          ) : <div className="ch-side"><span className="l">No open {want.toLowerCase()} to link. Set the case up first, then link it here.</span></div>}
-          <div style={{ display: 'flex', gap: 6 }}>
+          {picking.length ? <ChainPicker options={picking} value={pick} onChange={setPick} want={want === 'Sale' ? 'sale' : 'purchase'} /> : <div className="ch-side"><span className="l">No open {want.toLowerCase()} on the system to link.</span></div>}
+          <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
             {picking.length > 0 && <button type="button" className="ch-btn go" disabled={busy || !pick} onClick={() => void link()}>Link</button>}
             <button type="button" className="ch-btn" onClick={() => { setPicking(null); setPick(''); }}>Cancel</button>
           </div>

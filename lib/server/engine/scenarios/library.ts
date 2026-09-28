@@ -434,8 +434,10 @@ SCENARIOS.push({
   summary: "One client selling their home and buying another, both with us: the two cases linked, each holding exchange for the other, exchanged together on the same completion date, the sale completing first because its money funds the purchase.",
   steps: [
     step('enrol', 'Purchase enrolled (the client also sells with us)', async (c) => { await c.run({ type: 'enrol', transactionType: 'freehold_purchase', hasLender: true, requireProofOfFunds: false, requireExchangeAuthority: true, requiredSearches: ['LLC1', 'CON29'] }); }),
-    ...upTo(saleSteps, 'exchange').map(onSale),
+    // Both cases exist and are linked from the start, as a firm acting on both sets them up.
+    onSale(saleSteps[0]),
     step('link', 'The sale and the purchase linked as one chain', async (c) => { const sale = await c.companion(); await c.svc.linkChain(c.tenantId, c.matterId, sale.matterId, c.userId); }),
+    ...upTo(saleSteps, 'exchange').slice(1).map(onSale),
     ...idCheck(),
     ...searches(['LLC1', 'CON29']),
     ...mortgage(),
