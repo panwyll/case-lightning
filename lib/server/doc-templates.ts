@@ -537,9 +537,9 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
   },
   {
     name: 'Report on title',
-    description: 'Report to the client on the title and searches; the narrative sections are written by the AI from the file.',
+    description: 'The report on title the client receives: the conveyancer-approved report goes where {{report_body}} is. Put your letterhead, logo and sign-off around it.',
     fileName: 'report-on-title.docx',
-    hasLlmPrompts: true,
+    hasLlmPrompts: false,
     paragraphs: [
       '{{firm_name}}',
       '',
@@ -550,22 +550,7 @@ export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
       'Client(s): {{buyer_names}}',
       'Date:      {{today}}',
       '',
-      '1. THE PROPERTY',
-      '',
-      '[[Write a brief paragraph introducing the property at {{property_address}} being purchased by {{buyer_names}} for a {{track}} matter. Mention that this is a report on title and that the client should read it carefully.]]',
-      '',
-      '2. TITLE',
-      '',
-      '[[Write a short paragraph (3-4 sentences) explaining what a report on title covers, that the title has been investigated, and that the client should raise any queries before exchange.]]',
-      '',
-      '3. KEY DATES',
-      '',
-      'Exchange of contracts is targeted for {{exchange_date}}.',
-      'Completion is targeted for {{completion_date}}.',
-      '',
-      '4. NEXT STEPS',
-      '',
-      '[[Write a brief paragraph (2-3 sentences) describing the next steps the client should take, including signing documents, arranging funds, and contacting the firm with any questions.]]',
+      '{{report_body}}',
       '',
       'Prepared by: {{assigned_to}}',
       '{{firm_name}}',
@@ -636,5 +621,29 @@ export const DOC_USAGE: Record<string, { step: string; to: string }> = {
   'Completion statement': { step: 'Completion, after exchange', to: 'Client' },
   'Completion letter': { step: 'Completion, when completion is confirmed', to: 'Client' },
   'Contract pack covering letter': { step: 'Contract, when the pack goes out on a sale', to: "Buyer's solicitor" },
-  'Report on title': { step: 'Title, once title, searches and enquiries are resolved; a conveyancer approves it', to: 'Client' },
+  'Report on title': { step: 'Title, once the title is resolved (interim) or everything is in; a conveyancer approves it, and it goes as this Word document with the report where {{report_body}} is', to: 'Client' },
 };
+
+/**
+ * The approved report on title as a Word document for the client: the firm's own "Report on title"
+ * template (its letterhead and branding) with the report where it says {{report_body}}; a clean
+ * document with the case heading when the firm's template has no such place. The approved words go
+ * in as they are: nothing here writes or rewrites them.
+ */
+export async function renderReportOnTitleDocx(tenantId: string, matterId: string, body: string): Promise<{ bytes: Buffer; fileName: string }> {
+  const user = { tenantId, userId: '' } as SessionUser;
+  const { vars, matterRef } = await loadMatterVars(user, matterId);
+  const fileName = `Report on title - ${matterRef}.docx`;
+  const tpl = await queryOne<{ file_content: Buffer }>(`select file_content from doc_template where tenant_id = $1 and name = 'Report on title' order by created_at limit 1`, [tenantId]).catch(() => null);
+  if (tpl?.file_content) {
+    const xml = new PizZip(Buffer.from(tpl.file_content)).file('word/document.xml')?.asText() ?? '';
+    // docxtemplater may have split the tag across runs: look at the text alone.
+    if (/\{\{\s*report_body\s*\}\}/.test(xml.replace(/<[^>]+>/g, ''))) {
+      const doc = new Docxtemplater(new PizZip(Buffer.from(tpl.file_content)), { delimiters: { start: '{{', end: '}}' }, paragraphLoop: true, linebreaks: true, nullGetter: () => '' });
+      doc.render({ ...vars, report_body: body.replace(/\r\n/g, '\n').trim() });
+      return { bytes: Buffer.from(doc.getZip().generate({ type: 'nodebuffer' })), fileName };
+    }
+  }
+  const heading = [vars.firm_name, '', 'REPORT ON TITLE', '', `Case: ${vars.matter_ref}`, `Property: ${vars.property_address}`, `Client(s): ${vars.buyer_names}`, `Date: ${vars.today}`, ''].filter((l, i, all) => l || all[i - 1]);
+  return { bytes: createMinimalDocx([...heading, ...body.replace(/\r\n/g, '\n').trim().split('\n')]), fileName };
+}

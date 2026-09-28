@@ -58,12 +58,17 @@ function withFooter(body: string, info: MatterContactInfo): string {
   return `${body.trimEnd()}\n\n${f}`;
 }
 
+/** A file sent with an email (the report on title as a Word document). */
+export interface MailAttachment { name: string; bytes: Buffer; contentType: string }
+
 export interface CommsDeps {
+  /** The approved report on title as the firm's Word document (their Doc Packs template), and kept on the case. */
+  renderReport?(tenantId: string, matterId: string, body: string): Promise<{ bytes: Buffer; fileName: string }>;
   contactInfo(tenantId: string, matterId: string): Promise<MatterContactInfo>;
   whatsapp: { sendText(to: string, body: string): Promise<{ messageId: string | null }> } | null;
-  email: { send(input: { to: string; subject: string; text: string; fromUserId?: string | null }): Promise<{ messageId: string | null }> } | null;
+  email: { send(input: { to: string; subject: string; text: string; fromUserId?: string | null; attachments?: MailAttachment[] }): Promise<{ messageId: string | null }> } | null;
   /** Fee-earner mailbox: send now, or create a draft (returns the draft/message id). */
-  mailbox: { send(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }>; draft(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }> } | null;
+  mailbox: { send(userId: string, to: string, subject: string, bodyHtml: string, attachments?: MailAttachment[]): Promise<{ messageId: string | null }>; draft(userId: string, to: string, subject: string, bodyHtml: string): Promise<{ messageId: string | null }> } | null;
   log(input: { tenantId: string; matterId: string | null; direction: 'OUT' | 'IN'; channel: string; address: string | null; template: string | null; subject?: string | null; body: string; providerRef: string | null; status: string; guard?: unknown }): Promise<void>;
   /** Put something in front of a person (a task + notification on the matter). */
   routeToHuman(input: { tenantId: string; matterId: string | null; title: string; detail: string; fromAddress: string }): Promise<void>;
@@ -205,10 +210,15 @@ export class ProductionClientComms implements ClientComms {
     if (!content) throw new Error('Report draft has no content to send.');
     if (!info.clientEmail) throw new Error('No client email address on the matter.');
     const subject = `Report on title — ${info.propertyAddress} (${info.matterRef})`;
-    const body = `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title below. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${content}\n\n${info.firmName}`;
+    // The report goes as the firm's Word document (their letterhead, from Doc Packs); the email is the covering note.
+    const doc = this.deps.renderReport ? await this.deps.renderReport(input.tenantId, input.matterId, content) : null;
+    const attachments: MailAttachment[] = doc ? [{ name: doc.fileName, bytes: doc.bytes, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }] : [];
+    const body = doc
+      ? `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title attached. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${info.firmName}`
+      : `Hello ${info.clientFirstName ?? 'there'},\n\nPlease find your report on title below. Read it carefully and let ${info.feeEarnerName ?? 'us'} know if you have any questions before we exchange contracts.\n\n${content}\n\n${info.firmName}`;
     let r: { messageId: string | null };
-    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info));
-    else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId });
+    if (this.deps.mailbox && info.feeEarnerUserId) r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info), attachments);
+    else if (this.deps.email) r = await this.deps.email.send({ to: info.clientEmail, subject, text: emailText(body, info), fromUserId: info.feeEarnerUserId, attachments });
     else throw new Error('No email sender configured.');
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template: 'report_on_title', subject, body: subject, providerRef: r.messageId, status: 'SENT' });
     return { channel: 'email', messageId: r.messageId, address: info.clientEmail };

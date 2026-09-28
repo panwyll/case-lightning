@@ -74,25 +74,44 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
   };
 }
 
+/** A Word document we produced (the report on title as sent), filed on the case and kept in storage. */
+async function fileGeneratedDocx(tenantId: string, matterId: string, fileName: string, bytes: Buffer): Promise<void> {
+  const { putBlob } = await import('../blob-store');
+  const crypto = await import('node:crypto');
+  const mime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const row = await queryOne<{ id: string }>(
+    `insert into document (tenant_id, matter_id, source_type, storage_path, file_name, mime_type, size_bytes, hash_sha256, doc_type) values ($1,$2,'GENERATED',$3,$4,$5,$6,$7,'GENERATED_DOCUMENT') returning id`,
+    [tenantId, matterId, `generated://report-on-title/${matterId}`, fileName, mime, bytes.length, crypto.createHash('sha256').update(bytes).digest('hex')]
+  );
+  if (row) await putBlob(tenantId, row.id, bytes, { mime });
+}
+
 export function productionCommsDeps(): CommsDeps {
   const wa = whatsappClient();
   const resend = config.resendApiKey && config.resendFromEmail ? new Resend(config.resendApiKey) : null;
   const graphOk = missingFor('graph').length === 0;
   return {
     contactInfo,
+    renderReport: async (tenantId, matterId, body) => {
+      const { renderReportOnTitleDocx } = await import('../doc-templates');
+      const out = await renderReportOnTitleDocx(tenantId, matterId, body);
+      // Kept on the case: the document as the client received it.
+      await fileGeneratedDocx(tenantId, matterId, out.fileName, out.bytes).catch(() => {});
+      return out;
+    },
     whatsapp: wa ? { sendText: (to, body) => wa.sendText(to, body) } : null,
     email: resend
       ? {
-          send: async ({ to, subject, text }) => {
-            const r = await resend.emails.send({ from: config.resendFromEmail!, to, subject, text });
+          send: async ({ to, subject, text, attachments }) => {
+            const r = await resend.emails.send({ from: config.resendFromEmail!, to, subject, text, ...(attachments?.length ? { attachments: attachments.map((a) => ({ filename: a.name, content: a.bytes })) } : {}) });
             return { messageId: r.data?.id ?? null };
           },
         }
       : null,
     mailbox: graphOk
       ? {
-          send: async (userId, to, subject, bodyHtml) => {
-            const r = await sendMailTracked(userId, to, subject, bodyHtml);
+          send: async (userId, to, subject, bodyHtml, attachments) => {
+            const r = await sendMailTracked(userId, to, subject, bodyHtml, attachments);
             return { messageId: r.internetMessageId };
           },
           draft: async (userId, to, subject, bodyHtml) => {
