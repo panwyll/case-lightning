@@ -17,7 +17,7 @@ export function ProposalMessage({ msg }: { msg: ProposalPreview }) {
     return (
       <div className="pm" aria-label="What would be done">
         <div className="h">{msg.title}</div>
-        {msg.lines.map((l, i) => <p key={i}>{l}</p>)}
+        {msg.lines.map((l, i) => <pre key={i} className="b">{l}</pre>)}
       </div>
     );
   }

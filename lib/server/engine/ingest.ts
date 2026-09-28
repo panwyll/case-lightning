@@ -110,9 +110,15 @@ export interface IngestReport {
 }
 
 /** Classify + route + run. Best-effort at the call site; throws only on programmer error. */
-export async function ingestDocument(svc: EngineService, ports: EnginePorts, tenantId: string, matterId: string, doc: DocumentRef): Promise<IngestReport> {
+export async function ingestDocument(svc: EngineService, ports: EnginePorts, tenantId: string, matterId: string, doc: DocumentRef, known?: DocumentClassification | null): Promise<IngestReport> {
   const state = await svc.getState(tenantId, matterId);
   if (!state.enrolled) return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: 'matter not enrolled in the engine' }, result: null };
+  // Read again: what the document is is already known, so the classify call is not paid for twice.
+  if (known) {
+    const action = routeClassification(state, known);
+    const result = await runAction(svc, tenantId, matterId, doc.id, action);
+    return { documentId: doc.id, classification: known, action, result };
+  }
   if (!ports.classifier) return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: 'no document classifier configured — use the /ingest route with an explicit role' }, result: null };
 
   let classification: DocumentClassification;

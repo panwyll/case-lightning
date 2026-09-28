@@ -103,11 +103,18 @@ export function surveyEnquiries(points: SurveyLegalIssue[]): string | null {
   if (!points.length) return null;
   return [`Additional enquiries arising from our client's survey:`, ...points.map((p, i) => `${i + 1}. ${clean(p.text)}. ${ASK[p.category]}`)].join('\n');
 }
+/** The gist of a surveyor's sentence: its first clause, unquoted, at most a line. */
+const brief = (t: string) => {
+  const s = clean(t).replace(/^["“']+|["”']+$/g, '').replace(/["“”]/g, '');
+  const first = s.split(/(?<=[.;])\s|\s(?:and|which|as|so that)\s/)[0] ?? s;
+  const cut = first.length > 110 ? `${first.slice(0, 107).replace(/\s+\S*$/, '')}…` : first;
+  return cut.replace(/^./, (c) => c.toLowerCase());
+};
 /** One request for access, naming each specialist and what they are to look at. */
 export function accessEnquiry(groups: Array<{ specialist: string; items: Array<{ text: string }> }>, note?: string | null): string {
   return [
     `Our client wishes to have the following inspections carried out before exchange, as recommended by their surveyor. Please confirm your client will permit access, on what dates, and on what conditions (including whether any lifting of floor coverings or minor opening-up is acceptable and who makes good):`,
-    ...groups.map((g, i) => `${i + 1}. ${g.specialist}: ${g.items.slice(0, 3).map((x) => clean(x.text)).join('; ')}${g.items.length > 3 ? `; and ${g.items.length - 3} related point${g.items.length - 3 === 1 ? '' : 's'}` : ''}.`),
+    ...groups.map((g, i) => `${i + 1}. ${g.specialist}${g.items.length ? `: ${brief(g.items[0].text)}` : ''}${g.items.length > 1 ? ` (and ${g.items.length - 1} related point${g.items.length - 1 === 1 ? '' : 's'} in the report)` : ''}.`),
     ...(note ? [`Our client adds: ${note}`] : []),
   ].join('\n');
 }

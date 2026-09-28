@@ -27,7 +27,7 @@ import { z } from 'zod/v4';
 import type { Citation, DecisionKind, Flag, MatterState, NoteKind, NoteSender } from './types';
 import type { DecisionSummariser, DocumentRef, NoteExtractor, ProofOfFundsSummariser, ReportDrafter } from './ports';
 import { FUND_SOURCE_LABEL, gbp, type ProofOfFundsFacts, type TransactionReview } from './proof-of-funds';
-import type { EngineDocumentInput, StructuredLlm } from './llm';
+import { leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
 import type { DocumentBytesLoader } from './extraction';
 import { OPTIONS_FOR, optionLabel } from './rules';
 import { TemplateReportDrafter } from './mocks';
@@ -110,7 +110,8 @@ export class ClaudeSummariser implements DecisionSummariser {
   }
 
   async summarise(input: { kind: DecisionKind; subjectLabel: string; flags: Flag[]; source: DocumentRef; state: MatterState }): Promise<SummaryOverride | null> {
-    const source = await this.loader.load(input.source).catch(() => null);
+    const loaded = await this.loader.load(input.source).catch(() => null);
+    const source = loaded ? await leanDocument(loaded) : null;
     const documents: EngineDocumentInput[] = source ? [{ ...source, title: input.source.fileName ?? input.source.id }] : [];
     const flagText = input.flags.map((f, i) => `${i + 1}. code=${f.code} severity=${f.severity} — ${f.description}${f.locator ? ` [p.${f.locator.page ?? '?'}${f.locator.section ? ` ${f.locator.section}` : ''}${f.locator.quote ? ` "${f.locator.quote}"` : ''}]` : ''}`).join('\n');
     const facts = JSON.stringify(factsFor(input.kind, input.state));
@@ -222,7 +223,8 @@ export class ClaudeProofOfFundsSummariser implements ProofOfFundsSummariser {
   }
 
   async summarise(input: { facts: ProofOfFundsFacts; flags: Flag[]; source: DocumentRef; state: MatterState; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> }): Promise<SummaryOverride | null> {
-    const source = await this.loader.load(input.source).catch(() => null);
+    const loaded = await this.loader.load(input.source).catch(() => null);
+    const source = loaded ? await leanDocument(loaded) : null;
     const documents: EngineDocumentInput[] = source ? [{ ...source, title: input.source.fileName ?? 'Proof of funds declaration' }] : [];
     const flagText = input.flags.map((f, i) => `${i + 1}. code=${f.code} severity=${f.severity} — ${f.description}${f.locator?.quote ? ` [line: ${f.locator.quote}]` : ''}`).join('\n') || '(none)';
     const reviewJson = JSON.stringify({ statements: input.review?.statements ?? [], draftedQueries: input.review?.queries.map((q) => q.question) ?? [], answers: input.answers ?? [] });

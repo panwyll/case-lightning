@@ -594,7 +594,15 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     if (s.abandoned) break;
     const side = profile(s).side;
     const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
-    if (staleChase) {
+    // Two pending proposals that would send the same thing (the same acknowledgement to the same party, the
+    // same enquiry): the newer is taken back, so a person never sees, or approves, a duplicate.
+    const pending = Object.values(s.proposals).filter((p) => p.status === 'pending').sort((a, b) => a.proposedAt.localeCompare(b.proposedAt));
+    const sameAs = (p: (typeof pending)[number]) => p.action === 'acknowledgement' ? `ack:${String(p.detail.recipientRole)}:${String(p.detail.what)}` : p.action === 'enquiry_draft' ? `enq:${String(p.detail.subject).slice(0, 400)}` : p.action === 'client_update' ? `cu:${String(p.detail.template)}:${JSON.stringify(p.detail.context ?? {}).slice(0, 400)}` : null;
+    const seenKeys = new Set<string>();
+    const duplicate = pending.find((p) => { const k = sameAs(p); if (!k) return false; if (seenKeys.has(k)) return true; seenKeys.add(k); return false; });
+    if (duplicate && !staleChase) {
+      ev = { type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: duplicate.eventId, action: duplicate.action, detail: duplicate.detail, note: 'Withdrawn by the system: the same thing is already proposed.' } };
+    } else if (staleChase) {
       // The thing we were going to chase for has arrived: the proposal is withdrawn, not left for a person to reject.
       ev = { type: 'action_rejected', actor: SYSTEM, payload: { proposalEventId: staleChase.eventId, action: staleChase.action, detail: staleChase.detail, note: 'Withdrawn by the engine: what was being chased has arrived.' } };
     } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.manualHandling.required && !s.abandoned) {

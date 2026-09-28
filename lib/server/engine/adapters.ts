@@ -93,7 +93,7 @@ export function documentBytesLoader(): DocumentBytesLoader {
 function chooseExtractor(): { extractor: EnginePorts['extractor']; classifier: DocumentClassifier | null } {
   const useClaude = config.engineExtractor === 'claude' || (config.engineExtractor === 'auto' && !!config.anthropicApiKey);
   if (!useClaude) return { extractor: new FixtureExtractor(), classifier: null };
-  const ex = new ClaudeExtractor(claudeLlm(), documentBytesLoader(), new PgDocumentFactsWriter(), { model: config.engineExtractModel, effort: 'high' });
+  const ex = new ClaudeExtractor(claudeLlm(), documentBytesLoader(), new PgDocumentFactsWriter(), { model: config.engineExtractModel, classifyModel: config.engineClassifyModel, criticalModel: config.engineCriticalModel });
   return { extractor: ex, classifier: new ClaudeClassifier(ex) };
 }
 
@@ -106,9 +106,9 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
   if (!useClaude) return { summariser: new TemplateSummariser(), reportDrafter: new TemplateReportDrafter(), pofSummariser: null, noteExtractor: floor };
   const llm = claudeLlm();
   return {
-    summariser: new ClaudeSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
-    reportDrafter: new ClaudeReportDrafter(llm, { model: config.engineDraftModel, effort: 'high', log }),
-    pofSummariser: new ClaudeProofOfFundsSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'high', log }),
+    summariser: new ClaudeSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'medium', log }),
+    reportDrafter: new ClaudeReportDrafter(llm, { model: config.engineCriticalModel, effort: 'high', log }),
+    pofSummariser: new ClaudeProofOfFundsSummariser(llm, documentBytesLoader(), { model: config.engineDraftModel, effort: 'medium', log }),
     noteExtractor: new ClaudeNoteReader(llm, { model: config.engineDraftModel, effort: 'medium', log, fallback: floor }),
   };
 }

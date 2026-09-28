@@ -70,9 +70,14 @@ export const config = {
   // it runs on the most capable tier; summaries/report drafts likewise (they are
   // reviewed by a person but the citations must be exact). Client Q&A is tightly
   // constrained to FAQ rephrasing so it runs at low effort on the same model.
-  engineExtractModel: env('ENGINE_EXTRACT_MODEL') ?? 'claude-opus-5',
-  engineDraftModel: env('ENGINE_DRAFT_MODEL') ?? 'claude-opus-5',
-  engineQaModel: env('ENGINE_QA_MODEL') ?? 'claude-opus-5',
+  /** Reading documents (surveys, searches, replies, statements, forms). */
+  engineExtractModel: env('ENGINE_EXTRACT_MODEL') ?? 'claude-sonnet-5',
+  /** Title, contract and lease, and the report on title: where a misread is expensive. */
+  engineCriticalModel: env('ENGINE_CRITICAL_MODEL') ?? 'claude-opus-5-5',
+  /** "What is this document?": the first pages' text is enough. */
+  engineClassifyModel: env('ENGINE_CLASSIFY_MODEL') ?? 'claude-haiku-4-5',
+  engineDraftModel: env('ENGINE_DRAFT_MODEL') ?? 'claude-sonnet-5',
+  engineQaModel: env('ENGINE_QA_MODEL') ?? 'claude-sonnet-5',
   // Which port implementations the engine wires (adapters.ts). Each is 'mock' until
   // its credentials are present; set explicitly to force one way or the other.
   engineExtractor: (env('ENGINE_EXTRACTOR') ?? 'auto') as 'auto' | 'claude' | 'fixture',

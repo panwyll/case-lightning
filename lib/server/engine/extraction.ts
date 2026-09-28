@@ -25,7 +25,10 @@ import { z } from 'zod/v4';
 import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
 import { type PropertyFormsFacts, SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
-import { ENGINE_SYSTEM_GUARD, type EngineDocumentInput, type StructuredLlm } from './llm';
+import { ENGINE_SYSTEM_GUARD, leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
+
+/** Documents where a misread costs the client: read as the PDF itself, on the strongest model. */
+const CRITICAL_ROLES = new Set(['title', 'contract', 'lease']);
 import { MIN_EXTRACTION_CONFIDENCE } from './rules';
 import { PageLedgerSchema, buildReview, pageTextsWithOcr, type DocumentReview, type PageTexts } from './review';
 import type { StatementFacts, PayslipFacts, EvidenceKind } from './proof-of-funds';
@@ -605,7 +608,7 @@ export class ClaudeExtractor implements DocumentExtractor {
     private llm: StructuredLlm,
     private loader: DocumentBytesLoader,
     private writer: DocumentFactsWriter | null,
-    private opts: { model: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' } = { model: 'claude-opus-5', effort: 'high' }
+    private opts: { model: string; effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'; classifyModel?: string; criticalModel?: string } = { model: 'claude-sonnet-5' }
   ) {
     this.name = `claude-extractor:${opts.model}`;
   }
@@ -624,15 +627,23 @@ export class ClaudeExtractor implements DocumentExtractor {
   }
 
   private async run<S extends z.ZodType>(doc: DocumentRef, role: string, schema: S, instructions: string, prompt: string, feature: 'DOC_CLASSIFY' | 'DOC_EXTRACT', tune: { maxTokens?: number; effort?: 'low' | 'medium' | 'high' } = {}) {
-    const { input, contentHash } = await this.input(doc);
+    const { input: full, contentHash } = await this.input(doc);
+    // What it costs to read depends on what is being read: the opening pages to say what a document is;
+    // the whole text for most; the PDF itself, on the strongest model, where a misread is expensive.
+    const base = role.split(':')[0];
+    const critical = CRITICAL_ROLES.has(base);
+    const classify = base === 'classify';
+    const input = await leanDocument(full, { keepPdf: critical, firstPages: classify ? 3 : undefined });
+    const model = classify ? this.opts.classifyModel ?? this.opts.model : critical ? this.opts.criticalModel ?? this.opts.model : this.opts.model;
+    const effort = tune.effort ?? (classify ? 'low' : critical ? 'high' : 'medium');
     const res = await this.llm.call<z.infer<S>>({
       schema: schema as unknown as z.ZodType<z.infer<S>>,
       instructions,
       documents: [{ ...input, title: doc.fileName ?? doc.id }],
       prompt,
-      model: this.opts.model,
-      effort: tune.effort ?? this.opts.effort ?? 'high',
-      maxTokens: tune.maxTokens,
+      model,
+      effort,
+      maxTokens: tune.maxTokens ?? (classify ? 2_000 : undefined),
       meter: { tenantId: doc.tenantId, matterId: doc.matterId, feature },
     });
     return { out: res.output, contentHash, model: res.model, promptHash: res.promptHash };
