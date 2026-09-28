@@ -408,6 +408,8 @@ export type WorkBucket = 'do' | 'waiting' | 'escalate';
 export interface WorkItem {
   /** Set on the Tasks list: an assistant may do this one (else it is for a conveyancer). */
   assistantCan?: boolean;
+  /** A locked file's task: the document its password opens. */
+  documentId?: string | null;
   id: string;
   bucket: WorkBucket;
   matterId: string;

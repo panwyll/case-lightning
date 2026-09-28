@@ -1112,7 +1112,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
       <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
-      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} /></div>
+      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>
 
       {openWaits.length > 0 && (
         <>

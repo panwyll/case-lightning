@@ -26,7 +26,7 @@ export function requireDecider(user: SessionUser): void {
  * trying a failed send again. Anything that is legal judgement, advice, costs the firm a fee,
  * or moves money stays with a conveyancer. `kind` is the work item's (decisionTask) kind.
  */
-export const ASSISTANT_TASK_KINDS = new Set(['proposal:chase', 'proposal:acknowledgement', 'proposal:client_update', 'proposal:signing_pack', 'proposal:proof_of_funds_request', 'issue:send_failed:retry']);
+export const ASSISTANT_TASK_KINDS = new Set(['proposal:chase', 'proposal:acknowledgement', 'proposal:client_update', 'proposal:signing_pack', 'proposal:proof_of_funds_request', 'issue:send_failed:retry', 'issue:file_locked']);
 export const assistantMay = (kind: string | null | undefined): boolean => !!kind && ASSISTANT_TASK_KINDS.has(kind);
 
 /** A decision this person may take: a conveyancer or admin any; an assistant only the kinds above. */

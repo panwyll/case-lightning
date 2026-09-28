@@ -32,7 +32,7 @@ export async function recordLockedDocument(tenantId: string, matterId: string, d
     if (!s.enrolled || s.completion.confirmedAt) return;
     const title = `Password-protected file: ${fileName}`;
     if (Object.values(s.issues).some((i) => i.status === 'open' && i.title === title)) return;
-    await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title, detail: `${fileName} arrived password-protected, so nothing in it can be read yet. The password usually comes separately (an email, a text, a phone call). Enter it on the Documents tab against this file; if a later email to this case contains it, it is tried automatically. [doc:${documentId}]`, gate: 'none', severity: 'warning', documentId });
+    await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title, detail: `${fileName} arrived password-protected, so nothing in it can be read yet. The password usually comes separately (an email, a text, a phone call). Enter it with Enter Password on this task (or against the file on the Documents tab); a password in a later email to this case is tried automatically. [doc:${documentId}]`, gate: 'none', severity: 'warning', documentId });
   } catch { /* the file is still marked; the tab shows it */ }
 }
 

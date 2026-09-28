@@ -73,6 +73,8 @@ export interface WorkItem {
   chaseDue: boolean;
   /** The kind of thing it is (a decision kind, `proposal:<what it would send>`, or issue / wait). */
   kind?: string;
+  /** A locked file's task: the document its password opens. */
+  documentId?: string | null;
   /** The chip on the list, in words. */
   chip?: string;
   /** Where to go: the decision, the issue, the wait or just the case. */
@@ -291,7 +293,9 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       ...base,
       id: `do:issue:${i.id}`,
       bucket: 'do',
-      kind: i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '') ? 'issue:send_failed:retry' : 'issue',
+      kind: i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '') ? 'issue:send_failed:retry' : i.kind === 'file_locked' && /\[doc:[0-9a-f-]{36}\]/.test(i.detail ?? '') ? 'issue:file_locked' : 'issue',
+      // A locked file is opened from the task itself: the password goes against this document.
+      documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       chip: i.kind === 'send_failed' ? 'Send failed' : i.kind === 'file_locked' ? 'Locked file' : 'Issue',
       what: spec.actions[0] ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',

@@ -50,7 +50,7 @@ const CSS = `
 .is-dlg .f{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 `;
 
-export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<void> }) {
+export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<void>; onChanged?: () => void }) {
   const [cat, setCat] = useState<IssueCatalogue | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [unfold, setUnfold] = useState<Set<string>>(new Set());
@@ -63,6 +63,14 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
   const [raising, setRaising] = useState(false);
   const [draft, setDraft] = useState({ kind: 'survey_defect', title: '', detail: '', gate: 'default' as 'default' | 'exchange' | 'completion' | 'none' });
   const [showClosed, setShowClosed] = useState(false);
+  const [pwFor, setPwFor] = useState<string | null>(null);
+  const [pw, setPw] = useState('');
+  const [pwErr, setPwErr] = useState<string | null>(null);
+  const unlock = async (docId: string) => {
+    setPwErr(null);
+    try { await api(`/documents/${docId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw, from: 'task' }) }); setPwFor(null); setPw(''); onChanged?.(); }
+    catch (e: unknown) { setPwErr(e instanceof Error ? e.message : 'That password does not open the file.'); }
+  };
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => { api<{ issues: IssueCatalogue }>('/engine/spec').then((s) => setCat(s.issues)).catch(() => setCat(null)); }, [api]);
@@ -85,6 +93,8 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
   const done = !!state.completion.confirmedAt || !!state.abandoned;
 
   const ask = (q: string, d = '') => window.prompt(q, d);
+  /** A locked file's issue carries the document its password opens. */
+  const lockedDoc = (i: IssueRow): string | null => (i.kind === 'file_locked' && i.status === 'open' ? /\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null : null);
   const act = (body: Record<string, unknown>) => { setMenu(null); void cmd(body); };
   const del = (i: IssueRow) => { const r = ask('Delete this issue? It is taken off the case; the Timeline keeps the record. Why (optional)?'); if (r !== null) act({ type: 'withdraw_issue', issueId: i.id, reason: r.trim() || 'Deleted: not an issue.' }); };
 
@@ -119,7 +129,8 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
         {!done && (
           <div className="is-acts" ref={menu === i.id ? menuRef : undefined}>
             {!ctx && i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '') && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => act({ type: 'retry_issue', issueId: i.id })}>Try Again</button>}
-            {!ctx && !(i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '')) && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => startResolve(i)}>Resolve</button>}
+            {!ctx && lockedDoc(i) && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => { setPwFor(i.id); setPw(''); setPwErr(null); }}>Enter Password</button>}
+            {!ctx && !lockedDoc(i) && !(i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '')) && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => startResolve(i)}>Resolve</button>}
             {ctx && <button className="ep-btn" style={{ margin: 0 }} disabled={busy} onClick={() => act({ type: 'resolve_issue', issueId: i.id, resolution: k?.resolutions[0] ?? 'other', note: 'No longer the case.' })}>Clear</button>}
             <button className="ep-btn" style={{ margin: 0 }} disabled={busy} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}>More</button>
             {menu === i.id && (
@@ -135,6 +146,16 @@ export function IssuesPanel({ api, state, busy, cmd }: { api: Api; state: Engine
                 {!ctx && <button role="menuitem" className="bad" onClick={() => { const n = ask('This ends the transaction: the issue is marked fatal and the case abandoned. Say why.'); if (n && window.confirm('Abandon the case? This cannot be undone.')) act({ type: 'mark_issue_fatal', issueId: i.id, reason: n }); }}>Abandon The Case</button>}
               </div>
             )}
+          </div>
+        )}
+        {pwFor === i.id && lockedDoc(i) && (
+          <div className="is-res">
+            <div className="r">
+              <input className="ep-input" type="password" autoFocus placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && pw) void unlock(lockedDoc(i)!); }} style={{ flex: 1, minWidth: 200 }} autoComplete="off" />
+              <button className="ep-btn" style={{ margin: 0 }} onClick={() => setPwFor(null)}>Cancel</button>
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={!pw} onClick={() => void unlock(lockedDoc(i)!)}>Unlock</button>
+            </div>
+            {pwErr && <div className="fx" style={{ color: '#b91c1c' }}>{pwErr}</div>}
           </div>
         )}
         {resolving === i.id && (

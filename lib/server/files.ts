@@ -19,6 +19,7 @@ import { stripHtml, htmlToText, newWordsOf } from './text';
 import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { isLockedPdf, passwordCandidates } from './pdf-lock';
+import { expandZip, isZip, type ZipResult } from './zip-expand';
 import { recordLockedDocument, tryPasswordsFromMessage } from './document-unlock';
 import { emitMatterEvent } from './events';
 import { ingestFiledDocument } from './engine/ingest-hook';
@@ -207,7 +208,17 @@ export async function summarizeAttachments(
   matterId: string,
   messageId: string
 ): Promise<{ documents: AttachmentDoc[]; context: string }> {
-  const attachments = await listMessageAttachments(user.userId, messageId).catch(() => [] as any[]);
+  const listed = await listMessageAttachments(user.userId, messageId).catch(() => [] as any[]);
+  // What is inside a zip is what was sent: the drafter sees those files, not the archive.
+  const attachments: any[] = [];
+  for (const a of listed) {
+    const buf = a.contentBytes ? Buffer.from(a.contentBytes, 'base64') : null;
+    if (buf && isZip(a.name, a.contentType, buf)) {
+      const z = await expandZip(buf).catch(() => null);
+      if (z && !z.error) { for (const e of z.entries) attachments.push({ name: e.name, contentType: e.contentType, contentBytes: e.bytes.toString('base64'), isInline: false }); continue; }
+    }
+    attachments.push(a);
+  }
   const reviewable = attachments
     .filter((a: any) => a.contentBytes && a.name && !a.isInline)
     .filter((a: any) => {
@@ -473,13 +484,26 @@ export function describeFiling(
     else if (f.outcome === 'locked') lines.push(`${f.name}: password-protected; password requested (task raised).`);
     else if (f.outcome === 'duplicate') lines.push(`${f.name}: already on file${as(f.as) ? ` (${as(f.as)})` : ''}; not re-processed${f.reason ? ` (${f.reason})` : ''}.`);
     else if (f.outcome === 'skipped') lines.push(`${f.name}: not filed: ${f.reason ?? 'reason not recorded'}.`);
+    else if (f.outcome === 'expanded') lines.push(`${f.name}: archive opened; ${f.reason ?? 'contents extracted'}.`);
     else lines.push(`${f.name}: filed; not processed${f.reason ? `: ${f.reason}` : ''}.`);
   }
   return [...lines, ...problems];
 }
 
 /** What became of each attachment: filed and read into the case, filed but locked, or already there. */
-export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null }
+/** An archive that could not be opened: a task asks for the files another way. */
+async function raiseArchiveTask(tenantId: string, matterId: string, fileName: string, why: string): Promise<void> {
+  const { engine } = await import('./engine/adapters');
+  const { SYSTEM } = await import('./engine/types');
+  const svc = engine();
+  const s = await svc.getState(tenantId, matterId);
+  if (!s.enrolled || s.completion.confirmedAt) return;
+  const title = `Archive could not be opened: ${fileName}`;
+  if (Object.values(s.issues).some((i) => i.status === 'open' && i.title === title)) return;
+  await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'file_locked', title, detail: `${fileName}: ${why}.`, gate: 'none' });
+}
+
+export interface FiledAttachment { name: string; outcome: 'read' | 'locked' | 'filed' | 'duplicate' | 'skipped' | 'expanded'; as: string | null; reason: string | null }
 
 export async function fileEmailAttachments(
   user: { userId: string; tenantId: string },
@@ -514,6 +538,17 @@ export async function fileEmailAttachments(
     if (kind === '#microsoft.graph.itemAttachment') { files.push({ name: att.name ?? 'an attached email', outcome: 'skipped', as: null, reason: 'it is an email attached inside the email; open it in Outlook and file its attachments from there' }); continue; }
     if (!att.contentBytes || !att.name) { files.push({ name: att.name ?? 'an attachment', outcome: 'skipped', as: null, reason: att.fetchError ? `it could not be downloaded: ${att.fetchError}` : 'its contents could not be downloaded' }); continue; }
     const buffer = Buffer.from(att.contentBytes, 'base64');
+    // A zip is opened: each file inside is filed and read in its own right (it joins this loop).
+    if (!att.fromArchive && isZip(att.name, att.contentType, buffer)) {
+      const z = await expandZip(buffer).catch((e: Error) => ({ entries: [], skipped: [], error: e.message }) as ZipResult);
+      for (const e of z.entries) attachments.push({ '@odata.type': '#microsoft.graph.fileAttachment', name: e.name, contentType: e.contentType, size: e.bytes.length, contentBytes: e.bytes.toString('base64'), isInline: false, fromArchive: att.name });
+      for (const sk of z.skipped) files.push({ name: `${sk.name} (in ${att.name})`, outcome: 'skipped', as: null, reason: sk.reason });
+      if (!z.error) { files.push({ name: att.name, outcome: 'expanded', as: null, reason: `${z.entries.length} file${z.entries.length === 1 ? '' : 's'} extracted` }); continue; }
+      // It could not be opened (an encrypted archive): not filed; a task asks for the files another way.
+      files.push({ name: att.name, outcome: 'skipped', as: null, reason: z.error });
+      await raiseArchiveTask(user.tenantId, matterId, att.name, z.error).catch(() => {});
+      continue;
+    }
     // Content-address by SHA-256: dedup on the bytes, not the filename — so a
     // renamed duplicate is skipped, while a changed file sharing a name is treated
     // as genuinely new (the old filename check silently dropped updated files).

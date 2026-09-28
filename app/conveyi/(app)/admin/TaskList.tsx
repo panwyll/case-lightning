@@ -44,6 +44,8 @@ const CSS = `
 .tl-open{padding:0 14px 14px 40px}
 .tl-open .dp.inline{border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .tl-for{font-size:11.5px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:4px 10px;white-space:nowrap}
+.tl-pw{display:inline-flex;gap:6px;align-items:center}
+.tl-pw input{border:1px solid #cbd5e1;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;width:150px}
 .tl-clear{display:flex;align-items:center;gap:8px;padding:14px;font-size:13px;color:#166534;background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px}
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 `;
@@ -72,6 +74,13 @@ export default function TaskList({ who }: { who: string }) {
     try { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'retry_issue', issueId }) }); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
     catch (e: unknown) { setQuickErr({ id: issueId, text: e instanceof Error ? e.message : 'Could not send it again.' }); }
     finally { setRetrying(null); }
+  };
+  const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [pwd, setPwd] = useState('');
+  /** A locked file opened from its task: the right password unlocks it, closes the task and reads the file. */
+  const unlock = async (i: WorkItem) => {
+    try { await api(`/documents/${i.documentId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pwd, from: 'task' }) }); setUnlockingId(null); setPwd(''); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
+    catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); }
   };
   const quickApprove = async (key: string, eventId: string) => {
     setApproving(eventId);
@@ -155,6 +164,9 @@ export default function TaskList({ who }: { who: string }) {
                   {isDecision
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
+                      {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
+                        ? <span className="tl-pw"><input type="password" autoFocus placeholder="Password" value={pwd} onChange={(e) => setPwd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && pwd) void unlock(i); if (e.key === 'Escape') setUnlockingId(null); }} autoComplete="off" /><button type="button" className="tl-btn go" disabled={!pwd} onClick={() => void unlock(i)}>Unlock</button></span>
+                        : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
                       {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
                       <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=tasks' : ''}`}>{i.ref?.type === 'issue' ? 'Open issue' : 'Open case'} <ChevronRight size={14} /></a>
                     </>}
