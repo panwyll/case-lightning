@@ -19,6 +19,7 @@ import { getPolicy } from '../policy';
 import { PgLenderDirectory } from './lender-directory';
 import { sandboxGuard } from './sandbox';
 import { previewProposal } from '../comms/preview';
+import { findFiles, fileBytes } from './file-finder';
 import { billOnIdResolved } from './billing-reaction';
 import crypto from 'node:crypto';
 import { query, queryOne } from '../db';
@@ -199,6 +200,7 @@ export function productionPorts(): EnginePorts {
       asAutomation: runAsAutomation,
       outsideAutomation: runOutsideAutomation,
       messagePreview: previewProposal,
+      files: { find: findFiles, bytes: fileBytes },
       log,
     });
   }

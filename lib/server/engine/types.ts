@@ -524,6 +524,8 @@ export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 
 /** The command a proposal would run. Deliberately a small, safe set — see notes.ts. */
 export type NoteCommand =
+  /** The client asks for a copy of a document ("I can't find my TA10"): found on the case and sent back to them. */
+  | { type: 'send_file_copy'; what: string }
   | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string; /** further_investigation: which specialists, by name ("damp", "structural engineer"); absent = all. */ scope?: string[] | null }
   /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
   | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }

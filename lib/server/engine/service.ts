@@ -281,6 +281,9 @@ export class EngineService {
       // A document that goes with it (the completion statement): as a Word document.
       const attachId = (detail as { attachDocumentId?: string }).attachDocumentId;
       let attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = [];
+      // Files from the case as they are (a copy the client asked for).
+      const fileIds = (detail as { attachFileIds?: string[] }).attachFileIds ?? [];
+      if (fileIds.length && this.ports.files) for (const id of fileIds) { const f = await this.ports.files.bytes(tenantId, id).catch(() => null); if (f) attachments.push(f); }
       if (attachId) {
         const doc = await this.ports.documents.get(tenantId, attachId).catch(() => null);
         const text = (doc?.extractedFacts as { content?: string } | null)?.content ?? '';
@@ -1621,6 +1624,17 @@ export class EngineService {
                 const key = `enquiry_draft:client:${p.noteId}:${id}`;
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'client_instruction', key, detail, `ENQUIRY ON THE CLIENT'S INSTRUCTION\n\nTo: the seller's solicitor\nAbout: ${c.about}\n\n${c.text.trim()}`))) {
                   await this.perform(tenantId, matterId, 'enquiry_draft', detail);
+                }
+              } else if (c.type === 'send_file_copy') {
+                // The client cannot find a document: it goes back to them, attached, if it is on the file.
+                const found = this.ports.files ? await this.ports.files.find(tenantId, matterId, c.what) : [];
+                if (!found.length) {
+                  await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title: `The client asked for a copy of ${c.what.trim().slice(0, 60)}: not found on the file`, detail: `Find it and send it to them, or tell them when it will be available. They wrote: "${action.quote ?? c.what}"`, gate: 'none', severity: 'warning' } as never);
+                } else {
+                  const detail = { template: 'file_copy', context: { fileList: found.map((f) => f.fileName).join(', '), what: c.what.trim() }, triggeredByEventId: e.id, attachFileIds: found.map((f) => f.id) };
+                  if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'file_copy', `file_copy:${p.noteId}:${id}`, detail, `CLIENT UPDATE\n\nTo: the client\nWhat: a copy of ${c.what.trim()}\nAttached: ${found.map((f) => f.fileName).join(', ')}`))) {
+                    try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('file copy could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+                  }
                 }
               } else {
                 await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
