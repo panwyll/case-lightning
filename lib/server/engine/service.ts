@@ -1303,6 +1303,16 @@ export class EngineService {
         // Addendum: an enquiry to an INTERNAL counterparty is delivered to the other
         // side's handler as inbound correspondence — the same event pair as an external
         // exchange, with no read of the other matter's state (the wall is in the DB too).
+        // Our enquiries go to the seller's solicitor as they are raised (approved, or raised by a person). Internal counterparties are delivered below.
+        if (e.type === 'enquiry_raised' && (e.payload as { counterpartyType?: string }).counterpartyType !== 'internal' && this.ports.chaser.sendEnquiries) {
+          const p = e.payload as { enquiryId: string; subject: string };
+          try {
+            await this.ports.chaser.sendEnquiries({ tenantId, matterId, enquiryId: p.enquiryId, text: p.subject });
+          } catch (err) {
+            this.ports.log(`enquiry ${p.enquiryId} could not be sent`, err);
+            await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', { enquiryId: p.enquiryId, subject: p.subject }, err);
+          }
+        }
         if (e.type === 'enquiry_raised' && (e.payload as { counterpartyType?: string }).counterpartyType === 'internal' && this.ports.linked) {
           const p = e.payload as { enquiryId: string; subject: string };
           // A person raised the enquiry; delivering it is their act, not a trust-level question.

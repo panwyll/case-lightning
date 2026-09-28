@@ -73,6 +73,7 @@ export const CHASES: Record<string, Template> = {
 
 /** Notices to other parties on the matter: news, not a chase. */
 export const PARTY_NOTICES: Record<string, Template> = {
+  enquiries_to_seller_solicitor: T('enquiries_to_seller_solicitor', 'chase', '{{address}}: enquiries (our ref {{matterRef}})', 'Dear {{solicitorName}},\n\nWe act for the buyer of {{address}}. Please let us have your replies to the following enquiries.\n\n{{enquiries}}\n\nWe look forward to hearing from you.\n\n{{feeEarner}}\n{{firmName}}'),
   confirm_offer_status: T('confirm_offer_status', 'chase', '{{address}} — mortgage offer, our ref {{matterRef}}', 'Dear {{agentName}},\n\nWe act for the buyer of {{address}}. We understand from you that there may be a difficulty with the mortgage offer ("{{quote}}"). Please confirm by return whether the offer stands and, if not, what is required and on what timetable, so that we can advise our client before exchange.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['matterRef', 'address']),
   chase_update_agent: T('chase_update_agent', 'chase', '{{address}} — chased today (our ref {{matterRef}})', 'Dear {{agentName}},\n\nA quick update on {{address}}: we are waiting for {{waitingOn}} to come back to us on {{waitingFor}}. We chased them again today{{nextChaseNote}}.\n\nNothing is needed from you at the moment — we will let you know as soon as we hear.\n\nKind regards,\n{{feeEarner}}\n{{firmName}}', ['address', 'waitingOn', 'waitingFor']),
 };

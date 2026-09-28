@@ -320,3 +320,15 @@ test('in manual handling nothing stops firing, but whatever would have gone out 
   assert.deepEqual(proposed.map((p) => p.subject).sort(), ['CON29', 'LLC1'], 'both searches proposed');
   assert.ok(proposed.every((p) => (p.detail as { manualMode?: boolean }).manualMode), 'marked as manual mode');
 });
+
+test("an enquiry raised goes to the seller's solicitor, not only onto the record", async () => {
+  const h = harness();
+  const { svc, ports } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: [] });
+  await svc.requestIdCheck(TENANT, MATTER, USER);
+  await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  await svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, subject: '1. Please supply the FENSA certificate for the replacement windows.' } as never);
+  const sent = (ports.chaser as unknown as { enquiriesSent: Array<{ text: string }> }).enquiriesSent;
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /FENSA certificate/);
+});

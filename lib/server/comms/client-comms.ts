@@ -316,6 +316,22 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { channel: 'email' as const, messageId: draft.messageId };
   }
 
+  async sendEnquiries(input: { tenantId: string; matterId: string; enquiryId: string; text: string }) {
+    const t = await resolveTemplate(this.deps, input.tenantId, PARTY_NOTICES.enquiries_to_seller_solicitor);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const to = info.contacts.seller_solicitor;
+    if (!to?.email) throw new Error("There is no seller's solicitor email on the case to send the enquiries to.");
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, solicitorName: to.name || 'Colleagues', enquiries: input.text.trim() });
+    if (r.missing.length) throw new Error(`Enquiries template ${t.key} missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
+    let sent: { messageId: string | null };
+    if (this.deps.mailbox && info.feeEarnerUserId) sent = await this.deps.mailbox.send(info.feeEarnerUserId, to.email, r.subject, emailHtml(r.body, info));
+    else if (this.deps.email) sent = await this.deps.email.send({ to: to.email, subject: r.subject, text: emailText(r.body, info), fromUserId: info.feeEarnerUserId });
+    else throw new Error('No email sender configured.');
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to.email, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    return { channel: 'email' as const, messageId: sent.messageId };
+  }
+
   async sendPartyNotice(input: { tenantId: string; matterId: string; recipientRole: 'estate_agent' | 'lender'; template: string; context: Record<string, unknown> }) {
     const baseNotice = PARTY_NOTICES[input.template];
     if (!baseNotice) throw new Error(`Unknown notice template ${input.template}`);

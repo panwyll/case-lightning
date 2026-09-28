@@ -140,6 +140,8 @@ export interface ClientComms {
 /** Component #5, third-party chases — template-based, timer-triggered, never AI-generated per message in v1. */
 export interface ThirdPartyChaser {
   readonly name: string;
+  /** Our enquiries to the seller's solicitor, as raised (approved, or raised by a person): numbered, with our reference. */
+  sendEnquiries?(input: { tenantId: string; matterId: string; enquiryId: string; text: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
   sendChase(input: {
     tenantId: string;
     matterId: string;
