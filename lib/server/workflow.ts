@@ -318,7 +318,7 @@ async function createTemplateTask(
 
 const fillVars = (s: string, vars: Record<string, string>) => s.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) => vars[k] ?? '');
 
-async function matterEmailVars(tenantId: string, matterId: string): Promise<Record<string, string> | null> {
+export async function matterEmailVars(tenantId: string, matterId: string): Promise<Record<string, string> | null> {
   const [m, ten, asg] = await Promise.all([
     queryOne<any>(`select * from matter where id=$1 and tenant_id=$2`, [matterId, tenantId]),
     queryOne<{ name: string }>(`select name from tenant where id=$1`, [tenantId]),

@@ -37,6 +37,11 @@ export async function previewProposal(tenantId: string, matterId: string, action
     const m = await comms.previewStatusUpdate({ tenantId, matterId, template: str('template')!, context: { ...((detail.context as Record<string, unknown>) ?? {}), overview: extra.overview ?? '' } });
     return { kind: 'message', ...m };
   }
+  // A first request (the contract pack, the redemption statement…): the email as it would go.
+  if (action === 'chase' && detail.kind === 'request' && str('template') && str('recipientRole')) {
+    const m = await chaser.previewRequest({ tenantId, matterId, recipientRole: str('recipientRole') as 'seller_solicitor' | 'lender' | 'estate_agent', template: str('template')!, context: (detail.context as Record<string, unknown>) ?? {} });
+    return { kind: 'message', ...m };
+  }
   if (action === 'chase' && str('template') && str('recipientRole')) {
     const m = await chaser.previewChase({ tenantId, matterId, recipientRole: str('recipientRole')!, template: str('template')!, context: (detail.context as Record<string, unknown>) ?? {} });
     return { kind: 'message', ...m };

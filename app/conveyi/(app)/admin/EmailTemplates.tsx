@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Paperclip, Check } from '@/app/shared/icons';
+import { CaseSearch, type CaseHit } from '@/app/shared/engine/CaseSearch';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
   const token = typeof window !== 'undefined' ? window.localStorage.getItem('cl_token') : null;
@@ -28,6 +29,8 @@ const SAMPLE: Record<string, string> = {
   exchange_date: '19 Jul 2026', completion_date: '2 Aug 2026', counterparty_solicitor: 'Croft & Hargreaves', counterparty_agent: 'Hunters',
   lender: 'Santander', stage: 'searches & enquiries', firm_name: 'Your Firm LLP', assigned_to: 'Alex Fee-earner', today: '12 Jul 2026',
 };
+/** "exchanged__sale" reads "Exchanged · Sale". */
+const engineName = (k: string) => { const [base, kind] = k.split('__'); const n = base.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()); return kind ? `${n} · ${kind === 'transfer' ? 'Transfer Of Equity' : kind.replace(/^./, (c) => c.toUpperCase())}` : n; };
 const fill = (s: string) => (s || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) => SAMPLE[k] ?? `{{${k}}}`);
 
 export default function EmailTemplates() {
@@ -38,6 +41,10 @@ export default function EmailTemplates() {
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // Preview against a real case: the words as they stand in the editor, filled from that case.
+  const [previewCase, setPreviewCase] = useState<CaseHit | null>(null);
+  const [live, setLive] = useState<{ subject: string; body: string } | null>(null);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -55,6 +62,15 @@ export default function EmailTemplates() {
   useEffect(() => { void load(); }, [load]);
 
   const cur = templates.find((t) => t.id === sel) || null;
+  useEffect(() => {
+    setLive(null); setLiveErr(null);
+    if (!cur || !previewCase) return;
+    const t = setTimeout(() => {
+      api<{ subject: string; body: string }>('/admin/templates/preview', { method: 'POST', body: JSON.stringify({ matterId: previewCase.id, name: cur.name, engine: cur.category === 'Engine', subject: cur.subjectTemplate ?? '', body: cur.bodyTemplate }) })
+        .then((r) => setLive(r)).catch((e: Error) => setLiveErr(e.message));
+    }, 350);
+    return () => clearTimeout(t);
+  }, [cur?.id, cur?.subjectTemplate, cur?.bodyTemplate, previewCase?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (patch: Partial<Tpl>) => setTemplates((ts) => ts.map((t) => t.id === sel ? { ...t, ...patch } : t));
 
   const save = async (t: Tpl) => {
@@ -103,7 +119,7 @@ export default function EmailTemplates() {
           {templates.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>No templates yet.</div>}
           {templates.map((t) => (
             <button key={t.id} onClick={() => setSel(t.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: sel === t.id ? '#F2EEFC' : 'transparent', cursor: 'pointer', marginBottom: 2 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{t.category === 'Engine' ? t.name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : t.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{t.category === 'Engine' ? engineName(t.name) : t.name}</div>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category === 'Engine' ? (engine[t.name]?.to ?? 'Engine') : `${t.category} · ${t.styleTag}`}</div>
             </button>
           ))}
@@ -115,7 +131,7 @@ export default function EmailTemplates() {
             <div style={card}>
               {cur.category === 'Engine' && engine[cur.name] ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginBottom: 8, alignItems: 'baseline' }}>
-                  <strong style={{ fontSize: 14, gridColumn: '1 / -1' }}>{cur.name.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())}</strong>
+                  <strong style={{ fontSize: 14, gridColumn: '1 / -1' }}>{engineName(cur.name)}</strong>
                   <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>Sent when</span><span>{engine[cur.name].when}</span>
                   <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>To</span><span>{engine[cur.name].to}</span>
                   {engine[cur.name].requires.length > 0 && (<>
@@ -177,9 +193,13 @@ export default function EmailTemplates() {
             </div>
             {/* Live preview with sample data */}
             <div style={{ ...card, background: '#fbfbfe' }}>
-              <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 6 }}>Preview (sample case)</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{fill(cur.subjectTemplate || '(no subject)')}</div>
-              <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{fill(cur.bodyTemplate)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3 }}>Preview</div>
+                <div style={{ flex: 1, maxWidth: 360, marginLeft: 'auto' }}><CaseSearch api={api} value={previewCase} onChange={setPreviewCase} placeholder="Preview for a case" /></div>
+              </div>
+              {liveErr && <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>{liveErr}</div>}
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{live ? live.subject || '(no subject)' : fill(cur.subjectTemplate || '(no subject)')}</div>
+              <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{live ? live.body : fill(cur.bodyTemplate)}</div>
             </div>
           </div>
         ) : (

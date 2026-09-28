@@ -676,7 +676,7 @@ export class EngineService {
       if (s.lenderConsent.status === 'not_started') await safe("lender's consent request", () => this.run(tenantId, matterId, { type: 'request_lender_consent', actor: SYSTEM }));
     }
     // Joint buyers: how they will own it, asked at the start (or when a second buyer joins).
-    if ((e.type === 'matter_created' || e.type === 'clients_updated') && side === 'buyer' && s.parties > 1 && !s.clientDecisions.ownership_basis && !asked('ownership_basis_request')) await askClient('ownership_basis_request');
+    if ((e.type === 'matter_created' || e.type === 'clients_updated') && (side === 'buyer' || tt === 'transfer_of_equity') && s.parties > 1 && !s.clientDecisions.ownership_basis && !asked('ownership_basis_request')) await askClient('ownership_basis_request');
     if (to === 'pre_contract' && tt === 'leasehold_purchase' && s.managementPack.status === 'not_started') await safe('management pack request', () => this.run(tenantId, matterId, { type: 'management_pack_requested', actor: SYSTEM, from: "the seller's solicitor" }));
     if (to === 'pre_exchange' && s.requireExchangeAuthority && s.clientDecisions.exchange_authority?.decision !== 'authorised' && !asked('exchange_authority_request')) {
       await askClient('exchange_authority_request', { completionLine: s.targetCompletionDate ? `, with completion on ${s.targetCompletionDate} or the date we agree with you` : '' });

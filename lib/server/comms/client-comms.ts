@@ -20,7 +20,7 @@ import { signedHtml, signedText, type Signature } from '../signature';
 import { z } from 'zod/v4';
 import type { ClientComms, DocumentRef, ThirdPartyChaser } from '../engine/ports';
 import type { StructuredLlm } from '../engine/llm';
-import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES, SEARCH_NAMES, render, type Template } from './templates';
+import { ACKS, CHASES, CLIENT_UPDATES, PARTY_NOTICES, SEARCH_NAMES, forTransaction, render, type Template } from './templates';
 import { classifyClientQuestion, FAQ, validateFaqReply, type FaqEntry, isStatusQuestion } from './guard';
 import { clientStatusAnswer, type CaseBrief } from '../engine/brief';
 
@@ -36,6 +36,8 @@ export interface MatterContactInfo {
   clientEmail: string | null;
   /** Every client on the case with an email address (joint buyers, co-owners): client emails go to all of them. */
   clientEmails?: string[];
+  /** What kind of case, for the words: purchase, sale, remortgage or transfer (of equity). */
+  transaction?: 'purchase' | 'sale' | 'remortgage' | 'transfer';
   clientPhone: string | null;
   clientWhatsAppOptIn: boolean;
   /** Third parties by role, for chases. */
@@ -129,7 +131,8 @@ export class ProductionClientComms implements ClientComms {
   readonly name = 'client-comms';
   constructor(private deps: CommsDeps) {}
 
-  private vars(info: MatterContactInfo, context: Record<string, unknown>): Record<string, string> {
+  /** The variables a client message fills from (public for the template preview). */
+  vars(info: MatterContactInfo, context: Record<string, unknown>): Record<string, string> {
     const payload = (context.payload ?? {}) as Record<string, unknown>;
     const searchType = typeof payload.searchType === 'string' ? payload.searchType : '';
     // Every string the engine put in the context is a variable (a progress update's done / doneLine / status / next / targetNote); the named ones below take precedence.
@@ -143,7 +146,7 @@ export class ProductionClientComms implements ClientComms {
       searchName: SEARCH_NAMES[searchType] ?? 'search',
       searchList: (Array.isArray(context.searches) ? (context.searches as string[]) : Array.isArray(payload.requiredSearches) ? (payload.requiredSearches as string[]) : null)?.map((s) => SEARCH_NAMES[s] ?? s).join(', ') ?? 'local authority, drainage & water and environmental',
       completionDate: typeof payload.completionDate === 'string' ? payload.completionDate : info.completionDate ?? 'the agreed date',
-      transaction: typeof context.transaction === 'string' ? context.transaction : 'purchase',
+      transaction: typeof context.transaction === 'string' ? context.transaction : (info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase'),
       waitingOn: typeof context.waitingOn === 'string' ? context.waitingOn : '',
       waitingFor: typeof context.waitingFor === 'string' ? context.waitingFor : '',
       nextChaseNote: typeof context.nextChase === 'string' && context.nextChase ? ` and will chase again on ${context.nextChase} if we have not heard` : ' and will keep following it up',
@@ -189,19 +192,19 @@ export class ProductionClientComms implements ClientComms {
 
   /** The status update exactly as sendStatusUpdate would send it. */
   async previewStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }): Promise<MessagePreview> {
-    const base = CLIENT_UPDATES[input.template];
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const base = forTransaction(CLIENT_UPDATES, input.template, info.transaction);
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
-    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.vars(info, input.context));
     return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
   }
 
   async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[] }) {
-    const base = CLIENT_UPDATES[input.template];
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const base = forTransaction(CLIENT_UPDATES, input.template, info.transaction);
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
-    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = applyOverride(render(t, this.vars(info, input.context)), input.override);
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
@@ -254,7 +257,7 @@ export class ProductionChaser implements ThirdPartyChaser {
       ageWorkingDays: String(ctx.ageWorkingDays ?? ''),
       priorChaseNote: prior > 0 ? `, despite ${prior} previous reminder${prior === 1 ? '' : 's'}` : '',
       completionDate: info.completionDate ?? '',
-      transaction: typeof ctx.transaction === 'string' ? ctx.transaction : 'purchase',
+      transaction: typeof ctx.transaction === 'string' ? ctx.transaction : (info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase'),
       // The thing we asked for, again (engine/chase-content.ts): the link, the form, or what is still outstanding.
       resend: typeof ctx.resend === 'string' ? ctx.resend : '',
       // Said only when there is a lender: a cash buyer never reads about a mortgage.
@@ -275,10 +278,10 @@ export class ProductionChaser implements ThirdPartyChaser {
 
   /** The chase exactly as sendChase would send it. */
   async previewChase(input: { tenantId: string; matterId: string; recipientRole: string; template: string; context: Record<string, unknown> }): Promise<MessagePreview> {
-    const baseChase = CHASES[input.template];
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const baseChase = forTransaction(CHASES, input.template, info.transaction);
     if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
-    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = render(t, this.chaseVars(info, input.context));
     return { ...this.recipient(info, input.recipientRole), subject: r.subject, body: r.body };
   }
@@ -293,10 +296,10 @@ export class ProductionChaser implements ThirdPartyChaser {
   }
 
   async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }) {
-    const baseChase = CHASES[input.template];
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const baseChase = forTransaction(CHASES, input.template, info.transaction);
     if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
-    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const r = applyOverride(render(t, this.chaseVars(info, input.context)), input.override);
     if (r.missing.length) throw new Error(`Chase template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
@@ -331,16 +334,44 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { channel: 'email' as const, messageId: draft.messageId };
   }
 
-  async sendRequest(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }) {
-    const base = PARTY_NOTICES[input.template];
+  /** Any engine template's words (as edited, not yet saved) filled from a real case: what that case's email would say. */
+  async previewTemplateText(input: { tenantId: string; matterId: string; key: string; subject: string; body: string }): Promise<{ subject: string; body: string; missing: string[] }> {
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const base = input.key.split('__')[0];
+    const client = !!(CLIENT_UPDATES[input.key] ?? CLIENT_UPDATES[base]) || (CHASES[input.key] ?? CHASES[base])?.channel === 'client' || input.key === 'ack_client';
+    const party = !!(PARTY_NOTICES[input.key] ?? PARTY_NOTICES[base]);
+    const t: Template = { key: input.key, channel: client ? 'client' : 'chase', subject: input.subject, body: input.body, requires: [] };
+    const word = info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase';
+    const other = info.contacts.seller_solicitor?.name ?? 'Sirs';
+    const vars: Record<string, string> = client ? new ProductionClientComms(this.deps).vars(info, {}) : party
+      ? { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: other, solicitorName: other, completionDate: info.completionDate ?? 'the agreed date', leaseholdForms: '', transaction: word }
+      : this.chaseVars(info, {});
+    return render(t, { ...vars, what: vars.what ?? 'the documents' });
+  }
+
+  /** A first request exactly as sendRequest would send it. */
+  async previewRequest(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }): Promise<MessagePreview> {
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const base = forTransaction(PARTY_NOTICES, input.template, info.transaction);
     if (!base) throw new Error(`Unknown request template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
+    const to = info.contacts[input.recipientRole];
+    const label = input.recipientRole === 'seller_solicitor' ? "The other side's solicitor" : input.recipientRole === 'estate_agent' ? 'The estate agent' : 'The lender';
+    const ctx = input.context;
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to?.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
+    return { to: `${label}${to?.name ? ` (${to.name})` : ''}`, address: to?.email ?? null, channel: to?.email ? 'email' : 'none', subject: r.subject, body: r.body };
+  }
+
+  async sendRequest(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }) {
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const base = forTransaction(PARTY_NOTICES, input.template, info.transaction);
+    if (!base) throw new Error(`Unknown request template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, base);
     const to = info.contacts[input.recipientRole];
     const label = input.recipientRole === 'seller_solicitor' ? "the seller's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : 'the lender';
     if (!to?.email) throw new Error(`There is no email address for ${label} on the case, so this could not be sent. Add them as a contact, then Try Again.`);
     const ctx = input.context;
-    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '' });
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '', transaction: info.transaction === 'transfer' ? 'transfer of equity' : info.transaction ?? 'purchase' });
     if (r.missing.length) throw new Error(`Request template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     let sent: { messageId: string | null };

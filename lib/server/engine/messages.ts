@@ -31,6 +31,30 @@ export function engineMessages(levels: LevelConfig) {
     rows.push({ id: `update:${ev}`, kind: 'update', when: EVENT_LABEL[ev] ?? ev.replace(/_/g, ' '), to: 'Client', subject: t?.subject ?? tpl, template: tpl, levelKey: levelKey('client_update', tpl), level: levelFor(levels, 'client_update', tpl) });
   }
   rows.push({ id: 'update:chase_update', kind: 'update', when: 'We chase someone on their behalf', to: 'Client (and the agent)', subject: CLIENT_UPDATES.chase_update.subject, template: 'chase_update', levelKey: levelKey('client_update', 'chase_update'), level: levelFor(levels, 'client_update', 'chase_update') });
+  // Requests the engine sends itself when a step falls due (service.ts FIRST_REQUESTS and automaticSteps).
+  const REQUESTS: Array<[string, string, string]> = [
+    ['request_contract_pack', 'A purchase leaves instruction', "Seller's solicitor"],
+    ['request_management_pack', 'A leasehold purchase reaches pre-contract', "Seller's solicitor"],
+    ['request_redemption_statement', 'A sale or remortgage of a mortgaged property is enrolled', 'Lender'],
+    ['request_lender_consent', 'A transfer of equity of a mortgaged property is enrolled', 'Lender'],
+    ['request_discharge', 'The mortgage is redeemed on completion', 'Lender'],
+    ['enquiries_to_seller_solicitor', 'An enquiry is raised', "Seller's solicitor"],
+    ['exchanged_agent', 'Contracts are exchanged', 'Estate agent'],
+    ['completed_agent', 'Completion', 'Estate agent'],
+    ['property_forms_request', 'A sale is enrolled', 'Client'],
+    ['deposit_request', 'The contract is approved (purchase)', 'Client'],
+    ['completion_statement', 'The completion statement is sent', 'Client'],
+    ['ownership_basis_request', 'Joint buyers are enrolled, or a second buyer joins', 'Client'],
+    ['exchange_authority_request', 'The case reaches pre-exchange', 'Client'],
+    ['buildings_insurance_request', 'Contracts are exchanged on a lender-funded purchase', 'Client'],
+    ['balance_request', 'Completion funds are requested from the client', 'Client'],
+  ];
+  for (const [tpl, when, to] of REQUESTS) {
+    if (rows.some((r) => r.template === tpl)) continue;
+    const t = CLIENT_UPDATES[tpl] ?? PARTY_NOTICES[tpl];
+    const client = to === 'Client';
+    rows.push({ id: `req:${tpl}`, kind: 'request', when, to, subject: t?.subject ?? tpl, template: tpl, levelKey: levelKey(client ? 'client_update' : 'chase', tpl), level: levelFor(levels, client ? 'client_update' : 'chase', tpl) });
+  }
   for (const k of WAIT_KEYS) {
     const r = DEFAULT_SLA[k];
     const t = CHASES[r.template];
@@ -52,6 +76,12 @@ export function messageInfo(): Record<string, MessageInfo> {
     const t = all[m.template];
     const prev = out[m.template];
     out[m.template] = { when: prev ? `${prev.when}; ${m.when.charAt(0).toLowerCase()}${m.when.slice(1)}` : m.when, to: m.to, requires: t?.requires ?? [], vars: varsOf(t) };
+  }
+  // A version for another kind of case says when it is used: the base's trigger, on that kind of case.
+  const KIND: Record<string, string> = { sale: 'a sale', remortgage: 'a remortgage', transfer: 'a transfer of equity' };
+  for (const [k, t] of Object.entries(all)) {
+    const [base, kind] = k.split('__');
+    if (!out[k] && kind && out[base]) out[k] = { ...out[base], when: `${out[base].when} (on ${KIND[kind] ?? kind})`, requires: t.requires, vars: varsOf(t) };
   }
   for (const [k, t] of Object.entries(all)) if (!out[k]) out[k] = { vars: varsOf(t), when: k === 'qa_routed_to_human' ? 'A client question the assistant cannot answer safely' : k === 'chase_update_agent' ? 'We chase someone on the client\'s behalf' : 'Used by the engine', to: t.channel === 'client' ? 'Client' : k === 'chase_update_agent' ? 'Estate agent' : 'The party', requires: t.requires };
   return out;

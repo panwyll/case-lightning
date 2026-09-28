@@ -33,14 +33,14 @@ const READY: Record<string, (s: MatterState) => string | null> = {
   'Report on title': (s) => {
     if (!buyer(s)) return 'Only on a purchase';
     if (s.reportOnTitle.status === 'drafted') return 'A draft is waiting for approval in Tasks';
-    if (s.reportOnTitle.status === 'approved' || s.reportOnTitle.status === 'sent') return `Already ${s.reportOnTitle.status}`;
+    if (s.reportOnTitle.status === 'approved' || s.reportOnTitle.status === 'sent') return null; // already done: a preview shows it; generating again asks first
     if (!isResolved(s.title.status)) return s.title.documentId ? 'Title not resolved yet' : 'Official copies not in yet';
     if (s.stage !== 'contract_review' && s.stage !== 'pre_contract') return atLeast(s, 'pre_exchange') ? 'Past the report stage' : 'Not at pre-contract yet';
     return null;
   },
 };
 
-export interface CaseChoice { matterId: string; matterRef: string | null; propertyAddress: string | null; ready: boolean; reason: string | null }
+export interface CaseChoice { matterId: string; matterRef: string | null; propertyAddress: string | null; ready: boolean; reason: string | null; /** When this document was last produced for the case (sent or generated), if it was. */ previous: string | null }
 
 export async function casesForTemplate(user: SessionUser, templateId: string): Promise<{ template: string; cases: CaseChoice[] }> {
   const tpl = await queryOne<{ name: string }>(`select name from doc_template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
@@ -57,7 +57,7 @@ export async function casesForTemplate(user: SessionUser, templateId: string): P
       const s = await svc.getState(user.tenantId, m.id).catch(() => null);
       reason = !s || !s.enrolled ? 'Not enrolled yet' : s.closedAt || s.abandoned ? 'Closed' : rule(s);
     }
-    return { matterId: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, ready: !reason, reason };
+    return { matterId: m.id, matterRef: m.matter_ref, propertyAddress: m.property_address, ready: !reason, reason, previous: await previousFor(user.tenantId, m.id, templateId, tpl.name) };
   }));
   cases.sort((a, b) => Number(b.ready) - Number(a.ready));
   return { template: tpl.name, cases };
@@ -73,11 +73,39 @@ export function docxText(buffer: Buffer): string {
 
 export interface Generated { matterId: string; name: string; documentId: string; fileName: string; preview: string; webUrl: string | null; /** The engine's own draft: it waits for approval in Tasks. */ decisionEventId: string | null; capped: boolean }
 
-export async function generateForCase(user: SessionUser, templateId: string, matterId: string): Promise<Generated> {
+/** When the document was last produced for the case: the report as sent, the statement as sent, or a Doc Packs generation. */
+async function previousFor(tenantId: string, matterId: string, templateId: string, name: string): Promise<string | null> {
+  if (name === 'Report on title') return (await engine().getState(tenantId, matterId).catch(() => null))?.reportOnTitle.sentAt ?? null;
+  if (name === 'Completion statement') return (await engine().getState(tenantId, matterId).catch(() => null))?.completion.statementGeneratedAt ?? null;
+  return (await queryOne<{ at: string }>(`select created_at::text as at from document where tenant_id = $1 and matter_id = $2 and storage_path = $3 order by created_at desc limit 1`, [tenantId, matterId, `generated://${templateId}`]).catch(() => null))?.at ?? null;
+}
+
+/**
+ * The document as it would be for this case, without filing or sending anything: the firm's
+ * template filled in (model-written sections left as their prompts), or the engine's draft or
+ * sent version of the report on title and completion statement.
+ */
+export async function previewForCase(user: SessionUser, templateId: string, matterId: string): Promise<{ preview: string; fileName: string; previous: string | null }> {
+  const tpl = await queryOne<{ name: string }>(`select name from doc_template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
+  if (!tpl) throw Object.assign(new Error('Template not found.'), { status: 404 });
+  const previous = await previousFor(user.tenantId, matterId, templateId, tpl.name);
+  const latest = async (docType: string) => (await queryOne<{ content: string | null; file_name: string | null }>(`select extracted_facts->>'content' as content, file_name from document where tenant_id = $1 and matter_id = $2 and doc_type = $3 and superseded_at is null order by created_at desc limit 1`, [user.tenantId, matterId, docType]).catch(() => null));
+  if (tpl.name === 'Report on title' || tpl.name === 'Completion statement') {
+    const d = await latest(tpl.name === 'Report on title' ? 'REPORT_ON_TITLE_DRAFT' : 'COMPLETION_STATEMENT');
+    return { preview: d?.content ?? `No ${tpl.name.toLowerCase()} has been drafted for this case yet. Generate drafts one from the case as it stands.`, fileName: d?.file_name ?? tpl.name, previous };
+  }
+  const { buffer } = await generateTemplateForMatter(user, matterId, templateId, false);
+  return { preview: docxText(buffer), fileName: templateOutputName(tpl.name), previous };
+}
+
+export async function generateForCase(user: SessionUser, templateId: string, matterId: string, opts: { again?: boolean } = {}): Promise<Generated> {
   const tpl = await queryOne<{ name: string; has_llm_prompts: boolean }>(`select name, has_llm_prompts from doc_template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
   if (!tpl) throw Object.assign(new Error('Template not found.'), { status: 404 });
   const svc = engine();
   const rule = READY[tpl.name];
+  // Already produced for this case: a second one only when the person says so.
+  const previous = await previousFor(user.tenantId, matterId, templateId, tpl.name);
+  if (previous && !opts.again) throw Object.assign(new Error(`Already produced for this case on ${previous.slice(0, 10)}.`), { status: 409, code: 'already_sent' });
   if (rule) {
     const s = await svc.getState(user.tenantId, matterId);
     const why = !s.enrolled ? 'Not enrolled yet' : rule(s);

@@ -5,7 +5,7 @@ import { requireRole } from '@/lib/server/session';
 import { assertMatterAccess } from '@/lib/server/guard';
 import { assertEntitled } from '@/lib/server/plan';
 import { ok, fail } from '@/lib/server/http';
-import { generateForCase } from '@/lib/server/doc-generate';
+import { generateForCase, previewForCase } from '@/lib/server/doc-generate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,9 +18,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const user = await requireRole(['ADMIN']);
     await assertEntitled(user.tenantId);
     const { id } = z.object({ id: z.string().uuid() }).parse(await params);
-    const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await req.json());
+    const { matterId, preview, again } = z.object({ matterId: z.string().uuid(), preview: z.boolean().optional(), again: z.boolean().optional() }).parse(await req.json());
     await assertMatterAccess(user, matterId);
-    return ok(await generateForCase(user, id, matterId));
+    // A preview files and sends nothing.
+    if (preview) return ok(await previewForCase(user, id, matterId));
+    return ok(await generateForCase(user, id, matterId, { again: !!again }));
   } catch (error) {
     return fail(error);
   }

@@ -8,7 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { X } from '@/app/shared/icons';
 
-interface CaseChoice { matterId: string; matterRef: string | null; propertyAddress: string | null; ready: boolean; reason: string | null }
+interface CaseChoice { matterId: string; matterRef: string | null; propertyAddress: string | null; ready: boolean; reason: string | null; previous?: string | null }
 interface Generated { matterId: string; name: string; documentId: string; fileName: string; preview: string; webUrl: string | null; decisionEventId: string | null; capped: boolean }
 
 const CSS = `
@@ -34,6 +34,8 @@ const CSS = `
 .dg-ok{color:#15803d;font-size:13px;font-weight:600;margin-right:auto}
 .dg-pre{white-space:pre-wrap;font:13px/1.55 ui-sans-serif,system-ui,sans-serif;color:#1e293b;background:#f8fafc;border:1px solid #e6e8ee;border-radius:10px;padding:14px;margin:0}
 .dg-meta{font-size:12.5px;color:#475569;margin-bottom:8px}
+.dg-row .sent{font-size:11px;font-weight:700;color:#15803d;background:#dcfce7;border-radius:99px;padding:1px 8px;white-space:nowrap}
+.dg-warn{font-size:13px;color:#92400e;margin-right:auto}
 `;
 
 export function DocGenerate({ templateId, templateName, sendTo, onClose }: { templateId: string; templateName: string; sendTo: string | null; onClose: () => void }) {
@@ -44,6 +46,8 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<Generated | null>(null);
   const [task, setTask] = useState<'idle' | 'busy' | 'made'>('idle');
+  const [preview, setPreview] = useState<{ preview: string; fileName: string; previous: string | null } | null>(null);
+  const [confirmAgain, setConfirmAgain] = useState(false);
 
   useEffect(() => {
     api<{ cases: CaseChoice[] }>(`/admin/doc-templates/${templateId}/cases`).then((r) => setCases(r.cases)).catch((e: unknown) => { setCases([]); setErr(e instanceof Error ? e.message : 'Could not load cases.'); });
@@ -60,10 +64,19 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
   }, [cases, q]);
   const chosen = cases?.find((c) => c.matterId === pick) ?? null;
 
-  const generate = async () => {
+  const showPreview = async () => {
     if (!pick) return;
     setBusy(true); setErr(null);
-    try { setDone(await api<Generated>(`/admin/doc-templates/${templateId}/generate`, { method: 'POST', body: JSON.stringify({ matterId: pick }) })); }
+    try { setPreview(await api<{ preview: string; fileName: string; previous: string | null }>(`/admin/doc-templates/${templateId}/generate`, { method: 'POST', body: JSON.stringify({ matterId: pick, preview: true }) })); }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not preview it.'); }
+    finally { setBusy(false); }
+  };
+  const generate = async () => {
+    if (!pick) return;
+    // Produced for this case already: say so, and only go again when they confirm.
+    if (chosen?.previous && !confirmAgain) { setConfirmAgain(true); return; }
+    setBusy(true); setErr(null);
+    try { setDone(await api<Generated>(`/admin/doc-templates/${templateId}/generate`, { method: 'POST', body: JSON.stringify({ matterId: pick, again: !!chosen?.previous }) })); setConfirmAgain(false); }
     catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not generate it.'); }
     finally { setBusy(false); }
   };
@@ -90,12 +103,19 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
               {cases === null && <div className="dg-meta">Loading…</div>}
               {cases && !shown.length && <div className="dg-meta">No open cases.</div>}
               {shown.map((c) => (
-                <button key={c.matterId} type="button" className={`dg-row${pick === c.matterId ? ' on' : ''}`} disabled={!c.ready} onClick={() => setPick(c.matterId)} title={c.reason ?? undefined}>
+                <button key={c.matterId} type="button" className={`dg-row${pick === c.matterId ? ' on' : ''}`} onClick={() => { setPick(c.matterId); setPreview(null); setConfirmAgain(false); }} title={c.reason ?? undefined}>
                   <span className="a">{c.propertyAddress ?? c.matterRef ?? c.matterId}</span>
                   {c.matterRef && <span className="r">{c.matterRef}</span>}
+                  {c.previous && <span className="sent">Sent {new Date(c.previous).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                   {!c.ready && <span className="why">{c.reason}</span>}
                 </button>
               ))}
+              {preview && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="dg-meta">{preview.fileName} · preview{preview.previous ? ` · produced ${preview.previous.slice(0, 10)}` : ''}</div>
+                  <pre className="dg-pre">{preview.preview || 'Nothing to show.'}</pre>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -105,9 +125,13 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
           )}
         </div>
         <div className="dg-f">
-          {err ? <span className="dg-err">{err}</span> : task === 'made' ? <span className="dg-ok">Task created on the case.</span> : <span style={{ marginRight: 'auto' }} />}
+          {err ? <span className="dg-err">{err}</span> : confirmAgain && chosen?.previous ? <span className="dg-warn">Already produced for this case on {new Date(chosen.previous).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. Produce it again?</span> : task === 'made' ? <span className="dg-ok">Task created on the case.</span> : <span style={{ marginRight: 'auto' }} />}
           {!done ? (
-            <button type="button" className="dg-btn go" disabled={!chosen?.ready || busy} onClick={() => void generate()}>{busy ? 'Generating…' : 'Generate'}</button>
+            <>
+              <button type="button" className="dg-btn" disabled={!pick || busy} onClick={() => void showPreview()}>{busy && !confirmAgain ? 'Loading…' : 'Preview'}</button>
+              {confirmAgain && <button type="button" className="dg-btn" onClick={() => setConfirmAgain(false)}>Cancel</button>}
+              <button type="button" className="dg-btn go" disabled={!chosen?.ready || busy} title={chosen && !chosen.ready ? chosen.reason ?? undefined : undefined} onClick={() => void generate()}>{busy ? 'Generating…' : confirmAgain ? 'Yes, Produce Again' : 'Generate'}</button>
+            </>
           ) : (
             <>
               <a className="dg-btn" href={`/api/v1/documents/${done.documentId}/raw`} target="_blank" rel="noopener noreferrer">Download</a>

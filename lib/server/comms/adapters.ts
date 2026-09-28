@@ -68,6 +68,7 @@ export async function contactInfo(tenantId: string, matterId: string): Promise<M
     clientFirstName: firstName,
     clientEmail: client?.email ?? null,
     clientEmails,
+    transaction: /_sale$/.test(m.transaction_type ?? '') ? 'sale' : m.transaction_type === 'remortgage' ? 'remortgage' : m.transaction_type === 'transfer_of_equity' ? 'transfer' : 'purchase',
     clientPhone: client?.phone ?? null,
     clientWhatsAppOptIn: !!client?.whatsapp_opt_in,
     footer,
