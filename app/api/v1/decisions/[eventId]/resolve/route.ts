@@ -7,7 +7,8 @@ import { ok, fail } from '@/lib/server/http';
 import { engine } from '@/lib/server/engine/adapters';
 import { stageBlockers } from '@/lib/server/engine/machine';
 import { pendingDecisions } from '@/lib/server/engine/types';
-import { requireDecider, resolveSchema, assertEngaged } from '@/lib/server/engine/http';
+import { requireDeciderFor, resolveSchema, assertEngaged } from '@/lib/server/engine/http';
+import { decisionTask } from '@/lib/server/engine/work';
 import { writeAudit } from '@/lib/server/audit';
 
 export const runtime = 'nodejs';
@@ -18,13 +19,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
   try {
     assertFeature('auth');
     const user = await requireUser();
-    requireDecider(user);
     const { eventId } = z.object({ eventId: z.string().uuid() }).parse(await params);
     const input = resolveSchema.parse(await req.json());
     const svc = engine();
     const d = await svc.eventStore.findDecision(user.tenantId, eventId);
     if (!d) return fail(Object.assign(new Error('Decision not found.'), { status: 404 }));
     await assertMatterAccess(user, d.matterId);
+    // An assistant may send what the engine drafted to move the file along; judgement and money stay with a conveyancer.
+    if (user.role === 'ASSISTANT') {
+      const st = await svc.getState(user.tenantId, d.matterId);
+      const dec = st.decisions[eventId];
+      requireDeciderFor(user, dec ? decisionTask(st, dec).kind : null);
+    }
     // Addendum 3 §3: the engagement gate (scroll or dwell on the source) is checked here too, not only in the UI.
     // It guards decisions whose source is somebody else's document. A proposal or a held clear is the engine's own
     // text: the summary is the whole of it, so there is nothing to read before deciding.

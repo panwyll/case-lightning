@@ -6,6 +6,7 @@ import { ok, fail } from '@/lib/server/http';
 import { query } from '@/lib/server/db';
 import { buckets, OWNER_LABEL } from '@/lib/server/engine/work';
 import { workItems, canCover } from '@/lib/server/engine/my-work';
+import { assistantMay } from '@/lib/server/engine/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,9 @@ export async function GET(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const q = z.object({ all: z.string().optional(), user: z.string().uuid().optional(), limit: z.coerce.number().min(1).max(500).optional() }).parse(Object.fromEntries(req.nextUrl.searchParams));
-    const all = q.all === '1' && canCover(user);
+    // An assistant is not the handler on any case: their list is every case they may see.
+    const assistant = user.role === 'ASSISTANT';
+    const all = (q.all === '1' && canCover(user)) || assistant;
     const who = q.user ?? user.userId;
     const { items, matters } = await workItems(user, { all, who, limit: q.limit });
     // A state stored before waits recorded their opener: read the opening event's actor from the log.
@@ -43,7 +46,8 @@ export async function GET(req: NextRequest) {
       const name = new Map(rows.map((r) => [r.id, r.display_name || r.email || r.id]));
       for (const i of items) if (i.openedBy && name.has(i.openedBy)) i.openedBy = name.get(i.openedBy)!;
     }
-    return ok({ ...buckets(items), scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters, ownerLabels: OWNER_LABEL });
+    for (const i of items) (i as { assistantCan?: boolean }).assistantCan = assistantMay(i.kind);
+    return ok({ ...buckets(items), viewerRole: user.role, scope: all ? 'all' : who === user.userId ? 'mine' : 'colleague', matters, ownerLabels: OWNER_LABEL });
   } catch (error) {
     return fail(error);
   }

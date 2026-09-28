@@ -406,6 +406,8 @@ export interface CaseloadRollup { total: number; normal: number; attention: numb
 
 export type WorkBucket = 'do' | 'waiting' | 'escalate';
 export interface WorkItem {
+  /** Set on the Tasks list: an assistant may do this one (else it is for a conveyancer). */
+  assistantCan?: boolean;
   id: string;
   bucket: WorkBucket;
   matterId: string;

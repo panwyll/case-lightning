@@ -20,6 +20,22 @@ export function requireDecider(user: SessionUser): void {
   if (user.role !== 'ADMIN' && user.role !== 'CONVEYANCER') throw new ForbiddenError();
 }
 
+/**
+ * The tasks an assistant may do: sending what the engine drafted to move the file along (a
+ * chase, an acknowledgement, a routine update, the signing pack, the proof-of-funds form) and
+ * trying a failed send again. Anything that is legal judgement, advice, costs the firm a fee,
+ * or moves money stays with a conveyancer. `kind` is the work item's (decisionTask) kind.
+ */
+export const ASSISTANT_TASK_KINDS = new Set(['proposal:chase', 'proposal:acknowledgement', 'proposal:client_update', 'proposal:signing_pack', 'proposal:proof_of_funds_request', 'issue:send_failed:retry']);
+export const assistantMay = (kind: string | null | undefined): boolean => !!kind && ASSISTANT_TASK_KINDS.has(kind);
+
+/** A decision this person may take: a conveyancer or admin any; an assistant only the kinds above. */
+export function requireDeciderFor(user: SessionUser, kind: string | null | undefined): void {
+  if (user.role === 'ADMIN' || user.role === 'CONVEYANCER') return;
+  if (user.role === 'ASSISTANT' && assistantMay(kind)) return;
+  throw Object.assign(new ForbiddenError(), { message: 'This one is for a conveyancer.' });
+}
+
 const searchType = z.enum(SEARCH_TYPES);
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'YYYY-MM-DD');
 

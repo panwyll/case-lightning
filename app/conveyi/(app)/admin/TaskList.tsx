@@ -43,6 +43,7 @@ const CSS = `
 .tl-item.open + .tl-item .tl-task{border-top:0}
 .tl-open{padding:0 14px 14px 40px}
 .tl-open .dp.inline{border:1px solid #e6e8ee;border-radius:12px;background:#fff}
+.tl-for{font-size:11.5px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:4px 10px;white-space:nowrap}
 .tl-clear{display:flex;align-items:center;gap:8px;padding:14px;font-size:13px;color:#166534;background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px}
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 `;
@@ -56,7 +57,9 @@ const ageDays = (i: WorkItem, now: number): number | null => (i.since ? Math.flo
 const sentence = (w: string): string => w.replace(/^Decide:\s*/i, '').trim().replace(/^\w/, (c) => c.toUpperCase());
 
 export default function TaskList({ who }: { who: string }) {
-  const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[] } | null>(null);
+  const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[]; viewerRole?: string } | null>(null);
+  // An assistant sees every task on their cases; the ones that are a conveyancer's call say so instead of offering Approve.
+  const forConveyancer = (i: WorkItem): boolean => data?.viewerRole === 'ASSISTANT' && !i.assistantCan;
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [sort, setSort] = useState<Sort>('urgency');
   const [caseId, setCaseId] = useState('');
@@ -147,7 +150,8 @@ export default function TaskList({ who }: { who: string }) {
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : age != null ? (age === 0 ? 'since today' : `waiting ${age}d`) : ''}</span>
-                  {isDecision && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
+                  {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
+                  {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
                   {isDecision
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>

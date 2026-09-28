@@ -160,7 +160,7 @@ export function Brand() {
 }
 
 /** An assistant's app is filing email and the cases they have been granted. */
-const ASSISTANT_KEYS = new Set(['email', 'matters', 'help']);
+const ASSISTANT_KEYS = new Set(['mywork', 'email', 'matters', 'help']);
 
 /** "Peter Anwyll" → PA; "peter@firm.co.uk" → PE. */
 export const initials = (name: string): string => {

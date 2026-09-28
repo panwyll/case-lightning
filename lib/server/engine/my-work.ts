@@ -12,7 +12,8 @@ export const canCover = (user: SessionUser): boolean => user.role === 'ADMIN' ||
 
 /** `all`: the team's caseload (cover roles only); `who`: one person's. */
 export async function workItems(user: SessionUser, opts: { all?: boolean; who?: string | null; limit?: number } = {}): Promise<{ items: WorkItem[]; matters: number }> {
-  const all = !!opts.all && canCover(user);
+  // An assistant's list is every case they may see (the visibility filter below still applies).
+  const all = !!opts.all && (canCover(user) || user.role === 'ASSISTANT');
   const who = opts.who && (canCover(user) || opts.who === user.userId) ? opts.who : user.userId;
   const svc = engine();
   const [states, subflows] = await Promise.all([
