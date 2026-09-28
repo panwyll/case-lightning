@@ -60,7 +60,7 @@ import type { EventStore } from './store';
 import { evaluateSearch, evaluateEnquiryReply, evaluateMortgageOffer, evaluateLease, evaluateTitle, evaluateIdCheck } from './rules';
 import { describeIdDocument, reviewIdDocument } from './id-document';
 import { evaluateProofOfFunds, factsFromSubmission, renderDeclaration, reviewTransactions, type EvidenceDocument, type ProofOfFundsSubmission } from './proof-of-funds';
-import { openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
+import { isResolved, openIssues, openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SIGNED_DOCUMENT_LABEL, type SignedDocument, type SigningMethod } from './types';
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
@@ -89,8 +89,6 @@ export const PHASE_DONE: Record<string, { done: string; line: string }> = {
 
 export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   search_ordered: 'searches_ordered',
-  search_cleared: 'search_back_all_clear',
-  search_flagged: 'search_back_under_review',
   enquiry_raised: 'enquiries_raised',
   mortgage_offer_cleared: 'mortgage_offer_checked',
   report_on_title_sent: 'report_on_title_sent',
@@ -1297,6 +1295,17 @@ export class EngineService {
         }
         // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
         // A stage the client was waiting on has been signed off: tell them, say where everything else stands and what comes next.
+        // The searches: one email when they have all come back and been through (not one per search).
+        if (e.type === 'search_cleared' || e.type === 'search_reviewed' || (e.type === 'step_completed_manually' && String((e.payload as { step?: string }).step).startsWith('search:'))) {
+          const fresh = await this.getState(tenantId, matterId);
+          const all = fresh.requiredSearches.length > 0 && fresh.requiredSearches.every((t) => isResolved(fresh.searches[t]?.status));
+          if (all && !fresh.clientUpdateLastSentAt?.searches_all_back) {
+            const detail = { template: 'searches_all_back', context: { eventType: e.type, payload: e.payload, searches: fresh.requiredSearches }, triggeredByEventId: e.id };
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'searches_all_back', 'searches_all_back', detail, `CLIENT UPDATE\n\nTo: the client\nBecause: every search is back and reviewed (${fresh.requiredSearches.join(', ')})\nTemplate: searches_all_back`))) {
+              try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('searches-all-back update could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+            }
+          }
+        }
         // A phase of the case is complete (the junctions on the flowchart): the client hears where it stands too.
         const phaseDone = e.type === 'stage_advanced' ? PHASE_DONE[(e.payload as { to: string }).to] : undefined;
         if (phaseDone || (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'approve') || e.type === 'title_reviewed' && (e.payload as { option: string }).option === 'approve') {

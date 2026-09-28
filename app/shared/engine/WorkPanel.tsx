@@ -115,6 +115,9 @@ export const WORK_CSS = `
 .ep-who.doc{background:#e0e7ff;color:#3730a3}
 .ep-who.doc:hover,.ep-who.doc:focus{background:#3730a3;color:#fff}
 .ep-tip .k{display:inline-block;min-width:44px;font-weight:800;color:#c4b5fd;margin-right:4px}
+.ep-exit{position:absolute;left:50%;bottom:-12px;transform:translateX(-50%);z-index:3;display:flex;gap:4px}
+.ep-exit .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #94a3b8;color:#64748b}
+.ep-exit .ep-who:hover,.ep-exit .ep-who:focus{background:#5A27E0;border-color:#5A27E0;color:#fff}
 .ep-junction{position:absolute;z-index:2;transform:translate(-50%,-50%);display:flex}
 .ep-junction .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #5A27E0;color:#5A27E0;box-shadow:0 1px 3px rgba(15,23,42,.12)}
 .ep-junction.auto .ep-who{border-color:#94a3b8;color:#64748b}
@@ -242,23 +245,43 @@ const ABOUT: Record<string, About> = {
   Forms: { starts: 'Sent to the client on enrolment of a sale.', done: 'TA6, TA10 (and TA7) completed and returned; chased on the SLA.', via: 'Client comms.' },
 };
 /**
- * What each step sends by itself: the acknowledgement when something arrives (to whom), and what the
- * client is told. Both go at the case's trust level (proposed first at Propose), from the firm's templates.
+ * Every email the case sends by itself, one envelope each, placed where it goes out: on a section's
+ * title (when the section starts), on a step (an acknowledgement when something arrives, a chase when
+ * it is late), on the line under a section (when it is complete), at a junction. Each opens its template.
  */
-interface Messages { acks?: string; tells?: string; template?: string }
-const SEARCH_MSG: Messages = { tells: 'The client, once every search is ordered, and again as each result comes back (clear, or being looked at).', template: 'searches_ordered' };
-const MESSAGES: Record<string, Messages> = {
-  'Proof of funds': { acks: 'The client, when their form comes in.', tells: 'The client, when it is signed off: a progress update with where everything else stands.', template: 'progress_update' },
-  'Official copies': { tells: 'The client, when the title is approved: a progress update with where everything else stands.', template: 'progress_update' },
-  'Report on title': { tells: 'The client: the report itself, once a conveyancer approves it.', template: 'report_on_title_sent' },
-  'search:LLC1': SEARCH_MSG, 'search:CON29': SEARCH_MSG, 'search:DRAINAGE_WATER': SEARCH_MSG, 'search:ENVIRONMENTAL': SEARCH_MSG, 'search:CHANCEL': SEARCH_MSG,
-  Enquiry: { acks: "The seller's solicitor, when their replies come in.", tells: 'The client, when we raise enquiries: what we asked and why.', template: 'enquiries_raised' },
-  Offer: { acks: 'The client, when the offer arrives.', tells: 'The client, once the offer is checked.', template: 'mortgage_offer_checked' },
-  Forms: { acks: 'The client, when their completed forms come in.' },
-  Exchange: { tells: 'The client, the day contracts are exchanged: the completion date and what happens next.', template: 'exchanged' },
-  Completion: { tells: 'The client, on completion.', template: 'completed' },
+interface Email { template: string; to: string; when: string }
+const E = (template: string, to: string, when: string): Email => ({ template, to, when });
+const STEP_EMAILS: Record<string, Email[]> = {
+  'ID / AML check': [E('chase_id_documents', 'Client', 'If the ID check is not done on time')],
+  'Proof of funds': [E('ack_client', 'Client', 'When their form comes in'), E('chase_proof_of_funds', 'Client', 'If the form is not back on time')],
+  'Official copies': [E('chase_contract_pack', "Seller's solicitor", 'If the contract pack is late')],
+  'Report on title': [E('report_on_title_sent', 'Client', 'When a conveyancer approves it (the report goes as your Word document)')],
+  Enquiry: [E('ack_counterparty', "Seller's solicitor", 'When their replies arrive'), E('chase_enquiry_reply', "Seller's solicitor", 'If the replies are late')],
+  Offer: [E('ack_client', 'Client', 'When the offer arrives'), E('chase_mortgage_offer', 'Client', 'If the offer is late')],
+  Forms: [E('ack_client', 'Client', 'When their completed forms come in'), E('chase_property_forms', 'Client', 'If the forms are late')],
+  'Management pack (LPE1)': [E('chase_management_pack', 'Managing agent', 'If the pack is late')],
+  'Redemption statement': [E('chase_redemption_statement', 'Lender', 'If the statement is late')],
 };
-const messagesFor = (x: Tile): Messages | null => (x.depth ? null : MESSAGES[x.key ?? ''] ?? MESSAGES[x.label.replace(/\s·.*$/, '')] ?? MESSAGES[x.label.split(' ')[0]] ?? null);
+for (const t of ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL']) STEP_EMAILS[`search:${t}`] = [E('chase_search_provider', 'Search provider', 'If the result is late')];
+const LANE_EMAILS: Record<string, { start?: Email[]; exit?: Email[] }> = {
+  searches: { start: [E('searches_ordered', 'Client', 'When every search is ordered')], exit: [E('searches_all_back', 'Client', 'When every search is back and approved')] },
+  enquiries: { start: [E('enquiries_raised', 'Client', 'When we raise enquiries with the seller\'s solicitor')] },
+  source_of_funds: { start: [E('proof_of_funds_request', 'Client', 'When proof of funds is asked for (the form link)')], exit: [E('progress_update', 'Client', 'When proof of funds is signed off')] },
+  mortgage: { exit: [E('mortgage_offer_checked', 'Client', 'When the offer is checked')] },
+  title: { exit: [E('progress_update', 'Client', 'When the title is approved')] },
+  registration: { exit: [E('registration_complete', 'Client', 'When registration is complete')] },
+};
+const JUNCTION_EMAILS: Record<string, Email[]> = {
+  'enquiries->contract': [E('progress_update', 'Client', 'Investigation complete: searches back, enquiries answered')],
+  'investigation->contract': [E('progress_update', 'Client', 'Investigation complete: searches back, enquiries answered')],
+  'contract->completion': [E('exchanged', 'Client', 'When contracts are exchanged')],
+  'completion->registration': [E('completed', 'Client', 'On completion')],
+};
+const emailsFor = (x: Tile): Email[] => (x.depth ? [] : STEP_EMAILS[x.key ?? ''] ?? STEP_EMAILS[x.label.replace(/\s·.*$/, '')] ?? STEP_EMAILS[x.label.split(' ')[0]] ?? []);
+/** One envelope for one email: who it goes to and when, and a link to the template it is written from. */
+function EmailMark({ e, size = 11 }: { e: Email; size?: number }) {
+  return <Tip label={`Email: ${e.when}`} icon={<Mail size={size} />} href={`/conveyi/admin?tab=templates&t=${encodeURIComponent(e.template)}`} text={<><span className="k">Email to</span> {e.to}<br /><span className="k">When</span> {e.when}<br /><span className="k">Template</span> {e.template.replace(/_/g, ' ')}</>} />;
+}
 
 const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
 /** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
@@ -302,8 +325,9 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
   const toggleFold = (n: number) => setUnfolded((cur) => { const next = new Set(cur); if (next.has(n)) next.delete(n); else next.add(n); return next; });
   return (
     <div className={`ep-box ${lane.state}${open ? ' on' : ''}`} id={`lane-${lane.id}`} data-lane={lane.id} data-unfed={unfed ? '' : undefined}>
+      {!lane.plain && (LANE_EMAILS[lane.id]?.exit?.length ?? 0) > 0 && <div className="ep-exit">{LANE_EMAILS[lane.id]!.exit!.map((e) => <EmailMark key={e.template} e={e} size={12} />)}</div>}
       <button type="button" className="ep-box-h" onClick={onToggle} aria-expanded={open}>
-        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
+        <span className="ep-box-t">{!lane.plain && <span className="ic" style={{ color: colour }}><Icon size={16} /></span>}{titleCase(lane.title)}{!lane.plain && (LANE_EMAILS[lane.id]?.start ?? []).map((e) => <EmailMark key={e.template} e={e} />)}{lane.holds && <Tip label={lane.holds} icon={<Lock size={11} />} text={<><span className="k">{lane.holds}</span> The rest of this band carries on without it; {lane.holds.replace(/^Holds /, '').toLowerCase()} cannot happen until this box is done.</>} />}</span>
         {!lane.plain && <span className="ep-box-m"><span style={{ color: r.fg }}>{r.label}</span><span className="n">{done}/{steps.length}</span></span>}
         {!lane.plain && <span className="ep-bar"><i style={{ width: `${pct}%`, background: colour }} /></span>}
       </button>
@@ -325,7 +349,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
                   {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
-                  {(() => { const m = messagesFor(x); return m ? <Tip label={`What ${x.label} sends`} icon={<Mail size={11} />} href={m.template ? `/conveyi/admin?tab=templates&t=${encodeURIComponent(m.template)}` : undefined} text={<>{m.acks && <><span className="k">Acknowledges</span> {m.acks}<br /></>}{m.tells && <><span className="k">Tells</span> {m.tells}</>}{m.template && <><br /><span className="k">Template</span> {m.template.replace(/_/g, ' ')}</>}</>} /> : null; })()}
+                  {emailsFor(x).map((e) => <EmailMark key={e.template} e={e} />)}
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
                 {!lane.plain && <Pill s={x.status} />}
@@ -347,15 +371,6 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
 }
 
 /** What sits between two phases: an automatic hand-off, or a person who has to sign. */
-/** What the client is told as the case crosses a junction (the same updates the engine sends). */
-const JUNCTION_TELLS: Record<string, string> = {
-  'instruction->investigation': 'Checks done and the searches ordered: the client is told the legal work is under way.',
-  'enquiries->contract': 'Investigations complete: a progress update to the client, with where everything else stands; then the report on title.',
-  'investigation->contract': 'Investigations complete: a progress update to the client, with where everything else stands; then the report on title.',
-  'contract->completion': 'Exchanged: the client is told the completion date and what happens next.',
-  'completion->registration': 'Completed: the client is told, and that registration follows.',
-};
-
 const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: string }> = {
   'instruction->investigation': { kind: 'auto', label: 'Automatic', text: 'Once the ID check clears the case moves to pre-contract and every search on its list is ordered from InfoTrack. At Propose each order is put to you first.' },
   'enquiries->contract': { kind: 'person', label: 'Conveyancer', text: 'Nothing exchanges until each strand above is cleared by the rules or accepted by a conveyancer, every enquiry is answered to our satisfaction, the report on title has gone and source of funds is signed off.' },
@@ -423,14 +438,14 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       </svg>
       {lines.junctions.map((j) => {
         const g = JUNCTION[`${j.from}->${j.to}`];
-        const tells = JUNCTION_TELLS[`${j.from}->${j.to}`];
-        // A person's sign-off is marked, and what the client is told there; everything else is automatic by default.
+        const mails = JUNCTION_EMAILS[`${j.from}->${j.to}`] ?? [];
+        // A person's sign-off is marked, and each email sent there; everything else is automatic by default.
         const person = g && g.kind === 'person' ? g : null;
-        if (!person && !tells) return null;
+        if (!person && !mails.length) return null;
         return (
           <div key={`${j.from}-${j.to}`} className={`ep-junction ${person ? 'person' : 'auto'}`} style={{ left: j.x, top: j.y, display: 'flex', gap: 4 }}>
             {person && <Tip label={person.label} icon={<User size={12} />} text={<><span className="k">{person.label}</span> {person.text}</>} />}
-            {tells && <Tip label="The client is told" icon={<Mail size={12} />} text={<><span className="k">Tells the client</span> {tells}</>} />}
+            {mails.map((e) => <EmailMark key={e.template} e={e} size={12} />)}
           </div>
         );
       })}

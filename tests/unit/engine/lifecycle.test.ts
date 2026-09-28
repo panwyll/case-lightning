@@ -35,14 +35,14 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   await svc.searchReturned(TENANT, MATTER, 'DRAINAGE_WATER', h.doc(searchClear('DRAINAGE_WATER')));
   s = await svc.getState(TENANT, MATTER);
   assert.equal(s.searches.LLC1.status, 'cleared');
-  assert.ok(ports.clientComms.sent.filter((m) => m.template === 'search_back_all_clear').length >= 2, 'client told searches are back, all clear');
+  assert.ok(!ports.clientComms.sent.some((m) => m.template === 'searches_all_back'), 'not until they are all back');
 
   // A flagged CON29 → decision citing the PDF page/section.
   r = await svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchFlagged('CON29')));
   const con29Decision = Object.values(r.state.decisions).find((d) => d.kind === 'search' && d.subject === 'CON29')!;
   assert.equal(con29Decision.status, 'pending');
   assert.match(con29Decision.citations[0].label, /p\.4, 3\.7/);
-  assert.ok(ports.clientComms.sent.some((m) => m.template === 'search_back_under_review'));
+  assert.ok(!ports.clientComms.sent.some((m) => /^search_back/.test(m.template)), 'no email per search');
 
   // An unreadable ENVIRONMENTAL → low confidence → decision, never a guess.
   r = await svc.searchReturned(TENANT, MATTER, 'ENVIRONMENTAL', h.doc(searchLowConfidence('ENVIRONMENTAL')));

@@ -45,6 +45,10 @@ export default function EmailTemplates() {
       setTemplates(r.templates ?? []);
       setDocTemplates(r.docTemplates ?? []);
       setEngine(r.engine ?? {});
+      // Opened from an envelope on the flowchart (?t=<template key>): that template, selected.
+      const want = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('t') : null;
+      const hit = want ? (r.templates ?? []).find((t) => t.name === want) : null;
+      if (hit) setSel(hit.id);
     }
     catch (e: any) { setErr(e?.message || 'Could not load templates.'); }
   }, []);
