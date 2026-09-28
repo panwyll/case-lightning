@@ -1468,7 +1468,7 @@ function AdminPageInner() {
         )}
 
         {tab === 'firm' && <><FirmDetails canEdit={me?.role === 'ADMIN'} /><MySignature /></>}
-        {tab === 'rules' && <RulesPanel canSign={me?.role === 'ADMIN'} />}
+        {tab === 'rules' && <RulesPanel canApprove={me?.role === 'ADMIN'} canPropose={me?.role === 'ADMIN' || me?.role === 'CONVEYANCER'} />}
         {tab === 'team' && (
           <div style={card}>
             {editing === 'new' && (
