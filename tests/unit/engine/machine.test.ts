@@ -199,7 +199,7 @@ test('exchange and completion ordering invariants', () => {
   ]);
   assert.throws(() => decide(state, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-20' }, { now }), /only valid at stage "pre_exchange"/);
   assert.throws(() => decide(state, { type: 'completion_confirmed', actor: USER }, { now }), /only valid at stage "pre_completion"/);
-  assert.throws(() => decide(state, { type: 'sdlt_submitted', actor: USER }, { now }), /not valid before stage "completed"/);
+  assert.throws(() => decide(state, { type: 'sdlt_submitted', actor: USER }, { now }), /comes at the completed stage/);
   assert.throws(() => decide(state, { type: 'mortgage_offer_extracted', actor: 'system', facts: offerClear(), extractor: 'f' }, { now }), /No mortgage offer/);
 });
 

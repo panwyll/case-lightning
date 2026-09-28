@@ -358,7 +358,7 @@ const stageAtLeast = (s: MatterState, stage: Stage): boolean => {
 };
 
 const requireStageAtLeast = (s: MatterState, stage: Stage, what: string): void => {
-  if (!stageAtLeast(s, stage)) reject(`${what} is not valid before stage "${stage}" (matter is at "${s.stage}").`);
+  if (!stageAtLeast(s, stage)) reject(`${what} comes at the ${stage.replace(/_/g, ' ')} stage in this system's process; this case is at ${s.stage.replace(/_/g, ' ')}.`);
 };
 
 const requireStage = (s: MatterState, stage: Stage, what: string): void => {
@@ -908,7 +908,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     // ── Enquiries ──
     case 'raise_enquiry': {
       requireEnrolled(s);
-      requireStageAtLeast(s, 'pre_contract', 'Raising an enquiry');
+      // Any time after instruction: most enquiries follow the contract pack, but a survey question or one the client asks for
+      // is the conveyancer's call, not a stage rule.
+      requireStageAtLeast(s, 'instruction', 'Raising an enquiry');
       if (cmd.origin?.issueId) openIssue(s, cmd.origin.issueId); // an enquiry raised from an issue must be from a live one
       if (!cmd.subject?.trim()) reject('An enquiry needs a subject.', 400);
       const enquiryId = cmd.enquiryId?.trim() || nextPlainEnquiryId(s, cmd.origin?.issueId ?? null);
