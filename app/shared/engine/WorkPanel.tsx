@@ -827,8 +827,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     actions: has('report_on_title') ? <>
       {['not_started', 'rejected'].includes(s.reportOnTitle.status) && (() => {
         // Always shown, so it can be found; greyed out with the reason until the case has reached the point it can be written.
-        const why = !resolved(s.title.status) ? (s.title.documentId ? 'The title is not resolved yet' : 'The official copies are not in yet') : s.stage !== 'contract_review' ? 'Searches, enquiries or the mortgage offer are still open' : null;
-        return <button className="ep-btn primary" disabled={busy || !!why} title={why ?? 'Drafted from the file; a conveyancer approves it before it goes'} onClick={() => cmd({ type: 'draft_report_on_title' })}>{s.reportOnTitle.status === 'rejected' ? 'Draft Report On Title Again' : 'Draft Report On Title'}</button>;
+        const why = !resolved(s.title.status) ? (s.title.documentId ? 'The title is not resolved yet' : 'The official copies are not in yet') : s.stage !== 'pre_contract' && s.stage !== 'contract_review' ? 'Past the report stage' : null;
+        // Before searches, enquiries and the offer are all in, it is an interim report; the supplementary follows before exchange.
+        const interim = s.stage === 'pre_contract';
+        const supplementary = !interim && !!s.reportOnTitle.interimSentAt;
+        return <button className="ep-btn primary" disabled={busy || !!why} title={why ?? (interim ? 'Searches, enquiries or the offer are still to come: an interim report, with a supplementary one before exchange' : 'Drafted from the file; a conveyancer approves it before it goes')} onClick={() => cmd({ type: 'draft_report_on_title' })}>{interim ? 'Draft Interim Report On Title' : supplementary ? 'Draft Supplementary Report' : s.reportOnTitle.status === 'rejected' ? 'Draft Report On Title Again' : 'Draft Report On Title'}</button>;
       })()}
       {s.reportOnTitle.status === 'drafted' && <a className="ep-btn" href="?tab=tasks">Review Draft In Tasks</a>}
       {s.reportOnTitle.status === 'approved' && <button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'send_report_on_title' })}>Send Report To Client</button>}

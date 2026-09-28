@@ -35,7 +35,7 @@ const READY: Record<string, (s: MatterState) => string | null> = {
     if (s.reportOnTitle.status === 'drafted') return 'A draft is waiting for approval in Tasks';
     if (s.reportOnTitle.status === 'approved' || s.reportOnTitle.status === 'sent') return `Already ${s.reportOnTitle.status}`;
     if (!isResolved(s.title.status)) return s.title.documentId ? 'Title not resolved yet' : 'Official copies not in yet';
-    if (s.stage !== 'contract_review') return atLeast(s, 'pre_exchange') ? 'Past the report stage' : 'Searches, enquiries or the mortgage offer still open';
+    if (s.stage !== 'contract_review' && s.stage !== 'pre_contract') return atLeast(s, 'pre_exchange') ? 'Past the report stage' : 'Not at pre-contract yet';
     return null;
   },
 };

@@ -1108,7 +1108,9 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'draft_report_on_title': {
       requireEnrolled(s);
       requireSide(s, ['buyer'], 'A report on title');
-      requireStage(s, 'contract_review', 'Drafting the report on title');
+      // Once the title is resolved it can be written: in pre-contract it is an interim report (searches, enquiries or the
+      // offer still to come) and a supplementary one follows before exchange; in contract review it is the full report.
+      if (s.stage !== 'pre_contract' && s.stage !== 'contract_review') reject(`The report on title is written in pre-contract or contract review; this case is at ${s.stage.replace(/_/g, ' ')}.`);
       if (!isResolved(s.title.status)) reject(`Title is ${s.title.status}; resolve it before drafting the report.`);
       if (s.reportOnTitle.status === 'drafted') reject('A draft is already awaiting approval.');
       if (s.reportOnTitle.status === 'approved') reject('An approved draft is awaiting sending.');
@@ -1122,7 +1124,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         summarisedBy: cmd.model,
       };
       assertDecisionSpec(decision);
-      return [{ type: 'report_on_title_drafted', actor: AI, payload: { draftId: cmd.draftId, draftDocumentId: cmd.draftDocumentId, model: cmd.model, decision, basedOn: cmd.basedOn ?? [] }, sourceDocumentId: cmd.draftDocumentId }];
+      return [{ type: 'report_on_title_drafted', actor: AI, payload: { draftId: cmd.draftId, draftDocumentId: cmd.draftDocumentId, model: cmd.model, decision, basedOn: cmd.basedOn ?? [], interim: s.stage === 'pre_contract' }, sourceDocumentId: cmd.draftDocumentId }];
     }
     case 'record_report_on_title_sent': {
       assertCanSendReport(s, cmd.draftId);
@@ -2544,5 +2546,6 @@ export function assertCanSendReport(s: MatterState, draftId: string): void {
   if (r.draftId !== draftId) reject('That draft is not the current report on title.');
   if (r.status === 'sent') reject('The report on title has already been sent.');
   if (r.status !== 'approved' || !r.approvedEventId) reject('The report on title has not been approved by a conveyancer.', 412);
+  if (r.interim && s.stage !== 'pre_contract') reject('This draft was written as an interim report, before searches, enquiries and the offer were all in; they are in now, so draft the report again.');
   if (!r.approvedBy || !isUserActor(r.approvedBy)) reject('Approval must come from a person, not automation.', 412);
 }

@@ -246,7 +246,7 @@ export interface EngineState {
   enquiries: Record<string, { enquiryId: string; subject: string; origin?: { about?: string; purpose?: string } | null; status: string; raisedAt: string; repliedAt: string | null; resolution: string | null; documentId?: string | null }>;
   mortgage: { status: string; facts: { lender?: string } | null; documentId?: string | null };
   title: { status: string; facts: { titleNumber?: string; tenure?: string } | null; documentId?: string | null; lease?: { unexpiredYears?: number | null; groundRentPenniesPa?: number | null; demise?: string | null } | null; leaseDocumentId?: string | null };
-  reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null };
+  reportOnTitle: { status: string; draftId: string | null; approvedBy: string | null; sentAt: string | null; interim?: boolean; interimSentAt?: string | null };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
   sellerForms?: { receivedAt: string | null; forms: string[]; documentId: string | null; facts: unknown };

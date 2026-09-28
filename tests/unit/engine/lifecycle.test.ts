@@ -262,3 +262,29 @@ test('no search provider connected: an ordered search comes straight back as a p
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.reportOnTitle.status, 'drafted', 'title, searches and enquiries resolved: the report drafted itself');
 });
+
+test('the report on title can go early as an interim report; once searches are in, a supplementary is due before exchange and drafts itself', async () => {
+  const h = harness();
+  const { svc } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29'] });
+  await svc.requestIdCheck(TENANT, MATTER, USER);
+  await svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  await svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  let s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.stage, 'pre_contract', 'the search is still out');
+  await svc.draftReportOnTitle(TENANT, MATTER);
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.reportOnTitle.interim, true);
+  const d = Object.values(s.decisions).find((x) => x.kind === 'report_on_title' && x.status === 'pending')!;
+  await resolve(h, d.eventId, 'approve', USER);
+  await svc.sendReportOnTitle(TENANT, MATTER, USER);
+  assert.equal((await svc.getState(TENANT, MATTER)).reportOnTitle.status, 'sent');
+  // The search comes back: everything is in, and the interim report is not the whole story.
+  await svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
+  s = await svc.getState(TENANT, MATTER);
+  assert.equal(s.stage, 'contract_review');
+  assert.ok(s.reportOnTitle.interimSentAt, 'the interim report is remembered');
+  assert.equal(s.reportOnTitle.status, 'drafted', 'the supplementary drafted itself');
+  assert.equal(s.reportOnTitle.interim, false);
+  assert.ok(s.reportOnTitle.status !== 'sent' && !(await import('../../../lib/server/engine/machine')).stageBlockers(s).every((b) => !/report on title/.test(b)), 'exchange waits for the supplementary');
+});

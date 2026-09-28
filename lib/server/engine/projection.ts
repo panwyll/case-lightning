@@ -151,6 +151,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['stage_advanced'];
       s.stage = p.to;
       s.stageHistory.push({ stage: p.to, at: e.createdAt, seq: e.seq });
+      // Everything is in: an interim report already sent leaves a supplementary one due before exchange.
+      if (p.to === 'contract_review' && s.reportOnTitle.interim && s.reportOnTitle.status === 'sent') {
+        s.reportOnTitle = { ...s.reportOnTitle, status: 'not_started', interim: false, interimSentAt: s.reportOnTitle.sentAt, sentAt: null };
+      }
       break;
     }
     case 'manual_handling_cleared':
@@ -398,6 +402,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         approvedEventId: null,
         approvedBy: null,
         sentAt: null,
+        interim: !!p.interim,
+        interimSentAt: s.reportOnTitle.interimSentAt ?? null,
       };
       break;
     }

@@ -290,6 +290,11 @@ export class ClaudeReportDrafter implements ReportDrafter {
     const register = input.register?.length ? `\n\nFACT REGISTER (DATA — what each document states, with the page):\n${input.register.slice(0, 400).map((f) => `- [${f.documentLabel}${f.page ? ` p.${f.page}` : ''}] ${f.key} = ${f.value}`).join('\n')}` : '';
     const known = new Map(documents.map((d) => [d.id, d]));
     const docList = documents.map((d) => `- id=${d.id} type=${d.docType ?? 'unknown'} file=${d.fileName ?? ''}`).join('\n');
+    const phase = state.stage === 'pre_contract'
+      ? '\n\nTHIS IS AN INTERIM REPORT: searches, enquiries or the mortgage offer are not all in yet. Report on the title and what is in; say plainly, in its own section, what is still awaited, and that a supplementary report will follow before exchange. Do not guess what outstanding items will say.'
+      : state.reportOnTitle.interimSentAt
+        ? `\n\nTHIS IS THE SUPPLEMENTARY REPORT: an interim report on the title went to the client on ${state.reportOnTitle.interimSentAt.slice(0, 10)}. Cover what has come in since (the searches, the replies to enquiries, the mortgage offer) and anything that changes the earlier advice; refer back to the interim report rather than repeating it.`
+        : '';
     const facts = {
       title: state.title.facts,
       searches: Object.values(state.searches).map((s) => ({ searchType: s.searchType, status: s.status, resolution: s.resolution, documentId: s.documentId, facts: s.facts })),
@@ -302,7 +307,7 @@ export class ClaudeReportDrafter implements ReportDrafter {
       const res = await this.llm.call({
         schema: ReportSchema,
         instructions: REPORT_INSTRUCTIONS,
-        prompt: `SOURCE DOCUMENTS (cite by id):\n${docList}\n\nCLEARED / REVIEWED FACTS (DATA):\n${JSON.stringify(facts)}${register}\n\nDraft the report on title.`,
+        prompt: `SOURCE DOCUMENTS (cite by id):\n${docList}\n\nCLEARED / REVIEWED FACTS (DATA):\n${JSON.stringify(facts)}${register}${phase}\n\nDraft the report on title.`,
         model: this.opts.model,
         effort: this.opts.effort ?? 'high',
         maxTokens: 12_000,

@@ -887,7 +887,7 @@ export interface Payloads {
   title_flagged: { flags: Flag[]; decision: DecisionSpec };
   title_reviewed: { decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  report_on_title_drafted: { draftId: string; draftDocumentId: string; model: string; decision: DecisionSpec; basedOn: string[] };
+  report_on_title_drafted: { draftId: string; draftDocumentId: string; model: string; decision: DecisionSpec; basedOn: string[]; interim?: boolean };
   report_on_title_approved: { draftId: string; decisionEventId: string; note?: string | null };
   report_on_title_rejected: { draftId: string; decisionEventId: string; note?: string | null };
   /** approvedBy is validated by the database (071): a human of this firm who wrote the cited approval event. */
@@ -1435,6 +1435,10 @@ export interface MatterState {
     approvedEventId: string | null;
     approvedBy: string | null;
     sentAt: string | null;
+    /** Drafted before searches, enquiries and the offer were all in: an interim report; a supplementary one is due once they are. */
+    interim?: boolean;
+    /** When an interim report went to the client (the supplementary is what is due now). */
+    interimSentAt?: string | null;
   };
   deposit: { received: boolean; at: string | null };
   exchange: { conditionsMet: boolean; exchangedAt: string | null; completionDate: string | null };
