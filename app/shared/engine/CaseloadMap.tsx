@@ -1,6 +1,7 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { HEALTH_LABEL, type CaseToken, type HealthBand } from './types';
+import { Minus, Plus, Search } from '@/app/shared/icons';
 
 /**
  * The caseload map (docs/caseload-ux.md §1): every matter as a house on a sheet of paper,
@@ -68,6 +69,11 @@ export const CASELOAD_CSS = `
 .cm-compact .cm-row{display:block;min-height:0;padding:8px 10px 6px}
 .cm-compact .cm-lab{border-right:0;padding:0 0 4px;font-size:9.5px;letter-spacing:.08em;align-self:auto}
 .cm-compact .cm-houses{padding:0;gap:3px}
+.cm-zoom{display:inline-flex;align-items:center;border:1px solid #e2e8f0;border-radius:999px;background:#fff;overflow:hidden;margin-left:auto}
+.cm-zoom button{border:0;background:none;padding:5px 9px;display:inline-flex;align-items:center;color:#475569;cursor:pointer}
+.cm-zoom button:hover:not(:disabled){background:#f5f3ff;color:#5A27E0}
+.cm-zoom button:disabled{color:#cbd5e1;cursor:default}
+.cm-zoom .mag{border-left:1px solid #eef1f5;border-right:1px solid #eef1f5}
 .cm-house{background:none;border:0;padding:0;cursor:pointer;line-height:0;border-radius:4px;transition:transform .08s ease}
 .cm-house:hover,.cm-house:focus-visible{transform:translateY(-3px);outline:none}
 .cm-house.dim{opacity:.18}
@@ -111,6 +117,9 @@ export function House({ band, size = 30, title, untracked = false }: { band: Hea
 const line = (t: CaseToken) => t.health.headline ?? `Day ${t.dayOfCase} · nothing outstanding`;
 const isTracked = (t: CaseToken) => t.tracked !== false;
 
+/** House sizes on the board, as a multiple of normal: a fifth to double. */
+const ZOOM_STEPS = [0.2, 0.3, 0.45, 0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
+
 export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false, hideBoard = false, byHandler = false }: {
   /** A section inside a grouped board: smaller title, no filter chips. */
   compact?: boolean;
@@ -125,6 +134,11 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
   rollup: { total: number; normal: number; attention: number; delayed: number; blocked: number; critical: number; stuck: number; untracked?: number };
   onOpen: (matterId: string) => void;
 }) {
+  // The houses' size (a heads-up scatter of the caseload): a fifth of normal at least, double at most; remembered per viewer.
+  const [zi, setZi] = useState<number>(ZOOM_STEPS.indexOf(1));
+  useEffect(() => { try { const raw = window.localStorage.getItem('caseview-zoom'); const v = raw === null ? NaN : Number(raw); if (Number.isInteger(v) && v >= 0 && v < ZOOM_STEPS.length) setZi(v); } catch { /* default size */ } }, []);
+  const setZoomAt = (n: number) => { const k = Math.min(ZOOM_STEPS.length - 1, Math.max(0, n)); setZi(k); try { window.localStorage.setItem('caseview-zoom', String(k)); } catch { /* per-viewer convenience */ } };
+  const zoom = compact ? 1 : ZOOM_STEPS[zi];
   const [filter, setFilter] = useState<HealthBand | 'all'>('all');
   const [tip, setTip] = useState<{ t: CaseToken; x: number; y: number } | null>(null);
 
@@ -159,7 +173,7 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
       onMouseLeave={() => setTip(null)}
       aria-label={`${t.propertyAddress ?? t.matterRef ?? 'Case'} — ${HEALTH_LABEL[t.health.band]}`}
     >
-      <House band={t.health.band} size={28} title={t.propertyAddress ?? t.matterRef ?? undefined} />
+      <House band={t.health.band} size={Math.max(6, Math.round(28 * zoom))} title={t.propertyAddress ?? t.matterRef ?? undefined} />
     </button>
   ));
   const chip = (key: HealthBand | 'all', n: number, label: string) => (
@@ -182,7 +196,14 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
           {chip('blocked', rollup.blocked, 'Blocked')}
           {chip('critical', rollup.critical, 'Critical')}
         </div>}
-        {actions && <div style={{ marginLeft: 'auto' }}>{actions}</div>}
+        {!compact && !hideBoard && (
+          <div className="cm-zoom" role="group" aria-label="House size">
+            <button type="button" aria-label="Smaller" disabled={zi === 0} onClick={() => setZoomAt(zi - 1)}><Minus size={16} /></button>
+            <button type="button" aria-label="Normal size" title={`${Math.round(zoom * 100)}%`} className="mag" onClick={() => setZoomAt(ZOOM_STEPS.indexOf(1))}><Search size={16} /></button>
+            <button type="button" aria-label="Larger" disabled={zi === ZOOM_STEPS.length - 1} onClick={() => setZoomAt(zi + 1)}><Plus size={16} /></button>
+          </div>
+        )}
+        {actions && <div style={{ marginLeft: compact || hideBoard ? 'auto' : undefined }}>{actions}</div>}
       </div>
       {!hideBoard && <div className="cm-board">
         {byHandler && handlers.length > 0 && (
