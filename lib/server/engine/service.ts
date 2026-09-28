@@ -1398,7 +1398,8 @@ export class EngineService {
           await this.ports.mailFolders.archiveCase(tenantId, matterId).catch((err) => this.ports.log('case mail folders could not be archived', err));
         }
         // The deeds are ready to sign once the contract is approved (on a remortgage, the offer is cleared; on a transfer of equity, the lender consents): the pack is proposed.
-        if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage') || e.type === 'lender_consent_received') {
+        if (e.type === 'contract_approved' || ((e.type === 'mortgage_offer_cleared' || e.type === 'mortgage_condition_reviewed') && (await this.getState(tenantId, matterId)).transactionType === 'remortgage') || e.type === 'lender_consent_received' || (e.type === 'client_decision_recorded' && (e.payload as { subject?: string }).subject === 'ownership_basis' && (await this.getState(tenantId, matterId)).signing.packSentAt)) {
+          // (A tenants-in-common decision after the pack went adds the declaration of trust: it goes on its own.)
           await this.proposeSigningPack(tenantId, matterId, subflows);
         }
         // A survey read for the first time: its letter and enquiries are proposed. A re-read only refreshes the reading;
