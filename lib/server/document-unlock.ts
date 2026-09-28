@@ -55,7 +55,12 @@ export async function tryUnlockDocument(tenantId: string, documentId: string, pa
   const src = await bytesFor(tenantId, documentId);
   if (!src) return { unlocked: false, reason: 'The file could not be read.' };
   if (!(await isLockedPdf(src.bytes))) return { unlocked: true, reason: 'The file is not password-protected.' };
-  const open = await unlockPdf(src.bytes, password).catch(() => null);
+  // A wrong password returns null; a failure to open the file at all is a different problem, and says so.
+  let open: Buffer | null;
+  try { open = await unlockPdf(src.bytes, password); } catch (err) {
+    console.error('[unlock] could not open the PDF to try the password', (err as Error).message);
+    return { unlocked: false, reason: `The file could not be opened to try the password (${(err as Error).message.slice(0, 120)}).` };
+  }
   if (!open) return { unlocked: false, reason: 'That password does not open the file.' };
   await putBlob(tenantId, documentId, open, { mime: 'application/pdf', replace: true });
   await query(`update document set extracted_facts = coalesce(extracted_facts, '{}'::jsonb) || $3::jsonb, size_bytes = $4 where id = $1 and tenant_id = $2`, [documentId, tenantId, JSON.stringify({ locked: false, unlockedAt: new Date().toISOString(), unlockedBy: by.userId ?? 'system', unlockedHow: by.how }), open.length]);

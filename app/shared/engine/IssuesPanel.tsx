@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { PasswordInput } from './PasswordInput';
 import { fmtDay, pretty, type Api, type EngineState, type IssueCatalogue, type IssueRow } from './types';
 
 /**
@@ -66,10 +67,12 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
   const [pwFor, setPwFor] = useState<string | null>(null);
   const [pw, setPw] = useState('');
   const [pwErr, setPwErr] = useState<string | null>(null);
+  const [unlockingNow, setUnlockingNow] = useState(false);
   const unlock = async (docId: string) => {
-    setPwErr(null);
+    setPwErr(null); setUnlockingNow(true);
     try { await api(`/documents/${docId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pw, from: 'task' }) }); setPwFor(null); setPw(''); onChanged?.(); }
     catch (e: unknown) { setPwErr(e instanceof Error ? e.message : 'That password does not open the file.'); }
+    finally { setUnlockingNow(false); }
   };
   const menuRef = useRef<HTMLDivElement | null>(null);
 
@@ -151,9 +154,9 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
         {pwFor === i.id && lockedDoc(i) && (
           <div className="is-res">
             <div className="r">
-              <input className="ep-input" type="password" autoFocus placeholder="Password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && pw) void unlock(lockedDoc(i)!); }} style={{ flex: 1, minWidth: 200 }} autoComplete="off" />
+              <PasswordInput className="ep-input" autoFocus value={pw} onChange={setPw} onEnter={() => void unlock(lockedDoc(i)!)} onEscape={() => setPwFor(null)} style={{ flex: 1, minWidth: 200 }} />
               <button className="ep-btn" style={{ margin: 0 }} onClick={() => setPwFor(null)}>Cancel</button>
-              <button className="ep-btn primary" style={{ margin: 0 }} disabled={!pw} onClick={() => void unlock(lockedDoc(i)!)}>Unlock</button>
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={!pw || unlockingNow} onClick={() => void unlock(lockedDoc(i)!)}>{unlockingNow ? 'Unlocking…' : 'Unlock'}</button>
             </div>
             {pwErr && <div className="fx" style={{ color: '#b91c1c' }}>{pwErr}</div>}
           </div>

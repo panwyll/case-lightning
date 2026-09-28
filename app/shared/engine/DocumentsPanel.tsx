@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
+import { PasswordInput } from './PasswordInput';
 import { WORK_CSS } from './WorkPanel';
 import { Grouped, ListToolbar, useListTools, whenIn, type Filter } from './ListTools';
 import { fmtWhen, pretty, type Api, type DocumentReviewSummary, type DraftCheckView, type EngineEvent, type EngineView } from './types';
@@ -298,7 +299,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
               <div key={d.id} className="ep-row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{d.fileName ?? d.id}</b>
                 <span className="ep-note">{fmtWhen(d.createdAt)}</span>
-                <input className="ep-input" type="password" placeholder="Password" value={pw[d.id] ?? ''} onChange={(e) => setPw((m) => ({ ...m, [d.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') void unlock(d.id); }} style={{ width: 180 }} aria-label={`Password for ${d.fileName ?? 'file'}`} />
+                <PasswordInput className="ep-input" value={pw[d.id] ?? ''} onChange={(v) => setPw((m) => ({ ...m, [d.id]: v }))} onEnter={() => void unlock(d.id)} style={{ width: 200 }} />
                 <button className="ep-btn primary" disabled={unlocking === d.id || !(pw[d.id] ?? '').length} onClick={() => void unlock(d.id)}>{unlocking === d.id ? 'Unlocking…' : 'Unlock'}</button>
                 {unlockErr[d.id] && <span className="ep-note" style={{ color: '#b91c1c' }}>{unlockErr[d.id]}</span>}
               </div>

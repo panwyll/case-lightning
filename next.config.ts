@@ -8,7 +8,10 @@ import { APP_BASE, PROTECTED_SEGMENTS } from './lib/paths';
  * that was written before the move working, permanently.
  */
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['pdfjs-dist', 'tesseract.js', '@napi-rs/canvas'],
+  // mupdf (WebAssembly: locked-PDF detection and unlocking) breaks when bundled ("_ is not a function"): it is loaded from
+  // node_modules as it ships, and its .wasm is carried into every server function that can reach it.
+  serverExternalPackages: ['pdfjs-dist', 'tesseract.js', '@napi-rs/canvas', 'mupdf'],
+  outputFileTracingIncludes: { '/api/**': ['./node_modules/mupdf/dist/mupdf-wasm.wasm'] },
   async redirects() {
     return PROTECTED_SEGMENTS.flatMap((seg) => [
       { source: `/${seg}`, destination: `${APP_BASE}/${seg}`, permanent: true },

@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
@@ -77,10 +78,13 @@ export default function TaskList({ who }: { who: string }) {
   };
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [pwd, setPwd] = useState('');
+  const [unlockBusy, setUnlockBusy] = useState(false);
   /** A locked file opened from its task: the right password unlocks it, closes the task and reads the file. */
   const unlock = async (i: WorkItem) => {
+    setUnlockBusy(true); setQuickErr(null);
     try { await api(`/documents/${i.documentId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pwd, from: 'task' }) }); setUnlockingId(null); setPwd(''); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
     catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); }
+    finally { setUnlockBusy(false); }
   };
   const quickApprove = async (key: string, eventId: string) => {
     setApproving(eventId);
@@ -165,7 +169,7 @@ export default function TaskList({ who }: { who: string }) {
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
-                        ? <span className="tl-pw"><input type="password" autoFocus placeholder="Password" value={pwd} onChange={(e) => setPwd(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && pwd) void unlock(i); if (e.key === 'Escape') setUnlockingId(null); }} autoComplete="off" /><button type="button" className="tl-btn go" disabled={!pwd} onClick={() => void unlock(i)}>Unlock</button></span>
+                        ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><button type="button" className="tl-btn go" disabled={!pwd || unlockBusy} onClick={() => void unlock(i)}>{unlockBusy ? 'Unlocking…' : 'Unlock'}</button></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
                       {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
                       <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=tasks' : ''}`}>{i.ref?.type === 'issue' ? 'Open issue' : 'Open case'} <ChevronRight size={14} /></a>
