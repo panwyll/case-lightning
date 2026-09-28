@@ -237,6 +237,8 @@ export interface EnginePorts {
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;
+  /** The firm's reminder window for client updates, in hours (Rules > Timers); absent = the default. */
+  clientReminderHours?(tenantId: string): Promise<number>;
   /** Optional: drafts the letter after the survey (a person reads and can edit it). Without it, the template letter. */
   surveyAdviser?: { draft(input: { tenantId: string; matterId: string; facts: SurveyFacts; purchasePricePennies: number | null; freehold: boolean; hasLender: boolean; transactionLabel: string }): Promise<string | null> } | null;
   /** Optional: Outlook housekeeping; a completed case's mail folders move into Archive. */

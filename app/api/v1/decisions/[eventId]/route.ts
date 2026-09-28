@@ -1,4 +1,5 @@
 import { effectText, noteTaskTitle, nothingToActTitle } from '@/lib/server/engine/notes';
+import { getPolicy } from '@/lib/server/policy';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -99,7 +100,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
     let message = null as Awaited<ReturnType<typeof previewProposal>>;
     if (d.kind === 'proposal') {
       const pr = Object.values(stateForContext.proposals).find((x) => x.eventId === eventId) ?? null;
-      if (pr) message = await previewProposal(user.tenantId, d.matterId, pr.action, (pr.detail ?? {}) as Record<string, unknown>, { overview: clientOverview(stateForContext, new Date()).text }).catch(() => null);
+      if (pr) message = await previewProposal(user.tenantId, d.matterId, pr.action, (pr.detail ?? {}) as Record<string, unknown>, { overview: clientOverview(stateForContext, new Date(), { reminderHours: await getPolicy(user.tenantId, 'clientReminderHours').catch(() => undefined) }).text }).catch(() => null);
     }
     return ok({
       context,

@@ -15,9 +15,9 @@ interface Timer { waitKey: string; label: string; to: string; chaseAfter: number
 interface Message { id: string; kind: 'acknowledgement' | 'update' | 'chase' | 'request'; when: string; to: string; subject: string; template: string; levelKey: string; level: TrustLevel }
 interface DocRule { id: string; document: string; rule: string; value: string }
 interface CaseRule { id: string; group: string; when: string; then: string; holds?: string; tells?: string; source: string }
-interface Rules { policies?: { protectOutgoingFiles: boolean; archiveHandledEmail?: boolean }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
+interface Rules { policies?: { protectOutgoingFiles: boolean; archiveHandledEmail?: boolean; clientReminderHours?: number }; timers: Timer[]; messages: Message[]; documentRules: DocRule[]; caseRules: CaseRule[]; signoffs: Record<string, { at: string; by: string | null }> }
 
-const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['cases', 'Case Rules'], ['documents', 'Document Rules']] as const;
+const SECTIONS = [['signoffs', 'Sign-Offs'], ['timers', 'Timers'], ['messages', 'Messages'], ['documents', 'Document Rules']] as const;
 const KIND_LABEL: Record<Message['kind'], string> = { acknowledgement: 'Acknowledgement', update: 'Client update', chase: 'Chase', request: 'Request' };
 
 const CSS = `
@@ -60,17 +60,26 @@ export default function RulesPage() {
   const [section, setSection] = useState<string>(typeof window !== 'undefined' && window.location.hash ? window.location.hash.slice(1) : 'signoffs');
   const setProtect = async (value: boolean) => {
     setBusy('policy');
-    try { await api('/admin/rules', { method: 'PATCH', body: JSON.stringify({ key: 'protectOutgoingFiles', value }) }); await load(); }
+    try { await api('/admin/engine-rules', { method: 'PATCH', body: JSON.stringify({ key: 'protectOutgoingFiles', value }) }); await load(); }
+    finally { setBusy(null); }
+  };
+  const [remind, setRemind] = useState<string>('');
+  const saveRemind = async () => {
+    const hours = Number(remind);
+    if (!Number.isInteger(hours) || hours < 1) return;
+    setBusy('remind');
+    try { await api('/admin/engine-rules', { method: 'PATCH', body: JSON.stringify({ key: 'clientReminderHours', value: hours }) }); setRemind(''); await load(); }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save it.'); }
     finally { setBusy(null); }
   };
   const setArchive = async (value: boolean) => {
     setBusy('archive');
-    try { await api('/admin/rules', { method: 'PATCH', body: JSON.stringify({ key: 'archiveHandledEmail', value }) }); await load(); }
+    try { await api('/admin/engine-rules', { method: 'PATCH', body: JSON.stringify({ key: 'archiveHandledEmail', value }) }); await load(); }
     finally { setBusy(null); }
   };
   const load = useCallback(async () => {
     try {
-      setR(await api<Rules>('/admin/rules'));
+      setR(await api<Rules>('/admin/engine-rules'));
       setErr(null);
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : 'Could not load the rules (admins only).');
@@ -91,7 +100,7 @@ export default function RulesPage() {
   const saveTimer = async (t: Timer) => {
     setBusy(t.waitKey);
     try {
-      await api('/admin/rules', { method: 'PUT', body: JSON.stringify({ waitKey: t.waitKey, chaseAfter: timerValue(t, 'chaseAfter'), chaseEvery: timerValue(t, 'chaseEvery'), escalateAfter: timerValue(t, 'escalateAfter'), reEscalateAfter: timerValue(t, 'reEscalateAfter') }) });
+      await api('/admin/engine-rules', { method: 'PUT', body: JSON.stringify({ waitKey: t.waitKey, chaseAfter: timerValue(t, 'chaseAfter'), chaseEvery: timerValue(t, 'chaseEvery'), escalateAfter: timerValue(t, 'escalateAfter'), reEscalateAfter: timerValue(t, 'reEscalateAfter') }) });
       setEdits((e) => { const n = { ...e }; delete n[t.waitKey]; return n; });
       await load();
     } catch (e: unknown) {
@@ -100,30 +109,6 @@ export default function RulesPage() {
       setBusy(null);
     }
   };
-  const sign = async (ruleId: string, signed: boolean) => {
-    setBusy(ruleId);
-    try {
-      await api('/admin/rules', { method: 'POST', body: JSON.stringify({ ruleId, signed }) });
-      await load();
-    } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Could not record the sign-off.');
-    } finally {
-      setBusy(null);
-    }
-  };
-  const signCell = (id: string) => {
-    const s = r?.signoffs?.[id];
-    return (
-      <td className="ru-sign">
-        {s ? (
-          <span className="ru-signed"><i>✓</i>Signed <small>{s.by ?? ''} · {new Date(s.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</small><button className="eg-btn" disabled={busy === id} onClick={() => void sign(id, false)} title="Withdraw this sign-off">Undo</button></span>
-        ) : (
-          <button className="eg-btn primary" disabled={busy === id} onClick={() => void sign(id, true)}>Sign Off</button>
-        )}
-      </td>
-    );
-  };
-  const signedCount = (ids: string[]) => ids.filter((id) => r?.signoffs?.[id]).length;
   const pickLevel = async (m: Message, lv: TrustLevel) => {
     setBusy(m.id);
     try {
@@ -190,6 +175,13 @@ export default function RulesPage() {
           </table>
         </div>
         <div className="ru-sub" style={{ marginTop: 6 }}>Working days, England and Wales.</div>
+        <div className="eg-card" style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <b style={{ fontSize: 13.5, flex: 1, minWidth: 240 }}>Remind Clients of What They Owe in Updates</b>
+          <span className="ru-sub">No sooner than every</span>
+          <input type="number" min={1} max={336} value={remind !== '' ? remind : String(r?.policies?.clientReminderHours ?? 24)} onChange={(e) => setRemind(e.target.value)} style={{ width: 64, border: '1px solid #cbd5e1', borderRadius: 6, padding: '5px 8px', font: 'inherit', fontSize: 13 }} aria-label="Hours" />
+          <span className="ru-sub">hours</span>
+          {remind !== '' && Number(remind) !== (r?.policies?.clientReminderHours ?? 24) && <button className="eg-btn primary" disabled={busy === 'remind'} onClick={() => void saveRemind()}>Save</button>}
+        </div>
       </section>
 
       <section id="messages" className="ru-sec">
@@ -230,43 +222,8 @@ export default function RulesPage() {
         </div>
       </section>
 
-      <section id="cases" className="ru-sec">
-        <h2 className="ru-h">Case Rules</h2>
-        {r && <div className="ru-progress">{signedCount(r.caseRules.map((x) => x.id))} of {r.caseRules.length} signed off</div>}
-        <div className="eg-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table className="ru-t">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Then</th>
-                <th>Holds</th>
-                <th>Tells</th>
-                <th>Signed</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from(new Set((r?.caseRules ?? []).map((x) => x.group))).map((g) => (
-                <Fragment key={g}>
-                  <tr className="grp"><td colSpan={5}>{g}</td></tr>
-                  {(r?.caseRules ?? []).filter((x) => x.group === g).map((x) => (
-                    <tr key={x.id} title={x.source}>
-                      <td style={{ fontWeight: 600, width: '22%', verticalAlign: 'top' }}>{x.when}</td>
-                      <td style={{ width: '48%', verticalAlign: 'top', lineHeight: 1.45 }}>{x.then}</td>
-                      <td>{x.holds && <span className="ru-holds">{x.holds}</span>}</td>
-                      <td className="ru-tells">{x.tells ?? ''}</td>
-                      {signCell(x.id)}
-                    </tr>
-                  ))}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       <section id="documents" className="ru-sec">
         <h2 className="ru-h">Document Rules</h2>
-        {r && <div className="ru-progress">{signedCount(r.documentRules.map((x) => x.id))} of {r.documentRules.length} signed off</div>}
         <div className="eg-card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="ru-t">
             <thead>
@@ -274,7 +231,6 @@ export default function RulesPage() {
                 <th>Document</th>
                 <th>Rule</th>
                 <th>Value</th>
-                <th>Signed</th>
               </tr>
             </thead>
             <tbody>
@@ -283,7 +239,6 @@ export default function RulesPage() {
                   <td style={{ whiteSpace: 'nowrap' }}>{d.document}</td>
                   <td>{d.rule}</td>
                   <td className="ru-val">{d.value}</td>
-                  {signCell(d.id)}
                 </tr>
               ))}
             </tbody>

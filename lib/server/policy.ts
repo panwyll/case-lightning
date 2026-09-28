@@ -2,13 +2,15 @@
 import { query, queryOne } from './db';
 
 export type SigningProvider = 'none' | 'infotrack' | 'intouch' | 'leap' | 'mock';
-export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider } = {
+export const POLICY_DEFAULTS: { protectOutgoingFiles: boolean; archiveHandledEmail: boolean; signingProvider: SigningProvider; clientReminderHours: number } = {
   /** Outgoing files go as a password-protected zip, with the password sent separately (WhatsApp where the client has opted in, otherwise its own message). */
   protectOutgoingFiles: false,
   /** Email filed to a case or set aside here is archived in the mailbox, so the Outlook inbox matches the Email tab. */
   archiveHandledEmail: true,
   /** Who the firm signs deeds electronically with ('none': wet ink only). A lender that does not take an e-signed mortgage deed is wet ink regardless. */
   signingProvider: 'none',
+  /** A client update mentions what the client still owes us only if nobody has asked them about it (an update, a chase, the request itself) in this many hours. */
+  clientReminderHours: 24,
 };
 export type PolicyKey = keyof typeof POLICY_DEFAULTS;
 

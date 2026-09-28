@@ -3,9 +3,10 @@
  * what we are waiting on from others, with how long each usually takes. Written from the same
  * case brief the client Q&A answers from, so it never names an internal code.
  *
- * Timing: an item is left out when the client was told about it in the last few days (each
- * update records what it mentioned), or when it was only raised in the last hour — an update
- * sent ten minutes after the form went out does not say "we are still waiting on your form".
+ * Timing: something the client owes us is mentioned only when nobody has asked them for it (an
+ * update, a chase, the request itself) within the firm's reminder window (24 hours unless set),
+ * so an update sent ten minutes after the form went out does not say "we are still waiting on
+ * your form". What others owe is left out when the client heard about it in the last few days.
  */
 import { caseBrief, type BriefWait } from './brief';
 import { activeAvailability, awayNow, type MatterState } from './types';
@@ -32,7 +33,11 @@ export interface ClientOverview { text: string; mentioned: string[] }
 const list = (xs: string[]): string => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 const since = (w: BriefWait): string => (w.sinceCalendarDays <= 0 ? 'today' : w.sinceCalendarDays === 1 ? 'yesterday' : `${w.sinceCalendarDays} days ago`);
 
-export function clientOverview(s: MatterState, now: Date, opts: ChaseContentOptions = {}): ClientOverview {
+/** How long after the client was last asked for something (an update, a chase, the request) an update may remind them of it. The firm sets it (Rules > Timers). */
+export const DEFAULT_CLIENT_REMINDER_HOURS = 24;
+
+export function clientOverview(s: MatterState, now: Date, opts: ChaseContentOptions & { reminderHours?: number } = {}): ClientOverview {
+  const remindMs = (opts.reminderHours ?? DEFAULT_CLIENT_REMINDER_HOURS) * 3_600_000;
   const brief = caseBrief(s, now);
   const told = s.clientToldAt ?? {};
   const keep: BriefWait[] = [];
@@ -41,8 +46,14 @@ export function clientOverview(s: MatterState, now: Date, opts: ChaseContentOpti
     const key = `${w.key}:${w.subject}`;
     const open = s.waits.find((x) => x.key === w.key && x.subject === w.subject && x.closedAt === null);
     const toldAt = told[key] ? new Date(told[key]).getTime() : null;
-    if (toldAt !== null && now.getTime() - toldAt < TOLD_QUIET_MS) continue;
-    if (open && now.getTime() - new Date(open.openedAt).getTime() < JUST_RAISED_MS) continue;
+    if (w.role === 'client') {
+      // Asked recently (told in an update, chased, or only just requested): not again yet. Otherwise it rides along with this update.
+      const asked = Math.max(toldAt ?? 0, ...(open?.chasesSentAt ?? []).map((t) => new Date(t).getTime()), open ? new Date(open.openedAt).getTime() : 0);
+      if (now.getTime() - asked < remindMs) continue;
+    } else {
+      if (toldAt !== null && now.getTime() - toldAt < TOLD_QUIET_MS) continue;
+      if (open && now.getTime() - new Date(open.openedAt).getTime() < JUST_RAISED_MS) continue;
+    }
     keep.push(w);
     mentioned.push(key);
   }

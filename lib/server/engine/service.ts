@@ -244,7 +244,8 @@ export class EngineService {
     } else if (action === 'client_update') {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
-      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), this.idProviderOpts());
+      const reminderHours = this.ports.clientReminderHours ? await this.ports.clientReminderHours(tenantId).catch(() => undefined) : undefined;
+      const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), { ...this.idProviderOpts(), reminderHours });
       const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null });
       // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
       const aboutKey = (d as { about?: unknown }).about;

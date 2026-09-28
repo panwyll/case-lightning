@@ -15,6 +15,7 @@
  *   clientComms    → ProductionClientComms when WhatsApp/Resend/Graph is configured (component #5); mock otherwise
  *   chaser         → ProductionChaser (draft-by-default template chases from the fee-earner mailbox); mock otherwise
  */
+import { getPolicy } from '../policy';
 import { PgLenderDirectory } from './lender-directory';
 import { sandboxGuard } from './sandbox';
 import { previewProposal } from '../comms/preview';
@@ -186,6 +187,7 @@ export function productionPorts(): EnginePorts {
       searchProvider,
       idCheckProvider,
       clientComms,
+      clientReminderHours: (tenantId: string) => getPolicy(tenantId, 'clientReminderHours'),
       chaser,
       signing: clientComms.name.startsWith('mock') ? null : productionSigningPort(),
       // eslint-disable-next-line @typescript-eslint/no-require-imports
