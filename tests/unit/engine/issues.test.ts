@@ -268,3 +268,19 @@ test('readiness milestones and a price change on a lender-funded purchase: advis
   assert.ok(!stageBlockers(s).some((b) => /contract approved|signed contract/.test(b)), 'milestones are advisory');
   assert.ok(stageBlockers(s).some((b) => b.startsWith('issue: Lender approval needed')));
 });
+
+test('a delay is context, not an issue: it holds nothing, makes no task, and is said when someone asks for an update', async () => {
+  const { matterWork } = await import('../../../lib/server/engine/work');
+  const { caseBrief, clientStatusAnswer } = await import('../../../lib/server/engine/brief');
+  const h = harness();
+  await toPreExchange(h);
+  await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'seller_delay', title: 'Seller has not signed the contract', gate: 'exchange' });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(!stageBlockers(s).some((b) => b.startsWith('issue:')), 'holds nothing, even raised with a gate');
+  assert.ok(!matterWork(s, h.ports.now(), {} as never).items.some((i) => i.kind === 'issue'), 'no task');
+  const b = caseBrief(s, h.ports.now());
+  assert.equal(b.context.length, 1);
+  assert.equal(b.issues.length, 0);
+  const a = clientStatusAnswer(b, h.ports.now());
+  if (a.canAnswer) assert.match(a.text, /seller's side is running behind/);
+});

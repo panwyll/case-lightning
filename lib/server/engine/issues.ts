@@ -192,6 +192,8 @@ export interface IssueKindSpec {
   note: string;
   /** What the machine already does about this situation without an issue being raised. */
   overlaps?: string;
+  /** Context, not a problem to solve: who is running late and why. It holds nothing and makes no task; it is on the file and in answers to "any update?". */
+  context?: boolean;
   /** Behaviour (docs/case-model.md §5): default severity, the workstreams affected, the milestones threatened, the standard actions, who owns the next step, when it escalates. */
   severity: IssueSeverity;
   workstreams: Workstream[];
@@ -245,8 +247,8 @@ const KIND_SPECS_BASE: Array<Omit<IssueKindSpec, 'severity' | 'workstreams' | 't
   { kind: 'lender_funds_delayed', group: 'money', label: 'Lender funds delayed', arisesFrom: 'the advance not released: the certificate of title sent late, a condition unsatisfied, the lender\'s cut-off missed', gate: 'completion', stages: POST_EX, resolutions: ['received', 'completed_late', 'other'], note: 'Most lenders need the COT 5 working days before completion; a late advance means late completion interest.', overlaps: 'the funds wait timer chases the lender from day 2' },
   // ── parties & chain ──
   { kind: 'chain_dependency', group: 'parties_chain', label: 'Chain dependency', arisesFrom: 'the top or bottom of the chain is not ready: their management pack, their enquiries, their buyer pulled out, their mortgage', gate: 'exchange', stages: ['contract_review', 'pre_exchange'], resolutions: ['chain_ready', 'dates_replanned', 'other'], note: 'Agents say "ready" a week before solicitors are; a link dropping out costs ~10 weeks; the collapse is often discovered on exchange day.' },
-  { kind: 'seller_delay', group: 'parties_chain', label: 'Seller delay', arisesFrom: 'the seller has not returned the protocol forms, signed the contract, provided documents, or instructed their solicitor on a point', gate: 'exchange', stages: PRE, resolutions: ['received', 'dates_replanned', 'accepted_as_is', 'other'], note: 'The commonest reason a matter sits: nothing is technically wrong, someone is just not doing it.' },
-  { kind: 'buyer_delay', group: 'parties_chain', label: 'Buyer delay', arisesFrom: 'our own client: survey not booked, documents not returned, the deposit not sent, the mortgage application not made', gate: 'exchange', stages: PRE_ALL, resolutions: ['received', 'dates_replanned', 'other'], note: 'Record it so the file shows who was waiting for whom.' },
+  { kind: 'seller_delay', context: true, group: 'parties_chain', label: 'Seller delay', arisesFrom: 'the seller has not returned the protocol forms, signed the contract, provided documents, or instructed their solicitor on a point', gate: 'none', stages: PRE, resolutions: ['received', 'dates_replanned', 'accepted_as_is', 'other'], note: 'The commonest reason a matter sits: nothing is technically wrong, someone is just not doing it.' },
+  { kind: 'buyer_delay', context: true, group: 'parties_chain', label: 'Buyer delay', arisesFrom: 'our own client: survey not booked, documents not returned, the deposit not sent, the mortgage application not made', gate: 'none', stages: PRE_ALL, resolutions: ['received', 'dates_replanned', 'other'], note: 'Record it so the file shows who was waiting for whom.' },
   { kind: 'company_buyer_checks', group: 'funds_aml', label: 'Company buyer checks', arisesFrom: 'the buyer is a company (enrolment shape): Companies House, directors and PSCs, authority to buy, the company\'s source of funds', gate: 'exchange', stages: ['instruction', ...PRE], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'Treat every director and PSC as a client for identity; the company\'s own money is the source of funds.' },
   { kind: 'buy_to_let_conditions', group: 'mortgage', label: 'Buy-to-let conditions', arisesFrom: 'a buy-to-let purchase (enrolment shape): the offer\'s rental cover and letting conditions, a sitting tenancy, deposit protection, licensing', gate: 'exchange', stages: ['instruction', ...PRE], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'A sitting tenant needs the lender\'s consent and the tenancy papers before exchange; higher-rate SDLT applies.' },
   { kind: 'new_build_pack', group: 'property', label: 'New build pack', arisesFrom: 'a new build (enrolment shape): the developer\'s contract, warranty cover note, planning and building regulations, roads and sewers agreements, CIL, completion on notice', gate: 'exchange', stages: ['instruction', ...PRE], resolutions: ['evidence_provided', 'accepted_as_is', 'other'], note: 'The developer sets the exchange deadline; the lender will not lend without the warranty.' },
@@ -360,6 +362,8 @@ const BEHAVIOUR: Record<IssueKind, { severity: IssueSeverity; workstreams: Works
   other: { severity: 'warning', workstreams: [], threatens: ['exchange'], actions: [], responsible: 'conveyancer', escalateAfterWorkingDays: null },
 };
 
+/** Kinds that are context: they never hold a gate or make a task. */
+export const isContextKind = (kind: string): boolean => !!KIND_SPECS_BASE.find((k) => k.kind === kind && (k as { context?: boolean }).context);
 export const ISSUE_KIND_SPECS: IssueKindSpec[] = KIND_SPECS_BASE.map((k) => ({ ...k, ...BEHAVIOUR[k.kind] }));
 
 /** Time-based issues the timer raises itself (docs/case-model.md §6). */

@@ -284,6 +284,7 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
   // ── DO: issues whose next step is ours ──
   for (const i of openIssues(s)) {
     const spec = ISSUE_KIND_SPEC[i.kind];
+    if (spec.context) continue; // context: on the file and in status answers, not a task
     if (spec.responsible !== 'conveyancer' && spec.responsible !== 'mlro') continue;
     if (i.enquiryIds.some((q) => s.enquiries[q] && s.enquiries[q].status !== 'cleared' && s.enquiries[q].status !== 'reviewed')) continue; // tracked by a live enquiry → it is a WAITING, not a DO
     out.push({

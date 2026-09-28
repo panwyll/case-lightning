@@ -143,7 +143,7 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
   const expected = profile.expectedWorkingDays[stage] ?? 10;
   const pace: CasePace = { stage, inStage, expected, overrun: Math.max(0, inStage - expected) };
 
-  const issues = openIssues(s);
+  const issues = openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context);
   const waits = openWaits(s);
   const decisions = pendingDecisions(s).filter((d) => d.kind !== 'auto_clear');
   const deadlines = deadlineActions(s, now, cal);

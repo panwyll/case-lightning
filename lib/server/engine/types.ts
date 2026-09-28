@@ -1687,9 +1687,11 @@ export function openIssues(state: MatterState): IssueState[] {
     .filter((i) => i.status === 'open' || i.status === 'negotiating')
     .sort((a, b) => a.raisedAt.localeCompare(b.raisedAt) || (a.id > b.id ? 1 : -1));
 }
-/** Open issues whose gate holds the given stage exit. */
+/** Issue kinds that are context (who is running late), mirrored from issues.ts `context`: they never hold a gate. */
+export const CONTEXT_ISSUE_KINDS: ReadonlySet<string> = new Set(['seller_delay', 'buyer_delay']);
+/** Open issues whose gate holds the given stage exit (context never does, whatever it was raised with). */
 export function issuesGating(state: MatterState, gate: IssueGate): IssueState[] {
-  return openIssues(state).filter((i) => i.gate === gate);
+  return openIssues(state).filter((i) => i.gate === gate && !CONTEXT_ISSUE_KINDS.has(i.kind));
 }
 
 export function openWaits(state: MatterState): WaitState[] {

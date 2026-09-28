@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { IssuesPanel } from './IssuesPanel';
 import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
@@ -945,6 +946,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     ],
     actions: <>
       {seller && !s.contractPack?.sentAt && atLeast('pre_contract') && act('exchange', 'contract_pack_sent', 'Contract Pack Sent', {}, { primary: true, disabled: forms.status !== 'received' || s.title.status === 'awaiting', title: forms.status !== 'received' ? 'The property forms are not in' : s.title.status === 'awaiting' ? 'Official copies are not on file' : undefined })}
+      {buyer && !exchanged && !completed && <button className="ep-btn" disabled={busy} onClick={() => { const p = ask(s.purchasePricePennies != null ? `Agreed price is £${(s.purchasePricePennies / 100).toLocaleString('en-GB')}. New agreed price (£)? A change on a lender-funded purchase tells the lender.` : 'Agreed price (£)?'); if (!p) return; const r = ask('Why did it change?'); if (r) void cmd({ type: 'record_price_change', toPennies: Math.round(Number(p.replace(/[^0-9.]/g, '')) * 100), reason: r }); }}>Change Price</button>}
       {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.contractApprovedAt && act('exchange', 'contract_approved', 'Contract Approved')}
       {['contract_review', 'pre_exchange'].includes(s.stage) && !s.readiness.signedContractHeldAt && act('exchange', 'signed_contract_held', 'Signed Contract Held')}
       {buyer && ['contract_review', 'pre_exchange'].includes(s.stage) && !s.deposit.received && act('exchange', 'deposit_received', 'Deposit Received')}
@@ -1083,6 +1085,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {section === 'tasks' && (<>
       <div className="ep-sec">To Do ({view.pendingDecisions.length})</div>
       <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
+      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} /></div>
 
       {openWaits.length > 0 && (
         <>

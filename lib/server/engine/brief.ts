@@ -85,6 +85,8 @@ export interface CaseBrief {
   away: Array<{ who: string; from: string; until: string }>;
   /** Open issues — the legal problems. NEVER shown to a client by the automated channel. */
   issues: Array<{ id: string; kind: string; label: string; title: string; gate: string; severity: string }>;
+  /** Context on the file: who is running late (seller, chain, our client). Said in answers to "any update?". */
+  context: Array<{ kind: string; label: string; title: string }>;
   decisionsPending: Array<{ kind: string; subject: string | null }>;
   nextActions: Array<{ what: string; who: string; unblocks: string }>;
   milestones: {
@@ -140,7 +142,8 @@ export function caseBrief(s: MatterState, now: Date = new Date(), cal: WorkingCa
     workstreams: workstreams(s, now).map((w) => ({ id: w.id, label: w.label, status: w.status, detail: w.detail })),
     waiting,
     away: activeAvailability(s, now).map((w) => ({ who: w.party === 'client' ? 'you' : w.party === 'seller_side' ? "the seller's side" : w.party === 'agent' ? 'the estate agent' : 'your lender', from: w.from, until: w.until })),
-    issues: openIssues(s).map((i) => ({ id: i.id, kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title, gate: i.gate, severity: i.severity })),
+    context: openIssues(s).filter((i) => ISSUE_KIND_SPEC[i.kind]?.context).map((i) => ({ kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim() })),
+    issues: openIssues(s).filter((i) => !ISSUE_KIND_SPEC[i.kind]?.context).map((i) => ({ id: i.id, kind: i.kind, label: ISSUE_KIND_SPEC[i.kind]?.label ?? i.kind, title: i.title, gate: i.gate, severity: i.severity })),
     decisionsPending: pendingDecisions(s).filter((d) => d.kind !== 'auto_clear').map((d) => ({ kind: d.kind, subject: d.subject })),
     nextActions: nextActions(s, now).slice(0, 6).map((a) => ({ what: a.what, who: a.who, unblocks: a.unblocks })),
     milestones: {
@@ -172,6 +175,10 @@ export function renderForDrafting(b: CaseBrief): string {
       L.push(`    · ${w.detail} — with ${w.who}, ${w.sinceWorkingDays} working days, ${w.chasesSent} chase${w.chasesSent === 1 ? '' : 's'} sent${w.escalated ? ', ESCALATED' : ''}.`);
     }
   } else L.push('- Nothing is outstanding with a third party.');
+  if (b.context.length) {
+    L.push(`- Context (not issues; mention if asked for an update):`);
+    for (const c of b.context) L.push(`    · ${c.label}: ${c.title}`);
+  }
   if (b.issues.length) {
     L.push(`- Open issues:`);
     for (const i of b.issues) L.push(`    · ${i.id} ${i.label}: ${i.title} (${i.gate === 'none' ? 'holds nothing' : `holds ${i.gate}`}, ${i.severity}).`);
@@ -246,6 +253,9 @@ export function clientStatusAnswer(b: CaseBrief, now: Date = new Date()): Client
       }
     }
   }
+
+  // Context: who is running late, in general words (the file's own note is internal).
+  if (b.context.some((c) => c.kind === 'seller_delay')) { parts.push("The seller's side is running behind, and we are pressing them."); facts.push('context: seller delay'); }
 
   if (onClient.length) {
     parts.push(`We do still need ${list(onClient.map((w) => w.what))} from you.`);

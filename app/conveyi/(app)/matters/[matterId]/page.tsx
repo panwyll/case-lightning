@@ -6,7 +6,6 @@ import type { CaseHudData } from '@/app/shared/engine/CaseHud';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { HEALTH_LABEL, TRANSACTION_LABEL, pretty, stageLabel, type HealthBand, type WorkItem } from '@/app/shared/engine/types';
 import { WorkPanel, WORK_CSS } from '@/app/shared/engine/WorkPanel';
-import { IssuesPanel } from '@/app/shared/engine/IssuesPanel';
 import { NotesPanel } from '@/app/shared/engine/NotesPanel';
 import { DocumentsPanel } from '@/app/shared/engine/DocumentsPanel';
 import { Timeline, type CaseLogEntry } from '@/app/shared/engine/Timeline';
@@ -25,8 +24,8 @@ import { paths } from '@/lib/paths';
  * emails, files and history below. The other tabs are the doing: Work (every action a
  * person records), Issues, Notes, Documents and Timeline. There is no second page for a case.
  */
-type Tab = 'overview' | 'tasks' | 'issues' | 'notes' | 'documents' | 'timeline';
-const TABS: Tab[] = ['overview', 'tasks', 'issues', 'notes', 'documents', 'timeline'];
+type Tab = 'overview' | 'tasks' | 'notes' | 'documents' | 'timeline';
+const TABS: Tab[] = ['overview', 'tasks', 'notes', 'documents', 'timeline'];
 interface Row { id: string; matterRef: string | null; propertyAddress: string | null; stage: string; assignee: string | null; assignedTo: string | null }
 interface Person { id: string; email: string; display_name: string | null }
 interface Detail {
@@ -90,7 +89,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   useEffect(() => {
     const s = new URLSearchParams(window.location.search);
     const t = s.get('tab') as Tab | null;
-    setQ({ tab: t && TABS.includes(t) ? t : null, focus: s.get('focus'), doc: s.get('doc') });
+    // ?tab=issues (old links) opens Tasks, where issues now live.
+    setQ({ tab: (t as string) === 'issues' ? 'tasks' : t && TABS.includes(t) ? t : null, focus: s.get('focus'), doc: s.get('doc') });
   }, []);
   const focus = q.focus;
   const doc = q.doc;
@@ -123,7 +123,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const view = eng.view;
   const enrolled = !!view?.state.enrolled;
   const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
-  const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => i.status === 'open' || i.status === 'negotiating').length;
+  // Issues live on Tasks now: its count is the decisions plus the open issues (context is not a task).
+  const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => (i.status === 'open' || i.status === 'negotiating') && !['seller_delay', 'buyer_delay'].includes(i.kind)).length;
   const unreadNotes = Object.values(view?.state.notes ?? {}).filter((n) => n.status === 'proposed').length;
   const [row, setRow] = useState<Row | null>(null);
   const [team, setTeam] = useState<Person[]>([]);
@@ -208,15 +209,13 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
           <div className="eg-tabs">
             <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
-            <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending ? ` (${pending})` : ''}</button>
-            <button className={`eg-tab${tab === 'issues' ? ' on' : ''}`} onClick={() => setTab('issues')} disabled={!enrolled}>Issues{openIssues ? ` (${openIssues})` : ''}</button>
+            <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending + openIssues ? ` (${pending + openIssues})` : ''}</button>
             <button className={`eg-tab${tab === 'notes' ? ' on' : ''}`} onClick={() => setTab('notes')} disabled={!enrolled}>Notes{unreadNotes ? ` (${unreadNotes})` : ''}</button>
             <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')} disabled={!enrolled}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
           </div>
 
           {tab === 'tasks' && view && enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} section="tasks" />}
-          {tab === 'issues' && view && enrolled && <div className="ep"><IssuesPanel api={api} state={view.state} busy={eng.busy} cmd={eng.cmd} /></div>}
           {tab === 'notes' && view && enrolled && <div className="ep"><NotesPanel api={api} state={view.state} busy={eng.busy} people={row.assignedTo && nameOf(row.assignedTo) ? { [row.assignedTo]: nameOf(row.assignedTo) } : {}} cmd={async (body) => { await eng.cmd(body); refresh(); }} /></div>}
           {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} doc={doc} />}
           {tab === 'documents' && ((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (

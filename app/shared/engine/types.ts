@@ -188,7 +188,7 @@ export interface IssueRow {
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
-  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string }>;
+  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean }>;
   resolutions: Array<{ id: string; label: string; effects: string[] }>;
   staleAfterWorkingDays: number;
 }
