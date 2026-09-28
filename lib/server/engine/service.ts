@@ -81,6 +81,23 @@ export interface RunResult {
 }
 
 /** Client status updates fired automatically by event (the safe half of #5). Template names only; the port renders. */
+/**
+ * The first request a step sends (the chase only follows it): who it goes to and from which template.
+ * Third parties go at the chase trust level, the client at the client-update level. `optional`: no
+ * address for them on the case is not a failure (an agent is not always involved).
+ */
+export const FIRST_REQUESTS: Partial<Record<EventType, { to: 'seller_solicitor' | 'lender' | 'estate_agent' | 'client'; template: string; buyerOnly?: boolean; optional?: boolean }>> = {
+  contract_pack_requested: { to: 'seller_solicitor', template: 'request_contract_pack' },
+  management_pack_requested: { to: 'seller_solicitor', template: 'request_management_pack' },
+  redemption_statement_requested: { to: 'lender', template: 'request_redemption_statement' },
+  lender_consent_requested: { to: 'lender', template: 'request_lender_consent' },
+  property_forms_requested: { to: 'client', template: 'property_forms_request' },
+  contract_approved: { to: 'client', template: 'deposit_request', buyerOnly: true },
+  completion_statement_generated: { to: 'client', template: 'completion_statement' },
+  contracts_exchanged: { to: 'estate_agent', template: 'exchanged_agent', optional: true },
+  completion_confirmed: { to: 'estate_agent', template: 'completed_agent', optional: true },
+};
+
 /** Phase junctions the client hears about (a progress update), by the stage the case moves into. The flowchart shows the same. */
 export const PHASE_DONE: Record<string, { done: string; line: string }> = {
   // Entering pre-contract already tells them (searches ordered), as does the report going out: only this junction is news on its own.
@@ -221,6 +238,11 @@ export class EngineService {
       const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType, override: (detail as { edited?: MessageOverride }).edited ?? null });
       if (!sent) return;
       await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
+    } else if (action === 'chase' && (detail as { kind?: string }).kind === 'request') {
+      // A first request to another party (not a chase): the template, to the role, once.
+      const d = detail as { recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> };
+      if (!this.ports.chaser.sendRequest) throw new Error('Requests to other parties are not configured on this deployment.');
+      await this.ports.chaser.sendRequest({ tenantId, matterId, recipientRole: d.recipientRole, template: d.template, context: d.context });
     } else if (action === 'chase') {
       const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown>; alsoSubjects?: string[] };
       const edited = (detail as { edited?: MessageOverride }).edited ?? null;
@@ -254,7 +276,18 @@ export class EngineService {
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const reminderHours = this.ports.clientReminderHours ? await this.ports.clientReminderHours(tenantId).catch(() => undefined) : undefined;
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now(), { ...this.idProviderOpts(), reminderHours });
-      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null });
+      // A document that goes with it (the completion statement): as a Word document.
+      const attachId = (detail as { attachDocumentId?: string }).attachDocumentId;
+      let attachments: Array<{ name: string; bytes: Buffer; contentType: string }> = [];
+      if (attachId) {
+        const doc = await this.ports.documents.get(tenantId, attachId).catch(() => null);
+        const text = (doc?.extractedFacts as { content?: string } | null)?.content ?? '';
+        if (text) {
+          const { createMinimalDocx } = await import('../doc-templates');
+          attachments = [{ name: `${(doc?.fileName ?? 'document').replace(/\.[a-z0-9]+$/i, '')}.docx`, bytes: createMinimalDocx(text.split('\n')), contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }];
+        }
+      }
+      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null, attachments });
       // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
       const aboutKey = (d as { about?: unknown }).about;
       const about = typeof aboutKey === 'string' ? [aboutKey] : [];
@@ -1327,6 +1360,36 @@ export class EngineService {
         }
         // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
         // A stage the client was waiting on has been signed off: tell them, say where everything else stands and what comes next.
+        // The first request a step sends (the contract pack, the redemption statement, the deposit…): the chase only ever follows it.
+        const first = FIRST_REQUESTS[e.type];
+        if (first) {
+          const fresh = await this.getState(tenantId, matterId);
+          const side = profileOf(fresh.transactionType ?? 'freehold_purchase').side;
+          if (!first.buyerOnly || side === 'buyer') {
+            const p = (e.payload ?? {}) as Record<string, unknown>;
+            const leasehold = /leasehold/.test(fresh.transactionType ?? '');
+            const price = fresh.purchasePricePennies;
+            const context: Record<string, unknown> = {
+              eventType: e.type, payload: e.payload,
+              leaseholdForms: leasehold ? ' and the Leasehold Information Form (TA7)' : '',
+              completionDate: typeof p.completionDate === 'string' ? p.completionDate : fresh.exchange.completionDate ?? '',
+              depositAmount: price ? ` (normally 10% of the price: £${Math.round(price / 1000).toLocaleString('en-GB')})` : '',
+              transaction: side === 'seller' ? 'sale' : 'purchase',
+            };
+            const toClient = first.to === 'client';
+            const detail = toClient
+              ? { template: first.template, context, triggeredByEventId: e.id, ...(e.type === 'completion_statement_generated' && typeof p.documentId === 'string' ? { attachDocumentId: p.documentId } : {}) }
+              : { kind: 'request', recipientRole: first.to, template: first.template, context, triggeredByEventId: e.id, optional: !!first.optional };
+            const action: EngineAction = toClient ? 'client_update' : 'chase';
+            const who = first.to === 'seller_solicitor' ? "the seller's solicitor" : first.to === 'estate_agent' ? 'the estate agent' : `the ${first.to}`;
+            if (!(await this.proposeUnless(tenantId, matterId, subflows, action, first.template, `first:${first.template}:${e.id}`, detail, `${toClient ? 'CLIENT UPDATE' : 'REQUEST'}\n\nTo: ${who}\nTemplate: ${first.template}`))) {
+              try { await this.perform(tenantId, matterId, action, detail); } catch (err) {
+                if (first.optional && /no email address/i.test((err as Error).message)) this.ports.log(`${first.template}: nobody to tell`, err);
+                else { this.ports.log(`${first.template} could not be sent`, err); await this.recordSendFailure(tenantId, matterId, action, detail, err); }
+              }
+            }
+          }
+        }
         // The searches: one email when they have all come back and been through (not one per search).
         if (e.type === 'search_cleared' || e.type === 'search_reviewed' || (e.type === 'step_completed_manually' && String((e.payload as { step?: string }).step).startsWith('search:'))) {
           const fresh = await this.getState(tenantId, matterId);

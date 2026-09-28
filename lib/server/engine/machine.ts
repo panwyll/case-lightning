@@ -654,7 +654,8 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     let ev: NewEvent | null = null;
     if (s.abandoned) break;
     const side = profile(s).side;
-    const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
+    // A first request (the contract pack, a redemption statement…) rides the chase level but is not a chase: it is never 'stale'.
+    const staleChase = Object.values(s.proposals).find((p) => p.status === 'pending' && p.action === 'chase' && (p.detail as { kind?: string }).kind !== 'request' && !s.waits.some((w) => w.closedAt === null && `${w.key}:${w.subject}` === p.dedupKey));
     // Two pending proposals that would send the same thing (the same acknowledgement to the same party, the
     // same enquiry): the newer is taken back, so a person never sees, or approves, a duplicate.
     const pending = Object.values(s.proposals).filter((p) => p.status === 'pending').sort((a, b) => a.proposedAt.localeCompare(b.proposedAt));

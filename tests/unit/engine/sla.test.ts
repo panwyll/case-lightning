@@ -87,7 +87,7 @@ test('a chase proposed at Propose is withdrawn by the engine when the thing bein
   h.advanceDays(6);
   await h.svc.tick(TENANT, MATTER);
   let s = await h.svc.getState(TENANT, MATTER);
-  const proposal = Object.values(s.proposals).find((p) => p.action === 'chase' && p.status === 'pending');
+  const proposal = Object.values(s.proposals).find((p) => p.action === 'chase' && p.status === 'pending' && (p.detail as { kind?: string }).kind !== 'request');
   assert.ok(proposal, 'the chase is proposed, not sent');
   assert.ok(pendingDecisions(s).some((d) => d.kind === 'proposal'));
   // The result comes back (flagged, so a person still has to look at it) — the chase is off the table either way.
@@ -95,7 +95,7 @@ test('a chase proposed at Propose is withdrawn by the engine when the thing bein
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.proposals[proposal!.eventId].status, 'rejected');
   assert.equal(s.proposals[proposal!.eventId].resolvedBy, 'system');
-  assert.ok(!pendingDecisions(s).some((d) => d.kind === 'proposal'), 'no stale chase left in Tasks');
+  assert.ok(!Object.values(s.proposals).some((p) => p.status === 'pending' && p.action === 'chase' && (p.detail as { kind?: string }).kind !== 'request'), 'no stale chase left in Tasks');
   assert.ok(s.waits.every((w) => w.key !== 'id_check' || w.closedAt), 'the wait closed on arrival');
 });
 

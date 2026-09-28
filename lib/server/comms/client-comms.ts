@@ -149,7 +149,7 @@ export class ProductionClientComms implements ClientComms {
   }
 
   /** Channel choice: WhatsApp only with explicit opt-in; else email; else nothing to send to. */
-  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, body: string): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
+  private async deliver(tenantId: string, matterId: string, info: MatterContactInfo, template: string, subject: string, body: string, attachments: MailAttachment[] = []): Promise<{ channel: 'whatsapp' | 'email' | 'mock'; messageId: string | null; address: string | null }> {
     if (info.clientPhone && info.clientWhatsAppOptIn && this.deps.whatsapp) {
       try {
         const r = await this.deps.whatsapp.sendText(info.clientPhone, body);
@@ -164,7 +164,7 @@ export class ProductionClientComms implements ClientComms {
       // fallback when no mailbox is connected, and it says so on the record.
       if (this.deps.mailbox && info.feeEarnerUserId) {
         try {
-          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info));
+          const r = await this.deps.mailbox.send(info.feeEarnerUserId, info.clientEmail, subject, emailHtml(body, info), attachments);
           await this.deps.log({ tenantId, matterId, direction: 'OUT', channel: 'email', address: info.clientEmail, template, subject, body, providerRef: r.messageId, status: 'SENT' });
           return { channel: 'email', messageId: r.messageId, address: info.clientEmail };
         } catch (err) {
@@ -191,7 +191,7 @@ export class ProductionClientComms implements ClientComms {
     return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
   }
 
-  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }) {
+  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null; attachments?: MailAttachment[] }) {
     const base = CLIENT_UPDATES[input.template];
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
@@ -200,7 +200,7 @@ export class ProductionClientComms implements ClientComms {
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     // An edited message is sent as the person wrote it; the "where things stand" tail is only added to the template's own words.
-    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, input.override?.body?.trim() ? r.body : withOverview(r.body, input.context));
+    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, input.override?.body?.trim() ? r.body : withOverview(r.body, input.context), input.attachments ?? []);
   }
 
   /** Only ever reached after the engine's approval invariant (assertCanSendReport). Email only — a report is a document, not a chat message. */
@@ -300,6 +300,13 @@ export class ProductionChaser implements ThirdPartyChaser {
       return { channel: sent.channel, messageId: sent.messageId };
     }
 
+    // The search provider and HM Land Registry are not emailed: they are chased through their portal or by phone. A person is asked to, with what to say.
+    if (input.recipientRole === 'search_provider' || input.recipientRole === 'hmlr') {
+      const who = input.recipientRole === 'hmlr' ? 'HM Land Registry' : 'the search provider';
+      await this.deps.routeToHuman({ tenantId: input.tenantId, matterId: input.matterId, title: `Chase ${who}: ${r.subject}`, detail: `${who} is chased through its portal or by phone, not by email. What to ask:\n\n${r.body}`, fromAddress: '' });
+      await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'portal', address: null, template: t.key, subject: r.subject, body: r.body, providerRef: null, status: 'TASK' });
+      return { channel: 'portal' as const, messageId: null };
+    }
     const roleKey = input.recipientRole === 'seller_solicitor' ? 'seller_solicitor' : input.recipientRole === 'lender' ? 'lender' : null;
     const to = roleKey ? info.contacts[roleKey]?.email ?? null : null;
     if (!to) throw new Error(`No ${input.recipientRole.replace('_', ' ')} email address on the matter — add the contact to chase automatically.`);
@@ -314,6 +321,26 @@ export class ProductionChaser implements ThirdPartyChaser {
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: t.key, subject: r.subject, body: r.body, providerRef: draft.messageId, status: 'DRAFTED' });
     await this.deps.onChaseDrafted?.({ tenantId: input.tenantId, matterId: input.matterId, messageId: draft.messageId, title: `Chase drafted: ${r.subject}`, detail: `To ${to} — open Drafts to send.` });
     return { channel: 'email' as const, messageId: draft.messageId };
+  }
+
+  async sendRequest(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }) {
+    const base = PARTY_NOTICES[input.template];
+    if (!base) throw new Error(`Unknown request template ${input.template}`);
+    const t = await resolveTemplate(this.deps, input.tenantId, base);
+    const info = await this.deps.contactInfo(input.tenantId, input.matterId);
+    const to = info.contacts[input.recipientRole];
+    const label = input.recipientRole === 'seller_solicitor' ? "the seller's solicitor" : input.recipientRole === 'estate_agent' ? 'the estate agent' : 'the lender';
+    if (!to?.email) throw new Error(`There is no email address for ${label} on the case, so this could not be sent. Add them as a contact, then Try Again.`);
+    const ctx = input.context;
+    const r = render(t, { matterRef: info.matterRef, address: info.propertyAddress, firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, recipientName: to.name || 'Sirs', completionDate: typeof ctx.completionDate === 'string' && ctx.completionDate ? ctx.completionDate : info.completionDate ?? 'the agreed date', leaseholdForms: typeof ctx.leaseholdForms === 'string' ? ctx.leaseholdForms : '' });
+    if (r.missing.length) throw new Error(`Request template ${t.key} missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
+    let sent: { messageId: string | null };
+    if (this.deps.mailbox && info.feeEarnerUserId) sent = await this.deps.mailbox.send(info.feeEarnerUserId, to.email, r.subject, emailHtml(r.body, info));
+    else if (this.deps.email) sent = await this.deps.email.send({ to: to.email, subject: r.subject, text: emailText(r.body, info), fromUserId: info.feeEarnerUserId });
+    else throw new Error('No email sender configured.');
+    await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to.email, template: t.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
+    return { channel: 'email' as const, messageId: sent.messageId };
   }
 
   async sendEnquiries(input: { tenantId: string; matterId: string; enquiryId: string; text: string }) {

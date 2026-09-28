@@ -332,3 +332,14 @@ test("an enquiry raised goes to the seller's solicitor, not only onto the record
   assert.equal(sent.length, 1);
   assert.match(sent[0].text, /FENSA certificate/);
 });
+
+test('a step that asks someone for something sends the request, not only a chase later: the contract pack, the deposit', async () => {
+  const h = harness();
+  const { svc, ports } = h;
+  await svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: [] });
+  const requests = (ports.chaser as unknown as { requests: Array<{ template: string; recipientRole: string }> }).requests;
+  assert.ok(requests.some((r) => r.template === 'request_contract_pack' && r.recipientRole === 'seller_solicitor'), "the contract pack is asked for from the seller's solicitor");
+  const { FIRST_REQUESTS } = await import('../../../lib/server/engine/service');
+  assert.deepEqual([FIRST_REQUESTS.contract_approved?.to, FIRST_REQUESTS.contract_approved?.template], ['client', 'deposit_request'], 'contract approved asks the client for the deposit');
+  assert.equal(FIRST_REQUESTS.completion_statement_generated?.template, 'completion_statement');
+});

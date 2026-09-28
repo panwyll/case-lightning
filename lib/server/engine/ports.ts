@@ -132,7 +132,7 @@ export interface MessageOverride { subject?: string | null; body?: string | null
 
 export interface ClientComms {
   readonly name: string;
-  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: MessageOverride | null }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
+  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: MessageOverride | null; attachments?: Array<{ name: string; bytes: Buffer; contentType: string }> }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
   /** Only ever called after assertCanSendReport passes — the engine, not the port, guards this. */
   sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef }): Promise<{ channel: string; messageId: string | null }>;
 }
@@ -141,6 +141,8 @@ export interface ClientComms {
 export interface ThirdPartyChaser {
   readonly name: string;
   /** Our enquiries to the seller's solicitor, as raised (approved, or raised by a person): numbered, with our reference. */
+  /** A first request to another party (the contract pack, a redemption statement, the lender's consent, the agent told of exchange): news or a request, not a chase. */
+  sendRequest?(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'lender' | 'estate_agent'; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'mock'; messageId: string | null }>;
   sendEnquiries?(input: { tenantId: string; matterId: string; enquiryId: string; text: string }): Promise<{ channel: 'email' | 'mock'; messageId: string | null } | null>;
   sendChase(input: {
     tenantId: string;

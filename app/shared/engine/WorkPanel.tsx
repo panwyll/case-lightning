@@ -261,7 +261,15 @@ const STEP_EMAILS: Record<string, Email[]> = {
   'Report on title': [E('report_on_title_sent', 'Client', 'When a conveyancer approves it (the report goes as your Word document)')],
   Enquiry: [E('ack_counterparty', "Seller's solicitor", 'When their replies arrive')],
   Offer: [E('ack_client', 'Client', 'When the offer arrives')],
-  Forms: [E('ack_client', 'Client', 'When their completed forms come in')],
+  Forms: [E('property_forms_request', 'Client', 'When the forms are asked for'), E('ack_client', 'Client', 'When their completed forms come in')],
+  'Official copies': [E('request_contract_pack', "Seller's solicitor", 'At instruction: asks for the draft contract pack')],
+  'Management pack (LPE1)': [E('request_management_pack', "Seller's solicitor", 'When the pack is asked for')],
+  'Redemption statement': [E('request_redemption_statement', 'Lender', 'When the statement is asked for')],
+  Consent: [E('request_lender_consent', 'Lender', "When the lender's consent is asked for")],
+  Deposit: [E('deposit_request', 'Client', 'When the contract is approved: the deposit, and never to pay emailed bank details')],
+  'Completion statement': [E('completion_statement', 'Client', 'When it is produced (as a Word document)')],
+  Exchange: [E('exchanged_agent', 'Estate agent', 'When contracts are exchanged')],
+  Completion: [E('completed_agent', 'Estate agent', 'On completion: the keys may be released')],
 };
 const LANE_EMAILS: Record<string, { start?: Email[]; exit?: Email[] }> = {
   id_aml: { start: [E('id_check_request', 'Client', 'When the ID check is requested (why, and the link to start it)')] },
