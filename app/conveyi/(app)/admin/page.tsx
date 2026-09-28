@@ -1,5 +1,6 @@
 'use client';
-import { FirmDetails, MySignature, StorageCard } from './FirmDetails';
+import { BackLink } from '@/app/shared/BackLink';
+import { FirmDetails, MySignature } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
@@ -667,7 +668,10 @@ function AdminPageInner() {
   const docFileRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [policy, setPolicy] = useState<any>(null);
+  const [firmTab, setFirmTab] = useState<'details' | 'signature'>(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('sub') === 'signature' ? 'signature' : 'details'));
   const [audit, setAudit] = useState<any[]>([]);
+  const [auditNext, setAuditNext] = useState<string | null>(null);
+  const [auditMore, setAuditMore] = useState(false);
   // Automations (auto-rules + playbooks, merged) live in the self-contained
   // <Automations /> component — no page-level state needed here.
   const [t, setT] = useState({ name: '', category: 'enquiry_response', subjectTemplate: '', bodyTemplate: '', styleTag: 'NEUTRAL' });
@@ -682,7 +686,7 @@ function AdminPageInner() {
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
       if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
-      if (tab === 'audit') setAudit((await api<{ logs: any[] }>('/admin/audit?limit=100')).logs);
+      if (tab === 'audit') { const r = await api<{ logs: any[]; next?: string | null }>('/admin/audit?limit=100'); setAudit(r.logs); setAuditNext(r.next ?? null); }
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
       if (tab === 'workload') setWorkload((await api<{ workload: any[] }>('/admin/workload')).workload ?? []);
       setStatus('');
@@ -1010,9 +1014,8 @@ function AdminPageInner() {
       `}</style>
         <div>
         {tab !== 'templates' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>{TAB_META[tab].label}</h1>
+          <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a', display: 'flex', alignItems: 'center' }}>{(tab === 'policy' || tab === 'actions' || tab === 'audit') && <BackLink href={paths.integrations} label="Back to Tools" />}{TAB_META[tab].label}</h1>
           {tab === 'mywork' && <RefreshButton label="Refresh Tasks" onRefresh={() => new Promise<void>((done) => window.dispatchEvent(new CustomEvent('conveyi:refresh-tasks', { detail: { done } })))} />}
-          {(tab === 'policy' || tab === 'actions' || tab === 'audit') && <a href={paths.integrations} style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#0f172a', textDecoration: 'none', border: '1px solid #e6e8ee', borderRadius: 9, padding: '6px 12px', background: '#fff' }}>Tools</a>}
           {tab === 'team' && (<>
             <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
             <button style={{ ...btnPrimary, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
@@ -1475,7 +1478,16 @@ function AdminPageInner() {
           </div>
         )}
 
-        {tab === 'firm' && <><FirmDetails canEdit={me?.role === 'ADMIN'} /><MySignature />{me?.role === 'ADMIN' && <StorageCard />}</>}
+        {tab === 'firm' && (
+          <>
+            <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid #e6e8ee', marginBottom: 14 }}>
+              {([['details', 'Firm Details'], ['signature', 'Email Signature']] as const).map(([k, l]) => (
+                <button key={k} role="tab" aria-selected={firmTab === k} onClick={() => setFirmTab(k)} style={{ padding: '8px 12px', fontSize: 13, fontWeight: 600, color: firmTab === k ? '#5A27E0' : '#64748b', border: 0, background: 'none', cursor: 'pointer', borderBottom: `2px solid ${firmTab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>{l}</button>
+              ))}
+            </div>
+            {firmTab === 'details' ? <FirmDetails canEdit={me?.role === 'ADMIN'} /> : <MySignature />}
+          </>
+        )}
         {tab === 'rules' && <RulesPanel canApprove={me?.role === 'ADMIN'} canPropose={me?.role === 'ADMIN' || me?.role === 'CONVEYANCER'} />}
         {tab === 'team' && (
           <div style={card}>
@@ -1637,6 +1649,15 @@ function AdminPageInner() {
                 )}
               </tbody>
             </table>
+            {auditNext && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginTop: 12 }}>
+                <button type="button" style={{ ...btnPrimary, background: '#fff', color: '#5A27E0', border: '1px solid #5A27E0' }} disabled={auditMore} onClick={async () => {
+                  setAuditMore(true);
+                  try { const r = await api<{ logs: any[]; next?: string | null }>(`/admin/audit?limit=100&before=${encodeURIComponent(auditNext)}`); setAudit((cur) => [...cur, ...r.logs]); setAuditNext(r.next ?? null); }
+                  finally { setAuditMore(false); }
+                }}>{auditMore ? 'Loading…' : 'Load More'}</button>
+              </div>
+            )}
           </div>
           );
         })()}

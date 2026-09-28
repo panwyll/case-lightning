@@ -12,10 +12,12 @@ export async function GET(req: NextRequest) {
   try {
     assertFeature('auth');
     const user = await requireRole(['ADMIN']);
-    const { matterId, limit } = z
+    // Paged by time: `before` is the last row's time from the previous page (every entry is reachable, a hundred at a time).
+    const { matterId, limit, before } = z
       .object({
         matterId: z.string().uuid().optional(),
         limit: z.coerce.number().int().min(1).max(500).default(100),
+        before: z.string().datetime({ offset: true }).optional(),
       })
       .parse(Object.fromEntries(req.nextUrl.searchParams));
 
@@ -45,18 +47,19 @@ export async function GET(req: NextRequest) {
              select ${cols} ${from} where a.tenant_id = $1 and a.matter_id = $2
              union all
              select ${ecols} ${efrom} where e.tenant_id = $1 and e.matter_id = $2 and ${ewhere}
-           ) x order by created_at desc limit $3`,
-          [user.tenantId, matterId, limit]
+           ) x where ($4::timestamptz is null or created_at < $4::timestamptz) order by created_at desc limit $3`,
+          [user.tenantId, matterId, limit, before ?? null]
         )
       : await query(
           `select * from (
              select ${cols} ${from} where a.tenant_id = $1
              union all
              select ${ecols} ${efrom} where e.tenant_id = $1 and ${ewhere}
-           ) x order by created_at desc limit $2`,
-          [user.tenantId, limit]
+           ) x where ($3::timestamptz is null or created_at < $3::timestamptz) order by created_at desc limit $2`,
+          [user.tenantId, limit, before ?? null]
         );
-    return ok({ logs: rows });
+    const last = (rows as Array<{ created_at: string | Date }>).slice(-1)[0];
+    return ok({ logs: rows, next: rows.length === limit && last ? new Date(last.created_at).toISOString() : null });
   } catch (error) {
     return fail(error);
   }

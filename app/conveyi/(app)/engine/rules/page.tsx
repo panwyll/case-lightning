@@ -1,4 +1,5 @@
 'use client';
+import { BackLink } from '@/app/shared/BackLink';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { paths } from '@/lib/paths';
 import { api } from '@/app/shared/engine/api';
@@ -134,8 +135,7 @@ export default function RulesPage() {
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + TRUST_CSS + CSS}</style>
       <div className="eg-top">
-        <h1 className="eg-h1">Rules</h1>
-        <a className="eg-btn" href={paths.integrations}>Tools</a>
+        <h1 className="eg-h1" style={{ display: 'flex', alignItems: 'center' }}><BackLink href="/conveyi/integrations" label="Back to Tools" />Rules</h1>
       </div>
       <nav className="ru-nav" aria-label="Sections">
         {SECTIONS.map(([id, label]) => <a key={id} href={`#${id}`} className={section === id ? 'on' : ''} onClick={() => setSection(id)}>{label}</a>)}

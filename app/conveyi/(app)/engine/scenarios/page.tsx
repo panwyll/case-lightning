@@ -1,4 +1,5 @@
 'use client';
+import { BackLink } from '@/app/shared/BackLink';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -65,9 +66,8 @@ export default function ScenariosPage() {
     <div className="eg" style={{ maxWidth: 1100 }}>
       <style>{ENGINE_CSS + CSS}</style>
       <div className="eg-top">
-        <h1 className="eg-h1">Scenarios</h1>
+        <h1 className="eg-h1" style={{ display: 'flex', alignItems: 'center' }}><BackLink href="/conveyi/integrations" label="Back to Tools" />Scenarios</h1>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a className="eg-btn" href={paths.integrations}>Tools</a>
           <a className="eg-btn" href={paths.machineMap}>Machine Map</a>
         </div>
       </div>

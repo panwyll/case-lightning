@@ -1,4 +1,5 @@
 'use client';
+import { BackLink } from '@/app/shared/BackLink';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -127,10 +128,9 @@ export default function MapPage() {
       <style>{ENGINE_CSS + WORK_CSS + CSS}</style>
       <div className="eg-top">
         <div>
-          <h1 className="eg-h1">Machine Map</h1>
+          <h1 className="eg-h1" style={{ display: 'flex', alignItems: 'center' }}><BackLink href="/conveyi/integrations" label="Back to Tools" />Machine Map</h1>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <a className="eg-btn" href="/conveyi/integrations">Tools</a>
           <a className="eg-btn" href="/conveyi/admin?tab=mywork">Tasks</a>
           <a className="eg-btn" href="/api/v1/engine/spec" target="_blank" rel="noreferrer">JSON</a>
         </div>
