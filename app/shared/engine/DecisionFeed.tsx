@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DecisionCard, DECISION_CSS } from './DecisionCard';
 import { DecisionPanel } from './DecisionPanel';
 import { ChevronRight } from '@/app/shared/icons';
@@ -37,33 +37,52 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
   const [err, setErr] = useState<string | null>(null);
   const [kind, setKind] = useState<string>('all');
   const [open, setOpen] = useState<string | null>(null);
-  const [approving, setApproving] = useState<string | null>(null);
   const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
-  const quickApprove = async (eventId: string) => {
-    setApproving(eventId);
-    setQuickErr(null);
-    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); await load(); onResolved?.(); }
-    catch (e: unknown) { setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' }); setOpen(eventId); }
-    finally { setApproving(null); }
-  };
+  // Rows acted on are hidden at once and stay hidden until the server stops listing them, so a
+  // load that started before an approval landed cannot bring a row back. Only the newest load applies.
+  const [done, setDone] = useState<Set<string>>(() => new Set());
+  const loadSeq = useRef(0);
+  const hide = (id: string, on: boolean) => setDone((prev) => { const n = new Set(prev); if (on) n.add(id); else n.delete(id); return n; });
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     try {
       const d = await api<{ decisions: DecisionRow[] }>(`/decisions?limit=${limit}${matterId ? `&matterId=${matterId}` : ''}`);
+      if (seq !== loadSeq.current) return;
       setRows(d.decisions);
+      setDone((prev) => { const listed = new Set(d.decisions.map((x) => x.eventId)); const n = new Set([...prev].filter((id) => listed.has(id))); return n.size === prev.size ? prev : n; });
       setErr(null);
-      onCount?.(d.decisions.length);
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : 'Could not load decisions.');
+      if (seq === loadSeq.current) setErr(e instanceof Error ? e.message : 'Could not load decisions.');
     }
-  }, [api, matterId, limit, onCount]);
+  }, [api, matterId, limit]);
+
+  const resolved = (eventId: string) => {
+    hide(eventId, true);
+    setOpen((o) => (o === eventId ? null : o));
+    onResolved?.();
+    void load();
+  };
+  const quickApprove = async (eventId: string) => {
+    hide(eventId, true);
+    setQuickErr((q) => (q?.id === eventId ? null : q));
+    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); onResolved?.(); void load(); }
+    catch (e: unknown) {
+      const status = (e as { status?: number })?.status;
+      if (status === 409) { onResolved?.(); void load(); return; }
+      hide(eventId, false);
+      setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' });
+    }
+  };
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const kinds = useMemo(() => Array.from(new Set((rows ?? []).map((r) => r.kind))), [rows]);
-  const visible = useMemo(() => (rows ?? []).filter((r) => kind === 'all' || r.kind === kind), [rows, kind]);
+  const live = useMemo(() => (rows === null ? null : rows.filter((r) => !done.has(r.eventId))), [rows, done]);
+  useEffect(() => { if (live) onCount?.(live.length); }, [live, onCount]);
+  const kinds = useMemo(() => Array.from(new Set((live ?? []).map((r) => r.kind))), [live]);
+  const visible = useMemo(() => (live ?? []).filter((r) => kind === 'all' || r.kind === kind), [live, kind]);
   const groups = useMemo(() => {
     const m = new Map<string, DecisionRow[]>();
     for (const r of visible) {
@@ -74,18 +93,18 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
     return [...m.entries()];
   }, [visible]);
 
-  if (hideWhenEmpty && (rows === null || rows.length === 0)) return null;
+  if (hideWhenEmpty && (live === null || live.length === 0)) return null;
   return (
     <div>
       <style>{DECISION_CSS + ROW_CSS}</style>
       {err && <div className="dc-err">{err}</div>}
-      {rows === null && !err && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Loading…</div>}
-      {rows && rows.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: compact ? 12 : 30, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>Nothing waiting on you{matterId ? ' for this case' : ''}.</div>}
-      {rows && rows.length > 0 && kinds.length > 1 && !compact && (
+      {live === null && !err && <div style={{ color: '#94a3b8', fontSize: 13, padding: 12 }}>Loading…</div>}
+      {live && live.length === 0 && <div style={{ color: '#64748b', fontSize: 14, padding: compact ? 12 : 30, textAlign: 'center', border: '1px dashed #e2e8f0', borderRadius: 12 }}>Nothing waiting on you{matterId ? ' for this case' : ''}.</div>}
+      {live && live.length > 0 && kinds.length > 1 && !compact && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           {['all', ...kinds].map((k) => (
             <button key={k} className="dc-btn" style={{ margin: 0, background: kind === k ? '#0f172a' : '#fff', color: kind === k ? '#fff' : '#0f172a' }} onClick={() => setKind(k)}>
-              {k === 'all' ? `All (${rows.length})` : `${KIND_LABEL[k] ?? pretty(k)} (${rows.filter((r) => r.kind === k).length})`}
+              {k === 'all' ? `All (${live.length})` : `${KIND_LABEL[k] ?? pretty(k)} (${live.filter((r) => r.kind === k).length})`}
             </button>
           ))}
         </div>
@@ -98,17 +117,17 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
             </div>
           )}
           {list.map((d) => compact ? (
-            <DecisionCard key={d.eventId} decision={d} api={api} compact showMatter={!matterId} onResolved={() => { void load(); onResolved?.(); }} />
+            <DecisionCard key={d.eventId} decision={d} api={api} compact showMatter={!matterId} onResolved={() => resolved(d.eventId)} />
           ) : (
             <div key={d.eventId} className={`df-item${open === d.eventId ? ' open' : ''}`}>
               <div className="df-row">
                 <div className="what">{quickErr?.id === d.eventId && <div style={{ color: '#b91c1c', fontSize: 12, fontWeight: 500 }}>{quickErr.text}</div>}<span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{d.chip ?? chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
-                {quickApprovable(d.taskKind) && open !== d.eventId && <button type="button" className="df-btn go" disabled={approving === d.eventId} onClick={() => void quickApprove(d.eventId)}>{approving === d.eventId ? 'Approving…' : 'Approve'}</button>}
+                {quickApprovable(d.taskKind) && open !== d.eventId && <button type="button" className="df-btn go" onClick={() => void quickApprove(d.eventId)}>Approve</button>}
                 <button type="button" className={`df-btn${open === d.eventId ? ' on' : ''}`} aria-label={open === d.eventId ? 'Collapse' : 'Review'} onClick={() => setOpen(open === d.eventId ? null : d.eventId)}>{open === d.eventId ? null : 'Review '}<ChevronRight size={14} style={{ transform: open === d.eventId ? 'rotate(90deg)' : undefined }} /></button>
               </div>
               {open === d.eventId && (
                 <div className="df-open">
-                  <DecisionPanel eventId={d.eventId} inline onResolved={() => { setOpen(null); void load(); onResolved?.(); }} />
+                  <DecisionPanel eventId={d.eventId} inline onResolved={() => resolved(d.eventId)} />
                 </div>
               )}
             </div>

@@ -655,6 +655,8 @@ export class EngineService {
     const docId = documentId ?? d?.sourceDocumentId;
     if (!docId) throw Object.assign(new Error('Decision not found.'), { status: 404 });
     const document = await this.requireDoc(tenantId, matterId, docId);
+    // Opening the source again changes nothing on the case (the audit log still records each open): no write, no lock.
+    if (d && d.status === 'pending' && d.openedBy.includes(userId) && docId === d.sourceDocumentId) return { document, result: { events: [], state } };
     const result = await this.run(tenantId, matterId, { type: 'open_decision_source', userId, decisionEventId, documentId: docId });
     return { document, result };
   }
