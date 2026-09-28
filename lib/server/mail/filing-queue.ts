@@ -1,5 +1,5 @@
 import { query } from '../db';
-import { readQueue, queueCounts, sweepForRead, QUEUE_PAGE, type QueueUser } from './queue';
+import { readQueue, queueCounts, sweepForRead, recheckSenderAddress, QUEUE_PAGE, type QueueUser } from './queue';
 import { caseCards, explainMatch, senderOnCase } from './case-cards';
 
 /**
@@ -10,7 +10,15 @@ import { caseCards, explainMatch, senderOnCase } from './case-cards';
  */
 export async function filingQueue(user: QueueUser, q: { cursor?: string | null; limit?: number; sweep?: boolean } = {}) {
   if (q.sweep !== false) await sweepForRead(user).catch((e) => console.warn('[filing queue] sweep failed', (e as Error).message));
-  const [{ rows, nextCursor }, counts] = await Promise.all([readQueue(user, { cursor: q.cursor, limit: q.limit ?? QUEUE_PAGE }), queueCounts(user)]);
+  const [first, counts] = await Promise.all([readQueue(user, { cursor: q.cursor, limit: q.limit ?? QUEUE_PAGE }), queueCounts(user)]);
+  let { rows, nextCursor } = first;
+  // Flagged only because the name matches someone else on file: if a person has since said who this address is, check again.
+  const nameOnly = [...new Set(rows.filter((r) => r.sender?.verdict === 'suspicious' && r.sender.warnings.length > 0 && r.sender.warnings.every((w) => /^Signed "/.test(w))).map((r) => r.from_address?.toLowerCase()).filter(Boolean))] as string[];
+  if (nameOnly.length) {
+    let changed = 0;
+    for (const a of nameOnly) changed += await recheckSenderAddress(user.tenantId, a).catch(() => 0);
+    if (changed) ({ rows, nextCursor } = await readQueue(user, { cursor: q.cursor, limit: q.limit ?? QUEUE_PAGE }));
+  }
 
   const matterIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
   const cards = await caseCards(user.tenantId, matterIds);

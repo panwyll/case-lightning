@@ -272,3 +272,29 @@ export async function queueCounts(user: QueueUser): Promise<{ toFile: number; bu
   );
   return { toFile: r?.to_file ?? 0, bulk: r?.bulk ?? 0 };
 }
+
+/**
+ * A person has just said who an address is on a case: emails from it still waiting to be filed
+ * are checked again. A name clash with someone else on file no longer counts against a vouched
+ * address, and the sender counts towards matching once more. (What the receiving server said
+ * about the email, a forgery or a look-alike domain, is kept.)
+ */
+export async function recheckSenderAddress(tenantId: string, address: string): Promise<number> {
+  const from = address.trim().toLowerCase();
+  const rows = await query<{ id: string; subject: string | null; body_preview: string | null; graph_conversation_id: string | null; sender: SenderCheck | null }>(
+    `select id, subject, body_preview, graph_conversation_id, sender from email_queue where tenant_id = $1 and lower(from_address) = $2 and resolved_at is null`,
+    [tenantId, from]
+  ).catch(() => []);
+  if (!rows.length) return 0;
+  const known = await knownParties(tenantId);
+  if (!known.contacts.some((c) => c.confirmed && c.email.toLowerCase() === from)) return 0;
+  let n = 0;
+  for (const r of rows) {
+    const warnings = (r.sender?.warnings ?? []).filter((w) => !/^Signed "/.test(w));
+    const sender: SenderCheck = { verdict: warnings.length ? 'suspicious' : r.sender?.verdict === 'ok' ? 'ok' : 'unverified', warnings };
+    const candidates = await matchMessage(tenantId, { conversationId: r.graph_conversation_id ?? undefined, fromAddress: from, recipientAddresses: [], subject: r.subject ?? '', bodyText: r.body_preview ?? '' }, { distrustSender: sender.verdict === 'suspicious' }).catch(() => null);
+    await query(`update email_queue set sender = $2::jsonb${candidates ? ', candidates = $3::jsonb' : ''} where id = $1`, candidates ? [r.id, JSON.stringify(sender), JSON.stringify(candidates.slice(0, 3))] : [r.id, JSON.stringify(sender)]);
+    n += 1;
+  }
+  return n;
+}

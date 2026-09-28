@@ -123,3 +123,13 @@ test('trust: what an email says can never make a match green — only who sent i
   const lines = explainMatch([sig('KNOWN_CONTACT', 0.5, 'CLIENT'), sig('ONLY_CASE', 0.35)], { fromName: 'Priya Shah', fromAddress: 'priya@example.com', senderRole: 'CLIENT' });
   assert.deepEqual(lines, ['From Priya Shah, our client on this case', 'Their only open case with us']);
 });
+
+test('an address a person put on a case as a party is not flagged for sharing a name with someone else on file', async () => {
+  const { checkSender } = await import('../../../lib/server/mail/sender-check');
+  const known = { contacts: [{ email: 'pete@killerdotdev.onmicrosoft.com', name: 'Peter Anwyll', confirmed: true }, { email: 'pete@caselightning.co.uk', name: 'Pete', confirmed: true }], domains: ['killerdotdev.onmicrosoft.com', 'caselightning.co.uk'] };
+  const ok = checkSender({ fromName: 'Peter Anwyll', fromAddress: 'pete@caselightning.co.uk', replyTo: [], headers: null }, known);
+  assert.notEqual(ok.verdict, 'suspicious', ok.warnings.join(' '));
+  // Only seen on email, never confirmed: the name clash still flags it.
+  const seen = checkSender({ fromName: 'Peter Anwyll', fromAddress: 'pete@caselightning.co.uk', replyTo: [], headers: null }, { ...known, contacts: [known.contacts[0], { ...known.contacts[1], confirmed: false }] });
+  assert.equal(seen.verdict, 'suspicious');
+});

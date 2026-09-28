@@ -35,7 +35,7 @@ export interface SenderInput {
 
 export interface KnownParties {
   /** Addresses we hold, with the name they go by: case contacts and the firm's own people. */
-  contacts: Array<{ email: string; name: string | null }>;
+  contacts: Array<{ email: string; name: string | null; /** A person (or an integration) set who this address is: its own name does not have to match. */ confirmed?: boolean }>;
   /** Domains the firm deals with: its own and every case contact's. */
   domains: string[];
 }
@@ -128,7 +128,10 @@ export function checkSender(input: SenderInput, known: KnownParties): SenderChec
 
   const name = input.fromName?.trim().toLowerCase();
   const sameName = name && name.length > 3 && !name.includes('@') ? known.contacts.filter((c) => c.name && c.name.trim().toLowerCase() === name) : [];
-  if (from) {
+  // An address someone at the firm has put on a case as a party (or one of the firm's own) is vouched for:
+  // the same person writing from it under a name also on file elsewhere is not an impersonation.
+  const vouched = !!from && known.contacts.some((c) => c.confirmed && c.email.toLowerCase() === from);
+  if (from && !vouched) {
     if (sameName.length && !sameName.some((c) => c.email.toLowerCase() === from)) {
       suspicious = true;
       warnings.push(`Signed "${input.fromName}", but ${input.fromName} is on file as ${sameName[0].email}, not ${from}.`);

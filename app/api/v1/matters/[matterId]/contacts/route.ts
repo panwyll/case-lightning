@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { recheckSenderAddress } from '@/lib/server/mail/queue';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -62,7 +63,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
        returning id`,
       [user.tenantId, matterId, email, body.name ?? null, body.role ?? null, body.phone ?? null, body.whatsappOptIn ?? null, body.phone !== undefined]
     );
-    return ok({ id: row[0]?.id });
+    // Saying who someone is vouches for their address: emails from it waiting to be filed are checked again.
+    const rechecked = body.role ? await recheckSenderAddress(user.tenantId, email).catch(() => 0) : 0;
+    return ok({ id: row[0]?.id, rechecked });
   } catch (error) {
     return fail(error);
   }

@@ -459,21 +459,21 @@ export function describeFiling(
   files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
   problems: string[]
 ): string[] {
-  const role = (as: string | null) => (as ? ` as ${as.replace(/_/g, ' ')}` : '');
+  const as = (x: string | null) => (x ? x.replace(/_/g, ' ') : null);
   const lines: string[] = [];
   if (email) {
-    if (email.outcome === 'read') lines.push(`The email was read${role(email.as)}`);
-    else if (email.outcome === 'noted') lines.push(email.proposals ? `The email was read: ${email.proposals} thing${email.proposals === 1 ? '' : 's'} to confirm (a task asks you)` : 'The email was read; nothing in it for the case to act on');
-    else if (email.outcome === 'duplicate') lines.push('The email was already on the case');
-    else if (email.outcome === 'skipped') lines.push('The email has no body to read');
-    else lines.push(`The email was filed but not acted on${email.reason ? `: ${email.reason}` : ''}`);
+    if (email.outcome === 'read') lines.push(`Email processed${as(email.as) ? `: classified as ${as(email.as)}` : ''}.`);
+    else if (email.outcome === 'noted') lines.push(email.proposals ? `Email processed: ${email.proposals} proposed action${email.proposals === 1 ? '' : 's'} awaiting review.` : 'Email processed: no actionable content.');
+    else if (email.outcome === 'duplicate') lines.push('Email already on file.');
+    else if (email.outcome === 'skipped') lines.push('Email has no body text to process.');
+    else lines.push(`Email filed; not processed${email.reason ? `: ${email.reason}` : ''}.`);
   }
   for (const f of files) {
-    if (f.outcome === 'read') lines.push(`${f.name} read${role(f.as)}`);
-    else if (f.outcome === 'locked') lines.push(`${f.name} is password-protected (a task asks for the password)`);
-    else if (f.outcome === 'duplicate') lines.push(`${f.name} is already on the case${f.as ? `, read as ${f.as}` : ''}${f.reason ? ` (${f.reason})` : ''}; nothing new to read`);
-    else if (f.outcome === 'skipped') lines.push(`${f.name} was not filed: ${f.reason ?? 'unknown reason'}`);
-    else lines.push(`${f.name} filed but not acted on${f.reason ? `: ${f.reason}` : ''}`);
+    if (f.outcome === 'read') lines.push(`${f.name}: processed${as(f.as) ? ` as ${as(f.as)}` : ''}.`);
+    else if (f.outcome === 'locked') lines.push(`${f.name}: password-protected; password requested (task raised).`);
+    else if (f.outcome === 'duplicate') lines.push(`${f.name}: already on file${as(f.as) ? ` (${as(f.as)})` : ''}; not re-processed${f.reason ? ` (${f.reason})` : ''}.`);
+    else if (f.outcome === 'skipped') lines.push(`${f.name}: not filed: ${f.reason ?? 'reason not recorded'}.`);
+    else lines.push(`${f.name}: filed; not processed${f.reason ? `: ${f.reason}` : ''}.`);
   }
   return [...lines, ...problems];
 }
