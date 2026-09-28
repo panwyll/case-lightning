@@ -345,7 +345,8 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       const a = [...own, ...carried].map(mid);
       const b = boxes(tierEls[i + 1], '.ep-box:not([data-unfed])').map(mid);
       if (!a.length || !b.length) continue;
-      const y = (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2;
+      // The bus sits just under the boxes it leaves, inside their own band, not on the band's edge.
+      const y = Math.min(Math.max(...a.map((p) => p.bottom)) + 22, (Math.max(...a.map((p) => p.bottom)) + Math.min(...b.map((p) => p.top))) / 2);
       const from = tierEls[i].dataset.tier ?? ''; const to = tierEls[i + 1].dataset.tier ?? '';
       if (a.length === 1 && b.length === 1 && Math.abs(a[0].x - b[0].x) < 2) {
         arrows.push(`M${a[0].x},${a[0].bottom} V${b[0].top - 1}`);
@@ -354,7 +355,8 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       }
       const xs = [...a, ...b].map((p) => p.x);
       bus.push(`M${Math.min(...xs)},${y} H${Math.max(...xs)}`);
-      junctions.push({ x: (Math.min(...xs) + Math.max(...xs)) / 2, y, from, to });
+      // The sign-off sits where the lines meet: over the drop into a single next box, else mid-bus.
+      junctions.push({ x: b.length === 1 ? b[0].x : (Math.min(...xs) + Math.max(...xs)) / 2, y, from, to });
       for (const p of a) drops.push(`M${p.x},${p.bottom} V${y}`);
       for (const p of b) arrows.push(`M${p.x},${y} V${p.top - 1}`);
     }
@@ -380,7 +382,8 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       </svg>
       {lines.junctions.map((j) => {
         const g = JUNCTION[`${j.from}->${j.to}`];
-        if (!g) return null;
+        // Only a person's sign-off is marked; everything else is automatic by default.
+        if (!g || g.kind !== 'person') return null;
         return (
           <div key={`${j.from}-${j.to}`} className={`ep-junction ${g.kind}`} style={{ left: j.x, top: j.y }}>
             <Tip label={g.label} icon={g.kind === 'person' ? <User size={12} /> : <Zap size={12} />} text={<><span className="k">{g.label}</span> {g.text}</>} />
