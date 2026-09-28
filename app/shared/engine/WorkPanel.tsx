@@ -8,7 +8,7 @@ import { DecisionFeed } from './DecisionFeed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
-import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, User, Zap } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -241,6 +241,25 @@ const ABOUT: Record<string, About> = {
   File: { starts: 'Once registration is confirmed.', done: 'Client sent the completed register; the file closed.' },
   Forms: { starts: 'Sent to the client on enrolment of a sale.', done: 'TA6, TA10 (and TA7) completed and returned; chased on the SLA.', via: 'Client comms.' },
 };
+/**
+ * What each step sends by itself: the acknowledgement when something arrives (to whom), and what the
+ * client is told. Both go at the case's trust level (proposed first at Propose), from the firm's templates.
+ */
+interface Messages { acks?: string; tells?: string; template?: string }
+const SEARCH_MSG: Messages = { tells: 'The client, once every search is ordered, and again as each result comes back (clear, or being looked at).', template: 'searches_ordered' };
+const MESSAGES: Record<string, Messages> = {
+  'Proof of funds': { acks: 'The client, when their form comes in.', tells: 'The client, when it is signed off: a progress update with where everything else stands.', template: 'progress_update' },
+  'Official copies': { tells: 'The client, when the title is approved: a progress update with where everything else stands.', template: 'progress_update' },
+  'Report on title': { tells: 'The client: the report itself, once a conveyancer approves it.', template: 'report_on_title_sent' },
+  'search:LLC1': SEARCH_MSG, 'search:CON29': SEARCH_MSG, 'search:DRAINAGE_WATER': SEARCH_MSG, 'search:ENVIRONMENTAL': SEARCH_MSG, 'search:CHANCEL': SEARCH_MSG,
+  Enquiry: { acks: "The seller's solicitor, when their replies come in.", tells: 'The client, when we raise enquiries: what we asked and why.', template: 'enquiries_raised' },
+  Offer: { acks: 'The client, when the offer arrives.', tells: 'The client, once the offer is checked.', template: 'mortgage_offer_checked' },
+  Forms: { acks: 'The client, when their completed forms come in.' },
+  Exchange: { tells: 'The client, the day contracts are exchanged: the completion date and what happens next.', template: 'exchanged' },
+  Completion: { tells: 'The client, on completion.', template: 'completed' },
+};
+const messagesFor = (x: Tile): Messages | null => (x.depth ? null : MESSAGES[x.key ?? ''] ?? MESSAGES[x.label.replace(/\s·.*$/, '')] ?? MESSAGES[x.label.split(' ')[0]] ?? null);
+
 const aboutFor = (x: Tile): About | null => ABOUT[x.key ?? ''] ?? ABOUT[x.label.replace(/\s·.*$/, '')] ?? ABOUT[x.label.split(' ')[0]] ?? null;
 /** Who has to sign a sub-block off, by its label. Nothing listed means the rules can clear it. */
 const PERSON: Array<[RegExp, 'conveyancer' | 'client']> = [[/^Contract approved/, 'conveyancer'], [/^Client's authority/, 'client'], [/^Exchange$/, 'conveyancer'], [/^Report on title/, 'conveyancer'], [/^Proof of funds/, 'conveyancer'], [/^Mortgage deed/, 'client'], [/^Certificate of title/, 'conveyancer'], [/^Completion payment/, 'conveyancer'], [/^Balance to the client/, 'conveyancer'], [/^Payment to the lender/, 'conveyancer'], [/^AP1/, 'conveyancer'], [/^SDLT/, 'conveyancer'], [/^Transfer deed/, 'client'], [/^Declaration of trust/, 'client'], [/^How they hold/, 'client'], [/^Forms/, 'client'], [/^Completion$/, 'conveyancer']];
@@ -306,6 +325,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
                   {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
+                  {(() => { const m = messagesFor(x); return m ? <Tip label={`What ${x.label} sends`} icon={<Mail size={11} />} href={m.template ? `/conveyi/admin?tab=templates&t=${encodeURIComponent(m.template)}` : undefined} text={<>{m.acks && <><span className="k">Acknowledges</span> {m.acks}<br /></>}{m.tells && <><span className="k">Tells</span> {m.tells}</>}{m.template && <><br /><span className="k">Template</span> {m.template.replace(/_/g, ' ')}</>}</>} /> : null; })()}
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
                 {!lane.plain && <Pill s={x.status} />}
@@ -327,6 +347,15 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
 }
 
 /** What sits between two phases: an automatic hand-off, or a person who has to sign. */
+/** What the client is told as the case crosses a junction (the same updates the engine sends). */
+const JUNCTION_TELLS: Record<string, string> = {
+  'instruction->investigation': 'Checks done and the searches ordered: the client is told the legal work is under way.',
+  'enquiries->contract': 'Investigations complete: a progress update to the client, with where everything else stands; then the report on title.',
+  'investigation->contract': 'Investigations complete: a progress update to the client, with where everything else stands; then the report on title.',
+  'contract->completion': 'Exchanged: the client is told the completion date and what happens next.',
+  'completion->registration': 'Completed: the client is told, and that registration follows.',
+};
+
 const JUNCTION: Record<string, { kind: 'auto' | 'person'; label: string; text: string }> = {
   'instruction->investigation': { kind: 'auto', label: 'Automatic', text: 'Once the ID check clears the case moves to pre-contract and every search on its list is ordered from InfoTrack. At Propose each order is put to you first.' },
   'enquiries->contract': { kind: 'person', label: 'Conveyancer', text: 'Nothing exchanges until each strand above is cleared by the rules or accepted by a conveyancer, every enquiry is answered to our satisfaction, the report on title has gone and source of funds is signed off.' },
@@ -394,11 +423,14 @@ export function Flow({ tiers, current, toggle, noticeFor }: { tiers: Array<{ id:
       </svg>
       {lines.junctions.map((j) => {
         const g = JUNCTION[`${j.from}->${j.to}`];
-        // Only a person's sign-off is marked; everything else is automatic by default.
-        if (!g || g.kind !== 'person') return null;
+        const tells = JUNCTION_TELLS[`${j.from}->${j.to}`];
+        // A person's sign-off is marked, and what the client is told there; everything else is automatic by default.
+        const person = g && g.kind === 'person' ? g : null;
+        if (!person && !tells) return null;
         return (
-          <div key={`${j.from}-${j.to}`} className={`ep-junction ${g.kind}`} style={{ left: j.x, top: j.y }}>
-            <Tip label={g.label} icon={g.kind === 'person' ? <User size={12} /> : <Zap size={12} />} text={<><span className="k">{g.label}</span> {g.text}</>} />
+          <div key={`${j.from}-${j.to}`} className={`ep-junction ${person ? 'person' : 'auto'}`} style={{ left: j.x, top: j.y, display: 'flex', gap: 4 }}>
+            {person && <Tip label={person.label} icon={<User size={12} />} text={<><span className="k">{person.label}</span> {person.text}</>} />}
+            {tells && <Tip label="The client is told" icon={<Mail size={12} />} text={<><span className="k">Tells the client</span> {tells}</>} />}
           </div>
         );
       })}

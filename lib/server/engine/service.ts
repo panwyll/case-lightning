@@ -81,6 +81,12 @@ export interface RunResult {
 }
 
 /** Client status updates fired automatically by event (the safe half of #5). Template names only; the port renders. */
+/** Phase junctions the client hears about (a progress update), by the stage the case moves into. The flowchart shows the same. */
+export const PHASE_DONE: Record<string, { done: string; line: string }> = {
+  // Entering pre-contract already tells them (searches ordered), as does the report going out: only this junction is news on its own.
+  contract_review: { done: 'investigations complete', line: 'The searches are back and our enquiries of the seller\'s solicitor are answered: the investigation of the property is complete.' },
+};
+
 export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   search_ordered: 'searches_ordered',
   search_cleared: 'search_back_all_clear',
@@ -1291,11 +1297,13 @@ export class EngineService {
         }
         // Proof of funds: "request further" re-opens the form with the conveyancer's note to the client.
         // A stage the client was waiting on has been signed off: tell them, say where everything else stands and what comes next.
-        if ((e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'approve') || e.type === 'title_reviewed' && (e.payload as { option: string }).option === 'approve') {
+        // A phase of the case is complete (the junctions on the flowchart): the client hears where it stands too.
+        const phaseDone = e.type === 'stage_advanced' ? PHASE_DONE[(e.payload as { to: string }).to] : undefined;
+        if (phaseDone || (e.type === 'proof_of_funds_reviewed' && (e.payload as { option: string }).option === 'approve') || e.type === 'title_reviewed' && (e.payload as { option: string }).option === 'approve') {
           const fresh = await this.getState(tenantId, matterId);
           const brief = caseBrief(fresh, this.ports.now());
-          const done = e.type === 'proof_of_funds_reviewed' ? 'source of funds approved' : 'title approved';
-          const doneLine = e.type === 'proof_of_funds_reviewed' ? 'We have signed off your proof of funds: that part of the file is complete.' : 'We have reviewed the title to the property and approved it.';
+          const done = phaseDone ? phaseDone.done : e.type === 'proof_of_funds_reviewed' ? 'source of funds approved' : 'title approved';
+          const doneLine = phaseDone ? phaseDone.line : e.type === 'proof_of_funds_reviewed' ? 'We have signed off your proof of funds: that part of the file is complete.' : 'We have reviewed the title to the property and approved it.';
           // What comes next, once: one sentence for the stage, the target date if there is one. Outstanding items are the "where things stand" tail every client update carries.
           const target = brief.milestones.targetExchangeDate;
           const targetNote = target ? ` We are working towards exchange around ${new Date(target).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })}.` : '';
