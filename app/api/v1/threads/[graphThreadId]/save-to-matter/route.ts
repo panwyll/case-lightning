@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { putBlob } from '@/lib/server/blob-store';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -108,6 +109,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ gra
           user.userId,
         ]
       );
+      // Our own copy too, so reading never depends on the case folder.
+      await putBlob(user.tenantId, doc!.id, buffer, { mime: attachment.contentType ?? null }).catch(() => {});
       await upsertChunks({
         tenantId: user.tenantId,
         matterId: body.matterId,

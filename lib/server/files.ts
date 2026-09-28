@@ -620,7 +620,8 @@ export async function fileEmailAttachments(
         user.userId,
       ]
     );
-    if (!uploaded && doc?.id) await putBlob(user.tenantId, doc.id, buffer).catch((e) => console.error('[files] attachment bytes could not be kept', (e as Error).message));
+    // Our own copy as well as the case folder's: reading never depends on the drive owner's Microsoft login, or on the file staying where it was filed.
+    if (doc?.id) await putBlob(user.tenantId, doc.id, buffer, { mime: att.contentType ?? null }).catch((e) => console.error('[files] attachment bytes could not be kept', (e as Error).message));
     // Index the document's CONTENT (not just its filename) so the drafter is
     // case-aware across the matter's documents, not only the current email.
     const indexText = await buildDocIndexText(user, matterId, att.name, att.contentType, att.contentBytes);

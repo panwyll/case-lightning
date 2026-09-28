@@ -25,7 +25,7 @@ import { z } from 'zod/v4';
 import type { ContractFacts, EnquiryReplyFacts, Flag, IdCheckFacts, MortgageOfferFacts, SearchFacts, SearchType, Severity, TitleFacts, TitlePlanFacts, SupportingDocFacts, SurveyFacts, LeaseFacts, ManagementPackFacts } from './types';
 import { type PropertyFormsFacts, SEARCH_TYPES } from './types';
 import type { DocumentExtractor, DocumentRef } from './ports';
-import { ENGINE_SYSTEM_GUARD, leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
+import { ENGINE_SYSTEM_GUARD, EngineLlmError, leanDocument, type EngineDocumentInput, type StructuredLlm } from './llm';
 
 /** Documents where a misread costs the client: read as the PDF itself, on the strongest model. */
 const CRITICAL_ROLES = new Set(['title', 'contract', 'lease']);
@@ -721,8 +721,13 @@ export class ClaudeExtractor implements DocumentExtractor {
   }
 
   async classify(doc: DocumentRef): Promise<Classification> {
-    const { out } = await this.run(doc, 'classify', ClassificationSchema, PROMPTS.classify, `File name: ${doc.fileName ?? 'unknown'}. Classify the document.`, 'DOC_CLASSIFY');
-    return out;
+    const ask = () => this.run(doc, 'classify', ClassificationSchema, PROMPTS.classify, `File name: ${doc.fileName ?? 'unknown'}. Classify the document.`, 'DOC_CLASSIFY');
+    // An answer that fails the schema (a stray value) is one-off; one more try costs little and saves the document going unread.
+    try { return (await ask()).out; }
+    catch (err) {
+      if (!(err instanceof EngineLlmError) || err.status !== 502) throw err;
+      return (await ask()).out;
+    }
   }
 
   async extractSearch(doc: DocumentRef, searchType: SearchType): Promise<SearchFacts> {

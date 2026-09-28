@@ -111,8 +111,9 @@ export function claudeLlm(apiKey = config.anthropicApiKey): StructuredLlm {
       const promptHash = crypto.createHash('sha256').update(JSON.stringify({ model, system, content })).digest('hex');
       const startedAt = Date.now();
       const client = new Anthropic({ apiKey, timeout: 10 * 60_000, maxRetries: 2 });
-      const meter = (usage: TokenUsage, status: 'SUCCESS' | 'FAILED') =>
-        recordAiUsage({ ctx: req.meter, provider: 'anthropic', model, tier: 'engine', usage, byok: false, status, latencyMs: Date.now() - startedAt, meta: { promptHash } });
+      // A failure records why, so it can be read back later (usage_event.meta.error), not only that it failed.
+      const meter = (usage: TokenUsage, status: 'SUCCESS' | 'FAILED', error?: string) =>
+        recordAiUsage({ ctx: req.meter, provider: 'anthropic', model, tier: 'engine', usage, byok: false, status, latencyMs: Date.now() - startedAt, meta: { promptHash, ...(error ? { error: error.slice(0, 500) } : {}) } });
 
       let message: Anthropic.Message;
       // Streaming keeps long PDF reads inside HTTP timeouts; finalMessage() carries parsed_output.
@@ -132,29 +133,29 @@ export function claudeLlm(apiKey = config.anthropicApiKey): StructuredLlm {
       } catch (err) {
         // A call that failed after the model ran (cut off, unparseable) was still billed: record what it used.
         const partial = (stream as unknown as { currentMessage?: Anthropic.Message; receivedMessages?: Anthropic.Message[] }).currentMessage ?? (stream as unknown as { receivedMessages?: Anthropic.Message[] }).receivedMessages?.slice(-1)[0];
-        await meter(partial?.usage ? usageOf(partial.usage) : { inputTokens: 0, outputTokens: 0 }, 'FAILED');
+        await meter(partial?.usage ? usageOf(partial.usage) : { inputTokens: 0, outputTokens: 0 }, 'FAILED', (err as Error)?.message ?? String(err));
         if (err instanceof Anthropic.RateLimitError) throw new EngineLlmError('Claude rate limit reached; the document will be retried.', 429);
         if (err instanceof Anthropic.APIError) throw new EngineLlmError(`Claude API error ${err.status}: ${err.message}`, 502);
         throw err;
       }
       const usage = usageOf(message.usage);
       if (message.stop_reason === 'refusal') {
-        await meter(usage, 'FAILED');
+        await meter(usage, 'FAILED', `refusal${message.stop_details?.explanation ? `: ${message.stop_details.explanation}` : ''}`);
         throw new EngineLlmError(`Claude declined to process this document${message.stop_details?.explanation ? `: ${message.stop_details.explanation}` : ''}.`, 422);
       }
       if (message.stop_reason === 'max_tokens') {
-        await meter(usage, 'FAILED');
+        await meter(usage, 'FAILED', 'max_tokens');
         throw new EngineLlmError('Claude output was cut off (max_tokens); the document may be too long.', 502);
       }
       const parsed = (message as { parsed_output?: T | null }).parsed_output ?? null;
       if (parsed == null) {
-        await meter(usage, 'FAILED');
+        await meter(usage, 'FAILED', `no parsed output (stop: ${message.stop_reason}); text: ${message.content.map((c) => (c.type === 'text' ? c.text : '')).join('').slice(0, 300)}`);
         throw new EngineLlmError('Claude returned output that did not match the schema.', 502);
       }
       // Belt and braces: validate again with zod so a lenient parse never leaks through.
       const check = (req.schema as z.ZodType<T>).safeParse(parsed);
       if (!check.success) {
-        await meter(usage, 'FAILED');
+        await meter(usage, 'FAILED', `validation: ${check.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ')}`);
         throw new EngineLlmError(`Structured output failed validation: ${check.error.issues.map((i) => i.path.join('.') + ' ' + i.message).join('; ')}`, 502);
       }
       await meter(usage, 'SUCCESS');
