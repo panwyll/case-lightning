@@ -525,7 +525,8 @@ export class EngineService {
   }
 
   async titleReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
-    if (await this.alreadyHave(tenantId, matterId, 'official_copies', null)) {
+    // Another copy of the official copies is filed, not read; reading the same document again (Read Again) goes through.
+    if ((await this.getState(tenantId, matterId)).title.documentId !== documentId && (await this.alreadyHave(tenantId, matterId, 'official_copies', null))) {
       this.ports.log('official copies already on the case; duplicate ignored', { matterId, documentId });
       return { state: await this.getState(tenantId, matterId), events: [], warning: 'Official copies are already on the case; this copy was filed but not read again.' };
     }

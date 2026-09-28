@@ -14,7 +14,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 /** The event a reading left, and the role it means. */
-const ROLE_OF_EVENT: Record<string, 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms'> = {
+const ROLE_OF_EVENT: Record<string, 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'title_plan' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms'> = {
+  title_plan_read: 'title_plan',
   survey_received: 'survey',
   specialist_report_received: 'specialist_report',
   search_returned: 'search',
@@ -56,7 +57,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ doc
       `select type, payload from matter_event where tenant_id = $1 and matter_id = $2 and source_document_id = $3 and type = any($4::text[]) order by seq desc limit 1`,
       [user.tenantId, row.matter_id, documentId, Object.keys(ROLE_OF_EVENT)]
     ).catch(() => null);
-    const known = last ? { role: ROLE_OF_EVENT[last.type], searchType: (last.payload.searchType as never) ?? null, enquiryReferences: typeof last.payload.enquiryId === 'string' ? [last.payload.enquiryId] : [], titleNumber: null, lender: null, confidence: 1, reason: 'read again as what it was read as before' } : null;
+    // Something last read as the title is classified afresh: it may be a title plan, which is now read as a plan.
+    const known = last && ROLE_OF_EVENT[last.type] !== 'title' ? { role: ROLE_OF_EVENT[last.type], searchType: (last.payload.searchType as never) ?? null, enquiryReferences: typeof last.payload.enquiryId === 'string' ? [last.payload.enquiryId] : [], titleNumber: null, lender: null, confidence: 1, reason: 'read again as what it was read as before' } : null;
     // Drop the cached reading; the text of an engine-written document (its content) stays.
     await query(`update document set extracted_facts = case when extracted_facts ? 'content' then jsonb_build_object('content', extracted_facts->'content') else null end where id = $1 and tenant_id = $2`, [documentId, user.tenantId]);
     // A long report takes a minute or two to read: answer now, read after the response, log the outcome on the case.
