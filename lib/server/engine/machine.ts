@@ -133,7 +133,7 @@ type CommandBody =
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'lease_extracted'; actor: Actor; documentId: string; facts: LeaseFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
   | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
@@ -1027,7 +1027,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (d.kind !== 'proposal' && d.kind !== 'auto_clear' && !d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
       if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
-      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null);
+      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null, cmd.edited ?? null);
     }
 
     // ── Report on title ──
@@ -2197,7 +2197,7 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null } | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
@@ -2205,7 +2205,9 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   if (d.kind === 'proposal') {
     const p = s.proposals[d.eventId];
     if (!p) reject('Proposal not found for this decision.', 500);
-    if (option === 'approve') return [{ type: 'action_approved', actor: userId, payload: { proposalEventId: d.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: d.sourceDocumentId }];
+    // Approved as worded, or with a person's edits: the edits are what goes, and the log keeps both.
+    const edited = editedIn && (editedIn.subject?.trim() || editedIn.body?.trim()) ? { subject: editedIn.subject?.trim() || null, body: editedIn.body?.trim() || null } : null;
+    if (option === 'approve') return [{ type: 'action_approved', actor: userId, payload: { proposalEventId: d.eventId, action: p.action, detail: edited ? { ...p.detail, edited } : p.detail, note, ...(edited ? { edited } : {}) }, sourceDocumentId: d.sourceDocumentId }];
     if (option === 'reject') return [{ type: 'action_rejected', actor: userId, payload: { proposalEventId: d.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: d.sourceDocumentId }];
     reject(`"${option}" is not an option for a proposal (approve or reject).`, 400);
   }

@@ -42,6 +42,12 @@ export interface MatterContactInfo {
   footer?: string;
 }
 
+/** A person's edit replaces the template's words; the guard still reads what actually goes. */
+function applyOverride<R extends { subject: string; body: string; missing: string[] }>(r: R, o?: { subject?: string | null; body?: string | null } | null): R {
+  if (!o || (!o.subject?.trim() && !o.body?.trim())) return r;
+  return { ...r, subject: o.subject?.trim() || r.subject, body: o.body?.trim() || r.body, missing: [] };
+}
+
 /** The firm's footer under the signature, once: a template the firm edited may already carry it. */
 function withFooter(body: string, info: MatterContactInfo): string {
   const f = info.footer?.trim();
@@ -168,15 +174,16 @@ export class ProductionClientComms implements ClientComms {
     return { to: clientLine(info), ...clientAddress(info), subject: r.subject, body: withOverview(r.body, input.context) };
   }
 
-  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }) {
+  async sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }) {
     const base = CLIENT_UPDATES[input.template];
     if (!base) throw new Error(`Unknown client update template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, base);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
-    const r = render(t, this.vars(info, input.context));
+    const r = applyOverride(render(t, this.vars(info, input.context)), input.override);
     if (r.missing.length) throw new Error(`Template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
-    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, withOverview(r.body, input.context));
+    // An edited message is sent as the person wrote it; the "where things stand" tail is only added to the template's own words.
+    return this.deliver(input.tenantId, input.matterId, info, t.key, r.subject, input.override?.body?.trim() ? r.body : withOverview(r.body, input.context));
   }
 
   /** Only ever reached after the engine's approval invariant (assertCanSendReport). Email only — a report is a document, not a chat message. */
@@ -249,12 +256,12 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { ...who, channel: who.channel === 'draft' ? 'email' : who.channel, subject: r.subject, body: r.body };
   }
 
-  async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown> }) {
+  async sendChase(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr'; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }) {
     const baseChase = CHASES[input.template];
     if (!baseChase) throw new Error(`Unknown chase template ${input.template}`);
     const t = await resolveTemplate(this.deps, input.tenantId, baseChase);
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
-    const r = render(t, this.chaseVars(info, input.context));
+    const r = applyOverride(render(t, this.chaseVars(info, input.context)), input.override);
     if (r.missing.length) throw new Error(`Chase template ${t.key} missing ${r.missing.join(', ')}`);
     { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
 
@@ -304,21 +311,23 @@ export class ProductionChaser implements ThirdPartyChaser {
     return { channel: 'email' as const, messageId: sent.messageId };
   }
 
-  async sendAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'client'; what: string; forEventType: string }) {
+  async sendAcknowledgement(input: { tenantId: string; matterId: string; recipientRole: 'seller_solicitor' | 'client'; what: string; forEventType: string; override?: { subject?: string | null; body?: string | null } | null }) {
     if (this.deps.ackMode === 'off') return null;
     const info = await this.deps.contactInfo(input.tenantId, input.matterId);
     const vars = { matterRef: info.matterRef, address: info.propertyAddress, property: info.propertyAddress, firstName: info.clientFirstName ?? 'there', firmName: info.firmName, feeEarner: info.feeEarnerName ?? info.firmName, what: input.what };
     if (input.recipientRole === 'client') {
-      const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_client), vars);
+      const r = applyOverride(render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_client), vars), input.override);
       if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
+      { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
       if (!info.clientEmail && !(info.clientPhone && info.clientWhatsAppOptIn)) return null;
       const sent = await new ProductionClientComms(this.deps)['deliver'](input.tenantId, input.matterId, info, ACKS.ack_client.key, r.subject, r.body);
       return { channel: sent.channel, messageId: sent.messageId };
     }
     const to = info.contacts.seller_solicitor?.email ?? null;
     if (!to || !this.deps.mailbox || !info.feeEarnerUserId) return null;
-    const r = render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_counterparty), vars);
+    const r = applyOverride(render(await resolveTemplate(this.deps, input.tenantId, ACKS.ack_counterparty), vars), input.override);
     if (r.missing.length) throw new Error(`Acknowledgement template missing ${r.missing.join(', ')}`);
+    { const why = messageProblem(r); if (why) throw new MessageHeldError(why); }
     const sent = await this.deps.mailbox.send(info.feeEarnerUserId, to, r.subject, toHtml(withFooter(r.body, info)));
     await this.deps.log({ tenantId: input.tenantId, matterId: input.matterId, direction: 'OUT', channel: 'email', address: to, template: ACKS.ack_counterparty.key, subject: r.subject, body: r.body, providerRef: sent.messageId, status: 'SENT' });
     return { channel: 'email' as const, messageId: sent.messageId };

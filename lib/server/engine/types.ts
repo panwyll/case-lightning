@@ -864,7 +864,7 @@ export interface Payloads {
   shadow_mode_changed: { shadowMode: boolean; reason?: string | null };
   /** PROPOSE level: what the engine wants to do, put in front of a person as a decision. `detail` is everything needed to do it on approval. */
   action_proposed: { action: EngineAction; subject?: string | null; detail: Record<string, unknown>; dedupKey: string; decision: DecisionSpec };
-  action_approved: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
+  action_approved: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null; edited?: { subject: string | null; body: string | null } };
   action_rejected: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; note?: string | null };
   /** A person approved it and the doing failed (a send bounced, a provider was down). Visible on the case, never swallowed. */
   action_failed: { proposalEventId: string; action: EngineAction; detail: Record<string, unknown>; reason: string };

@@ -188,10 +188,10 @@ export class MockIdCheckProvider implements IdCheckProvider {
 
 export class MockClientComms implements ClientComms {
   readonly name = 'mock-client-comms (stub for WhatsApp/email #5)';
-  sent: Array<{ matterId: string; template: string; context: Record<string, unknown> }> = [];
+  sent: Array<{ matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }> = [];
   reports: Array<{ matterId: string; documentId: string }> = [];
-  async sendStatusUpdate(input: { matterId: string; template: string; context: Record<string, unknown> }) {
-    this.sent.push({ matterId: input.matterId, template: input.template, context: input.context });
+  async sendStatusUpdate(input: { matterId: string; template: string; context: Record<string, unknown>; override?: { subject?: string | null; body?: string | null } | null }) {
+    this.sent.push({ matterId: input.matterId, template: input.template, context: input.context, override: input.override ?? null });
     return { channel: 'mock' as const, messageId: `mock-msg-${this.sent.length}` };
   }
   async sendReportOnTitle(input: { matterId: string; draftDocument: DocumentRef }) {

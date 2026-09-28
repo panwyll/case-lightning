@@ -59,6 +59,7 @@ import { openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SI
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
+import type { MessageOverride } from './ports';
 import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyEnquiries, surveyNeedsAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
@@ -180,12 +181,12 @@ export class EngineService {
   private async perform(tenantId: string, matterId: string, action: EngineAction, detail: Record<string, unknown>): Promise<void> {
     if (action === 'acknowledgement') {
       const d = detail as { forEventId: string; forEventType: EventType; recipientRole: string; what: string };
-      const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType });
+      const sent = await this.ports.chaser.sendAcknowledgement({ tenantId, matterId, recipientRole: d.recipientRole as never, what: d.what, forEventType: d.forEventType, override: (detail as { edited?: MessageOverride }).edited ?? null });
       if (!sent) return;
       await this.run(tenantId, matterId, { type: 'record_acknowledgement', ack: { forEventId: d.forEventId, forEventType: d.forEventType, recipientRole: d.recipientRole as never, what: d.what, channel: sent.channel, messageId: sent.messageId } });
     } else if (action === 'chase') {
       const d = detail as { waitKey: string; subject: string; recipientRole: string; template: string; context: Record<string, unknown> };
-      const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context });
+      const sent = await this.ports.chaser.sendChase({ tenantId, matterId, recipientRole: d.recipientRole as never, template: d.template, context: d.context, override: (detail as { edited?: MessageOverride }).edited ?? null });
       await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: d.subject, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel, messageId: sent.messageId } });
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
       await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
@@ -198,7 +199,7 @@ export class EngineService {
       const d = detail as { template: string; context: Record<string, unknown>; triggeredByEventId: string; agentTemplate?: string | null };
       // Where things stand, as of now (not as of when the update was proposed), and a note of what it told the client about.
       const ov = clientOverview(await this.getState(tenantId, matterId), this.ports.now());
-      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text } });
+      const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: d.template, context: { ...d.context, overview: ov.text }, override: (detail as { edited?: MessageOverride }).edited ?? null });
       // A letter about one thing (this survey) remembers it was sent, so a re-read does not send it again.
       const aboutKey = (d as { about?: unknown }).about;
       const about = typeof aboutKey === 'string' ? [aboutKey] : [];
@@ -210,8 +211,8 @@ export class EngineService {
         if (party) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: partyTemplate, recipientRole: partyRole, channel: party.channel, messageId: party.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
     } else if (action === 'enquiry_draft') {
-      const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[] };
-      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [] } : { formsQuestion: d.question ?? undefined } });
+      const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[]; edited?: MessageOverride };
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [] } : { formsQuestion: d.question ?? undefined } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -563,8 +564,8 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null): Promise<RunResult> {
-    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null });
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null, edited?: { subject?: string | null; body?: string | null } | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null, edited: edited ?? null });
   }
 
   /**

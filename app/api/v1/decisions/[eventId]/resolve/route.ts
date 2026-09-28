@@ -29,7 +29,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
     // It guards decisions whose source is somebody else's document. A proposal or a held clear is the engine's own
     // text: the summary is the whole of it, so there is nothing to read before deciding.
     const engagement = d.kind === 'proposal' || d.kind === 'auto_clear' ? (input.engagement ?? { scrolledSource: false, dwellMs: 0 }) : assertEngaged(input.engagement ?? null);
-    const result = await svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null);
+    const result = await svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null, input.edited ?? null);
     await writeAudit({ tenantId: user.tenantId, matterId: d.matterId, actorUserId: user.userId, actionType: 'ENGINE_DECISION_RESOLVED', actionStatus: 'SUCCESS', payload: { decisionEventId: eventId, kind: d.kind, option: input.option, hasNote: !!input.note, verificationMethod: input.verification?.method ?? null, engagement, selection: input.selection ?? null } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {

@@ -89,3 +89,20 @@ test('the proof-of-funds form can be sent again with the same link', async () =>
   assert.equal(s.proofOfFunds.rounds ?? 1, 1);
   assert.ok(s.clientUpdateLastSentAt.proof_of_funds_request, 'the resend is on the record');
 });
+
+test('a proposal approved with edits sends the edited words, and the log keeps them', async () => {
+  const { harness: mk, TENANT: T, MATTER: M, USER: U } = await import('./helpers');
+  const h = mk();
+  await h.store.setLevel(T, 'client_update', 'propose', null);
+  await h.svc.run(T, M, { type: 'enrol', actor: U, hasLender: false, requiredSearches: [] });
+  await h.svc.surveyReceived(T, M, h.doc({ surveyType: 'level2', surveyor: 'J', summary: 'x', recommendations: [{ code: 'R', text: 'Roof tiles slipped; repair urgently.', furtherInvestigation: false, severity: 'high', rating: 3 }], confidence: 0.9 }, 'SURVEY'));
+  let s = await h.svc.getState(T, M);
+  const p = Object.values(s.proposals).find((x) => x.status === 'pending' && x.action === 'client_update' && x.detail.template === 'survey_advice');
+  assert.ok(p, 'the survey letter waits for a person');
+  await h.svc.resolveDecision(T, M, p!.eventId, U, 'approve', null, null, null, null, { subject: 'Your survey', body: 'Hello Jo, a shorter note written by hand about the roof.' });
+  const sent = h.ports.clientComms.sent.at(-1) as unknown as { template: string; override?: { subject: string; body: string } };
+  assert.equal(sent.template, 'survey_advice');
+  assert.equal(sent.override?.body, 'Hello Jo, a shorter note written by hand about the roof.');
+  s = await h.svc.getState(T, M);
+  assert.equal(s.proposals[p!.eventId].status, 'approved');
+});

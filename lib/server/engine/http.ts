@@ -177,6 +177,8 @@ export function assertEngaged(engagement: Engagement | null | undefined): Engage
 
 export const resolveSchema = z.object({
   option: z.enum(DECISION_OPTIONS),
+  /** A proposal approved with its words changed: what actually goes. */
+  edited: z.object({ subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish() }).nullish(),
   note: z.string().max(4000).nullish(),
   /** Addendum 2: required for option 'verify' on a bank-details decision; the machine validates the method. */
   verification: z.object({ method: z.string().max(60), reference: z.string().max(200).nullish() }).nullish(),

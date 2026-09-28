@@ -94,6 +94,10 @@ const CSS = `
 .dp-msg .b{margin:6px 0 0;font:inherit;font-size:13.5px;line-height:1.55;color:#0f172a;white-space:pre-wrap}
 .dp-msg p{margin:6px 0 0;font-size:13px;color:#475569}
 .dp-msg p.warn{color:#92400e}
+.dp-msg{position:relative}
+.dp-edit{position:absolute;top:10px;right:12px;border:1px solid #c4b5fd;background:#fff;color:#5A27E0;border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;cursor:pointer}
+.dp-ed{display:block;width:100%;margin-top:8px;border:1px solid #c4b5fd;border-radius:8px;padding:8px 10px;font:inherit;font-size:13.5px;line-height:1.55;color:#0f172a;background:#fcfbff;resize:vertical;box-sizing:border-box}
+.dp-ed.s{font-weight:700}
 .dp-narr{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:4px}
 .dp-narr li{font-size:13.5px;line-height:1.5;color:#0f172a;display:flex;gap:8px;align-items:baseline;white-space:pre-wrap}
 .dp-narr li.warn{color:#92400e}
@@ -240,6 +244,24 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
   const openQueries = detail?.openQueries ?? 0;
   const needsReason = (o: string) => (o !== 'approve' && o !== 'verify') || (o === 'approve' && openQueries > 0);
   const msg = detail?.message ?? null;
+  // A proposed message can be reworded before it goes: a wrong phrase or a missing line is a quick fix, not an engineering one.
+  const editableMsg = !!msg && (msg.kind === 'message' || (msg.kind === 'action' && /enquiry/i.test(msg.title)));
+  const [editing, setEditing] = useState(false);
+  const [eSubject, setESubject] = useState('');
+  const [eBody, setEBody] = useState('');
+  const startEdit = () => {
+    if (!msg) return;
+    if (msg.kind === 'action') { setESubject(''); setEBody(msg.lines[0] ?? ''); }
+    else { setESubject(msg.subject); setEBody(msg.body); }
+    setEditing(true);
+  };
+  const editedBody = (): { subject: string | null; body: string | null } | null => {
+    if (!editing || !msg) return null;
+    const origBody = msg.kind === 'action' ? msg.lines[0] ?? '' : msg.body;
+    const origSubject = msg.kind === 'action' ? '' : msg.subject;
+    if (eBody.trim() === origBody.trim() && eSubject.trim() === origSubject.trim()) return null;
+    return { subject: msg.kind === 'action' ? null : eSubject.trim() || null, body: eBody.trim() || null };
+  };
   const optionLabel = (o: string) => {
     return (OPTION_LABEL_BY_KIND[d?.kind ?? '']?.[o] ?? OPTION_LABEL[o] ?? pretty(o)).replace(/\s+[—(].*$/, '');
   };
@@ -365,7 +387,8 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? editedBody() : null }) });
+      setEditing(false);
       setDone(option);
       await load();
       window.dispatchEvent(new Event('conveyi:counts'));
@@ -452,17 +475,27 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
           {inline && ctx?.submitted && <p className="dp-sub" style={{ marginTop: 0 }}>{ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p>}
           {msg && (
             <div className={`dp-msg${msg.kind !== 'action' && msg.channel === 'none' ? ' warn' : ''}`} aria-label="What would be sent">
+              {editableMsg && pending && (
+                <button type="button" className="dp-edit" onClick={() => (editing ? setEditing(false) : startEdit())}>{editing ? 'Undo Edits' : 'Edit'}</button>
+              )}
               {msg.kind === 'action' ? (
                 <>
                   <div className="h">{msg.title}</div>
-                  {msg.lines.map((l, i) => <p key={i}>{l}</p>)}
+                  {editing ? <textarea className="dp-ed" rows={Math.min(18, Math.max(6, eBody.split('\n').length + 2))} value={eBody} onChange={(e) => setEBody(e.target.value)} aria-label="Enquiry text" />
+                    : msg.lines.map((l, i) => <pre key={i} className="b">{l}</pre>)}
+                  {msg.lines.slice(1).length > 0 && editing && msg.lines.slice(1).map((l, i) => <p key={i}>{l}</p>)}
                 </>
               ) : (
                 <>
                   <div className="h">{msg.kind === 'form' ? 'The proof-of-funds form goes to' : msg.channel === 'whatsapp' ? 'WhatsApp to' : msg.channel === 'draft' ? 'Email drafted in Outlook to' : 'Email to'} {msg.to}</div>
                   {msg.channel === 'none' && <p className="warn">There is no address for them on the case, so this cannot go until one is added.</p>}
-                  <div className="s">{msg.subject}</div>
-                  <pre className="b">{msg.body}</pre>
+                  {editing ? <>
+                    <input className="dp-ed s" value={eSubject} onChange={(e) => setESubject(e.target.value)} aria-label="Subject" />
+                    <textarea className="dp-ed" rows={Math.min(24, Math.max(8, eBody.split('\n').length + 2))} value={eBody} onChange={(e) => setEBody(e.target.value)} aria-label="Message" />
+                  </> : <>
+                    <div className="s">{msg.subject}</div>
+                    <pre className="b">{msg.body}</pre>
+                  </>}
                 </>
               )}
             </div>

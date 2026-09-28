@@ -115,9 +115,12 @@ export interface IdCheckProvider {
 }
 
 /** Component #5, status updates only — the safe-to-automate half. Q&A is deliberately NOT a port here. */
+/** A person's edit of a proposed message: what actually goes. */
+export interface MessageOverride { subject?: string | null; body?: string | null }
+
 export interface ClientComms {
   readonly name: string;
-  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown> }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
+  sendStatusUpdate(input: { tenantId: string; matterId: string; template: string; context: Record<string, unknown>; override?: MessageOverride | null }): Promise<{ channel: 'email' | 'whatsapp' | 'mock'; messageId: string | null; /** where it went, for the case's record */ address?: string | null }>;
   /** Only ever called after assertCanSendReport passes — the engine, not the port, guards this. */
   sendReportOnTitle(input: { tenantId: string; matterId: string; draftDocument: DocumentRef }): Promise<{ channel: string; messageId: string | null }>;
 }
@@ -131,6 +134,7 @@ export interface ThirdPartyChaser {
     recipientRole: 'seller_solicitor' | 'search_provider' | 'lender' | 'client' | 'id_provider' | 'hmlr';
     template: string;
     context: Record<string, unknown>;
+    override?: MessageOverride | null;
   }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null }>;
   /**
    * A note to another party on the matter — the estate agent, today — that is news and
@@ -153,6 +157,7 @@ export interface ThirdPartyChaser {
     recipientRole: 'seller_solicitor' | 'client';
     what: string;
     forEventType: string;
+    override?: MessageOverride | null;
   }): Promise<{ channel: 'email' | 'whatsapp' | 'portal' | 'mock'; messageId: string | null } | null>;
 }
 
