@@ -127,14 +127,14 @@ const KIND_CHECKS: Record<string, string[]> = {
   enquiry: ['Does the reply answer the question actually asked', 'Is what it says backed by a document (certificate, consent, policy)', 'Does the answer create a new issue or a lender point', 'Further enquiry, indemnity, or report to the client: which is the right next step'],
   mortgage: ['Every special condition against the title and the searches', 'Offer expiry against the target exchange and completion dates', 'Advance, term and retention against the completion statement', 'Valuation against the price; any down-valuation', 'Lender handbook Part 2 requirements for this lender'],
   title: ['Registered proprietor is the seller named in the contract', 'Restrictions: whose consent or certificate is needed before registration', 'Charges to be discharged on completion, and the redemption position', "Covenants and easements: do they affect the client's intended use", 'Class of title; any caution or notice', 'Leasehold: term, ground rent and its review, forfeiture, consents'],
-  report_on_title: ['Every search, enquiry and title point appears, with the advice', 'Mortgage conditions the client must meet', 'Dates and money: deposit, completion, retention', 'Plain English; nothing the client has not been told elsewhere'],
+  report_on_title: ['Every search, enquiry and title point appears, with the advice', 'Mortgage conditions the client must meet', 'Dates and money: deposit, completion, retention', 'Reads plainly, and agrees with what the client has already been told'],
   proof_of_funds: ['Declared total covers price plus costs less mortgage', "Every source evidenced by statements in the client's name", 'Large or recent credits explained', "Gifts: donor identified, no repayment, donor's own funds", 'Higher-risk sources escalated, not signed off'],
   management_pack: ['Service charge, ground rent and arrears against the budget and the lease', 'Major works planned or levied', 'Buildings insurance in place and adequate', "Landlord's consents needed on assignment; any restriction on the title"],
   bank_details: ['Verify by a phone call to a number you already hold, or a Lawyer Checker match', 'Never confirm on the channel the details arrived on', 'Compare with any details held before: a change is the fraud signal', 'Pay nothing until this is resolved'],
   requisition: ['What HM Land Registry is asking for, exactly', 'The reply deadline and the priority period', 'Whether the answer needs the other side, the lender or the client'],
   escalation: ['What the handler decided and why they escalated', 'The same source they saw', 'Whether the position needs the client or the lender told'],
   proposal: [],
-  auto_clear: ['The document says what the rules found', 'Nothing else in it a person would pick up on'],
+  auto_clear: ['The document says what the rules found'],
   note_actions: ['Does each proposed line say what the note actually says', 'Nothing recorded that the client did not say'],
 };
 
@@ -267,7 +267,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
       const flags = raised?.type === 'enquiry_reply_flagged' ? (rp as Payloads['enquiry_reply_flagged']).flags : [];
       headline = q ? `Reply to enquiry ${q.enquiryId}, ${q.subject}: ${rf?.status === 'partial' ? 'answers part of it' : rf?.status === 'refused' ? 'declines to answer' : rf?.status === 'unclear' ? 'is unclear' : rf?.status === 'answered' ? 'answers it' : 'needs reading'}.` : `Reply to enquiry ${subjectKey ?? ''}.`;
       addT('Enquiry', q ? `${q.enquiryId} · ${q.subject}` : subjectKey);
-      addT('Raised', raisedEv ? `${day(raisedEv.createdAt)}${raisedEv.actor === 'system' ? ' by the rules' : ' by a person'}${origin?.issueId ? ` from issue ${origin.issueId}` : origin?.followUpOf ? ` as a follow-up to ${origin.followUpOf}` : ''}` : null);
+      addT('Raised', raisedEv ? `${day(raisedEv.createdAt)}${raisedEv.actor === 'system' ? ' by the rules' : ' by hand'}${origin?.issueId ? ` from issue ${origin.issueId}` : origin?.followUpOf ? ` as a follow-up to ${origin.followUpOf}` : ''}` : null);
       addT('Reply received', day(replyEv?.createdAt ?? q?.repliedAt));
       addT('Reply reads as', rf ? `${rf.status}${rf.confidence < 0.85 ? ` (read with ${Math.round(rf.confidence * 100)}% confidence)` : ''}` : null, rf?.status === 'refused' || rf?.status === 'unclear');
       addT('Points', flagLines(flags.length ? flags : rf?.issues), flags.some((f) => f.severity === 'high'));
@@ -293,7 +293,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     } else if (d.kind === 'title') {
       const f = s.title.facts;
       const flags = raised?.type === 'title_flagged' ? (rp as Payloads['title_flagged']).flags : [];
-      headline = f ? `Title ${f.titleNumber} (${f.tenure}): ${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}.` : 'The title needs a person.';
+      headline = f ? `Title ${f.titleNumber} (${f.tenure}): ${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}.` : 'The official copies need reading by hand.';
       addT('Title', f ? `${f.titleNumber} · ${f.tenure}${p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure ? ` (instruction says ${p.tenure})` : ''}` : null, !!f && p.tenure !== 'any' && f.tenure !== 'unknown' && f.tenure !== p.tenure);
       addT('Restrictions', f?.restrictions.length ? f.restrictions.map((r) => r.text).join(' · ') : null);
       addT('Charges', f?.charges.length ? f.charges.map((r) => r.text).join(' · ') : null);
@@ -350,7 +350,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
         ...(s.requireProofOfFunds && !s.proofOfFunds.approvedAt ? ['proof of funds'] : []),
       ];
       headline = `Draft report on title from ${n(basedOn.length, 'source document')}${pendingBits.length ? `; ${n(pendingBits.length, 'thing')} still open that it cannot yet cover` : ''}.`;
-      addT('Drafted', raised ? `${day(raised.createdAt)} by ${(rp as { model?: string }).model ?? 'the drafter'}` : null);
+      addT('Drafted', raised ? day(raised.createdAt) : null);
       addT('Based on', basedOn.length ? `${basedOn.length} documents (title, searches, replies filed to date)` : null);
       addT('Still open, not in the report', pendingBits.length ? pendingBits.join(', ') : null, pendingBits.length > 0);
       checks = KIND_CHECKS.report_on_title;
@@ -416,7 +416,7 @@ export function taskContext(input: { state: MatterState; matter: MatterFacts; ev
     if (subjectKey && [pl.searchType, pl.enquiryId, pl.subject, pl.requestId, pl.bankDetailsId, pl.draftId].includes(subjectKey)) return true;
     return !!prefix && e.type.startsWith(prefix);
   };
-  const who = (a: string) => (a === 'system' || a === 'ai' ? '' : a === 'external' ? ' · from outside' : ' · by a person');
+  const who = (a: string) => (a === 'system' || a === 'ai' ? '' : a === 'external' ? ' · from outside' : ' · by hand');
   const history = events.filter(touches).slice(-8).map((e) => ({ at: e.createdAt, what: `${pretty(e.type)}${who(e.actor)}` }));
 
   // ── Related: the rest of the case that bears on this ──
@@ -519,11 +519,11 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
   if (d.kind === 'mortgage') {
     const f = s.mortgage.facts;
     const special = f?.conditions.filter((c) => !c.standard) ?? [];
-    return [{ documentId: docId, title, summary: [f?.lender ? `Offer from ${f.lender}` : 'Mortgage offer', f?.amountPennies ? `advance ${gbp(f.amountPennies)}` : null, f?.expiryDate ? `expires ${day(f.expiryDate)}` : null, f ? `${n(f.conditions.length, 'condition')}, ${special.length} special` : null, read].filter(Boolean).join(', '), lines: special.map((c) => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })), warn: special.length > 0 }];
+    return [{ documentId: docId, title, summary: [f?.lender ? `Offer from ${f.lender}` : 'Mortgage offer', f?.amountPennies ? `advance ${gbp(f.amountPennies)}` : null, f?.expiryDate ? `expires ${day(f.expiryDate)}` : null, f ? `${n(f.conditions.length, 'condition')}, ${special.length} special` : null, read].filter(Boolean).join(', '), lines: special.map((c) => ({ text: c.text, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })), warn: special.length > 0 }];
   }
   if (d.kind === 'title') {
     const f = s.title.facts;
-    const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string } }[]): Ev[] => arr.map((e) => ({ text: `${label} ${e.code}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
+    const entries = (label: string, arr: { code: string; text: string; locator?: { page?: number; quote?: string } }[]): Ev[] => arr.map((e) => ({ text: `${label}: ${e.text}`, documentId: docId, page: e.locator?.page ?? null, quote: e.locator?.quote ?? e.text.slice(0, 80), warn: true }));
     const cards: TaskContext['files'] = [{ documentId: docId, title, summary: [f ? `Official copy of ${f.titleNumber}, ${f.tenure}${f.unregistered ? ', UNREGISTERED' : ''}` : 'Official copy', f ? `${n(f.restrictions.length, 'restriction')}, ${n(f.charges.length, 'charge')}, ${n(f.covenants.length, 'covenant')}` : null, read].filter(Boolean).join(', '), lines: f ? [...entries('Restriction', f.restrictions), ...entries('Charge', f.charges), ...entries('Covenant', f.covenants)] : [], warn: !!f && (f.restrictions.length + f.charges.length + f.covenants.length) > 0 }];
     const l = f?.lease;
     if (l && s.title.leaseDocumentId) cards.push({ documentId: s.title.leaseDocumentId, title: 'Lease', summary: [l.unexpiredYears != null ? `${n(l.unexpiredYears, 'year')} unexpired` : null, l.groundRentPenniesPa != null ? `ground rent ${gbp(l.groundRentPenniesPa)} a year` : null, l.groundRentReview ?? null, l.flags?.length ? n(l.flags.length, 'point') : null].filter(Boolean).join(', '), lines: flagLines(l.flags), warn: !!l.flags?.length });
@@ -542,7 +542,7 @@ function sourceFile(s: MatterState, d: DecisionState, raised: EngineEvent | null
     return [{ documentId: docId, title, summary: ['Management pack (LPE1)', f?.serviceChargePenniesPa != null ? `service charge ${gbp(f.serviceChargePenniesPa)} a year` : null, f?.groundRentPenniesPa != null ? `ground rent ${gbp(f.groundRentPenniesPa)}` : null, f?.arrearsPennies ? `arrears ${gbp(f.arrearsPennies)}` : null, read].filter(Boolean).join(', '), lines: flagLines(f?.flags), warn: !!f?.flags?.length || !!f?.arrearsPennies }];
   }
   if (d.kind === 'report_on_title') {
-    return [{ documentId: docId, title: 'Draft report on title', summary: [rv?.facts ? `${rv.verified} of ${n(rv.facts, 'quoted fact')} found in the sources` : 'not checked against the register', rv?.unverified.length ? `${n(rv.unverified.length, 'claim')} not found` : null].filter(Boolean).join(', '), lines: (rv?.unverified ?? []).slice(0, 8).map((u) => ({ text: `Not found in the source: ${u.key} = ${u.value}`, documentId: docId, warn: true })), warn: !!rv?.unverified.length }];
+    return [{ documentId: docId, title: 'Draft report on title', summary: [rv?.facts ? `${rv.verified} of ${n(rv.facts, 'quoted fact')} found in the sources` : 'not yet checked against the documents on file', rv?.unverified.length ? `${n(rv.unverified.length, 'claim')} not found` : null].filter(Boolean).join(', '), lines: (rv?.unverified ?? []).slice(0, 8).map((u) => ({ text: `Not found in the source: ${u.key} = ${u.value}`, documentId: docId, warn: true })), warn: !!rv?.unverified.length }];
   }
   if (d.kind === 'bank_details') {
     const b = Object.values(s.bankDetails).find((r) => r.sourceDocumentId === docId) ?? null;
@@ -579,7 +579,8 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     return out;
   }
   if (d.kind === 'mortgage') {
-    const f = s.mortgage.facts;
+    // The offer as it was when this was raised (a later offer may have replaced it on the case).
+    const f = ((rp.facts as typeof s.mortgage.facts | undefined) ?? s.mortgage.facts) ?? null;
     const special = f?.conditions.filter((c) => !c.standard) ?? [];
     const standard = f?.conditions.filter((c) => c.standard).length ?? 0;
     const target = s.targetExchangeDate ?? x.matter.exchangeTargetDate ?? null;
@@ -588,14 +589,14 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const names = mismatch('buyer_names');
     return [
       item('Every special condition is something the file can meet', special.length ? 'flag' : 'ok', [
-        ...(special.length ? special.map((c) => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })) : [{ text: 'No special conditions' }]),
+        ...(special.length ? special.map((c) => ({ text: `${c.code}: ${c.text}`, documentId: docId, page: c.locator?.page ?? null, quote: c.locator?.quote ?? c.text.slice(0, 80), warn: true })) : [{ text: f ? 'No special conditions' : 'The offer could not be read' }]),
         ...(standard ? [{ text: `${n(standard, 'standard condition')} the rules cleared (insurance, occupancy, the usual)` }] : []),
       ]),
       item('The offer is valid to completion', daysLeft != null && daysLeft < 0 ? 'flag' : tight ? 'flag' : daysLeft == null ? 'open' : 'ok', [
         { text: f?.expiryDate ? `Expires ${day(f.expiryDate)}${daysLeft != null ? ` (${daysLeft < 0 ? `${-daysLeft} days ago` : `in ${daysLeft} days`})` : ''}${target ? ` · target exchange ${day(target)}` : ' · no target exchange date set'}` : 'No expiry date read from the offer', warn: !!tight || (daysLeft != null && daysLeft < 0), documentId: docId },
       ]),
       item('Advance, lender and names match the instruction', names ? 'flag' : 'ok', [
-        { text: `${f?.lender ?? 'Lender not read'}${f?.amountPennies ? ` · advance ${gbp(f.amountPennies)}` : ''}${s.purchasePricePennies && f?.amountPennies ? ` · ${pct(f.amountPennies, s.purchasePricePennies)} of the price` : ''}`, documentId: docId },
+        { text: `${f?.lender ?? 'Lender not read from the offer'}${f?.amountPennies ? ` · advance ${gbp(f.amountPennies)}` : ''}${s.purchasePricePennies && f?.amountPennies ? ` · ${pct(f.amountPennies, s.purchasePricePennies)} of the price` : ''}`, documentId: docId },
         ...(names ? [{ text: names.message, warn: true }] : []),
       ]),
       item('Valuation against the price; any down-valuation', 'open'),
@@ -707,11 +708,11 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     return [
       item('Every figure and fact in the draft is backed by the file', rv?.facts ? (rv.unverified.length ? 'flag' : 'ok') : 'open', rv?.facts ? [
         { text: `${rv.verified} of ${n(rv.facts, 'quoted fact')} found on the page`, documentId: docId },
-        ...rv.unverified.slice(0, 6).map((u) => ({ text: `Not found in the source: ${u.key} = ${u.value}`, warn: true })),
-      ] : [{ text: 'The draft has not been checked against the register' }]),
-      item('Nothing is reported that is still open', pendingBits.length ? 'flag' : 'ok', pendingBits.length ? [{ text: `Still open, not in the report: ${pendingBits.join(', ')}`, warn: true }] : [{ text: 'Every search, enquiry and title point is resolved' }]),
-      item('Mortgage conditions the client must meet are in it', s.hasLender ? 'open' : 'ok', s.hasLender && s.mortgage.facts ? s.mortgage.facts.conditions.filter((c) => !c.standard).map((c) => ({ text: `${c.code}: ${c.text}` })) : []),
-      item('Plain English; nothing the client has not been told elsewhere', 'open'),
+        ...rv.unverified.slice(0, 6).map((u) => ({ text: `Not found in the documents: ${u.value}`, warn: true })),
+      ] : [{ text: 'Not yet checked against the documents on file' }]),
+      item(pendingBits.length ? 'What is still to come is said to be still to come' : 'Everything it reports on is in', pendingBits.length ? 'flag' : 'ok', pendingBits.length ? [{ text: `Still to come: ${pendingBits.join(', ')}`, warn: true }] : [{ text: 'Every search, enquiry and title point is resolved' }]),
+      item('Mortgage conditions the client must meet are in it', s.hasLender ? 'open' : 'ok', s.hasLender && s.mortgage.facts ? s.mortgage.facts.conditions.filter((c) => !c.standard).map((c) => ({ text: c.text })) : []),
+      item('Reads plainly, and agrees with what the client has already been told', 'open'),
     ];
   }
   if (d.kind === 'bank_details') {
@@ -733,7 +734,6 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
     const ac = raised?.type === 'auto_clear_review_raised' ? (rp as { subFlow?: string; subject?: string; reasons?: string[] }) : null;
     return [
       item('The document says what the rules found', 'open', plainReasons(ac?.reasons).map((r) => ({ text: r, documentId: docId }))),
-      item('Nothing else in it a person would pick up on', 'open'),
     ];
   }
   // Escalations, requisitions, note actions and anything else: the summary's own lines under the kind's checks.
@@ -742,17 +742,31 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
 }
 
 /** The kind's checks with the decision's flags attached to the check they speak to; a flag that fits none is its own row. */
+/** Flag-code words, as the checklist lines say them. */
+const FLAG_WORD: Record<string, string[]> = {
+  conservation: ['planning'], listed: ['planning'], enforcement: ['planning'], tpo: ['planning'], planning: ['planning'], building: ['building', 'regulations'], regulations: ['regulations'],
+  adopted: ['road'], unadopted: ['road'], highway: ['road'], highways: ['road'], road: ['road'], footpath: ['footpath'],
+  scheme: ['schemes'], schemes: ['schemes'], rail: ['rail'], proposal: ['schemes'], development: ['development'],
+  contaminated: ['contaminated'], contamination: ['contaminated'], radon: ['radon'], flood: ['flooding'], flooding: ['flooding'],
+  sewer: ['sewer'], drainage: ['drainage'], water: ['water'], mining: ['mining'], chancel: ['chancel'],
+};
+
 function attachFlags(checks: string[], flags: Flag[], docId: string | null, okEvidence: Ev[]): ChecklistItem[] {
   const items: ChecklistItem[] = checks.map((text) => ({ text, status: 'open' as const, evidence: [] as Ev[] }));
   const unplaced: Flag[] = [];
   for (const f of flags) {
-    const fw = words(`${f.code.replace(/_/g, ' ')} ${f.description}`);
+    // The flag's code says what it is ("CONSERVATION_AREA" is planning, not roads); the wording is a fallback, and then two words must agree.
+    const cw = new Set(f.code.toLowerCase().split('_').flatMap((t) => FLAG_WORD[t] ?? [t]));
     let best = -1; let score = 0;
-    items.forEach((it, i) => { const o = [...words(it.text)].filter((w) => fw.has(w)).length; if (o > score) { score = o; best = i; } });
+    items.forEach((it, i) => { const o = [...words(it.text)].filter((w) => cw.has(w)).length; if (o > score) { score = o; best = i; } });
+    if (best < 0) {
+      const fw = words(f.description);
+      items.forEach((it, i) => { const o = [...words(it.text)].filter((w) => fw.has(w)).length; if (o >= 2 && o > score) { score = o; best = i; } });
+    }
     const ev: Ev = { text: seeTail(f.description), documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? f.locator?.section ?? null, warn: f.severity === 'high' || f.severity === 'medium' };
     if (best >= 0) { items[best].status = 'flag'; items[best].evidence.push(ev); } else unplaced.push(f);
   }
-  for (const f of unplaced) items.unshift({ text: seeTail(f.description), status: 'flag', evidence: [{ text: `${f.severity} · ${f.code.replace(/_/g, ' ').toLowerCase()}`, documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? null, warn: f.severity === 'high' }] });
+  for (const f of unplaced) items.unshift({ text: seeTail(f.description), status: 'flag', evidence: [{ text: f.severity === 'high' ? 'Serious' : f.severity === 'medium' ? 'Needs a decision' : 'For the client to know', documentId: docId, page: f.locator?.page ?? null, quote: f.locator?.quote ?? null, warn: f.severity === 'high' }] });
   if (!flags.length && items.length) { items[0].status = 'ok'; items[0].evidence.push(...okEvidence); }
   return items;
 }
