@@ -45,9 +45,25 @@ test('a rule whose words change gets a new hash (so an approval lapses)', () => 
 
 test('the export sets out each proposed change against current behaviour, with the code', () => {
   const r = PLAYBOOK.find((x) => x.id === 'timer.offer_expired')!;
-  const md = proposalsMarkdown('Smith & Co', [{ ...r, hash: 'h', status: 'change_proposed', proposal: 'Tell the client and the agent the same day.', reviewedBy: 'Jo', reviewedAt: '2026-09-28T10:00:00Z' }]);
+  const md = proposalsMarkdown('Smith & Co', [{ ...r, stage: 'Mortgage', hash: 'h', status: 'change_proposed', proposal: 'Tell the client and the agent the same day.', reviewedBy: 'Jo', reviewedAt: '2026-09-28T10:00:00Z' }]);
   assert.match(md, /# Proposed playbook changes — Smith & Co/);
   assert.match(md, /## Mortgage offer expired `timer.offer_expired`/);
   assert.match(md, /> Tell the client and the agent the same day\./);
   assert.match(md, /\*\*Code:\*\* `sla.ts timedIssueActions`/);
+});
+
+test('every stage placement names a rule that exists', async () => {
+  const src = fs.readFileSync('lib/server/engine/playbook.ts', 'utf8');
+  const block = src.slice(src.indexOf('const STAGE_OF'), src.indexOf('export const stageOf'));
+  for (const m of block.matchAll(/'([a-z_.]+)': '/g)) assert.ok(ids.has(m[1]), `stage placed for unknown rule ${m[1]}`);
+});
+
+test('a proposed new rule exports with where it comes from, who can trigger it, and what should happen', async () => {
+  const { newRulesMarkdown } = await import('../../../lib/server/playbook-review');
+  const md = newRulesMarkdown([{ id: 'x', signal: "The seller's solicitor says the seller has died", sources: ['email_body'], senders: ['other_side'], example: 'Sadly our client passed away last week.', actions: 'Hold exchange.\nAsk who the personal representatives are.', decides: 'fee_earner', holds: 'exchange', proposedBy: 'Jo', proposedById: null, proposedAt: '2026-09-28T10:00:00Z' }]);
+  assert.match(md, /## The seller's solicitor says the seller has died/);
+  assert.match(md, /Comes from: What an email says/);
+  assert.match(md, /Who can trigger it: The other side's solicitor/);
+  assert.match(md, /> Ask who the personal representatives are\./);
+  assert.match(md, /Holds: Exchange/);
 });

@@ -104,6 +104,24 @@ const TIMER: PlaybookRule[] = [
   }),
 ];
 
+/** The part of the transaction each rule belongs to, in the order a case runs. */
+export const PLAYBOOK_STAGES = ['Instruction', 'Source Of Funds', 'Searches', 'Title And Contract', 'Enquiries', 'Survey', 'Mortgage', 'Leasehold', 'Exchange', 'Signing And Completion', 'After Completion', 'Throughout'] as const;
+export type PlaybookStage = (typeof PLAYBOOK_STAGES)[number];
+const STAGE_OF: Record<string, PlaybookStage> = {
+  'email.survey_decision': 'Survey', 'email.specialist_instruction': 'Survey', 'email.survey_plan': 'Survey', 'email.survey_done': 'Survey',
+  'email.exchange_authority': 'Exchange', 'email.dates': 'Exchange', 'email.wait_over': 'Exchange', 'email.price_change': 'Exchange',
+  'email.request_from_seller': 'Enquiries', 'email.mortgage_at_risk': 'Mortgage', 'email.gift': 'Source Of Funds', 'email.name_change': 'Instruction',
+  'document.search': 'Searches', 'document.enquiry_reply': 'Enquiries', 'document.mortgage_offer': 'Mortgage', 'document.title': 'Title And Contract', 'document.contract': 'Title And Contract', 'document.property_forms': 'Title And Contract',
+  'document.lease': 'Leasehold', 'document.management_pack': 'Leasehold', 'document.id_check': 'Instruction', 'document.survey': 'Survey', 'document.specialist_report': 'Survey',
+  'timer.offer_expiring': 'Mortgage', 'timer.offer_expired': 'Mortgage', 'timer.cdd_refresh': 'Instruction', 'timer.search_delayed': 'Searches', 'timer.enquiry_unanswered': 'Enquiries',
+  'timer.deadline.mortgage_offer_expiry': 'Mortgage', 'timer.deadline.sdlt_filing': 'After Completion', 'timer.deadline.notice_to_complete': 'Signing And Completion', 'timer.deadline.requisition_reply': 'After Completion', 'timer.deadline.priority_period_expiry': 'Signing And Completion',
+  'timer.chase.id_check': 'Instruction', 'timer.chase.proof_of_funds': 'Source Of Funds', 'timer.chase.search': 'Searches', 'timer.chase.enquiry': 'Enquiries', 'timer.chase.contract_pack': 'Title And Contract', 'timer.chase.property_forms': 'Title And Contract',
+  'timer.chase.management_pack': 'Leasehold', 'timer.chase.mortgage_offer': 'Mortgage', 'timer.chase.lender_consent': 'Mortgage', 'timer.chase.survey': 'Survey', 'timer.chase.funds': 'Signing And Completion', 'timer.chase.redemption': 'Signing And Completion', 'timer.chase.signed_documents': 'Signing And Completion',
+  'timer.chase.registration': 'After Completion', 'timer.chase.discharge': 'After Completion',
+};
+/** A rule's stage; anything not placed runs throughout the case. */
+export const stageOf = (id: string): PlaybookStage => STAGE_OF[id] ?? 'Throughout';
+
 export const PLAYBOOK: PlaybookRule[] = [...EMAIL, ...DOCUMENT, ...TIMER];
 
 /** Every note command maps to the rules that describe it (the compiler insists on all of them). */
