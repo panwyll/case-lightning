@@ -8,8 +8,10 @@
  */
 import { queryOne } from './db';
 import { getFirmProfile, type FirmProfile } from './firm';
+import { sanitizeSignatureHtml } from './html-sanitize';
+import { htmlToText } from './text';
 
-export interface SignaturePerson { name: string | null; jobTitle: string | null; phone: string | null; email: string | null }
+export interface SignaturePerson { name: string | null; jobTitle: string | null; phone: string | null; email: string | null; /** Their own signature, pasted as rendered HTML and stored cleaned; null = the firm's standard. */ signatureHtml?: string | null }
 export interface Signature { text: string; html: string; names: string[] }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string);
@@ -18,17 +20,33 @@ const siteHref = (w: string) => (/^https?:\/\//i.test(w) ? w : `https://${w}`);
 
 export async function getSignaturePerson(tenantId: string, userId: string | null): Promise<SignaturePerson> {
   if (!userId) return { name: null, jobTitle: null, phone: null, email: null };
-  const r = await queryOne<{ display_name: string | null; email: string | null; job_title: string | null; phone: string | null }>(
+  const r = await queryOne<{ display_name: string | null; email: string | null; job_title: string | null; phone: string | null; signature_html?: string | null }>(
+    `select display_name, email, job_title, phone, signature_html from app_user where id = $1 and tenant_id = $2`, [userId, tenantId]
+  ).catch(() => queryOne<{ display_name: string | null; email: string | null; job_title: string | null; phone: string | null }>(
+    // Before migration 107: no pasted signature.
     `select display_name, email, job_title, phone from app_user where id = $1 and tenant_id = $2`, [userId, tenantId]
-  ).catch(async () => {
+  )).catch(async () => {
     // Before migration 105: name and email only.
     const b = await queryOne<{ display_name: string | null; email: string | null }>(`select display_name, email from app_user where id = $1 and tenant_id = $2`, [userId, tenantId]).catch(() => null);
     return b ? { ...b, job_title: null, phone: null } : null;
   });
-  return { name: clean(r?.display_name) ?? clean(r?.email), jobTitle: clean(r?.job_title), phone: clean(r?.phone), email: clean(r?.email) };
+  return { name: clean(r?.display_name) ?? clean(r?.email), jobTitle: clean(r?.job_title), phone: clean(r?.phone), email: clean(r?.email), signatureHtml: clean((r as { signature_html?: string | null } | null)?.signature_html) };
 }
 
 export function buildSignature(firm: FirmProfile, person: SignaturePerson): Signature {
+  // Their own pasted signature, as they made it; the firm's standing notice still goes under it.
+  if (person.signatureHtml) {
+    const own = sanitizeSignatureHtml(person.signatureHtml);
+    const notice = clean(firm.signatureNotice);
+    const html = `<div style="margin-top:18px">${own}</div>${notice ? `<div style="font-family:Segoe UI,Arial,sans-serif;font-size:11px;color:#b45309;margin-top:6px;font-weight:600">${esc(notice).replace(/\n/g, '<br>')}</div>` : ''}`;
+    const text = [htmlToText(own), notice].filter(Boolean).join('\n');
+    return { text, html, names: [person.name, firm.name].map(clean).filter((x): x is string => !!x) };
+  }
+  return standardSignature(firm, person);
+}
+
+/** The firm's standard signature, built from the firm's details and the person's name. */
+export function standardSignature(firm: FirmProfile, person: SignaturePerson): Signature {
   const addr = [firm.addressLine1, firm.addressLine2, firm.town, firm.postcode].map(clean).filter(Boolean).join(', ');
   const sra = firm.sraNumber ? `Authorised and regulated by the Solicitors Regulation Authority (SRA number ${firm.sraNumber})` : null;
   const phones = [person.phone ? `D: ${person.phone}` : null, firm.phone ? `T: ${firm.phone}` : null].filter(Boolean).join(' · ');

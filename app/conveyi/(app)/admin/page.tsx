@@ -232,7 +232,7 @@ const TAB_META: Record<TabKey, { label: string; subtitle: string }> = {
   templates: { label: 'Email Templates', subtitle: '' },
   docpacks: { label: 'Doc Packs', subtitle: '' },
   team: { label: 'Team', subtitle: '' },
-  firm: { label: 'Firm Details', subtitle: '' },
+  firm: { label: 'Firm', subtitle: '' },
   rules: { label: 'Rules', subtitle: '' },
   policy: { label: 'Policy', subtitle: '' },
   actions: { label: 'Tools', subtitle: '' },

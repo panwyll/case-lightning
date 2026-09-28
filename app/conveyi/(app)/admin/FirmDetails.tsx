@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 
 type Firm = { name: string; addressLine1: string | null; addressLine2: string | null; town: string | null; postcode: string | null; phone: string | null; sraNumber: string | null; website: string | null; logoUrl?: string | null; signatureNotice?: string | null };
@@ -31,7 +31,7 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="fd">
       <style>{CSS}</style>
-      <div className="fd-h">Firm Details</div>
+      <div className="fd-h">Firm</div>
       <div className="fd-grid">
         {field('Firm name', 'name')}
         {field('Address', 'addressLine1', { placeholder: 'Street' })}
@@ -54,41 +54,41 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-type Person = { name: string | null; jobTitle: string | null; phone: string | null; email: string | null };
-
-/** Your own lines in the email signature, and the signature as clients will see it. */
+/** Your own signature: paste a rendered one (from Gmail, Outlook, a signature generator) or write it here; empty means the firm's standard. */
 export function MySignature() {
-  const [p, setP] = useState<Person | null>(null);
-  const [html, setHtml] = useState('');
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [sig, setSig] = useState<{ own: string | null; standard: string; preview: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  const load = (r: { person: Person; preview: { html: string } }) => { setP(r.person); setHtml(r.preview.html); };
-  useEffect(() => { api<{ person: Person; preview: { html: string } }>('/me/signature').then(load).catch(() => setP(null)); }, []);
+  const fill = (r: { own: string | null; standard: string; preview: string }) => { setSig(r); if (ref.current) ref.current.innerHTML = r.own ?? r.standard; };
+  useEffect(() => { api<{ own: string | null; standard: string; preview: string }>('/me/signature').then(fill).catch(() => setSig(null)); }, []);
+  useEffect(() => { if (sig && ref.current && !ref.current.innerHTML) ref.current.innerHTML = sig.own ?? sig.standard; }, [sig]);
   useEffect(() => { if (!note) return; const t = setTimeout(() => setNote(null), 4000); return () => clearTimeout(t); }, [note]);
-  if (!p) return null;
-  const save = async () => {
+  const save = async (html: string | null) => {
     setBusy(true);
-    try { load(await api('/me/signature', { method: 'PATCH', body: JSON.stringify({ jobTitle: p.jobTitle, phone: p.phone }) })); setNote('Saved'); }
+    try { fill(await api('/me/signature', { method: 'PATCH', body: JSON.stringify({ html }) })); setNote('Saved'); }
     catch (e: unknown) { setNote(e instanceof Error ? e.message : 'Could not save.'); }
     finally { setBusy(false); }
   };
+  if (!sig) return null;
   return (
     <div className="fd">
       <style>{CSS}</style>
       <div className="fd-h">My Signature</div>
-      <div className="fd-grid">
-        <label className="fd-row"><span>Name</span><input className="fd-in" value={p.name ?? ''} disabled /></label>
-        <label className="fd-row"><span>Job title</span><input className="fd-in" value={p.jobTitle ?? ''} onChange={(e) => setP({ ...p, jobTitle: e.target.value })} placeholder="Conveyancer" style={{ maxWidth: 320 }} /></label>
-        <label className="fd-row"><span>Direct line</span><input className="fd-in" value={p.phone ?? ''} onChange={(e) => setP({ ...p, phone: e.target.value })} inputMode="tel" style={{ maxWidth: 240 }} /></label>
+      <div ref={ref} className="fd-sig" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="My signature" />
+      <div className="fd-a">
+        <button className="fd-btn" disabled={busy} onClick={() => void save(ref.current?.innerHTML ?? null)}>{busy ? 'Saving…' : 'Save'}</button>
+        {sig.own && <button className="fd-btn2" disabled={busy} onClick={() => void save(null)}>Use The Firm&apos;s Standard</button>}
+        {note && <span className="fd-note">{note}</span>}
       </div>
-      <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>{note && <span className="fd-note">{note}</span>}</div>
-      <div className="fd-prev" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }
 
 const CSS = `
-.fd-prev{margin-top:14px;padding:4px 16px 16px;border:1px dashed #cbd5e1;border-radius:10px;background:#fafafa;overflow-x:auto}
+.fd-sig{min-height:120px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;background:#fff;overflow:auto;outline:none;font-family:Segoe UI,Arial,sans-serif;font-size:13px}
+.fd-sig:focus{border-color:#5A27E0;box-shadow:0 0 0 3px rgba(90,39,224,.15)}
+.fd-btn2{background:#fff;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer}
 .fd{border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;margin-bottom:14px;background:#fff}
 .fd-h{font-weight:800;font-size:14px;color:#0f172a;margin-bottom:10px}
 .fd-grid{display:grid;gap:6px}

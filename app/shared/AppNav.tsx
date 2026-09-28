@@ -57,7 +57,7 @@ const GROUPS: ReadonlyArray<{ label: string; items: NavItem[] }> = [
     label: 'Firm',
     items: [
       { key: 'team', label: 'Team', icon: Users, href: `${paths.admin}?tab=team`, adminTab: 'team', adminOnly: true },
-      { key: 'firm', label: 'Firm Details', icon: Building, href: `${paths.admin}?tab=firm`, adminTab: 'firm' },
+      { key: 'firm', label: 'Firm', icon: Building, href: `${paths.admin}?tab=firm`, adminTab: 'firm' },
       { key: 'rules', label: 'Rules', icon: Scale, href: `${paths.admin}?tab=rules`, adminTab: 'rules' },
       { key: 'tools', label: 'Tools', icon: Wrench, href: paths.integrations, adminOnly: true, match: (p) => p.startsWith(paths.integrations) || p.startsWith(`${APP_BASE}/engine`), adminTabs: ['actions', 'audit', 'policy'] },
     ],
