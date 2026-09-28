@@ -424,7 +424,7 @@ const PHASES: ReadonlyArray<{ id: string; label: string; lanes: string[]; unfed?
 ];
 const phaseState = (ls: LaneDef[]): LaneDef['state'] => (ls.some((l) => l.state === 'blocked') ? 'blocked' : ls.some((l) => l.state === 'open') ? 'open' : ls.length && ls.every((l) => l.state === 'done') ? 'done' : 'idle');
 
-type Cmd = (body: Record<string, unknown>) => Promise<void>;
+type Cmd = (body: Record<string, unknown>) => Promise<boolean | void>;
 
 /** Case shapes a case can be enrolled with (mirrors lib/server/engine/shapes.ts). */
 const SHAPES: Array<{ id: string; label: string; sides: string[]; summary: string }> = [
@@ -525,6 +525,16 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
 }
 
 export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow' }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' }) {
+  // A chase sent by hand shows as sent on its button for 20 seconds.
+  const [chaseSent, setChaseSent] = useState<Record<string, number>>({});
+  const [chasing, setChasing] = useState<string | null>(null);
+  const [chaseFailed, setChaseFailed] = useState<string | null>(null);
+  useEffect(() => {
+    const live = Object.values(chaseSent);
+    if (!live.length) return;
+    const t = setTimeout(() => setChaseSent((m) => Object.fromEntries(Object.entries(m).filter(([, at]) => Date.now() - at < 20_000))), Math.max(0, Math.min(...live) + 20_000 - Date.now()));
+    return () => clearTimeout(t);
+  }, [chaseSent]);
   const [pofNote, setPofNote] = useState('');
   const [pofQuestion, setPofQuestion] = useState('');
   const [enquiry, setEnquiry] = useState({ id: '', subject: '' });
@@ -1102,10 +1112,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
               const who = w.chase ? (WAIT_PARTY[w.chase.recipientRole] ?? w.chase.recipientRole.replace(/_/g, ' ')) : null;
               const proposes = (view.levels?.chase ?? 'propose') === 'propose';
               const chased = w.chasesSentAt.length;
+              const lastChase = chased ? w.chasesSentAt[chased - 1] : null;
+              const wk = `${w.key}:${w.subject}`;
+              const justSent = chaseSent[wk] != null;
               return (
                 <div key={`${w.key}:${w.subject}`} className="ep-tile">
                   <b>{cap(w.key)}{w.subject && !/^[0-9a-f-]{20,}$/i.test(w.subject) ? ` · ${w.subject}` : ''}{who ? <span style={{ fontWeight: 500, color: '#64748b' }}> from {who}</span> : null}</b>
-                  <span className="d" style={{ display: 'block' }}>Asked {fmtDay(w.openedAt)}{chased ? ` · chased ${chased === 1 ? 'once' : `${chased} times`}` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
+                  <span className="d" style={{ display: 'block' }}>Asked {fmtDay(w.openedAt)}{w.openedBy && view.people?.[w.openedBy] ? ` by ${view.people[w.openedBy]}` : ''}{w.escalations.some((e) => !e.resolvedAt) ? ' · escalated' : ''}</span>
+                  {lastChase && <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#334155' }}>Last chased {fmtWhen(lastChase)}{w.lastChasedBy ? ` by ${w.lastChasedBy}` : ''}{chased > 1 ? ` · ${chased} chases` : ''}</span>}
                   {w.chase ? (
                     <span className="d" style={{ display: 'block', color: w.chase.dueInWorkingDays <= 0 ? '#b45309' : undefined }}>
                       {w.chase.dueInWorkingDays > 0
@@ -1113,7 +1127,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
                   ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}
-                  <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5 }} disabled={busy || !w.chase} onClick={() => cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null })}>Chase Now Instead</button></div>
+                  <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? 'Sending…' : chased ? 'Chase Again' : 'Chase Now'}</button></div>
+                  {chaseFailed === wk && notice?.kind === 'err' && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4, fontSize: 12, color: '#b91c1c' }}><span style={{ flex: 1 }}>Not sent: {notice.text}</span><button type="button" aria-label="Dismiss" onClick={() => setChaseFailed(null)} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button></div>}
                 </div>
               );
             })}

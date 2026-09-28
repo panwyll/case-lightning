@@ -687,6 +687,8 @@ export interface WaitState {
   openedBy?: string;
   closedAt: string | null;
   chasesSentAt: string[];
+  /** Who sent the last chase by hand (a name); null when the timer sent it. */
+  lastChasedBy?: string | null;
   escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>;
 }
 
@@ -759,6 +761,9 @@ export interface ChaseSpec {
   messageId?: string | null;
   /** Stamped by the machine on chases to the counterparty solicitor. */
   counterpartyType?: CounterpartyType | null;
+  /** The person who sent it by hand (Chase Now); absent on a timer chase. */
+  sentBy?: string | null;
+  sentByName?: string | null;
 }
 
 /**

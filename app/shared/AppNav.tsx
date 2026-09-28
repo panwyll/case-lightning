@@ -126,6 +126,11 @@ function Items({ isAdmin, assistant }: { isAdmin: boolean; assistant: boolean })
   const counts = useCounts();
   const tab = useSearchParams()?.get('tab') ?? null;
   const onAdmin = path.startsWith(paths.admin);
+  // The last page that was not a case: a case's Back button returns there.
+  useEffect(() => {
+    if (!path || /\/matters\/[0-9a-f-]{36}/i.test(path)) return;
+    try { sessionStorage.setItem('conveyi:back', path + (window.location.search || '')); } catch { /* no storage: Back goes to the board */ }
+  }, [path, tab]);
   const active = (i: NavItem) => (onAdmin ? (!!i.adminTab && i.adminTab === (tab ?? 'mywork')) || !!i.adminTabs?.includes((tab ?? 'mywork') as AdminTab) : !!i.match && i.match(path));
   // A decision page is a task being done; the nav says so.
   return (

@@ -18,7 +18,7 @@
  */
 import { DEFAULT_SLA, DEADLINE_LEAD, deadlineActions, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC, type Workstream } from './issues';
-import { openIssues, openWaits, pendingDecisions, type MatterState, type Stage, type WaitState } from './types';
+import { awayNow, openIssues, openWaits, pendingDecisions, type MatterState, type Stage, type WaitState } from './types';
 import { profileOf } from './transactions';
 import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
 
@@ -180,11 +180,15 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
       `Their normal turnaround is ${plural(rule.chaseAfter, 'working day')}; we escalate at ${rule.escalateAfter}.`,
       chases ? `${plural(chases, 'chase')} sent, most recently ${w.chasesSentAt[chases - 1].slice(0, 10)}.` : 'No chase has gone out yet.',
     ];
-    if (escalated) {
+    // Time decides the band, not how often we pressed Chase. Someone recorded as away is not late while away: a nudge at most.
+    const away = rule.recipientRole === 'client' && !!awayNow(s, 'client', now);
+    if (away) {
+      if (age >= rule.chaseAfter) reasons.push({ code: 'chase_due', band: 'attention', headline: `${what} — ${party} is away`, why, suggested: 'Pick it up when they are back', workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
+    } else if (escalated) {
       reasons.push({ code: 'wait_escalated', band: 'delayed', headline: `${what} — ${party} is ${plural(age - rule.escalateAfter, 'working day')} past escalation`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
-    } else if (age >= rule.escalateAfter || chases >= 2) {
+    } else if (age >= rule.escalateAfter) {
       reasons.push({ code: 'wait_overdue', band: 'delayed', headline: `${what} — ${party} is ${plural(age - rule.chaseAfter, 'working day')} overdue`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
-    } else if (age >= rule.chaseAfter || chases >= 1) {
+    } else if (age >= rule.chaseAfter) {
       reasons.push({ code: 'chase_due', band: 'attention', headline: `${what} — ${party} is ${plural(Math.max(1, age - rule.chaseAfter + 1), 'working day')} overdue`, why, suggested: chaseAdvice(party, chases), workstream: WAIT_WORKSTREAM[w.key] ?? null, ref: { type: 'wait', id: `${w.key}:${w.subject}` }, ageWorkingDays: age });
     }
   }

@@ -4,7 +4,7 @@
  * replayed the same log; here the state is projected once and every view is derived from it.
  * The single-purpose routes still exist and call the same builders.
  */
-import { queryOne } from '../db';
+import { query, queryOne } from '../db';
 import { boardSelect, type BoardMatter } from '../board';
 import { listAssignees } from '../tasks';
 import { DEFAULT_SLA, nextChase } from './sla';
@@ -22,7 +22,9 @@ import type { EngineService } from './service';
 
 /** The engine's view of a matter: state, profile, blockers, waits, decisions, levels, the matter row and its charge. */
 export async function engineView(svc: EngineService, tenantId: string, matterId: string, state: MatterState) {
-  const [subflows, matter, charge, sla] = await Promise.all([
+  // The people named on the page (who asked for what): only ids that are users.
+  const personIds = [...new Set(state.waits.map((w) => w.openedBy).filter((id): id is string => !!id && /^[0-9a-f-]{36}$/i.test(id)))];
+  const [subflows, matter, charge, sla, docCount, people] = await Promise.all([
     svc.levels(tenantId),
     queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null; sandbox: boolean; sandbox_scenario: string | null; sandbox_step: string | null }>(
       `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler, m.sandbox, m.sandbox_scenario, m.sandbox_step
@@ -31,6 +33,9 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     ).catch(() => null),
     queryOne<{ charged_at: string; billed: boolean; unbilled_reason: string | null; amount_pennies: number }>(`select charged_at, billed, unbilled_reason, amount_pennies from matter_charge where tenant_id = $1 and matter_id = $2`, [tenantId, matterId]).catch(() => null),
     svc.eventStore.loadSla(tenantId).catch(() => DEFAULT_SLA),
+    // What the Documents tab lists: the case's papers, not the generated notes, emails and dossiers the timeline carries.
+    queryOne<{ n: number }>(`select count(*)::int as n from document where tenant_id = $1 and matter_id = $2 and superseded_at is null and coalesce(doc_type, '') not in ('FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL')`, [tenantId, matterId]).then((r) => r?.n ?? 0).catch(() => 0),
+    personIds.length ? query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [tenantId, personIds]).catch(() => []) : Promise.resolve([] as Array<{ id: string; name: string }>),
   ]);
   const profile = profileOf(state.transactionType);
   return {
@@ -43,6 +48,8 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),
     // Everything the log holds (the panel shows the engine's conclusions) …
     pendingDecisions: pendingDecisions(state),
+    documentCount: docCount,
+    people: Object.fromEntries(people.map((p) => [p.id, p.name])) as Record<string, string>,
     // … and what a person may act on (addendum 3 §2).
     surfacedDecisions: surfacedDecisions(state),
     levels: subflows,

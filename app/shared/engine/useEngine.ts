@@ -58,7 +58,7 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
 
   // Busy while any command is in flight (a counter: overlapping commands do not clear each other's state).
   // It covers the refresh too, so nothing is clicked against a view the command has just changed.
-  const cmd = useCallback(async (body: Record<string, unknown>) => {
+  const cmd = useCallback(async (body: Record<string, unknown>): Promise<boolean> => {
     inFlight.current += 1;
     setBusy(true);
     setErr(null);
@@ -69,10 +69,12 @@ export function useEngine(matterId: string, api: Api, onChanged?: () => void, op
       onChanged?.();
       const n = r.events?.length ?? 0;
       setNotice(r.warning ? { kind: 'warn', text: r.warning, at: Date.now() } : { kind: 'ok', text: n ? `Recorded${n > 1 ? ` (${n} events)` : ''}` : 'Nothing to record', at: Date.now() });
+      return true;
     } catch (e: unknown) {
       const text = e instanceof Error ? e.message : 'Command failed.';
       setErr(text);
       setNotice({ kind: 'err', text, at: Date.now() });
+      return false;
     } finally {
       inFlight.current -= 1;
       if (inFlight.current === 0) setBusy(false);

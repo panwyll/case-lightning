@@ -99,7 +99,7 @@ const RAG: Record<string, { fg: string; bg: string; dot: string }> = {
 };
 
 interface CaseCard { matterId: string; matterRef: string; propertyAddress: string | null; type: string; clients: string[]; stage: string | null; handler: string | null; otherSide: string | null; closed: boolean }
-interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; score: number; case: CaseCard | null; matched: string[]; senderOnCase?: 'contact' | 'firm' | 'seen' | 'none' }
+interface Suggestion { matterId: string; matterRef: string; propertyAddress: string; band: string; score: number; case: CaseCard | null; matched: string[]; onThread?: boolean; senderOnCase?: 'contact' | 'firm' | 'seen' | 'none' }
 interface Person { name: string | null; address: string | null }
 interface FullMessage { subject: string; from: Person | null; to: Person[]; cc: Person[]; receivedDateTime: string | null; body: { contentType: 'html' | 'text'; content: string }; attachments: Array<{ id: string; name: string; size: number }> }
 interface Item {
@@ -379,11 +379,11 @@ function Detail({ item, mailbox, busy, onFile, onNotACase }: { item: Item; mailb
                 <span className="addr">{s.case?.propertyAddress ?? s.propertyAddress}<span className="ref">{s.matterRef}</span></span>
                 <span className="side"><Pct s={s} /><button className={`ef-file${i === 0 && item.sender?.verdict !== 'suspicious' ? '' : ' ghost'}`} disabled={busy} onClick={() => onFile(s.matterId)}><Check size={13} /> File here</button></span>
                 <span className="who">{describe(s.case)}{s.case?.otherSide ? ` · other side ${s.case.otherSide}` : ''}</span>
-                {(s.matched.length > 0 || s.senderOnCase === 'none') && (
+                {(s.matched.length > 0 || (s.senderOnCase === 'none' && !s.onThread)) && (
                   <ul>
                     {s.matched.map((m) => <li key={m}><Check size={12} />{m}</li>)}
                     {/* Names and addresses are public: say so when that is all there is. */}
-                    {s.senderOnCase === 'none' && <li className="amber"><AlertTriangle size={12} />Not from anyone on this case: only what it says matches</li>}
+                    {s.senderOnCase === 'none' && !s.onThread && <li className="amber"><AlertTriangle size={12} />Not from anyone on this case: only what it says matches</li>}
                   </ul>
                 )}
               </div>

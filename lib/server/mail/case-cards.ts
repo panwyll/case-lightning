@@ -84,9 +84,11 @@ export function explainMatch(
 ): string[] {
   const out: string[] = [];
   const from = ctx.fromName || ctx.fromAddress || 'The sender';
-  for (const s of signals) {
+  // A thread already filed to the case is the strongest reason there is: it is said first.
+  const ordered = [...signals].sort((a, b) => Number(b.kind === 'LINKED_THREAD') - Number(a.kind === 'LINKED_THREAD'));
+  for (const s of ordered) {
     switch (s.kind) {
-      case 'LINKED_THREAD': out.push('Earlier emails in this conversation are already on this case'); break;
+      case 'LINKED_THREAD': out.push('On a thread already filed to this case'); break;
       case 'KNOWN_CONTACT': out.push(`From ${from}, ${ROLE[s.value ?? ''] ?? 'a contact'} on this case`); break;
       case 'ONLY_CASE': out.push('Their only open case with us'); break;
       case 'CONTACT_FIRM': out.push(`Sent from ${s.value && ROLE[s.value] ? `the same firm as ${ROLE[s.value]}` : 'the firm of a contact on this case'}`); break;

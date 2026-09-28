@@ -67,7 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
       else if (input.type === 'resend_proof_of_funds') return await svc.resendProofOfFunds(user.tenantId, matterId, user.userId);
       else if (input.type === 'retry_action') return await svc.retryFailedAction(user.tenantId, matterId, input.proposalEventId, user.userId);
       else if (input.type === 'retry_issue') return await svc.retryIssue(user.tenantId, matterId, input.issueId, user.userId);
-      else if (input.type === 'chase_now') return await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId);
+      else if (input.type === 'chase_now') return await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId, user.displayName ?? user.email);
       else if (input.type === 'draft_completion_statement') {
         const drafted = await svc.draftCompletionStatement(user.tenantId, matterId);
         await writeAudit({ tenantId: user.tenantId, matterId, actorUserId: user.userId, actionType: 'ENGINE_DRAFT', actionStatus: 'SUCCESS', payload: { kind: 'completion_statement', documentId: (drafted as unknown as { documentId: string }).documentId } }).catch(() => {});

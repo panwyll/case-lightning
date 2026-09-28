@@ -359,7 +359,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     const mIdents = identsByMatter.get(m.id) ?? [];
 
     if (linkedSet.has(m.id)) {
-      signalsHit.push({ kind: 'LINKED_THREAD', detail: 'Thread already linked to this case', weight: 1.0 });
+      signalsHit.push({ kind: 'LINKED_THREAD', detail: 'On a thread already filed to this case', weight: 1.0 });
     }
     if (m.case_ref_token && tokens.includes(m.case_ref_token.toUpperCase())) {
       signalsHit.push({ kind: 'CASE_REF_TOKEN', detail: `Subject/body carries [#${m.case_ref_token}]`, weight: 0.9, value: m.case_ref_token });

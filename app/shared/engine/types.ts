@@ -140,7 +140,7 @@ export interface DraftCheckView {
   summary: { sentences: number; claims: number; matched: number; struck: number; cited: number };
 }
 
-export interface WaitRow { key: string; subject: string; openedAt: string; closedAt: string | null; chasesSentAt: string[]; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>; /** When the timer chases next; null when no further chase is due. */ chase?: { dueDate: string; dueInWorkingDays: number; recipientRole: string; template: string; priorChases: number } | null }
+export interface WaitRow { key: string; subject: string; openedAt: string; openedBy?: string; closedAt: string | null; chasesSentAt: string[]; lastChasedBy?: string | null; escalations: Array<{ eventId: string; raisedAt: string; resolvedAt: string | null }>; /** When the timer chases next; null when no further chase is due. */ chase?: { dueDate: string; dueInWorkingDays: number; recipientRole: string; template: string; priorChases: number } | null }
 
 export interface PofQueryRow {
   id: string;
@@ -302,7 +302,7 @@ export interface CompletionContract { label: string; documentRoles?: string[]; d
 export interface DocumentReviewSummary { pages: number; read: number; withFacts: number; unreadable: number; unattested: number; complete: boolean; facts: number; verified: number }
 export interface CaseDocument {
   review?: DocumentReviewSummary | null; id: string; fileName: string | null; docType: string | null; webUrl: string | null; createdAt: string; emailFrom?: string | null; emailFromAddress?: string | null; emailSubject?: string | null }
-export interface EngineView { sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
+export interface EngineView { sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; people?: Record<string, string>; documentCount?: number; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 

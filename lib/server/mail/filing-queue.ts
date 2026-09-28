@@ -56,6 +56,7 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
         case: cards.get(c.matterId) ?? null,
         matched: explainMatch(c.signals, { fromName: r.from_name, fromAddress: r.from_address, senderRole: roleOf(c.matterId, r.from_address) }),
         senderOnCase: senderOnCase(c.signals, r.from_address),
+        onThread: c.signals.some((x) => x.kind === 'LINKED_THREAD'),
       })),
     };
   });

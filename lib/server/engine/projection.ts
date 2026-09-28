@@ -533,7 +533,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['chase_sent'];
       s.chasesSent += 1;
       const w = findOpenWait(s, p.waitKey, p.subject);
-      if (w) w.chasesSentAt.push(e.createdAt);
+      if (w) { w.chasesSentAt.push(e.createdAt); w.lastChasedBy = p.sentByName ?? null; }
       break;
     }
     case 'acknowledgement_sent': {

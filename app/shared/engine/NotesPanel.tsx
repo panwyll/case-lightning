@@ -34,7 +34,7 @@ export function NotesPanel({
   api: Api;
   state: EngineState;
   busy: boolean;
-  cmd: (body: Record<string, unknown>) => Promise<void>;
+  cmd: (body: Record<string, unknown>) => Promise<unknown>;
   people?: Record<string, string>;
 }) {
   const [text, setText] = useState('');
@@ -118,7 +118,7 @@ function Note({ n, open, onToggle, who }: { n: NoteRow; open: boolean; onToggle:
 }
 
 /** Add a note or a call from the case's Tasks: the words are filed and read back as things to confirm. */
-export function AddNote({ busy, cmd }: { busy: boolean; cmd: (body: Record<string, unknown>) => Promise<void> }) {
+export function AddNote({ busy, cmd }: { busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown> }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
   const [kind, setKind] = useState('typed');

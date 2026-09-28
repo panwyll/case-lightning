@@ -53,7 +53,7 @@ const CSS = `
 .is-dlg .f{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 `;
 
-export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<void>; onChanged?: () => void }) {
+export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; onChanged?: () => void }) {
   const [cat, setCat] = useState<IssueCatalogue | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [unfold, setUnfold] = useState<Set<string>>(new Set());

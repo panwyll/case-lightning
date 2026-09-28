@@ -230,7 +230,7 @@ export class EngineService {
       const open = new Set(openWaits(state).filter((w) => w.key === d.waitKey).map((w) => w.subject));
       for (const subj of subjects) {
         if (subj !== d.subject && !open.has(subj)) continue;
-        await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: subj, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel as never, messageId: sent.messageId } });
+        await this.run(tenantId, matterId, { type: 'record_chase', chase: { waitKey: d.waitKey as never, subject: subj, recipientRole: d.recipientRole as never, template: d.template, channel: sent.channel as never, messageId: sent.messageId, ...(typeof d.context?.sentBy === 'string' ? { sentBy: d.context.sentBy, sentByName: typeof d.context.sentByName === 'string' ? d.context.sentByName : null } : {}) } });
       }
     } else if (action === 'client_update' && (detail as { kind?: string }).kind === 'id_check_request') {
       await this.requestIdCheck(tenantId, matterId, SYSTEM, (detail as { party?: string | null }).party ?? null);
@@ -856,7 +856,7 @@ export class EngineService {
   }
 
   /** A person sends the chase for a wait now rather than when the timer would; the same template and record as the timer's. */
-  async chaseNow(tenantId: string, matterId: string, waitKey: WaitKey, subject: string | null, actor: string): Promise<RunResult> {
+  async chaseNow(tenantId: string, matterId: string, waitKey: WaitKey, subject: string | null, actor: string, actorName: string | null = null): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
     const wait = openWaits(state).find((w) => w.key === waitKey && (w.subject || null) === (subject || null));
     if (!wait) throw Object.assign(new Error(`No open ${waitKey.replace(/_/g, ' ')} wait${subject ? ` for ${subject}` : ''} on this case.`), { status: 409 });
@@ -864,12 +864,14 @@ export class EngineService {
     const rule = sla[waitKey];
     if (!rule) throw Object.assign(new Error(`No chase rule for ${waitKey}.`), { status: 400 });
     const ageWorkingDays = workingDaysBetween(new Date(wait.openedAt), this.ports.now());
-    const context = { waitKey: wait.key, subject: wait.subject, openedAt: wait.openedAt, ageWorkingDays, priorChases: wait.chasesSentAt.length, sentBy: actor };
+    const context = { waitKey: wait.key, subject: wait.subject, openedAt: wait.openedAt, ageWorkingDays, priorChases: wait.chasesSentAt.length, sentBy: actor, sentByName: actorName };
     // An enquiry chase lists every unanswered enquiry, and records each as chased.
     const also = wait.key === 'enquiry' ? openWaits(state).filter((w) => w.key === 'enquiry' && w.subject !== wait.subject).map((w) => w.subject) : [];
     await this.perform(tenantId, matterId, 'chase', { waitKey: wait.key, subject: wait.subject, recipientRole: rule.recipientRole, template: rule.template, context, ...(also.length ? { alsoSubjects: also } : {}) });
     const after = await this.getState(tenantId, matterId);
-    return { state: after, events: [], warning: `Chase sent to the ${rule.recipientRole.replace(/_/g, ' ')} (${rule.template.replace(/_/g, ' ')}).` };
+    const now = after.waits.find((w) => w.key === wait.key && w.subject === wait.subject && w.closedAt === null);
+    if ((now?.chasesSentAt.length ?? 0) <= wait.chasesSentAt.length) throw Object.assign(new Error('The chase did not go. The reason is on the Tasks tab.'), { status: 502 });
+    return { state: after, events: [] };
   }
 
   /** Sweep every active matter (cron). */

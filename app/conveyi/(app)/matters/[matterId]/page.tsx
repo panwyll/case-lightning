@@ -16,6 +16,8 @@ import type { CaseModel } from '@/app/shared/engine/CaseView';
 import { useEngine, type EngineBundle } from '@/app/shared/engine/useEngine';
 import { ContactsCard } from '@/app/shared/engine/ContactsCard';
 import { paths } from '@/lib/paths';
+import { ArrowLeft } from '@/app/shared/icons';
+import { useRouter } from 'next/navigation';
 
 /**
  * One case, whole. The Overview tab is where it is: the stages, what is running inside
@@ -37,6 +39,8 @@ type Model = CaseModel & { profile?: { label: string; side: string }; health?: {
 const CSS = `
 .mx-head{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-bottom:14px}
 .mx-title{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+.mx-back{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#334155;cursor:pointer;flex:none}
+.mx-back:hover{background:#f1f5f9}
 .mx-sub{color:#64748b;font-size:13px;margin:3px 0 0}
 .mx-ctl{display:flex;gap:8px;align-items:center;margin-left:auto}
 .mx-sel{padding:7px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;background:#fff;color:#0f172a;font-family:inherit}
@@ -161,6 +165,13 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
     catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not change the owner.'); }
   };
 
+  const router = useRouter();
+  // Back to wherever the case was opened from (the board, Tasks, Email); the board when it was opened directly.
+  const goBack = () => {
+    let to: string | null = null;
+    try { to = sessionStorage.getItem('conveyi:back'); } catch { /* the board */ }
+    router.push(to || paths.cases);
+  };
   const m = detail?.matter ?? {};
   const nameOf = (id: string | null) => (id ? team.find((u) => u.id === id)?.display_name || team.find((u) => u.id === id)?.email || '' : '');
   const band = model?.health?.band;
@@ -176,6 +187,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           <div className="mx-head">
             <div style={{ minWidth: 0 }}>
               <h1 className="mx-title">
+                <button type="button" className="mx-back" aria-label="Back" title="Back" onClick={goBack}><ArrowLeft size={18} /></button>
                 {band && <House band={band} size={28} />}{row.propertyAddress ?? row.matterRef}
                 {view?.state.transactionType && <span className="eg-chip muted">{TRANSACTION_LABEL[view.state.transactionType] ?? view.state.transactionType}</span>}
                 {view && enrolled && <span className="eg-chip stage">{view.state.closedAt ? 'Closed' : view.state.abandoned ? 'Abandoned' : stageLabel(view.state.stage, view.profile)}</span>}
@@ -209,7 +221,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
           <div className="eg-tabs">
             <button className={`eg-tab${tab === 'overview' ? ' on' : ''}`} onClick={() => setTab('overview')}>Overview</button>
             <button className={`eg-tab${tab === 'tasks' ? ' on' : ''}`} onClick={() => setTab('tasks')} disabled={!enrolled}>Tasks{pending + openIssues ? ` (${pending + openIssues})` : ''}</button>
-            <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents</button>
+            <button className={`eg-tab${tab === 'documents' ? ' on' : ''}`} onClick={() => setTab('documents')} disabled={!enrolled}>Documents{view?.documentCount ? ` (${view.documentCount})` : ''}</button>
             <button className={`eg-tab${tab === 'timeline' ? ' on' : ''}`} onClick={() => setTab('timeline')} disabled={!enrolled}>Timeline{eng.events.length ? ` (${eng.events.length})` : ''}</button>
           </div>
 
