@@ -251,23 +251,18 @@ const ABOUT: Record<string, About> = {
 };
 /**
  * Every email the case sends by itself, one envelope each, placed where it goes out: on a section's
- * title (when the section starts), on a step (an acknowledgement when something arrives, a chase when
- * it is late), on the line under a section (when it is complete), at a junction. Each opens its template.
+ * title (when the section starts), on a step (an acknowledgement when something arrives; chases are
+ * implied and not shown), on the line under a section (when it is complete), at a junction. Each opens its template.
  */
 interface Email { template: string; to: string; when: string }
 const E = (template: string, to: string, when: string): Email => ({ template, to, when });
 const STEP_EMAILS: Record<string, Email[]> = {
-  'ID / AML check': [E('chase_id_documents', 'Client', 'If the ID check is not done on time')],
-  'Proof of funds': [E('ack_client', 'Client', 'When their form comes in'), E('chase_proof_of_funds', 'Client', 'If the form is not back on time')],
-  'Official copies': [E('chase_contract_pack', "Seller's solicitor", 'If the contract pack is late')],
+  'Proof of funds': [E('ack_client', 'Client', 'When their form comes in')],
   'Report on title': [E('report_on_title_sent', 'Client', 'When a conveyancer approves it (the report goes as your Word document)')],
-  Enquiry: [E('ack_counterparty', "Seller's solicitor", 'When their replies arrive'), E('chase_enquiry_reply', "Seller's solicitor", 'If the replies are late')],
-  Offer: [E('ack_client', 'Client', 'When the offer arrives'), E('chase_mortgage_offer', 'Client', 'If the offer is late')],
-  Forms: [E('ack_client', 'Client', 'When their completed forms come in'), E('chase_property_forms', 'Client', 'If the forms are late')],
-  'Management pack (LPE1)': [E('chase_management_pack', 'Managing agent', 'If the pack is late')],
-  'Redemption statement': [E('chase_redemption_statement', 'Lender', 'If the statement is late')],
+  Enquiry: [E('ack_counterparty', "Seller's solicitor", 'When their replies arrive')],
+  Offer: [E('ack_client', 'Client', 'When the offer arrives')],
+  Forms: [E('ack_client', 'Client', 'When their completed forms come in')],
 };
-for (const t of ['LLC1', 'CON29', 'DRAINAGE_WATER', 'ENVIRONMENTAL', 'CHANCEL']) STEP_EMAILS[`search:${t}`] = [E('chase_search_provider', 'Search provider', 'If the result is late')];
 const LANE_EMAILS: Record<string, { start?: Email[]; exit?: Email[] }> = {
   searches: { start: [E('searches_ordered', 'Client', 'When every search is ordered')], exit: [E('searches_all_back', 'Client', 'When every search is back and approved')] },
   enquiries: { start: [E('enquiries_raised', 'Client', 'When we raise enquiries with the seller\'s solicitor')] },
