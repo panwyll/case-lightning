@@ -51,6 +51,9 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
   // The seller's solicitor sent the pack too, so nothing at all is owed by anyone else.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  // The report on title drafted itself; it is sent back, so nothing is waiting on us either.
+  const rot = Object.values((await h.svc.getState(TENANT, MATTER)).decisions).find((d) => d.kind === 'report_on_title' && d.status === 'pending')!;
+  await resolve(h, rot.eventId, 'reject', USER, 'Redo later');
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.waits.filter((w) => !w.closedAt).length, 0);
   const now = h.advanceDays(70); // ~50 working days in pre-contract; 20 is typical

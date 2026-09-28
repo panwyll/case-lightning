@@ -176,11 +176,37 @@ export class TemplateReportDrafter implements ReportDrafter {
 export class MockSearchProvider implements SearchProvider {
   readonly name = 'mock-search-provider (stub for InfoTrack #4)';
   orders: Array<{ matterId: string; searchType: SearchType; reference: string }> = [];
+  /** `placeholders`: every order comes straight back with a placeholder result (production, until a provider is connected). */
+  constructor(private opts: { placeholders?: boolean } = {}) {
+    if (opts.placeholders) this.placeholderResult = placeholderSearchResult;
+  }
+  placeholderResult?: SearchProvider['placeholderResult'];
   async orderSearch(input: { matterId: string; searchType: SearchType }) {
     const reference = `MOCK-${input.searchType}-${this.orders.length + 1}`;
     this.orders.push({ matterId: input.matterId, searchType: input.searchType, reference });
     return { reference };
   }
+}
+
+const SEARCH_NAME: Record<string, string> = { LLC1: 'Local land charges (LLC1)', CON29: 'Local authority (CON29)', DRAINAGE_WATER: 'Drainage and water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel repair', MINING: 'Mining', FLOOD: 'Flood' };
+
+/** The stand-in result: plainly a placeholder, reporting nothing, so the case moves on and nobody mistakes it for a search. */
+export function placeholderSearchResult(input: { searchType: SearchType; reference: string; orderedAt: Date }): { fileName: string; content: string; facts: SearchFacts } {
+  const name = SEARCH_NAME[input.searchType] ?? input.searchType.replace(/_/g, ' ').toLowerCase();
+  const day = input.orderedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' });
+  return {
+    fileName: `PLACEHOLDER ${input.searchType} search.txt`,
+    content: [
+      `PLACEHOLDER: ${name.toUpperCase()} SEARCH`,
+      '',
+      'No search was carried out. No search provider is connected, so this file stands in for the result.',
+      'It reports no entries so the case can move on. Order the real search before exchange.',
+      '',
+      `Ordered: ${day}`,
+      `Reference: ${input.reference}`,
+    ].join('\n'),
+    facts: { searchType: input.searchType, flags: [], confidence: 1, summaryFields: { placeholder: true } },
+  };
 }
 
 export class MockIdCheckProvider implements IdCheckProvider {

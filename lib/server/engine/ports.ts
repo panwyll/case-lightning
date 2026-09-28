@@ -111,6 +111,11 @@ export interface ReportDrafter {
 export interface SearchProvider {
   readonly name: string;
   orderSearch(input: { tenantId: string; matterId: string; searchType: SearchType }): Promise<{ reference: string }>;
+  /**
+   * A stand-in provider (no search provider connected) hands back a placeholder result at once, so
+   * a case is not held on searches nobody will ever send. It says on its face that no search was done.
+   */
+  placeholderResult?(input: { searchType: SearchType; reference: string; orderedAt: Date }): { fileName: string; content: string; facts: SearchFacts };
 }
 
 export interface IdCheckProvider {

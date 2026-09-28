@@ -29,7 +29,7 @@ import { workingDaysBetween } from './working-days';
 import { checkDraft, draftCheckLine, renderChecked, type DraftCheck } from './draft-check';
 import { buildCompletionStatement } from './completion-statement';
 import { caseBrief } from './brief';
-import { decide, assertCanSendReport, type Command } from './machine';
+import { decide, assertCanSendReport, reportReady, type Command } from './machine';
 import { profileOf } from './transactions';
 import { applyEvent, project } from './projection';
 import { deferral, outsideDeferral } from './defer';
@@ -134,6 +134,7 @@ export class EngineService {
     const followOn = async () => {
       await this.asAutomation(() => this.effects(tenantId, matterId, result.events, result.state, subflows));
       await this.asAutomation(() => this.acknowledge(tenantId, matterId, result.events, result.state, subflows));
+      if (result.events.length && reportReady(result.state)) await this.draftReportWhenReady(tenantId, matterId);
       if (this.ports.onEvents && result.events.length) {
         const latest = await this.getState(tenantId, matterId).catch(() => result.state);
         await this.asAutomation(() => this.ports.onEvents!({ tenantId, matterId, events: result.events, state: latest })).catch((err) => this.ports.log('post-commit observer failed', err));
@@ -272,6 +273,12 @@ export class EngineService {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
       await this.run(tenantId, matterId, { type: 'record_search_ordered', actor: SYSTEM, searchType: d.searchType, provider: this.ports.searchProvider.name, reference });
+      // No provider connected: the stand-in comes straight back with a placeholder that says so.
+      const stub = this.ports.searchProvider.placeholderResult?.({ searchType: d.searchType, reference, orderedAt: this.ports.now() });
+      if (stub) {
+        const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'SEARCH_RESULT', fileName: stub.fileName, content: stub.content });
+        await this.searchReturned(tenantId, matterId, d.searchType, doc.id, this.ports.searchProvider.name, stub.facts);
+      }
     }
   }
 
@@ -495,19 +502,20 @@ export class EngineService {
     return s.idCheck.status !== 'not_started' && s.idCheck.status !== 'requested';
   }
 
-  async searchReturned(tenantId: string, matterId: string, searchType: SearchType, documentId: string, provider?: string | null): Promise<RunResult> {
+  async searchReturned(tenantId: string, matterId: string, searchType: SearchType, documentId: string, provider?: string | null, known?: SearchFacts): Promise<RunResult> {
     if (await this.alreadyHave(tenantId, matterId, 'search', searchType)) {
       this.ports.log(`${searchType} search result already on the case; duplicate ignored`, { matterId, documentId });
       return { state: await this.getState(tenantId, matterId), events: [], warning: `The ${searchType} result is already on the case; this copy was filed but not read again.` };
     }
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     await this.run(tenantId, matterId, { type: 'search_returned', actor: EXTERNAL, searchType, documentId, provider: provider ?? null });
-    const facts: SearchFacts = await this.ports.extractor.extractSearch(doc, searchType).catch((err) => {
+    // A placeholder from the stand-in provider carries its own (empty) facts: there is nothing to read.
+    const facts: SearchFacts = known ?? await this.ports.extractor.extractSearch(doc, searchType).catch((err) => {
       // Extraction failed → confidence 0 → the rule layer flags it. Never guess, never stall.
       this.ports.log(`search extraction failed for ${searchType} — routing to human`, err);
       return { searchType, flags: [], confidence: 0 };
     });
-    const summary = await this.summarise('search', `${searchType} search`, evaluateSearch(facts), doc, tenantId, matterId);
+    const summary = known ? { text: `Placeholder ${searchType} search: no search was carried out (no provider connected). Order the real search before exchange.`, by: 'template' } : await this.summarise('search', `${searchType} search`, evaluateSearch(facts), doc, tenantId, matterId);
     return this.run(tenantId, matterId, { type: 'search_extracted', actor: SYSTEM, searchType, facts, extractor: this.ports.extractor.name, summary });
   }
 
@@ -697,8 +705,26 @@ export class EngineService {
 
   // ───────────── report on title (AI-drafting-heavy; never auto-sent) ─────────────
 
+  /** Title, searches and enquiries are all resolved: the report on title is drafted for approval, once. */
+  private draftingReport = new Set<string>();
+  private async draftReportWhenReady(tenantId: string, matterId: string): Promise<void> {
+    const key = `${tenantId}:${matterId}`;
+    if (this.draftingReport.has(key)) return;
+    this.draftingReport.add(key);
+    try {
+      if (!reportReady(await this.getState(tenantId, matterId))) return;
+      await this.draftReportOnTitle(tenantId, matterId);
+    } catch (err) {
+      this.ports.log('report on title could not be drafted automatically', err);
+    } finally {
+      this.draftingReport.delete(key);
+    }
+  }
+
   async draftReportOnTitle(tenantId: string, matterId: string): Promise<RunResult> {
     const state = await this.getState(tenantId, matterId);
+    // Already drafted (the engine drafts it once title, searches and enquiries are resolved): nothing more to do.
+    if (state.reportOnTitle.status === 'drafted') return { state, events: [] };
     const docIds = new Set<string>();
     for (const sr of Object.values(state.searches)) if (sr.documentId) docIds.add(sr.documentId);
     for (const q of Object.values(state.enquiries)) if (q.documentId) docIds.add(q.documentId);
@@ -786,6 +812,17 @@ export class EngineService {
     const subflows = await this.levels(tenantId);
     let chases = 0;
     let escalations = 0;
+    // No search provider connected: a search still waiting (ordered before placeholders came straight back) gets its placeholder now.
+    if (this.ports.searchProvider.placeholderResult) {
+      for (const sr of Object.values(state.searches).filter((x) => x.status === 'ordered' && !x.documentId)) {
+        try {
+          const stub = this.ports.searchProvider.placeholderResult({ searchType: sr.searchType, reference: `${sr.searchType}-${sr.cycle}`, orderedAt: sr.orderedAt ? new Date(sr.orderedAt) : now });
+          const doc = await this.ports.documents.createGenerated({ tenantId, matterId, docType: 'SEARCH_RESULT', fileName: stub.fileName, content: stub.content });
+          await this.searchReturned(tenantId, matterId, sr.searchType, doc.id, this.ports.searchProvider.name, stub.facts);
+        } catch (err) { this.ports.log(`placeholder ${sr.searchType} search could not be filed`, err); }
+      }
+      state = await this.getState(tenantId, matterId);
+    }
     // Time as a source of events (docs/case-model.md §6): offer expiry, aged waits, sitting issues — first, so the deadlines below see the result.
     let timed = 0;
     for (const t of timedIssueActions(state, now)) {

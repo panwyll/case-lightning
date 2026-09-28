@@ -116,7 +116,7 @@ function chooseAi(log: (msg: string, detail?: unknown) => void): { summariser: E
 
 /** Real InfoTrack providers (#4) when credentials are present; mocks otherwise. */
 function chooseIntegrations(): { searchProvider: EnginePorts['searchProvider']; idCheckProvider: EnginePorts['idCheckProvider'] } {
-  if (!infotrackConfigured()) return { searchProvider: new MockSearchProvider(), idCheckProvider: new MockIdCheckProvider() };
+  if (!infotrackConfigured()) return { searchProvider: new MockSearchProvider({ placeholders: true }), idCheckProvider: new MockIdCheckProvider() };
   const p = infotrackProviders();
   return { searchProvider: p.searchProvider, idCheckProvider: p.idCheckProvider };
 }

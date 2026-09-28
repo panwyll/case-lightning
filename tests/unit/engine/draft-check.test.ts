@@ -82,13 +82,13 @@ test('a report on title is filed as checked against the register: sentences cite
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
   const titleDoc = h.doc(titleClear());
-  await h.svc.titleReceived(TENANT, MATTER, titleDoc);
   const title = titleClear();
   h.ports.documents.register = {
     facts: [{ id: 'f-title', documentId: titleDoc, documentLabel: 'Official copy', key: 'title.number', value: title.titleNumber, page: 1, quote: `Title number ${title.titleNumber}` }],
     allowed: ['7 Mill Lane, RG9 2BH'],
   };
-  await h.svc.draftReportOnTitle(TENANT, MATTER);
+  // The title is the last of title, searches and enquiries: the report drafts itself.
+  await h.svc.titleReceived(TENANT, MATTER, titleDoc);
   const state = await h.svc.getState(TENANT, MATTER);
   const rot = firstDecision(state, 'report_on_title');
   const draftDoc = h.ports.documents.all().find((d) => d.docType === 'REPORT_ON_TITLE_DRAFT')!;

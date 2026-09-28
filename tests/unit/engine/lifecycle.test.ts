@@ -77,10 +77,11 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   assert.match(tDecision.summary, /undertaking to discharge/);
   await resolve(h, tDecision.eventId, 'approve', USER, 'Undertaking received');
 
-  await assert.rejects(svc.sendReportOnTitle(TENANT, MATTER, USER), /not the current|not been approved/);
-  r = await svc.draftReportOnTitle(TENANT, MATTER);
+  // Title, searches and enquiries are resolved: the report is drafted without being asked, and waits for approval.
+  r = { ...r, state: await svc.getState(TENANT, MATTER) };
   assert.equal(r.state.reportOnTitle.status, 'drafted');
-  assert.equal(r.events[0].actor, 'ai');
+  assert.equal((await svc.draftReportOnTitle(TENANT, MATTER)).events.length, 0, 'drafting again adds nothing');
+  assert.equal((await h.store.listEvents(TENANT, MATTER)).find((e) => e.type === 'report_on_title_drafted')?.actor, 'ai');
   const rotDecision = Object.values(r.state.decisions).find((d) => d.kind === 'report_on_title')!;
   assert.ok(rotDecision.citations.length >= 5, 'the draft cites every source document it was built from');
   await assert.rejects(svc.sendReportOnTitle(TENANT, MATTER, USER), /not been approved/);
@@ -226,8 +227,9 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   ports.setNow(new Date('2026-12-01T09:00:00Z'));
   assert.deepEqual(await svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 });
   const pending = await h.store.listPendingDecisions(TENANT);
-  assert.equal(pending.filter((d) => d.kind !== 'auto_clear').length, 0, 'nothing gating the matter');
-  assert.ok(pending.every((d) => d.kind === 'auto_clear'), 'only advisory auto-clear reviews (assist level) remain');
+  // With the search back, title, searches and enquiries are all resolved: the report on title drafted itself.
+  assert.equal(pending.filter((d) => d.kind === 'report_on_title').length, 1, 'the report on title is drafted for approval');
+  assert.equal(pending.filter((d) => d.kind !== 'auto_clear' && d.kind !== 'report_on_title').length, 0, 'nothing else waits on a person');
 });
 
 test('extraction failure never stalls the matter — it becomes a human decision', async () => {
@@ -241,4 +243,22 @@ test('extraction failure never stalls the matter — it becomes a human decision
   const d = firstDecision(r.state);
   assert.equal(d.sourceDocumentId, noFacts);
   assert.match(d.summary, /LOW_EXTRACTION_CONFIDENCE|confidence/i);
+});
+
+test('no search provider connected: an ordered search comes straight back as a placeholder that says so, and the report on title then drafts itself', async () => {
+  const { MockSearchProvider } = await import('../../../lib/server/engine/mocks');
+  const h = harness();
+  h.ports.searchProvider = new MockSearchProvider({ placeholders: true });
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: false, requiredSearches: ['CON29', 'DRAINAGE_WATER'] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  let s = await h.svc.getState(TENANT, MATTER);
+  for (const t of ['CON29', 'DRAINAGE_WATER'] as const) {
+    assert.ok(['cleared', 'reviewed'].includes(s.searches[t].status), `${t} came back (${s.searches[t].status})`);
+    const doc = await h.ports.documents.get(TENANT, s.searches[t].documentId!);
+    assert.match((doc!.extractedFacts as { content: string }).content, /^PLACEHOLDER: .*\n\nNo search was carried out/);
+  }
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.reportOnTitle.status, 'drafted', 'title, searches and enquiries resolved: the report drafted itself');
 });

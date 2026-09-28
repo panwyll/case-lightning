@@ -88,12 +88,12 @@ test('ClaudeReportDrafter through the engine: the draft is a decision citing rea
   const con29 = h.doc(searchClear('CON29'));
   await svc.searchReturned(TENANT, MATTER, 'CON29', con29);
   const title = h.doc(titleClear());
-  await svc.titleReceived(TENANT, MATTER, title);
-  assert.equal((await svc.getState(TENANT, MATTER)).stage, 'contract_review');
-
   const llm = new FakeLlm(() => ({ sections: [{ heading: 'Intro', body: 'Dear client', sourceDocumentIds: [] }, { heading: 'Title', body: 'Freehold, no restrictions', sourceDocumentIds: [title] }, { heading: 'Searches', body: 'CON29: road adopted', sourceDocumentIds: [con29] }], outstanding: [] }));
   h.ports.reportDrafter = new ClaudeReportDrafter(llm, { model: 'fake' });
-  const r = await svc.draftReportOnTitle(TENANT, MATTER);
+  await svc.titleReceived(TENANT, MATTER, title);
+  assert.equal((await svc.getState(TENANT, MATTER)).stage, 'contract_review');
+  // The title was the last thing outstanding: the report drafted itself with the drafter in place.
+  const r = { state: await svc.getState(TENANT, MATTER) };
   const d = Object.values(r.state.decisions).find((x) => x.kind === 'report_on_title')!;
   assert.equal(d.summarisedBy, 'fake');
   assert.deepEqual(d.citations.map((c) => c.documentId).sort(), [con29, title].sort());

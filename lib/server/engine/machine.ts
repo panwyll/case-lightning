@@ -602,6 +602,18 @@ function issueBlockers(s: MatterState, gate: IssueGate): string[] {
 }
 
 /** Required searches not yet resolved; `includeUnordered` also lists ones never ordered (pre_contract only). */
+/**
+ * The report on title can be written: a buyer's case in contract review with the title, every
+ * required search and every enquiry resolved, and no draft yet. The engine drafts it then, unasked
+ * (a draft only: a conveyancer approves it before anything goes to the client).
+ */
+export function reportReady(s: MatterState): boolean {
+  if (!s.enrolled || s.closedAt || s.abandoned || s.manualHandling.required) return false;
+  if (profileOf(s.transactionType ?? 'freehold_purchase').side !== 'buyer') return false;
+  if (s.stage !== 'contract_review' || s.reportOnTitle.status !== 'not_started') return false;
+  return isResolved(s.title.status) && !unresolvedSearches(s, true).length && Object.values(s.enquiries).every((q) => isResolved(q.status));
+}
+
 function unresolvedSearches(s: MatterState, includeUnordered: boolean): string[] {
   const out: string[] = [];
   for (const t of s.requiredSearches) {
