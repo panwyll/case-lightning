@@ -45,18 +45,17 @@ export async function chainView(svc: EngineService, tenantId: string, state: Mat
   };
 }
 
-/** The engine's view of a matter: state, profile, blockers, waits, decisions, levels, the matter row and its charge. */
+/** The engine's view of a matter: state, profile, blockers, waits, decisions, levels and the matter row. (Its billing is not shown to anyone working the case.) */
 export async function engineView(svc: EngineService, tenantId: string, matterId: string, state: MatterState) {
   // The people named on the page (who asked for what): only ids that are users.
   const personIds = [...new Set(state.waits.map((w) => w.openedBy).filter((id): id is string => !!id && /^[0-9a-f-]{36}$/i.test(id)))];
-  const [subflows, matter, charge, sla, docCount, people] = await Promise.all([
+  const [subflows, matter, sla, docCount, people] = await Promise.all([
     svc.levels(tenantId),
     queryOne<{ matter_ref: string; property_address: string; stage: string | null; shadow_mode: boolean | null; assigned_to: string | null; handler: string | null; sandbox: boolean; sandbox_scenario: string | null; sandbox_step: string | null }>(
       `select m.matter_ref, m.property_address, m.stage, m.shadow_mode, m.assigned_to, coalesce(u.display_name, u.email) as handler, m.sandbox, m.sandbox_scenario, m.sandbox_step
          from matter m left join app_user u on u.id = m.assigned_to where m.id = $1 and m.tenant_id = $2`,
       [matterId, tenantId]
     ).catch(() => null),
-    queryOne<{ charged_at: string; billed: boolean; unbilled_reason: string | null; amount_pennies: number }>(`select charged_at, billed, unbilled_reason, amount_pennies from matter_charge where tenant_id = $1 and matter_id = $2`, [tenantId, matterId]).catch(() => null),
     svc.eventStore.loadSla(tenantId).catch(() => DEFAULT_SLA),
     // What the Documents tab lists: the case's papers, not the generated notes, emails and dossiers the timeline carries.
     queryOne<{ n: number }>(`select count(*)::int as n from document where tenant_id = $1 and matter_id = $2 and superseded_at is null and coalesce(doc_type, '') not in ('FILE_NOTE', 'EMAIL', 'ESCALATION_DOSSIER', 'DEADLINE_DOSSIER', 'PROPOSAL', 'BANK_DETAILS_NOTE', 'SANDBOX_EMAIL')`, [tenantId, matterId]).then((r) => r?.n ?? 0).catch(() => 0),
@@ -81,7 +80,7 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     surfacedDecisions: surfacedDecisions(state),
     levels: subflows,
     contracts: COMPLETION_CONTRACTS,
-    matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, sandbox: !!matter.sandbox, sandboxScenario: matter.sandbox_scenario, sandboxStep: matter.sandbox_step, charge: charge ? { chargedAt: charge.charged_at, billed: charge.billed, reason: charge.unbilled_reason, amountPennies: charge.amount_pennies } : null } : null,
+    matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, sandbox: !!matter.sandbox, sandboxScenario: matter.sandbox_scenario, sandboxStep: matter.sandbox_step } : null,
   };
 }
 

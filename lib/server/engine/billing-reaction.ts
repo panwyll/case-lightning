@@ -12,8 +12,19 @@ export const CASE_OPENING_EVENTS = new Set(['id_check_cleared', 'id_check_review
 /** True when this batch of events resolves the ID / AML check. */
 export const opensCase = (events: ReadonlyArray<Pick<EngineEvent, 'type'>>): boolean => events.some((e) => CASE_OPENING_EVENTS.has(e.type));
 
+/**
+ * The backstop: a case reaching completion that was never counted (its ID check resolved some
+ * way that did not fire the charge, or the charge failed) is counted now. chargeCase is
+ * once-only, so a case already counted is untouched.
+ */
+export const COMPLETION_EVENTS = new Set(['completion_confirmed']);
+export const reachesCompletion = (events: ReadonlyArray<Pick<EngineEvent, 'type'>>): boolean => events.some((e) => COMPLETION_EVENTS.has(e.type));
+
 export async function billOnIdResolved(input: { tenantId: string; matterId: string; events: EngineEvent[] }): Promise<void> {
-  if (!opensCase(input.events)) return;
+  const opening = opensCase(input.events);
+  const completing = reachesCompletion(input.events);
+  if (!opening && !completing) return;
   const { chargeCase } = await import('../case-billing');
-  await chargeCase(input.tenantId, input.matterId, 'ID_AML_RESOLVED');
+  const r = await chargeCase(input.tenantId, input.matterId, opening ? 'ID_AML_RESOLVED' : 'COMPLETION_BACKSTOP');
+  if (completing && !opening && r.opened) console.warn(`[case-billing] matter ${input.matterId} reached completion uncounted; counted now`);
 }

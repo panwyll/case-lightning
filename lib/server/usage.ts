@@ -37,7 +37,8 @@ export type UsageFeature =
   | 'SURVEY_ADVICE'
   | 'EMBED'
   // The engine counted the case: its ID / AML check came back resolved (billing-reaction.ts)
-  | 'ID_AML_RESOLVED';
+  | 'ID_AML_RESOLVED'
+  | 'COMPLETION_BACKSTOP';
 
 export interface UsageContext {
   tenantId: string;
