@@ -22,10 +22,10 @@ test('pursue: access is asked of the seller, their conditions reach the client, 
   await toPreContract(h);
   await h.svc.surveyReceived(TENANT, MATTER, h.doc(survey()));
   let s = await h.svc.getState(TENANT, MATTER);
-  assert.equal(s.survey.status, 'further_investigation');
+  assert.equal(s.survey.status, 'awaiting_client', 'the client decides once; the suggested checks do not each hold exchange');
   const issue = openIssues(s).find((i) => i.kind === 'survey_further_investigation')!;
   assert.ok(issue);
-  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'physical_condition', decision: 'satisfied', note: '' }), /Further investigation is still outstanding/);
+  // The suggested checks inform the client; they do not stop them deciding. (Satisfied is allowed; see survey-review.)
 
   await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'pursue', note: 'Client will pay for the specialist' });
   s = await h.svc.getState(TENANT, MATTER);

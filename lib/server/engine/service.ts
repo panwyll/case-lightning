@@ -60,7 +60,7 @@ import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
 import type { MessageOverride } from './ports';
-import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyEnquiries, surveyNeedsAdvice } from './survey-review';
+import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyContext, surveyEnquiries, surveyNeedsAdvice, templateAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
@@ -538,7 +538,7 @@ export class EngineService {
     if (!noteId || !reader) return recorded;
     const brief = caseBrief(recorded.state, this.ports.now());
     const drafts = await reader
-      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
+      .extract({ tenantId, matterId, text: input.text, kind: input.kind, from: input.from ?? null, attachments: input.attachments ?? [], context: await this.replyContext(tenantId, matterId, recorded.state, input.from ?? null).catch(() => undefined), now: this.ports.now().toISOString(), caseLine: `${brief.transactionLabel}, ${brief.lifecycleLabel.toLowerCase()}` })
       .catch((err) => {
         this.ports.log('note extraction failed — the note is still on the file', err);
         return [];
@@ -786,6 +786,17 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'record_signing_pack_sent', documents: docs, methods, attached: sent.attached, channel: sent.channel, messageId: sent.messageId });
   }
 
+  /** What a client's email may be answering: the survey letter, while they have not said how to proceed. */
+  private async replyContext(tenantId: string, matterId: string, state: MatterState, from: NoteSender | null): Promise<string | undefined> {
+    if (!from || from.relation !== 'client' || !state.survey.reports.length) return undefined;
+    if (state.survey.status === 'client_satisfied' || state.survey.status === 'client_withdrawing') return undefined;
+    const events = await this.store.listEvents(tenantId, matterId);
+    const last = [...events].reverse().find((e) => e.type === 'survey_received');
+    if (!last) return undefined;
+    const sentAt = state.clientUpdateLastSentAt?.survey_advice ?? null;
+    return surveyContext((last.payload as { facts: SurveyFacts }).facts, sentAt);
+  }
+
   /**
    * What goes to the seller about the surveyor's investigations, rebuilt from the client's instruction on
    * each one: those marked "evidence" in one request for what the seller already holds, those marked
@@ -884,10 +895,13 @@ export class EngineService {
             }
           }
           if (surveyNeedsAdvice(p.facts)) {
-            const blocks = surveyAdvice(p.facts, { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender });
             const key = `survey_advice:${docKey}`;
             if (!fresh.clientToldAt?.[key] && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
-              const detail = { template: 'survey_advice', context: { eventType: e.type, ...blocks }, triggeredByEventId: e.id, about: key };
+              // The letter is written, not assembled: the model drafts it from the reading; a person reads it (and can edit it) at Propose.
+              const opts = { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender };
+              const drafted = this.ports.surveyAdviser ? await this.ports.surveyAdviser.draft({ tenantId, matterId, facts: p.facts, ...opts, transactionLabel: caseBrief(fresh, this.ports.now()).transactionLabel }).catch(() => null) : null;
+              const adviceBody = drafted ?? templateAdvice(surveyAdvice(p.facts, opts));
+              const detail = { template: 'survey_advice', context: { eventType: e.type, adviceBody }, triggeredByEventId: e.id, about: key };
               if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'survey_advice', key, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: what the survey means for exchange, and a request for their decision\nTemplate: survey_advice'))) {
                 try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('survey advice could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
               }
@@ -1098,6 +1112,13 @@ export class EngineService {
                 await this.run(tenantId, matterId, { type: 'resolve_issue', actor: e.actor, issueId: open.id, resolution: c.resolution, note: c.note });
               } else if (c.type === 'record_availability') {
                 await this.run(tenantId, matterId, { type: 'record_availability', actor: e.actor, party: c.party, from: c.from, until: c.until, note: c.note });
+              } else if (c.type === 'request_from_seller') {
+                // The client told us what to get from the other side: the enquiry, drafted from their words, as a proposal a person can edit.
+                const detail = { subject: c.text.trim(), question: null, origin: 'client_instruction' };
+                const key = `enquiry_draft:client:${p.noteId}:${id}`;
+                if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'client_instruction', key, detail, `ENQUIRY ON THE CLIENT'S INSTRUCTION\n\nTo: the seller's solicitor\nAbout: ${c.about}\n\n${c.text.trim()}`))) {
+                  await this.perform(tenantId, matterId, 'enquiry_draft', detail);
+                }
               } else {
                 await this.run(tenantId, matterId, { type: 'raise_issue', actor: e.actor, kind: c.kind, title: c.title, detail: c.detail, gate: c.gate, documentId: note.documentId });
               }

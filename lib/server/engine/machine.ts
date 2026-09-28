@@ -1448,7 +1448,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
         if (openFi.some((i) => i.title === title)) continue; // this specialist is already being tracked (a re-read, or an earlier report)
         n += 1;
         // Critical only for what the surveyor rates urgent (condition rating 3); otherwise it holds exchange as a warning.
-        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: g.items.map((r) => `• ${r.text}`).join('\n'), gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: g.urgent ? 'critical' : 'warning', causedBy: null }, sourceDocumentId: cmd.documentId });
+        // A record of what the surveyor suggested, not a gate: the survey holds exchange until the client says how to proceed, once.
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title, detail: g.items.map((r) => `• ${r.text}`).join('\n'), gate: 'none', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: 'info', causedBy: null }, sourceDocumentId: cmd.documentId });
       }
       return out;
     }
@@ -1466,7 +1467,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       let n = Object.keys(s.issues).length;
       for (const r of further) {
         n += 1;
-        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title: `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`, detail: r.text, gate: 'exchange', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: r.severity === 'high' ? 'critical' : 'warning', causedBy: target?.id ?? null }, sourceDocumentId: cmd.documentId });
+        out.push({ type: 'issue_raised', actor: SYSTEM, payload: { issueId: `ISS-${n}`, kind: 'survey_further_investigation', title: `${r.specialist ? `${r.specialist} report` : 'Further investigation'} recommended: ${r.text.slice(0, 140)}`, detail: r.text, gate: 'none', stage: s.stage, sourceDocumentId: cmd.documentId, origin: null, party: null, severity: 'info', causedBy: target?.id ?? null }, sourceDocumentId: cmd.documentId });
       }
       return out;
     }
@@ -1477,7 +1478,6 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (!allowed) reject(`Unknown client decision subject "${cmd.subject}".`, 400);
       if (!allowed.includes(cmd.decision)) reject(`"${cmd.decision}" is not an outcome for ${cmd.subject.replace(/_/g, ' ')}: ${allowed.join(' / ')}.`, 400);
       if (cmd.subject === 'physical_condition' && !surveyApplies(s)) reject('No survey is on file; the client\'s view of the physical condition is recorded once a survey has been received.');
-      if (cmd.subject === 'physical_condition' && cmd.decision === 'satisfied' && s.survey.status === 'further_investigation') reject('Further investigation is still outstanding; the client can confirm satisfaction once the specialist reports are in (or the issues are withdrawn / accepted).');
       if (cmd.subject === 'exchange_authority' && s.exchange.exchangedAt) reject('Contracts are already exchanged.');
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');

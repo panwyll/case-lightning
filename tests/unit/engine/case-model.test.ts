@@ -50,17 +50,16 @@ test('survey: facts are automated (report received, further investigation recomm
   const sv = await h.svc.surveyReceived(TENANT, MATTER, h.doc(SURVEY, 'SURVEY'));
   assert.deepEqual(sv.events.map((e) => e.type), ['survey_received', 'issue_raised', 'issue_raised']);
   s = sv.state;
-  assert.equal(s.survey.status, 'further_investigation');
+  assert.equal(s.survey.status, 'awaiting_client');
   assert.equal(lifecycle(s), 'pre_exchange', 'no longer ready');
   const fi = openIssues(s).filter((i) => i.kind === 'survey_further_investigation');
   assert.equal(fi.length, 2);
   assert.match(fi[0].title, /Further investigation: Damp and timber specialist/);
   assert.equal(fi[0].raisedBy, 'system');
   const ws = workstreams(s).find((w) => w.id === 'survey')!;
-  assert.equal(ws.status, 'blocked');
+  assert.equal(ws.status, 'awaiting', 'waiting on the client, not blocked item by item');
   const why = whyNot(s, 'exchange');
-  assert.ok(why.some((l) => /Client satisfied with the physical condition: .*Damp and timber/.test(l)), why.join('\n'));
-  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'physical_condition', decision: 'satisfied' }), /Further investigation is still outstanding/);
+  assert.ok(why.some((l) => /Client satisfied with the physical condition/.test(l)), why.join('\n'));
 
   // Specialist 1: damp — finds no evidence of decay, no further investigation → the issue is resolved by the report (a fact).
   const damp = await h.svc.specialistReportReceived(TENANT, MATTER, h.doc({ surveyType: 'specialist', surveyor: 'Timberwise', summary: 'No evidence of active decay; readings consistent with condensation.', recommendations: [{ code: 'VENT', text: 'Improve ventilation to the rear addition.', furtherInvestigation: false, severity: 'low' }], confidence: 0.9 }, 'SPECIALIST_REPORT'), fi[0].id);
@@ -69,7 +68,7 @@ test('survey: facts are automated (report received, further investigation recomm
   assert.equal(s.issues[fi[0].id].status, 'resolved');
   assert.equal(s.issues[fi[0].id].resolution, 'specialist_report_clear');
   assert.equal(s.issues[fi[0].id].resolvedBy, 'system', 'the machine records the fact the specialist established');
-  assert.equal(s.survey.status, 'further_investigation', 'the electrics one is still open');
+  assert.equal(s.survey.status, 'awaiting_client', 'the electrics one is still open, but the client decides once');
 
   // Specialist 2: the electrician recommends a further structural check → the old issue closes, a new one chains (DISCOVERED_BY).
   const eicr = await h.svc.specialistReportReceived(TENANT, MATTER, h.doc({ surveyType: 'specialist', recommendations: [{ code: 'REWIRE', text: 'Partial rewire needed; a structural engineer should check the joists where cables were chased.', furtherInvestigation: true, specialist: 'Structural engineer', severity: 'high' }], confidence: 0.9 }, 'SPECIALIST_REPORT'), fi[1].id);
@@ -77,11 +76,11 @@ test('survey: facts are automated (report received, further investigation recomm
   assert.equal(s.issues[fi[1].id].status, 'resolved');
   const chained = openIssues(s).find((i) => i.kind === 'survey_further_investigation')!;
   assert.equal(chained.causedBy, fi[1].id);
-  assert.equal(chained.severity, 'critical');
+  assert.equal(chained.severity, 'info', 'a suggestion for the client to weigh');
   const g = caseGraph(s);
   assert.ok(g.edges.some((e) => e.type === 'DISCOVERED_BY' && e.from === `issue:${chained.id}` && e.to === `issue:${fi[1].id}`));
   assert.ok(g.edges.some((e) => e.type === 'THREATENS' && e.from === `issue:${chained.id}` && e.to === 'gate:exchange'));
-  assert.ok(g.edges.some((e) => e.type === 'BLOCKS' && e.from === `issue:${chained.id}` && e.to === 'req:physical_condition_accepted'));
+  assert.ok(!g.edges.some((e) => e.type === 'BLOCKS' && e.from === `issue:${chained.id}` && e.to === 'req:physical_condition_accepted'), 'a suggestion informs the client; it does not block their decision');
 
   // Structural engineer: nothing to worry about → survey waits on the client.
   await h.svc.specialistReportReceived(TENANT, MATTER, h.doc({ surveyType: 'specialist', recommendations: [], confidence: 0.95 }, 'SPECIALIST_REPORT'), chained.id);

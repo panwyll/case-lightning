@@ -63,12 +63,12 @@ test('a survey on file gives the conveyancer tasks: the enquiries are proposed a
   assert.match(String(enquiries[0].detail.subject), /1\. The rear extension[\s\S]*2\. Replacement windows[\s\S]*3\. Confirm the right of way/);
   const sent = h.ports.clientComms.sent.find((m) => m.template === 'survey_advice');
   assert.ok(sent, 'the client letter (client updates are unasked in the fixture)');
-  assert.match(String(sent!.context.urgentBlock), /roof tiles/);
+  assert.match(String(sent!.context.adviceBody), /roof tiles/, 'without a model the template letter carries the substance');
   // The damp investigation holds exchange as a warning (rated 2), not critical.
   const damp = Object.values(s.issues).find((i) => i.kind === 'survey_further_investigation')!;
-  assert.equal(damp.severity, 'warning');
-  assert.equal(damp.gate, 'exchange');
-  assert.ok(res.state.survey.status === 'further_investigation');
+  assert.equal(damp.severity, 'info', 'a suggestion on record, not an alarm');
+  assert.equal(damp.gate, 'none', 'the survey holds exchange on the client\'s one decision, not per check');
+  assert.equal(res.state.survey.status, 'awaiting_client');
 });
 
 test('reading the same survey again replaces the reading and repeats nothing', async () => {
@@ -94,7 +94,7 @@ test('the client can change their mind: waive the investigation, then want it af
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'open').length, 1, 'the investigation is back');
   assert.equal(s.clientDecisions.further_investigation?.decision, 'pursue');
-  assert.equal(s.survey.status, 'further_investigation');
+  assert.equal(s.survey.status, 'awaiting_client');
 });
 
 test('a failed reading raises no placeholder investigation, and a good one reads normally', async () => {
@@ -233,4 +233,24 @@ test("the client's instruction is per specialist: leave the drains, ask about th
   s = await h.svc.getState(TENANT, MATTER);
   b = batches();
   assert.deepEqual(b.map((p) => p.dedupKey.split(':')[1]), ['access-batch'], 'only the structural access request is left');
+});
+
+test("the client's reply is read against the survey letter: their instruction becomes one drafted enquiry, nothing else", async () => {
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc(REPORT, 'SURVEY'));
+  const CLIENT = { address: 'jo@example.com', name: 'Jo Client', relation: 'client' as const };
+  let seen: string | undefined;
+  // A reader that sees the context and does what the model is told to: one enquiry covering what the client asked for.
+  h.ports.noteExtractor = { name: 'test', extract: async (input) => { seen = input.context; return [{ kind: 'client_decision', summary: 'Client wants the damp guarantee and the window certificate', quote: 'ask them for the damp guarantee and the FENSA', command: { type: 'request_from_seller', about: 'damp guarantee and FENSA', text: "Our client asks that your client supply: 1. any damp-proofing guarantee for the rear wall; 2. the FENSA certificate for the replacement windows." } }]; } };
+  await h.svc.recordNote(TENANT, MATTER, { text: 'Thanks. Not worried about the roof, but please ask them for the damp guarantee and the FENSA before we go further.', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT });
+  assert.match(seen ?? '', /wrote to the client about their survey[\s\S]*Rated urgent: Slipped and missing roof tiles/);
+  let s = await h.svc.getState(TENANT, MATTER);
+  const d = Object.values(s.decisions).find((x) => x.kind === 'note_actions' && x.status === 'pending')!;
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  s = await h.svc.getState(TENANT, MATTER);
+  const enq = Object.values(s.proposals).filter((p) => p.status === 'pending' && p.dedupKey.startsWith('enquiry_draft:client:'));
+  assert.equal(enq.length, 1);
+  assert.match(String(enq[0].detail.subject), /damp-proofing guarantee[\s\S]*FENSA/);
+  assert.doesNotMatch(String(enq[0].detail.subject), /\broof\b|structural|drain/i, 'only what the client asked for');
 });

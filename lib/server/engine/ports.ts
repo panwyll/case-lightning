@@ -76,7 +76,7 @@ export interface DocumentExtractor {
  */
 export interface NoteExtractor {
   readonly name: string;
-  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string; attachments?: string[] }): Promise<NoteActionDraft[]>;
+  extract(input: { tenantId: string; matterId: string; text: string; kind: NoteKind; caseLine?: string; from?: NoteSender | null; now?: string; attachments?: string[]; context?: string }): Promise<NoteActionDraft[]>;
 }
 
 /** Component #3 (reading/summarising). May improve the prose of a decision; may NOT change the verdict or the citations. */
@@ -224,6 +224,8 @@ export interface EnginePorts {
   searchProvider: SearchProvider;
   idCheckProvider: IdCheckProvider;
   clientComms: ClientComms;
+  /** Optional: drafts the letter after the survey (a person reads and can edit it). Without it, the template letter. */
+  surveyAdviser?: { draft(input: { tenantId: string; matterId: string; facts: SurveyFacts; purchasePricePennies: number | null; freehold: boolean; hasLender: boolean; transactionLabel: string }): Promise<string | null> } | null;
   /** Optional: Outlook housekeeping; a completed case's mail folders move into Archive. */
   mailFolders?: { archiveCase(tenantId: string, matterId: string): Promise<number> } | null;
   /** Optional: sending the signing pack. Without it the pack is proposed and recorded by hand. */

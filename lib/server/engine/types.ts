@@ -479,6 +479,8 @@ export type NoteCommand =
   | { type: 'record_price_change'; toPennies: number | null; reductionPennies: number | null; reason: string }
   /** An open issue of a kind a person may close on someone's word (the chain is ready, the delay is over). */
   | { type: 'resolve_issue'; kind: IssueKind; resolution: IssueResolution; note: string }
+  /** The client asked us to get something from the seller's side (evidence, access, a document): the enquiry, drafted. */
+  | { type: 'request_from_seller'; text: string; about: string }
   /** Someone is away between two dates. */
   | { type: 'record_availability'; party: AvailabilityParty; from: string; until: string; note: string }
   | { type: 'raise_issue'; kind: IssueKind; title: string; detail: string | null; gate: IssueGate };

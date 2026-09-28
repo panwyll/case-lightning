@@ -142,3 +142,20 @@ export function evidenceEnquiry(groups: Array<{ specialist: string; items: Array
     ...(note ? [`Our client adds: ${note}`] : []),
   ].join('\n');
 }
+
+/** The template letter, when no model drafted one: the same substance, fixed wording. */
+export function templateAdvice(blocks: Record<string, string>): string {
+  return `We have read your survey. We are not surveyors, so we cannot advise you on the condition of the property, but we can make sure nothing in the report is missed before exchange commits you to the purchase.\n\n${blocks.urgentBlock}${blocks.investigateBlock}${blocks.legalBlock}${blocks.riskBlock}${blocks.valueBlock}${blocks.insuranceBlock}Please let us know how you would like to proceed: go ahead as things stand, ask the seller for a reduction or for work to be done, have any of the checks above carried out first, or not proceed. We will not exchange until we have heard from you.`.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** What the client's reply may be answering: the survey, as we put it to them. For the note reader. */
+export function surveyContext(f: SurveyFacts, sentAt: string | null): string {
+  const urgent = f.recommendations.filter((r) => r.code !== 'UNREAD' && (r.rating === 3 || (r.rating == null && r.severity === 'high'))).map((r) => clean(r.text));
+  const groups = investigationGroups(f.recommendations).map((g) => `${g.specialist}: ${g.items.map((x) => clean(x.text)).slice(0, 3).join('; ')}`);
+  return [
+    `${sentAt ? `On ${sentAt.slice(0, 10)} we` : 'We'} wrote to the client about their survey, offered to ask the seller's solicitor for supporting evidence or for access for their own specialists, and asked how they want to proceed.`,
+    urgent.length ? `Rated urgent: ${urgent.join(' | ')}` : null,
+    groups.length ? `Further checks the surveyor suggested: ${groups.join(' | ')}` : null,
+    f.legalIssues?.length ? `Points for the legal adviser (we raise these ourselves): ${f.legalIssues.map((l) => clean(l.text)).slice(0, 8).join(' | ')}` : null,
+  ].filter(Boolean).join('\n');
+}

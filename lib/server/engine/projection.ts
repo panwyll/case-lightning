@@ -680,7 +680,6 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'issue_raised': {
       const p = e.payload as Payloads['issue_raised'];
       // An investigation (re)opened on the survey puts the survey back to waiting on it.
-      if (p.kind === 'survey_further_investigation' && s.survey.status !== 'not_started') s.survey.status = 'further_investigation';
       s.issues[p.issueId] = {
         id: p.issueId,
         kind: p.kind,
@@ -853,14 +852,17 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       s.survey.reports = s.survey.reports.filter((r) => !(e.sourceDocumentId && r.documentId === e.sourceDocumentId && r.forIssueId === null));
       const unread = p.facts.confidence === 0 || p.facts.recommendations.some((r) => r.code === 'UNREAD');
       s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.surveyType, receivedAt: e.createdAt, recommendations: unread ? 0 : p.facts.recommendations.length, furtherInvestigation: further, forIssueId: null, urgent: p.facts.recommendations.filter((r) => r.rating === 3 || (r.rating == null && r.severity === 'high')).length, toInvestigate: p.facts.recommendations.filter((r) => r.furtherInvestigation).length, legalPoints: p.facts.legalIssues?.length ?? 0, unread });
-      s.survey.status = further ? 'further_investigation' : 'awaiting_client';
+      // The client decides, once, how to proceed: the surveyor's suggestions inform that, they do not each hold exchange.
+      s.survey.status = s.clientDecisions.physical_condition?.decision === 'satisfied' ? 'client_satisfied' : 'awaiting_client';
+      void further;
       break;
     }
     case 'specialist_report_received': {
       const p = e.payload as Payloads['specialist_report_received'];
       s.survey.reports.push({ eventId: e.id, documentId: e.sourceDocumentId ?? null, surveyType: p.facts.surveyType, receivedAt: e.createdAt, recommendations: p.facts.recommendations.length, furtherInvestigation: p.furtherInvestigation, forIssueId: p.forIssueId });
       // The status settles once the issues this event resolves / raises are applied (settleSurvey on issue_resolved / withdrawn).
-      if (p.furtherInvestigation) s.survey.status = 'further_investigation';
+      // A further check the specialist suggests is for the client to weigh, like the survey's own: it does not reopen a gate.
+      void p.furtherInvestigation;
       break;
     }
     case 'client_decision_recorded': {

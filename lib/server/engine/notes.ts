@@ -42,6 +42,8 @@ export interface NoteExtractionContext {
   now?: string;
   /** Files that came with the email, and what each was read as: "attached" is about these, not a claim. */
   attachments?: string[];
+  /** What we last told the client that this may be a reply to (the survey advice). */
+  context?: string;
 }
 
 /** Issues that word from the right person may close: waits and chain positions, never a defect or a check. */
@@ -99,6 +101,10 @@ export function senderPolicy(source: NoteSource | undefined, action: NoteAction)
   // The lender or broker reporting a problem with the offer: the confirmation goes back to them, and the client hears.
   if (action.command?.type === 'raise_issue' && action.command.kind === 'mortgage_at_risk' && relation === 'lender') {
     return [{ ...action, command: { ...action.command, detail: `Reported by the lender or broker. ${action.command.detail ?? ''}`.trim() } }];
+  }
+  // Only our client (or someone in the firm) tells us what to ask the other side for.
+  if (action.command?.type === 'request_from_seller' && relation !== 'client' && relation !== 'colleague') {
+    return [{ ...action, kind: 'information', command: null, summary: `${action.summary} (asked by ${RELATION_LABEL[relation]}, not the client; nothing goes to the seller on their say-so)` }];
   }
   // Only the client or the other side closes a wait on their word; an agent's "the chain is ready" is a claim to check.
   if (action.command?.type === 'resolve_issue' && relation !== 'client' && relation !== 'other_side' && relation !== 'colleague') {
@@ -252,6 +258,7 @@ export function commandTitle(c: NoteCommand): string {
     case 'set_target_dates': return `Target dates: ${[c.targetExchangeDate ? `exchange ${dayShort(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `completion ${dayShort(c.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`;
     case 'record_price_change': return c.toPennies ? `Price change: ${pounds(c.toPennies)}` : `Price reduction: ${pounds(c.reductionPennies ?? 0)}`;
     case 'resolve_issue': return `Close: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
+    case 'request_from_seller': return `Ask the seller: ${c.about.trim().slice(0, 80) || 'as the client instructed'}`;
     case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
   }
@@ -271,6 +278,7 @@ export function effectText(c: NoteCommand): string {
     case 'set_target_dates': return `Sets the target dates: ${[c.targetExchangeDate ? `exchange ${prettyDate(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `completion ${prettyDate(c.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`;
     case 'record_price_change': return c.toPennies ? `Records the price as ${pounds(c.toPennies)}${c.reductionPennies ? '' : ''} and tells the lender if there is one` : `Records a price reduction of ${pounds(c.reductionPennies ?? 0)} and tells the lender if there is one`;
     case 'resolve_issue': return `Closes the open "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}" issue as ${RESOLUTION_LABEL[c.resolution]?.toLowerCase() ?? c.resolution}`;
+    case 'request_from_seller': return `Proposes this enquiry to the seller's solicitor (editable before it goes): ${c.text.trim().slice(0, 300)}${c.text.trim().length > 300 ? '…' : ''}`;
     case 'record_availability': return `Notes that ${AVAILABILITY_PARTY_LABEL[c.party]} is away ${prettyDate(c.from)} to ${prettyDate(c.until)}: chases to them wait, updates say so, and target dates are checked against it`;
     case 'raise_issue': return `Raises the issue "${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind}"${c.gate === 'none' ? '' : ` (holds ${c.gate})`}${issueConsequence(c.kind) ? ` and ${issueConsequence(c.kind)}` : ''}`;
   }
@@ -376,6 +384,11 @@ export function commandProblem(c: NoteCommand): string | null {
     if (!RESOLVABLE_ON_SOMEONES_WORD.includes(c.kind)) return `a "${c.kind}" issue is not closed on someone's word`;
     if (!(ISSUE_RESOLUTIONS as readonly string[]).includes(c.resolution)) return `"${c.resolution}" is not a resolution`;
     if (!ISSUE_KIND_SPEC[c.kind].resolutions.includes(c.resolution)) return `"${ISSUE_KIND_SPEC[c.kind].label}" is not resolved by "${c.resolution}"`;
+    return null;
+  }
+  if (c.type === 'request_from_seller') {
+    if (!c.text?.trim() || c.text.trim().length < 20) return 'the request says nothing';
+    if (c.text.length > 4000) return 'the request is too long for one enquiry';
     return null;
   }
   if (c.type === 'record_availability') {
