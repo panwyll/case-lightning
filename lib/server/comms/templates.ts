@@ -133,6 +133,13 @@ export function messageProblem(r: { subject: string; body: string; missing?: str
     [/(^|\n)\s*•\s*(\n|$)/, 'it has an empty bullet'],
   ];
   for (const [re, why] of checks) if (re.test(text)) return why;
+  // A heading ("Where everything else stands:") with nothing under it: a section whose content never arrived.
+  const lines = r.body.split('\n').map((l) => l.trim());
+  for (let i = 0; i < lines.length; i++) {
+    if (!/^[A-Z][^.!?]{2,60}:$/.test(lines[i])) continue;
+    const next = lines.slice(i + 1).find((l) => l.length > 0);
+    if (!next || /^[A-Z][^.!?]{2,60}:$/.test(next)) return `the section "${lines[i].slice(0, -1)}" is empty`;
+  }
   if (r.body.trim().length < 40) return 'it is almost empty';
   return null;
 }

@@ -92,7 +92,13 @@ const emailText = (text: string, info: MatterContactInfo): string => (info.signa
 /** The built-in template, unless the firm has rewritten it under Email Templates. */
 async function resolveTemplate(deps: CommsDeps, tenantId: string, t: Template): Promise<Template> {
   const o = deps.templateOverride ? await deps.templateOverride(tenantId, t.key).catch(() => null) : null;
-  return o ? { ...t, subject: o.subject || t.subject, body: o.body || t.body } : t;
+  if (!o) return t;
+  // A field the firm's version uses that the built-in does not (an older version's {{status}}) is not filled by anything:
+  // it is required, so the message is held with the reason instead of going out with a blank.
+  const fields = (s: string) => [...s.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
+  const builtIn = new Set([...fields(t.subject), ...fields(t.body)]);
+  const own = [...new Set([...fields(o.subject || ''), ...fields(o.body || '')])].filter((f) => !builtIn.has(f));
+  return { ...t, subject: o.subject || t.subject, body: o.body || t.body, requires: [...new Set([...t.requires, ...own])] };
 }
 
 /** A message exactly as it would go: who it is addressed to, on which channel, with the subject and body. Nothing sent, nothing logged. */

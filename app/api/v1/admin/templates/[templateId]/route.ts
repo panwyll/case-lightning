@@ -55,7 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ te
     // migration 055 still saves the rest of the template.
     if (body.attachDocTemplateIds !== undefined) {
       await queryOne(
-        `update template set attach_doc_template_ids = $1::uuid[], updated_at = now() where id = $2 and tenant_id = $3`,
+        `update template set attach_doc_template_ids = $1::uuid[], updated_at = case when updated_at = created_at then created_at else now() end where id = $2 and tenant_id = $3`,
         [body.attachDocTemplateIds, templateId, user.tenantId]
       ).catch(() => {});
     }

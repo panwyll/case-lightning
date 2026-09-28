@@ -14,8 +14,12 @@ import { messageInfo } from '@/lib/server/engine/messages';
 async function ensureEngineTemplates(tenantId: string, userId: string): Promise<void> {
   const have = new Set((await query<{ name: string }>(`select name from template where tenant_id = $1 and category = 'Engine'`, [tenantId]).catch(() => [])).map((r) => r.name));
   const all = [...Object.values(CLIENT_UPDATES), ...Object.values(CHASES), ...Object.values(PARTY_NOTICES), ...Object.values(ACKS)];
+  // A copy nobody has edited (updated_at = created_at) follows the built-in: it shows today's wording, and it is not an override.
   for (const t of all) {
-    if (have.has(t.key)) continue;
+    if (have.has(t.key)) {
+      await query(`update template set subject_template = $3, body_template = $4, updated_at = created_at where tenant_id = $1 and name = $2 and category = 'Engine' and updated_at = created_at and (subject_template is distinct from $3 or body_template is distinct from $4)`, [tenantId, t.key, t.subject, t.body]).catch(() => {});
+      continue;
+    }
     await query(`insert into template (tenant_id, name, category, subject_template, body_template, style_tag, policy_tags, created_by) values ($1, $2, 'Engine', $3, $4, 'NEUTRAL', '{}', $5) on conflict (tenant_id, name) where is_active do nothing`, [tenantId, t.key, t.subject, t.body, userId]).catch(() => {});
   }
 }
