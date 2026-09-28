@@ -961,7 +961,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {inboundOpen.length > 0 && act('enquiries', 'enquiry_replies_sent', `Replies Sent (${Object.values(replySel).filter(Boolean).length})`, { enquiryIds: Object.keys(replySel).filter((k) => replySel[k]) }, { primary: true, disabled: !Object.values(replySel).some(Boolean) })}
     </> });
 
-  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.mortgageDeedAt && deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
+  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
       { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage', detail: (() => {
         const w = (s.waits ?? []).find((x) => x.key === 'mortgage_offer' && x.closedAt === null);
@@ -975,8 +975,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         if (!r) return 'none recorded for this lender';
         return [r.minUnexpiredYears != null ? `lease ${r.minUnexpiredYears}+ years` : null, r.maxSearchAgeMonths != null ? `searches under ${r.maxSearchAgeMonths} months old` : null, r.acceptsNonFamilyGift != null ? `non-family gifts ${r.acceptsNonFamilyGift ? 'accepted' : 'not accepted'}` : null, r.requiresEws1 ? 'EWS1 required' : null].filter(Boolean).join(' · ') || (r.note ?? 'recorded');
       })(), action: <a className="ep-sub-a" href="/conveyi/engine/lenders" style={{ fontSize: 12 }}>Lender Directory</a> }] : []),
-      { label: 'Mortgage deed', status: deeds.mortgageDeedAt ? 'done' : s.signing?.packSentAt ? 'with_client' : 'not_started', detail: deeds.mortgageDeedAt ? `signed copy on file ${fmtDay(deeds.mortgageDeedAt)}` : 'goes out in the signing pack; its signed copy is recorded under Signing',
-        action: deeds.mortgageDeedAt || completed ? undefined : <button type="button" className="ep-btn" disabled={busy} onClick={() => { setOpenLane('signing'); requestAnimationFrame(() => document.getElementById('lane-signing')?.scrollIntoView({ behavior: 'smooth', block: 'center' })); }}>Open Signing</button> },
       { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : s.exchange.completionDate ? `due ${fmtDay(workingDaysBefore(s.exchange.completionDate, 5))}, 5 working days before completion` : 'due 5 working days before completion, through the lender\'s portal',
         action: !deeds.certificateOfTitleAt && !completed && resolved(s.mortgage.status) ? act('mortgage', 'certificate_of_title_sent', 'Record Sent', {}, { primary: !!s.exchange.exchangedAt }) : undefined },
     ] });
