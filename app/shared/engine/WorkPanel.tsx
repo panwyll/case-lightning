@@ -114,9 +114,14 @@ export const WORK_CSS = `
 .ep-who:hover,.ep-who:focus{background:#5A27E0;color:#fff;outline:none}
 .ep-who.doc{background:#e0e7ff;color:#3730a3}
 .ep-who.doc:hover,.ep-who.doc:focus{background:#3730a3;color:#fff}
+/* Emails: purple wherever they sit (in a box, on a line, at a junction) */
+.ep-who.doc[aria-label^="Email:"]{background:#ede9fe;color:#5A27E0}
+.ep-who.doc[aria-label^="Email:"]:hover,.ep-who.doc[aria-label^="Email:"]:focus{background:#5A27E0;color:#fff}
+.ep-junction .ep-who[aria-label^="Email:"],.ep-exit .ep-who[aria-label^="Email:"]{background:#fff;border-color:#5A27E0;color:#5A27E0}
+.ep-junction .ep-who[aria-label^="Email:"]:hover,.ep-exit .ep-who[aria-label^="Email:"]:hover{background:#5A27E0;color:#fff}
 .ep-tip .k{display:inline-block;min-width:44px;font-weight:800;color:#c4b5fd;margin-right:4px}
 .ep-exit{position:absolute;left:50%;bottom:-12px;transform:translateX(-50%);z-index:3;display:flex;gap:4px}
-.ep-exit .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #94a3b8;color:#64748b}
+.ep-exit .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #5A27E0;color:#5A27E0}
 .ep-exit .ep-who:hover,.ep-exit .ep-who:focus{background:#5A27E0;border-color:#5A27E0;color:#fff}
 .ep-junction{position:absolute;z-index:2;transform:translate(-50%,-50%);display:flex}
 .ep-junction .ep-who{margin:0;width:22px;height:22px;background:#fff;border:2px solid #5A27E0;color:#5A27E0;box-shadow:0 1px 3px rgba(15,23,42,.12)}
