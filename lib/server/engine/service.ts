@@ -381,9 +381,12 @@ export class EngineService {
     const { reference, link } = await this.ports.idCheckProvider.requestCheck({ tenantId, matterId, party, label: pc?.label ?? null });
     const result = await this.run(tenantId, matterId, { type: 'request_id_check', actor, provider: this.ports.idCheckProvider.name, reference, party, link: link ?? null });
     // The client hears it from us, not only from the provider: why, and the link (or who it comes from). Other people named on the case get the provider's own link.
-    if (!party) {
+    // A co-client (a joint buyer or seller) is a client too: their own link, named, to the clients' addresses.
+    const coClient = !!pc && ['buyer', 'seller', 'owner'].includes(pc.role);
+    if (!party || coClient) {
       const { idProviderSendsLink, idProviderLabel } = this.idProviderOpts();
-      const idLinkLine = link ? `Please start your check here: ${link}` : idProviderSendsLink ? `You will receive an email from ${idProviderLabel} with a secure link to start it.` : 'We will send you a secure link to start it shortly.';
+      const who = coClient ? `${pc!.label}: ` : '';
+      const idLinkLine = link ? `${who}Please start your check here: ${link}` : idProviderSendsLink ? `${who}You will receive an email from ${idProviderLabel} with a secure link to start it.` : `${who}We will send you a secure link to start it shortly.`;
       const context = { idLinkLine, transaction: profileOf(before.transactionType ?? 'freehold_purchase').side === 'seller' ? 'sale' : 'purchase' };
       try {
         const sent = await this.ports.clientComms.sendStatusUpdate({ tenantId, matterId, template: 'id_check_request', context });
@@ -1340,8 +1343,9 @@ export class EngineService {
       try {
         await this.perform(tenantId, matterId, 'search_order', detail);
       } catch (err) {
-        // Provider down: the search stays un-ordered and shows as a stage blocker; a human can record it manually.
+        // Provider down: the search stays un-ordered, and it is a task (not a log line nobody reads).
         this.ports.log(`could not order ${searchType} search — manual fallback needed`, err);
+        await this.recordSendFailure(tenantId, matterId, 'search_order', detail, err);
       }
     }
   }

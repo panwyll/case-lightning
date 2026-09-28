@@ -128,7 +128,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   };
   const view = eng.view;
   const enrolled = !!view?.state.enrolled;
-  const pending = view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0;
+  const pending = (view?.surfacedDecisions?.filter((d) => d.kind !== 'auto_clear').length ?? 0) + (view?.due?.length ?? 0);
   // Issues live on Tasks now: its count is the decisions plus the open issues (context is not a task).
   const openIssues = Object.values(view?.state.issues ?? {}).filter((i) => (i.status === 'open' || i.status === 'negotiating') && !['seller_delay', 'buyer_delay'].includes(i.kind)).length;
   const [row, setRow] = useState<Row | null>(null);

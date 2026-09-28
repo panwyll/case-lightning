@@ -168,20 +168,25 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
     push('mortgage_offer_expiry', expiry, `The mortgage offer expires on ${expiry} and contracts are not exchanged. Exchange before then, or ask the lender for an extension / re-issue now — a lapsed offer reopens the mortgage sub-flow and blocks exchange.`);
   }
   // The certificate of title: our certificate to the lender, through its portal, so the advance arrives for completion.
-  if (state.hasLender && state.exchange.exchangedAt && state.exchange.completionDate && !state.deeds.certificateOfTitleAt && !state.completion.confirmedAt) {
-    const due = subtractWorkingDays(new Date(state.exchange.completionDate), CERTIFICATE_OF_TITLE_NOTICE, cal).toISOString().slice(0, 10);
-    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${state.exchange.completionDate}, so the mortgage advance arrives in time. Record it on the Mortgage step once it has gone.`);
+  // (A remortgage has no exchange: its completion date is the one agreed with the lender and the client.)
+  const cotCompletion = state.exchange.completionDate ?? (state.transactionType === 'remortgage' ? state.targetCompletionDate : null);
+  if (state.hasLender && (state.exchange.exchangedAt || state.transactionType === 'remortgage') && cotCompletion && !state.deeds.certificateOfTitleAt && !state.completion.confirmedAt) {
+    const due = subtractWorkingDays(new Date(cotCompletion), CERTIFICATE_OF_TITLE_NOTICE, cal).toISOString().slice(0, 10);
+    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it on the Mortgage step once it has gone.`);
   }
-  if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt) {
+  if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt) {
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);
     const price = state.purchasePricePennies;
     const basis = { ...(state.sdltBasis ?? { firstTimeBuyer: false, additionalProperty: false, nonUkResident: false }), company: state.shapes?.includes('company_buyer') ?? false };
     const est = price ? computeSdlt(price, basis) : null;
     push('sdlt_filing', due, `The SDLT return and payment are due within 14 days of completion (${state.completion.confirmedAt.slice(0, 10)}) — by ${due}. Late filing carries an automatic penalty and interest.${est ? ` Estimate on the ${sdltLabel(basis)} basis: £${(est.totalPennies / 100).toLocaleString('en-GB')} (${est.scheme}); check against HMRC's calculator.` : ''}`);
   }
-  if (state.preCompletion?.prioritySearchExpiresAt && !state.completion.confirmedAt) {
+  if (state.preCompletion?.prioritySearchExpiresAt && !state.postCompletion.ap1SubmittedAt) {
     const exp = state.preCompletion.prioritySearchExpiresAt.slice(0, 10);
-    push('priority_period_expiry', exp, `The OS1 priority period ends on ${exp} and completion has not been confirmed. Complete inside it, or make a fresh priority search now: after it lapses another application could take priority and the lender's charge would not be protected.`);
+    // Before completion it protects the completion; after it, the AP1 must be lodged inside it.
+    push('priority_period_expiry', exp, state.completion.confirmedAt
+      ? `The OS1 priority period ends on ${exp} and the AP1 has not been lodged. Lodge it before then: an application lodged after the priority period can lose priority, and the lender's charge with it.`
+      : `The OS1 priority period ends on ${exp} and completion has not been confirmed. Complete inside it, or make a fresh priority search now: after it lapses another application could take priority and the lender's charge would not be protected.`);
   }
   if (state.noticeToComplete && !state.completion.confirmedAt) {
     const n = state.noticeToComplete;

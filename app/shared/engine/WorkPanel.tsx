@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MarkComplete } from './MarkComplete';
+import { uploadCaseFile } from './uploadCaseFile';
 import { IssuesPanel } from './IssuesPanel';
 import { AddNote } from './NotesPanel';
 import { createPortal } from 'react-dom';
@@ -741,6 +742,59 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </div>
     </div>
   ) : null;
+  // What a step waiting on us records, and the form it opens: the same as the flowchart's own.
+  const [closing, setClosing] = useState(false);
+  const firmAccounts = () => Object.values(s.bankDetails).filter((b) => b.payeeKind === 'firm_client_account' && b.status === 'verified');
+  const dueAction = (key: string): ReactNode => {
+    const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
+    switch (key) {
+      case 'official_copies': return <label className="ep-btn primary" style={{ margin: 0, cursor: 'pointer' }}>Upload Official Copies<input type="file" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ''; void (async () => { for (const f of fs) await uploadCaseFile(api, matterId, f, {}); onChanged?.(); })(); }} /></label>;
+      case 'contract_pack': return act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true });
+      case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
+      case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
+      case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
+      case 'exchange': return act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true });
+      case 'completion_statement': return act('exchange', 'completion_statement_generated', 'Send To Client', {}, { primary: true });
+      case 'certificate_of_title': return act('mortgage', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true });
+      case 'bankruptcy_search': return act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }, { primary: true });
+      case 'priority_search': return act('pre_completion_checks', 'priority_search_made', 'Record Made', {}, { primary: true });
+      case 'funds_request': {
+        const acc = firmAccounts();
+        if (!acc.length) return <span className="ep-note">Verify our client account under Bank Details first.</span>;
+        return <>{p.fundsFrom.filter((f) => f === 'lender' || f === 'client' || f === 'isa_provider').filter((f) => f !== 'lender' || s.hasLender).map((f) => <button key={f} className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => cmd({ type: 'funds_requested', fromRole: f, bankDetailsId: payFrom.firm_client_account ?? acc[0].id })}>Request From {pretty(f).replace(/^./, (c) => c.toUpperCase())}</button>)}</>;
+      }
+      case 'completion_monies': return act('completion', 'funds_received', 'Record Received', { fromRole: 'buyer_solicitor' }, { primary: true });
+      case 'consideration': return act('completion', 'funds_received', 'Record Received', { fromRole: 'incoming_owner' }, { primary: true });
+      case 'completion_payment': return authorise('seller_solicitor', 'completion_monies', 'Authorise');
+      case 'redemption_payment': return authorise('lender', 'other', 'Authorise', s.redemption?.redemptionPennies);
+      case 'completion': return act('completion', 'completion_confirmed', 'Confirm Completion', {}, { primary: true });
+      case 'balance_to_client': return authorise('client', 'other', 'Authorise');
+      case 'mortgage_redeemed': return act('redemption', 'mortgage_redeemed', 'Record Redeemed', {}, { primary: true });
+      case 'sdlt': return <>{act('registration', 'sdlt_submitted', 'Record Filed', {}, { primary: true })}{act('registration', 'sdlt_not_required', 'No Return Due')}</>;
+      case 'ap1': return act('registration', 'ap1_submitted', 'Record Lodged', {}, { primary: true });
+      case 'notice_of_assignment': return act('leasehold', 'notice_of_assignment_served', 'Record Served', {}, { primary: true });
+      case 'close_file': return closing
+        ? <><button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => { setClosing(false); void cmd({ type: 'close_matter' }); }}>Confirm Close</button><button className="ep-btn" style={{ margin: 0 }} onClick={() => setClosing(false)}>Cancel</button></>
+        : <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => setClosing(true)}>Close File</button>;
+      default: return null;
+    }
+  };
+  // What someone else owed us, confirmed when it is in (where nothing reads it in by itself).
+  const waitConfirm = (key: string, subject: string): ReactNode => {
+    switch (key) {
+      case 'redemption': return act('redemption', 'redemption_statement_received', 'Record Received');
+      case 'lender_consent': return act('lender_consent', 'lender_consent_received', 'Record Received');
+      case 'discharge': return act('registration', 'discharge_confirmed', 'Record Confirmed');
+      case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
+      case 'deposit': return act('exchange', 'deposit_received', 'Record Received');
+      case 'insurance': return act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance');
+      case 'funds': return act('completion', 'funds_received', 'Record Received', { fromRole: subject });
+      case 'client_decision': return subject === 'exchange_authority'
+        ? act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' })
+        : <>{(['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'] as const).map((d) => <span key={d}>{act('co_ownership', 'client_decision_recorded', pretty(d), { subject: 'ownership_basis', decision: d })}</span>)}</>;
+      default: return null;
+    }
+  };
   const sheetDialog = sheet && sheet.type === 'client_decision_recorded' ? (
     <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
       <ClientDecisionSheet
@@ -1217,7 +1271,19 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {readDialog}
 
       {section === 'tasks' && (<>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length})</div><AddNote busy={busy} cmd={cmd} /></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div><AddNote busy={busy} cmd={cmd} /></div>
+      {(view.due?.length ?? 0) > 0 && (
+        <div className="ep-grid" style={{ marginBottom: 12 }}>
+          {view.due!.map((d) => (
+            <div key={d.key} className="ep-tile">
+              <b>{d.title}</b>
+              {d.dueDate && <span className="d" style={{ display: 'block', color: d.dueDate < new Date().toISOString().slice(0, 10) ? '#b91c1c' : '#b45309', fontWeight: 600 }}>By {fmtDay(d.dueDate)}</span>}
+              {d.detail && <span className="d" style={{ display: 'block' }}>{d.detail}</span>}
+              <div className="acts" style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{dueAction(d.key)}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
       <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>
 
@@ -1244,7 +1310,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
                   ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}
-                  <div className="acts" style={{ marginTop: 4 }}><button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? 'Sending…' : chased ? 'Chase Again' : 'Chase Now'}</button></div>
+                  <div className="acts" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{waitConfirm(w.key, w.subject)}<button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? 'Sending…' : chased ? 'Chase Again' : 'Chase Now'}</button></div>
                   {chaseFailed === wk && notice?.kind === 'err' && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4, fontSize: 12, color: '#b91c1c' }}><span style={{ flex: 1 }}>Not sent: {notice.text}</span><button type="button" aria-label="Dismiss" onClick={() => setChaseFailed(null)} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button></div>}
                 </div>
               );

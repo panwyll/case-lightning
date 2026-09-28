@@ -306,7 +306,9 @@ export interface CaseDocument {
 /** The other half of the client's chain (lib/server/engine/open-case.ts chainView). */
 export interface ChainView { matterId: string; relation: 'sale' | 'purchase'; matterRef: string | null; propertyAddress: string | null; readable: boolean; stage: string | null; exchangedAt: string | null; exchangeReady: boolean; holding: string[]; completionDate: string | null; targetCompletion: string | null; completedAt: string | null; abandoned: boolean }
 
-export interface EngineView { chain?: ChainView | null; sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; people?: Record<string, string>; documentCount?: number; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
+/** A step waiting on us (lib/server/engine/due.ts). */
+export interface DueStepRow { key: string; lane: string; title: string; detail?: string; dueDate?: string | null }
+export interface EngineView { chain?: ChainView | null; sdlt?: { estimatePennies: number; scheme: string; basis: string; declared: boolean } | null; contracts?: Record<string, CompletionContract>; state: EngineState; profile?: ProfileView; lifecycle?: { id: string; label: string }; blockers: string[]; waits: WaitRow[]; pendingDecisions: DecisionRow[]; due?: DueStepRow[]; people?: Record<string, string>; documentCount?: number; surfacedDecisions?: DecisionRow[]; levels?: Record<string, TrustLevel>; matter?: MatterMeta | null }
 
 export interface EngineEvent { id: string; seq: number; type: string; actor: string; payload: Record<string, unknown>; sourceDocumentId: string | null; confidenceScore: number | null; createdAt: string }
 

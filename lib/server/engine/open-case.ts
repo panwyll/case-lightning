@@ -4,6 +4,7 @@
  * replayed the same log; here the state is projected once and every view is derived from it.
  * The single-purpose routes still exist and call the same builders.
  */
+import { dueSteps } from './due';
 import { query, queryOne } from '../db';
 import { boardSelect, type BoardMatter } from '../board';
 import { listAssignees } from '../tasks';
@@ -74,6 +75,8 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),
     // Everything the log holds (the panel shows the engine's conclusions) …
     pendingDecisions: pendingDecisions(state),
+    // What is waiting on us (due.ts): the Tasks tab lists it with the form that records each.
+    due: dueSteps(state, new Date()),
     documentCount: docCount,
     people: Object.fromEntries(people.map((p) => [p.id, p.name])) as Record<string, string>,
     // … and what a person may act on (addendum 3 §2).

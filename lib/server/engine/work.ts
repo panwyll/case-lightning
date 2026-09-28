@@ -26,6 +26,7 @@ import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
+import { dueSteps } from './due';
 import { ENGINE_ACTION_LABEL, ENGINE_ACTION_SUBJECTS, openIssues, openWaits, pendingDecisions, surfacedDecisions, type MatterState, type LevelConfig, type DecisionState } from './types';
 import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar } from './working-days';
 
@@ -78,7 +79,7 @@ export interface WorkItem {
   /** The chip on the list, in words. */
   chip?: string;
   /** Where to go: the decision, the issue, the wait or just the case. */
-  ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'client' | 'case'; id: string };
+  ref: { type: 'decision' | 'issue' | 'wait' | 'requirement' | 'step' | 'client' | 'case'; id: string };
 }
 
 export interface MatterWork {
@@ -310,20 +311,21 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     });
   }
 
-  // ── DO: the next step on the gate when it is ours and nothing is outstanding ──
-  for (const a of nextActions(s, now).filter((x) => x.who === 'conveyancer' && x.ref.type === 'requirement')) {
+  // ── DO: every step waiting on us (due.ts), derived from the case so none can drop off the list ──
+  for (const d of dueSteps(s, now)) {
+    const overdue = d.dueDate ? d.dueDate < now.toISOString().slice(0, 10) : false;
     out.push({
       ...base,
-      id: `do:req:${a.ref.id}`,
+      id: `do:step:${d.key}`,
       bucket: 'do',
-      what: a.what,
-      unblocks: a.unblocks,
+      what: d.title,
+      unblocks: d.detail ?? null,
       actionOwner: 'conveyancer',
-      urgency: a.urgency === 'critical' ? 'critical' : a.urgency === 'warning' ? 'attention' : 'normal',
-      workstream: null,
+      urgency: overdue ? 'critical' : d.dueDate ? 'attention' : 'normal',
+      workstream: d.lane,
       since: null, sinceWorkingDays: null, slaWorkingDays: null, chaseInWorkingDays: null,
-      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
-      ref: { type: 'requirement', id: a.ref.id },
+      chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: d.dueDate ?? null, chaseDue: false,
+      ref: { type: 'step', id: d.key },
     });
   }
 

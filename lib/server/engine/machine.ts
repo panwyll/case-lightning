@@ -341,7 +341,8 @@ const isPurchase = (s: MatterState): boolean => s.transactionType === 'freehold_
  * the client says they are not having one. Neither once exchanged, closed or abandoned.
  */
 export function expectationDue(s: MatterState, key: ExpectationKey): boolean {
-  if (!s.enrolled || !isPurchase(s) || s.exchange.exchangedAt || s.abandoned || s.closedAt) return false;
+  // The new offer on a remortgage is the client's to chase as much as a buyer's.
+  if (!s.enrolled || !(isPurchase(s) || (key === 'mortgage_offer' && s.transactionType === 'remortgage')) || s.exchange.exchangedAt || s.completion.confirmedAt || s.abandoned || s.closedAt) return false;
   if (s.waits.some((w) => w.key === key && w.closedAt === null)) return false;
   if (key === 'mortgage_offer') return !!s.hasLender && s.mortgage.status === 'awaiting' && !s.mortgage.documentId;
   return s.survey.status === 'not_started' && !s.survey.reports.length && s.survey.plan?.plan !== 'none';
