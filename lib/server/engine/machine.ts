@@ -110,6 +110,8 @@ import {
   AVAILABILITY_PARTIES,
   type ExpectationKey,
   type TitlePlanFacts,
+  type SupportingDocFacts,
+  openIssues,
 } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
@@ -152,6 +154,7 @@ type CommandBody =
   | { type: 'record_availability'; actor: Actor; party: AvailabilityParty; from: string; until: string; note?: string | null }
   | { type: 'open_expectation'; key: ExpectationKey }
   | { type: 'record_title_plan'; documentId: string; facts: TitlePlanFacts }
+  | { type: 'record_supporting_document'; documentId: string; facts: SupportingDocFacts }
   | { type: 'set_funding'; actor: Actor; hasLender: boolean; reason: string }
   | { type: 'record_survey_plan'; actor: Actor; plan: 'none' | 'booked'; date?: string | null; note?: string | null }
   | { type: 'notice_to_complete_served'; actor: Actor; servedBy: 'buyer' | 'seller'; servedAt?: string | null; expiresAt: string; documentId: string }
@@ -1333,6 +1336,16 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
     case 'record_signing_envelope': {
       requireEnrolled(s);
       return [{ type: 'signing_envelope_sent', actor: SYSTEM, payload: { document: cmd.document, provider: cmd.provider, envelopeId: cmd.envelopeId } }];
+    }
+    case 'record_supporting_document': {
+      requireEnrolled(s);
+      const out: NewEvent[] = [{ type: 'supporting_document_read', actor: SYSTEM, payload: { facts: cmd.facts }, sourceDocumentId: cmd.documentId }];
+      // An open issue it may answer (works without consents, a missing certificate or guarantee) is pointed at it; a person decides.
+      const answers: Record<string, string[]> = { planning_permission: ['building_regs_missing', 'planning_breach', 'document_missing'], building_regs: ['building_regs_missing', 'document_missing'], certificate: ['document_missing', 'building_regs_missing'], guarantee: ['document_missing'], indemnity_policy: ['building_regs_missing', 'planning_breach', 'restrictive_covenant_breach', 'document_missing'] };
+      for (const i of openIssues(s).filter((x) => (answers[cmd.facts.kind] ?? []).includes(x.kind))) {
+        out.push({ type: 'issue_updated', actor: SYSTEM, payload: { issueId: i.id, status: i.status as 'open' | 'negotiating', note: `A document on the file may answer this: ${cmd.facts.title || cmd.facts.kind.replace(/_/g, ' ')}${cmd.facts.covers ? ` (${cmd.facts.covers.slice(0, 120)})` : ''}.`, gate: null } });
+      }
+      return out;
     }
     case 'record_title_plan': {
       requireEnrolled(s);

@@ -638,6 +638,12 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       else { s.mortgage = { status: 'not_required', documentId: null, facts: null, decisionEventId: null }; closeWait(s, 'mortgage_offer', null, e); }
       break;
     }
+    case 'supporting_document_read': {
+      const p = e.payload as Payloads['supporting_document_read'];
+      const docId = e.sourceDocumentId ?? e.id;
+      s.title = { ...s.title, supporting: [...(s.title.supporting ?? []).filter((x) => x.documentId !== docId), { documentId: docId, facts: p.facts, at: e.createdAt }] };
+      break;
+    }
     case 'title_plan_read': {
       const p = e.payload as Payloads['title_plan_read'];
       const docId = e.sourceDocumentId ?? e.id;

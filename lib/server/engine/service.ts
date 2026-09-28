@@ -516,6 +516,14 @@ export class EngineService {
     return { state, events: [], warning: facts ? (facts.flags.length ? `Contract read: ${facts.flags.length} point${facts.flags.length === 1 ? '' : 's'} for you under Documents.` : undefined) : 'The contract could not be read; review it by hand under Documents.' };
   }
 
+  /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */
+  async supportingDocumentReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const doc = await this.requireDoc(tenantId, matterId, documentId);
+    if (!this.ports.extractor.extractSupportingDocument) return { state: await this.getState(tenantId, matterId), events: [], warning: 'A supporting document: filed.' };
+    const facts = await this.ports.extractor.extractSupportingDocument(doc);
+    return this.run(tenantId, matterId, { type: 'record_supporting_document', documentId, facts });
+  }
+
   /** A title plan: read as the map it is, beside the register (never as the register), checked against it on the title step. */
   async titlePlanReceived(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
     const doc = await this.requireDoc(tenantId, matterId, documentId);

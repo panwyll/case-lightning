@@ -579,6 +579,21 @@ function buildChecklistItems(s: MatterState, d: DecisionState, checks: string[],
       ]));
       if (p.otherMarkings.length) out.push(item(`Title plan ${p.titleNumber}: other markings, and what each means for the client`, 'flag', p.otherMarkings.map((m) => ({ text: `${m.marking}: ${m.marks}`, documentId: pl.documentId }))));
     }
+    // What the seller supplied behind the forms: each policy, permission, certificate and guarantee, with what matters about it.
+    const KIND_WORDS: Record<string, string> = { indemnity_policy: 'Indemnity policy', planning_permission: 'Planning permission', building_regs: 'Building regulations', guarantee: 'Guarantee', certificate: 'Certificate', other: 'Document' };
+    const addr = (x.matter.propertyAddress ?? '').toLowerCase().split(',')[0].trim();
+    for (const sd of s.title.supporting ?? []) {
+      const d = sd.facts;
+      const elsewhere = !!addr && !!d.property && !d.property.toLowerCase().includes(addr.split(' ').slice(-2).join(' '));
+      const policyGap = d.kind === 'indemnity_policy' && (d.benefitPasses !== true || d.limitPennies == null);
+      const ev: Array<{ text: string; documentId?: string | null; warn?: boolean }> = [
+        { text: [d.covers || 'what it covers is not stated', d.issuedBy, d.reference, d.date ? `dated ${d.date}` : '', d.expires ? `expires ${d.expires}` : ''].filter(Boolean).join(' · '), documentId: sd.documentId },
+      ];
+      if (d.kind === 'indemnity_policy') ev.push({ text: `Limit: ${d.limitPennies != null ? gbp(d.limitPennies) : 'not stated'} · cover passes to the buyer and lender: ${d.benefitPasses === true ? 'yes' : d.benefitPasses === false ? 'no' : 'not stated'}`, warn: policyGap });
+      if (elsewhere) ev.push({ text: `Names ${d.property}, not ${x.matter.propertyAddress}`, warn: true });
+      for (const n of d.notes) ev.push({ text: n, documentId: sd.documentId });
+      out.push(item(`${KIND_WORDS[d.kind] ?? 'Document'}: ${d.title || d.covers || 'untitled'}`, policyGap || elsewhere ? 'flag' : 'open', ev));
+    }
     const l = f?.lease;
     if (l) {
       const lf = (l.flags ?? []).map((fl) => flagEv(fl, s.title.leaseDocumentId ?? docId));

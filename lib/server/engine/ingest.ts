@@ -29,6 +29,7 @@ export type IngestAction =
   | { kind: 'mortgage_offer' }
   | { kind: 'title' }
   | { kind: 'title_plan' }
+  | { kind: 'supporting_document' }
   | { kind: 'id_check'; party: string | null }
   | { kind: 'management_pack' }
   | { kind: 'property_forms' }
@@ -77,6 +78,8 @@ export function routeClassification(state: MatterState, c: DocumentClassificatio
     }
     case 'title_plan':
       return { kind: 'title_plan' };
+    case 'supporting_document':
+      return { kind: 'supporting_document' };
     case 'contract':
       if (state.exchange.exchangedAt) return { kind: 'skip', reason: 'contracts already exchanged; file the contract under Documents' };
       return { kind: 'contract' };
@@ -153,6 +156,8 @@ export async function runAction(svc: EngineService, tenantId: string, matterId: 
       return svc.idCheckResultReceived(tenantId, matterId, documentId, action.party);
     case 'title_plan':
       return svc.titlePlanReceived(tenantId, matterId, documentId);
+    case 'supporting_document':
+      return svc.supportingDocumentReceived(tenantId, matterId, documentId);
     case 'contract':
       return svc.contractReceived(tenantId, matterId, documentId);
     case 'management_pack':

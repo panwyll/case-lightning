@@ -52,3 +52,20 @@ test('a tenure that cannot be read flags the title but does not pause the case; 
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.manualHandling.required, false);
 });
+
+test('a supporting document is read and shown with the title; a policy that does not pass to the buyer is flagged, and an issue it may answer is pointed at it', async () => {
+  const h = await purchase();
+  const { titleWithCharge } = await import('./helpers');
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleWithCharge()));
+  const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'building_regs_missing', title: 'Loft conversion without building regs sign-off' });
+  const issueId = (r.events[0].payload as { issueId: string }).issueId;
+  const policy = { kind: 'indemnity_policy', title: 'Lack of building regulations indemnity', covers: 'Loft conversion 2019', issuedBy: 'Stewart Title', reference: 'P-1', date: '2024-01-01', expires: '', limitPennies: 25_000_000, benefitPasses: null, property: '', notes: [], confidence: 0.9 };
+  await h.svc.supportingDocumentReceived(TENANT, MATTER, h.doc(policy as never));
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.title.supporting?.length, 1);
+  assert.match(s.issues[issueId].history.map((x) => x.what).join(' '), /may answer this: Lack of building regulations indemnity/);
+  const d = Object.values(s.decisions).find((x) => x.kind === 'title')!;
+  const { taskContext } = await import('../../../lib/server/engine/context');
+  const lines = taskContext({ state: s, matter: { matterRef: null, propertyAddress: null }, events: [], target: { kind: 'decision', decision: d } }).checklist.map((c) => `${c.status}: ${c.text} | ${c.evidence.map((e) => e.text).join(' / ')}`);
+  assert.ok(lines.some((l) => /^flag: Indemnity policy: Lack of building regulations indemnity.*cover passes to the buyer and lender: not stated/.test(l)), lines.join('\n'));
+});

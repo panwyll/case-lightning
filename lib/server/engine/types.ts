@@ -218,6 +218,7 @@ export const EVENT_TYPES = [
   'availability_recorded',
   'expectation_opened',
   'title_plan_read',
+  'supporting_document_read',
   'manual_handling_cleared',
   'funding_changed',
   'survey_plan_recorded',
@@ -376,6 +377,31 @@ export interface TitlePlanFacts {
   notes: string[];
   /** The plan's date, scale or OS reference, as printed. */
   reference: string;
+  confidence: number;
+}
+
+/** A document the seller supplies to back up the forms: an indemnity policy, a planning permission, a certificate, a guarantee. */
+export const SUPPORTING_KINDS = ['indemnity_policy', 'planning_permission', 'building_regs', 'guarantee', 'certificate', 'other'] as const;
+export type SupportingKind = (typeof SUPPORTING_KINDS)[number];
+export interface SupportingDocFacts {
+  kind: SupportingKind;
+  /** What it is, as titled ("Lack of building regulations indemnity", "Decision notice 19/01234/HH"). */
+  title: string;
+  /** What it covers or approves: the risk insured, the works permitted or certified. */
+  covers: string;
+  /** Insurer, council, installer or guarantor. */
+  issuedBy: string;
+  reference: string;
+  /** ISO dates, or empty. */
+  date: string;
+  expires: string;
+  /** Indemnity policies: the limit, in pennies (null when not stated). */
+  limitPennies: number | null;
+  /** Indemnity policies: does the cover pass to the buyer, their successors and their lender? null when not stated. */
+  benefitPasses: boolean | null;
+  /** The property it names, as printed. */
+  property: string;
+  notes: string[];
   confidence: number;
 }
 
@@ -1024,6 +1050,7 @@ export interface Payloads {
   availability_recorded: { id: string; party: AvailabilityParty; from: string; until: string; note: string };
   expectation_opened: { key: ExpectationKey };
   title_plan_read: { facts: TitlePlanFacts };
+  supporting_document_read: { facts: SupportingDocFacts };
   /** A person resumed automation after a pause, with why. */
   manual_handling_cleared: { reason: string; was: string | null };
   /** The buyer now has a mortgage, or is now buying without one. */
@@ -1371,6 +1398,8 @@ export interface MatterState {
     leaseDocumentId: string | null;
     /** Title plans read on the case, each against its own title number. */
     plans?: Array<{ documentId: string; facts: TitlePlanFacts; at: string }>;
+    /** The documents behind the seller's forms: indemnity policies, permissions, certificates, guarantees. */
+    supporting?: Array<{ documentId: string; facts: SupportingDocFacts; at: string }>;
   };
   reportOnTitle: {
     status: 'not_started' | 'drafted' | 'approved' | 'rejected' | 'sent';

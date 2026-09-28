@@ -800,6 +800,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     tiles: [
       { label: `Official copies${s.title.facts?.titleNumber ? ` · ${s.title.facts.titleNumber}` : ''}`, documentId: s.title.documentId, focus: 'title', status: s.title.status, detail: s.title.facts?.tenure ?? (buyer && s.contractPack?.requestedAt && !s.title.documentId ? `contract pack asked of the seller's solicitor ${fmtDay(s.contractPack.requestedAt)} · chased on the SLA` : undefined) },
       ...(buyer ? [{ label: `Seller's forms (${leasehold ? 'TA6 / TA7 / TA10' : 'TA6 / TA10'})`, documentId: s.sellerForms?.documentId ?? undefined, status: s.sellerForms?.receivedAt ? 'read' : 'not_started', detail: s.sellerForms?.receivedAt ? `${s.sellerForms.forms.join(', ')} read ${fmtDay(s.sellerForms.receivedAt)}; answers that matter are issues` : 'arrive with the contract pack; upload under Documents' }] : []),
+      ...(((s.title as { supporting?: unknown[] }).supporting?.length ?? 0) > 0 ? [{ label: `Supporting documents · ${(s.title as { supporting?: unknown[] }).supporting!.length}`, status: 'read', detail: ((s.title as { supporting?: Array<{ facts: { title: string; kind: string } }> }).supporting ?? []).map((x) => x.facts.title || x.facts.kind.replace(/_/g, ' ')).join(' · ') }] : []),
       ...(has('report_on_title') ? [{ label: 'Report on title', focus: 'report_on_title', status: s.reportOnTitle.status, detail: s.reportOnTitle.sentAt ? `sent ${fmtDay(s.reportOnTitle.sentAt)}` : undefined }] : []),
     ],
     actions: has('report_on_title') ? <>

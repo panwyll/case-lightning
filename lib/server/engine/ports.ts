@@ -18,7 +18,7 @@
  */
 import type { DraftCheck, RegisterFact } from './draft-check';
 import type { NoteActionDraft } from './notes';
-import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SignedDocument, SearchFacts, SearchType, SurveyFacts, TitleFacts, TitlePlanFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
+import type { PropertyFormsFacts, Citation, DecisionKind, EngineEvent, EnquiryReplyFacts, Flag, IdCheckFacts, MatterState, MortgageOfferFacts, NoteKind, NoteSender, SignedDocument, SearchFacts, SearchType, SurveyFacts, TitleFacts, TitlePlanFacts, SupportingDocFacts, ContractFacts, LeaseFacts, ManagementPackFacts } from './types';
 import type { SummaryOverride } from './machine';
 import type { ProofOfFundsFacts, StatementFacts, TransactionReview, PayslipFacts, EvidenceKind } from './proof-of-funds';
 
@@ -54,6 +54,8 @@ export interface DocumentExtractor {
   extractTitle(doc: DocumentRef): Promise<TitleFacts>;
   /** A title plan (the map): optional, so an extractor without it files the plan unread. */
   extractTitlePlan?(doc: DocumentRef): Promise<TitlePlanFacts>;
+  /** A supporting document (indemnity policy, permission, certificate, guarantee): optional, like the plan. */
+  extractSupportingDocument?(doc: DocumentRef): Promise<SupportingDocFacts>;
   extractIdCheck(doc: DocumentRef): Promise<IdCheckFacts>;
   /** A contract read for its terms: parties, price, deposit, dates, conditions. Reviewed by a person; never approved by rule. */
   extractContract(doc: DocumentRef): Promise<ContractFacts>;
@@ -173,7 +175,7 @@ export interface DocumentClassifier {
 }
 
 export interface DocumentClassification {
-  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'title_plan' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms' | 'other';
+  role: 'search' | 'enquiry_reply' | 'mortgage_offer' | 'title' | 'title_plan' | 'supporting_document' | 'id_check' | 'contract' | 'survey' | 'specialist_report' | 'management_pack' | 'lease' | 'property_forms' | 'other';
   searchType: SearchType | null;
   enquiryReferences: string[];
   titleNumber: string | null;
