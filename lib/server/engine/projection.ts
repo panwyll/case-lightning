@@ -1042,6 +1042,15 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         for (const w of s.waits) if (w.key === key && w.closedAt === null && (subject === null || w.subject === subject)) w.closedAt = e.createdAt;
       };
       const [kind, sub] = p.step.includes(':') ? [p.step.split(':')[0], p.step.split(':').slice(1).join(':')] : [p.step, null];
+      // A step done by hand settles whatever was waiting for a person's sign-off on it (a report draft, a flagged search):
+      // otherwise it stays on the Tasks tab with nothing that can clear it.
+      const decisionKind = ({ id_check: 'id_check', proof_of_funds: 'proof_of_funds', title: 'title', mortgage: 'mortgage', report_on_title: 'report_on_title', management_pack: 'management_pack', search: 'search', enquiry: 'enquiry', enquiries: 'enquiry' } as Record<string, string>)[kind];
+      if (decisionKind) for (const d of Object.values(s.decisions)) {
+        if (d.status !== 'pending' || d.kind !== decisionKind) continue;
+        if (sub && d.subject && d.subject !== sub) continue;
+        if (kind === 'id_check' && d.subject && d.subject.includes(':')) continue; // a co-client's own check is theirs
+        resolveDecision(s, d.eventId, 'approve', `Completed by hand: ${p.note}`, e);
+      }
       switch (kind) {
         case 'id_check': s.idCheck.status = 'reviewed'; close('id_check'); break;
         case 'proof_of_funds': s.proofOfFunds.status = 'reviewed'; close('proof_of_funds'); break;

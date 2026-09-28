@@ -269,3 +269,20 @@ test('handler change is on the log (holiday cover, reassignment); a person can r
   const c = await h.svc.run(TENANT, MATTER, { type: 'record_correction', actor: SENIOR, aboutEventId: r.events[0].id, reason: 'Cover ended 3 days early' });
   assert.equal(c.events[0].causedByEventId, r.events[0].id);
 });
+
+test('a report on title marked done by hand while its draft waits settles the draft: nothing is left on the Tasks tab that cannot be cleared', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: ['CON29'] });
+  await h.svc.requestIdCheck(TENANT, MATTER, USER);
+  await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
+  await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
+  await h.svc.mortgageOfferReceived(TENANT, MATTER, h.doc(offerClear()));
+  await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.draftReportOnTitle(TENANT, MATTER);
+  assert.ok(pendingDecisions(await h.svc.getState(TENANT, MATTER)).some((d) => d.kind === 'report_on_title'));
+  await h.svc.run(TENANT, MATTER, { type: 'mark_manual_handling', actor: USER, reason: 'Report sent from our own system' } as never);
+  await h.svc.run(TENANT, MATTER, { type: 'complete_step_manually', actor: USER, step: 'report_on_title', note: 'Sent by post' });
+  const s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.reportOnTitle.status, 'sent');
+  assert.ok(!pendingDecisions(s).some((d) => d.kind === 'report_on_title'), 'the draft is settled, not left pending');
+});
