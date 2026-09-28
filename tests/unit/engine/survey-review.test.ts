@@ -273,3 +273,19 @@ test('a re-read only refreshes the reading; Send Recommendations replaces what i
   assert.ok(!Object.values(s.proposals).some((p) => p.status === 'pending' && p.dedupKey === 'enquiry_draft:access-batch:ISS-9'));
   assert.equal(Object.values(s.proposals).filter((p) => p.status === 'pending' && p.dedupKey.startsWith(`enquiry_draft:survey:${docId}`)).length, 1, 'one set of enquiries, the new one');
 });
+
+test('the client hears what was asked for them, in plain words, not "pre-contract enquiries"', async () => {
+  const h = await enrolled();
+  await h.svc.store.setLevel(TENANT, 'enquiry_draft', 'auto', null);
+  const CLIENT = { address: 'jo@example.com', name: 'Jo Client', relation: 'client' as const };
+  h.ports.noteExtractor = { name: 'test', extract: async () => [{ kind: 'client_decision', summary: 'wants the damp guarantee', quote: 'ask them for the damp guarantee', command: { type: 'request_from_seller', about: 'the damp guarantee and the FENSA certificate', text: 'Please supply the damp-proofing guarantee and the FENSA certificate for the windows.' } }] };
+  await h.svc.recordNote(TENANT, MATTER, { text: 'Please ask them for the damp guarantee and the FENSA.', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL'), from: CLIENT });
+  const s = await h.svc.getState(TENANT, MATTER);
+  const d = Object.values(s.decisions).find((x) => x.kind === 'note_actions' && x.status === 'pending')!;
+  await h.svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
+  await h.svc.resolveDecision(TENANT, MATTER, d.eventId, USER, 'approve');
+  const sent = h.ports.clientComms.sent.find((m) => m.template === 'enquiries_raised');
+  assert.ok(sent);
+  assert.match(String(sent!.context.enquiryLine), /asked the seller's solicitor about the damp guarantee and the FENSA certificate, as you asked/);
+  assert.doesNotMatch(String(sent!.context.enquiryLine), /pre-contract/);
+});

@@ -790,7 +790,7 @@ export interface Payloads {
   search_flagged: { searchType: SearchType; flags: Flag[]; decision: DecisionSpec };
   search_reviewed: { searchType: SearchType; decisionEventId: string; option: DecisionOption; note?: string | null; engagement?: Engagement | null };
 
-  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null; counterpartyType?: CounterpartyType | null };
+  enquiry_raised: { enquiryId: string; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string; purpose?: string; about?: string } | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_received: { enquiryId: string; facts?: EnquiryReplyFacts | null; counterpartyType?: CounterpartyType | null };
   enquiry_reply_cleared: { enquiryId: string; reasons: string[] };
   enquiry_reply_flagged: { enquiryId: string; flags: Flag[]; decision: DecisionSpec };
@@ -1241,7 +1241,7 @@ export interface EnquiryState {
   decisionEventId: string | null;
   resolution: DecisionOption | null;
   /** Where it came from: a decision, a follow-up, an issue, or a "not known" answer on the seller's forms. */
-  origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null;
+  origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string; purpose?: string; about?: string } | null;
 }
 
 export interface IssueState {

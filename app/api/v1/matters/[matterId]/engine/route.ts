@@ -63,6 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
     else if (input.type === 'draft_report_on_title') result = await svc.draftReportOnTitle(user.tenantId, matterId);
     else if (input.type === 'resend_proof_of_funds') result = await svc.resendProofOfFunds(user.tenantId, matterId, user.userId);
     else if (input.type === 'retry_action') result = await svc.retryFailedAction(user.tenantId, matterId, input.proposalEventId, user.userId);
+    else if (input.type === 'retry_issue') result = await svc.retryIssue(user.tenantId, matterId, input.issueId, user.userId);
     else if (input.type === 'chase_now') result = await svc.chaseNow(user.tenantId, matterId, input.waitKey, input.subject ?? null, user.userId);
     else if (input.type === 'draft_completion_statement') {
       result = await svc.draftCompletionStatement(user.tenantId, matterId);

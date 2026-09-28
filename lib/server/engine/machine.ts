@@ -126,7 +126,7 @@ type CommandBody =
   | { type: 'record_search_ordered'; actor: Actor; searchType: SearchType; provider: string; reference?: string | null }
   | { type: 'search_returned'; actor: Actor; searchType: SearchType; documentId: string; provider?: string | null }
   | { type: 'search_extracted'; actor: Actor; searchType: SearchType; facts: SearchFacts; extractor: string; summary?: SummaryOverride | null }
-  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string } | null }
+  | { type: 'raise_enquiry'; actor: Actor; enquiryId?: string | null; subject: string; origin?: { decisionEventId?: string; followUpOf?: string; issueId?: string; alsoIssueIds?: string[]; formsQuestion?: string; purpose?: string; about?: string } | null }
   | { type: 'enquiry_reply_received'; actor: Actor; enquiryId: string; documentId: string; facts?: EnquiryReplyFacts | null; summary?: SummaryOverride | null }
   | { type: 'mortgage_offer_received'; actor: Actor; documentId: string; lender?: string | null }
   | { type: 'mortgage_offer_extracted'; actor: Actor; facts: MortgageOfferFacts; extractor: string; summary?: SummaryOverride | null }

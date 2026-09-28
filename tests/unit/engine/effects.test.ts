@@ -106,3 +106,21 @@ test('a proposal approved with edits sends the edited words, and the log keeps t
   s = await h.svc.getState(T, M);
   assert.equal(s.proposals[p!.eventId].status, 'approved');
 });
+
+test('a failed send the system made itself can be tried again from its issue', async () => {
+  const { harness: mk, TENANT: T, MATTER: M, USER: U } = await import('./helpers');
+  const h = mk();
+  await h.svc.run(T, M, { type: 'enrol', actor: U, hasLender: false, requiredSearches: [] });
+  const real = h.ports.clientComms.sendStatusUpdate.bind(h.ports.clientComms);
+  let fail = true;
+  h.ports.clientComms.sendStatusUpdate = async (input) => { if (fail) throw new Error('Graph account not connected for this user'); return real(input); };
+  await h.svc.run(T, M, { type: 'raise_enquiry', actor: U, subject: 'Please confirm the boundary.', origin: { purpose: 'general' } });
+  let s = await h.svc.getState(T, M);
+  const issue = Object.values(s.issues).find((i) => i.kind === 'send_failed' && i.status === 'open');
+  assert.ok(issue, 'the failure is on the case');
+  assert.match(issue!.detail ?? '', /\[retry:/);
+  fail = false;
+  await h.svc.retryIssue(T, M, issue!.id, U);
+  s = await h.svc.getState(T, M);
+  assert.equal(s.issues[issue!.id].status, 'resolved');
+});

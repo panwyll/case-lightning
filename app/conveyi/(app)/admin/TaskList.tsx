@@ -63,6 +63,13 @@ export default function TaskList({ who }: { who: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const [approving, setApproving] = useState<string | null>(null);
   const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const retry = async (matterId: string, issueId: string) => {
+    setRetrying(issueId); setQuickErr(null);
+    try { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'retry_issue', issueId }) }); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
+    catch (e: unknown) { setQuickErr({ id: issueId, text: e instanceof Error ? e.message : 'Could not send it again.' }); }
+    finally { setRetrying(null); }
+  };
   const quickApprove = async (key: string, eventId: string) => {
     setApproving(eventId);
     setQuickErr(null);
@@ -143,7 +150,10 @@ export default function TaskList({ who }: { who: string }) {
                   {isDecision && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving === i.ref.id} onClick={() => void quickApprove(key, i.ref.id)}>{approving === i.ref.id ? 'Approving…' : 'Approve'}</button>}
                   {isDecision
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
-                    : <a className="tl-btn" href={paths.matter(i.matterId)}>Open case <ChevronRight size={14} /></a>}
+                    : <>
+                      {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
+                      <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=issues' : ''}`}>{i.ref?.type === 'issue' ? 'Open issue' : 'Open case'} <ChevronRight size={14} /></a>
+                    </>}
                 </div>
                 {isOpen && isDecision && (
                   <div className="tl-open">

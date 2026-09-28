@@ -85,6 +85,18 @@ export const CLIENT_UPDATE_TEMPLATES: Partial<Record<EventType, string>> = {
   ap1_confirmed: 'registration_complete',
 };
 
+/** What the client hears when we ask the seller's side something: what it was for, plainly, and what happens next. */
+function enquiryLine(purpose: string, about: string | null): string {
+  switch (purpose) {
+    case 'client_instruction': return `We've asked the seller's solicitor ${about ? `about ${about.replace(/^[A-Z]/, (c) => c.toLowerCase())}` : 'for what you wanted'}, as you asked. We'll let you know what they say.`;
+    case 'evidence': return "We've asked the seller's solicitor for any reports, certificates or guarantees that answer the points in your survey. We'll send on whatever they have.";
+    case 'access': return "We've asked the seller's solicitor whether your specialists can get in, and when. We'll pass on their answer as soon as we have it.";
+    case 'survey': return "We've put the points your surveyor raised for us (planning, building regulations, guarantees and the like) to the seller's solicitor. We'll let you know what comes back.";
+    case 'forms': return "We've sent the seller's solicitor our questions on the contract papers. Replies usually take a week or two; we'll chase if they're slow and tell you if anything needs you.";
+    default: return "We've sent the seller's solicitor a question on your purchase. We'll let you know what they say.";
+  }
+}
+
 /** Which sub-flow an automatic client update belongs to (null → only matter-level shadow suppresses it). */
 export class EngineService {
   constructor(
@@ -211,8 +223,11 @@ export class EngineService {
         if (party) await this.run(tenantId, matterId, { type: 'record_client_update', update: { template: partyTemplate, recipientRole: partyRole, channel: party.channel, messageId: party.messageId, triggeredByEventId: d.triggeredByEventId } });
       }
     } else if (action === 'enquiry_draft') {
-      const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[]; edited?: MessageOverride };
-      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [] } : { formsQuestion: d.question ?? undefined } });
+      const d = detail as { subject: string; question?: string | null; issueId?: string | null; alsoIssueIds?: string[]; edited?: MessageOverride; origin?: string; title?: string; about?: string };
+      // What it was for travels with it, so the client hears it in those terms.
+      const purpose = d.origin === 'client_instruction' ? 'client_instruction' : d.origin === 'survey' ? 'survey' : d.title === 'Access for specialists' ? 'access' : d.title === 'Evidence from the seller' ? 'evidence' : d.question ? 'forms' : 'general';
+      const about = d.about ?? (typeof d.title === 'string' && d.title.startsWith("On the client's instruction: ") ? d.title.slice("On the client's instruction: ".length) : undefined);
+      await this.run(tenantId, matterId, { type: 'raise_enquiry', actor: SYSTEM, subject: d.edited?.body?.trim() || d.subject, origin: d.issueId ? { issueId: d.issueId, alsoIssueIds: d.alsoIssueIds ?? [], purpose, about } : { formsQuestion: d.question ?? undefined, purpose, about } });
     } else if (action === 'search_order') {
       const d = detail as { searchType: SearchType };
       const { reference } = await this.ports.searchProvider.orderSearch({ tenantId, matterId, searchType: d.searchType });
@@ -1133,7 +1148,7 @@ export class EngineService {
                 await this.run(tenantId, matterId, { type: 'record_availability', actor: e.actor, party: c.party, from: c.from, until: c.until, note: c.note });
               } else if (c.type === 'request_from_seller') {
                 // The client told us what to get from the other side: the enquiry, drafted from their words, as a proposal a person can edit.
-                const detail = { subject: c.text.trim(), question: null, origin: 'client_instruction', title: `On the client's instruction: ${c.about.trim().slice(0, 60)}` };
+                const detail = { subject: c.text.trim(), question: null, origin: 'client_instruction', title: `On the client's instruction: ${c.about.trim().slice(0, 60)}`, about: c.about.trim() };
                 const key = `enquiry_draft:client:${p.noteId}:${id}`;
                 if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'client_instruction', key, detail, `ENQUIRY ON THE CLIENT'S INSTRUCTION\n\nTo: the seller's solicitor\nAbout: ${c.about}\n\n${c.text.trim()}`))) {
                   await this.perform(tenantId, matterId, 'enquiry_draft', detail);
@@ -1179,6 +1194,13 @@ export class EngineService {
           let dedupKey = `${template}:${e.id}`;
           let because = e.type.replace(/_/g, ' ');
           // Searches are ordered as a set: the client hears once, when the last one has gone, not once per search.
+          if (e.type === 'enquiry_raised') {
+            const o = ((e.payload as { origin?: { purpose?: string; about?: string } | null }).origin ?? {}) as { purpose?: string; about?: string };
+            const purpose = o.purpose ?? 'forms';
+            context = { ...context, enquiryLine: enquiryLine(purpose, o.about ?? null) };
+            dedupKey = `${template}:${purpose}:${this.ports.now().toISOString().slice(0, 10)}`;
+            because = `${purpose.replace(/_/g, ' ')} enquiry raised`;
+          }
           if (e.type === 'search_ordered') {
             const fresh = await this.getState(tenantId, matterId);
             const ordered = fresh.requiredSearches.filter((t) => fresh.searches[t]);
@@ -1221,6 +1243,12 @@ export class EngineService {
         else if (msg?.title) lines.push('', msg.title);
         lines.push('', `Error text for support: ${ex.raw}`);
         if (proposalId) lines.push(`[proposal:${proposalId}]`);
+        else {
+          // Sent by the system itself (no proposal): the task keeps what was being sent, so Try Again can send it.
+          const clean = Object.fromEntries(Object.entries(detail).filter(([k]) => !k.startsWith('__')));
+          const packed = Buffer.from(JSON.stringify({ action, detail: clean }), 'utf8').toString('base64url');
+          if (packed.length < 30_000) lines.push(`[retry:${packed}]`);
+        }
         await this.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'send_failed', title, detail: lines.join('\n'), gate: 'none', severity: 'warning' });
       });
     } catch (inner) {
@@ -1252,6 +1280,24 @@ export class EngineService {
       await this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId: i.id, resolution: 'evidence_provided', note: 'Sent on retry.' }).catch(() => {});
     }
     return result;
+  }
+
+  /** Try a failed send again from its task, whether it came from an approved proposal or from the system acting itself. */
+  async retryIssue(tenantId: string, matterId: string, issueId: string, userId: string): Promise<RunResult> {
+    const s = await this.getState(tenantId, matterId);
+    const i = s.issues[issueId];
+    if (!i || i.kind !== 'send_failed' || (i.status !== 'open' && i.status !== 'negotiating')) throw Object.assign(new Error('There is no failed send to try again here.'), { status: 409 });
+    const proposal = (i.detail ?? '').match(/\[proposal:([0-9a-f-]{36})\]/)?.[1];
+    if (proposal && s.proposals[proposal]?.status === 'failed') return this.retryFailedAction(tenantId, matterId, proposal, userId);
+    const packed = (i.detail ?? '').match(/\[retry:([A-Za-z0-9_-]+)\]/)?.[1];
+    if (!packed) throw Object.assign(new Error('This one cannot be sent again automatically; send it by hand using the message in the task, then resolve it.'), { status: 409 });
+    const { action, detail } = JSON.parse(Buffer.from(packed, 'base64url').toString('utf8')) as { action: EngineAction; detail: Record<string, unknown> };
+    try {
+      await this.perform(tenantId, matterId, action, detail);
+    } catch (err) {
+      throw Object.assign(new Error(explainSendError(err).reason), { status: 502 });
+    }
+    return this.run(tenantId, matterId, { type: 'resolve_issue', actor: userId, issueId, resolution: 'evidence_provided', note: 'Sent on retry.' });
   }
 
   /** Send the client the proof-of-funds form again: the same link, the same round. For "they never got it". */
