@@ -438,8 +438,8 @@ export const CLIENT_DECISION_SUBJECTS = ['physical_condition', 'further_investig
 export type ClientDecisionSubject = (typeof CLIENT_DECISION_SUBJECTS)[number];
 export const CLIENT_DECISION_OUTCOMES: Record<ClientDecisionSubject, string[]> = {
   physical_condition: ['satisfied', 'renegotiate', 'further_investigation', 'withdraw'],
-  /** The surveyor recommended a specialist: the client pursues it (we seek access from the seller) or waives it (accepts the risk, advised in writing). */
-  further_investigation: ['pursue', 'waive'],
+  /** The surveyor recommended a specialist: the client pursues it (we seek access from the seller), asks first for the seller's evidence (reports, certificates, guarantees that may answer it), or waives it (accepts the risk, advised in writing). */
+  further_investigation: ['pursue', 'evidence', 'waive'],
   exchange_authority: ['authorised', 'not_yet', 'withdrawn'],
   accept_risk: ['accepted', 'declined'],
   accept_terms: ['accepted', 'declined'],

@@ -1481,7 +1481,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'exchange_authority' && s.exchange.exchangedAt) reject('Contracts are already exchanged.');
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
-      if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed') reject('Record what the client said (note).', 400);
+      if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed' && cmd.decision !== 'evidence') reject('Record what the client said (note).', 400);
       const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
       if (cmd.subject === 'further_investigation') {
         const open = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));

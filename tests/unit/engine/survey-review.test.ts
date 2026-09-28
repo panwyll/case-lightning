@@ -168,3 +168,31 @@ test('a survey on file proposes one set of enquiries and, when the client wants 
   assert.equal(access.length, 1);
   assert.match(String(access[0].detail.subject), /1\. Damp and timber specialist/);
 });
+
+test('advice first: the letter offers evidence, access or neither; nothing goes to the seller until the client says', async () => {
+  const b = surveyAdvice(REPORT, { purchasePricePennies: 43_500_000, freehold: true, hasLender: true });
+  assert.match(b.investigateBlock, /three ways to go:\n1\. We ask the seller's solicitor for anything that already answers it, for example any damp-proofing[\s\S]*If you have had a specialist look already, send us their report\.\n2\. We ask for access[\s\S]*3\. You go ahead without it/);
+  assert.match(b.investigateBlock, /we will not contact the seller's side about these until you do/);
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc(REPORT, 'SURVEY'));
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(Object.values(s.proposals).filter((p) => /access-batch|evidence-batch/.test(p.dedupKey)).length, 0, 'the survey alone asks the seller for nothing about inspections');
+  // The client asks for the seller's evidence first.
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'evidence' });
+  s = await h.svc.getState(TENANT, MATTER);
+  const ev = Object.values(s.proposals).find((p) => p.dedupKey.startsWith('enquiry_draft:evidence-batch:'));
+  assert.ok(ev, 'one evidence enquiry');
+  assert.match(String(ev!.detail.subject), /Before our client instructs specialists[\s\S]*1\. Damp and timber specialist[\s\S]*damp-proofing or timber treatment reports and guarantees/);
+  assert.equal(Object.values(s.proposals).filter((p) => p.dedupKey.startsWith('enquiry_draft:access-batch:')).length, 0, 'no access request until they want the specialists in');
+});
+
+test('reading the survey again after the client chose to investigate proposes nothing new to the seller', async () => {
+  const h = await enrolled();
+  const docId = h.doc(REPORT, 'SURVEY');
+  await h.svc.surveyReceived(TENANT, MATTER, docId);
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'pursue', note: 'Wants the specialists in' });
+  const before = Object.values((await h.svc.getState(TENANT, MATTER)).proposals).filter((p) => p.action === 'enquiry_draft').length;
+  await h.svc.surveyReceived(TENANT, MATTER, docId);
+  const after = Object.values((await h.svc.getState(TENANT, MATTER)).proposals).filter((p) => p.action === 'enquiry_draft' && p.status === 'pending').length;
+  assert.ok(after <= before);
+});

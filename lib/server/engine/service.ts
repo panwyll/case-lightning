@@ -59,7 +59,7 @@ import { openPofQueries, openWaits, awayOn, awayNow, deedsToSign, deedSigned, SI
 import { explainSendError } from '../comms/errors';
 import { clientOverview } from './client-overview';
 import { claimText, prettyDate, AVAILABILITY_PARTY_LABEL } from './notes';
-import { accessEnquiry, sortLegalPoints, surveyAdvice, surveyEnquiries, surveyNeedsAdvice } from './survey-review';
+import { accessEnquiry, evidenceEnquiry, sortLegalPoints, surveyAdvice, surveyEnquiries, surveyNeedsAdvice } from './survey-review';
 import type { SurveyFacts } from './types';
 const ARRIVAL_ISSUES = new Set<string>(['survey_report_outstanding', 'mortgage_offer_outstanding', 'search_delayed', 'freeholder_info_outstanding']);
 import type { IssueKind } from './issues';
@@ -862,7 +862,6 @@ export class EngineService {
               try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiries could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
             }
           }
-          if (fresh.clientDecisions?.further_investigation?.decision === 'pursue') await this.proposeAccess(tenantId, matterId, subflows, null);
           if (surveyNeedsAdvice(p.facts)) {
             const blocks = surveyAdvice(p.facts, { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender });
             const key = `survey_advice:${docKey}`;
@@ -920,6 +919,23 @@ export class EngineService {
         // The client wants the specialist in: ask the seller's solicitor for access, one enquiry per recommendation, proposed or raised as the trust level says.
         if (e.type === 'client_decision_recorded' && (e.payload as { subject: string; decision: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'pursue') {
           await this.proposeAccess(tenantId, matterId, subflows, (e.payload as { note?: string | null }).note ?? null);
+        }
+        // The client wants the seller's evidence first (reports, certificates, guarantees): one enquiry, specialist by specialist.
+        if (e.type === 'client_decision_recorded' && (e.payload as { subject: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'evidence') {
+          const fresh = await this.getState(tenantId, matterId);
+          const open = Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating'));
+          if (open.length) {
+            const groups = open.map((i) => ({ specialist: i.title.replace(/^Further investigation:\s*/, ''), items: (i.detail ?? i.title).split('\n').map((t) => ({ text: t.replace(/^•\s*/, '') })).filter((t) => t.text.trim()) }));
+            const subject = evidenceEnquiry(groups, (e.payload as { note?: string | null }).note ?? null);
+            const ids = open.map((i) => i.id).sort();
+            const key = `enquiry_draft:evidence-batch:${ids.join(',')}`;
+            if (!Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
+              const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
+              if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `EVIDENCE FROM THE SELLER\n\nTo: the seller's solicitor\nWhat the client asked: anything the seller holds that answers the surveyor's points, before specialists are sent in.\n\n${subject}`))) {
+                try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('evidence enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+              }
+            }
+          }
         }
         // The seller's solicitor has answered an access enquiry: the client hears the conditions and can book the specialist.
         if (e.type === 'enquiry_reply_received') {

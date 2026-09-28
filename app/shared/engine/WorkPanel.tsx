@@ -802,7 +802,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const fi = s.clientDecisions?.further_investigation?.decision ?? null;
     const pc = s.clientDecisions?.physical_condition?.decision ?? null;
     const lastReport = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0];
-    const clientView = pc ?? (fi === 'pursue' ? 'investigating' : fi === 'waive' ? 'waived_investigation' : s.survey.status === 'not_started' ? 'not_started' : 'awaiting_client');
+    const clientView = pc ?? (fi === 'pursue' ? 'investigating' : fi === 'evidence' ? 'asking_for_evidence' : fi === 'waive' ? 'waived_investigation' : s.survey.status === 'not_started' ? 'not_started' : 'awaiting_client');
     const current = (on: boolean) => (on ? ' ✓' : '');
     const readingThis = !!readingNow && readingNow.documentId === lastReport?.documentId && (lastReport?.receivedAt ?? null) === readingNow.before;
     const stuck = readingThis && Date.now() - (readingNow?.since ?? 0) > 5 * 60_000;
@@ -826,7 +826,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status !== 'not_started' ? <>
         {(s.survey.reports.some((r) => r.furtherInvestigation) || fi) && <>
-          {act('survey', 'client_decision_recorded', `Investigate${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { primary: !fi, disabled: fi === 'pursue' })}
+          {act('survey', 'client_decision_recorded', `Ask for Evidence${current(fi === 'evidence')}`, { subject: 'further_investigation', decision: 'evidence' }, { primary: !fi, disabled: fi === 'evidence' })}
+          {act('survey', 'client_decision_recorded', `Investigate${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { disabled: fi === 'pursue' })}
           {act('survey', 'client_decision_recorded', `Waive Investigation${current(fi === 'waive')}`, { subject: 'further_investigation', decision: 'waive' }, { disabled: fi === 'waive' })}
         </>}
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}

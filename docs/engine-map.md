@@ -554,7 +554,7 @@ stateDiagram-v2
 ## 8 · Client decisions (recorded by a person, never inferred)
 
 - `physical_condition`: satisfied / renegotiate / further_investigation / withdraw
-- `further_investigation`: pursue / waive
+- `further_investigation`: pursue / evidence / waive
 - `exchange_authority`: authorised / not_yet / withdrawn
 - `accept_risk`: accepted / declined
 - `accept_terms`: accepted / declined

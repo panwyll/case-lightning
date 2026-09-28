@@ -251,6 +251,7 @@ export function claimText(subject: ClientDecisionSubject, decision: string, deta
     'physical_condition:withdraw': 'you no longer wish to proceed with the purchase',
     'further_investigation:pursue': 'you want the further investigation the surveyor recommended carried out',
     'further_investigation:waive': 'you are content to proceed without the further investigation the surveyor recommended',
+    'further_investigation:evidence': "you would like us to ask the seller for any reports, certificates or guarantees before arranging inspections",
     'exchange_authority:authorised': 'you authorise us to exchange contracts',
     'exchange_authority:not_yet': 'you are not yet ready for us to exchange contracts',
     'exchange_authority:withdrawn': 'you have withdrawn your authority to exchange contracts',

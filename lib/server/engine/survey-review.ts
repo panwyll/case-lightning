@@ -37,7 +37,7 @@ export function surveyAdvice(f: SurveyFacts, opts: { purchasePricePennies: numbe
   const risks = f.risks ?? [];
   const blocks: Record<string, string> = { urgentBlock: '', investigateBlock: '', legalBlock: '', riskBlock: '', valueBlock: '', insuranceBlock: '' };
   if (urgent.length) blocks.urgentBlock = `Your surveyor rates these as serious or urgent (condition rating 3):\n${bullet(urgent.map((r) => clean(r.text)))}\nRICS advises getting written quotations for this work before you are legally committed, which happens at exchange. You may want to use the quotes to ask the seller for a reduction or for the work to be done before completion.\n\n`;
-  if (groups.length) blocks.investigateBlock = `Your surveyor recommends these inspections before you commit:\n${bullet(groups.map((g) => `${g.specialist}${g.items.length > 1 ? ` (${g.items.length} points in the report)` : `: ${clean(g.items[0].text)}`}`))}\nIf you want them done, tell us and we will ask the seller's solicitor for access. If you decide not to, please tell us in writing that you are proceeding without them.${groups.some((g) => g.specialist === 'Level 3 building survey') ? ' A Level 3 survey replaces much of the above with one detailed inspection; many buyers commission it first and then only the specialists it still recommends.' : ''}\n\n`;
+  if (groups.length) blocks.investigateBlock = `Your surveyor recommends these inspections before you commit:\n${bullet(groups.map((g) => `${g.specialist}${g.items.length > 1 ? ` (${g.items.length} points in the report)` : `: ${clean(g.items[0].text)}`}`))}\n\nFor each, there are three ways to go:\n1. We ask the seller's solicitor for anything that already answers it, for example ${groups.slice(0, 3).map((g) => evidenceFor(g.specialist).split(', and')[0]).join('; ')}. If you have had a specialist look already, send us their report.\n2. We ask for access so your own specialist can inspect before exchange.\n3. You go ahead without it, which you would confirm to us in writing.\nTell us which you would like, for each or for all of them; we will not contact the seller's side about these until you do.${groups.some((g) => g.specialist === 'Level 3 building survey') ? ' A Level 3 survey replaces much of the above with one detailed inspection; many buyers commission it first and then only the specialists it still recommends.' : ''}\n\n`;
   if (legal.length) blocks.legalBlock = `Your surveyor asked us, as your legal advisers, to check ${legal.length === 1 ? 'one point' : `${legal.length} points`} with the seller (planning and building regulations, guarantees, rights and boundaries). We are raising ${legal.length === 1 ? 'it' : 'them'} with the seller's solicitor and will report back.\n\n`;
   const insurance = ours.filter((o) => o.startsWith('Client: ')).map((o) => o.slice(8));
   if (insurance.length) blocks.riskBlock = `${blocks.riskBlock}Your surveyor also suggests you check:\n${bullet(insurance)}\n\n`;
@@ -115,6 +115,30 @@ export function accessEnquiry(groups: Array<{ specialist: string; items: Array<{
   return [
     `Our client wishes to have the following inspections carried out before exchange, as recommended by their surveyor. Please confirm your client will permit access, on what dates, and on what conditions (including whether any lifting of floor coverings or minor opening-up is acceptable and who makes good):`,
     ...groups.map((g, i) => `${i + 1}. ${g.specialist}${g.items.length ? `: ${brief(g.items[0].text)}` : ''}${g.items.length > 1 ? ` (and ${g.items.length - 1} related point${g.items.length - 1 === 1 ? '' : 's'} in the report)` : ''}.`),
+    ...(note ? [`Our client adds: ${note}`] : []),
+  ].join('\n');
+}
+
+/** What the seller may already hold that answers each kind of concern: asked for before anyone is sent in. */
+export const EVIDENCE: Record<string, string> = {
+  'Structural engineer': "any structural engineer's report, and details of any subsidence or movement claim on the buildings insurance",
+  'Damp and timber specialist': 'any damp-proofing or timber treatment reports and guarantees',
+  'Gas and heating engineer': 'the latest gas safety record and boiler service history, and building regulations or HETAS certification for any stove or flue',
+  Electrician: 'a recent Electrical Installation Condition Report (EICR) and Part P certificates for any electrical work',
+  'Drainage (CCTV) survey': 'any drainage (CCTV) survey, and any build-over agreement with the water company',
+  'Asbestos surveyor': 'any asbestos survey or register',
+  Roofer: 'any roofing guarantee and details of recent roof work',
+  Arboriculturalist: "any tree survey, and whether any tree is protected by a preservation order",
+  Plumber: 'details and certificates for any recent plumbing work',
+  'Level 3 building survey': 'any recent full building survey',
+};
+export const evidenceFor = (specialist: string): string => EVIDENCE[specialist] ?? `any report, certificate or guarantee relating to what the ${specialist.toLowerCase()} would look at`;
+
+/** One enquiry asking the seller's solicitor for what they already hold, specialist by specialist. */
+export function evidenceEnquiry(groups: Array<{ specialist: string; items: Array<{ text: string }> }>, note?: string | null): string {
+  return [
+    `Our client's surveyor has recommended further investigation of the points below. Before our client instructs specialists, please supply any of the following your client holds, or confirm that they hold none:`,
+    ...groups.map((g, i) => `${i + 1}. ${g.specialist}${g.items.length ? ` (${brief(g.items[0].text)})` : ''}: ${evidenceFor(g.specialist)}.`),
     ...(note ? [`Our client adds: ${note}`] : []),
   ].join('\n');
 }

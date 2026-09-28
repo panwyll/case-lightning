@@ -13,6 +13,7 @@ const DECISION_LABEL: Record<string, string> = {
   'physical_condition:further_investigation': 'Wants further investigation',
   'physical_condition:withdraw': 'Withdraws',
   'further_investigation:pursue': 'Wants the further investigation',
+  'further_investigation:evidence': "Wants the seller's evidence first",
   'further_investigation:waive': 'Waives the further investigation',
   'exchange_authority:authorised': 'Authorises exchange',
   'exchange_authority:not_yet': 'Not ready to exchange',
