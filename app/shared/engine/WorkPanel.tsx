@@ -755,7 +755,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
       case 'exchange': return act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true });
       case 'completion_statement': return act('exchange', 'completion_statement_generated', 'Send To Client', {}, { primary: true });
-      case 'certificate_of_title': return act('mortgage', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true });
+      case 'certificate_of_title': return act('pre_completion_checks', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true });
       case 'bankruptcy_search': return act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }, { primary: true });
       case 'priority_search': return act('pre_completion_checks', 'priority_search_made', 'Record Made', {}, { primary: true });
       case 'funds_request': {
@@ -1015,7 +1015,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {inboundOpen.length > 0 && act('enquiries', 'enquiry_replies_sent', `Replies Sent (${Object.values(replySel).filter(Boolean).length})`, { enquiryIds: Object.keys(replySel).filter((k) => replySel[k]) }, { primary: true, disabled: !Object.values(replySel).some(Boolean) })}
     </> });
 
-  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? (deeds.certificateOfTitleAt ? 'done' : 'open') : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
+  if (has('mortgage') && s.hasLender) lane({ id: 'mortgage', order: 'sequence', title: remo ? 'New mortgage' : 'Mortgage', state: resolved(s.mortgage.status) ? 'done' : s.mortgage.status === 'flagged' ? 'blocked' : 'open', note: s.mortgage.facts?.lender ?? undefined,
     tiles: [
       { label: 'Offer', status: s.mortgage.status, documentId: s.mortgage.documentId, focus: 'mortgage', detail: (() => {
         const w = (s.waits ?? []).find((x) => x.key === 'mortgage_offer' && x.closedAt === null);
@@ -1029,8 +1029,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         if (!r) return 'none recorded for this lender';
         return [r.minUnexpiredYears != null ? `lease ${r.minUnexpiredYears}+ years` : null, r.maxSearchAgeMonths != null ? `searches under ${r.maxSearchAgeMonths} months old` : null, r.acceptsNonFamilyGift != null ? `non-family gifts ${r.acceptsNonFamilyGift ? 'accepted' : 'not accepted'}` : null, r.requiresEws1 ? 'EWS1 required' : null].filter(Boolean).join(' · ') || (r.note ?? 'recorded');
       })(), action: <a className="ep-sub-a" href="/conveyi/engine/lenders" style={{ fontSize: 12 }}>Lender Directory</a> }] : []),
-      { label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : s.exchange.completionDate ? `due ${fmtDay(workingDaysBefore(s.exchange.completionDate, 5))}, 5 working days before completion` : 'due 5 working days before completion, through the lender\'s portal',
-        action: !deeds.certificateOfTitleAt && !completed && resolved(s.mortgage.status) ? act('mortgage', 'certificate_of_title_sent', 'Record Sent', {}, { primary: !!s.exchange.exchangedAt }) : undefined },
     ] });
 
   if (has('redemption') && redemptionApplies) lane({ id: 'redemption', order: 'sequence', title: 'Redemption of the existing mortgage', state: red.status === 'redeemed' || red.status === 'discharged' ? 'done' : red.status === 'received' ? (completed ? 'open' : 'done') : red.status === 'requested' ? 'open' : 'blocked', note: red.lender ?? undefined,
@@ -1185,17 +1183,18 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const pc = s.preCompletion ?? { insuranceConfirmedAt: null, insurer: null, prioritySearchAt: null, prioritySearchExpiresAt: null, bankruptcySearchAt: null };
     const all = !!(pc.bankruptcySearchAt && pc.prioritySearchAt && pc.insuranceConfirmedAt);
     const os1Expired = !!(pc.prioritySearchExpiresAt && Date.parse(pc.prioritySearchExpiresAt) < Date.now() && !completed);
-    lane({ id: 'pre_completion_checks', title: "Lender's pre-completion checks", holds: buyer && s.hasLender ? 'Holds Completion' : undefined, state: all && !os1Expired ? 'done' : s.stage === 'pre_completion' ? (buyer && s.hasLender ? 'blocked' : 'open') : 'idle', note: buyer && s.hasLender ? undefined : 'good practice; not a gate without a lender',
+    const live = !completed && (atLeast('exchanged') || (remo && atLeast('pre_contract')));
+    lane({ id: 'pre_completion_checks', title: s.hasLender ? "Lender's completion requirements" : 'Pre-completion checks', holds: (buyer || remo) && s.hasLender ? 'Holds Completion' : undefined, state: all && !os1Expired && (!s.hasLender || deeds.certificateOfTitleAt) ? 'done' : s.stage === 'pre_completion' ? (s.hasLender ? 'blocked' : 'open') : exchanged ? 'open' : 'idle', note: s.hasLender ? 'after exchange, in the days before completion' : 'good practice; not a gate without a lender',
       tiles: [
-        { label: 'Bankruptcy search (K16)', status: pc.bankruptcySearchAt ? 'done' : 'not_started', detail: pc.bankruptcySearchAt ? `clear ${fmtDay(pc.bankruptcySearchAt)}` : undefined },
-        { label: 'Priority search (OS1)', status: pc.prioritySearchAt ? (os1Expired ? 'expired' : 'done') : 'not_started', detail: pc.prioritySearchExpiresAt ? `priority to ${pc.prioritySearchExpiresAt}` : undefined },
-        { label: 'Buildings insurance', status: pc.insuranceConfirmedAt ? 'done' : 'not_started', detail: pc.insurer ?? undefined },
-      ],
-      actions: !completed && atLeast('pre_exchange') ? <>
-        {!pc.bankruptcySearchAt && act('pre_completion_checks', 'bankruptcy_search_clear', 'Bankruptcy Search Clear', {})}
-        {(!pc.prioritySearchAt || os1Expired) && <button className="ep-btn" disabled={busy} onClick={() => { const d = ask('Priority period expires on (YYYY-MM-DD):'); if (d) void cmd({ type: 'priority_search_made', expiresAt: d }); }}>Priority Search Made</button>}
-        {!pc.insuranceConfirmedAt && <button className="ep-btn" disabled={busy} onClick={() => { const i = ask('Insurer (as on the policy):'); if (i !== null) void cmd({ type: 'buildings_insurance_confirmed', insurer: i || null }); }}>Buildings Insurance Confirmed</button>}
-      </> : null });
+        ...(s.hasLender ? [{ label: 'Certificate of title', status: deeds.certificateOfTitleAt ? 'sent' : 'not_started', detail: deeds.certificateOfTitleAt ? `sent ${fmtDay(deeds.certificateOfTitleAt)}` : (s.exchange.completionDate ?? (remo ? s.targetCompletionDate : null)) ? `due ${fmtDay(workingDaysBefore((s.exchange.completionDate ?? s.targetCompletionDate)!, 5))}, 5 working days before completion; releases the advance` : "5 working days before completion, through the lender's portal; releases the advance",
+          action: !deeds.certificateOfTitleAt && live && resolved(s.mortgage.status) ? act('pre_completion_checks', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true }) : undefined }] : []),
+        { label: 'Bankruptcy search (K16)', status: pc.bankruptcySearchAt ? 'done' : 'not_started', detail: pc.bankruptcySearchAt ? `clear ${fmtDay(pc.bankruptcySearchAt)}` : 'against every borrower, close to completion',
+          action: !pc.bankruptcySearchAt && live ? act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }) : undefined },
+        { label: 'Priority search (OS1)', status: pc.prioritySearchAt ? (os1Expired ? 'expired' : 'done') : 'not_started', detail: pc.prioritySearchExpiresAt ? `priority to ${pc.prioritySearchExpiresAt}` : '30 working days of priority: made just before completion so it covers registration',
+          action: (!pc.prioritySearchAt || os1Expired) && live ? act('pre_completion_checks', 'priority_search_made', 'Record Made') : undefined },
+        { label: 'Buildings insurance', status: pc.insuranceConfirmedAt ? 'done' : 'not_started', detail: pc.insurer ?? 'from exchange: the client is asked for the schedule',
+          action: !pc.insuranceConfirmedAt && live ? act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance') : undefined },
+      ] });
   }
 
   {

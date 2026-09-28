@@ -172,7 +172,7 @@ export function deadlineActions(state: MatterState, now: Date, cal: WorkingCalen
   const cotCompletion = state.exchange.completionDate ?? (state.transactionType === 'remortgage' ? state.targetCompletionDate : null);
   if (state.hasLender && (state.exchange.exchangedAt || state.transactionType === 'remortgage') && cotCompletion && !state.deeds.certificateOfTitleAt && !state.completion.confirmedAt) {
     const due = subtractWorkingDays(new Date(cotCompletion), CERTIFICATE_OF_TITLE_NOTICE, cal).toISOString().slice(0, 10);
-    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it on the Mortgage step once it has gone.`);
+    push('certificate_of_title', due, `Send the certificate of title to the lender (through its portal) by ${due}: ${CERTIFICATE_OF_TITLE_NOTICE} working days before completion on ${cotCompletion}, so the mortgage advance arrives in time. Record it under the lender's completion requirements once it has gone.`);
   }
   if (state.completion.confirmedAt && !state.postCompletion.sdltSubmittedAt && !state.sdltNotRequiredAt) {
     const due = new Date(new Date(state.completion.confirmedAt).getTime() + 14 * 86_400_000).toISOString().slice(0, 10);

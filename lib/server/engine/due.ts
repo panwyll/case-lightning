@@ -57,7 +57,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'completion_statement', lane: 'exchange', title: 'Check the completion statement and send it to the client', detail: 'Drafted on exchange under Documents.' });
   if (s.hasLender && (buyer || remo) && isResolved(s.mortgage.status) && !s.deeds.certificateOfTitleAt && !completed && (exchanged || remo)) {
     const due = completionDate ? day(subtractWorkingDays(new Date(completionDate), 5, EW_CALENDAR)) : null;
-    add({ key: 'certificate_of_title', lane: 'mortgage', title: 'Send the certificate of title to the lender', detail: "Through the lender's portal; it releases the advance.", dueDate: due });
+    add({ key: 'certificate_of_title', lane: 'pre_completion_checks', title: 'Send the certificate of title to the lender', detail: "Through the lender's portal; it releases the advance.", dueDate: due });
   }
   const lenderChecks = s.hasLender && (buyer || remo) && !completed && (exchanged || (remo && s.stage === 'pre_completion'));
   if (lenderChecks && !s.preCompletion.bankruptcySearchAt) add({ key: 'bankruptcy_search', lane: 'pre_completion_checks', title: 'Bankruptcy search (K16) against every borrower' });
