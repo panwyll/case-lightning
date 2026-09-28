@@ -18,6 +18,7 @@ import type { DocumentBytesLoader, DocumentFactsWriter } from './extraction';
 import { diffRegister, type DocumentReview, type PageTexts } from './review';
 import { runCrossChecks } from './crosscheck-run';
 import { imageInput, isImageFile } from './image-input';
+import { withoutEncryption } from '../pdf-lock';
 
 interface DocRow {
   id: string;
@@ -110,7 +111,7 @@ export class PgDocumentBytesLoader implements DocumentBytesLoader {
     if (!bytes) return null;
     const mime = row.mime_type ?? '';
     const name = doc.fileName ?? '';
-    if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return { kind: 'pdf', data: bytes.toString('base64'), title: name || undefined };
+    if (mime === 'application/pdf' || /\.pdf$/i.test(name)) return { kind: 'pdf', data: (await withoutEncryption(bytes)).toString('base64'), title: name || undefined };
     if (isImageFile(bytes, mime, name)) return imageInput(bytes, mime, name);
     if (mime.startsWith('text/') || /\.(txt|md|csv)$/i.test(name)) return { kind: 'text', data: bytes.toString('utf8').slice(0, 200_000), title: name || undefined };
     return null; // .docx etc. — not read by the pipeline yet; the human handles it

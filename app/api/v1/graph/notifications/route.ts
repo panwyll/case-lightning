@@ -3,7 +3,7 @@ import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
 import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
-import { hasTrustedLink, hasDefinitiveSignal } from '@/lib/server/matching';
+import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
@@ -112,7 +112,10 @@ export async function POST(req: NextRequest) {
 
         // Not on a case yet → onto the filing queue, with the matching and the sender
         // check the triage just did. A trusted link means it IS on a case. Best-effort.
-        if (!(triage.top && hasTrustedLink(triage.top))) {
+        // On a filed conversation, but naming a different case: a person decides, not the link.
+        const strayed = triage.top && hasTrustedLink(triage.top) ? await linkedFilingHeld(user.tenantId, triage.top, triage.candidates ?? [], message.from?.emailAddress?.address) : null;
+        if (strayed) console.info(`[graph notification] on a conversation filed to ${triage.top!.matterRef}, but ${strayed}: queued for a person`);
+        if (!(triage.top && hasTrustedLink(triage.top)) || strayed) {
           const cls = triage.classification as { caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; sender?: typeof triage.classification.sender };
           await enqueueMessage(user, message, {
             candidates: triage.candidates,
@@ -126,7 +129,7 @@ export async function POST(req: NextRequest) {
         // the firm created — never a case-ref token (attacker-injectable) or fuzzy
         // corroboration, or this email's documents could be filed into the wrong
         // client's case. Token/fuzzy matches wait for the user to confirm. Best-effort.
-        if (triage.top && hasTrustedLink(triage.top)) {
+        if (triage.top && hasTrustedLink(triage.top) && !strayed) {
           await autoFileToCase(user, message, triage.top.matterId, { later: (fn) => after(fn) });
         }
 

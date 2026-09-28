@@ -78,3 +78,12 @@ test('a forwarded chain that talks about files it does not carry says so; one th
   assert.equal(attachmentsNotOnEmail('Please find attached the offer.', [{ name: 'offer.pdf', outcome: 'read' }]), null);
   assert.equal(attachmentsNotOnEmail('Thanks, speak soon.', []), null);
 });
+
+test('an email on a conversation filed to one case that names a different case is left for a person; one that names its own case (or both) is filed', async () => {
+  const { namesAnotherCase } = await import('../../../lib/server/matching');
+  const linked = { matterId: 'A', matterRef: 'A-1', propertyAddress: '9 Arthur Road', score: 1, band: 'AUTO' as const, signals: [{ kind: 'LINKED_THREAD' as const, detail: '', weight: 1 }] };
+  const other = { matterId: 'B', matterRef: 'B-1', propertyAddress: '4 Elm Close', score: 0.6, band: 'STRONG' as const, signals: [{ kind: 'STREET' as const, detail: '', weight: 0.4, value: 'Elm Close' }] };
+  assert.equal(namesAnotherCase(linked, [linked, other])?.matterId, 'B');
+  assert.equal(namesAnotherCase({ ...linked, signals: [...linked.signals, { kind: 'STREET' as const, detail: '', weight: 0.4, value: 'Arthur Road' }] }, [linked, other]), null);
+  assert.equal(namesAnotherCase(linked, [linked]), null);
+});

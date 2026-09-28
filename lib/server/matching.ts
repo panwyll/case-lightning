@@ -193,6 +193,22 @@ export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined
   return !!c?.signals?.some((s) => s.kind === 'LINKED_THREAD');
 }
 
+/** What in an email's own words names a case: its tag, its reference, its postcode or street. */
+const NAMES_A_CASE: ReadonlySet<MatchSignal['kind']> = new Set(['CASE_REF_TOKEN', 'FIRM_REF', 'ADDRESS', 'STREET']);
+
+/**
+ * An email on a conversation already on one case that names a different case (an agent or the
+ * other side reusing an old thread for another property): not filed on the link alone. It goes
+ * to a person. Returns the other case it names, if any.
+ */
+export function namesAnotherCase(linked: Candidate, candidates: Candidate[]): Candidate | null {
+  const namesLinked = linked.signals.some((s) => NAMES_A_CASE.has(s.kind));
+  const other = candidates.find((c) => c.matterId !== linked.matterId && c.signals.some((s) => NAMES_A_CASE.has(s.kind)));
+  if (!other) return null;
+  // Both named (a chain covering a sale and its linked purchase): the link decides. Only the other named: a person decides.
+  return namesLinked ? null : other;
+}
+
 /**
  * Green (AUTO) needs to know WHO sent it, not just what it says. Everything in an email's
  * text — an address, a client's name, a postcode, even a quoted reference — is public or
@@ -201,6 +217,23 @@ export function hasTrustedLink(c: { signals?: MatchSignal[] } | null | undefined
  * or reply inside a thread already on the case as someone the case has heard from. So:
  * content alone can reach amber (STRONG) at best; green takes a trusted sender.
  */
+/**
+ * Why an email on a conversation filed to a case should NOT be filed there on the link alone, or
+ * null when it may be. A conversation carries every later forward of its chain, from anyone: the
+ * link is trusted only for someone the case knows (a contact, their firm, an address already on
+ * the case's email, the firm's own people), and only when the email does not name a different case.
+ */
+export async function linkedFilingHeld(tenantId: string, linked: Candidate, candidates: Candidate[], fromAddress: string | null | undefined): Promise<string | null> {
+  const other = namesAnotherCase(linked, candidates);
+  if (other) return `it names another case (${other.matterRef})`;
+  const from = (fromAddress ?? '').toLowerCase();
+  const known = linked.signals.some((s) => s.kind === 'KNOWN_CONTACT' || s.kind === 'CONTACT_FIRM' || (s.kind === 'PARTICIPANT_EMAIL' && (s.value ?? '').toLowerCase() === from));
+  if (known) return null;
+  const self = await tenantSelfAddresses(tenantId).catch(() => ({ emails: new Set<string>(), domains: new Set<string>() }));
+  if (from && self.emails.has(from)) return null;
+  return `it is from ${from || 'an unknown sender'}, who is not on this case`;
+}
+
 export function bandFor(score: number, signals: MatchSignal[]): Band {
   const kinds = new Set(signals.map((s) => s.kind));
   const fromThisCase = kinds.has('KNOWN_CONTACT') || (kinds.has('LINKED_THREAD') && (kinds.has('CONTACT_FIRM') || kinds.has('PARTICIPANT_EMAIL')));

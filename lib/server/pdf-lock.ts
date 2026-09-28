@@ -47,6 +47,24 @@ export async function unlockPdf(bytes: Buffer, password: string): Promise<Buffer
   return Buffer.from(doc.saveToBuffer('encrypt=none').asUint8Array());
 }
 
+/**
+ * A PDF encrypted only to restrict printing or copying (most lender and bank documents) opens for
+ * anyone, but the model will not take an encrypted file at all. The same pages, unencrypted, for
+ * reading. A file that needs a password, or that cannot be re-saved, comes back as it was.
+ */
+export async function withoutEncryption(bytes: Buffer): Promise<Buffer> {
+  if (!bytes.includes('/Encrypt')) return bytes;
+  try {
+    const m = await mupdf();
+    const doc = m.Document.openDocument(bytes, 'application/pdf') as import('mupdf').PDFDocument;
+    if (doc.needsPassword()) return bytes;
+    return Buffer.from(doc.saveToBuffer('encrypt=none').asUint8Array());
+  } catch (err) {
+    console.warn('[pdf-lock] could not remove copy/print restrictions for reading', (err as Error).message);
+    return bytes;
+  }
+}
+
 /** The PDF protected with a password (AES-256): what we send when the firm's policy is to protect outgoing files. */
 export async function protectPdf(bytes: Buffer, password: string): Promise<Buffer> {
   const m = await mupdf();

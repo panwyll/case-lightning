@@ -23,6 +23,7 @@ import { writeBack, type LeapWritebackStore, type WritebackKind } from './writeb
 import type { LeapDocument, LeapMatter, LeapMatterParty, LeapTokens, LeapWebhookEvent } from './types';
 import { enrolIfUntracked } from '../../engine/enrol';
 import { imageInput, isImageFile } from '../../engine/image-input';
+import { withoutEncryption } from '../../pdf-lock';
 
 // Re-export so routes import one module.
 export { syncMatters, syncOneMatter, handleLeapWebhook };
@@ -304,7 +305,7 @@ export class LeapDocumentBytesLoader implements DocumentBytesLoader {
     const mime = dl.mimeType ?? row.mime_type ?? '';
     const name = doc.fileName ?? dl.fileName ?? '';
     let input: EngineDocumentInput | null = null;
-    if (mime.includes('pdf') || /\.pdf$/i.test(name)) input = { kind: 'pdf', data: dl.bytes.toString('base64'), title: name || undefined };
+    if (mime.includes('pdf') || /\.pdf$/i.test(name)) input = { kind: 'pdf', data: (await withoutEncryption(dl.bytes)).toString('base64'), title: name || undefined };
     else if (isImageFile(dl.bytes, mime, name)) input = await imageInput(dl.bytes, mime, name);
     else if (mime.startsWith('text/') || /\.(txt|md|csv)$/i.test(name)) input = { kind: 'text', data: dl.bytes.toString('utf8').slice(0, 200_000), title: name || undefined };
     if (input) this.cache.set(doc.id, { at: Date.now(), input });

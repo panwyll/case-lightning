@@ -18,7 +18,7 @@ const CSS = `
 .is-h h3{margin:0;font-size:13px;font-weight:800;color:#0f172a;letter-spacing:.02em;text-transform:uppercase}
 .is-h .n{font-size:12px;color:#64748b}
 .is-h .sp{margin-left:auto}
-.is-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:visible}
+.is-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;max-height:min(560px,60vh);overflow-y:auto;overscroll-behavior:contain}
 .is-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;padding:11px 14px;border-top:1px solid #f1f5f9;align-items:start}
 .is-row:first-child{border-top:0}
 .is-t{font-size:13.5px;font-weight:700;color:#0f172a;line-height:1.35}
@@ -97,7 +97,7 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
   const byKind = useMemo(() => Object.fromEntries(kinds.map((k) => [k.kind, k])), [kinds]);
   const isContext = (i: IssueRow) => !!byKind[i.kind]?.context || ['seller_delay', 'buyer_delay'].includes(i.kind);
   const all = Object.values(state.issues ?? {});
-  const live = all.filter((i) => i.status === 'open' || i.status === 'negotiating').sort((a, b) => a.raisedAt.localeCompare(b.raisedAt));
+  const live = all.filter((i) => i.status === 'open' || i.status === 'negotiating').sort((a, b) => b.raisedAt.localeCompare(a.raisedAt)); // newest first
   const open = live.filter((i) => !isContext(i));
   const context = live.filter(isContext);
   const closed = all.filter((i) => i.status === 'resolved' || i.status === 'fatal').sort((a, b) => (b.resolvedAt ?? '').localeCompare(a.resolvedAt ?? ''));

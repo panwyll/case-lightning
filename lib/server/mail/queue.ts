@@ -189,6 +189,17 @@ async function fileMissedReply(user: QueueUser, m: GraphMessage): Promise<boolea
   if (triaged) return false;
   // The sweep reads a lighter message; the filing wants the whole body.
   const full = await getMessage(user.userId, m.id).catch(() => m);
+  // On a filed conversation, but naming a different case: left in the queue for a person, as the notification would.
+  const { matchMessage, messageSignals, linkedFilingHeld } = await import('../matching');
+  const candidates = await matchMessage(user.tenantId, messageSignals(full)).catch(() => []);
+  const linked = candidates.find((c) => c.matterId === thread.matter_id);
+  const held = linked ? await linkedFilingHeld(user.tenantId, linked, candidates, (full as GraphMessage).from?.emailAddress?.address) : null;
+  if (held) {
+    await enqueueMessage(user, full as never, { candidates }).catch(() => false);
+    // Recorded, so the next sweep leaves it to the person rather than weighing it again.
+    await query(`insert into email_triage (tenant_id, graph_message_id, graph_conversation_id, matched_matter_id, confidence, band, classification, candidates) values ($1,$2,$3,null,0,'WEAK',$4::jsonb,'[]'::jsonb)`, [user.tenantId, m.id, m.conversationId, JSON.stringify({ intent: 'OTHER', needsAttention: true, urgency: 'MEDIUM', reason: `On a filed conversation, but ${held}: left for a person.` })]).catch(() => {});
+    return false;
+  }
   const { autoFileToCase } = await import('./auto-file');
   await autoFileToCase(user as never, full, thread.matter_id);
   // Recorded, so the next sweep does not file it again.

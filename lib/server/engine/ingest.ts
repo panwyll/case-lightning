@@ -134,7 +134,8 @@ export async function ingestDocument(svc: EngineService, ports: EnginePorts, ten
     classification = await ports.classifier.classify(doc);
   } catch (err) {
     ports.log(`classification failed for document ${doc.id}`, err);
-    return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: 'classification failed' }, result: null };
+    // The reason travels with it: the task and the Documents tab say what went wrong, not just that something did.
+    return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: `classification failed (${String((err as Error)?.message ?? err).slice(0, 200)})` }, result: null };
   }
   // An email's own words are a reply at most (enquiries answered inline). An email that quotes or
   // describes an offer, a title or a search is not that document: the document is its attachment,
