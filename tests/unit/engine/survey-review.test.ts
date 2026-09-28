@@ -196,3 +196,41 @@ test('reading the survey again after the client chose to investigate proposes no
   const after = Object.values((await h.svc.getState(TENANT, MATTER)).proposals).filter((p) => p.action === 'enquiry_draft' && p.status === 'pending').length;
   assert.ok(after <= before);
 });
+
+test("the client's instruction is per specialist: leave the drains, ask about the damp, get a structural engineer in", async () => {
+  const two = { ...REPORT, recommendations: [
+    ...REPORT.recommendations,
+    { code: 'MOVE', text: 'Cracking to the rear wall; a structural engineer should inspect before exchange.', furtherInvestigation: true, specialist: 'structural engineer', severity: 'high' as const, rating: 3 as const },
+    { code: 'DRAIN', text: 'Obtain a CCTV survey of the underground drains.', furtherInvestigation: true, severity: 'medium' as const, rating: 2 as const },
+  ] };
+  const h = await enrolled();
+  await h.svc.surveyReceived(TENANT, MATTER, h.doc(two, 'SURVEY'));
+  let s = await h.svc.getState(TENANT, MATTER);
+  const id = (name: RegExp) => Object.values(s.issues).find((i) => i.kind === 'survey_further_investigation' && name.test(i.title))!.id;
+  const damp = id(/Damp/), structural = id(/Structural/), drains = id(/Drainage/);
+  const batches = () => Object.values(s.proposals).filter((p) => p.status === 'pending' && /^enquiry_draft:(access|evidence)-batch:/.test(p.dedupKey));
+
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'waive', note: 'Not worried about the drains', scope: [drains] });
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'evidence', scope: [damp] });
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.issues[drains].status, 'resolved', 'the drains are left, and only the drains');
+  assert.equal(s.issues[structural].status, 'open');
+  let b = batches();
+  assert.equal(b.length, 1);
+  assert.match(String(b[0].detail.subject), /Damp and timber specialist/);
+  assert.doesNotMatch(String(b[0].detail.subject), /Structural|Drainage/, 'nothing the client did not ask about goes to the seller');
+
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'pursue', note: 'Get an engineer in', scope: [structural] });
+  s = await h.svc.getState(TENANT, MATTER);
+  b = batches();
+  assert.equal(b.length, 2);
+  const access = b.find((p) => p.dedupKey.startsWith('enquiry_draft:access-batch:'))!;
+  assert.match(String(access.detail.subject), /1\. Structural engineer/);
+  assert.doesNotMatch(String(access.detail.subject), /Damp|Drainage/);
+
+  // They change their mind about the damp: the pending request for it is taken back.
+  await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'further_investigation', decision: 'waive', note: 'Will deal with the damp after completion', scope: [damp] });
+  s = await h.svc.getState(TENANT, MATTER);
+  b = batches();
+  assert.deepEqual(b.map((p) => p.dedupKey.split(':')[1]), ['access-batch'], 'only the structural access request is left');
+});

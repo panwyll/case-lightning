@@ -596,11 +596,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         api={api}
         subject={String(sheet.extra.subject ?? '')}
         decision={String(sheet.extra.decision ?? '')}
+        about={typeof sheet.extra.scopeLabel === 'string' ? sheet.extra.scopeLabel : null}
         docs={docs}
         busy={busy}
         onCancel={() => setSheet(null)}
         onSubmit={async (body) => {
-          await cmd({ type: sheet.type, ...sheet.extra, ...body });
+          const { scopeLabel: _l, ...extra } = sheet.extra as Record<string, unknown>;
+          await cmd({ type: sheet.type, ...extra, ...body });
           setSheet(null);
         }}
       />
@@ -804,6 +806,21 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     const lastReport = s.survey.reports.filter((r) => !r.forIssueId).slice(-1)[0];
     const clientView = pc ?? (fi === 'pursue' ? 'investigating' : fi === 'evidence' ? 'asking_for_evidence' : fi === 'waive' ? 'waived_investigation' : s.survey.status === 'not_started' ? 'not_started' : 'awaiting_client');
     const current = (on: boolean) => (on ? ' ✓' : '');
+    // The surveyor's investigations, one row each: the client says what to do about each one, not all at once.
+    const fiIssues = Object.values(s.issues ?? {}).filter((i) => i.kind === 'survey_further_investigation' && i.status !== 'withdrawn');
+    const investigations: Tile[] = fiIssues.map((i) => {
+      const live = i.status === 'open' || i.status === 'negotiating';
+      const route = i.status === 'resolved' && i.resolution === 'accepted_as_is' ? 'waive' : i.route ?? null;
+      const name = i.title.replace(/^Further investigation:\s*/, '').replace(/ report recommended:.*$/, '');
+      const pick = (decision: 'evidence' | 'pursue' | 'waive', label: string) => act('survey', 'client_decision_recorded', `${label}${current(route === decision)}`, { subject: 'further_investigation', decision, scope: [i.id], scopeLabel: name }, { disabled: route === decision || exchanged });
+      return {
+        label: name,
+        depth: 1,
+        status: i.status === 'resolved' ? (i.resolution === 'accepted_as_is' ? 'left' : 'cleared') : route === 'evidence' ? 'asking_seller' : route === 'pursue' ? 'arranging_access' : 'client_to_decide',
+        detail: i.enquiryIds.length ? `asked of the seller's solicitor (${i.enquiryIds.join(', ')})` : undefined,
+        action: live || route === 'waive' ? <>{pick('evidence', 'Evidence')}{pick('pursue', 'Access')}{pick('waive', 'Leave It')}</> : undefined,
+      };
+    });
     const readingThis = !!readingNow && readingNow.documentId === lastReport?.documentId && (lastReport?.receivedAt ?? null) === readingNow.before;
     const stuck = readingThis && Date.now() - (readingNow?.since ?? 0) > 5 * 60_000;
     const found = lastReport && !lastReport.unread ? [
@@ -822,14 +839,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
     } : null;
     lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
-      tiles: [{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : []), { label: "Client's view", status: clientView }],
+      tiles: [...([{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : [])] as Tile[]), ...investigations, { label: "Client's view", status: clientView }],
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status !== 'not_started' ? <>
-        {(s.survey.reports.some((r) => r.furtherInvestigation) || fi) && <>
-          {act('survey', 'client_decision_recorded', `Ask for Evidence${current(fi === 'evidence')}`, { subject: 'further_investigation', decision: 'evidence' }, { primary: !fi, disabled: fi === 'evidence' })}
-          {act('survey', 'client_decision_recorded', `Investigate${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { disabled: fi === 'pursue' })}
-          {act('survey', 'client_decision_recorded', `Waive Investigation${current(fi === 'waive')}`, { subject: 'further_investigation', decision: 'waive' }, { disabled: fi === 'waive' })}
-        </>}
         {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}
         {act('survey', 'client_decision_recorded', `Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
         {act('survey', 'client_decision_recorded', `Withdraw${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}

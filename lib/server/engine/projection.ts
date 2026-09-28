@@ -866,6 +866,10 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'client_decision_recorded': {
       const p = e.payload as Payloads['client_decision_recorded'];
       s.clientDecisions[p.subject] = { decision: p.decision, at: e.createdAt, by: e.actor, note: p.note ?? null };
+      // Which investigations the instruction covers: those named, or every open one.
+      if (p.subject === 'further_investigation') {
+        for (const i of Object.values(s.issues)) if (i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating') && (!p.scope?.length || p.scope.includes(i.id))) i.route = p.decision as 'evidence' | 'pursue' | 'waive';
+      }
       if (p.subject === 'physical_condition') s.survey.status = p.decision === 'satisfied' ? 'client_satisfied' : p.decision === 'renegotiate' ? 'client_renegotiating' : p.decision === 'withdraw' ? 'client_withdrawing' : 'further_investigation';
       break;
     }

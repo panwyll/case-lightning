@@ -438,7 +438,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
         <div className="dp-scroll">
           <div className="dp-head" style={inline ? { display: 'none' } : undefined}>
             <div style={{ minWidth: 0 }}>
-              <div className="dp-kind">{KIND_LABEL[d.kind] ?? pretty(d.kind)}{d.subject && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}</div>
+              <div className="dp-kind">{d.kind === 'note_actions' && noteLines?.title ? noteLines.title : `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${d.subject && !/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(d.subject) ? ` · ${d.subject.replace(/^[a-z_]+:/, '')}` : ''}`}</div>
               <p className="dp-lead">{detail.matter?.propertyAddress ?? d.propertyAddress ?? d.matterRef}</p>
               {ctx?.submitted ? <p className="dp-sub">{ctx.submitted.by}{ctx.submitted.at ? ` · ${fmtWhen(ctx.submitted.at)}` : ''}</p> : lead ? <p className="dp-sub">{lead}</p> : null}
             </div>

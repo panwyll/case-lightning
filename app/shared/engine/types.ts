@@ -112,6 +112,7 @@ export interface NoteActionView {
 }
 
 export interface NoteActionsDetail {
+  title?: string | null;
   noteId: string;
   noteKind: string;
   actions: NoteActionView[];
@@ -158,6 +159,8 @@ export interface PofQueryRow {
 }
 
 export interface IssueRow {
+  /** A further investigation: what the client said to do about it. */
+  route?: 'evidence' | 'pursue' | 'waive' | null;
   id: string;
   kind: string;
   title: string;

@@ -785,23 +785,39 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'record_signing_pack_sent', documents: docs, methods, attached: sent.attached, channel: sent.channel, messageId: sent.messageId });
   }
 
-  /** One request to the seller's solicitor for access, naming every specialist the client wants in. */
-  private async proposeAccess(tenantId: string, matterId: string, subflows: LevelConfig, note: string | null): Promise<void> {
+  /**
+   * What goes to the seller about the surveyor's investigations, rebuilt from the client's instruction on
+   * each one: those marked "evidence" in one request for what the seller already holds, those marked
+   * "pursue" in one request for access, the rest nothing. A pending request that no longer matches (the
+   * client changed their mind, waived it, or is now satisfied with the property) is taken back first.
+   */
+  private async routeInvestigations(tenantId: string, matterId: string, subflows: LevelConfig, note: string | null): Promise<void> {
     const fresh = await this.getState(tenantId, matterId);
-    const open = Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && !x.enquiryIds.length);
-    // Older per-issue requests (and an earlier batch that no longer covers every open investigation) are taken back.
-    for (const x of Object.values(fresh.proposals).filter((x) => x.status === 'pending' && x.action === 'enquiry_draft' && (x.dedupKey.startsWith('enquiry_draft:access:ISS-') || x.dedupKey.startsWith('enquiry_draft:access-batch:')))) {
-      await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: 'replaced by one access request' }).catch(() => {});
+    const open = Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating'));
+    const asked = (i: (typeof open)[number], kind: 'access' | 'evidence') => i.enquiryIds.some((q) => (kind === 'access' ? /inspections carried out before exchange|Access for a specialist/ : /Before our client instructs specialists/).test(fresh.enquiries[q]?.subject ?? ''));
+    const settled = fresh.clientDecisions?.physical_condition?.decision === 'satisfied' || fresh.clientDecisions?.physical_condition?.decision === 'withdraw';
+    const wantEvidence = settled ? [] : open.filter((i) => i.route === 'evidence' && !asked(i, 'evidence'));
+    const wantAccess = settled ? [] : open.filter((i) => i.route === 'pursue' && !asked(i, 'access'));
+    const groupOf = (i: (typeof open)[number]) => ({ specialist: i.title.replace(/^Further investigation:\s*/, '').replace(/ report recommended:.*$/, ''), items: (i.detail ?? i.title).split('\n').map((t) => ({ text: t.replace(/^•\s*/, '') })).filter((t) => t.text.trim()) });
+    const keyOf = (kind: 'evidence' | 'access', xs: typeof open) => `enquiry_draft:${kind}-batch:${xs.map((i) => i.id).sort().join(',')}`;
+    const wanted = new Set([wantEvidence.length ? keyOf('evidence', wantEvidence) : '', wantAccess.length ? keyOf('access', wantAccess) : ''].filter(Boolean));
+    for (const x of Object.values(fresh.proposals).filter((p) => p.status === 'pending' && p.action === 'enquiry_draft' && /^enquiry_draft:(access|evidence)(-batch)?:/.test(p.dedupKey) && !wanted.has(p.dedupKey))) {
+      await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: "the client's instruction on the investigations changed" }).catch(() => {});
     }
-    if (!open.length) return;
-    const groups = open.map((i) => ({ specialist: i.title.replace(/^Further investigation:\s*/, '').replace(/ report recommended:.*$/, ''), items: (i.detail ?? i.title).split('\n').map((t) => ({ text: t.replace(/^•\s*/, '') })).filter((t) => t.text.trim()) }));
-    const subject = accessEnquiry(groups, note);
-    const ids = open.map((i) => i.id).sort();
-    const key = `enquiry_draft:access-batch:${ids.join(',')}`;
-    if (Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status === 'pending')) return;
-    const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
-    if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ACCESS FOR SPECIALISTS\n\nTo: the seller's solicitor\n${groups.length} inspection${groups.length === 1 ? '' : 's'}: ${groups.map((g) => g.specialist).join(', ')}\n\n${subject}`)) return;
-    try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('access request could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+    const propose = async (kind: 'evidence' | 'access', xs: typeof open) => {
+      if (!xs.length) return;
+      const key = keyOf(kind, xs);
+      if (Object.values(fresh.proposals).some((p) => p.dedupKey === key && p.status === 'pending')) return;
+      const groups = xs.map(groupOf);
+      const subject = kind === 'evidence' ? evidenceEnquiry(groups, note) : accessEnquiry(groups, note);
+      const ids = xs.map((i) => i.id).sort();
+      const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
+      const summary = `${kind === 'evidence' ? 'EVIDENCE FROM THE SELLER' : 'ACCESS FOR SPECIALISTS'}\n\nTo: the seller's solicitor\nOn the client's instruction, for: ${groups.map((g) => g.specialist).join(', ')}\n\n${subject}`;
+      if (await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, summary)) return;
+      try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log(`${kind} request could not be raised`, err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+    };
+    await propose('evidence', wantEvidence);
+    await propose('access', wantAccess);
   }
 
   // ───────────── effects ─────────────
@@ -916,26 +932,10 @@ export class EngineService {
             }
           }
         }
-        // The client wants the specialist in: ask the seller's solicitor for access, one enquiry per recommendation, proposed or raised as the trust level says.
-        if (e.type === 'client_decision_recorded' && (e.payload as { subject: string; decision: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'pursue') {
-          await this.proposeAccess(tenantId, matterId, subflows, (e.payload as { note?: string | null }).note ?? null);
-        }
-        // The client wants the seller's evidence first (reports, certificates, guarantees): one enquiry, specialist by specialist.
-        if (e.type === 'client_decision_recorded' && (e.payload as { subject: string }).subject === 'further_investigation' && (e.payload as { decision: string }).decision === 'evidence') {
-          const fresh = await this.getState(tenantId, matterId);
-          const open = Object.values(fresh.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating'));
-          if (open.length) {
-            const groups = open.map((i) => ({ specialist: i.title.replace(/^Further investigation:\s*/, ''), items: (i.detail ?? i.title).split('\n').map((t) => ({ text: t.replace(/^•\s*/, '') })).filter((t) => t.text.trim()) }));
-            const subject = evidenceEnquiry(groups, (e.payload as { note?: string | null }).note ?? null);
-            const ids = open.map((i) => i.id).sort();
-            const key = `enquiry_draft:evidence-batch:${ids.join(',')}`;
-            if (!Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
-              const detail = { subject, issueId: ids[0], alsoIssueIds: ids.slice(1) };
-              if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `EVIDENCE FROM THE SELLER\n\nTo: the seller's solicitor\nWhat the client asked: anything the seller holds that answers the surveyor's points, before specialists are sent in.\n\n${subject}`))) {
-                try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('evidence enquiry could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
-              }
-            }
-          }
+        // The client said what to do about the surveyor's investigations (all, or some by name): what goes to the
+        // seller is rebuilt from each investigation's own instruction, and nothing else goes.
+        if (e.type === 'client_decision_recorded' && ['further_investigation', 'physical_condition'].includes((e.payload as { subject: string }).subject)) {
+          await this.routeInvestigations(tenantId, matterId, subflows, (e.payload as { note?: string | null }).note ?? null);
         }
         // The seller's solicitor has answered an access enquiry: the client hears the conditions and can book the specialist.
         if (e.type === 'enquiry_reply_received') {
@@ -1065,7 +1065,14 @@ export class EngineService {
               if (c.type === 'client_decision_recorded') {
                 // Cites the approval it came from: the database refuses a client decision written
                 // from an automation context without one (migration 079).
-                await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId, approvedEventId: e.id });
+                // "Leave the drains, get a structural engineer in": the specialists named become the investigations it covers.
+                let scope: string[] | null = null;
+                if (c.subject === 'further_investigation' && c.scope?.length) {
+                  const fi = Object.values(fresh.issues).filter((i) => i.kind === 'survey_further_investigation');
+                  scope = fi.filter((i) => c.scope!.some((n) => i.title.toLowerCase().includes(n.toLowerCase().replace(/\s*(specialist|engineer|survey(or)?|report)s?$/, '').trim()))).map((i) => i.id);
+                  if (!scope.length) throw new Error(`None of the investigations on the case match "${c.scope.join(', ')}".`);
+                }
+                await this.run(tenantId, matterId, { type: 'client_decision_recorded', actor: e.actor, subject: c.subject, decision: c.decision, note: c.note, evidenceDocumentId: note.documentId, approvedEventId: e.id, scope });
               } else if (c.type === 'set_target_dates') {
                 await this.run(tenantId, matterId, { type: 'set_target_dates', actor: e.actor, targetExchangeDate: c.targetExchangeDate ?? undefined, targetCompletionDate: c.targetCompletionDate ?? undefined, reason: c.reason });
               } else if (c.type === 'confirm_with_client') {

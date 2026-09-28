@@ -160,7 +160,7 @@ type CommandBody =
   // ── case model: survey workstream, client decisions, closure ──
   | { type: 'survey_received'; actor: Actor; documentId: string; surveyType: SurveyType; facts: SurveyFacts; extractor: string }
   | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
-  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null }
+  | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; scope?: string[] | null }
   | { type: 'close_matter'; actor: Actor; reason?: string | null }
   | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
   | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
@@ -1482,11 +1482,15 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.subject === 'exchange_authority' && !profile(s).hasExchange) reject(`A ${profile(s).label.toLowerCase()} has no exchange to authorise.`);
       if (cmd.subject === 'ownership_basis' && s.parties < 2) reject('Only one client on this matter: there is no co-ownership to decide.');
       if (!cmd.note?.trim() && cmd.decision !== 'satisfied' && cmd.decision !== 'authorised' && cmd.decision !== 'accepted' && cmd.decision !== 'agreed' && cmd.decision !== 'evidence') reject('Record what the client said (note).', 400);
-      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
+      const out: NewEvent[] = [{ type: 'client_decision_recorded', actor: cmd.actor, payload: { subject: cmd.subject, decision: cmd.decision, note: cmd.note?.trim() || null, evidenceDocumentId: cmd.evidenceDocumentId ?? null, ...(cmd.approvedEventId ? { approvedEventId: cmd.approvedEventId } : {}), ...(cmd.scope?.length ? { scope: cmd.scope } : {}) }, sourceDocumentId: cmd.evidenceDocumentId ?? null }];
       if (cmd.subject === 'further_investigation') {
-        const open = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating'));
+        // The client's instruction is per investigation: "leave the drains, get the damp guarantee, send a structural engineer in".
+        const scope = cmd.scope?.length ? new Set(cmd.scope) : null;
+        if (scope) for (const id of scope) if (!s.issues[id] || s.issues[id].kind !== 'survey_further_investigation') reject(`${id} is not a further investigation on this case.`, 400);
+        const inScope = (i: { id: string }) => !scope || scope.has(i.id);
+        const open = Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && (i.status === 'open' || i.status === 'negotiating') && inScope(i));
         // Changing their mind after waiving: the waived investigations are raised again.
-        const waived = cmd.decision === 'pursue' && !open.length ? Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'resolved' && i.resolution === 'accepted_as_is') : [];
+        const waived = cmd.decision !== 'waive' && !open.length ? Object.values(s.issues).filter((i) => i.kind === 'survey_further_investigation' && i.status === 'resolved' && i.resolution === 'accepted_as_is' && inScope(i)) : [];
         if (!open.length && !waived.length) reject('No further investigation is outstanding on this survey.');
         let k = Object.keys(s.issues).length;
         for (const i of waived) { k += 1; out.push({ type: 'issue_raised', actor: cmd.actor, payload: { issueId: `ISS-${k}`, kind: 'survey_further_investigation', title: i.title, detail: i.detail, gate: 'exchange', stage: s.stage, sourceDocumentId: i.sourceDocumentId ?? null, origin: null, party: null, severity: i.severity, causedBy: i.id }, sourceDocumentId: i.sourceDocumentId ?? null }); }

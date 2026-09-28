@@ -225,6 +225,44 @@ export function issueConsequence(kind: string): string | null {
 export const pounds = (pennies: number): string => `£${(pennies / 100).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
 export const AVAILABILITY_PARTY_LABEL: Record<AvailabilityParty, string> = { client: 'the client', seller_side: "the seller's side", agent: 'the estate agent', lender: 'the lender or broker' };
 
+const DECISION_SHORT: Record<string, string> = {
+  'physical_condition:satisfied': 'satisfied with the property',
+  'physical_condition:renegotiate': 'wants to renegotiate',
+  'physical_condition:further_investigation': 'wants further investigation',
+  'physical_condition:withdraw': 'withdraws',
+  'further_investigation:pursue': 'wants the specialists in',
+  'further_investigation:evidence': "wants the seller's evidence first",
+  'further_investigation:waive': 'waives the investigation',
+  'exchange_authority:authorised': 'authorises exchange',
+  'exchange_authority:not_yet': 'not ready to exchange',
+  'exchange_authority:withdrawn': 'withdraws authority to exchange',
+  'completion_date:agreed': 'agrees the completion date',
+  'completion_date:declined': 'declines the completion date',
+  'accept_terms:accepted': 'accepts the terms',
+  'accept_risk:accepted': 'accepts the risk',
+};
+const decisionShort = (subject: string, decision: string) => DECISION_SHORT[`${subject}:${decision}`] ?? `${subject.replace(/_/g, ' ')}: ${decision.replace(/_/g, ' ')}`;
+const dayShort = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+
+/** A task title for one proposed line: what it would put on the case, in a few words. */
+export function commandTitle(c: NoteCommand): string {
+  switch (c.type) {
+    case 'client_decision_recorded': return `Client decision: ${decisionShort(c.subject, c.decision)}`;
+    case 'confirm_with_client': return `Confirm with the client: ${decisionShort(c.subject, c.decision)}`;
+    case 'set_target_dates': return `Target dates: ${[c.targetExchangeDate ? `exchange ${dayShort(c.targetExchangeDate)}` : null, c.targetCompletionDate ? `completion ${dayShort(c.targetCompletionDate)}` : null].filter(Boolean).join(', ')}`;
+    case 'record_price_change': return c.toPennies ? `Price change: ${pounds(c.toPennies)}` : `Price reduction: ${pounds(c.reductionPennies ?? 0)}`;
+    case 'resolve_issue': return `Close: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
+    case 'record_availability': return `${AVAILABILITY_PARTY_LABEL[c.party].replace(/^the /, '').replace(/^./, (x) => x.toUpperCase())} away ${dayShort(c.from)} to ${dayShort(c.until)}`;
+    case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
+  }
+}
+/** The title of a note's task: its first proposed line, and how many more. */
+export function noteTaskTitle(actions: Array<{ command: NoteCommand | null }>): string | null {
+  const cmds = actions.map((a) => a.command).filter((c): c is NoteCommand => !!c);
+  if (!cmds.length) return null;
+  return `${commandTitle(cmds[0])}${cmds.length > 1 ? ` (+${cmds.length - 1} more)` : ''}`;
+}
+
 /** What applying this command does, as the person sees it before they tick the line. */
 export function effectText(c: NoteCommand): string {
   switch (c.type) {

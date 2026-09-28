@@ -12,9 +12,9 @@ const DECISION_LABEL: Record<string, string> = {
   'physical_condition:renegotiate': 'Wants to renegotiate',
   'physical_condition:further_investigation': 'Wants further investigation',
   'physical_condition:withdraw': 'Withdraws',
-  'further_investigation:pursue': 'Wants the further investigation',
-  'further_investigation:evidence': "Wants the seller's evidence first",
-  'further_investigation:waive': 'Waives the further investigation',
+  'further_investigation:pursue': 'Wants their specialist in',
+  'further_investigation:evidence': "Ask the seller for evidence",
+  'further_investigation:waive': 'Leave it',
   'exchange_authority:authorised': 'Authorises exchange',
   'exchange_authority:not_yet': 'Not ready to exchange',
   'exchange_authority:withdrawn': 'Withdraws authority to exchange',
@@ -28,7 +28,9 @@ const DECISION_LABEL: Record<string, string> = {
 /** Outcomes that need the client's words on record (the others are a plain yes). */
 const NEEDS_WORDS = new Set(['renegotiate', 'further_investigation', 'withdraw', 'waive', 'not_yet', 'withdrawn', 'declined', 'pursue']);
 
-export function ClientDecisionSheet({ matterId, api, subject, decision, docs, busy, onSubmit, onCancel }: {
+export function ClientDecisionSheet({ matterId, api, subject, decision, about = null, docs, busy, onSubmit, onCancel }: {
+  /** What it is about, when it is one of several (a specialist the surveyor named). */
+  about?: string | null;
   matterId: string;
   api: Api;
   subject: string;
@@ -85,7 +87,7 @@ export function ClientDecisionSheet({ matterId, api, subject, decision, docs, bu
   return (
     <div className="cds" role="dialog" aria-label={`Record: ${title}`}>
       <style>{CSS}</style>
-      <div className="cds-h">{title}</div>
+      <div className="cds-h">{title}{about ? <span className="cds-about"> · {about}</span> : null}</div>
       <label className="cds-row">
         <span>Client</span>
         <select className="ep-input" value={who} onChange={(e) => setWho(e.target.value)}>
@@ -130,6 +132,7 @@ export function ClientDecisionSheet({ matterId, api, subject, decision, docs, bu
 const CSS = `
 .cds{margin-top:10px;border:1px solid #c4b5fd;background:#fff;border-radius:12px;padding:16px 18px;width:min(520px,92vw)}
 .cds-h{font-size:15px;font-weight:800;color:#0f172a;margin-bottom:12px}
+.cds-about{font-weight:600;color:#475569}
 .cds-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;align-items:center;padding:5px 0;font-size:13px;color:#334155;font-weight:600}
 .cds-row .ep-input{margin:0;width:100%;font-weight:400}
 .cds-row textarea.ep-input{resize:vertical;font-family:inherit}

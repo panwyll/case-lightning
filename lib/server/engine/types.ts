@@ -470,7 +470,7 @@ export type NoteActionKind = (typeof NOTE_ACTION_KINDS)[number];
 
 /** The command a proposal would run. Deliberately a small, safe set — see notes.ts. */
 export type NoteCommand =
-  | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string }
+  | { type: 'client_decision_recorded'; subject: ClientDecisionSubject; decision: string; note: string; /** further_investigation: which specialists, by name ("damp", "structural engineer"); absent = all. */ scope?: string[] | null }
   /** Someone other than the client reported a client decision: ask the client; it is recorded only when they say so themselves. */
   | { type: 'confirm_with_client'; subject: ClientDecisionSubject; decision: string; saidBy: string; quote: string; detail?: string | null }
   /** Dates mentioned for exchange or completion: the case's targets, which a person sets (contractual dates after exchange are not touched by a note). */
@@ -938,7 +938,7 @@ export interface Payloads {
   specialist_report_received: { facts: SurveyFacts; forIssueId: string | null; extractor: string; furtherInvestigation: boolean };
   /** The client's decision on something only the client decides — recorded by a person, never inferred. */
   /** approvedEventId: the note_actions_applied event a person approved it in, when it came from a note (the database checks it). */
-  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null };
+  client_decision_recorded: { subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; /** further_investigation: the investigations this applies to (issue ids); absent = all open ones. */ scope?: string[] | null };
   /** Severity moved (by a person, or by the timer as a deadline nears). */
   issue_severity_changed: { issueId: string; severity: IssueSeverity; reason: string };
   /** The file is closed: registered, everything served, nothing further. */
@@ -1271,6 +1271,8 @@ export interface IssueState {
   /** The issue whose investigation discovered this one. */
   causedBy: string | null;
   history: Array<{ at: string; by: Actor; what: string }>;
+  /** For a surveyor's further investigation: what the client said to do about it (ask the seller for evidence, get access, or leave it). */
+  route?: 'evidence' | 'pursue' | 'waive' | null;
 }
 
 export interface MatterState {
