@@ -65,7 +65,8 @@ export default function CaseViewPage() {
       {rows && rollup ? (
         <CaseloadMap
           title="Case View"
-          actions={<span style={{ display: 'flex', gap: 10, alignItems: 'center' }}>{scope === 'all' && <button type="button" className={`cv-toggle${byHandler ? ' on' : ''}`} role="switch" aria-checked={byHandler} onClick={() => setByHandler(!byHandler)}><i />Show Assignee</button>}<ScopeSelect value={scope} onChange={setScope} /></span>}
+          actions={<ScopeSelect value={scope} onChange={setScope} />}
+          corner={scope === 'all' ? <button type="button" className={`cv-toggle${byHandler ? ' on' : ''}`} role="switch" aria-checked={byHandler} onClick={() => setByHandler(!byHandler)}><i />Assignee</button> : undefined}
           rows={rows}
           rollup={rollup}
           byHandler={scope === 'all' && byHandler}

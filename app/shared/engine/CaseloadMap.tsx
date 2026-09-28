@@ -62,6 +62,7 @@ export const CASELOAD_CSS = `
 .cm-cell:first-child{border-left:0}
 .cm-names{min-height:0;background:#faf8f3}
 .cm-names .cm-lab{border-right:1px solid #ece7da}
+.cm-corner{padding:6px 10px;letter-spacing:normal;text-transform:none}
 .cm-name{padding:6px 12px;font-size:11.5px;font-weight:800;color:#5b5646;border-left:1px solid #ece7da;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cm-name:first-child{border-left:0}
 .cm-name .n{margin-left:6px;font-weight:600;color:#b8b1a0;font-variant-numeric:tabular-nums}
@@ -119,7 +120,9 @@ const isTracked = (t: CaseToken) => t.tracked !== false;
 /** House sizes on the board, as a multiple of normal: a fifth to double. */
 const ZOOM_STEPS = [0.2, 0.3, 0.45, 0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = false, hideBoard = false, byHandler = false }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false }: {
+  /** A control for the board's top-left cell (the Assignee toggle). */
+  corner?: React.ReactNode;
   /** A section inside a grouped board: smaller title, no filter chips. */
   compact?: boolean;
   /** Header only: the chips and controls, with the board drawn elsewhere. */
@@ -205,11 +208,11 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, compact = fa
         {actions && <div style={{ marginLeft: compact || hideBoard ? 'auto' : undefined }}>{actions}</div>}
       </div>
       {!hideBoard && <div className="cm-board">
-        {byHandler && handlers.length > 0 && (
+        {((byHandler && handlers.length > 0) || corner) && (
           <div className="cm-row cm-names">
-            <div className="cm-lab" />
-            <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${handlers.length}, minmax(0, 1fr))` }}>
-              {handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
+            <div className="cm-lab cm-corner">{corner}</div>
+            <div className="cm-cols" style={{ gridTemplateColumns: `repeat(${Math.max(1, byHandler ? handlers.length : 1)}, minmax(0, 1fr))` }}>
+              {byHandler && handlers.map((h) => <div key={h} className="cm-name">{h}<span className="n">{visible.filter((r) => (r.assignedToName ?? 'Unassigned') === h).length}</span></div>)}
             </div>
           </div>
         )}
