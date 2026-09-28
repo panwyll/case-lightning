@@ -19,7 +19,7 @@
 import { applyEvent } from './projection';
 import { assertCompletion, CompletionError, type Completion } from './completion';
 import type { DeadlineKind } from './sla';
-import { validateNoteActions, summariseNoteActions, type NoteActionDraft } from './notes';
+import { validateNoteActions, summariseNoteActions, nothingToActSummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
 import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
@@ -136,7 +136,7 @@ type CommandBody =
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
   | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
-  | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string }
+  | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string; /** Filed without anyone looking (a reply on a filed conversation): put before a person even when nothing is proposed. */ surface?: boolean }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
   | { type: 'record_suppressed'; action: SuppressedAction; reason: 'shadow_mode' | 'subflow_shadow'; subFlow: SubFlow | null; detail: Record<string, unknown> }
   | { type: 'set_shadow_mode'; actor: Actor; shadowMode: boolean; reason?: string | null }
@@ -2072,10 +2072,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const events: NewEvent[] = [];
       // A decision needs a source to cite. A note filed without a document is read and
       // logged, but nothing is proposed for approval — there would be nothing to open.
-      if (actionable.length && note.documentId) {
+      // An email nobody has looked at yet is put before a person even when it asks for nothing: a reply is never filed away unseen.
+      const surfaceEmpty = !actionable.length && !!cmd.surface && note.kind === 'email';
+      if ((actionable.length || surfaceEmpty) && note.documentId) {
         const decision: DecisionSpec = {
           kind: 'note_actions',
-          summary: summariseNoteActions({ kind: note.kind, text: note.text, actions, from: note.from }),
+          summary: surfaceEmpty ? nothingToActSummary(note.text, note.from) : summariseNoteActions({ kind: note.kind, text: note.text, actions, from: note.from }),
           sourceDocumentId: note.documentId,
           citations: [{ documentId: note.documentId, label: `${note.kind === 'call' ? 'Call note' : note.kind === 'email' ? 'Email' : 'Note'} ${note.id}` }],
           options: OPTIONS_FOR.note_actions,

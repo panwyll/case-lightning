@@ -1,4 +1,4 @@
-import { effectText, noteTaskTitle } from '@/lib/server/engine/notes';
+import { effectText, noteTaskTitle, nothingToActTitle } from '@/lib/server/engine/notes';
 import { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -64,7 +64,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ eve
       const note = state.notes[p.noteId] ?? null;
       const applied = resolving?.type === 'note_actions_applied' ? (resolving.payload as Payloads['note_actions_applied']) : null;
       noteActions = {
-        title: noteTaskTitle(p.actions),
+        title: noteTaskTitle(p.actions) ?? (note?.kind === 'email' ? nothingToActTitle(note.from) : null),
         noteId: p.noteId,
         noteKind: note?.kind ?? 'typed',
         actions: p.actions.map((a: NoteAction) => ({

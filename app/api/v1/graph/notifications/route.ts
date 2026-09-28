@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
 import { getMessage } from '@/lib/server/graph';
-import { archiveHandled } from '@/lib/server/mail/archive';
-import { emitMatterEvent } from '@/lib/server/events';
 import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink, hasDefinitiveSignal } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { describeFiling, fileEmailAttachments, fileEmailBodyAsDocument, indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
+import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
 import { markMatterDraftsStale } from '@/lib/server/worklist';
 import { learnFirmRef } from '@/lib/server/contacts';
 import { assistOnMessage } from '@/lib/server/assist';
 import { notifyMatter } from '@/lib/server/events';
 import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
 import { enqueueMessage } from '@/lib/server/mail/queue';
+import { autoFileToCase } from '@/lib/server/mail/auto-file';
 import type { SessionUser } from '@/lib/server/types';
 
 export const runtime = 'nodejs';
@@ -128,46 +127,7 @@ export async function POST(req: NextRequest) {
         // corroboration, or this email's documents could be filed into the wrong
         // client's case. Token/fuzzy matches wait for the user to confirm. Best-effort.
         if (triage.top && hasTrustedLink(triage.top)) {
-          const mId = triage.top.matterId;
-          // Attachments are listed whatever hasAttachments says: Outlook sets it false when a file is marked inline.
-          const problems: string[] = [];
-          const filed = await fileEmailAttachments(user, mId, messageId, message.subject).catch((e) => {
-            console.error('[graph notification] auto-save attachments failed', (e as Error).message);
-            problems.push(`attachments could not be filed: ${(e as Error).message}`);
-            return { saved: 0, files: [] };
-          });
-          // The email itself is read into the case too: a reply in the body is a reply.
-          const read = await fileEmailBodyAsDocument(user, mId, message, filed.files).catch((e) => {
-            console.error('[graph notification] email body read failed', (e as Error).message);
-            problems.push(`the email could not be read: ${(e as Error).message}`);
-            return null;
-          });
-          if (message.hasAttachments && !filed.files.length && !problems.length) problems.push('The email says it has attachments, but none could be listed from the mailbox');
-          // Filed to its case without anyone touching it: archived too, so it never sits in the inbox as if unhandled.
-          after(() => archiveHandled(user.tenantId, user.userId, message.conversationId, mId).then(() => {}));
-          await emitMatterEvent({ tenantId: user.tenantId, matterId: mId, eventType: 'EMAIL_FILED', title: `Email filed: ${String(message.subject ?? '').trim() || '(no subject)'}`, details: describeFiling(read, filed.files, problems).join('\n') }).catch(() => {});
-          // ...and the message text itself, so the case record is genuinely shared.
-          // listThreadMessages reads the CALLING user's mailbox, so without this a
-          // colleague asked for an update can't see what an email in someone else's
-          // inbox actually said — only that it was triaged. Same trusted-link gate.
-          await indexEmailBodyToMatter(user, mId, message).catch((e) =>
-            console.error('[graph notification] index email body failed', (e as Error).message)
-          );
-
-          // New information on the case can invalidate a reply already sitting in
-          // Drafts — the other side confirms a completion date twenty minutes after
-          // we drafted around not having one. Flag those drafts rather than rewrite
-          // them: regenerating is the fee earner's call, and one they may already
-          // have edited. The thread this email belongs to is excluded, since a reply
-          // being drafted on this very conversation is about to be reconsidered
-          // anyway by the assist that follows.
-          const fromWho = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
-          await markMatterDraftsStale(
-            user.tenantId,
-            mId,
-            `New email from ${fromWho}${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`,
-            `thread:${message.conversationId ?? ''}`
-          ).catch(() => 0);
+          await autoFileToCase(user, message, triage.top.matterId, { later: (fn) => after(fn) });
         }
 
         // Precompute the full taskpane "situation" (thread summary + drafted

@@ -543,7 +543,7 @@ export class EngineService {
   async recordNote(
     tenantId: string,
     matterId: string,
-    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[] }
+    input: { text: string; kind: NoteKind; actor: string; documentId?: string | null; durationSeconds?: number | null; noteId?: string | null; from?: NoteSender | null; attachments?: string[]; /** Filed without anyone looking: it always comes to a person. */ surface?: boolean }
   ): Promise<RunResult> {
     // A decision has to cite something a person can open. A note filed without a document
     // behind it (typed straight into the matter) becomes one — the note IS the evidence.
@@ -582,8 +582,8 @@ export class EngineService {
     // An email that brings files is not evidence that those files are missing: whatever the reader
     // made of "attached", an "it has not arrived" issue is not proposed from it.
     const kept = input.attachments?.length ? drafts.filter((d) => !(d.command?.type === 'raise_issue' && ARRIVAL_ISSUES.has(d.command.kind))) : drafts;
-    if (!kept.length && !stranger) return recorded;
-    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name });
+    if (!kept.length && !stranger && !input.surface) return recorded;
+    return this.run(tenantId, matterId, { type: 'note_extracted', noteId, drafts: kept, extractor: reader.name, surface: !!input.surface });
   }
 
   // ───────────── decisions (dashboard #6) ─────────────

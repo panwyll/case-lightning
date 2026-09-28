@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RefreshButton } from '@/app/shared/RefreshButton';
 import { api } from '@/app/shared/engine/api';
 import { paths } from '@/lib/paths';
 import { Paperclip, Check, X, Mail, AlertTriangle, Home, Loader } from '@/app/shared/icons';
@@ -257,6 +258,7 @@ export default function EmailToFile() {
       <style>{CSS}</style>
       <div className="ef-head">
         <h1 className="eg-h1" style={{ margin: 0 }}>Email</h1>
+        <RefreshButton onRefresh={() => load()} label="Refresh Email" />
         {mailboxes.length > 1 && (
           <select className="ef-mbox" value={mailbox ?? ''} onChange={(e) => setMailbox(e.target.value || null)} title="Whose mailbox to file from">
             {mailboxes.map((m) => <option key={m.userId} value={m.self ? '' : m.userId}>{m.name}</option>)}

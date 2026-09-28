@@ -107,6 +107,12 @@ export default function TaskList({ who }: { who: string }) {
     try { setData(await api(who ? `/engine/my-work?user=${who}` : '/engine/my-work?all=1')); setCheckedAt(new Date()); } catch { setData(null); }
   }, [who]);
   useEffect(() => { void load(); }, [load]);
+  // The Refresh beside the heading asks the list to reload in place; it says when it is done.
+  useEffect(() => {
+    const on = (e: Event) => { void load().finally(() => (e as CustomEvent<{ done?: () => void }>).detail?.done?.()); };
+    window.addEventListener('conveyi:refresh-tasks', on);
+    return () => window.removeEventListener('conveyi:refresh-tasks', on);
+  }, [load]);
 
   const now = Date.now();
   const tasks = useMemo(() => {

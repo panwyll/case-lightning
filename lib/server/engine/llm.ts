@@ -95,6 +95,11 @@ function documentBlocks(docs: EngineDocumentInput[]): Anthropic.ContentBlockPara
 }
 
 /** Production implementation over the Anthropic SDK. */
+/** Adaptive thinking and an effort level are for the Claude 5 generation (and Opus 4.5 onwards); Haiku 4.5 rejects both. */
+export function supportsAdaptiveThinking(model: string): boolean {
+  return !/haiku-4|sonnet-4|opus-4-[01]\b|claude-3/i.test(model);
+}
+
 export function claudeLlm(apiKey = config.anthropicApiKey): StructuredLlm {
   return {
     name: 'claude',
@@ -111,12 +116,15 @@ export function claudeLlm(apiKey = config.anthropicApiKey): StructuredLlm {
 
       let message: Anthropic.Message;
       // Streaming keeps long PDF reads inside HTTP timeouts; finalMessage() carries parsed_output.
+      // Haiku 4.5 takes neither adaptive thinking nor an effort level: sending them fails every call
+      // (it is the classifier, so every document would go unread). It gets the structured output alone.
+      const adaptive = supportsAdaptiveThinking(model);
       const stream = client.messages.stream({
         model,
         max_tokens: req.maxTokens ?? 16_000,
         system,
-        thinking: { type: 'adaptive' },
-        output_config: { effort: req.effort ?? 'high', format: zodOutputFormat(req.schema as never) },
+        ...(adaptive ? { thinking: { type: 'adaptive' as const } } : {}),
+        output_config: adaptive ? { effort: req.effort ?? 'high', format: zodOutputFormat(req.schema as never) } : { format: zodOutputFormat(req.schema as never) },
         messages: [{ role: 'user', content }],
       });
       try {

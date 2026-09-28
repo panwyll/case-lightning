@@ -1,5 +1,6 @@
 'use client';
 import { FirmDetails, MySignature } from './FirmDetails';
+import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
@@ -1008,6 +1009,7 @@ function AdminPageInner() {
         <div>
         {tab !== 'templates' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a' }}>{TAB_META[tab].label}</h1>
+          {tab === 'mywork' && <RefreshButton label="Refresh Tasks" onRefresh={() => new Promise<void>((done) => window.dispatchEvent(new CustomEvent('conveyi:refresh-tasks', { detail: { done } })))} />}
           {(tab === 'policy' || tab === 'actions' || tab === 'audit') && <a href={paths.integrations} style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 700, color: '#0f172a', textDecoration: 'none', border: '1px solid #e6e8ee', borderRadius: 9, padding: '6px 12px', background: '#fff' }}>Tools</a>}
           {tab === 'team' && (<>
             <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>

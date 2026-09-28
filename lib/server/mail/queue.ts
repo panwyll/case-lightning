@@ -12,7 +12,7 @@
  * explaining a match are computed at read time because cases change under the queue.
  */
 import { query, queryOne } from '../db';
-import { listInboxMessages } from '../graph';
+import { getMessage, listInboxMessages } from '../graph';
 import { matchMessage, type Candidate as MatchCandidate } from '../matching';
 import { checkSender, type SenderCheck, type KnownParties } from './sender-check';
 import { knownParties } from './known-parties';
@@ -160,7 +160,8 @@ export async function sweepInbox(user: QueueUser, opts: { pages: number; stopWhe
     let addedThisPage = 0;
     for (const m of messages) {
       if (seen.has(m.id)) continue;
-      if (m.conversationId && handled.has(m.conversationId)) continue;
+      // Already on a case: not for the filing queue. But a reply the new-mail notification never processed is filed now, as it would have been.
+      if (m.conversationId && handled.has(m.conversationId)) { await fileMissedReply(user, m).catch((e) => console.warn('[queue] missed reply could not be filed', (e as Error).message)); continue; }
       // The mailbox owner's own sent mail cc'd back in is not something to file from here.
       if (selfAddr && (m.from?.emailAddress?.address ?? '').toLowerCase() === selfAddr) continue;
       if (await enqueueMessage(user, m, { known }).catch(() => false)) addedThisPage++;
@@ -171,6 +172,28 @@ export async function sweepInbox(user: QueueUser, opts: { pages: number; stopWhe
     if (!nextLink) break;
   }
   return added;
+}
+
+/**
+ * A message on a conversation that is on a case, sitting in the inbox, that the notification
+ * never handled (no triage record): a lapsed subscription or a failed notification. Filed to its
+ * case the same way (mail/auto-file.ts). A message under two minutes old is left for the
+ * notification, which may still be on it.
+ */
+async function fileMissedReply(user: QueueUser, m: GraphMessage): Promise<boolean> {
+  if (!m.id || !m.conversationId) return false;
+  if (m.receivedDateTime && Date.now() - new Date(m.receivedDateTime).getTime() < 2 * 60_000) return false;
+  const thread = await queryOne<{ matter_id: string }>(`select matter_id from email_thread where tenant_id = $1 and graph_conversation_id = $2 order by created_at desc limit 1`, [user.tenantId, m.conversationId]).catch(() => null);
+  if (!thread?.matter_id) return false; // set aside, not on a case
+  const triaged = await queryOne<{ id: string }>(`select id from email_triage where tenant_id = $1 and graph_message_id = $2 limit 1`, [user.tenantId, m.id]).catch(() => null);
+  if (triaged) return false;
+  // The sweep reads a lighter message; the filing wants the whole body.
+  const full = await getMessage(user.userId, m.id).catch(() => m);
+  const { autoFileToCase } = await import('./auto-file');
+  await autoFileToCase(user as never, full, thread.matter_id);
+  // Recorded, so the next sweep does not file it again.
+  await query(`insert into email_triage (tenant_id, graph_message_id, graph_conversation_id, matched_matter_id, confidence, band, classification, candidates) values ($1,$2,$3,$4,1,'AUTO',$5::jsonb,'[]'::jsonb)`, [user.tenantId, m.id, m.conversationId, thread.matter_id, JSON.stringify({ intent: 'OTHER', needsAttention: true, urgency: 'MEDIUM', reason: 'Filed by the inbox sweep: the new-mail notification missed it' })]).catch((e) => console.warn('[queue] could not record the swept reply', (e as Error).message));
+  return true;
 }
 
 async function selfAddress(userId: string): Promise<string> {

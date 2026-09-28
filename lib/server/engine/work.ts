@@ -20,7 +20,7 @@
  *   actionOwner         — who is expected to do the thing (may be outside the firm).
  *   responsibilityOwner — the fee-earner accountable for it happening. Never null.
  */
-import { noteTaskTitle } from './notes';
+import { noteTaskTitle, nothingToActTitle } from './notes';
 import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
 import { ISSUE_KIND_SPEC } from './issues';
@@ -229,7 +229,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
   // A note's task says what it would put on the case, not "Note actions — N-012".
   if (d.kind === 'note_actions') {
     const note = s.notes[cleanSubject ?? ''] ?? Object.values(s.notes).find((x) => x.decisionEventId === d.eventId);
-    const title = note ? noteTaskTitle(note.actions) : null;
+    const title = note ? noteTaskTitle(note.actions) ?? (note.kind === 'email' ? nothingToActTitle(note.from) : null) : null;
     if (title) return title;
   }
   return (

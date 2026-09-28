@@ -268,6 +268,17 @@ export function commandTitle(c: NoteCommand): string {
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
   }
 }
+/** An email with nothing for the case to act on, as its task reads: a person confirms they have seen it. */
+export function nothingToActSummary(text: string, from?: NoteSender | null): string {
+  const who = from ? `${from.name || from.address} (${RELATION_LABEL[from.relation]})` : 'someone';
+  const first = text.split(/\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3).join(' ').slice(0, 300);
+  return [`An email from ${who} was filed to this case automatically. Nothing in it was found for the case to act on.`, '', first ? `It begins: “${first}${text.length > first.length ? '…' : ''}”` : '', '', 'Approve to mark it dealt with. If something was missed, reject and say what, or act on it from the case.'].filter((l, i, a) => l || a[i - 1]).join('\n');
+}
+/** A reply's task when nothing was proposed from it. */
+export function nothingToActTitle(from?: NoteSender | null): string {
+  return `Reply from ${from?.name || from?.address || 'someone'}: nothing to act on`;
+}
+
 /** The title of a note's task: its first proposed line, and how many more. */
 export function noteTaskTitle(actions: Array<{ command: NoteCommand | null }>): string | null {
   const cmds = actions.map((a) => a.command).filter((c): c is NoteCommand => !!c);

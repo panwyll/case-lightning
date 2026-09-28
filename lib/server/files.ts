@@ -491,6 +491,19 @@ export function describeFiling(
 }
 
 /** What became of each attachment: filed and read into the case, filed but locked, or already there. */
+/** Files filed but not read (the reader failed): one task per email, naming them, pointing at Read Again. */
+async function raiseUnreadTask(tenantId: string, matterId: string, unread: FiledAttachment[], subject?: string): Promise<void> {
+  const { engine } = await import('./engine/adapters');
+  const { SYSTEM } = await import('./engine/types');
+  const svc = engine();
+  const s = await svc.getState(tenantId, matterId);
+  if (!s.enrolled || s.completion.confirmedAt) return;
+  const title = `${unread.length === 1 ? `${unread[0].name} was` : `${unread.length} files were`} filed but not read${subject ? ` (${String(subject).slice(0, 60)})` : ''}`;
+  if (Object.values(s.issues).some((i) => i.status === 'open' && i.title === title)) return;
+  const detail = `${unread.map((f) => `${f.name}: ${f.reason}`).join('\n')}\n\nNothing in ${unread.length === 1 ? 'it' : 'them'} has reached the case. Open the Documents tab and use Read Again on each; if it still fails, the reason is shown there.`;
+  await svc.run(tenantId, matterId, { type: 'raise_issue', actor: SYSTEM, kind: 'other', title, detail, gate: 'none' });
+}
+
 /** An archive that could not be opened: a task asks for the files another way. */
 async function raiseArchiveTask(tenantId: string, matterId: string, fileName: string, why: string): Promise<void> {
   const { engine } = await import('./engine/adapters');
@@ -657,6 +670,9 @@ export async function fileEmailAttachments(
       },
     }).catch(() => {});
   }
+  // A file that was filed but could not be read is never left as a line in the log: a person is asked to read it again.
+  const unread = files.filter((f) => f.outcome === 'filed' && f.reason && /could not be read|classification failed|not processed/i.test(f.reason));
+  if (unread.length) await raiseUnreadTask(user.tenantId, matterId, unread, subject).catch((e) => console.error('[files] could not raise the unread-files task', (e as Error).message));
   return { saved, files };
 }
 
@@ -774,7 +790,9 @@ export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
   message: any,
-  attachments: Array<{ name: string; outcome: string; as: string | null }> = []
+  attachments: Array<{ name: string; outcome: string; as: string | null }> = [],
+  /** Filed without anyone looking (a reply on a filed conversation): a person is always asked, even when nothing is proposed. */
+  opts: { surface?: boolean } = {}
 ): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number }> {
   const body = htmlToText(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
   const fresh = newWordsOf(message ?? {});
@@ -804,7 +822,7 @@ export async function fileEmailBodyAsDocument(
   if (enrolled && (!role || role === 'other') && (fresh || body).trim().length >= 2) {
     const { engine } = await import('./engine/adapters');
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
-    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
+    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, surface: !!opts.surface, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details

@@ -276,3 +276,17 @@ test('every action carried on the decision quotes the note it came from', async 
   assert.ok(actions.length > 0);
   for (const a of actions) assert.ok(NOTE.includes(a.quote.trim()), `not verbatim: ${a.quote}`);
 });
+
+test('an email filed without anyone looking always comes to a person, even when nothing in it is proposed', async () => {
+  const h = await enrolled();
+  h.ports.noteExtractor = reader([{ kind: 'information', summary: 'Contract pack attached', quote: 'contract pack attached' }]);
+  const from = { address: 'seller@solicitors.co.uk', name: 'Seller Solicitor', relation: 'other_side' as const };
+  // Filed by a person who read it: nothing proposed, nothing asked.
+  const quiet = await h.svc.recordNote(TENANT, MATTER, { text: 'hi, contract pack attached', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL_BODY'), from });
+  assert.equal(blockingDecisions(quiet.state).filter((d) => d.kind === 'note_actions').length, 0);
+  // Filed automatically (a reply on a filed conversation): a person is asked.
+  const loud = await h.svc.recordNote(TENANT, MATTER, { text: 'hi, contract pack attached', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL_BODY'), from, surface: true });
+  const d = blockingDecisions(loud.state).filter((x) => x.kind === 'note_actions');
+  assert.equal(d.length, 1);
+  assert.match(d[0].summary, /filed to this case automatically\. Nothing in it was found for the case to act on/);
+});

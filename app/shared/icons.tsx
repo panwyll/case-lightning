@@ -72,4 +72,5 @@ export const ChevronDown = (p: IconProps) => <Icon {...p}><path d="m6 9 6 6 6-6"
 export const User = (p: IconProps) => <Icon {...p}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></Icon>;
 export const Zap = (p: IconProps) => <Icon {...p}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></Icon>;
 /** A spinner: the arc turns while something is in progress (the caller adds the animation). */
+export const RefreshCw = (p: IconProps) => <Icon {...p}><path d="M3 12a9 9 0 0 1 15.5-6.36L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-15.5 6.36L3 16" /><path d="M3 21v-5h5" /></Icon>;
 export const Loader = (p: IconProps) => <Icon {...p}><path d="M21 12a9 9 0 1 1-6.22-8.56" /></Icon>;

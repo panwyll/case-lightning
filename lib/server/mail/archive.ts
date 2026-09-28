@@ -31,12 +31,13 @@ async function caseFolder(tenantId: string, matterId: string, userId: string): P
 }
 
 /** Filed to a case: into the case's folder, read. Set aside (no case): into Archive. */
-export async function archiveHandled(tenantId: string, mailboxUserId: string, conversationId: string | null | undefined, matterId?: string | null): Promise<number> {
+/** `markRead`: a person filed it (they have seen it). A reply filed automatically stays unread in the case folder. */
+export async function archiveHandled(tenantId: string, mailboxUserId: string, conversationId: string | null | undefined, matterId?: string | null, opts: { markRead?: boolean } = {}): Promise<number> {
   if (!conversationId) return 0;
   if (!(await getPolicy(tenantId, 'archiveHandledEmail').catch(() => true))) return 0;
   if (matterId) {
     const folder = await caseFolder(tenantId, matterId, mailboxUserId).catch(warn('could not make the case folder'));
-    if (folder) return moveConversation(mailboxUserId, conversationId, 'inbox', String(folder), { markRead: true }).catch(warn('could not file the conversation into the case folder'));
+    if (folder) return moveConversation(mailboxUserId, conversationId, 'inbox', String(folder), { markRead: opts.markRead ?? true }).catch(warn('could not file the conversation into the case folder'));
   }
   return moveConversation(mailboxUserId, conversationId, 'inbox', 'archive').catch(warn('could not archive the conversation'));
 }
