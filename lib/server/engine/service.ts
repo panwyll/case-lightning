@@ -521,6 +521,8 @@ export class EngineService {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     if (!this.ports.extractor.extractSupportingDocument) return { state: await this.getState(tenantId, matterId), events: [], warning: 'A supporting document: filed.' };
     const facts = await this.ports.extractor.extractSupportingDocument(doc);
+    // The seller's own forms (TA6, TA7, TA10, TA13) are read as the forms, whatever they were filed as.
+    if (/\bTA ?(6|7|10|13)\b|property information form|fittings and contents|leasehold information form|completion information form/i.test(`${facts.title} ${doc.fileName ?? ''}`)) return this.propertyFormsReceived(tenantId, matterId, documentId);
     return this.run(tenantId, matterId, { type: 'record_supporting_document', documentId, facts });
   }
 

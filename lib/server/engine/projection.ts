@@ -648,6 +648,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
       const p = e.payload as Payloads['title_plan_read'];
       const docId = e.sourceDocumentId ?? e.id;
       s.title = { ...s.title, plans: [...(s.title.plans ?? []).filter((x) => x.documentId !== docId), { documentId: docId, facts: p.facts, at: e.createdAt }] };
+      // The title was read from this plan (before plans were told apart): it was never the register, so the title waits for the register again.
+      if (s.title.documentId === docId) s.title = { ...s.title, status: 'awaiting', documentId: null, facts: null, decisionEventId: null };
       break;
     }
     case 'expectation_opened': {
@@ -976,6 +978,8 @@ export function applyEvent(prev: MatterState, e: EngineEvent): MatterState {
     case 'seller_forms_received': {
       const p = e.payload as Payloads['seller_forms_received'];
       s.sellerForms = { receivedAt: e.createdAt, forms: p.forms, documentId: e.sourceDocumentId ?? null, facts: p.facts };
+      // Read before as a supporting document: it is the forms, and only the forms.
+      if (e.sourceDocumentId && s.title.supporting?.some((x) => x.documentId === e.sourceDocumentId)) s.title = { ...s.title, supporting: s.title.supporting.filter((x) => x.documentId !== e.sourceDocumentId) };
       break;
     }
     case 'related_matter_linked': {

@@ -69,3 +69,23 @@ test('a supporting document is read and shown with the title; a policy that does
   const lines = taskContext({ state: s, matter: { matterRef: null, propertyAddress: null }, events: [], target: { kind: 'decision', decision: d } }).checklist.map((c) => `${c.status}: ${c.text} | ${c.evidence.map((e) => e.text).join(' / ')}`);
   assert.ok(lines.some((l) => /^flag: Indemnity policy: Lack of building regulations indemnity.*cover passes to the buyer and lender: not stated/.test(l)), lines.join('\n'));
 });
+
+test('a TA6 read as a supporting document is read as the forms instead; a title read from a plan resets when the plan is re-read, so the register can be read', async () => {
+  const h = await purchase();
+  const ta6 = { kind: 'other', title: 'TA6 Law Society Property Information Form (6th edition)', covers: '', issuedBy: '', reference: '', date: '', expires: '', limitPennies: null, benefitPasses: null, property: '', notes: [], confidence: 0.9, forms: ['TA6'], disclosures: [], answers: { japaneseKnotweed: true } };
+  const r = await h.svc.supportingDocumentReceived(TENANT, MATTER, h.doc(ta6 as never, 'EMAIL_ATTACHMENT'));
+  assert.ok(r.events.some((e) => e.type === 'seller_forms_received'));
+  assert.equal((await h.svc.getState(TENANT, MATTER)).title.supporting?.length ?? 0, 0);
+  // Before plans were told apart, a plan was read as the register.
+  const planDoc = h.doc({ ...titleClear(), titleNumber: 'TGL120253', tenure: 'unknown' } as never);
+  await h.svc.titleReceived(TENANT, MATTER, planDoc);
+  assert.equal((await h.svc.getState(TENANT, MATTER)).title.documentId, planDoc);
+  await h.svc.run(TENANT, MATTER, { type: 'record_title_plan', documentId: planDoc, facts: { titleNumber: 'TGL120253', edgedRed: 'a garage', otherMarkings: [], notes: [], reference: '', confidence: 0.9 } });
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.title.status, 'awaiting');
+  assert.equal(s.title.documentId, null);
+  // The register itself is now read, not refused as a duplicate.
+  await h.svc.titleReceived(TENANT, MATTER, h.doc({ ...titleClear(), titleNumber: 'TGL129195' }));
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.equal(s.title.facts?.titleNumber, 'TGL129195');
+});
