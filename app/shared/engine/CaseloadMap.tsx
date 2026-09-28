@@ -40,6 +40,13 @@ const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> =
 };
 
 export const CASELOAD_CSS = `
+.cm-done{display:none;align-items:stretch;gap:8px;margin-left:auto}
+.cm-done div{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;padding:6px 12px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
+.cm-done b{font-size:20px;font-weight:800;color:#0f172a;line-height:1.1;font-variant-numeric:tabular-nums}
+.cm-done span{font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.cm-done div.rec{border-color:#16a34a;background:#f0fdf4}
+.cm-done div.rec b{color:#15803d}
+@media (min-width:1400px){.cm-done{display:flex}}
 .cm-head{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px;min-width:0}
 .cm-head > *{flex-shrink:0}
 .cm-head .cm-chips{flex:1 1 auto;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
@@ -120,7 +127,8 @@ const isTracked = (t: CaseToken) => t.tracked !== false;
 /** House sizes on the board, as a multiple of normal: a fifth to double. */
 const ZOOM_STEPS = [0.2, 0.3, 0.45, 0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
-export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false }: {
+export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false, completions = null }: {
+  completions?: { month: number; year: number; best: { month: string; n: number } | null } | null;
   /** A control for the board's top-left cell (the Assignee toggle). */
   corner?: React.ReactNode;
   /** A section inside a grouped board: smaller title, no filter chips. */
@@ -198,6 +206,13 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
           {chip('blocked', rollup.blocked, 'Blocked')}
           {chip('critical', rollup.critical, 'Critical')}
         </div>}
+        {!compact && completions && (
+          <div className="cm-done" aria-label="Completions">
+            <div><b>{completions.month}</b><span>Completed This Month</span></div>
+            <div><b>{completions.year}</b><span>This Year</span></div>
+            {completions.best && completions.best.n > 0 && <div className={completions.month >= completions.best.n && completions.month > 0 ? 'rec' : undefined}><b>{completions.best.n}</b><span>Best Month · {new Date(`${completions.best.month}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span></div>}
+          </div>
+        )}
         {!compact && !hideBoard && (
           <div className="cm-zoom" role="group" aria-label="House size">
             <button type="button" aria-label="Smaller" disabled={zi === 0} onClick={() => setZoomAt(zi - 1)}><Minus size={16} /></button>

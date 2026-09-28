@@ -49,7 +49,19 @@ export async function GET(req: NextRequest) {
     const names = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
     const nameOf = new Map(names.map((n) => [n.id, n.name]));
     const rows = await onlyVisible(user, [...tracked, ...untracked].map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null })));
+    // Completions: this month, this year, and the firm's best month (real cases only, the whole firm or the caller's own).
+    const done = await query<{ month: string; n: number }>(
+      `select to_char(date_trunc('month', e.created_at at time zone 'Europe/London'), 'YYYY-MM') as month, count(distinct e.matter_id)::int as n
+         from matter_event e join matter m on m.id = e.matter_id
+        where e.tenant_id = $1 and e.type = 'completion_confirmed' and coalesce(m.sandbox, false) = false and ($2::uuid is null or m.assigned_to = $2)
+        group by 1`,
+      [user.tenantId, q.mine === '1' ? user.userId : null]
+    ).catch(() => [] as Array<{ month: string; n: number }>);
+    const nowLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    const best = done.reduce<{ month: string; n: number } | null>((b, x) => (!b || x.n > b.n ? x : b), null);
+    const completions = { month: done.find((x) => x.month === nowLondon.slice(0, 7))?.n ?? 0, year: done.filter((x) => x.month.startsWith(nowLondon.slice(0, 4))).reduce((t, x) => t + x.n, 0), best };
     return ok({
+      completions,
       rows,
       // Health is only claimed for matters the engine actually knows about. An untracked
       // matter is not "moving normally" — it is unknown — so it is counted separately.
