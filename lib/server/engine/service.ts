@@ -786,6 +786,55 @@ export class EngineService {
     return this.run(tenantId, matterId, { type: 'record_signing_pack_sent', documents: docs, methods, attached: sent.attached, channel: sent.channel, messageId: sent.messageId });
   }
 
+  /**
+   * The survey's recommendations: the letter to the client and the surveyor's legal points as one set of
+   * enquiries. With `replace`, whatever is pending from this report is withdrawn and new ones proposed,
+   * even if a letter already went (a person asked for it). Without, nothing is proposed twice.
+   */
+  private async surveyRecommendations(tenantId: string, matterId: string, docKey: string, facts: SurveyFacts, subflows: LevelConfig, opts: { replace: boolean; triggeredByEventId: string }): Promise<void> {
+    const fresh = await this.getState(tenantId, matterId);
+    const mine = (k: string) => k.startsWith(`survey_advice:${docKey}`) || k.startsWith(`enquiry_draft:survey:${docKey}`);
+    for (const x of Object.values(fresh.proposals).filter((x) => x.status === 'pending' && (mine(x.dedupKey) || (opts.replace && /^enquiry_draft:(access|evidence)/.test(x.dedupKey))))) {
+      if (!opts.replace && !x.dedupKey.startsWith(`enquiry_draft:survey:${docKey}:`)) continue; // first read: only the old one-per-point enquiries are replaced
+      await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: opts.replace ? 'replaced when the survey was read again' : 'replaced by one set of enquiries from the survey' }).catch((err) => this.ports.log('could not withdraw a superseded survey task', err));
+    }
+    const stamp = opts.replace ? `:${this.ports.now().getTime()}` : '';
+    const after = await this.getState(tenantId, matterId);
+    const already = (key: string) => Object.values(after.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected');
+    const { seller, ours } = sortLegalPoints(facts.legalIssues ?? []);
+    const batch = surveyEnquiries(seller);
+    const enqKey = `enquiry_draft:survey:${docKey}${stamp}`;
+    if (batch && (opts.replace || (!Object.values(after.enquiries).some((q) => q.subject === batch) && !already(enqKey)))) {
+      const detail = { subject: batch, question: null, origin: 'survey', title: 'Enquiries from the survey' };
+      const check = ours.length ? `\n\nNot for the seller; check these ourselves:\n${ours.map((o) => `• ${o}`).join('\n')}` : '';
+      if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', enqKey, detail, `ENQUIRIES FROM THE SURVEY\n\nTo: the seller's solicitor\n${seller.length} point${seller.length === 1 ? '' : 's'} the surveyor raised for the legal adviser, as one set.\n\n${batch}${check}`))) {
+        try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiries could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
+      }
+    }
+    if (!surveyNeedsAdvice(facts)) return;
+    const key = `survey_advice:${docKey}${stamp}`;
+    if (!opts.replace && (after.clientToldAt?.[key] || already(key))) return;
+    const o = { purchasePricePennies: after.purchasePricePennies, freehold: after.transactionType !== 'leasehold_purchase', hasLender: after.hasLender };
+    const drafted = this.ports.surveyAdviser ? await this.ports.surveyAdviser.draft({ tenantId, matterId, facts, ...o, transactionLabel: caseBrief(after, this.ports.now()).transactionLabel }).catch(() => null) : null;
+    const adviceBody = drafted ?? templateAdvice(surveyAdvice(facts, o));
+    const detail = { template: 'survey_advice', context: { eventType: 'survey_received', adviceBody }, triggeredByEventId: opts.triggeredByEventId, about: key };
+    if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'survey_advice', key, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: what the survey means for exchange, and a request for their decision\nTemplate: survey_advice'))) {
+      try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('survey advice could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
+    }
+  }
+
+  /** A person asks for the survey's recommendations again (after Read Again, or whenever): pending ones are replaced. */
+  async sendSurveyRecommendations(tenantId: string, matterId: string, documentId: string): Promise<RunResult> {
+    const events = await this.store.listEvents(tenantId, matterId);
+    const last = [...events].reverse().find((x) => x.type === 'survey_received' && x.sourceDocumentId === documentId);
+    if (!last) throw Object.assign(new Error('That document has not been read as a survey.'), { status: 409 });
+    const facts = (last.payload as { facts: SurveyFacts }).facts;
+    if (facts.confidence === 0 || facts.recommendations.some((r) => r.code === 'UNREAD')) throw Object.assign(new Error('The survey could not be read; read it again first.'), { status: 409 });
+    const subflows = await this.levels(tenantId);
+    await this.asAutomation(() => this.surveyRecommendations(tenantId, matterId, documentId, facts, subflows, { replace: true, triggeredByEventId: last.id }));
+    return { state: await this.getState(tenantId, matterId), events: [] };
+  }
+
   /** What a client's email may be answering: the survey letter, while they have not said how to proceed. */
   private async replyContext(tenantId: string, matterId: string, state: MatterState, from: NoteSender | null): Promise<string | undefined> {
     if (!from || from.relation !== 'client' || !state.survey.reports.length) return undefined;
@@ -873,46 +922,10 @@ export class EngineService {
             }
           }
         }
-        // The survey was read: the surveyor's points for the legal adviser become enquiries to the seller's
-        // solicitor, and the client is written to about what the report means for exchange. Proposed or
-        // performed as the trust levels say; a person sees each as a task at Propose.
-        if (e.type === 'survey_received') {
-          const p = e.payload as { facts: SurveyFacts };
-          const fresh = await this.getState(tenantId, matterId);
-          const docKey = e.sourceDocumentId ?? e.id;
-          // What an earlier reading proposed one sentence at a time is taken back: one numbered set replaces it.
-          for (const x of Object.values(fresh.proposals).filter((x) => x.status === 'pending' && x.action === 'enquiry_draft' && (x.dedupKey.startsWith(`enquiry_draft:survey:${docKey}:`) || x.dedupKey.startsWith('enquiry_draft:access:ISS-')))) {
-            await this.run(tenantId, matterId, { type: 'withdraw_proposal', proposalEventId: x.eventId, reason: 'replaced by one set of enquiries from the survey' }).catch((err) => this.ports.log('could not withdraw a superseded enquiry', err));
-          }
-          const { seller, ours } = sortLegalPoints(p.facts.legalIssues ?? []);
-          const batch = surveyEnquiries(seller);
-          const key = `enquiry_draft:survey:${docKey}`;
-          if (batch && !Object.values(fresh.enquiries).some((q) => q.subject === batch) && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
-            const detail = { subject: batch, question: null, origin: 'survey', title: 'Enquiries from the survey' };
-            const check = ours.length ? `\n\nNot for the seller; check these ourselves:\n${ours.map((o) => `• ${o}`).join('\n')}` : '';
-            if (!(await this.proposeUnless(tenantId, matterId, subflows, 'enquiry_draft', 'survey', key, detail, `ENQUIRIES FROM THE SURVEY\n\nTo: the seller's solicitor\n${seller.length} point${seller.length === 1 ? '' : 's'} the surveyor raised for the legal adviser, as one set.\n\n${batch}${check}`))) {
-              try { await this.perform(tenantId, matterId, 'enquiry_draft', detail); } catch (err) { this.ports.log('survey enquiries could not be raised', err); await this.recordSendFailure(tenantId, matterId, 'enquiry_draft', detail, err); }
-            }
-          }
-          // Anything proposed about inspections under the old per-item flow no longer applies: taken back.
-          await this.routeInvestigations(tenantId, matterId, subflows, null);
-          if (surveyNeedsAdvice(p.facts)) {
-            // A letter already went, but from a reading that failed or predates what is read now: the client gets a proper one.
-            const prior = (await this.store.listEvents(tenantId, matterId)).filter((x) => x.type === 'survey_received' && x.sourceDocumentId === e.sourceDocumentId && x.seq < e.seq).slice(-1)[0];
-            const pf = prior ? (prior.payload as { facts: SurveyFacts }).facts : null;
-            const priorWasBad = !!pf && (pf.confidence === 0 || pf.recommendations.some((r) => r.code === 'UNREAD') || pf.legalIssues === undefined);
-            const key = priorWasBad ? `survey_advice:${docKey}:${e.id}` : `survey_advice:${docKey}`;
-            if ((priorWasBad || !fresh.clientToldAt?.[key]) && !Object.values(fresh.proposals).some((x) => x.dedupKey === key && x.status !== 'rejected')) {
-              // The letter is written, not assembled: the model drafts it from the reading; a person reads it (and can edit it) at Propose.
-              const opts = { purchasePricePennies: fresh.purchasePricePennies, freehold: fresh.transactionType !== 'leasehold_purchase', hasLender: fresh.hasLender };
-              const drafted = this.ports.surveyAdviser ? await this.ports.surveyAdviser.draft({ tenantId, matterId, facts: p.facts, ...opts, transactionLabel: caseBrief(fresh, this.ports.now()).transactionLabel }).catch(() => null) : null;
-              const adviceBody = drafted ?? templateAdvice(surveyAdvice(p.facts, opts));
-              const detail = { template: 'survey_advice', context: { eventType: e.type, adviceBody }, triggeredByEventId: e.id, about: key };
-              if (!(await this.proposeUnless(tenantId, matterId, subflows, 'client_update', 'survey_advice', key, detail, 'CLIENT UPDATE\n\nTo: the client\nWhat: what the survey means for exchange, and a request for their decision\nTemplate: survey_advice'))) {
-                try { await this.perform(tenantId, matterId, 'client_update', detail); } catch (err) { this.ports.log('survey advice could not be sent', err); await this.recordSendFailure(tenantId, matterId, 'client_update', detail, err); }
-              }
-            }
-          }
+        // A survey read for the first time: its letter and enquiries are proposed. A re-read only refreshes the reading;
+        // new recommendations are a person's choice (Read Again and Replace Tasks, or Send Recommendations).
+        if (e.type === 'survey_received' && !(e.payload as { reread?: boolean }).reread) {
+          await this.surveyRecommendations(tenantId, matterId, e.sourceDocumentId ?? e.id, (e.payload as { facts: SurveyFacts }).facts, subflows, { replace: false, triggeredByEventId: e.id });
         }
         // Something said in an email or a note was confirmed by a person: the system now does what the issue's label promised.
         if (e.type === 'issue_raised') {

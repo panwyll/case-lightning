@@ -167,7 +167,7 @@ const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 
 export const titleCase = (s: string) => s.split(' ').map((w, i) => (i > 0 && SMALL.has(w) ? w : /[A-Z0-9]/.test(w.slice(1)) ? w : w.replace(/^([^A-Za-z]*)([a-z])/, (_m, a: string, b: string) => a + b.toUpperCase()))).join(' ');
 const Pill = ({ s }: { s: string }) => <span className="ep-pill" style={{ background: PILL[s]?.bg ?? '#f1f5f9', color: PILL[s]?.fg ?? '#475569' }}>{cap(s)}</span>;
 const RAG: Record<string, { dot: string; fg: string; label: string }> = { done: { dot: '#16a34a', fg: '#14532d', label: 'Done' }, open: { dot: '#f59e0b', fg: '#78350f', label: 'In Progress' }, blocked: { dot: '#dc2626', fg: '#7f1d1d', label: 'Needs You' }, idle: { dot: '#cbd5e1', fg: '#64748b', label: 'Not Started' } };
-const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read']);
+const DONE_STATUSES = new Set(['cleared', 'reviewed', 'done', 'sent', 'received', 'discharged', 'redeemed', 'replied', 'verified', 'approved', 'not_required', 'not_applicable', 'read', 'on_file', 'satisfied', 'signed']);
 const SEARCH_NAME: Record<string, string> = { LLC1: 'Local Land Charges (LLC1)', CON29: 'Local Authority (CON29)', DRAINAGE_WATER: 'Drainage & Water', ENVIRONMENTAL: 'Environmental', CHANCEL: 'Chancel Repair', MINING: 'Coal Mining (CON29M)', FLOOD: 'Flood Risk', HIGHWAYS: 'Highways', PLANNING: 'Planning History' };
 const daysAgo = (iso: string) => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
 const gbp = (p: number | null | undefined) => (p == null ? '' : `£${(p / 100).toLocaleString('en-GB')}`);
@@ -554,10 +554,18 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const [rereadNote, setRereadNote] = useState<string | null>(null);
   /** A report being read again: its document, the reading it had before, and when it started. Cleared when a new reading lands. */
   const [readingNow, setReadingNow] = useState<{ documentId: string; before: string | null; since: number } | null>(null);
-  const readAgain = async (documentId: string, before: string | null) => {
-    setRereading(documentId); setRereadNote(null);
+  const [readChoice, setReadChoice] = useState<string | null>(null);
+  const [recoBusy, setRecoBusy] = useState(false);
+  const sendRecommendations = async (documentId: string) => {
+    setRecoBusy(true); setRereadNote(null);
+    try { await api(`/documents/${documentId}/recommendations`, { method: 'POST', body: '{}' }); setRereadNote('Recommendations drafted: they are in Tasks.'); onChanged?.(); }
+    catch (e: unknown) { setRereadNote(e instanceof Error ? e.message : 'Could not draft the recommendations.'); }
+    finally { setRecoBusy(false); }
+  };
+  const readAgain = async (documentId: string, before: string | null, replaceTasks = false) => {
+    setRereading(documentId); setRereadNote(null); setReadChoice(null);
     try {
-      await api(`/documents/${documentId}/read-again`, { method: 'POST', body: '{}' });
+      await api(`/documents/${documentId}/read-again`, { method: 'POST', body: JSON.stringify({ replaceTasks }) });
       setReadingNow({ documentId, before, since: Date.now() });
       // A long report takes a minute or two: look again until the new reading lands.
       for (const ms of [20_000, 40_000, 60_000, 90_000, 120_000, 180_000, 240_000]) setTimeout(() => onChanged?.(), ms);
@@ -824,7 +832,14 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ? (stuck ? 'Still reading after five minutes; the Timeline will say if it failed.' : 'Reading the report again; this updates by itself.')
         : lastReport.unread ? 'The report could not be read. Read it again, or record the findings by hand.'
         : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
-      action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
+      action: lastReport.documentId ? (readChoice === lastReport.documentId ? <>
+        <button className="ep-btn" disabled={busy} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt, false)}>Just Read Again</button>
+        <button className="ep-btn primary" disabled={busy} onClick={() => void readAgain(lastReport.documentId!, lastReport.receivedAt, true)}>Read Again and Replace Tasks</button>
+        <button className="ep-btn" onClick={() => setReadChoice(null)}>Cancel</button>
+      </> : <>
+        <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button>
+        {!lastReport.unread && !readingThis && <button className="ep-btn" disabled={busy || recoBusy} onClick={() => void sendRecommendations(lastReport.documentId!)}>{recoBusy ? 'Drafting…' : 'Send Recommendations'}</button>}
+      </>) : undefined,
     } : null;
     lane({ id: 'survey', title: 'Survey', holds: 'Holds Exchange', state: s.survey.status === 'client_satisfied' ? 'done' : s.survey.status === 'not_started' ? 'idle' : s.survey.status === 'further_investigation' || s.survey.status === 'client_renegotiating' ? 'blocked' : 'open', note: s.survey.status === 'not_started' ? 'the client commissions this; it is read when it arrives' : `${s.survey.reports.length} report${s.survey.reports.length === 1 ? '' : 's'} on file`,
       tiles: [...([{ label: 'Report', status: s.survey.reports.length ? 'on_file' : 'not_started', href: lastReport?.documentId ? `/api/v1/documents/${lastReport.documentId}/raw` : undefined }, ...(findings ? [findings] : [])] as Tile[]), ...investigations, { label: "Client's view", status: clientView }],

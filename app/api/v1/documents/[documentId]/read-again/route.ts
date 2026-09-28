@@ -6,6 +6,7 @@ import { assertMatterAccess } from '@/lib/server/guard';
 import { ok, fail } from '@/lib/server/http';
 import { query, queryOne } from '@/lib/server/db';
 import { ingestFiledDocument } from '@/lib/server/engine/ingest-hook';
+import { engine } from '@/lib/server/engine/adapters';
 import { emitMatterEvent } from '@/lib/server/events';
 
 export const runtime = 'nodejs';
@@ -34,11 +35,13 @@ const ROLE_OF_EVENT: Record<string, 'search' | 'enquiry_reply' | 'mortgage_offer
  * through classification and its sub-flow as if it had just arrived. For a report read before
  * the system asked the questions it asks now, or one read badly the first time.
  */
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ documentId: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ documentId: string }> }) {
   try {
     assertFeature('auth');
     const user = await requireUser();
     const { documentId } = z.object({ documentId: z.string().uuid() }).parse(await params);
+    // Read it again, and (a person's choice) replace the tasks it produced with new ones.
+    const { replaceTasks } = z.object({ replaceTasks: z.boolean().default(false) }).parse(await req.json().catch(() => ({})));
     const row = await queryOne<{ matter_id: string }>(`select matter_id from document where id = $1 and tenant_id = $2`, [documentId, user.tenantId]);
     if (!row) return fail(Object.assign(new Error('Document not found.'), { status: 404 }));
     await assertMatterAccess(user, row.matter_id);
@@ -60,6 +63,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ do
     after(async () => {
       const report = await ingestFiledDocument(user.tenantId, row.matter_id, documentId, known).catch((e) => { console.error('[read-again] failed', (e as Error).message); return null; });
       await query(`update document set read_again_at = null where id = $1 and tenant_id = $2`, [documentId, user.tenantId]).catch(() => {});
+      if (replaceTasks && report?.classification?.role === 'survey') await engine().sendSurveyRecommendations(user.tenantId, row.matter_id, documentId).catch((e) => console.error('[read-again] recommendations failed', (e as Error).message));
       const role = report?.classification?.role ?? null;
       const said = !report ? 'It could not be read.' : report.action.kind === 'skip' ? `Read${role && role !== 'other' ? ` as ${role.replace(/_/g, ' ')}` : ''}, not acted on: ${report.action.reason}` : `Read again as ${(role ?? report.action.kind).replace(/_/g, ' ')}.`;
       await emitMatterEvent({ tenantId: user.tenantId, matterId: row.matter_id, eventType: 'EMAIL_FILED', title: 'Read again', details: said }).catch(() => {});
