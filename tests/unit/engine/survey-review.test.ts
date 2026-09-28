@@ -95,3 +95,15 @@ test('the client can change their mind: waive the investigation, then want it af
   assert.equal(s.clientDecisions.further_investigation?.decision, 'pursue');
   assert.equal(s.survey.status, 'further_investigation');
 });
+
+test('a good reading clears the placeholder a failed one left', async () => {
+  const h = await enrolled();
+  const docId = h.doc(REPORT, 'SURVEY');
+  // What an earlier, failed read recorded.
+  await h.svc.run(TENANT, MATTER, { type: 'survey_received', actor: 'external', documentId: docId, surveyType: 'level2', facts: { surveyType: 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' }], confidence: 0 }, extractor: 'test' } as never);
+  let s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(Object.values(s.issues).some((i) => /could not be read automatically/.test(i.title) && i.status === 'open'));
+  await h.svc.surveyReceived(TENANT, MATTER, docId);
+  s = await h.svc.getState(TENANT, MATTER);
+  assert.ok(!Object.values(s.issues).some((i) => /could not be read automatically/.test(i.title) && i.status === 'open'), 'withdrawn once the report is read');
+});

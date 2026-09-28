@@ -1383,6 +1383,12 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       if (s.exchange.exchangedAt) reject('Contracts are exchanged; a survey now is a post-exchange matter for manual handling.');
       const out: NewEvent[] = [{ type: 'survey_received', actor: cmd.actor, payload: { surveyType: cmd.surveyType, facts: cmd.facts, extractor: cmd.extractor }, sourceDocumentId: cmd.documentId, confidenceScore: cmd.facts.confidence }];
+      // A good reading clears what a failed one left: the placeholder "could not be read" issue.
+      if (cmd.facts.confidence > 0) {
+        for (const i of Object.values(s.issues).filter((x) => x.kind === 'survey_further_investigation' && (x.status === 'open' || x.status === 'negotiating') && /could not be read automatically/.test(x.title))) {
+          out.push({ type: 'issue_withdrawn', actor: SYSTEM, payload: { issueId: i.id, reason: 'The report has now been read.' } });
+        }
+      }
       // Objective fact: the surveyor recommends further investigation → one issue per recommendation (holds exchange).
       let n = Object.keys(s.issues).length;
       for (const r of cmd.facts.recommendations.filter((x) => x.furtherInvestigation)) {

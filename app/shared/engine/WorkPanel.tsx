@@ -777,13 +777,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       // The client can change their mind until exchange: every option stays, the one on record is ticked.
       actions: !exchanged && s.survey.status !== 'not_started' ? <>
         {(s.survey.reports.some((r) => r.furtherInvestigation) || fi) && <>
-          {act('survey', 'client_decision_recorded', `Client Wants the Specialist In${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { primary: !fi, disabled: fi === 'pursue' })}
-          {act('survey', 'client_decision_recorded', `Client Waives Further Investigation${current(fi === 'waive')}`, { subject: 'further_investigation', decision: 'waive' }, { disabled: fi === 'waive' })}
+          {act('survey', 'client_decision_recorded', `Investigate${current(fi === 'pursue')}`, { subject: 'further_investigation', decision: 'pursue' }, { primary: !fi, disabled: fi === 'pursue' })}
+          {act('survey', 'client_decision_recorded', `Waive Investigation${current(fi === 'waive')}`, { subject: 'further_investigation', decision: 'waive' }, { disabled: fi === 'waive' })}
         </>}
-        {act('survey', 'client_decision_recorded', `Client Satisfied with the Property${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}
-        {act('survey', 'client_decision_recorded', `Client Wants to Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
-        {act('survey', 'client_decision_recorded', `Client Withdraws${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}
-        {lastReport?.documentId && <button className="ep-btn" disabled={busy || rereading === lastReport.documentId} onClick={() => void readAgain(lastReport.documentId!)}>{rereading === lastReport.documentId ? 'Starting…' : 'Read the Survey Again'}</button>}
+        {act('survey', 'client_decision_recorded', `Satisfied${current(pc === 'satisfied')}`, { subject: 'physical_condition', decision: 'satisfied' }, { primary: s.survey.status === 'awaiting_client', disabled: pc === 'satisfied' || s.survey.status === 'further_investigation', title: s.survey.status === 'further_investigation' ? 'Waiting on the further investigation, or the client waiving it' : undefined })}
+        {act('survey', 'client_decision_recorded', `Renegotiate${current(pc === 'renegotiate')}`, { subject: 'physical_condition', decision: 'renegotiate' }, { disabled: pc === 'renegotiate' })}
+        {act('survey', 'client_decision_recorded', `Withdraw${current(pc === 'withdraw')}`, { subject: 'physical_condition', decision: 'withdraw' }, { disabled: pc === 'withdraw' })}
+        {lastReport?.documentId && <button className="ep-btn" disabled={busy || rereading === lastReport.documentId} onClick={() => void readAgain(lastReport.documentId!)}>{rereading === lastReport.documentId ? 'Starting…' : 'Read Again'}</button>}
         {rereadNote && <span className="ep-note">{rereadNote}</span>}
       </> : null });
   }

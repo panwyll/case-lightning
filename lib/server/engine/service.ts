@@ -341,7 +341,7 @@ export class EngineService {
     const doc = await this.requireDoc(tenantId, matterId, documentId);
     const facts = await this.ports.extractor.extractSurvey(doc).catch((err) => {
       this.ports.log('survey extraction failed — recorded with no recommendations read; a person must read it', err);
-      return { surveyType: surveyType ?? 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: true, severity: 'medium' as const }], confidence: 0 } satisfies import('./types').SurveyFacts;
+      return { surveyType: surveyType ?? 'level2', recommendations: [{ code: 'UNREAD', text: 'The report could not be read automatically; a person must read it and record the recommendations.', furtherInvestigation: false, severity: 'medium' as const }], confidence: 0 } satisfies import('./types').SurveyFacts;
     });
     return this.run(tenantId, matterId, { type: 'survey_received', actor: EXTERNAL, documentId, surveyType: surveyType ?? facts.surveyType, facts, extractor: this.ports.extractor.name });
   }
