@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PasswordInput } from './PasswordInput';
 import { fmtDay, pretty, type Api, type EngineState, type IssueCatalogue, type IssueRow } from './types';
 
@@ -84,13 +85,25 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
     finally { setUnlockingNow(false); }
   };
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // The menu is drawn over the page (not inside the scrolling list, which would clip it), under its button, or above it near the bottom of the window.
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const [menuAt, setMenuAt] = useState<{ right: number; top: number; bottom: number } | null>(null);
+  const openMenu = (id: string, btn: HTMLElement) => {
+    if (menu === id) { setMenu(null); return; }
+    const r = btn.getBoundingClientRect();
+    setMenuAt({ right: window.innerWidth - r.right, top: r.bottom + 4, bottom: window.innerHeight - r.top + 4 });
+    setMenu(id);
+  };
 
   useEffect(() => { api<{ issues: IssueCatalogue }>('/engine/spec').then((s) => setCat(s.issues)).catch(() => setCat(null)); }, [api]);
   useEffect(() => {
     if (!menu) return;
-    const close = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null); };
+    const close = (e: MouseEvent) => { const t = e.target as Node; if (menuRef.current && !menuRef.current.contains(t) && !popRef.current?.contains(t)) setMenu(null); };
+    // Pinned to the window: scrolling would leave it behind, so it closes.
+    const gone = (e: Event) => { if (!popRef.current?.contains(e.target as Node)) setMenu(null); };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    window.addEventListener('scroll', gone, true);
+    return () => { document.removeEventListener('mousedown', close); window.removeEventListener('scroll', gone, true); };
   }, [menu]);
 
   const kinds = useMemo(() => cat?.kinds ?? [], [cat]);
@@ -144,9 +157,9 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
             {!ctx && lockedDoc(i) && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => { setPwFor(i.id); setPw(''); setPwErr(null); }}>Enter Password</button>}
             {!ctx && !lockedDoc(i) && !(i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '')) && <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => startResolve(i)}>Resolve</button>}
             {ctx && <button className="ep-btn" style={{ margin: 0 }} disabled={busy} onClick={() => act({ type: 'resolve_issue', issueId: i.id, resolution: k?.resolutions[0] ?? 'other', note: 'No longer the case.' })}>Clear</button>}
-            <button className="ep-btn" style={{ margin: 0 }} disabled={busy} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={() => setMenu(menu === i.id ? null : i.id)}>More</button>
-            {menu === i.id && (
-              <div className="is-menu" role="menu">
+            <button className="ep-btn" style={{ margin: 0 }} disabled={busy} aria-haspopup="menu" aria-expanded={menu === i.id} onClick={(e) => openMenu(i.id, e.currentTarget)}>More</button>
+            {menu === i.id && menuAt && createPortal(
+              <div className="is-menu" role="menu" ref={popRef} style={{ position: 'fixed', zIndex: 1000, right: menuAt.right, ...(menuAt.top + 320 > window.innerHeight ? { bottom: menuAt.bottom, top: 'auto' } : { top: menuAt.top }) }}>
                 <button role="menuitem" onClick={() => { const n = ask('Note'); if (n) act({ type: 'update_issue', issueId: i.id, status: i.status, note: n }); }}>Add Note</button>
                 {!ctx && i.status === 'open' && <button role="menuitem" onClick={() => { const n = ask('What is happening? (e.g. "client asked for £10k off; agent relaying")'); if (n) act({ type: 'update_issue', issueId: i.id, status: 'negotiating', note: n }); }}>Mark Negotiating</button>}
                 {!ctx && !exchanged && <button role="menuitem" onClick={() => { const q = ask('What do you want to ask the other side?'); if (q) act({ type: 'raise_enquiry', subject: q, origin: { issueId: i.id } }); }}>Ask The Other Side</button>}
@@ -156,7 +169,8 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
                 <hr />
                 <button role="menuitem" onClick={() => del(i)}>Delete</button>
                 {!ctx && <button role="menuitem" className="bad" onClick={() => { const n = ask('This ends the transaction: the issue is marked fatal and the case abandoned. Say why.'); if (n && window.confirm('Abandon the case? This cannot be undone.')) act({ type: 'mark_issue_fatal', issueId: i.id, reason: n }); }}>Abandon The Case</button>}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
         )}

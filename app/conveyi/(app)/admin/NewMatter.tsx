@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import { composeAddress, EMPTY_ADDR, UK_POSTCODE_RE, type AddrParts } from '@/lib/address';
 import { X } from '@/app/shared/icons';
@@ -53,6 +53,14 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
   const [agentName, setAgentName] = useState('');
   const [agentEmail, setAgentEmail] = useState('');
   const [lender, setLender] = useState('');
+  // The client's chain: on a purchase, their sale (and the reverse), if the firm acts on it too. Linked as the case is created.
+  const [chainOptions, setChainOptions] = useState<Array<{ matterId: string; matterRef: string | null; propertyAddress: string | null; client: string | null }>>([]);
+  const [linkTo, setLinkTo] = useState('');
+  useEffect(() => {
+    setLinkTo('');
+    if (track === 'REMORTGAGE') { setChainOptions([]); return; }
+    api<{ candidates: typeof chainOptions }>(`/matters/chain-candidates?side=${track === 'SALE' ? 'buyer' : 'seller'}`).then((r) => setChainOptions(r.candidates)).catch(() => setChainOptions([]));
+  }, [track]);
   const [exchange, setExchange] = useState('');
   const [completion, setCompletion] = useState('');
   const [ref, setRef] = useState('');
@@ -132,6 +140,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           lender: lender.trim() || undefined,
           exchangeTargetDate: exchange || undefined,
           completionTargetDate: completion || undefined,
+          linkedMatterId: track !== 'REMORTGAGE' && linkTo ? linkTo : undefined,
         }),
       });
       onCreated(created.id);
@@ -213,6 +222,15 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
             <input value={shownRef} onChange={(e) => { setRef(e.target.value); setRefTouched(true); }} placeholder="auto" style={S.input} />
           </div>
         </div>
+        {track !== 'REMORTGAGE' && chainOptions.length > 0 && (
+          <div>
+            <label style={S.lbl}>Client's {track === 'SALE' ? 'purchase' : 'sale'} (if we act on it)</label>
+            <select value={linkTo} onChange={(e) => setLinkTo(e.target.value)} style={S.input}>
+              <option value="">None</option>
+              {chainOptions.map((c) => <option key={c.matterId} value={c.matterId}>{[c.propertyAddress, c.client, c.matterRef].filter(Boolean).join(' · ')}</option>)}
+            </select>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Exchange target</label><input type="date" value={exchange} onChange={(e) => setExchange(e.target.value)} style={S.input} /></div>
           <div style={{ flex: '1 1 150px', minWidth: 0 }}><label style={S.lbl}>Completion target</label><input type="date" value={completion} min={exchange || undefined} onChange={(e) => setCompletion(e.target.value)} style={S.input} />{show('completion')}</div>

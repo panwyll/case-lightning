@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { assertMatterAccess } from '@/lib/server/guard';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -72,6 +73,8 @@ export async function POST(req: NextRequest) {
         chainPosition: z.string().optional(),
         // The New Case form: who we act for (with a way to reach them), the other side, the agent, the property and the price.
         track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
+        /** The client's other half of the chain (their sale, or their purchase), linked as the case is created. */
+        linkedMatterId: z.string().uuid().optional(),
         addressParts: z.record(z.string()).optional(),
         purchasePricePennies: z.number().int().nonnegative().optional(),
         parties: z.array(z.object({ name: z.string().trim().min(1), email: z.string().trim().email(), phone: z.string().trim().optional() })).optional(),
@@ -113,7 +116,15 @@ export async function POST(req: NextRequest) {
         [user.tenantId, created.id, c.email.toLowerCase(), c.name, c.role, c.phone]
       ).catch(() => {});
     }
+    // The client's chain, linked at setup: both cases, both ways (the case was enrolled as it was created).
+    let linkError: string | null = null;
+    if (body.linkedMatterId) {
+      await assertMatterAccess(user, body.linkedMatterId);
+      const { engine } = await import('@/lib/server/engine/adapters');
+      await engine().linkChain(user.tenantId, created.id, body.linkedMatterId, user.userId).catch((e: Error) => { linkError = e.message; });
+    }
     return ok({
+      linkError,
       id: created.id,
       folderPath: created.folderPath,
       folderWebUrl: created.folderWebUrl,

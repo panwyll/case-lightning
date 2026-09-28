@@ -60,6 +60,7 @@ export interface CreateMatterInput {
   completionTargetDate?: string;
   lender?: string;
   chainPosition?: string;
+  track?: 'PURCHASE' | 'SALE' | 'REMORTGAGE';
 }
 
 export interface CreateMatterResult {
@@ -101,8 +102,8 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
       const row = await queryOne<{ id: string }>(
         `insert into matter
           (tenant_id, matter_ref, property_address, buyer_names, seller_names, counterparty_solicitor,
-           counterparty_agent, exchange_target_date, completion_target_date, lender, chain_position, created_by, folder_path, case_ref_token)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) returning id`,
+           counterparty_agent, exchange_target_date, completion_target_date, lender, chain_position, created_by, folder_path, case_ref_token, track)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id`,
         [
           user.tenantId,
           matterRef,
@@ -118,6 +119,8 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
           user.userId,
           folderPath,
           caseRefToken,
+          // Set before enrolment reads it: a sale enrols as a sale, not as the default purchase.
+          input.track ?? 'PURCHASE',
         ]
       );
       matterId = row!.id;
