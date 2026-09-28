@@ -116,6 +116,8 @@ export interface IngestReport {
 }
 
 /** Classify + route + run. Best-effort at the call site; throws only on programmer error. */
+const EMAIL_BODY_ROLES: ReadonlySet<string> = new Set(['enquiry_reply', 'other']);
+
 export async function ingestDocument(svc: EngineService, ports: EnginePorts, tenantId: string, matterId: string, doc: DocumentRef, known?: DocumentClassification | null): Promise<IngestReport> {
   const state = await svc.getState(tenantId, matterId);
   if (!state.enrolled) return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: 'matter not enrolled in the engine' }, result: null };
@@ -134,6 +136,10 @@ export async function ingestDocument(svc: EngineService, ports: EnginePorts, ten
     ports.log(`classification failed for document ${doc.id}`, err);
     return { documentId: doc.id, classification: null, action: { kind: 'skip', reason: 'classification failed' }, result: null };
   }
+  // An email's own words are a reply at most (enquiries answered inline). An email that quotes or
+  // describes an offer, a title or a search is not that document: the document is its attachment,
+  // and the words are read as a note.
+  if (doc.docType === 'EMAIL' && !EMAIL_BODY_ROLES.has(classification.role)) classification = { ...classification, role: 'other' };
   const action = routeClassification(state, classification);
   const result = await runAction(svc, tenantId, matterId, doc.id, action);
   return { documentId: doc.id, classification, action, result };

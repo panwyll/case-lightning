@@ -201,6 +201,16 @@ export async function listMessageAttachments(userId: string, messageId: string):
   // A large file comes back in the list without its bytes: fetch those one at a time, raw,
   // so a 12 MB survey is filed like a one-page letter instead of being skipped.
   for (const a of list) {
+    // An email attached inside the email: its raw MIME, so the files inside it can be filed too.
+    if (a['@odata.type'] === '#microsoft.graph.itemAttachment' && a.id) {
+      try {
+        const raw = await client.api(`/me/messages/${messageId}/attachments/${a.id}/$value`).responseType(ResponseType.ARRAYBUFFER).get();
+        if (raw) { a.contentBytes = Buffer.from(raw as ArrayBuffer).toString('base64'); a.contentType = 'message/rfc822'; }
+      } catch (e) {
+        a.fetchError = (e as Error).message;
+      }
+      continue;
+    }
     if (a.contentBytes || a['@odata.type'] !== '#microsoft.graph.fileAttachment' || !a.id) continue;
     try {
       const raw = await client.api(`/me/messages/${messageId}/attachments/${a.id}/$value`).responseType(ResponseType.ARRAYBUFFER).get();

@@ -20,6 +20,7 @@ import { driveUserFor } from './matter-drive';
 import { writeAudit } from './audit';
 import { isLockedPdf, passwordCandidates } from './pdf-lock';
 import { expandZip, isZip, type ZipResult } from './zip-expand';
+import { expandAttachedEmail, isAttachedEmail } from './mail-expand';
 import { recordLockedDocument, tryPasswordsFromMessage } from './document-unlock';
 import { emitMatterEvent } from './events';
 import { ingestFiledDocument } from './engine/ingest-hook';
@@ -466,7 +467,7 @@ async function surfaceRevision(tenantId: string, matterId: string, fileName: str
 
 /** One line per thing that happened to an email and its files, in plain words, for the case log. */
 export function describeFiling(
-  email: { outcome: string; as: string | null; reason: string | null; proposals?: number } | null,
+  email: { outcome: string; as: string | null; reason: string | null; proposals?: number; missing?: string | null } | null,
   files: Array<{ name: string; outcome: string; as: string | null; reason: string | null }>,
   problems: string[]
 ): string[] {
@@ -479,12 +480,13 @@ export function describeFiling(
     else if (email.outcome === 'skipped') lines.push('Email has no body text to process.');
     else lines.push(`Email filed; not processed${email.reason ? `: ${email.reason}` : ''}.`);
   }
+  if (email?.missing) lines.push(`${email.missing} A task asks for them.`);
   for (const f of files) {
     if (f.outcome === 'read') lines.push(`${f.name}: processed${as(f.as) ? ` as ${as(f.as)}` : ''}.`);
     else if (f.outcome === 'locked') lines.push(`${f.name}: password-protected; password requested (task raised).`);
     else if (f.outcome === 'duplicate') lines.push(`${f.name}: already on file${as(f.as) ? ` (${as(f.as)})` : ''}; not re-processed${f.reason ? ` (${f.reason})` : ''}.`);
     else if (f.outcome === 'skipped') lines.push(`${f.name}: not filed: ${f.reason ?? 'reason not recorded'}.`);
-    else if (f.outcome === 'expanded') lines.push(`${f.name}: archive opened; ${f.reason ?? 'contents extracted'}.`);
+    else if (f.outcome === 'expanded') lines.push(`${f.name}: ${f.reason ?? 'opened; contents extracted'}.`);
     else lines.push(`${f.name}: filed; not processed${f.reason ? `: ${f.reason}` : ''}.`);
   }
   return [...lines, ...problems];
@@ -548,7 +550,16 @@ export async function fileEmailAttachments(
     // document is an inline image too, but a big one, and it is filed like any attachment.
     if (att.isInline && isImage && (att.size ?? 0) < 60_000) continue;
     if (kind === '#microsoft.graph.referenceAttachment') { files.push({ name: att.name ?? 'a linked file', outcome: 'skipped', as: null, reason: 'it is a link to a file in someone\'s OneDrive, not the file itself; ask for it as an attachment' }); continue; }
-    if (kind === '#microsoft.graph.itemAttachment') { files.push({ name: att.name ?? 'an attached email', outcome: 'skipped', as: null, reason: 'it is an email attached inside the email; open it in Outlook and file its attachments from there' }); continue; }
+    // An email attached inside the email (forwarded as an attachment, an .eml or .msg): opened, and its files join this loop.
+    if ((kind === '#microsoft.graph.itemAttachment' || isAttachedEmail(att.name, att.contentType)) && att.contentBytes && (att.depth ?? 0) < 3) {
+      const label = att.name ?? 'an attached email';
+      const x = await expandAttachedEmail(Buffer.from(att.contentBytes, 'base64'), att.name ?? '', att.contentType ?? '');
+      if (x.error) { files.push({ name: label, outcome: 'skipped', as: null, reason: x.error }); continue; }
+      for (const e of x.entries) attachments.push({ '@odata.type': '#microsoft.graph.fileAttachment', name: e.name, contentType: e.contentType, size: e.bytes.length, contentBytes: e.bytes.toString('base64'), isInline: e.isInline, depth: (att.depth ?? 0) + 1 });
+      files.push({ name: label, outcome: 'expanded', as: null, reason: x.entries.length ? `attached email opened; ${x.entries.length} file${x.entries.length === 1 ? '' : 's'} inside` : 'attached email opened; no files inside' });
+      continue;
+    }
+    if (kind === '#microsoft.graph.itemAttachment') { files.push({ name: att.name ?? 'an attached email', outcome: 'skipped', as: null, reason: att.fetchError ? `the attached email could not be downloaded: ${att.fetchError}` : 'it is an email attached inside the email; open it in Outlook and file its attachments from there' }); continue; }
     if (!att.contentBytes || !att.name) { files.push({ name: att.name ?? 'an attachment', outcome: 'skipped', as: null, reason: att.fetchError ? `it could not be downloaded: ${att.fetchError}` : 'its contents could not be downloaded' }); continue; }
     const buffer = Buffer.from(att.contentBytes, 'base64');
     // A zip is opened: each file inside is filed and read in its own right (it joins this loop).
@@ -556,7 +567,7 @@ export async function fileEmailAttachments(
       const z = await expandZip(buffer).catch((e: Error) => ({ entries: [], skipped: [], error: e.message }) as ZipResult);
       for (const e of z.entries) attachments.push({ '@odata.type': '#microsoft.graph.fileAttachment', name: e.name, contentType: e.contentType, size: e.bytes.length, contentBytes: e.bytes.toString('base64'), isInline: false, fromArchive: att.name });
       for (const sk of z.skipped) files.push({ name: `${sk.name} (in ${att.name})`, outcome: 'skipped', as: null, reason: sk.reason });
-      if (!z.error) { files.push({ name: att.name, outcome: 'expanded', as: null, reason: `${z.entries.length} file${z.entries.length === 1 ? '' : 's'} extracted` }); continue; }
+      if (!z.error) { files.push({ name: att.name, outcome: 'expanded', as: null, reason: `archive opened; ${z.entries.length} file${z.entries.length === 1 ? '' : 's'} extracted` }); continue; }
       // It could not be opened (an encrypted archive): not filed; a task asks for the files another way.
       files.push({ name: att.name, outcome: 'skipped', as: null, reason: z.error });
       await raiseArchiveTask(user.tenantId, matterId, att.name, z.error).catch(() => {});
@@ -786,6 +797,21 @@ export async function supersedePriorVersions(
  * Subject and the words), deduplicated on content, and goes through the same classify-and-route
  * step as a filed document. Returns what the reader made of it.
  */
+/**
+ * The words refer to files that are not on this email: a forwarded chain carries only its own
+ * attachments, not those of the emails quoted in it. Names them when the text does.
+ */
+export function attachmentsNotOnEmail(body: string, attachments: Array<{ name: string; outcome: string }>): string | null {
+  if (attachments.some((a) => a.outcome !== 'skipped')) return null;
+  const EXT = '(?:pdf|docx?|xlsx?|jpe?g|png|heic|zip|msg|eml)';
+  const quoted = [...body.matchAll(new RegExp(`["“']([^"”'\\n]{1,80}\\.${EXT})["”']`, 'gi'))].map((m) => m[1]);
+  const bare = [...body.matchAll(new RegExp(`(?:^|[\\s(<:])([\\w()&.-]{1,80}\\.${EXT})\\b`, 'gi'))].map((m) => m[1]);
+  const named = [...new Set([...quoted, ...bare].map((n) => n.trim()))].filter((n) => !quoted.some((q) => q !== n && q.endsWith(n))).slice(0, 6);
+  if (named.length) return `It mentions ${named.join(', ')}, which ${named.length === 1 ? 'is' : 'are'} not attached to it (likely on an earlier email in the chain).`;
+  if (/\b(please find|i have|i've|we have|we've|see)\s+(attached|enclosed)\b|\battached (is|are|please find)\b|\battachments?:/i.test(body)) return 'It refers to attachments, but none are on it (likely on an earlier email in the chain).';
+  return null;
+}
+
 export async function fileEmailBodyAsDocument(
   user: { userId: string; tenantId: string },
   matterId: string,
@@ -793,8 +819,18 @@ export async function fileEmailBodyAsDocument(
   attachments: Array<{ name: string; outcome: string; as: string | null }> = [],
   /** Filed without anyone looking (a reply on a filed conversation): a person is always asked, even when nothing is proposed. */
   opts: { surface?: boolean } = {}
-): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number }> {
+): Promise<{ outcome: 'read' | 'noted' | 'filed' | 'duplicate' | 'skipped'; as: string | null; reason: string | null; proposals?: number; missing?: string | null }> {
   const body = htmlToText(message?.body?.content ?? '') || (message?.bodyPreview ?? '');
+  // Files the email talks about but does not carry: said on the case, and a task asks for them.
+  const missing = attachmentsNotOnEmail(body, attachments);
+  if (missing) {
+    const title = `Files referred to but not attached: ${String(message?.subject ?? 'an email').replace(/^(re|fw|fwd):\s*/gi, '').slice(0, 80)}`;
+    const { engine } = await import('./engine/adapters');
+    const s = await engine().getState(user.tenantId, matterId).catch(() => null);
+    if (s?.enrolled && !Object.values(s.issues).some((i) => i.title === title && (i.status === 'open' || i.status === 'negotiating'))) {
+      await engine().run(user.tenantId, matterId, { type: 'raise_issue', actor: user.userId, kind: 'other', gate: 'none', title, detail: `${missing} Ask the sender to send the files themselves, or forward the earlier emails that carry them.` }).catch(() => {});
+    }
+  }
   const fresh = newWordsOf(message ?? {});
   // Any words at all are read: "surveys are all complete" is a signal, not noise.
   if (!body.trim()) return { outcome: 'skipped', as: null, reason: 'the email has no body to read' };
@@ -814,7 +850,7 @@ export async function fileEmailBodyAsDocument(
   // A failure here must surface, not vanish: the caller records it on the case.
   const report = await ingestFiledDocument(user.tenantId, matterId, doc.id);
   const role = report?.classification?.role ?? null;
-  if (report && report.action.kind !== 'skip') return { outcome: 'read', as: role, reason: null };
+  if (report && report.action.kind !== 'skip') return { outcome: 'read', as: role, reason: null, missing };
   // Not a document with a role, but words on a case: read them the way a file note is read.
   // Whatever they appear to say becomes a proposal for a person, gated by who sent it
   // (notes.ts senderPolicy); the case itself does not move until someone approves.
@@ -833,9 +869,9 @@ export async function fileEmailBodyAsDocument(
       await engine().recordBankDetails(user.tenantId, matterId, { actor: user.userId, payeeKind, payeeRef: sender.name || sender.address, details: { sortCode: bank.sortCode, accountNumber: bank.accountNumber, accountName: bank.accountName ?? sender.name ?? sender.address, firmName: null }, sourceChannel: 'email', sourceDocumentId: doc.id, note: `Found in an email from ${sender.name ? `${sender.name} <${sender.address}>` : sender.address} (${sender.relation.replace(/_/g, ' ')}). Verify by phone on a known number before any payment.` });
       proposals += 1;
     }
-    return { outcome: 'noted', as: null, reason: null, proposals };
+    return { outcome: 'noted', as: null, reason: null, proposals, missing };
   }
-  return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled' };
+  return { outcome: 'filed', as: role && role !== 'other' ? role : null, reason: report?.action.kind === 'skip' ? report.action.reason : 'the case is not enrolled', missing };
 }
 
 /** How the case knows an email address: its contacts' roles, or the firm's own people. Unknown otherwise. */

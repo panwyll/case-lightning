@@ -129,6 +129,18 @@ test('ingestDocument end to end: a classified search result flows into the engin
   assert.equal(firstDecision(s).sourceDocumentId, docId);
 });
 
+test("an email's own words are never filed as the offer, title or a search they describe: the attachment is the document, the words are a note", async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, requireProofOfFunds: false, requireExchangeAuthority: false, hasLender: true, requiredSearches: ['CON29'] });
+  const docId = h.doc({ content: 'FW: offer. Special conditions: 3 months payslips; proof of savings.' }, 'EMAIL');
+  const doc = (await h.ports.documents.get(TENANT, docId))!;
+  const ports = { ...h.ports, classifier: { name: 'fake', classify: async () => cls({ role: 'mortgage_offer', lender: 'Nationwide' }) } };
+  const report = await ingestDocument(h.svc, ports, TENANT, MATTER, doc);
+  assert.equal(report.classification?.role, 'other');
+  assert.equal(report.action.kind, 'skip');
+  assert.equal((await h.svc.getState(TENANT, MATTER)).mortgage.documentId ?? null, null, 'no offer recorded from the email text');
+});
+
 test('ClassificationSchema accepts the shape the classifier prompt asks for', () => {
   const c = ClassificationSchema.parse({ role: 'search', searchType: 'CON29', enquiryReferences: [], titleNumber: '', lender: '', scanQuality: 'good', pageCount: 12, confidence: 0.9, reason: 'CON29 header' });
   assert.equal(c.searchType, 'CON29');
