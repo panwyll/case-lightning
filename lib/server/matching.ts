@@ -217,21 +217,37 @@ export function namesAnotherCase(linked: Candidate, candidates: Candidate[]): Ca
  * or reply inside a thread already on the case as someone the case has heard from. So:
  * content alone can reach amber (STRONG) at best; green takes a trusted sender.
  */
+/** The Message-IDs an email says it answers: In-Reply-To first, then the References chain, newest first. */
+export function repliesTo(message: { internetMessageHeaders?: Array<{ name?: string; value?: string }> } | null | undefined): string[] {
+  const h = (n: string) => (message?.internetMessageHeaders ?? []).find((x) => (x.name ?? '').toLowerCase() === n)?.value ?? '';
+  const ids = (v: string) => v.match(/<[^<>\s]+>/g) ?? [];
+  return [...new Set([...ids(h('in-reply-to')), ...ids(h('references')).reverse()])].slice(0, 5);
+}
+
 /**
  * Why an email on a conversation filed to a case should NOT be filed there on the link alone, or
- * null when it may be. A conversation carries every later forward of its chain, from anyone: the
- * link is trusted only for someone the case knows (a contact, their firm, an address already on
- * the case's email, the firm's own people), and only when the email does not name a different case.
+ * null when it may be. The link is trusted only for a reply to something the firm sent: our
+ * email went out, they answered it. A chain forwarded or sent on (any old thread) shares the
+ * conversation but answers nothing of ours, so a person decides. Nor is one that names a
+ * different case filed on the link.
  */
-export async function linkedFilingHeld(tenantId: string, linked: Candidate, candidates: Candidate[], fromAddress: string | null | undefined): Promise<string | null> {
+export async function linkedFilingHeld(
+  tenantId: string,
+  linked: Candidate,
+  candidates: Candidate[],
+  message: { internetMessageHeaders?: Array<{ name?: string; value?: string }> } | null | undefined,
+  lookup: (internetMessageId: string) => Promise<string | null>
+): Promise<string | null> {
   const other = namesAnotherCase(linked, candidates);
   if (other) return `it names another case (${other.matterRef})`;
-  const from = (fromAddress ?? '').toLowerCase();
-  const known = linked.signals.some((s) => s.kind === 'KNOWN_CONTACT' || s.kind === 'CONTACT_FIRM' || (s.kind === 'PARTICIPANT_EMAIL' && (s.value ?? '').toLowerCase() === from));
-  if (known) return null;
+  const answers = repliesTo(message);
+  if (!answers.length) return 'it is not a reply to anything we sent';
   const self = await tenantSelfAddresses(tenantId).catch(() => ({ emails: new Set<string>(), domains: new Set<string>() }));
-  if (from && self.emails.has(from)) return null;
-  return `it is from ${from || 'an unknown sender'}, who is not on this case`;
+  for (const id of answers) {
+    const from = await lookup(id).catch(() => null);
+    if (from && self.emails.has(from)) return null;
+  }
+  return 'it is not a reply to anything we sent (a forwarded or re-sent thread)';
 }
 
 export function bandFor(score: number, signals: MatchSignal[]): Band {

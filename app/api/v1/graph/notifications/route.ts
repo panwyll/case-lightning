@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
-import { getMessage } from '@/lib/server/graph';
+import { getMessage, senderOfMessageId } from '@/lib/server/graph';
 import { runTriage, applyTriageTags } from '@/lib/server/triage';
 import { runAutoAutomations } from '@/lib/server/automations';
 import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '@/lib/server/matching';
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
         // Not on a case yet → onto the filing queue, with the matching and the sender
         // check the triage just did. A trusted link means it IS on a case. Best-effort.
         // On a filed conversation, but naming a different case: a person decides, not the link.
-        const strayed = triage.top && hasTrustedLink(triage.top) ? await linkedFilingHeld(user.tenantId, triage.top, triage.candidates ?? [], message.from?.emailAddress?.address) : null;
+        const strayed = triage.top && hasTrustedLink(triage.top) ? await linkedFilingHeld(user.tenantId, triage.top, triage.candidates ?? [], message, (id) => senderOfMessageId(user.userId, id)) : null;
         if (strayed) console.info(`[graph notification] on a conversation filed to ${triage.top!.matterRef}, but ${strayed}: queued for a person`);
         if (!(triage.top && hasTrustedLink(triage.top)) || strayed) {
           const cls = triage.classification as { caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; sender?: typeof triage.classification.sender };

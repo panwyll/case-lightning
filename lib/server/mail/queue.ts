@@ -192,8 +192,9 @@ async function fileMissedReply(user: QueueUser, m: GraphMessage): Promise<boolea
   // On a filed conversation, but naming a different case: left in the queue for a person, as the notification would.
   const { matchMessage, messageSignals, linkedFilingHeld } = await import('../matching');
   const candidates = await matchMessage(user.tenantId, messageSignals(full)).catch(() => []);
-  const linked = candidates.find((c) => c.matterId === thread.matter_id);
-  const held = linked ? await linkedFilingHeld(user.tenantId, linked, candidates, (full as GraphMessage).from?.emailAddress?.address) : null;
+  const linked = candidates.find((c) => c.matterId === thread.matter_id) ?? { matterId: thread.matter_id, matterRef: '', propertyAddress: '', score: 0, band: 'NONE' as const, signals: [] };
+  const { senderOfMessageId } = await import('../graph');
+  const held = await linkedFilingHeld(user.tenantId, linked, candidates, full as never, (id) => senderOfMessageId(user.userId, id));
   if (held) {
     await enqueueMessage(user, full as never, { candidates }).catch(() => false);
     // Recorded, so the next sweep leaves it to the person rather than weighing it again.

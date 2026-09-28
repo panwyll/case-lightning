@@ -232,6 +232,15 @@ export async function listMessageAttachmentsMeta(userId: string, messageId: stri
   return (result.value ?? []).filter((a: any) => !a.isInline);
 }
 
+/** Who sent the message with this Internet Message-ID, if it is in this mailbox (any folder); null when it is not. */
+export async function senderOfMessageId(userId: string, internetMessageId: string): Promise<string | null> {
+  const client = await graphClientForUser(userId);
+  const id = internetMessageId.replace(/'/g, "''");
+  const r = await client.api('/me/messages').filter(`internetMessageId eq '${id}'`).select('from').top(1).get();
+  const m = (r.value ?? [])[0];
+  return m ? String(m.from?.emailAddress?.address ?? '').toLowerCase() || null : null;
+}
+
 /** A single attachment WITH its bytes (contentBytes, base64) for review. */
 export async function getMessageAttachment(userId: string, messageId: string, attachmentId: string): Promise<any> {
   const client = await graphClientForUser(userId);

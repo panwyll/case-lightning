@@ -87,3 +87,16 @@ test('an email on a conversation filed to one case that names a different case i
   assert.equal(namesAnotherCase({ ...linked, signals: [...linked.signals, { kind: 'STREET' as const, detail: '', weight: 0.4, value: 'Arthur Road' }] }, [linked, other]), null);
   assert.equal(namesAnotherCase(linked, [linked]), null);
 });
+
+test('a filed conversation is trusted only for a reply to something we sent: a forwarded thread is held for a person', async () => {
+  const { repliesTo, linkedFilingHeld } = await import('../../../lib/server/matching');
+  const reply = { internetMessageHeaders: [{ name: 'In-Reply-To', value: '<ours@firm.example>' }, { name: 'References', value: '<a@x> <ours@firm.example>' }] };
+  assert.deepEqual(repliesTo(reply), ['<ours@firm.example>', '<a@x>']);
+  assert.deepEqual(repliesTo({ internetMessageHeaders: [] }), []);
+  const linked = { matterId: 'A', matterRef: 'A-1', propertyAddress: '', score: 1, band: 'AUTO' as const, signals: [] };
+  // No DB in unit tests: the firm's own addresses come back empty, so nothing "we sent" can be matched and it is held.
+  const forwarded = await linkedFilingHeld('t', linked, [linked], { internetMessageHeaders: [] }, async () => null);
+  assert.match(forwarded ?? '', /not a reply to anything we sent/);
+  const theirs = await linkedFilingHeld('t', linked, [linked], reply, async () => 'someone@else.example');
+  assert.match(theirs ?? '', /forwarded or re-sent thread/);
+});
