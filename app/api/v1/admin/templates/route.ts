@@ -40,7 +40,9 @@ export async function GET() {
       `select id, name from doc_template where tenant_id = $1 order by sort_order, created_at`,
       [user.tenantId]
     ).catch(() => []);
-    return ok({ templates: rows.map(rowToSafeTemplate), docTemplates, engine: messageInfo() });
+    // Each document with the step that makes it, so the attach menu can group them by stage.
+    const { DOC_USAGE } = await import('@/lib/server/doc-templates');
+    return ok({ templates: rows.map(rowToSafeTemplate), docTemplates: docTemplates.map((d) => ({ ...d, step: DOC_USAGE[d.name]?.step ?? null })), engine: messageInfo() });
   } catch (error) {
     return fail(error);
   }

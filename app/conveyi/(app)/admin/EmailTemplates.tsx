@@ -20,7 +20,17 @@ async function api<T = any>(path: string, options: RequestInit = {}): Promise<T>
 }
 
 interface Tpl { id: string; name: string; category: string; subjectTemplate: string | null; bodyTemplate: string; styleTag: string; attachDocTemplateIds?: string[]; isActive?: boolean }
-interface DocTpl { id: string; name: string }
+interface DocTpl { id: string; name: string; step?: string | null }
+/** The stage a document belongs to (as the Doc Packs tabs group them); the firm's own documents last. */
+const DOC_GROUPS = ['Instruction', 'Pre-Exchange', 'Exchange', 'Completion', "Firm's Own"] as const;
+const docGroup = (d: DocTpl): (typeof DOC_GROUPS)[number] => {
+  const stage = d.step?.split(',')[0].trim() ?? '';
+  if (!d.step) return "Firm's Own";
+  if (stage === 'Instruction') return 'Instruction';
+  if (stage === 'Contract & Exchange') return 'Exchange';
+  if (stage === 'Completion') return 'Completion';
+  return 'Pre-Exchange';
+};
 
 const STYLES = ['NEUTRAL', 'FIRM', 'CHASING'];
 // The {{placeholders}} that fill from matter data (mirrors buildMatterVars).
@@ -56,6 +66,14 @@ export default function EmailTemplates() {
   const [sel, setSel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [attachOpen, setAttachOpen] = useState(false);
+  // The attach menu closes on any click outside it.
+  const attachRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!attachOpen) return;
+    const close = (e: MouseEvent) => { if (!attachRef.current?.contains(e.target as Node)) setAttachOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [attachOpen]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // Preview against a real case: the words as they stand in the editor, filled from that case.
@@ -199,11 +217,20 @@ export default function EmailTemplates() {
                     <option value="">Insert…</option>
                     {vars.map((k) => <option key={k} value={k}>{`{{${k}}}`}{SAMPLE[k] ? ` · ${SAMPLE[k]}` : ''}</option>)}
                   </select>
-                  <span style={{ position: 'relative' }}>
+                  <span ref={attachRef} style={{ position: 'relative' }}>
                     <button type="button" title="Attach a document" aria-label="Attach a document" disabled={!available.length && !ids.length} onClick={() => setAttachOpen((o) => !o)} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 9px' }}><Paperclip size={16} />{ids.length ? ids.length : null}</button>
                     {attachOpen && (
                       <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,.14)', padding: 4, minWidth: 240, display: 'grid' }}>
-                        {available.length ? available.map((d) => <button key={d.id} type="button" onClick={() => { setIds([...ids, d.id]); setAttachOpen(false); }} style={{ textAlign: 'left', border: 0, background: 'none', padding: '7px 10px', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}>{d.name}</button>) : <span style={{ padding: '7px 10px', fontSize: 12.5, color: '#94a3b8' }}>Every document is attached</span>}
+                        {available.length ? DOC_GROUPS.map((g) => {
+                          const inGroup = available.filter((d) => docGroup(d) === g).sort((a, b) => a.name.localeCompare(b.name));
+                          if (!inGroup.length) return null;
+                          return (
+                            <div key={g}>
+                              <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', padding: '8px 10px 3px' }}>{g}</div>
+                              {inGroup.map((d) => <button key={d.id} type="button" onClick={() => { setIds([...ids, d.id]); setAttachOpen(false); }} style={{ display: 'block', width: '100%', textAlign: 'left', border: 0, background: 'none', padding: '6px 10px 6px 16px', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}>{d.name}</button>)}
+                            </div>
+                          );
+                        }) : <span style={{ padding: '7px 10px', fontSize: 12.5, color: '#94a3b8' }}>Every document is attached</span>}
                       </div>
                     )}
                   </span>
