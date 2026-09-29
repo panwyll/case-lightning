@@ -62,6 +62,7 @@ export const Pause = (p: IconProps) => <Icon {...p}><rect x="14" y="4" width="4"
 export const Circle = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="10" /></Icon>;
 export const CircleDot = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" fill="currentColor" /></Icon>;
 export const Search = (p: IconProps) => <Icon {...p}><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></Icon>;
+export const Filter = (p: IconProps) => <Icon {...p}><path d="M3 5h18l-7 8.5V19l-4 2v-7.5z" /></Icon>;
 export const Minus = (p: IconProps) => <Icon {...p}><path d="M5 12h14" /></Icon>;
 export const Ban = (p: IconProps) => <Icon {...p}><circle cx="12" cy="12" r="10" /><path d="m4.9 4.9 14.2 14.2" /></Icon>;
 export const Plus = (p: IconProps) => <Icon {...p}><path d="M5 12h14" /><path d="M12 5v14" /></Icon>;

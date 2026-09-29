@@ -82,8 +82,8 @@ export const HEALTH_RANK: Record<HealthBand, number> = { normal: 0, attention: 1
 export const HEALTH_LABEL: Record<HealthBand, string> = {
   normal: 'On track',
   attention: 'With us',
-  delayed: 'Others late',
-  blocked: 'We are late',
+  delayed: 'Delayed - Others',
+  blocked: 'Delayed - Us',
   critical: 'Critical',
 };
 
@@ -92,7 +92,7 @@ export type ReasonCode =
   | 'issue_blocking' | 'issue_critical' | 'issue_stale'
   | 'decision_pending' | 'hard_stop'
   | 'deadline_near' | 'deadline_passed'
-  | 'stage_overrun' | 'manual_handling' | 'abandoned';
+  | 'stage_overrun' | 'manual_handling' | 'abandoned' | 'step_due';
 
 export interface HealthReason {
   code: ReasonCode;
@@ -104,7 +104,7 @@ export interface HealthReason {
   /** What the system thinks should happen next. */
   suggested: string | null;
   workstream: Workstream | null;
-  ref: { type: 'wait' | 'issue' | 'decision' | 'deadline' | 'stage' | 'matter'; id: string };
+  ref: { type: 'wait' | 'issue' | 'decision' | 'deadline' | 'stage' | 'matter' | 'step'; id: string };
   /** Working days it has been like this (waits, issues), where that reads naturally. */
   ageWorkingDays?: number;
   /** Working days until the date we owe (deadlines). Negative = passed. */
@@ -318,6 +318,13 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
       workstream: null,
       ref: { type: 'stage', id: stage },
     });
+  }
+
+  // The flowchart's steps due now are ours to do: they colour the case, so they are its reasons too.
+  const today = now.toISOString().slice(0, 10);
+  for (const d of dueSteps(s, now)) {
+    const late = !!d.dueDate && d.dueDate < today;
+    reasons.push({ code: 'step_due', band: late ? 'blocked' : 'attention', headline: late ? `${d.title} — overdue since ${d.dueDate}` : d.title, why: [d.detail ?? 'The next step on the case is ours.'], suggested: d.title, workstream: null, ref: { type: 'step', id: d.key } });
   }
 
   reasons.sort((a, b) => HEALTH_RANK[b.band] - HEALTH_RANK[a.band] || (b.ageWorkingDays ?? 0) - (a.ageWorkingDays ?? 0));

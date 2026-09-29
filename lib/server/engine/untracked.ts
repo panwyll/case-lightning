@@ -89,5 +89,8 @@ export async function untrackedCaseRows(tenantId: string, opts: { assignedTo?: s
         pace: { stage: 'instruction' as never, inStage: 0, expected: 0, overrun: 0 },
       },
       dayOfCase: Math.max(0, Math.floor((now - r.created_at.getTime()) / 86_400_000)),
+      openedAt: r.created_at.toISOString(),
+      completedAt: null,
+      endedAt: null,
     }));
 }

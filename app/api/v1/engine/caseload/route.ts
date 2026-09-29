@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     assertFeature('auth');
     const user = await requireUser();
     const q = z
-      .object({ mine: z.string().optional(), includeShadow: z.string().optional(), limit: z.coerce.number().min(1).max(500).optional() })
+      .object({ mine: z.string().optional(), finished: z.string().optional(), includeShadow: z.string().optional(), limit: z.coerce.number().min(1).max(500).optional() })
       .parse(Object.fromEntries(req.nextUrl.searchParams));
     // A matter the engine is watching in shadow mode is still a real case on the firm's
     // books — shadow hides the engine's conclusions, never the matter. Shown by default.
@@ -48,7 +48,18 @@ export async function GET(req: NextRequest) {
     const ids = Array.from(new Set([...tracked, ...untracked].map((r) => r.assignedTo).filter((x): x is string => !!x)));
     const names = ids.length ? await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, ids]).catch(() => []) : [];
     const nameOf = new Map(names.map((n) => [n.id, n.name]));
-    const rows = await onlyVisible(user, [...tracked, ...untracked].map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null })));
+    // Finished cases (abandoned, or closed once registered) only when the list's filters ask for them: the board is live work.
+    const finished = q.finished === '1'
+      ? (await engine().eventStore.listQueue(user.tenantId, { assignedTo: q.mine === '1' ? user.userId : null, includeShadow: true, includeFinished: true, limit: 500 }))
+          .filter((r) => !tracked.some((t) => t.matterId === r.matterId))
+          .map((r) => ({ ...r, tracked: true as const }))
+      : [];
+    const all = [...tracked, ...untracked, ...finished];
+    const more = Array.from(new Set(finished.map((r) => r.assignedTo).filter((x): x is string => !!x && !nameOf.has(x))));
+    if (more.length) for (const n of await query<{ id: string; name: string }>(`select id, coalesce(display_name, email) as name from app_user where tenant_id = $1 and id = any($2::uuid[])`, [user.tenantId, more]).catch(() => [])) nameOf.set(n.id, n.name);
+    const visible = await onlyVisible(user, all.map((r) => ({ ...r, assignedToName: r.assignedTo ? nameOf.get(r.assignedTo) ?? null : null })));
+    const finishedIds = new Set(finished.map((r) => r.matterId));
+    const rows = visible.filter((r) => !finishedIds.has(r.matterId));
     // Completions: this month, this year, and the firm's best month (real cases only, the whole firm or the caller's own).
     const done = await query<{ month: string; n: number }>(
       `select to_char(date_trunc('month', e.created_at at time zone 'Europe/London'), 'YYYY-MM') as month, count(distinct e.matter_id)::int as n
@@ -66,6 +77,7 @@ export async function GET(req: NextRequest) {
     return ok({
       completions,
       rows,
+      finished: visible.filter((r) => finishedIds.has(r.matterId)),
       // Health is only claimed for matters the engine actually knows about. An untracked
       // matter is not "moving normally" — it is unknown — so it is counted separately.
       rollup: { ...rollup(tracked.filter((r) => rows.some((x) => x.matterId === r.matterId)).map((r) => r.health.band)), untracked: rows.filter((r) => !r.tracked).length },

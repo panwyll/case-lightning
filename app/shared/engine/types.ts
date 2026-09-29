@@ -56,6 +56,9 @@ export interface QueueRow {
   targetExchangeDate: string | null;
   manualHandling: boolean;
   updatedAt: string;
+  openedAt?: string | null;
+  completedAt?: string | null;
+  endedAt?: string | null;
 }
 
 export interface MatterMeta { matterRef: string; propertyAddress: string; legacyStage?: string | null; shadowMode: boolean; assignedTo?: string | null; handler?: string | null; /** A scenario-library case: quarantined from every outward effect. */ sandbox?: boolean; sandboxScenario?: string | null; sandboxStep?: string | null; }
@@ -389,7 +392,7 @@ export const pretty = (s: string) => s.replace(/_/g, ' ');
 export type HealthBand = 'normal' | 'attention' | 'delayed' | 'blocked' | 'critical';
 export const HEALTH_BANDS: HealthBand[] = ['normal', 'attention', 'delayed', 'blocked', 'critical'];
 /** Green nothing waiting on us · blue waiting on us, on time · yellow others late · red we are late · black both, or in jeopardy. */
-export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'With us', delayed: 'Others late', blocked: 'We are late', critical: 'Critical' };
+export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'With us', delayed: 'Delayed - Others', blocked: 'Delayed - Us', critical: 'Critical' };
 
 export interface HealthReason {
   code: string;

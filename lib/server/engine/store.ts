@@ -83,6 +83,10 @@ export interface QueueRow {
   health: HealthSummary;
   /** Days since the matter was instructed — shown as "day 43", never used to judge health. */
   dayOfCase: number;
+  /** When it was instructed, completed, and abandoned or closed: what the Case View filters by. */
+  openedAt: string | null;
+  completedAt: string | null;
+  endedAt: string | null;
 }
 
 export interface QueueOptions {
@@ -165,6 +169,9 @@ function queueRow(s: MatterState, meta: { matterRef: string | null; propertyAddr
     lifecycle: lifecycle(s),
     health: summariseHealth(caseHealth(s, now)),
     dayOfCase: s.stageHistory.length ? Math.max(0, Math.floor((now.getTime() - new Date(s.stageHistory[0].at).getTime()) / 86_400_000)) : 0,
+    openedAt: s.stageHistory[0]?.at ?? null,
+    completedAt: s.completion.confirmedAt,
+    endedAt: s.abandoned?.at ?? s.closedAt ?? null,
   };
 }
 
