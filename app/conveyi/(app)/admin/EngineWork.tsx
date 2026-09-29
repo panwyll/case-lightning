@@ -43,7 +43,15 @@ export const WORK_CSS = `
 .wk-send:hover{background:#f8fafc}
 .wk-send:disabled{opacity:.6;cursor:default}
 .wk-who{display:flex;gap:6px;flex-wrap:wrap}
-.wk-who span{font-size:11.5px;font-weight:700;color:#334155;background:#f1f5f9;border-radius:999px;padding:2px 9px;white-space:nowrap}
+.wk-who span{font-size:11.5px;font-weight:700;color:#334155;background:#f1f5f9;border-radius:999px;padding:2px 9px;white-space:nowrap;cursor:pointer}
+.wk-who span:hover{background:#ede9fe;color:#5A27E0}
+.wk-who span.on{background:#5A27E0;color:#fff}
+.wk-case{border-top:1px solid #eef1f5}
+.wk-case-h{display:flex;align-items:center;gap:8px;padding:9px 14px 4px;text-decoration:none;color:#0f172a;font-size:13px}
+.wk-case-h b{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wk-case-h span{font-size:12px;color:#64748b;white-space:nowrap}
+.wk-case-h .n{margin-left:auto;color:#94a3b8}
+.wk-case .wk-row{border-top:0;padding-left:34px}
 .wk-clear{display:flex;align-items:center;gap:8px;padding:2px 14px 12px;font-size:13px;color:#166534}
 .wk-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 .wk-left{font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -129,8 +137,13 @@ function Column({ title, items, checkedAt }: { title: string; items: WorkItem[];
  * Waiting on X to do Y by Z. Collapsed, one line: who holds how many, how many are
  * overdue, and when the next one falls due. Open, every line. It chases itself.
  */
-export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: () => void }) {
+export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /** before any search, for the count */ total?: number; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
+  // Narrowed to whoever we are waiting on (click their count); grouped by case.
+  const [whoFilter, setWhoFilter] = useState<string | null>(null);
+  const items = whoFilter ? all.filter((i) => i.actionOwner === whoFilter) : all;
+  // A search above narrows it: open, so the matches show.
+  const expanded = open || (total != null && total !== all.length);
   const [sending, setSending] = useState<string | null>(null);
   const [sendErr, setSendErr] = useState<string | null>(null);
   // Send the chase now: the same template and record the timer would use, sent by a person.
@@ -152,19 +165,22 @@ export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: ()
   const sorted = items.slice().sort(pressing);
   const overdue = items.filter((i) => (daysLeft(i) ?? 0) < 0).length;
   const upcoming = sorted.find((i) => (daysLeft(i) ?? -1) >= 0);
-  const byWho = Object.entries(items.reduce<Record<string, number>>((m, i) => ((m[i.actionOwner] = (m[i.actionOwner] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
+  const byWho = Object.entries(all.reduce<Record<string, number>>((m, i) => ((m[i.actionOwner] = (m[i.actionOwner] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
   return (
     <div className="wk-wait">
       <button className="wk-wait-hd" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span className={`chev${open ? ' open' : ''}`}><ChevronRight size={14} /></span>
-        <b>Waiting</b><span className="n">{items.length}</span>
-        <span className="wk-who">{byWho.map(([who, n]) => <span key={who}>{WHO_SHORT[who] ?? pretty(who)} {n}</span>)}</span>
+        <span className={`chev${expanded ? ' open' : ''}`}><ChevronRight size={14} /></span>
+        <b>Waiting</b><span className="n">{items.length}{total != null && total !== all.length ? ` of ${total}` : ''}</span>
+        <span className="wk-who">{byWho.map(([who, n]) => <span key={who} role="button" tabIndex={0} className={whoFilter === who ? 'on' : undefined} onClick={(e) => { e.stopPropagation(); setWhoFilter(whoFilter === who ? null : who); setOpen(true); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); setWhoFilter(whoFilter === who ? null : who); setOpen(true); } }}>{WHO_SHORT[who] ?? pretty(who)} {n}</span>)}</span>
         <span className="sum">
           {overdue > 0 && <span className="wk-left over">{overdue} overdue</span>}
           {upcoming && upcoming.chaseInWorkingDays != null && <span>next chase in {upcoming.chaseInWorkingDays} working day{upcoming.chaseInWorkingDays === 1 ? '' : 's'}</span>}
         </span>
       </button>
-      {open && sorted.map((i) => {
+      {expanded && groupByCase(sorted).map((g) => (
+        <div key={g.matterId} className="wk-case">
+          <a className="wk-case-h" href={paths.matter(g.matterId)}><House band={g.band} size={16} /><b>{g.address}</b>{g.ref && <span>{g.ref}</span>}{g.clients && <span>{g.clients}</span>}<span className="n">{g.items.length}</span></a>
+          {g.items.map((i) => {
         const who = OWNER[i.actionOwner] ?? pretty(i.actionOwner);
         const chasing = i.chaseDue ? <span className="over">Chasing {who} on the next sweep</span>
           : i.chaseInWorkingDays != null ? <span>Chasing {who} in {i.chaseInWorkingDays} working day{i.chaseInWorkingDays === 1 ? '' : 's'}</span>
@@ -174,7 +190,7 @@ export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: ()
             <House band={i.urgency} size={18} />
             <a href={paths.matter(i.matterId)} style={{ textDecoration: 'none', color: 'inherit', minWidth: 0 }}>
               <span className="line"><b>{i.what.charAt(0).toUpperCase() + i.what.slice(1)}</b>{i.dueBy ? <> by {day(i.dueBy)}</> : null}</span>
-              <div className="meta">{[i.matterRef, i.clients?.length ? i.clients.join(' & ') : null, i.propertyAddress].filter(Boolean).join(' · ')}{i.chasesSent > 0 ? ` · chased ${i.chasesSent}×` : ''}</div>
+              {i.chasesSent > 0 && <div className="meta">Chased {i.chasesSent}×</div>}
               {i.since && <div className="meta">Asked {day(i.since)}{i.openedBy ? ` by ${i.openedBy === 'system' || i.openedBy === 'ai' ? 'the system' : i.openedBy === 'external' ? 'the other side' : i.openedBy}` : ''}</div>}
             </a>
             <span className="right">
@@ -187,8 +203,22 @@ export function Waiting({ items, onChanged }: { items: WorkItem[]; onChanged: ()
           </div>
         );
       })}
+        </div>
+      ))}
+      {expanded && items.length === 0 && <div className="wk-row" style={{ gridTemplateColumns: '1fr', color: '#94a3b8' }}>Nothing matches.</div>}
     </div>
   );
+}
+
+/** Waits by case, in the order their most pressing wait falls. */
+function groupByCase(items: WorkItem[]) {
+  const m = new Map<string, { matterId: string; address: string; ref: string | null; clients: string | null; band: WorkItem['urgency']; items: WorkItem[] }>();
+  for (const i of items) {
+    const g = m.get(i.matterId) ?? { matterId: i.matterId, address: i.propertyAddress ?? i.matterRef ?? 'Case', ref: i.matterRef, clients: i.clients?.length ? i.clients.join(' & ') : null, band: i.urgency, items: [] };
+    g.items.push(i);
+    m.set(i.matterId, g);
+  }
+  return Array.from(m.values());
 }
 
 /** `who`: '' for the whole team, otherwise one person's id. */

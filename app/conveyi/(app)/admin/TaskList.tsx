@@ -6,7 +6,7 @@ import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
-import { ChevronRight, CheckCircle } from '@/app/shared/icons';
+import { ChevronRight, CheckCircle, Search } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
 
 /**
@@ -17,6 +17,10 @@ import { Waiting, WORK_CSS } from './EngineWork';
 const CSS = `
 .tl-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .tl-bar label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-q{position:relative;flex:1;min-width:220px;max-width:420px}
+.tl-q svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8}
+.tl-q input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px 6px 32px;font-size:12.5px;font-family:inherit}
+.tl-q input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
 .tl-bar select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit;max-width:280px}
 .tl-bar .n{margin-left:auto;font-size:12.5px;color:#94a3b8;font-variant-numeric:tabular-nums}
 .tl-group{background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px;overflow:hidden}
@@ -74,7 +78,9 @@ export default function TaskList({ who }: { who: string }) {
   const forConveyancer = (i: WorkItem): boolean => data?.viewerRole === 'ASSISTANT' && !i.assistantCan;
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [sort, setSort] = useState<Sort>('urgency');
-  const [caseId, setCaseId] = useState('');
+  const [q, setQ] = useState('');
+  /** Every word typed matches the case (address, reference, clients) or the task itself. */
+  const matches = useCallback((i: WorkItem) => { const hay = `${i.propertyAddress ?? ''} ${i.matterRef ?? ''} ${(i.clients ?? []).join(' ')} ${i.what} ${i.chip ?? ''}`.toLowerCase(); return q.trim().toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w)); }, [q]);
   const [open, setOpen] = useState<string | null>(null);
   // Several approvals can be in flight at once; each row tracks its own.
   const [approving, setApproving] = useState<Set<string>>(new Set());
@@ -146,14 +152,14 @@ export default function TaskList({ who }: { who: string }) {
   const tasks = useMemo(() => {
     if (!data) return [];
     const all = [...data.do, ...data.escalate].filter((i) => !(i.ref?.id && done.has(i.ref.id)));
-    const filtered = caseId ? all.filter((i) => i.matterId === caseId) : all;
+    const filtered = all.filter(matches);
     const by: Record<Sort, (a: WorkItem, b: WorkItem) => number> = {
       urgency: (a, b) => (RANK[a.urgency] ?? 9) - (RANK[b.urgency] ?? 9) || (ageDays(b, now) ?? 0) - (ageDays(a, now) ?? 0),
       due: (a, b) => (dueIn(a, now) ?? ageDays(a, now) == null ? 9999 : -(ageDays(a, now) ?? 0)) - (dueIn(b, now) ?? ageDays(b, now) == null ? 9999 : -(ageDays(b, now) ?? 0)),
       case: (a, b) => (a.propertyAddress ?? a.matterRef ?? '').localeCompare(b.propertyAddress ?? b.matterRef ?? '') || (RANK[a.urgency] ?? 9) - (RANK[b.urgency] ?? 9),
     };
     return filtered.slice().sort(by[sort]);
-  }, [data, caseId, sort, now, done]);
+  }, [data, matches, sort, now, done]);
 
   // Grouped by case, in the order the sort puts their first task.
   const groups = useMemo(() => {
@@ -166,11 +172,6 @@ export default function TaskList({ who }: { who: string }) {
     }
     return Array.from(m.values());
   }, [tasks]);
-  const cases = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const i of [...(data?.do ?? []), ...(data?.escalate ?? [])]) m.set(i.matterId, i.propertyAddress ?? i.matterRef ?? 'Case');
-    return Array.from(m.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [data]);
 
   if (!data) return null;
   return (
@@ -178,7 +179,7 @@ export default function TaskList({ who }: { who: string }) {
       <style>{WORK_CSS + CSS}</style>
       <div className="tl-bar">
         <label>Sort<select value={sort} onChange={(e) => setSort(e.target.value as Sort)}><option value="urgency">Urgency</option><option value="due">Due date</option><option value="case">Case</option></select></label>
-        <label>Case<select value={caseId} onChange={(e) => setCaseId(e.target.value)}><option value="">All cases</option>{cases.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+        <div className="tl-q"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, clients or tasks" aria-label="Search tasks" /></div>
         <span className="n">{tasks.length} task{tasks.length === 1 ? '' : 's'}{groups.length > 1 ? ` across ${groups.length} cases` : ''}</span>
       </div>
       {outcome && <div className={`tl-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
@@ -229,7 +230,7 @@ export default function TaskList({ who }: { who: string }) {
           })}
         </div>
       ))}
-      {data.waiting.length > 0 && <Waiting items={data.waiting} onChanged={() => void load()} />}
+      {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
     </div>
   );
 }

@@ -155,6 +155,14 @@ const wd = (iso: string, now: Date, cal: WorkingCalendar) => workingDaysBetween(
  */
 const subjectLabel = (action: string, subject: string): string => ENGINE_ACTION_SUBJECTS[action as keyof typeof ENGINE_ACTION_SUBJECTS]?.find((s) => s.key === subject)?.label ?? subject.replace(/_/g, ' ');
 
+/** What a first request asks for, as its task says it. */
+/** What each wait is for, as a chase's task says it. */
+const WAIT_LABEL: Record<string, string> = { mortgage_offer: 'News of the mortgage offer', survey: 'Whether the client is having a survey', contract_pack: "The draft contract pack", id_check: 'ID documents from the client', search: 'The search result', enquiry: 'Replies to our enquiries', funds: 'Completion funds', registration: 'Registration at HM Land Registry', proof_of_funds: 'The proof-of-funds form', management_pack: 'The management pack', property_forms: 'The property forms', redemption: 'The redemption statement', lender_consent: "The lender's consent", discharge: 'Discharge of the old mortgage', signed_documents: 'The signed documents', deposit: 'The deposit', client_decision: "The client's answer", insurance: 'Buildings insurance' };
+const REQUEST_TITLE: Record<string, string> = {
+  request_contract_pack: 'The draft contract pack', request_management_pack: 'The leasehold management pack', request_redemption_statement: 'A redemption statement',
+  request_lender_consent: "The lender's consent", request_discharge: 'Discharge of the old mortgage', exchanged_agent: 'Exchanged: tell the agent', completed_agent: 'Completed: tell the agent',
+  enquiries_to_seller_solicitor: 'Our enquiries',
+};
 const PROPOSAL_CHIP: Record<string, string> = { signing_pack: 'Proposal: signing pack', survey_advice: 'Proposal: survey advice to client', acknowledgement: 'Proposal: acknowledgement', chase: 'Proposal: chase', client_update: 'Proposal: client update', search_order: 'Proposal: search order', enquiry_draft: 'Proposal: enquiry', id_check_request: 'Proposal: ID check', proof_of_funds_request: 'Proposal: form to client' };
 /** What a standard client update is about, in the words of its subject line. */
 const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
@@ -169,7 +177,9 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     // Who it is for rides in the chip: "Proposal: client acknowledgement", "Proposal: chase seller's solicitor".
     const role = typeof det.recipientRole === 'string' ? det.recipientRole : null;
     const who = role === 'seller_solicitor' ? "seller's solicitor" : role === 'buyer_solicitor' ? "buyer's solicitor" : role === 'search_provider' ? 'search provider' : role === 'lender' ? 'lender' : role === 'hmlr' ? 'HMLR' : role ? role.replace(/_/g, ' ') : null;
-    const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
+    // A first request is not a chase: it asks for the thing the first time.
+    const request = sub === 'chase' && det.kind === 'request';
+    const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : request ? `Proposal: request to ${who ?? 'them'}` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
     // Proposed only because the case is in manual handling (it would otherwise have gone on its own): the chip says so.
     return { kind: `proposal:${sub}`, chip: det.manualMode ? `Manual Mode · ${chip}` : chip };
   }
@@ -203,7 +213,14 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
     switch (pr.action) {
       case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'}`;
-      case 'chase': return `${cap(typeof det.waitKey === 'string' ? det.waitKey.replace(/_/g, ' ') : 'a reply')}${typeof det.subject === 'string' && det.subject ? ` ${det.subject}` : ''}`;
+      case 'chase': {
+        // What is asked for, in words: the request's own title, or what the chase is chasing.
+        if (det.kind === 'request') return REQUEST_TITLE[String(det.template ?? '')] ?? cap(String(det.template ?? 'request').replace(/^request_/, '').replace(/_/g, ' '));
+        const key = typeof det.waitKey === 'string' ? det.waitKey : '';
+        const what = WAIT_LABEL[key] ?? (key ? cap(key.replace(/_/g, ' ')) : 'What we are waiting for');
+        const subj = typeof det.subject === 'string' && det.subject && !/^[0-9a-f-]{20,}$/i.test(det.subject) ? ` (${SEARCH_NAME[det.subject] ?? det.subject.replace(/_/g, ' ')})` : '';
+        return `${what}${subj}`;
+      }
       case 'search_order': return `${SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? '')}`;
       case 'enquiry_draft': {
         // What the enquiry is for, at a glance; the words themselves are in the task.
