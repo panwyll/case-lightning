@@ -191,7 +191,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
       <div style={{ flex: '2 1 160px', minWidth: 0 }}><label style={S.lbl}>{weAre}{clients.length > 1 ? ` ${i + 1}` : ''} name *</label><input value={c.name} autoComplete="off" onChange={(e) => setClients((cs) => cs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Full name" style={S.input} />{show(`c${i}name`)}</div>
       <div style={{ flex: '2 1 180px', minWidth: 0 }}><label style={S.lbl}>Email *</label><input type="email" inputMode="email" value={c.email} onChange={(e) => setClients((cs) => cs.map((x, j) => (j === i ? { ...x, email: e.target.value } : x)))} placeholder="name@example.com" style={S.input} />{show(`c${i}email`)}</div>
       <div style={{ flex: '1 1 130px', minWidth: 0 }}><label style={S.lbl}>Mobile</label><input type="tel" inputMode="tel" value={c.phone} onChange={(e) => setClients((cs) => cs.map((x, j) => (j === i ? { ...x, phone: e.target.value } : x)))} placeholder="07…" style={S.input} />{show(`c${i}phone`)}</div>
-      {clients.length > 1 && <button type="button" onClick={() => setClients((cs) => cs.filter((_, j) => j !== i))} style={{ ...S.x, marginTop: 24 }} aria-label="Remove"><X size={12} /></button>}
+      {clients.length > 1 && <button type="button" onClick={() => setClients((cs) => cs.filter((_, j) => j !== i))} style={{ ...S.x, marginTop: 24 }} aria-label="Remove"><X size={16} /></button>}
     </div>
   );
 
@@ -200,7 +200,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
       <div style={S.card} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
           <strong style={{ fontSize: 16, color: '#0f172a', flex: 1 }}>New Case</strong>
-          <button onClick={onClose} style={S.x} aria-label="Close"><X size={14} /></button>
+          <button onClick={onClose} style={S.x} aria-label="Close"><X size={16} /></button>
         </div>
 
         <div style={S.sec}>Property</div>
@@ -336,7 +336,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
 const S: Record<string, React.CSSProperties> = {
   overlay: { position: 'fixed', inset: 0, background: 'rgba(15,15,30,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 12 },
   card: { background: '#fff', borderRadius: 14, padding: 16, width: '100%', maxWidth: 620, maxHeight: '92vh', overflowY: 'auto', boxSizing: 'border-box', boxShadow: '0 14px 44px rgba(0,0,0,0.3)' },
-  x: { width: 26, height: 26, border: 'none', background: '#f1f5f9', borderRadius: 8, cursor: 'pointer', color: '#64748b', fontSize: 12, flexShrink: 0 },
+  x: { width: 28, height: 28, padding: 0, border: 'none', background: '#f1f5f9', borderRadius: 8, cursor: 'pointer', color: '#64748b', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0 },
   sec: { fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: '#5A27E0', margin: '16px 0 0', paddingBottom: 4, borderBottom: '1px solid #eef1f5' },
   lbl: { display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', margin: '10px 0 3px' },
   input: { width: '100%', boxSizing: 'border-box', fontSize: 13, padding: '7px 9px', borderRadius: 8, border: '1px solid #d0d5dd', background: '#fff', color: '#0f172a' },
