@@ -263,6 +263,13 @@ export function bandFor(score: number, signals: MatchSignal[]): Band {
  * Returns ranked candidate matters for a message. `tenantId` scopes everything;
  * candidates are produced only from hard identifiers + linked threads.
  */
+/**
+ * Only live cases are offered up for an email: not a file that is closed or merged away, nor a case the
+ * engine has abandoned or closed. A completed case still registering stays (its SDLT, registration and
+ * discharge mail must land). Anyone can still find a finished case by searching for it.
+ */
+const LIVE = `coalesce(status, 'OPEN') not in ('CLOSED', 'MERGED') and not exists (select 1 from matter_engine_state s where s.matter_id = matter.id and (jsonb_typeof(s.state->'abandoned') = 'object' or (s.state->>'closedAt') is not null))`;
+
 export async function matchMessage(tenantId: string, signals: MessageSignals, opts: { distrustSender?: boolean } = {}): Promise<Candidate[]> {
   const haystack = `${signals.subject}\n${signals.bodyText}`;
   const tokens = extractCaseRefTokens(haystack);
@@ -363,7 +370,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
   try {
     matters = await query<MatterRow>(
       `select id, matter_ref, property_address, case_ref_token, firm_ref, buyer_names, seller_names
-       from matter where tenant_id = $1 and id = any($2)`,
+       from matter where tenant_id = $1 and id = any($2) and ${LIVE}`,
       [tenantId, ids]
     );
   } catch {
@@ -371,7 +378,7 @@ export async function matchMessage(tenantId: string, signals: MessageSignals, op
     matters = (
       await query<Omit<MatterRow, 'firm_ref'>>(
         `select id, matter_ref, property_address, case_ref_token, buyer_names, seller_names
-         from matter where tenant_id = $1 and id = any($2)`,
+         from matter where tenant_id = $1 and id = any($2) and ${LIVE}`,
         [tenantId, ids]
       )
     ).map((m) => ({ ...m, firm_ref: null }));
