@@ -101,6 +101,79 @@ function Table({ columns, rows, filter, empty, maxHeight }: { columns: Col[]; ro
   );
 }
 
+type FirmRow = { id: string; name: string; created_at: string; users: number; cases: number; comp_plan: string | null; comp_until: string | null; status: string; entitled: boolean; trialEndsAt: string | null; graceEndsAt: string | null };
+const shortDay = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+
+/** Every firm's billing standing, and comping one (free, full service), with or without an end date. */
+function FirmsBilling({ k }: { k: string }) {
+  const [firms, setFirms] = useState<FirmRow[] | null>(null);
+  const [err, setErr] = useState('');
+  const [q, setQ] = useState('');
+  const [until, setUntil] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch('/api/v1/internal/firms', { headers: { authorization: `Bearer ${k}` } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setFirms(j.firms);
+    } catch (e) { setErr((e as Error).message); }
+  }, [k]);
+  useEffect(() => { void load(); }, [load]);
+  const comp = async (f: FirmRow, on: boolean) => {
+    setBusy(f.id); setErr('');
+    try {
+      const r = await fetch('/api/v1/internal/firms', { method: 'PATCH', headers: { authorization: `Bearer ${k}`, 'content-type': 'application/json' }, body: JSON.stringify({ tenantId: f.id, comp: on, until: on ? until[f.id] || null : null }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      await load();
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(null); }
+  };
+  const comped = (f: FirmRow) => !!f.comp_plan && (!f.comp_until || new Date(f.comp_until) > new Date());
+  const standing = (f: FirmRow): [string, string] =>
+    comped(f) ? [`Comped${f.comp_until ? ` to ${shortDay(f.comp_until)}` : ''}`, '#a78bfa']
+    : f.graceEndsAt ? [`Payment failed · grace to ${shortDay(f.graceEndsAt)}`, '#fbbf24']
+    : f.status === 'trialing' ? [`Trial${f.trialEndsAt ? ` to ${shortDay(f.trialEndsAt)}` : ''}`, '#93c5fd']
+    : f.entitled ? ['Paying', '#4ade80'] : ['Suspended', '#f87171'];
+  const shown = (firms ?? []).filter((f) => !q.trim() || f.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const input = { background: '#0f1115', border: '1px solid #2e3440', color: '#e6e9ef', borderRadius: 7, padding: '4px 8px', font: 'inherit', fontSize: 12.5 } as const;
+  const btn = (primary: boolean) => ({ background: primary ? '#7c5cff' : 'transparent', border: '1px solid #7c5cff', color: primary ? '#fff' : '#c4b5fd', borderRadius: 7, padding: '4px 11px', font: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer' }) as const;
+  return (
+    <section className="panel">
+      <h2>Billing &amp; comps</h2>
+      {err && <div style={{ color: '#f87171', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+      <input style={{ ...input, width: 280, marginBottom: 10 }} placeholder="Search firms" value={q} onChange={(e) => setQ(e.target.value)} />
+      {firms === null ? <div style={{ color: '#8b93a3', fontSize: 13 }}>Loading…</div> : (
+        <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead><tr>{['Firm', 'Since', 'Users', 'Cases', 'Billing', 'Comp'].map((h) => <th key={h} style={{ textAlign: 'left', color: '#8b93a3', fontWeight: 600, padding: '6px 8px', borderBottom: '1px solid #262b36', position: 'sticky', top: 0, background: '#171a21' }}>{h}</th>)}</tr></thead>
+            <tbody>
+              {shown.map((f) => {
+                const [label, colour] = standing(f);
+                return (
+                  <tr key={f.id} style={{ borderBottom: '1px solid #1f242d' }}>
+                    <td style={{ padding: '7px 8px', color: '#e6e9ef', fontWeight: 600 }}>{/^Tenant-/.test(f.name) ? 'Unnamed' : f.name}</td>
+                    <td style={{ padding: '7px 8px', color: '#aab1bf' }}>{shortDay(f.created_at)}</td>
+                    <td style={{ padding: '7px 8px', color: '#aab1bf' }}>{f.users}</td>
+                    <td style={{ padding: '7px 8px', color: '#aab1bf' }}>{f.cases}</td>
+                    <td style={{ padding: '7px 8px', color: colour, fontWeight: 600 }}>{label}</td>
+                    <td style={{ padding: '7px 8px' }}>
+                      {comped(f)
+                        ? <button type="button" style={btn(false)} disabled={busy === f.id} onClick={() => void comp(f, false)}>End Comp</button>
+                        : <span style={{ display: 'inline-flex', gap: 6 }}><input type="date" title="Comp until (blank: no end)" style={input} value={until[f.id] ?? ''} onChange={(e) => setUntil({ ...until, [f.id]: e.target.value })} /><button type="button" style={btn(true)} disabled={busy === f.id} onClick={() => void comp(f, true)}>Comp</button></span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function InternalDashboard() {
   const [key, setKey] = useState('');
   const [input, setInput] = useState('');
@@ -292,6 +365,8 @@ export default function InternalDashboard() {
               ]}
             />
           </section>
+
+          <FirmsBilling k={key} />
 
           <section className="panel">
             <h2>Every firm that has signed in</h2>
