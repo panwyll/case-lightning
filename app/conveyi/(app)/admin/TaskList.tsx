@@ -43,12 +43,13 @@ const CSS = `
 .tl-case b{font-size:13.5px;font-weight:800;color:#0f172a}
 .tl-case .ref{font-size:12px;color:#5A27E0;font-weight:700}
 .tl-case .who{font-size:12px;color:#64748b;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
-.tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px 14px;align-items:center;padding:13px 14px 13px 40px;border-top:1px solid #e6e8ee}
+.tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:13px 14px 13px 40px;border-top:1px solid #e6e8ee}
 .tl-task:first-of-type{border-top:0}
 .tl-task .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
 .tl-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
 .tl-chip.prop{color:#5A27E0;background:#f5f3ff}
 .tl-task .sub{font-size:12px;color:#64748b;margin-top:2px}
+.tl-acts{display:flex;align-items:center;gap:6px;justify-content:flex-end}
 .tl-task .age{font-size:12px;color:#94a3b8;white-space:nowrap;font-variant-numeric:tabular-nums}
 .tl-task .age.over{color:#b91c1c;font-weight:700}
 .tl-task .age.soon{color:#b45309;font-weight:700}
@@ -246,6 +247,7 @@ export default function TaskList({ who }: { who: string }) {
                     {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : i.since ? stamp(i.since) : ''}</span>
+                  <span className="tl-acts">
                   {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
                   {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving.has(i.ref.id)} onClick={() => void quickApprove(key, i.ref.id)}>{approving.has(i.ref.id) ? 'Approving…' : 'Approve'}</button>}
                   {isDecision
@@ -255,9 +257,10 @@ export default function TaskList({ who }: { who: string }) {
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><button type="button" className="tl-btn go" disabled={!pwd || unlockBusy} onClick={() => void unlock(i)}>{unlockBusy ? 'Unlocking…' : 'Unlock'}</button></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
                       {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
-                      <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=tasks' : ''}`}>{i.ref?.type === 'issue' ? 'Open issue' : 'Open case'} <ChevronRight size={14} /></a>
+                      <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=tasks' : ''}`}>{i.ref?.type === 'issue' ? 'Open Issue' : 'Open Case'} <ChevronRight size={14} /></a>
                     </>}
                   <button type="button" className="tl-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={() => void dismiss(i)}><X size={16} /></button>
+                  </span>
                 </div>
                 {isOpen && isDecision && (
                   <div className="tl-open">
