@@ -15,3 +15,10 @@ create index if not exists held_mail_tenant_idx on held_mail (tenant_id, receive
 
 -- A comp can end on a date (then the firm is on its trial, or pays). Null = open-ended.
 alter table billing_account add column if not exists comp_until timestamptz;
+
+-- The engine's automation role (when it exists) reads and clears held mail too.
+do $$ begin
+  if exists (select 1 from pg_roles where rolname = 'conveyi_automation') then
+    grant select, insert, delete on held_mail to conveyi_automation;
+  end if;
+end $$;
