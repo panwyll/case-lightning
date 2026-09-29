@@ -167,11 +167,10 @@ export const config = {
   // webhook drives status trialing → active. 0 = no trial. NOTE: the /start-trial
   // funnel uses a hosted Stripe Payment Link, whose trial is set in the dashboard.
   //
-  // 60 days while we're courting the first firms. A conveyance takes months, so a
-  // fortnight never spanned enough of a real matter for anyone to judge it. Because the
-  // card-free clock is computed from tenant.created_at rather than stored per tenant,
-  // raising this EXTENDS EXISTING TENANTS TOO — which is the intent for now.
-  trialDays: Number(env('TRIAL_DAYS') ?? '60'),
+  // One month. Because the card-free clock is computed from tenant.created_at rather than
+  // stored per tenant, changing this moves EXISTING trials too (shortening it ends a trial
+  // older than the new length).
+  trialDays: Number(env('TRIAL_DAYS') ?? '30'),
   // Emails a trial may process per month — trials get the full product but not full
   // volume. 0 = fall back to EMAIL_CAP.
   emailCapTrial: Number(env('EMAIL_CAP_TRIAL') ?? '200'),
