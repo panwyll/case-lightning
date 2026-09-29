@@ -47,7 +47,8 @@ export const CASELOAD_CSS = `
 .cm-done div + div{border-left:1px solid #eef1f5}
 .cm-done b{font-weight:800;color:#0f172a;font-variant-numeric:tabular-nums}
 .cm-done div.rec b{color:#15803d}
-@container (min-width: 1600px){.cm-done{display:inline-flex}}
+@container (min-width: 1480px){.cm-done{display:inline-flex}}
+.cm-done div{cursor:default}
 .cm-head{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px;min-width:0}
 .cm-head > *{flex-shrink:0}
 .cm-head .cm-chips{flex:1 1 auto;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
@@ -129,7 +130,7 @@ const isTracked = (t: CaseToken) => t.tracked !== false;
 const ZOOM_STEPS = [0.2, 0.3, 0.45, 0.6, 0.8, 1, 1.25, 1.5, 1.75, 2];
 
 export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, compact = false, hideBoard = false, byHandler = false, completions = null }: {
-  completions?: { month: number; year: number; best: { month: string; n: number } | null } | null;
+  completions?: { month: number; year: number; best: { month: string; n: number } | null; bestYear?: { year: string; n: number } | null } | null;
   /** A control for the board's top-left cell (the Assignee toggle). */
   corner?: React.ReactNode;
   /** A section inside a grouped board: smaller title, no filter chips. */
@@ -209,9 +210,9 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
         </div>}
         {!compact && completions && (
           <div className="cm-done" aria-label="Completions">
-            <div><b>{completions.month}</b>Completed This Month</div>
-            <div><b>{completions.year}</b>This Year</div>
-            {completions.best && completions.best.n > 0 && <div className={completions.month >= completions.best.n && completions.month > 0 ? 'rec' : undefined}><b>{completions.best.n}</b>Best · {new Date(`${completions.best.month}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })}</div>}
+            {/* The records ride on the tooltips: best month ever on this month, best year ever on this year. */}
+            <div className={completions.best && completions.month >= completions.best.n && completions.month > 0 ? 'rec' : undefined} title={completions.best ? `Best month: ${completions.best.n} (${new Date(`${completions.best.month}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })})` : 'No completions yet'}><b>{completions.month}</b>Completed This Month</div>
+            <div className={completions.bestYear && completions.year >= completions.bestYear.n && completions.year > 0 ? 'rec' : undefined} title={completions.bestYear ? `Best year: ${completions.bestYear.n} (${completions.bestYear.year})` : 'No completions yet'}><b>{completions.year}</b>This Year</div>
           </div>
         )}
         {!compact && !hideBoard && (

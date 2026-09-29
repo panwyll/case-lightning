@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
     ).catch(() => [] as Array<{ month: string; n: number }>);
     const nowLondon = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
     const best = done.reduce<{ month: string; n: number } | null>((b, x) => (!b || x.n > b.n ? x : b), null);
-    const completions = { month: done.find((x) => x.month === nowLondon.slice(0, 7))?.n ?? 0, year: done.filter((x) => x.month.startsWith(nowLondon.slice(0, 4))).reduce((t, x) => t + x.n, 0), best };
+    const years = new Map<string, number>();
+    for (const x of done) years.set(x.month.slice(0, 4), (years.get(x.month.slice(0, 4)) ?? 0) + x.n);
+    const bestYear = [...years.entries()].reduce<{ year: string; n: number } | null>((b, [year, n]) => (!b || n > b.n ? { year, n } : b), null);
+    const completions = { month: done.find((x) => x.month === nowLondon.slice(0, 7))?.n ?? 0, year: done.filter((x) => x.month.startsWith(nowLondon.slice(0, 4))).reduce((t, x) => t + x.n, 0), best, bestYear };
     return ok({
       completions,
       rows,

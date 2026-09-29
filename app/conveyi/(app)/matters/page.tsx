@@ -1,4 +1,5 @@
 'use client';
+import { ChevronRight } from '@/app/shared/icons';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -14,6 +15,8 @@ const CSS = `
 .cv-toggle i::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:99px;background:#fff;transition:left .12s}
 .cv-toggle.on i{background:#5A27E0}
 .cv-toggle.on i::after{left:14px}
+.cv-fold{display:flex;align-items:center;gap:6px;margin:16px 0 10px;border:0;background:none;padding:0;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer}
+.cv-fold .n{color:#94a3b8;font-weight:600;margin-left:4px}
 .cv-search{width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;font-family:inherit;background:#fff;margin-bottom:12px}
 .cv-list{background:#fff;border:1px solid #e6e8ee;border-radius:12px;overflow:auto;max-height:60vh}
 .cv-row{display:grid;grid-template-columns:28px 1fr 150px 150px 130px;gap:12px;align-items:center;padding:8px 14px;border-top:1px solid #f1f5f9;text-decoration:none;color:inherit}
@@ -28,7 +31,7 @@ const CSS = `
 const COLOUR: Record<string, string> = { normal: '#15803d', attention: '#1d4ed8', delayed: '#a16207', blocked: '#b91c1c', critical: '#111827' };
 const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
 
-type Completions = { month: number; year: number; best: { month: string; n: number } | null };
+type Completions = { month: number; year: number; best: { month: string; n: number } | null; bestYear?: { year: string; n: number } | null };
 
 export default function CaseViewPage() {
   const [rows, setRows] = useState<CaseToken[] | null>(null);
@@ -36,6 +39,9 @@ export default function CaseViewPage() {
   const [completions, setCompletions] = useState<Completions | null>(null);
   const [scope, setScope] = useState<Scope>('all');
   const [q, setQ] = useState('');
+  const [listOpen, setListOpenState] = useState(true);
+  useEffect(() => { try { if (localStorage.getItem('cv-list') === 'closed') setListOpenState(false); } catch { /* storage blocked */ } }, []);
+  const setListOpen = (open: boolean) => { setListOpenState(open); try { localStorage.setItem('cv-list', open ? 'open' : 'closed'); } catch { /* storage blocked */ } };
   const [byHandler, setByHandler] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -80,10 +86,12 @@ export default function CaseViewPage() {
       ) : (
         <div className="eg-top"><h1 className="eg-h1">Case View</h1><ScopeSelect value={scope} onChange={setScope} /></div>
       )}
-      <input className="cv-search" style={{ marginTop: 16 }} placeholder="Reference, address or handler" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+      {/* The list folds away, leaving the board: a heads-up screen for the office TV. */}
+      <button type="button" className="cv-fold" aria-expanded={listOpen} onClick={() => setListOpen(!listOpen)}><ChevronRight size={16} style={{ transform: listOpen ? 'rotate(90deg)' : undefined, transition: 'transform .12s' }} />Case List<span className="n">{rows?.length ?? ''}</span></button>
+      {listOpen && <input className="cv-search" placeholder="Reference, address or handler" value={q} onChange={(e) => setQ(e.target.value)} />}
       {err && <div className="eg-err">{err}</div>}
       {!rows && !err && <div className="eg-sub">Loading…</div>}
-      {list.length > 0 && <div className="cv-list">{list.map((r) => (
+      {listOpen && list.length > 0 && <div className="cv-list">{list.map((r) => (
         <a key={r.matterId} className="cv-row" href={paths.matter(r.matterId)}>
           <House band={r.health?.band ?? 'normal'} size={24} />
           <span style={{ minWidth: 0 }}>
