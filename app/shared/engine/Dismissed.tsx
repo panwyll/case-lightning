@@ -4,8 +4,8 @@ import { ChevronRight, X } from '@/app/shared/icons';
 import { fmtWhen, type Api } from './types';
 
 const CSS = `
-.dm-x{width:28px;height:28px;padding:0;border:0;background:none;color:#94a3b8;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
-.dm-x:hover{background:#fee2e2;color:#b91c1c}
+.dm-x{border:1px solid #fecaca;background:#fff;color:#b91c1c;border-radius:8px;padding:4px 9px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex:none}
+.dm-x:hover{background:#fef2f2;border-color:#fca5a5}
 .dm-box{margin-top:14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .dm-box > button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer;text-align:left}
 .dm-box .n{color:#94a3b8;font-weight:600}
@@ -22,7 +22,7 @@ export async function dismissTask(api: Api, matterId: string, ref: string, title
 }
 
 export function DismissButton({ onClick }: { onClick: () => void }) {
-  return <button type="button" className="dm-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={onClick}><X size={16} /></button>;
+  return <button type="button" className="dm-x" title="Delete the task (restore it from Deleted)" onClick={onClick}>Delete</button>;
 }
 
 /** One case's dismissed tasks, folded; Restore puts a task back. `reloadKey` changes when something was dismissed. */
@@ -43,7 +43,7 @@ export function DismissedTasks({ api, matterId, reloadKey, onRestored }: { api: 
       <style>{CSS}</style>
       {rows.length > 0 && (
         <div className="dm-box">
-          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}><ChevronRight size={16} style={{ transform: open ? 'rotate(90deg)' : undefined }} />Dismissed<span className="n">{rows.length}</span></button>
+          <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open}><ChevronRight size={16} style={{ transform: open ? 'rotate(90deg)' : undefined }} />Deleted<span className="n">{rows.length}</span></button>
           {open && rows.map((d) => (
             <div key={d.id} className="dm-row">
               <span className="t">{d.title ?? d.ref}</span>

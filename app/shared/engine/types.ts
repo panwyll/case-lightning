@@ -432,6 +432,7 @@ export interface CaseloadRollup { total: number; normal: number; attention: numb
 
 export type WorkBucket = 'do' | 'waiting' | 'escalate';
 export interface WorkItem {
+  needsAddress?: { role: string; who: string } | null;
   /** The case's health band (its colour), set on the Tasks list. */
   caseBand?: HealthBand;
   /** Set on the Tasks list: an assistant may do this one (else it is for a conveyancer). */

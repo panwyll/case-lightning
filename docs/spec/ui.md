@@ -10,6 +10,8 @@
 
 - **Buttons show their work** (`BusyButton`, `UploadButton`, `Spin`): spinner + "Saving…" while running, green tick + "Saved/Sent/Uploaded" when it worked, back to normal with the reason shown when it did not. A tick only when the step is actually done (an upload read as the wrong thing does not tick).
 - **Outcome in words** next to the thing: "Read as the register", "Filed on the case, but it reads as a contract, not official copies".
+- **Delete is red text**, never an X (an X reads as close/collapse).
+- **Proper terminology**: "unsuccessful", not "did not go"; the reason in plain words under it.
 - **Loading says Loading…**, never "No templates"/"No emails".
 - **Title Case** on buttons, headers, labels, chips, dropdown options ("Ready To Exchange", "On Track").
 - **No fluff text**: no subtitles, no explanatory sub-lines; the title and the control carry it.

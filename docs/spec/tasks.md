@@ -22,7 +22,9 @@ Waits are not tasks: they are listed under **Waiting** and chase themselves ([wa
 - **Every due key has an action** in `WorkPanel dueAction` and a label in `STEP_ACTION_LABEL` (or an upload in `STEP_UPLOADS`). A key without one falls back to "Open Case", which is a bug.
 - **Due date**: set where one exists (a deadline we owe, an issue's resolve-by). Overdue shows red on the row and colours the case.
 - **Belongs to one person**: the case handler, or whoever it was escalated to. The badge counts the person's own.
-- **Dismissable, restorable**: dismissed tasks leave the list and counts; Dismissed restores them.
+- **One click when there is nothing to fill in**: a step with no form (Send The Form, Send It, Draft Again, Record Lodged — `directStep`) acts on the row; only steps with a form expand, and they open straight onto it. Never a button that reveals the same button.
+- **Deletable, restorable**: a red **Delete** (text, never an X that reads as collapse) takes it off the list and counts; **Deleted** restores it.
+- **Unsuccessful sends say why and fix in place**: "Chase to the seller's solicitor unsuccessful"; no address → the row takes the email and **Save And Send** (saved to the case's contacts under the role).
 - **Done means gone, visibly**: the row shows the success (tick, "Read as the register", "Resolved …") for ~2s, then leaves.
 
 ## Adding one

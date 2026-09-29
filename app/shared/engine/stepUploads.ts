@@ -76,3 +76,12 @@ export const WAIT_ACTIONS: Record<string, WaitAction> = {
   insurance: { label: 'Record Insurance' },
   client_decision: { label: 'Record Decision' },
 };
+
+/** Steps with nothing to fill in: done straight from the row (no form to open). The command each one sends. */
+export function directStep(key: string): { label: string; busy: string; done: string; body: Record<string, unknown> } | null {
+  if (key.startsWith('resend:')) return { label: 'Send It', busy: 'Sending…', done: 'Sent', body: { type: 'retry_action', proposalEventId: key.slice('resend:'.length) } };
+  if (key === 'proof_of_funds_request') return { label: 'Send The Form', busy: 'Sending…', done: 'Sent', body: { type: 'request_proof_of_funds' } };
+  if (key === 'report_on_title_redraft') return { label: 'Draft Again', busy: 'Drafting…', done: 'Drafted', body: { type: 'draft_report_on_title' } };
+  if (key === 'ap1') return { label: 'Record Lodged', busy: 'Recording…', done: 'Recorded', body: { type: 'ap1_submitted' } };
+  return null;
+}

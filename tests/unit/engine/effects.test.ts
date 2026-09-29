@@ -39,7 +39,7 @@ test('a send that fails after a person approved it becomes a task: the reason in
   s = await h.svc.getState(TENANT, MATTER);
   const issue = openIssues(s).find((i) => i.kind === 'send_failed');
   assert.ok(issue, 'the failed send is on the case as a task');
-  assert.equal(issue!.title, 'Update to the client not sent');
+  assert.equal(issue!.title, 'Update to the client unsuccessful');
   assert.match(issue!.detail ?? '', /^Your Microsoft 365 connection has expired/);
   assert.match(issue!.detail ?? '', /Connect Microsoft 365/);
   assert.match(issue!.detail ?? '', /To: Jane \(the client\)/);

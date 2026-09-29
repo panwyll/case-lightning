@@ -33,7 +33,19 @@ import { EW_CALENDAR, addWorkingDays, workingDaysBetween, type WorkingCalendar }
 export type Bucket = 'do' | 'waiting' | 'escalate';
 export type ActionOwner = 'conveyancer' | 'client' | 'seller_side' | 'lender' | 'third_party' | 'mlro' | 'hmlr' | 'search_provider' | 'id_provider';
 
+/** Who a failed send was for, as the case's contacts record them (from the task's title). */
+function addressFor(title: string): { role: string; who: string } | null {
+  const t = title.toLowerCase();
+  if (/(seller'?s?|buyer'?s?|other side'?s?) solicitor/.test(t)) return { role: 'OTHER_SIDE', who: /buyer/.test(t) ? "the buyer's solicitor" : "the seller's solicitor" };
+  if (/lender/.test(t)) return { role: 'LENDER', who: 'the lender' };
+  if (/estate agent|agent/.test(t)) return { role: 'AGENT', who: 'the estate agent' };
+  if (/client/.test(t)) return { role: 'CLIENT', who: 'the client' };
+  return null;
+}
+
 export interface WorkItem {
+  /** A send that failed for want of an address: whose, so the task can take it. */
+  needsAddress?: { role: string; who: string } | null;
   id: string;
   bucket: Bucket;
   matterId: string;
@@ -331,8 +343,11 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // A locked file is opened from the task itself: the password goes against this document.
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       // The chip says what kind of problem; the line is the problem itself, as it was raised.
-      chip: i.kind === 'send_failed' ? 'Not Sent' : i.kind === 'file_locked' ? 'Locked File' : ISSUE_CHIP[i.kind] ?? spec.label,
-      what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
+      chip: i.kind === 'send_failed' ? 'Unsuccessful' : i.kind === 'file_locked' ? 'Locked File' : ISSUE_CHIP[i.kind] ?? spec.label,
+      // Older failures were titled "The chase to seller solicitor did not go: <reason>": read as the current wording.
+      what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim().replace(/^The (.+?) did not go:.*$/, (_m, w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).replace(/\bseller solicitor\b/, "the seller's solicitor").replace(/\bbuyer solicitor\b/, "the buyer's solicitor")} unsuccessful`),
+      // No address for them: the task takes it and sends (not a trip to the case's contacts).
+      needsAddress: i.kind === 'send_failed' && /no email address/i.test(i.detail ?? '') ? addressFor(i.title) : null,
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
       urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',

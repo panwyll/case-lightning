@@ -1187,7 +1187,7 @@ export class EngineService {
     await this.perform(tenantId, matterId, 'chase', { waitKey: wait.key, subject: wait.subject, recipientRole: rule.recipientRole, template: rule.template, context, ...(also.length ? { alsoSubjects: also } : {}) });
     const after = await this.getState(tenantId, matterId);
     const now = after.waits.find((w) => w.key === wait.key && w.subject === wait.subject && w.closedAt === null);
-    if ((now?.chasesSentAt.length ?? 0) <= wait.chasesSentAt.length) throw Object.assign(new Error('The chase did not go. The reason is on the Tasks tab.'), { status: 502 });
+    if ((now?.chasesSentAt.length ?? 0) <= wait.chasesSentAt.length) throw Object.assign(new Error('The chase was unsuccessful. The reason is on the Tasks list.'), { status: 502 });
     return { state: after, events: [] };
   }
 
@@ -1730,7 +1730,7 @@ export class EngineService {
     const role = typeof detail.recipientRole === 'string' ? ROLE[detail.recipientRole] ?? `the ${detail.recipientRole.replace(/_/g, ' ')}` : 'the client';
     // The title says what did not go; why, and what to do, are the issue's detail.
     const what = kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
-    const title = `${what} not sent`;
+    const title = `${what} unsuccessful`;
     const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
     try {

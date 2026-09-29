@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { PasswordInput } from './PasswordInput';
 import { BusyButton, UploadButton } from './BusyButton';
 import { LenderPicker } from './LenderPicker';
+import { AddressAndSend, addressFor } from './AddressAndSend';
 import { uploadCaseFile } from './uploadCaseFile';
 import { fmtDay, pretty, type Api, type CaseDocument, type EngineState, type IssueCatalogue, type IssueRow, type ResolutionField } from './types';
 
@@ -385,7 +386,8 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged, only, onCancel, 
         </div>
         {!done && !(bare && f) && (
           <div className="is-acts" ref={menu === i.id ? menuRef : undefined}>
-            {!ctx && retryable(i) && <BusyButton disabled={busy} busyLabel="Sending…" doneLabel="Sent" onClick={async () => { const ok = await run({ type: 'retry_issue', issueId: i.id }); if (ok) onChanged?.(); return ok; }}>Try Again</BusyButton>}
+            {!ctx && retryable(i) && /no email address/i.test(i.detail ?? '') && addressFor(i.title) && <AddressAndSend api={api} matterId={state.matterId} issueId={i.id} need={addressFor(i.title)!} onError={(t) => setOutcome({ ok: false, text: t })} onDone={() => { setOutcome({ ok: true, text: `Sent: ${clean(i.title)}` }); onChanged?.(); }} />}
+            {!ctx && retryable(i) && !(/no email address/i.test(i.detail ?? '') && addressFor(i.title)) && <BusyButton disabled={busy} busyLabel="Sending…" doneLabel="Sent" onClick={async () => { const ok = await run({ type: 'retry_issue', issueId: i.id }); if (ok) onChanged?.(); return ok; }}>Try Again</BusyButton>}
             {!ctx && doc && <button type="button" className={`ep-btn${f === 'password' ? '' : ' primary'}`} style={{ margin: 0 }} disabled={busy} onClick={() => (f === 'password' ? closeForm() : openForm(i, 'password'))}>{f === 'password' ? 'Cancel' : 'Enter Password'}</button>}
             {!ctx && !bare && !formless.has(i.kind) && <button type="button" className={`ep-btn${f === 'resolve' ? '' : ' primary'}`} style={{ margin: 0 }} disabled={busy} onClick={() => (f === 'resolve' ? closeForm() : openForm(i, 'resolve'))}>{f === 'resolve' ? 'Cancel' : 'Resolve'}</button>}
             {ctx && <BusyButton className="ep-btn" disabled={busy} doneLabel="Cleared" onClick={() => run({ type: 'resolve_issue', issueId: i.id, resolution: byKind[i.kind]?.resolutions[0] ?? 'other', note: 'No longer the case.' })}>Clear</BusyButton>}

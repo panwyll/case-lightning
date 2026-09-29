@@ -6,7 +6,8 @@ import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
 import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
-import { STEP_ACTION_LABEL, STEP_UPLOADS, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
+import { AddressAndSend } from '@/app/shared/engine/AddressAndSend';
+import { STEP_ACTION_LABEL, STEP_UPLOADS, directStep, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
@@ -23,8 +24,9 @@ const CSS = `
 .tl-msg{font-size:12.5px;font-weight:600;margin-top:4px;color:#92400e}
 .tl-msg.ok{color:#15803d}
 .tl-step{padding:12px 14px 14px 40px}
-.tl-x{width:28px;height:28px;padding:0;border:0;background:none;color:#94a3b8;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
-.tl-x:hover{background:#fee2e2;color:#b91c1c}
+.tl-in{border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px;font-size:12.5px;font-family:inherit}
+.tl-x{border:1px solid #fecaca;background:#fff;color:#b91c1c;border-radius:8px;padding:6px 10px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex:none}
+.tl-x:hover{background:#fef2f2;border-color:#fca5a5}
 .tl-dis{margin-top:14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .tl-dis > button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer;text-align:left}
 .tl-dis .n{color:#94a3b8;font-weight:600}
@@ -288,19 +290,27 @@ export default function TaskList({ who }: { who: string }) {
                           return out.ok;
                         } catch (e: unknown) { setStepMsg((m) => ({ ...m, [key]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
                       }} />
+                    : isStep && directStep(i.ref.id)
+                    ? (() => { const ds = directStep(i.ref.id)!; return <BusyButton className="tl-btn go" busyLabel={ds.busy} doneLabel={ds.done} onClick={async () => {
+                        setQuickErr(null);
+                        try { await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify(ds.body) }); setTimeout(() => { markDone(i.ref.id); void load(); window.dispatchEvent(new Event('conveyi:counts')); }, 1500); return true; }
+                        catch (e: unknown) { setQuickErr({ id: i.ref.id, text: e instanceof Error ? e.message : 'It was unsuccessful.' }); return false; }
+                      }}>{ds.label}</BusyButton>; })()
                     : isDecision || isStep
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
-                      {i.kind === 'issue:send_failed:retry' && <BusyButton className="tl-btn go" busyLabel="Sending…" doneLabel="Sent" onClick={() => retry(i.matterId, i.ref.id)}>Try Again</BusyButton>}
+                      {i.needsAddress
+                        ? <AddressAndSend api={api} matterId={i.matterId} issueId={i.ref.id} need={i.needsAddress} buttonClass="tl-btn go" inputClass="tl-in" onError={(text) => setQuickErr({ id: i.ref.id, text })} onDone={() => { markDone(i.ref.id); void load(); window.dispatchEvent(new Event('conveyi:counts')); }} />
+                        : i.kind === 'issue:send_failed:retry' && <BusyButton className="tl-btn go" busyLabel="Sending…" doneLabel="Sent" onClick={() => retry(i.matterId, i.ref.id)}>Try Again</BusyButton>}
                       {(isIssue && i.kind === 'issue') || isDeadline
                         ? <button type="button" className={`tl-btn${isOpen ? ' on' : isIssue ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isIssue ? 'Resolve' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : isIssue ? 'Resolve ' : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                         : isIssue ? null
                         : <a className="tl-btn" href={paths.matter(i.matterId)}>Open Case <ChevronRight size={14} /></a>}
                     </>}
-                  <button type="button" className="tl-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={() => void dismiss(i)}><X size={16} /></button>
+                  <button type="button" className="tl-x" title="Delete the task (restore it from Deleted)" onClick={() => void dismiss(i)}>Delete</button>
                   </span>
                 </div>
                 {isOpen && isDecision && (
@@ -332,11 +342,11 @@ export default function TaskList({ who }: { who: string }) {
       {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
       {dismissed.length > 0 && (
         <div className="tl-dis">
-          <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Dismissed<span className="n">{dismissedShown.length !== dismissed.length ? `${dismissedShown.length} of ${dismissed.length}` : dismissed.length}</span></button>
+          <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Deleted<span className="n">{dismissedShown.length !== dismissed.length ? `${dismissedShown.length} of ${dismissed.length}` : dismissed.length}</span></button>
           {showDismissed && (
             <div className="tl-dis-tools">
               <label>Sort<select value={disSort} onChange={(e) => setDisSort(e.target.value as typeof disSort)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="case">Case</option></select></label>
-              <label>Dismissed By<select value={disBy} onChange={(e) => setDisBy(e.target.value)}><option value="">Anyone</option>{[...new Set(dismissed.map((d) => d.dismissedBy).filter((x): x is string => !!x))].sort().map((b) => <option key={b} value={b}>{b}</option>)}</select></label>
+              <label>Deleted By<select value={disBy} onChange={(e) => setDisBy(e.target.value)}><option value="">Anyone</option>{[...new Set(dismissed.map((d) => d.dismissedBy).filter((x): x is string => !!x))].sort().map((b) => <option key={b} value={b}>{b}</option>)}</select></label>
             </div>
           )}
           {showDismissed && dismissedShown.map((d) => (

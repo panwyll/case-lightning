@@ -87,7 +87,12 @@ export async function devUpload(fileName: string, role: string) {
 
 export async function devRun(body: Record<string, unknown>) {
   const { svc } = await devHarness();
-  const r = await svc.run(DEV_TENANT, DEV_MATTER, { ...body, actor: DEV_USER } as never);
+  // The commands the real route runs through the service rather than the machine.
+  const r = body.type === 'retry_action' ? await svc.retryFailedAction(DEV_TENANT, DEV_MATTER, String(body.proposalEventId), DEV_USER)
+    : body.type === 'request_proof_of_funds' ? await svc.requestProofOfFunds(DEV_TENANT, DEV_MATTER, DEV_USER)
+    : body.type === 'draft_report_on_title' ? await svc.draftReportOnTitle(DEV_TENANT, DEV_MATTER)
+    : body.type === 'chase_now' ? await svc.chaseNow(DEV_TENANT, DEV_MATTER, body.waitKey as never, (body.subject as string) ?? null, DEV_USER, 'Dev User')
+    : await svc.run(DEV_TENANT, DEV_MATTER, { ...body, actor: DEV_USER } as never);
   return { events: r.events.map((e) => ({ type: e.type })) };
 }
 

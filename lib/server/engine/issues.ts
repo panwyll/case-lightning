@@ -539,5 +539,5 @@ export const ISSUE_CHIP: Record<IssueKind, string> = {
   bankruptcy_insolvency: 'Insolvency', survey_defect: 'Survey', environmental_risk: 'Environmental', third_party_encumbrance: 'Encumbrance', document_missing: 'Missing Document',
   disclosure_concern: 'Disclosure', completion_failure: 'Completion', survey_further_investigation: 'Further Investigation', survey_report_outstanding: 'Survey Report',
   transaction_at_risk: 'At Risk', mortgage_at_risk: 'Mortgage At Risk', unknown_correspondent: 'Unknown Sender', document_revised: 'Revised Document',
-  document_mismatch: 'Mismatch', file_locked: 'Locked File', send_failed: 'Not Sent', other: 'Issue',
+  document_mismatch: 'Mismatch', file_locked: 'Locked File', send_failed: 'Unsuccessful', other: 'Issue',
 };
