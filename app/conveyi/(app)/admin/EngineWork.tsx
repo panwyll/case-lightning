@@ -30,6 +30,9 @@ export const WORK_CSS = `
 .wk-wait-hd{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border:0;background:none;font-family:inherit;cursor:pointer;text-align:left;color:#0f172a}
 .wk-wait-hd > b{font-size:13px;font-weight:800;color:#0f172a;line-height:1.3}
 .wk-wait-hd .n{font-size:12px;color:#94a3b8;font-variant-numeric:tabular-nums}
+.wk-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 14px 10px}
+.wk-tools label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.wk-tools select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit}
 .wk-wait-hd .sum{margin-left:auto;font-size:12px;color:#64748b;display:flex;gap:10px}
 .wk-wait-hd .chev{color:#94a3b8;display:inline-flex;transition:transform .12s}
 .wk-wait-hd .chev.open{transform:rotate(90deg)}
@@ -162,7 +165,14 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
       setSending(null);
     }
   };
-  const sorted = items.slice().sort(pressing);
+  const [waitSort, setWaitSort] = useState<'overdue' | 'chase' | 'asked' | 'case'>('overdue');
+  const ORDER: Record<typeof waitSort, (a: WorkItem, b: WorkItem) => number> = {
+    overdue: pressing,
+    chase: (a, b) => (a.chaseDue ? -1 : a.chaseInWorkingDays ?? 999) - (b.chaseDue ? -1 : b.chaseInWorkingDays ?? 999) || pressing(a, b),
+    asked: (a, b) => (a.since ?? '9').localeCompare(b.since ?? '9') || pressing(a, b),
+    case: (a, b) => (a.propertyAddress ?? a.matterRef ?? '').localeCompare(b.propertyAddress ?? b.matterRef ?? '') || pressing(a, b),
+  };
+  const sorted = items.slice().sort(ORDER[waitSort]);
   const overdue = items.filter((i) => (daysLeft(i) ?? 0) < 0).length;
   const upcoming = sorted.find((i) => (daysLeft(i) ?? -1) >= 0);
   const byWho = Object.entries(all.reduce<Record<string, number>>((m, i) => ((m[i.actionOwner] = (m[i.actionOwner] ?? 0) + 1), m), {})).sort((a, b) => b[1] - a[1]);
@@ -177,6 +187,12 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
           {upcoming && upcoming.chaseInWorkingDays != null && <span>next chase in {upcoming.chaseInWorkingDays} working day{upcoming.chaseInWorkingDays === 1 ? '' : 's'}</span>}
         </span>
       </button>
+      {expanded && (
+        <div className="wk-tools">
+          <label>Sort<select value={waitSort} onChange={(e) => setWaitSort(e.target.value as typeof waitSort)}><option value="overdue">Most Overdue</option><option value="chase">Next Chase</option><option value="asked">Asked Longest Ago</option><option value="case">Case</option></select></label>
+          <label>Waiting On<select value={whoFilter ?? ''} onChange={(e) => setWhoFilter(e.target.value || null)}><option value="">Anyone</option>{byWho.map(([who, n]) => <option key={who} value={who}>{OWNER[who] ?? pretty(who)} ({n})</option>)}</select></label>
+        </div>
+      )}
       {expanded && groupByCase(sorted).map((g) => (
         <div key={g.matterId} className="wk-case">
           <a className="wk-case-h" href={paths.matter(g.matterId)}><House band={g.band} size={16} /><b>{g.address}</b>{g.ref && <span>{g.ref}</span>}{g.clients && <span>{g.clients}</span>}<span className="n">{g.items.length}</span></a>

@@ -24,6 +24,9 @@ const CSS = `
 .tl-dis{margin-top:14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .tl-dis > button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer;text-align:left}
 .tl-dis .n{color:#94a3b8;font-weight:600}
+.tl-dis-tools{display:flex;gap:10px;flex-wrap:wrap;padding:4px 14px 10px}
+.tl-dis-tools label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-dis-tools select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit}
 .tl-dis-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #f1f5f9;font-size:13px;color:#334155}
 .tl-dis-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-dis-row .m{color:#94a3b8;font-size:12px;white-space:nowrap}
@@ -99,6 +102,8 @@ export default function TaskList({ who }: { who: string }) {
   // Tasks dismissed from the tray: listed under Dismissed, restorable.
   const [dismissed, setDismissed] = useState<Array<{ id: string; matterId: string; ref: string; title: string | null; dismissedAt: string; dismissedBy: string | null; matterRef: string | null; propertyAddress: string | null }>>([]);
   const [showDismissed, setShowDismissed] = useState(false);
+  const [disSort, setDisSort] = useState<'newest' | 'oldest' | 'case'>('newest');
+  const [disBy, setDisBy] = useState('');
   const loadDismissed = useCallback(() => { api<{ dismissed: typeof dismissed }>('/tasks/dismissed').then((r) => setDismissed(r.dismissed)).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadDismissed(); }, [loadDismissed]);
   const dismiss = async (i: WorkItem) => {
@@ -113,6 +118,13 @@ export default function TaskList({ who }: { who: string }) {
     await api('/tasks/dismissed', { method: 'POST', body: JSON.stringify({ restore: id }) }).catch(() => {});
     void load(); loadDismissed(); window.dispatchEvent(new Event('conveyi:counts'));
   };
+  // Dismissed: the search above narrows it too; newest first unless sorted otherwise.
+  const dismissedShown = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return dismissed
+      .filter((d) => (!disBy || d.dismissedBy === disBy) && words.every((w) => `${d.title ?? ''} ${d.propertyAddress ?? ''} ${d.matterRef ?? ''}`.toLowerCase().includes(w)))
+      .sort((a, b) => disSort === 'case' ? (a.propertyAddress ?? a.matterRef ?? '').localeCompare(b.propertyAddress ?? b.matterRef ?? '') : disSort === 'oldest' ? a.dismissedAt.localeCompare(b.dismissedAt) : b.dismissedAt.localeCompare(a.dismissedAt));
+  }, [dismissed, q, disSort, disBy]);
   /** Every word typed matches the case (address, reference, clients) or the task itself. */
   const matches = useCallback((i: WorkItem) => { const hay = `${i.propertyAddress ?? ''} ${i.matterRef ?? ''} ${(i.clients ?? []).join(' ')} ${i.what} ${i.chip ?? ''}`.toLowerCase(); return q.trim().toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w)); }, [q]);
   const [open, setOpen] = useState<string | null>(null);
@@ -216,7 +228,7 @@ export default function TaskList({ who }: { who: string }) {
     <div>
       <style>{WORK_CSS + CSS}</style>
       <div className="tl-bar">
-        <label>Sort<select value={sort} onChange={(e) => setSort(e.target.value as Sort)}><option value="urgency">Urgency</option><option value="due">Due date</option><option value="case">Case</option></select></label>
+        <label>Sort<select value={sort} onChange={(e) => setSort(e.target.value as Sort)}><option value="urgency">Urgency</option><option value="due">Due Date</option><option value="case">Case</option></select></label>
         <div className="tl-q"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, clients or tasks" aria-label="Search tasks" /></div>
         <span className="n">{tasks.length} task{tasks.length === 1 ? '' : 's'}{groups.length > 1 ? ` across ${groups.length} cases` : ''}</span>
       </div>
@@ -284,8 +296,14 @@ export default function TaskList({ who }: { who: string }) {
       {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
       {dismissed.length > 0 && (
         <div className="tl-dis">
-          <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Dismissed<span className="n">{dismissed.length}</span></button>
-          {showDismissed && dismissed.map((d) => (
+          <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Dismissed<span className="n">{dismissedShown.length !== dismissed.length ? `${dismissedShown.length} of ${dismissed.length}` : dismissed.length}</span></button>
+          {showDismissed && (
+            <div className="tl-dis-tools">
+              <label>Sort<select value={disSort} onChange={(e) => setDisSort(e.target.value as typeof disSort)}><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="case">Case</option></select></label>
+              <label>Dismissed By<select value={disBy} onChange={(e) => setDisBy(e.target.value)}><option value="">Anyone</option>{[...new Set(dismissed.map((d) => d.dismissedBy).filter((x): x is string => !!x))].sort().map((b) => <option key={b} value={b}>{b}</option>)}</select></label>
+            </div>
+          )}
+          {showDismissed && dismissedShown.map((d) => (
             <div key={d.id} className="tl-dis-row">
               <span className="t">{d.title ?? d.ref}</span>
               <span className="m">{d.propertyAddress ?? d.matterRef ?? ''}</span>
