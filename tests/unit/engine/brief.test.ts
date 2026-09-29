@@ -32,7 +32,7 @@ test('brief: the engine\'s account of a matter, in one shape', async () => {
   assert.equal(b.enrolled, true);
   assert.equal(b.transactionLabel, 'Freehold purchase');
   assert.equal(b.side, 'buyer');
-  assert.equal(b.lifecycleLabel, 'Pre-exchange');
+  assert.equal(b.lifecycleLabel, 'Pre-Exchange');
   const con29 = b.waiting.find((w) => w.subject === 'CON29')!;
   assert.ok(con29, 'the outstanding search is in the brief');
   assert.equal(con29.who, 'the local authority and search providers', 'a role the client would recognise, never a firm name');

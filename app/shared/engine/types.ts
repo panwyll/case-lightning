@@ -198,7 +198,7 @@ export interface IssueCatalogue {
 
 export type TransactionType = 'freehold_purchase' | 'leasehold_purchase' | 'freehold_sale' | 'leasehold_sale' | 'remortgage' | 'transfer_of_equity';
 export const TRANSACTION_TYPES: TransactionType[] = ['freehold_purchase', 'leasehold_purchase', 'freehold_sale', 'leasehold_sale', 'remortgage', 'transfer_of_equity'];
-export const TRANSACTION_LABEL: Record<TransactionType, string> = { freehold_purchase: 'Freehold purchase', leasehold_purchase: 'Leasehold purchase', freehold_sale: 'Freehold sale', leasehold_sale: 'Leasehold sale', remortgage: 'Remortgage', transfer_of_equity: 'Transfer of equity' };
+export const TRANSACTION_LABEL: Record<TransactionType, string> = { freehold_purchase: 'Freehold Purchase', leasehold_purchase: 'Leasehold Purchase', freehold_sale: 'Freehold Sale', leasehold_sale: 'Leasehold Sale', remortgage: 'Remortgage', transfer_of_equity: 'Transfer Of Equity' };
 
 /** The transaction profile as the engine route returns it (docs/transaction-types.md). */
 export interface ProfileView {
@@ -392,7 +392,7 @@ export const pretty = (s: string) => s.replace(/_/g, ' ');
 export type HealthBand = 'normal' | 'attention' | 'delayed' | 'blocked' | 'critical';
 export const HEALTH_BANDS: HealthBand[] = ['normal', 'attention', 'delayed', 'blocked', 'critical'];
 /** Green nothing waiting on us · blue waiting on us, on time · yellow others late · red we are late · black both, or in jeopardy. */
-export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'With us', delayed: 'Delayed - Others', blocked: 'Delayed - Us', critical: 'Critical' };
+export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On Track', attention: 'With Us', delayed: 'Delayed - Others', blocked: 'Delayed - Us', critical: 'Critical' };
 
 export interface HealthReason {
   code: string;
@@ -461,8 +461,8 @@ export interface WorkItem {
 
 /** A stage's label for a given profile (the machine's phase names read differently on a sale or a remortgage). */
 export const stageLabel = (stage: string, profile?: ProfileView | null): string => profile?.stageLabels?.[stage] ?? STAGE_LABEL[stage] ?? stage;
-export const LIFECYCLE_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', investigating: 'Investigating', ready_to_complete: 'Ready to complete', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };
-export const STAGE_LABEL: Record<string, string> = { instruction: 'Instruction', pre_contract: 'Pre-contract', contract_review: 'Contract review', pre_exchange: 'Pre-exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', completed: 'Completed', post_completion: 'Post-completion' };
+export const LIFECYCLE_LABEL: Record<string, string> = { instructed: 'Instructed', pre_exchange: 'Pre-Exchange', ready_to_exchange: 'Ready To Exchange', exchanged: 'Exchanged', pre_completion: 'Pre-Completion', investigating: 'Investigating', ready_to_complete: 'Ready To Complete', completed: 'Completed', post_completion: 'Post-Completion', closed: 'Closed', aborted: 'Aborted' };
+export const STAGE_LABEL: Record<string, string> = { instruction: 'Instruction', pre_contract: 'Pre-Contract', contract_review: 'Contract Review', pre_exchange: 'Pre-Exchange', exchanged: 'Exchanged', pre_completion: 'Pre-Completion', completed: 'Completed', post_completion: 'Post-Completion' };
 export const ago = (iso: string | null | undefined) => {
   if (!iso) return '—';
   const ms = Date.now() - new Date(iso).getTime();

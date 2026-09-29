@@ -80,8 +80,8 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
 /** Worst wins. Critical outranks blocked: a blocked case with a deadline on Friday is the one to ring today. */
 export const HEALTH_RANK: Record<HealthBand, number> = { normal: 0, attention: 1, delayed: 2, blocked: 3, critical: 4 };
 export const HEALTH_LABEL: Record<HealthBand, string> = {
-  normal: 'On track',
-  attention: 'With us',
+  normal: 'On Track',
+  attention: 'With Us',
   delayed: 'Delayed - Others',
   blocked: 'Delayed - Us',
   critical: 'Critical',

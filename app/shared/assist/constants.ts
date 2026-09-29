@@ -34,8 +34,8 @@ export const TRACKS: Array<[string, string]> = [
   ['REMORTGAGE', 'Remortgage (acting for borrower)'],
 ];
 export const STATUS_FLAGS: Array<[string, string]> = [
-  ['ON_TRACK', 'On track'],
-  ['NEEDS_ATTENTION', 'Needs attention'],
+  ['ON_TRACK', 'On Track'],
+  ['NEEDS_ATTENTION', 'Needs Attention'],
   ['BLOCKED', 'Blocked'],
 ];
 

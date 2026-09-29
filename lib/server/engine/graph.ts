@@ -22,7 +22,7 @@ export const LIFECYCLE = ['instructed', 'pre_exchange', 'ready_to_exchange', 'ex
 /** Types without an exchange (remortgage, transfer of equity) read investigating → ready to complete instead of the exchange states. */
 export const LIFECYCLE_NO_EXCHANGE = ['instructed', 'investigating', 'ready_to_complete', 'completed', 'post_completion', 'closed'] as const;
 export type Lifecycle = (typeof LIFECYCLE)[number] | (typeof LIFECYCLE_NO_EXCHANGE)[number] | 'aborted';
-export const LIFECYCLE_LABEL: Record<Lifecycle, string> = { instructed: 'Instructed', pre_exchange: 'Pre-exchange', ready_to_exchange: 'Ready to exchange', exchanged: 'Exchanged', pre_completion: 'Pre-completion', investigating: 'Investigating', ready_to_complete: 'Ready to complete', completed: 'Completed', post_completion: 'Post-completion', closed: 'Closed', aborted: 'Aborted' };
+export const LIFECYCLE_LABEL: Record<Lifecycle, string> = { instructed: 'Instructed', pre_exchange: 'Pre-Exchange', ready_to_exchange: 'Ready To Exchange', exchanged: 'Exchanged', pre_completion: 'Pre-Completion', investigating: 'Investigating', ready_to_complete: 'Ready To Complete', completed: 'Completed', post_completion: 'Post-Completion', closed: 'Closed', aborted: 'Aborted' };
 export const lifecycleFor = (p: TransactionProfile): readonly Lifecycle[] => (p.hasExchange ? LIFECYCLE : LIFECYCLE_NO_EXCHANGE);
 
 /** The engine's finer stages are phases inside PRE-EXCHANGE; READY TO EXCHANGE / READY TO COMPLETE are derived gate states, not steps. */
