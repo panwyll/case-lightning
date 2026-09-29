@@ -15,7 +15,9 @@ export async function ingestFiledDocument(tenantId: string, matterId: string, do
   if (!doc) return null;
   // Ingestion is automation: it may extract, flag and clear, never write a human-gated event.
   const report = await runAsAutomation(() => ingestDocument(engine(), ports, tenantId, matterId, doc, known));
-  if (report.action.kind === 'skip' && report.classification && report.classification.role !== 'other') {
+  // An email's own words are read as a note by the caller (files.ts), which puts them before a person; a
+  // "received but not filed" notice for them would only repeat it.
+  if (report.action.kind === 'skip' && report.classification && report.classification.role !== 'other' && doc.docType !== 'EMAIL') {
     // Something recognisable arrived but could not be routed automatically — tell the
     // fee-earner, don't lose it (the /ingest route files it with an explicit role).
     await emitMatterEvent({

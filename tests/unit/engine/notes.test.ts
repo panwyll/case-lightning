@@ -288,5 +288,5 @@ test('an email filed without anyone looking always comes to a person, even when 
   const loud = await h.svc.recordNote(TENANT, MATTER, { text: 'hi, contract pack attached', kind: 'email', actor: USER, documentId: h.doc(null, 'EMAIL_BODY'), from, surface: true });
   const d = blockingDecisions(loud.state).filter((x) => x.kind === 'note_actions');
   assert.equal(d.length, 1);
-  assert.match(d[0].summary, /filed to this case automatically\. Nothing in it was found for the case to act on/);
+  assert.match(d[0].summary, /could not be sure what it needs, so it is for you to read and answer/);
 });

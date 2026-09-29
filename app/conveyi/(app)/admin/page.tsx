@@ -13,10 +13,10 @@ import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
-import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check, Search, Plus } from '@/app/shared/icons';
+import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Check, Plus } from '@/app/shared/icons';
 import { decisionTask } from './EngineWork';
 import TaskList, { TaskTools, type TaskSort } from './TaskList';
-import { DocGenerate } from './DocGenerate';
+import DocPacks from './DocPacks';
 
 interface MatterHit {
   id: string;
@@ -33,30 +33,6 @@ interface Template {
   styleTag: string;
   isActive: boolean;
 }
-
-interface DocTemplate {
-  usage?: { step: string; to: string } | null;
-  id: string;
-  name: string;
-  description: string | null;
-  file_name: string;
-  file_size_bytes: number;
-  has_llm_prompts: boolean;
-  sort_order: number;
-  created_at: string;
-}
-
-/** Doc Packs tabs: the stage of the case that makes the document; the firm's own (not in the flow) last. */
-const DOC_TABS = ['All', 'Instruction', 'Pre-Exchange', 'Exchange', 'Completion', "Firm's Own"] as const;
-type DocTab = (typeof DOC_TABS)[number];
-const docTabOf = (t: DocTemplate): Exclude<DocTab, 'All'> => {
-  const stage = t.usage?.step.split(',')[0].trim() ?? '';
-  if (!t.usage) return "Firm's Own";
-  if (stage === 'Instruction') return 'Instruction';
-  if (stage === 'Contract & Exchange') return 'Exchange';
-  if (stage === 'Completion') return 'Completion';
-  return 'Pre-Exchange';
-};
 
 const TOKEN_KEY = 'cl_token';
 
@@ -515,9 +491,6 @@ function AdminPageInner() {
     router.push(`${paths.admin}?tab=${t}`);
   }
 
-  const [aiGen, setAiGen] = useState({ name: '', instructions: '' });
-  const [aiGenBusy, setAiGenBusy] = useState(false);
-  const aiGenFileRef = useRef<HTMLInputElement>(null);
   const [billing, setBilling] = useState<any>(null);
   const [billingBusy, setBillingBusy] = useState(false);
   const [importStats, setImportStats] = useState<any>(null);
@@ -672,33 +645,6 @@ function AdminPageInner() {
     api<{ members: Array<{ id: string; display_name: string | null; email: string }> }>('/team/members').then((r) => setMembers(r.members)).catch(() => {});
   }, []);
   const [status, setStatus] = useState('');
-  const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
-  const [docLoaded, setDocLoaded] = useState(false);
-  const [docTab, setDocTab] = useState<DocTab>('All');
-  const [docQ, setDocQ] = useState('');
-  // Doc packs by the stage that makes them, then who they go to; the words typed narrow it.
-  const docSections = useMemo(() => {
-    const words = docQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const m = new Map<string, DocTemplate[]>();
-    for (const t of docTemplates) {
-      if (docTab !== 'All' && docTabOf(t) !== docTab) continue;
-      const hay = `${t.name} ${t.description ?? ''} ${t.usage?.step ?? ''} ${t.usage?.to ?? ''} ${t.file_name}`.toLowerCase();
-      if (!words.every((w) => hay.includes(w))) continue;
-      const sec = t.usage ? `To ${t.usage.to.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}` : 'Not In The Flow';
-      m.set(sec, [...(m.get(sec) ?? []), t]);
-    }
-    return [...m.entries()].sort((a, b) => Number(a[0] === 'Not In The Flow') - Number(b[0] === 'Not In The Flow') || a[0].localeCompare(b[0]));
-  }, [docTemplates, docTab, docQ]);
-  const docCounts = useMemo(() => { const c: Record<string, number> = { All: docTemplates.length }; for (const t of docTemplates) { const k = docTabOf(t); c[k] = (c[k] ?? 0) + 1; } return c; }, [docTemplates]);
-  const [genFor, setGenFor] = useState<{ id: string; name: string; to: string | null } | null>(null);
-  const [docUpload, setDocUpload] = useState({ name: '', description: '' });
-  const docFocus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc') : null;
-  useEffect(() => {
-    if (!docFocus || !docTemplates.length) return;
-    document.getElementById(`doc-${docFocus.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`)?.scrollIntoView({ block: 'center' });
-  }, [docFocus, docTemplates.length]);
-  const [docUploading, setDocUploading] = useState(false);
-  const docFileRef = useRef<HTMLInputElement>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [policy, setPolicy] = useState<any>(null);
   const [firmTab, setFirmTab] = useState<'details' | 'signature'>(() => (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('sub') === 'signature' ? 'signature' : 'details'));
@@ -717,7 +663,6 @@ function AdminPageInner() {
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
-      if (tab === 'docpacks') { setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates); setDocLoaded(true); }
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') { const r = await api<{ logs: any[]; next?: string | null }>('/admin/audit?limit=100'); setAudit(r.logs); setAuditNext(r.next ?? null); }
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
@@ -739,33 +684,6 @@ function AdminPageInner() {
       await load();
     } catch (e) {
       setStatus((e as Error).message);
-    }
-  }
-
-  async function uploadDocTemplate() {
-    const file = docFileRef.current?.files?.[0];
-    if (!file) { setStatus('Select a .docx file first.'); return; }
-    if (!docUpload.name.trim()) { setStatus('Give the template a name.'); return; }
-    setDocUploading(true);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('name', docUpload.name.trim());
-      form.append('description', docUpload.description.trim());
-      const res = await fetch('/api/v1/admin/doc-templates', {
-        method: 'POST',
-        credentials: 'include',
-        body: form,
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      setDocUpload({ name: '', description: '' });
-      if (docFileRef.current) docFileRef.current.value = '';
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    } finally {
-      setDocUploading(false);
     }
   }
 
@@ -793,63 +711,6 @@ function AdminPageInner() {
       setBillingBusy(false);
     }
   }
-
-  async function generateAiTemplate() {
-    const file = aiGenFileRef.current?.files?.[0] ?? null;
-    if (!aiGen.name.trim()) { setStatus('Give the template a name.'); return; }
-    if (!file && aiGen.instructions.trim().length < 10) {
-      setStatus('Describe the document, or upload an existing one to turn into a template.');
-      return;
-    }
-    setAiGenBusy(true);
-    setStatus('');
-    try {
-      const form = new FormData();
-      form.append('name', aiGen.name.trim());
-      form.append('instructions', aiGen.instructions.trim());
-      if (file) form.append('file', file);
-      const tok = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
-      const res = await fetch('/api/v1/admin/doc-templates/generate', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { ...(tok ? { Authorization: `Bearer ${tok}` } : {}) },
-        body: form,
-      });
-      const r = await res.json();
-      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
-      setAiGen({ name: '', instructions: '' });
-      if (aiGenFileRef.current) aiGenFileRef.current.value = '';
-      await load();
-      setStatus(`Created “${r.name}”${r.fromDocument ? ' from your document' : ''}${r.hasLlmPrompts ? ' (with AI sections)' : ''}. Download it to review before using.`);
-    } catch (e) {
-      setStatus((e as Error).message);
-    } finally {
-      setAiGenBusy(false);
-    }
-  }
-
-  async function replaceDocTemplate(id: string, file: File) {
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch(`/api/v1/admin/doc-templates/${id}`, { method: 'PUT', credentials: 'include', body: form });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
-
-  async function deleteDocTemplate(id: string) {
-    try {
-      await api(`/admin/doc-templates/${id}`, { method: 'DELETE' });
-      await load();
-    } catch (e) {
-      setStatus((e as Error).message);
-    }
-  }
-
 
   async function openPerson(u: any) {
     try {
@@ -1046,7 +907,7 @@ function AdminPageInner() {
         ::-webkit-scrollbar-track{background:transparent}
       `}</style>
         <div>
-        {tab !== 'templates' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
+        {tab !== 'templates' && tab !== 'docpacks' && <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
           <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, lineHeight: 1.2, color: '#0f172a', display: 'flex', alignItems: 'center' }}>{(tab === 'policy' || tab === 'actions' || tab === 'audit') && <BackLink href={paths.integrations} label="Back to Tools" />}{TAB_META[tab].label}</h1>
           {tab === 'mywork' && <RefreshButton label="Refresh Tasks" onRefresh={() => new Promise<void>((done) => window.dispatchEvent(new CustomEvent('conveyi:refresh-tasks', { detail: { done } })))} />}
           {tab === 'team' && (<>
@@ -1317,186 +1178,7 @@ function AdminPageInner() {
 
         {tab === 'templates' && <EmailTemplates />}
 
-        {tab === 'docpacks' && (
-          <>
-            {genFor && <DocGenerate templateId={genFor.id} templateName={genFor.name} sendTo={genFor.to} onClose={() => setGenFor(null)} />}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid #e8eaf0', marginBottom: 12 }}>
-              <div role="tablist" style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                {DOC_TABS.map((k) => (
-                  <button key={k} type="button" role="tab" aria-selected={docTab === k} onClick={() => setDocTab(k)} style={{ border: 'none', background: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: docTab === k ? '#5A27E0' : '#64748b', borderBottom: `2px solid ${docTab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>
-                    {k}{docLoaded ? <span style={{ marginLeft: 6, fontWeight: 600, color: '#94a3b8' }}>{docCounts[k] ?? 0}</span> : null}
-                  </button>
-                ))}
-              </div>
-              <div style={{ position: 'relative', marginLeft: 'auto', width: 260, maxWidth: '100%', marginBottom: 6 }}>
-                <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex' }}><Search size={16} /></span>
-                <input value={docQ} onChange={(e) => setDocQ(e.target.value)} placeholder="Search documents" aria-label="Search documents" style={{ ...input, paddingLeft: 32, margin: 0 }} />
-              </div>
-            </div>
-            {!docLoaded && <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 2px' }}>Loading…</div>}
-            {docLoaded && docSections.length === 0 && <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 2px' }}>{docTemplates.length ? 'No documents match.' : 'No documents yet.'}</div>}
-            {docSections.map(([sec, list]) => (<div key={sec} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', margin: '4px 2px 6px' }}>{sec} <span style={{ fontWeight: 600 }}>{list.length}</span></div>
-            {list.map((tpl) => (
-              <div key={tpl.id} id={`doc-${tpl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} style={{ ...card, ...(docFocus && docFocus === tpl.name ? { borderColor: '#5A27E0', boxShadow: '0 0 0 3px #ede9fe' } : {}) }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div>
-                    <strong>{tpl.name}</strong>
-                    {tpl.has_llm_prompts && (
-                      <span style={{ marginLeft: 8, fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 600 }}>
-                        AI-written sections
-                      </span>
-                    )}
-                    {tpl.usage && (
-                      <div style={{ fontSize: 12.5, color: '#3730a3', marginTop: 4, display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                        <span><strong style={{ color: '#94a3b8', fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>Created</strong>{tpl.usage.step}</span>
-                        <span><strong style={{ color: '#94a3b8', fontSize: 10.5, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>Sent to</strong>{tpl.usage.to}</span>
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                      {tpl.file_name} · {(tpl.file_size_bytes / 1024).toFixed(0)} KB
-                    </div>
-                    {tpl.description && (
-                      <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>{tpl.description}</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button type="button" onClick={() => setGenFor({ id: tpl.id, name: tpl.name, to: tpl.usage?.to ?? null })} style={{ padding: '4px 12px', background: '#5A27E0', color: '#fff', border: '1px solid #5A27E0', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
-                      Generate
-                    </button>
-                    <a
-                      href={`/api/v1/admin/doc-templates/${tpl.id}`}
-                      download={tpl.file_name}
-                      style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, textDecoration: 'none', fontWeight: 600 }}
-                    >
-                      Download
-                    </a>
-                    <label style={{ padding: '4px 10px', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }} title="Upload your own .docx for this document; its place in the flow stays the same">
-                      Replace
-                      <input type="file" accept=".docx" style={{ display: 'none' }} onChange={(e) => { const f = e.target.files?.[0]; if (f) void replaceDocTemplate(tpl.id, f); e.target.value = ''; }} />
-                    </label>
-                    {!tpl.usage && (
-                      <button
-                        style={{ padding: '4px 10px', background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600 }}
-                        onClick={() => deleteDocTemplate(tpl.id)}
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-            </div>))}
-
-            {/* Create with AI — the headline feature, up top */}
-            <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#6d28d9', display: 'flex' }}><Sparkles size={18} /></span>
-                <h2 style={{ margin: 0, fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Create a Template With AI</h2>
-                <span style={{ fontSize: 11, background: '#ede9fe', color: '#6d28d9', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>Beta</span>
-              </div>
-
-              <input
-                style={input}
-                placeholder="Template name (e.g. Notice to complete)"
-                value={aiGen.name}
-                onChange={(e) => setAiGen({ ...aiGen, name: e.target.value })}
-              />
-
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6d28d9', margin: '8px 0 4px' }}>
-                Turn an existing document into a template
-              </label>
-              <input ref={aiGenFileRef} type="file" accept=".docx,.txt" style={{ ...input, padding: '7px 8px' }} />
-
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#6d28d9', margin: '8px 0 4px' }}>
-                …or describe it (and add notes to refine an upload)
-              </label>
-              <textarea
-                style={{ ...input, minHeight: 84 }}
-                placeholder="e.g. 'A formal notice to complete to the other side's solicitor, citing the missed completion date and giving 10 working days.'  — optional if you uploaded a file"
-                value={aiGen.instructions}
-                onChange={(e) => setAiGen({ ...aiGen, instructions: e.target.value })}
-                maxLength={4000}
-              />
-              <button
-                style={{ padding: '9px 18px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, cursor: 'pointer', fontSize: 14, opacity: aiGenBusy ? 0.6 : 1 }}
-                onClick={generateAiTemplate}
-                disabled={aiGenBusy}
-              >
-                {aiGenBusy ? <Spin>Generating…</Spin> : 'Generate Template'}
-              </button>
-            </div>
-
-            {/* How it works */}
-            <div style={{ ...card, background: '#f0f9ff', borderColor: '#bae6fd' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-                <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Placeholders</h3>
-              </div>
-              <table style={{ fontSize: 12, borderCollapse: 'collapse', width: '100%' }}>
-                <tbody>
-                  {[
-                    ['{{matter_ref}}', 'Case reference, e.g. CL-0042'],
-                    ['{{property_address}}', 'Full property address'],
-                    ['{{buyer_names}}', 'Comma-separated buyer names'],
-                    ['{{seller_names}}', 'Comma-separated seller names'],
-                    ['{{exchange_date}}', 'Target exchange date (formatted)'],
-                    ['{{completion_date}}', 'Target completion date (formatted)'],
-                    ['{{counterparty_solicitor}}', 'Other side\'s solicitor'],
-                    ['{{counterparty_agent}}', 'Estate agent'],
-                    ['{{lender}}', 'Lender name'],
-                    ['{{track}}', 'Purchase / Sale / Remortgage'],
-                    ['{{stage}}', 'Current stage name'],
-                    ['{{today}}', 'Today\'s date (formatted)'],
-                    ['{{firm_name}}', 'Your firm name'],
-                    ['{{assigned_to}}', 'Conveyancer handling the case'],
-                  ].map(([placeholder, desc]) => (
-                    <tr key={placeholder} style={{ borderTop: '1px solid #e0f2fe' }}>
-                      <td style={{ padding: '3px 8px 3px 0', fontFamily: 'monospace', color: '#0369a1', whiteSpace: 'nowrap' }}>{placeholder}</td>
-                      <td style={{ padding: '3px 0', color: '#475569' }}>{desc}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p style={{ fontSize: 12, color: '#64748b', marginTop: 10, marginBottom: 0 }}>
-                <code style={{ background: '#e0f2fe', padding: '1px 4px', borderRadius: 3 }}>[[Write a short welcome paragraph for the client]]</code> asks the AI to write that section from the case.
-              </p>
-            </div>
-
-            {/* Upload form */}
-            <div style={card}>
-              <h3 style={{ margin: '0 0 6px', fontSize: 13, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>Upload Template</h3>
-              <input
-                ref={docFileRef}
-                type="file"
-                accept=".docx"
-                style={{ ...input, padding: '6px 8px' }}
-              />
-              <input
-                style={input}
-                placeholder="Template name (e.g. Client care letter)"
-                value={docUpload.name}
-                onChange={(e) => setDocUpload({ ...docUpload, name: e.target.value })}
-              />
-              <input
-                style={input}
-                placeholder="Description (optional)"
-                value={docUpload.description}
-                onChange={(e) => setDocUpload({ ...docUpload, description: e.target.value })}
-              />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  style={{ padding: '8px 16px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: docUploading ? 0.6 : 1 }}
-                  onClick={uploadDocTemplate}
-                  disabled={docUploading}
-                >
-                  {docUploading ? <Spin>Uploading…</Spin> : 'Upload'}
-                </button>
-              </div>
-            </div>
-
-          </>
-        )}
+        {tab === 'docpacks' && <DocPacks />}
 
         {tab === 'policy' && policy && (
           <div style={card}>

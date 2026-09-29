@@ -12,7 +12,7 @@ import { putBlob } from './blob-store';
 import { engine } from './engine/adapters';
 import { profileOf } from './engine/transactions';
 import { STAGES, isResolved, type MatterState, type Stage } from './engine/types';
-import { generateTemplateForMatter, templateOutputName } from './doc-templates';
+import { fillTemplate, generateTemplateForMatter, templateOutputName } from './doc-templates';
 import { isPremiumTenant, canUseHeavyLlm } from './plan';
 import { uploadToMatterFolder } from './graph';
 import { driveUserFor } from './matter-drive';
@@ -96,17 +96,44 @@ async function previousFor(tenantId: string, matterId: string, templateId: strin
  * template filled in (model-written sections left as their prompts), or the engine's draft or
  * sent version of the report on title and completion statement.
  */
-export async function previewForCase(user: SessionUser, templateId: string, matterId: string): Promise<{ preview: string; fileName: string; previous: string | null }> {
+/** The .docx as HTML (headings, bold, lists, tables kept), for a preview that looks like the document. */
+export async function docxHtml(buffer: Buffer): Promise<string | null> {
+  try {
+    const mammoth = await import('mammoth');
+    return (await mammoth.convertToHtml({ buffer })).value || null;
+  } catch { return null; }
+}
+
+/** Example details a document is previewed with when no case is picked (mirrors the email templates' sample). */
+const SAMPLE: Record<string, string> = {
+  matter_ref: 'SMI-OAK', property_address: '14 Oak Street, Leeds LS1 2AB', buyer_names: 'Mr & Mrs Smith', seller_names: 'Ms Jones',
+  exchange_date: '19 July 2026', completion_date: '2 August 2026', counterparty_solicitor: 'Croft & Hargreaves', counterparty_agent: 'Hunters',
+  lender: 'Santander', track: 'Purchase', stage: 'Searches & enquiries', assigned_to: 'Alex Carter',
+};
+
+export type Preview = { preview: string; html: string | null; fileName: string; previous: string | null; sample?: boolean };
+
+/** The document filled with example details: what it looks like, with nothing filed or sent. */
+export async function previewSample(user: SessionUser, templateId: string): Promise<Preview> {
+  const tpl = await queryOne<{ name: string; file_content: Buffer }>(`select name, file_content from doc_template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
+  if (!tpl) throw Object.assign(new Error('Template not found.'), { status: 404 });
+  const firm = (await queryOne<{ name: string }>(`select name from tenant where id = $1`, [user.tenantId]).catch(() => null))?.name ?? 'Your Firm';
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  const buffer = await fillTemplate(Buffer.from(tpl.file_content), { vars: { ...SAMPLE, firm_name: firm, today }, isPremium: false, userId: user.userId, tenantId: user.tenantId });
+  return { preview: docxText(buffer), html: await docxHtml(buffer), fileName: templateOutputName(tpl.name), previous: null, sample: true };
+}
+
+export async function previewForCase(user: SessionUser, templateId: string, matterId: string): Promise<Preview> {
   const tpl = await queryOne<{ name: string }>(`select name from doc_template where id = $1 and tenant_id = $2`, [templateId, user.tenantId]);
   if (!tpl) throw Object.assign(new Error('Template not found.'), { status: 404 });
   const previous = await previousFor(user.tenantId, matterId, templateId, tpl.name);
   const latest = async (docType: string) => (await queryOne<{ content: string | null; file_name: string | null }>(`select extracted_facts->>'content' as content, file_name from document where tenant_id = $1 and matter_id = $2 and doc_type = $3 and superseded_at is null order by created_at desc limit 1`, [user.tenantId, matterId, docType]).catch(() => null));
   if (tpl.name === 'Report on title' || tpl.name === 'Completion statement') {
     const d = await latest(tpl.name === 'Report on title' ? 'REPORT_ON_TITLE_DRAFT' : 'COMPLETION_STATEMENT');
-    return { preview: d?.content ?? `No ${tpl.name.toLowerCase()} has been drafted for this case yet. Generate drafts one from the case as it stands.`, fileName: d?.file_name ?? tpl.name, previous };
+    return { preview: d?.content ?? `No ${tpl.name.toLowerCase()} has been drafted for this case yet. Generate drafts one from the case as it stands.`, html: null, fileName: d?.file_name ?? tpl.name, previous };
   }
   const { buffer } = await generateTemplateForMatter(user, matterId, templateId, false);
-  return { preview: docxText(buffer), fileName: templateOutputName(tpl.name), previous };
+  return { preview: docxText(buffer), html: await docxHtml(buffer), fileName: templateOutputName(tpl.name), previous };
 }
 
 export async function generateForCase(user: SessionUser, templateId: string, matterId: string, opts: { again?: boolean } = {}): Promise<Generated> {

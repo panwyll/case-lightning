@@ -152,3 +152,32 @@ export function AddNote({ busy, cmd }: { busy: boolean; cmd: (body: Record<strin
     </>
   );
 }
+
+/** Raise an enquiry with the seller's solicitor from the case's Tasks (it is sent with the next batch and chased like the rest). */
+export function RaiseEnquiry({ busy, cmd, nextId }: { busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; nextId: string }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const raise = async () => {
+    const subject = text.trim();
+    if (subject.length < 5) return;
+    await cmd({ type: 'raise_enquiry', enquiryId: nextId, subject });
+    setText(''); setOpen(false);
+  };
+  return (
+    <>
+      <button className="ep-btn" style={{ margin: 0 }} disabled={busy} onClick={() => setOpen(true)}>Raise Enquiry</button>
+      {open && (
+        <div onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.38)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '80px 16px 16px' }}>
+          <div role="dialog" aria-label="Raise Enquiry" style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, boxShadow: '0 24px 64px rgba(15,23,42,.24)', padding: '18px 20px', display: 'grid', gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Raise Enquiry {nextId}</h2>
+            <textarea className="ep-input" rows={4} autoFocus placeholder="The enquiry for the seller's solicitor" style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13 }} value={text} onChange={(e) => setText(e.target.value)} />
+            <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+              <button className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(false)}>Cancel</button>
+              <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || text.trim().length < 5} onClick={() => void raise()}>{busy ? <Spin>Raising…</Spin> : 'Raise'}</button>
+            </span>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

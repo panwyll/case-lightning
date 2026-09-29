@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { MarkComplete } from './MarkComplete';
 import { uploadCaseFile } from './uploadCaseFile';
 import { IssuesPanel } from './IssuesPanel';
-import { AddNote } from './NotesPanel';
+import { AddNote, RaiseEnquiry } from './NotesPanel';
 import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { paths } from '@/lib/paths';
@@ -367,7 +367,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
                 <b>
                   {name}
                   {who && <Tip label={who === 'client' ? "The client's decision" : "A conveyancer's sign-off"} icon={<User size={11} />} text={who === 'client' ? "The client decides this; it is recorded from their instruction, never assumed." : 'A conveyancer signs this off. The rules can prepare it but never complete it.'} />}
-                  {about?.creates && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
+                  {about?.creates && /\.docx/.test(about.creates) && <Tip label={`Creates ${about.creates}`} icon={<FileText size={11} />} href={`/conveyi/admin?tab=docpacks&doc=${encodeURIComponent(about.creates.replace(/\s*\(.*$/, ''))}`} text={<><span className="k">Creates</span> {about.creates}. Filled from the case and filed under Documents. Click to open the document under Doc Packs.</>} />}
                   {emailsFor(x).map((e) => <EmailMark key={e.template} e={e} />)}
                   {about && <Tip label={`About ${x.label}`} text={<><span className="k">Starts</span> {about.starts}<br /><span className="k">Done</span> {about.done}{about.note && <><br /><span className="k">Note</span> {about.note}</>}{about.via && <><br /><span className="k">Via</span> {about.via}</>}{about.creates && <><br /><span className="k">Creates</span> {about.creates}</>}</>} />}
                 </b>
@@ -381,7 +381,7 @@ function Box({ lane, open, onToggle, notice, unfed }: { lane: LaneDef; open: boo
           })}
           </div>
           {lane.extra}
-          {lane.actions && <div className="acts">{lane.actions}</div>}
+          {/* No commands in a lane: every step is a task on the Tasks list (docs/spec/ui.md). */}
           <NoticeBox n={notice ?? null} />
         </div>
       )}
@@ -1074,7 +1074,6 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     tiles: inboundAll.map((q) => ({ label: q.id, status: q.repliedAt ? 'replied' : 'raised', detail: `round ${q.round} · ${fmtDay(q.receivedAt)}${q.repliedAt ? ` · replied ${fmtDay(q.repliedAt)}` : ''}` })),
     extra: inboundAll.length ? <div style={{ marginTop: 8 }}>{inboundAll.map((q) => (
       <div key={q.id} className="ep-row">
-        {!q.repliedAt && <input type="checkbox" checked={!!replySel[q.id]} onChange={(e) => setReplySel({ ...replySel, [q.id]: e.target.checked })} />}
         <b>{q.id}</b><span style={{ flex: 1 }}>{q.question}</span><Pill s={q.repliedAt ? 'replied' : 'raised'} />
       </div>
     ))}</div> : null,
@@ -1258,8 +1257,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           action: !deeds.certificateOfTitleAt && live && resolved(s.mortgage.status) ? act('pre_completion_checks', 'certificate_of_title_sent', 'Record Sent', {}, { primary: true }) : undefined }] : []),
         { label: 'Bankruptcy search (K16)', status: pc.bankruptcySearchAt ? 'done' : 'not_started', detail: pc.bankruptcySearchAt ? `clear ${fmtDay(pc.bankruptcySearchAt)}` : 'against every borrower, close to completion',
           action: !pc.bankruptcySearchAt && live ? act('pre_completion_checks', 'bankruptcy_search_clear', 'Record Clear', { subjects: s.partyNames?.length ? s.partyNames : undefined }) : undefined },
-        { label: 'Priority search (OS1)', status: pc.prioritySearchAt ? (os1Expired ? 'expired' : 'done') : 'not_started', detail: pc.prioritySearchExpiresAt ? `priority to ${pc.prioritySearchExpiresAt}` : '30 working days of priority: made just before completion so it covers registration',
-          action: (!pc.prioritySearchAt || os1Expired) && live ? act('pre_completion_checks', 'priority_search_made', 'Record Made') : undefined },
+        { label: 'Priority search (OS1)', status: pc.prioritySearchAt ? (os1Expired ? 'expired' : 'done') : 'not_started', detail: pc.prioritySearchExpiresAt ? `priority to ${pc.prioritySearchExpiresAt}` : '30 working days of priority: made just before completion so it covers registration' },
         { label: 'Buildings insurance', status: pc.insuranceConfirmedAt ? 'done' : 'not_started', detail: pc.insurer ?? 'from exchange: the client is asked for the schedule',
           action: !pc.insuranceConfirmedAt && live ? act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance') : undefined },
       ] });
@@ -1372,7 +1370,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       </>)}
 
       {section === 'tasks' && (<>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div><AddNote busy={busy} cmd={cmd} /></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div>{buyer && !exchanged && <RaiseEnquiry busy={busy} cmd={cmd} nextId={`E${Object.values(s.enquiries ?? {}).reduce((m, q) => Math.max(m, Number(/^E(\d+)$/i.exec(q.enquiryId)?.[1] ?? 0)), 0) + 1}`} />}<AddNote busy={busy} cmd={cmd} /></div>
       {disErr && <div className="eg-err">{disErr}</div>}
       {(view.due?.length ?? 0) > 0 && (
         <div className="ep-grid" style={{ marginBottom: 12 }}>

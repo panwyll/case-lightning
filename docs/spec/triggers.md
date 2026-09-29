@@ -8,6 +8,7 @@
 - **Trust level decides send vs propose**, per action and subject (`engine_action_level`): `auto` sends, `propose` puts it on the Tasks list to approve, `assist` acts and asks for a confirming look (the engine's auto-clears). The trigger is the same either way.
 - **"No" to a message is not "no" to the step.** A person rejecting an essential send (ID check, proof of funds, signing pack, search order, deposit/balance request, property forms, exchange authority, ownership, insurance) leaves a **Send It** task while the case still needs it (`due.ts resend:`). System withdrawals (duplicates, already arrived) do not.
 - **Every send is checked** (`messageProblem`): a broken message becomes a task, never an email. A failed send becomes a **Not Sent** task with Try Again.
+- **Incoming email is never filed away unseen.** Its words are read as a note (`files.ts fileEmailBodyAsDocument`), even when the document reader half-recognised it. What it says becomes a proposal (an issue, a request, a client decision); when the reader is not sure of anything, and the sender is outside the firm, it is a **Read And Reply** task (`<Who> Email` chip). Low confidence is a reason to ask a person, never to do nothing.
 - **Sandboxes never reach a real mailbox** (`sandbox.ts routeEach`): every sender method is routed to the outbox; a real file uploaded to a sandbox is still read.
 
 ## Adding one

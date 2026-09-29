@@ -382,3 +382,33 @@ test('a revised document is the same document: "Contract v2 (1).pdf" and "contra
   assert.equal(versionKey('IMG_2041.jpg'), null);
   assert.equal(versionKey('Document (3).pdf'), null);
 });
+
+// ───────────────────────────── a withdrawn offer is never filed away ─────────────────────────────
+
+test('"my mortgage provider has rescinded their offer" from the client raises a withdrawn-offer issue holding exchange', async () => {
+  const h = await enrolled();
+  const res = await email(h, 'Hi, my mortgage provider has rescinded their offer. Please advise next steps.', CLIENT);
+  const note = Object.values(res.state.notes)[0];
+  const cmd = note.actions.find((a) => a.command?.type === 'raise_issue')?.command as { kind: string; gate: string; title: string } | undefined;
+  assert.ok(cmd, 'an issue is proposed');
+  assert.equal(cmd!.kind, 'mortgage_at_risk');
+  assert.equal(cmd!.gate, 'exchange');
+  assert.match(cmd!.title, /^Mortgage offer withdrawn/);
+  for (const t of ['The lender has withdrawn the mortgage offer.', 'Santander have cancelled our mortgage offer', 'The offer has been revoked.']) {
+    const kinds = (await new DeterministicNoteReader().extract({ tenantId: TENANT, matterId: MATTER, text: t, kind: 'email' })).map((x) => (x.command as { kind?: string } | null)?.kind);
+    assert.ok(kinds.includes('mortgage_at_risk'), t);
+  }
+});
+
+test('an email the reader cannot place goes to a person to read and answer, never filed silently', async () => {
+  const h = await enrolled();
+  const documentId = h.doc(null, 'EMAIL');
+  await h.svc.recordNote(TENANT, MATTER, { text: 'Hello, quick question about the garden fence, can you call me?', kind: 'email', actor: USER, documentId, from: CLIENT, surface: true });
+  const s = await h.svc.getState(TENANT, MATTER);
+  const d = firstDecision(s, 'note_actions');
+  assert.ok(d, 'a task is raised');
+  const { matterWork } = await import('../../../lib/server/engine/work');
+  const item = matterWork(s, new Date()).items.find((i) => i.ref.id === d.eventId)!;
+  assert.equal(item.what, "Read and reply to the client's email");
+  assert.equal(item.chip, 'Client Email');
+});

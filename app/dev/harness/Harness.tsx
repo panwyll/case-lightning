@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import DocPacks from '@/app/conveyi/(app)/admin/DocPacks';
 import TaskList, { TaskTools, type TaskSort } from '@/app/conveyi/(app)/admin/TaskList';
 import { useEngine } from '@/app/shared/engine/useEngine';
 import { WorkPanel } from '@/app/shared/engine/WorkPanel';
@@ -45,6 +46,7 @@ export function Harness() {
       {typeof window !== 'undefined' && window.location.hash.startsWith('#step:')
         ? <StepReview api={api} matterId={MATTER} stepKey={window.location.hash.slice('#step:'.length)} onDone={() => {}} />
         : typeof window !== 'undefined' && window.location.hash === '#templates' ? <EmailTemplates />
+        : typeof window !== 'undefined' && window.location.hash.startsWith('#docpacks') ? <DocPacks />
         : view === 'tasks' ? <HarnessTasks /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
     </div>
   );

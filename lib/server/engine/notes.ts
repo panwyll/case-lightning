@@ -273,15 +273,30 @@ export function commandTitle(c: NoteCommand): string {
     case 'raise_issue': return `Issue: ${ISSUE_KIND_SPEC[c.kind]?.label ?? c.kind.replace(/_/g, ' ')}`;
   }
 }
-/** An email with nothing for the case to act on, as its task reads: a person confirms they have seen it. */
+/**
+ * An email the reader could not turn into something for the case (not a request, an update, an issue or a
+ * decision it could be sure of): it goes to a person to read and answer. Not being sure is a reason to ask,
+ * never a reason to file it away (docs/spec/triggers.md).
+ */
 export function nothingToActSummary(text: string, from?: NoteSender | null): string {
   const who = from ? `${from.name || from.address} (${RELATION_LABEL[from.relation]})` : 'someone';
   const first = text.split(/\n/).map((l) => l.trim()).filter(Boolean).slice(0, 3).join(' ').slice(0, 300);
-  return [`An email from ${who} was filed to this case automatically. Nothing in it was found for the case to act on.`, '', first ? `It begins: “${first}${text.length > first.length ? '…' : ''}”` : '', '', 'Approve to mark it dealt with. If something was missed, reject and say what, or act on it from the case.'].filter((l, i, a) => l || a[i - 1]).join('\n');
+  return [`An email from ${who}. The system could not be sure what it needs, so it is for you to read and answer.`, '', first ? `It begins: “${first}${text.length > first.length ? '…' : ''}”` : '', '', 'Approve once it is dealt with (answered, or nothing is needed). If the case should change, reject and say what, or raise it from the case.'].filter((l, i, a) => l || a[i - 1]).join('\n');
 }
-/** A reply's task when nothing was proposed from it. */
+/** Whose email it is, for the task: "the client's", "Jo Smith's". */
+const whose = (from?: NoteSender | null): string => {
+  if (from?.relation && from.relation !== 'unknown' && from.relation !== 'colleague') return RELATION_LABEL[from.relation].replace(/^the lender or broker$/, 'the lender').replace(/$/, "'s");
+  const n = from?.name || from?.address || 'the sender';
+  return `${n}'s`;
+};
+/** A read-and-reply task: what the person does with an email nothing was proposed from. */
 export function nothingToActTitle(from?: NoteSender | null): string {
-  return `Reply from ${from?.name || from?.address || 'someone'}: nothing to act on`;
+  return `Read and reply to ${whose(from)} email`;
+}
+/** The chip on an email's task: whose email it is. */
+export function emailChip(from?: NoteSender | null): string {
+  const r = from?.relation ?? 'unknown';
+  return r === 'client' ? 'Client Email' : r === 'agent' ? 'Agent Email' : r === 'other_side' ? "Other Side's Email" : r === 'lender' ? 'Lender Email' : r === 'colleague' ? 'Colleague Email' : 'Unknown Sender Email';
 }
 
 /** The title of a note's task: its first proposed line, and how many more. */
@@ -546,8 +561,19 @@ const RULES: Rule[] = [
     }),
   },
   {
+    // "my mortgage provider has rescinded their offer" — the offer is gone, not merely at risk: exchange cannot happen on it.
+    test: /\b((lender|bank|provider|broker|building society|mortgage company|they|he|she)\s+(has |have |had )?(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted|declined|refused|turned down)\s+(the |their |my |our |its |his |her )?(mortgage )?(offer|mortgage|application|lending|loan)|(has |have |had )(now )?(rescinded|revoked|withdrawn|withdrew|pulled|cancell?ed|retracted)\s+(the |their |my |our |its |his |her )?(mortgage )?offer|(mortgage )?offer\s+(has been |was |is |got |has )?(rescinded|revoked|cancell?ed|retracted|withdrawn|pulled))\b/i,
+    build: (sentence) => ({
+      kind: 'issue',
+      summary: 'The mortgage offer has been withdrawn',
+      quote: sentence,
+      confidence: 0.85,
+      command: { type: 'raise_issue', kind: 'mortgage_at_risk', title: `Mortgage offer withdrawn: ${sentence.trim()}`.slice(0, 160), detail: 'Said in an email or a note. Confirm with the lender or broker that the offer is withdrawn and why; the purchase cannot exchange on it. Advise the client on a new application or lender.', gate: 'exchange' },
+    }),
+  },
+  {
     // "I've lost my job so the mortgage may be a problem" — a change the lender must hear about before exchange.
-    test: /\b(lost (my|his|her|their) job|redundan\w*|job (has )?changed|chang\w* (my|his|her|their) job|new job|(mortgage|offer|application) (is|may be|might be|could be|will be) (a problem|in doubt|at risk|affected)|(mortgage|offer|application) (may|might|could|will|is going to|is to) (be )?(withdrawn|declined|refused|pulled|rejected)|(mortgage|offer|application)( has been| was)? (declined|refused|withdrawn|rejected|pulled)|(income|salary|pay) (has )?(dropped|changed|reduced|gone down|fallen))\b/i,
+    test: /\b(lost (my|his|her|their) job|redundan\w*|job (has )?changed|chang\w* (my|his|her|their) job|new job|(mortgage|offer|application) (is|may be|might be|could be|will be) (a problem|in doubt|at risk|affected)|(mortgage|offer|application) (may|might|could|will|is going to|is to) (be )?(withdrawn|declined|refused|pulled|rejected)|(mortgage|offer|application)( has been| was)? (declined|refused|withdrawn|rejected|pulled|rescinded|revoked|cancell?ed|retracted)|(income|salary|pay) (has )?(dropped|changed|reduced|gone down|fallen))\b/i,
     build: (sentence) => ({
       kind: 'issue',
       summary: 'The mortgage may be at risk',

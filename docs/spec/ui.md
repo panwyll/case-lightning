@@ -3,7 +3,7 @@
 ## Where
 
 - **Tasks list is the workplace.** Everything to do is there, grouped by case, with its action on the row. Opening the case is never required to finish a task.
-- **Case view is for troubleshooting and overview**: flowchart, documents, timeline. Its buttons mirror the Tasks list actions (same components: `WorkPanel dueAction`, `IssuesPanel`, `DecisionPanel`) — never an action that exists only there.
+- **Case view is for troubleshooting and overview**: flowchart, documents, timeline. No commands in flowchart lanes; the case's Tasks tab mirrors the Tasks list (same components: `WorkPanel dueAction`, `IssuesPanel`, `DecisionPanel`) plus adding work (Add Note, Raise Enquiry, Raise Issue) — never a step that exists only there.
 - **The flowchart documents the flow**: every automatic step shows its marker (email, document, sign-off, gate); each section's status chip sits top right.
 
 ## How

@@ -860,11 +860,17 @@ export async function fileEmailBodyAsDocument(
   // Not a document with a role, but words on a case: read them the way a file note is read.
   // Whatever they appear to say becomes a proposal for a person, gated by who sent it
   // (notes.ts senderPolicy); the case itself does not move until someone approves.
+  // An email is words even when the document reader half-recognised it ("rescinded their offer" read as a
+  // 30%-sure mortgage offer): it is read as a note, never dropped. A topic the reader recognised puts it
+  // before a person even when nothing is proposed, so it cannot pass silently.
   const enrolled = report?.action.kind === 'skip' && !/not enrolled/.test(report.action.reason);
-  if (enrolled && (!role || role === 'other') && (fresh || body).trim().length >= 2) {
+  const recognised = !!role && role !== 'other';
+  if (enrolled && (fresh || body).trim().length >= 2) {
     const { engine } = await import('./engine/adapters');
     const sender: NoteSender = { address: from, name: fromName || null, relation: await senderRelation(user.tenantId, matterId, from) };
-    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, surface: !!opts.surface, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
+    // Anyone outside the firm who writes on a case gets an answer: when the reader finds nothing it is sure of, a person reads it.
+    const toPerson = !!opts.surface || recognised || sender.relation !== 'colleague';
+    const res = await engine().recordNote(user.tenantId, matterId, { text: (fresh.length >= 2 ? fresh : body).slice(0, 20_000), kind: 'email', actor: user.userId, documentId: doc.id, from: sender, surface: toPerson, attachments: attachments.map((a) => `${a.name}${a.as ? ` (read as ${a.as.replace(/_/g, ' ')})` : a.outcome === 'duplicate' ? ' (already on the case)' : ''}`) });
     const note = Object.values(res.state.notes).find((n) => n.documentId === doc.id);
     let proposals = note?.actions.filter((a) => a.command).length ?? 0;
     // Bank details in an email are the fraud case: they go straight to the hard-stop bank-details
