@@ -39,7 +39,15 @@ export interface TenantBilling {
   trialing: boolean; // on a free trial → tier features but capped usage
   pilot: boolean; // no Stripe configured → full access, no billing
   trialEndsAt: string | null; // when a card-free trial runs out (null if not on one)
+  /** A payment has failed: still entitled until graceEndsAt, then suspended. */
+  grace?: boolean;
+  graceEndsAt?: string | null;
+  /** Not entitled any more (grace over, cancelled, trial ended): read-only, nothing sent. */
+  suspended?: boolean;
 }
+
+/** Days a firm keeps full service after a failed payment, while Stripe retries the card. */
+export const GRACE_DAYS = 7;
 
 /**
  * One read of the tenant's billing posture. Entitlement (may they use the app) is
@@ -62,36 +70,55 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
   }
   // One read for both the subscription and the tenant's own trial clock. The lateral
   // keeps the "latest billing_account row" semantics the previous query had.
-  const row = await queryOne<{
+  // Migration 111 adds comp_until: until it is run, read without it rather than fail every request.
+  const read = (withUntil: boolean) => queryOne<{
     plan: string | null;
     status: string | null;
     comp_plan: string | null;
+    comp_until: string | null;
+    past_due_since: string | null;
     has_account: boolean;
     ever_subscribed: boolean;
     trial_ends_at: string | null;
     tenant_created_at: string;
   }>(
-    `select b.plan, b.status, b.comp_plan, (b.tenant_id is not null) as has_account,
+    `select b.plan, b.status, b.comp_plan, ${withUntil ? 'b.comp_until' : 'null::timestamptz as comp_until'},
+            -- When the current run of failed payments began: the first PAST_DUE since the last payment.
+            (select min(e.occurred_at) from subscription_event e
+              where e.tenant_id = t.id and e.event_type = 'PAST_DUE'
+                and e.occurred_at > coalesce((select max(p.occurred_at) from subscription_event p where p.tenant_id = t.id and p.event_type = 'PAID'), 'epoch'::timestamptz))::text as past_due_since,
+            (b.tenant_id is not null) as has_account,
             (b.stripe_subscription_id is not null) as ever_subscribed,
             t.trial_ends_at, t.created_at as tenant_created_at
        from tenant t
        left join lateral (
-         select tenant_id, plan, status, comp_plan, stripe_subscription_id from billing_account
+         select tenant_id, plan, status, comp_plan, ${withUntil ? 'comp_until,' : ''} stripe_subscription_id from billing_account
          where tenant_id = t.id order by updated_at desc limit 1
        ) b on true
       where t.id = $1`,
     [tenantId]
   );
+  const row = await read(true).catch((err: Error) => (/comp_until/.test(err.message) ? read(false) : Promise.reject(err)));
   const account = row?.has_account ? row : null;
   // Comp override (test / pilot / internal) — full access for free, above Stripe, so a
   // webhook resync can't clobber it. See migration 032. Any non-null value comps the
   // firm; cases opened by a comped firm are recorded but never reported to Stripe.
-  if (account?.comp_plan) {
+  // A comp can have an end date: after it the firm is on its trial (if any is left) or pays.
+  if (account?.comp_plan && (!account.comp_until || new Date(account.comp_until).getTime() > Date.now())) {
     return { plan: USAGE_PLAN, status: 'active', entitled: true, trialing: false, pilot: false, trialEndsAt: null };
   }
   let status = account?.status ?? 'none';
   let entitled = status === 'active' || status === 'trialing';
   let trialing = status === 'trialing';
+  // A failed payment: full service for GRACE_DAYS while Stripe retries the card, then suspended.
+  let grace = false;
+  let graceEndsAt: string | null = null;
+  if (!entitled && (status === 'past_due' || status === 'unpaid')) {
+    const since = row?.past_due_since ? new Date(row.past_due_since) : null;
+    const ends = since ? new Date(since.getTime() + GRACE_DAYS * 86_400_000) : null;
+    // No record of when it began (an older row): the grace runs from now, never taken away unannounced.
+    if (!ends || Date.now() < ends.getTime()) { entitled = true; grace = true; graceEndsAt = (ends ?? new Date(Date.now() + GRACE_DAYS * 86_400_000)).toISOString(); }
+  }
 
   // Card-free trial: a firm that has NEVER subscribed gets full trial access from first
   // sign-in, so it can scan its own mailbox and see real matters before paying.
@@ -119,7 +146,7 @@ export async function getTenantBilling(tenantId: string): Promise<TenantBilling>
   // One plan: entitled → 'usage', otherwise no plan. The stored key is irrelevant to
   // the gates (a pre-migration row may still say plus/pro/enterprise).
   const plan: Plan | null = entitled ? USAGE_PLAN : null;
-  return { plan, status, entitled, trialing, pilot: false, trialEndsAt };
+  return { plan, status, entitled, trialing, pilot: false, trialEndsAt, grace, graceEndsAt, suspended: !entitled };
 }
 
 /**

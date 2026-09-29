@@ -30,3 +30,16 @@ test('joint buyers are asked how they will own it at the start, and chased until
   s = await h.svc.getState(TENANT, MATTER);
   assert.ok(!s.waits.some((w) => w.key === 'client_decision' && w.closedAt === null), 'the answer closes the wait');
 });
+
+test('a suspended firm is not swept: nothing is chased until they pay, then what fell due goes on the next sweep', async () => {
+  const h = harness();
+  await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, transactionType: 'freehold_sale', hasLender: false, hasExistingMortgage: false, requireExchangeAuthority: false });
+  let paid = false;
+  (h.ports as { entitled?: (t: string) => Promise<boolean> }).entitled = async () => paid;
+  h.advanceDays(9);
+  await h.svc.tickAll(TENANT);
+  assert.ok(!h.ports.chaser.chases.some((c) => c.template === 'chase_property_forms'), 'no chase while suspended');
+  paid = true;
+  await h.svc.tickAll(TENANT);
+  assert.ok(h.ports.chaser.chases.some((c) => c.template === 'chase_property_forms'), 'chased once they pay');
+});

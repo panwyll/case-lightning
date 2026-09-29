@@ -1185,7 +1185,13 @@ export class EngineService {
   /** Sweep every active matter (cron). */
   async tickAll(tenantId?: string | null, now = this.ports.now()): Promise<{ matters: number; chases: number; escalations: number }> {
     const totals = { matters: 0, chases: 0, escalations: 0 };
+    const paid = new Map<string, boolean>();
     for (const m of await this.store.listActiveMatters(tenantId)) {
+      // A suspended firm (unpaid past its grace) is not swept; what fell due goes on the first sweep after they pay.
+      if (this.ports.entitled) {
+        if (!paid.has(m.tenantId)) paid.set(m.tenantId, await this.ports.entitled(m.tenantId).catch(() => true));
+        if (!paid.get(m.tenantId)) continue;
+      }
       totals.matters += 1;
       try {
         const r = await this.tick(m.tenantId, m.matterId, now);

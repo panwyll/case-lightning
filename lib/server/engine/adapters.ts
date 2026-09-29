@@ -201,6 +201,7 @@ export function productionPorts(): EnginePorts {
       outsideAutomation: runOutsideAutomation,
       messagePreview: previewProposal,
       files: { find: findFiles, bytes: fileBytes },
+      entitled: (tenantId: string) => import('../plan').then((m) => m.isEntitled(tenantId)),
       log,
     });
   }

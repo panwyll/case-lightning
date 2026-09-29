@@ -30,6 +30,9 @@ function state(s: Status | null | undefined, firmOwned = false) {
 
 export default function ToolsPage() {
   const [leap, setLeap] = useState<Status | null | undefined>(undefined);
+  // The people who run CONVEYi see the Firms page (billing and comps across every firm).
+  const [platform, setPlatform] = useState(false);
+  useEffect(() => { api('/platform/firms').then(() => setPlatform(true)).catch(() => setPlatform(false)); }, []);
   const [intouch, setIntouch] = useState<Status | null | undefined>(undefined);
   useEffect(() => {
     api<Status>('/integrations/leap/status').then(setLeap).catch(() => setLeap(null));
@@ -67,6 +70,7 @@ export default function ToolsPage() {
         <a className="ig-card" href={paths.machineMap}><h2 className="ig-name">Machine map</h2></a>
         <a className="ig-card" href={paths.scenarios}><h2 className="ig-name">Scenarios</h2></a>
         <a className="ig-card" href={paths.lenders}><h2 className="ig-name">Lender Directory</h2></a>
+        {platform && <a className="ig-card" href="/conveyi/engine/firms"><h2 className="ig-name">Firms</h2></a>}
       </div>
     </div>
   );

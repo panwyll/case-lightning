@@ -1,18 +1,8 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
-import { getMessage, senderOfMessageId } from '@/lib/server/graph';
-import { runTriage, applyTriageTags } from '@/lib/server/triage';
-import { runAutoAutomations } from '@/lib/server/automations';
-import { hasTrustedLink, hasDefinitiveSignal, linkedFilingHeld } from '@/lib/server/matching';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
-import { indexEmailBodyToMatter, saveEmailAttachmentsToMatter } from '@/lib/server/files';
-import { markMatterDraftsStale } from '@/lib/server/worklist';
-import { learnFirmRef } from '@/lib/server/contacts';
-import { assistOnMessage } from '@/lib/server/assist';
-import { notifyMatter } from '@/lib/server/events';
-import { writeAssistCache, markAssistError } from '@/lib/server/assist-cache';
-import { enqueueMessage } from '@/lib/server/mail/queue';
-import { autoFileToCase } from '@/lib/server/mail/auto-file';
+import { processIncomingMessage } from '@/lib/server/mail/incoming';
+import { holdMail } from '@/lib/server/billing-suspension';
 import type { SessionUser } from '@/lib/server/types';
 
 export const runtime = 'nodejs';
@@ -55,117 +45,19 @@ export async function POST(req: NextRequest) {
           [sub.user_id]
         );
         if (!user) continue;
-        // Don't spend AI on a lapsed tenant — on-receipt triage/precompute is gated
-        // by entitlement just like the interactive paths.
-        if (!(await isEntitled(user.tenantId))) continue;
+        // A suspended firm (unpaid past its grace period): the mail is held, not read and not
+        // dropped, and processed the moment they pay (billing-suspension.ts).
+        if (!(await isEntitled(user.tenantId))) {
+          const id = n.resourceData?.id;
+          if (id) await holdMail(user.tenantId, user.userId, id);
+          continue;
+        }
         // Over the monthly email cap → stop processing new mail until next month/upgrade.
         if (!(await emailQuotaStatus(user.tenantId)).allowed) continue;
 
         const messageId = n.resourceData?.id;
         if (!messageId) continue;
-
-        const message = await getMessage(user.userId, messageId);
-
-        // A notification off the Sent Items folder is the fee earner's OWN mail. It
-        // must reach the shared case record — that's the whole point of watching sent
-        // items — but it is not an actionable inbound: we don't tag it in Outlook,
-        // don't run auto-rules against it, don't draft a reply to it, and don't
-        // announce "new email from <the lawyer themselves>". Detect by sender rather
-        // than trusting the folder, so a cc'd copy in the inbox can't be misread.
-        const selfAddr = (user.email || '').toLowerCase();
-        const fromAddr = (message.from?.emailAddress?.address || '').toLowerCase();
-        const outbound = !!selfAddr && fromAddr === selfAddr;
-
-        const triage = await runTriage(user, message);
-
-        if (outbound) {
-          // Mirror the inbound learning: file attachments, index the body, learn our
-          // own reference (direction known for certain), flag drafts the send overtook.
-          //
-          // Gate is DEFINITIVE, not trusted-link. Inbound requires a trusted link
-          // because its content is attacker-controllable — a stranger quoting a case
-          // ref could inject into a victim's file. A SENT email is authored by the
-          // firm from its own account, so that threat is absent: a definitive
-          // reference the firm itself wrote (our token / the firm's own "Our ref:")
-          // is trustworthy. This is what stops the fee earner's own outbound reply —
-          // often quoting the ref on a thread nobody manually linked — vanishing.
-          // Still definitive-only: a fuzzy address match is not adopted for a write.
-          if (triage.top && hasDefinitiveSignal(triage.top)) {
-            const mId = triage.top.matterId;
-            if (message.hasAttachments) {
-              await saveEmailAttachmentsToMatter(user, mId, messageId, message.subject).catch(() => {});
-            }
-            await indexEmailBodyToMatter(user, mId, message).catch(() => {});
-            await learnFirmRef(user, mId, message, { outbound: true }).catch(() => {});
-            await markMatterDraftsStale(
-              user.tenantId,
-              mId,
-              `You sent an email${message.subject ? ` — “${String(message.subject).slice(0, 60)}”` : ''}`,
-              `thread:${message.conversationId ?? ''}`
-            ).catch(() => 0);
-          }
-          continue; // done with this (outbound) notification
-        }
-
-        await applyTriageTags(user, message, triage);
-        await runAutoAutomations(user, message, triage);
-
-        // Not on a case yet → onto the filing queue, with the matching and the sender
-        // check the triage just did. A trusted link means it IS on a case. Best-effort.
-        // On a filed conversation, but naming a different case: a person decides, not the link.
-        const strayed = triage.top && hasTrustedLink(triage.top) ? await linkedFilingHeld(user.tenantId, triage.top, triage.candidates ?? [], message, (id) => senderOfMessageId(user.userId, id)) : null;
-        if (strayed) console.info(`[graph notification] on a conversation filed to ${triage.top!.matterRef}, but ${strayed}: queued for a person`);
-        if (!(triage.top && hasTrustedLink(triage.top)) || strayed) {
-          const cls = triage.classification as { caseMail?: 'yes' | 'no' | null; caseMailWhat?: string | null; sender?: typeof triage.classification.sender };
-          await enqueueMessage(user, message, {
-            candidates: triage.candidates,
-            sender: cls.sender,
-            caseMail: cls.caseMail ?? null,
-            caseMailWhat: cls.caseMailWhat ?? null,
-          }).catch((e) => console.error('[graph notification] enqueue failed', (e as Error).message));
-        }
-
-        // Auto-file attachments into a case's knowledge base ONLY on a trusted link
-        // the firm created — never a case-ref token (attacker-injectable) or fuzzy
-        // corroboration, or this email's documents could be filed into the wrong
-        // client's case. Token/fuzzy matches wait for the user to confirm. Best-effort.
-        if (triage.top && hasTrustedLink(triage.top) && !strayed) {
-          await autoFileToCase(user, message, triage.top.matterId, { later: (fn) => after(fn) });
-        }
-
-        // Precompute the full taskpane "situation" (thread summary + drafted
-        // reply) and cache it, so opening this email is instant. runTriage above
-        // already stored the classification, so assistOnMessage reuses it rather
-        // than re-classifying. Best-effort — a failure here never blocks triage.
-        //
-        // Only spend the summary/draft tokens on mail that's actually worth it:
-        // matched to a matter, or flagged as needing attention. Pure noise
-        // (newsletters, FYIs with no matter) stays lazy — the taskpane computes
-        // it on the rare open instead.
-        const worthPrecomputing = triage.top !== null || triage.classification.needsAttention;
-        if (worthPrecomputing) {
-          try {
-            const result = await assistOnMessage(user, { messageId, conversationId: message.conversationId });
-            await writeAssistCache(user.tenantId, messageId, result, 'READY');
-          } catch (assistError) {
-            await markAssistError(user.tenantId, messageId, (assistError as Error).message).catch(() => {});
-          }
-        }
-
-        // Proactive loop: a confirmed-match email that actually needs the fee-earner earns a
-        // briefing line. Routine matched mail (no action needed) stays silent — it's on the
-        // worklist already. Dedup per matter so a flurry on one case = one "there's activity".
-        if (triage.top && hasTrustedLink(triage.top) && triage.classification.needsAttention) {
-          const fromName = message.from?.emailAddress?.name || message.from?.emailAddress?.address || 'someone';
-          await notifyMatter(user.tenantId, triage.top.matterId, {
-            kind: 'EMAIL_TRIAGED',
-            headline: `New email from ${fromName}${message.subject ? ` — “${String(message.subject).slice(0, 80)}”` : ''}`,
-            did: worthPrecomputing ? 'Read it and drafted a suggested reply for you to review' : 'Triaged it and matched it to this case',
-            action: 'Open the case to review and reply',
-            dedupKey: `email:${triage.top.matterId}`,
-          }).catch(() => {});
-        }
-
+        await processIncomingMessage(user, messageId);
         // NB: we deliberately do NOT move the email here. The inbox stays an in-tray;
         // a matched email is only filed into its matter's folder once the user has
         // actually actioned it (replied / updated / delegated / marked handled).

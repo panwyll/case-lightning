@@ -227,6 +227,8 @@ export interface EnginePorts {
   /** Optional: the firm's lender directory; a mortgage offer naming a lender in it records that lender's requirements on the matter. */
   lenderDirectory?: { find(tenantId: string, lenderName: string): Promise<{ minUnexpiredYears: number | null; maxSearchAgeMonths: number | null; acceptsNonFamilyGift: boolean | null; requiresEws1: boolean | null; note: string | null } | null> } | null;
   documents: DocumentRepository;
+  /** Optional: whether the firm is paid up (or in its grace period). A suspended firm's cases are not swept: nothing is chased or sent until they pay. */
+  entitled?(tenantId: string): Promise<boolean>;
   /** Optional: a file on the case found by what someone calls it, and its bytes (a client asking for a copy). */
   files?: { find(tenantId: string, matterId: string, what: string): Promise<Array<{ id: string; fileName: string }>>; bytes(tenantId: string, id: string): Promise<{ name: string; bytes: Buffer; contentType: string } | null> };
   extractor: DocumentExtractor;

@@ -1,3 +1,4 @@
+import { assertEntitled } from '@/lib/server/plan';
 import { NextRequest } from 'next/server';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ mat
   try {
     assertFeature('auth');
     const user = await requireUser();
+    // A suspended firm (unpaid past its grace) can read its cases but not act on them.
+    await assertEntitled(user.tenantId);
     requireWriter(user);
     const { matterId } = z.object({ matterId: z.string().uuid() }).parse(await params);
     await assertMatterAccess(user, matterId);

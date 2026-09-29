@@ -16,6 +16,22 @@ import { planForPriceIds } from '@/lib/server/billing';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/** A firm that pays after a suspension picks up where it left off. Best-effort: the daily sweep catches anything missed. */
+async function resumeAfterPayment(accountId: string): Promise<void> {
+  try {
+    const { queryOne } = await import('@/lib/server/db');
+    const row = await queryOne<{ tenant_id: string | null }>(`select tenant_id from billing_account where id = $1`, [accountId]);
+    if (!row?.tenant_id) return;
+    const { releaseHeldMail } = await import('@/lib/server/billing-suspension');
+    await releaseHeldMail(row.tenant_id);
+    const { engine } = await import('@/lib/server/engine/adapters');
+    const { runAsAutomation } = await import('@/lib/server/db');
+    await runAsAutomation(() => engine().tickAll(row.tenant_id));
+  } catch (err) {
+    console.warn('[stripe webhook] resume after payment failed', (err as Error).message);
+  }
+}
+
 async function accountByCustomer(customerId: string, email: string | null) {
   return ensureAccountByCustomer(customerId, email);
 }
@@ -70,6 +86,8 @@ export async function POST(req: NextRequest) {
           const account = await accountByCustomer(customerId, inv.customer_email ?? null);
           await recordSubscriptionEvent({ accountId: account.id, stripeCustomerId: customerId, eventType: 'PAID', toStatus: 'active' });
           await query(`update billing_account set status = 'active', updated_at = now() where id = $1`, [account.id]);
+          // Paid again after a suspension: the mail held meanwhile is read now, and a sweep sends what fell due.
+          await resumeAfterPayment(account.id);
           const line = inv.lines?.data?.[0];
           await accrueCommission({
             refereeAccountId: account.id,

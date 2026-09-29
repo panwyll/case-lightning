@@ -1,3 +1,4 @@
+import { assertEntitled } from '@/lib/server/plan';
 import { NextRequest, after } from 'next/server';
 import { withDeferredEffects } from '@/lib/server/engine/defer';
 import { z } from 'zod';
@@ -21,6 +22,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
   try {
     assertFeature('auth');
     const user = await requireUser();
+    // A suspended firm (unpaid past its grace) can read its cases but not act on them.
+    await assertEntitled(user.tenantId);
     const { eventId } = z.object({ eventId: z.string().uuid() }).parse(await params);
     const input = resolveSchema.parse(await req.json());
     const svc = engine();
