@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, titleClear, titleWithCharge, titleLeasehold, offerClear, type Harness } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, titleClear, titleWithCharge, titleLeasehold, offerClear, type Harness, readyContract } from './helpers';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { caseGraph, lifecycle, requirements, workstreams, gate } from '../../../lib/server/engine/graph';
 import { profileOf, TRANSACTION_PROFILES } from '../../../lib/server/engine/transactions';
@@ -92,17 +92,21 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   assert.deepEqual(Object.keys(s.inboundEnquiries).sort(), ['BE-Boundary', 'BE1']);
   assert.match(stageBlockers(s).join(' | '), /2 enquiries from the buyer awaiting our reply/);
   assert.equal(gate(s, 'exchange').ready, false);
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' }), /2 of the buyer's enquiries await our reply/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'enquiry_replies_sent', actor: 'system', enquiryIds: ['BE1'] }), /person/);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'enquiry_replies_sent', actor: USER, enquiryIds: ['BE1'] });
   s = await h.svc.getState(TENANT, MATTER);
   assert.match(stageBlockers(s).join(' | '), /1 enquiry from the buyer awaiting our reply \(BE-Boundary\)/);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'enquiry_replies_sent', actor: USER, enquiryIds: ['BE-Boundary'] });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_exchange');
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'enquiry_replies_sent', actor: USER, enquiryIds: ['BE1'] }), /already replied/);
 
   // Exchange needs the redemption figure on a charged property.
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' }), /redemption figure is not known/);
   assert.match(stageBlockers(s).join(' | '), /redemption statement awaited/);
   // Requested by the engine at instruction; asking again is refused.
@@ -115,6 +119,7 @@ test('freehold sale end to end: forms → pack → buyer\'s enquiries answered �
   assert.equal(s.redemption.status, 'received');
   assert.equal(s.exchange.conditionsMet, true, 'the seller-side exchange conditions derive automatically');
   assert.equal(gate(s, 'exchange').ready, true);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' });
   await h.svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   s = await h.svc.getState(TENANT, MATTER);
@@ -180,6 +185,7 @@ test('sale: enquiries that arrive before the file moves on hold contract review;
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_exchange');
   assert.equal(s.exchange.conditionsMet, false, 'not derived while a reply is owed');
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'enquiry_replies_sent', actor: USER, enquiryIds: ['BE1'] });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.exchange.conditionsMet, true);
@@ -187,6 +193,7 @@ test('sale: enquiries that arrive before the file moves on hold contract review;
   await h.svc.run(TENANT, MATTER, { type: 'buyer_enquiries_received', actor: USER, enquiries: [{ question: 'Q2' }] });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.inboundEnquiries.BE2.round, 2);
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' }), /BE2/);
   assert.equal(gate(s, 'exchange').ready, false);
 });
@@ -235,6 +242,7 @@ test('remortgage end to end: no exchange — title, offer and redemption figure 
   assert.equal(s.stage, 'pre_completion', 'no exchange phases: investigation → execution');
   assert.equal(lifecycle(s), 'investigating', 'the coarse view says READY TO COMPLETE only once the completion gate is clear');
   assert.deepEqual(stages(h), ['pre_contract', 'pre_completion']);
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' }), /stage|exchange/i);
 
   // Execution: the deed must be witnessed; the certificate is a person's act.

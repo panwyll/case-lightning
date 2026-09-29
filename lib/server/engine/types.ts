@@ -205,6 +205,7 @@ export const EVENT_TYPES = [
   'client_account_receipt_recorded',
   'contract_pack_sent',
   'contract_pack_requested',
+  'signed_transfer_requested',
   'buyer_enquiries_received',
   'enquiry_replies_sent',
   'redemption_statement_requested',
@@ -701,7 +702,7 @@ export interface Engagement {
 
 // ───────────────────────────── Waits / SLA (2.6) ─────────────────────────────
 
-export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance'] as const;
+export const WAIT_KEYS = ['id_check', 'search', 'enquiry', 'funds', 'registration', 'proof_of_funds', 'management_pack', 'property_forms', 'redemption', 'lender_consent', 'discharge', 'contract_pack', 'transfer_deed', 'signed_documents', 'mortgage_offer', 'survey', 'deposit', 'client_decision', 'insurance'] as const;
 /** Things the client arranges in their own time (their mortgage, their survey): opened by the timer, not by a request of ours, so they are checked on rather than left to drift. */
 export const EXPECTATION_KEYS = ['mortgage_offer', 'survey'] as const;
 export type ExpectationKey = (typeof EXPECTATION_KEYS)[number];
@@ -1057,6 +1058,8 @@ export interface Payloads {
   contract_pack_sent: { includes: string[]; channel?: string | null; messageId?: string | null };
   /** Purchase: the buyer's solicitor has asked the seller's solicitor for the draft contract, official copies, plan and forms; the wait opens here. */
   contract_pack_requested: { to: string };
+  /** A purchase, after exchange: the seller's solicitor is asked for the TR1 their client has signed, for completion. */
+  signed_transfer_requested: { to: string };
   /** Sale: the buyer's solicitor's enquiries arrived (each becomes an inbound enquiry awaiting our reply). */
   buyer_enquiries_received: { enquiries: Array<{ id: string; question: string }>; round: number };
   /** Sale: replies sent (a person sends; the client's answers are theirs). */
@@ -1569,7 +1572,7 @@ export interface MatterState {
   inboundEnquiries: Record<string, InboundEnquiryState>;
   redemption: { status: 'not_required' | 'not_started' | 'requested' | 'received' | 'redeemed' | 'discharged'; lender: string | null; redemptionPennies: number | null; validUntil: string | null; documentId: string | null; redeemedAt: string | null; dischargedAt: string | null };
   lenderConsent: { status: 'not_required' | 'not_started' | 'requested' | 'received'; lender: string | null; receivedAt: string | null; conditions: string | null };
-  deeds: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null };
+  deeds: { mortgageDeedAt: string | null; certificateOfTitleAt: string | null; transferDeedAt: string | null; deedOfTrustAt: string | null; /** A purchase: when the seller's signed TR1 was asked for. */ transferRequestedAt?: string | null };
   sdltNotRequiredAt: string | null;
   /** Leasehold: the LPE1 / management pack. */
   managementPack: {

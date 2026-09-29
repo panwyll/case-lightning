@@ -10,7 +10,7 @@ import { stageBlockers } from '../../../lib/server/engine/machine';
 import { evaluateProofOfFunds, factsFromSubmission, templateBriefing, type ProofOfFundsSubmission } from '../../../lib/server/engine/proof-of-funds';
 import { validatePofBriefing, renderPofBriefing } from '../../../lib/server/engine/ai';
 import { openIssues, openPofQueries, pendingDecisions } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, readyContract } from './helpers';
 
 const submission = (over: Partial<ProofOfFundsSubmission> = {}): ProofOfFundsSubmission => ({
   declarant: { fullName: 'Priya Shah', email: 'priya@example.com', phone: null },
@@ -119,6 +119,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   await h.svc.draftReportOnTitle(TENANT, MATTER);
   await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
   await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
+  await readyContract(h);
   const dep = await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   const depIssue = openIssues(dep.state).find((i) => i.kind === 'aml_kyc_problem');
   assert.ok(depIssue && /Deposit received before proof of funds/.test(depIssue.title), 'money accepted before sign-off is recorded as an issue holding exchange');
@@ -140,6 +141,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   assert.match(d.summary, /Gifted deposit of £40,000 from Anita Shah/);
   const decl = (await h.ports.documents.get(TENANT, d.sourceDocumentId))?.extractedFacts as { content: string };
   assert.match(decl.content, /Evidence attached: nationwide-jul.pdf; nationwide-aug.pdf/);
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /awaiting the conveyancer's sign-off/);
   await assert.rejects(h.svc.proofOfFundsSubmitted(TENANT, MATTER, requestId, submission()), /No proof-of-funds request/);
 
@@ -483,6 +485,7 @@ test('the query loop end to end: submission drafts queries → sign-off refused 
   assert.equal(s.proofOfFunds.status, 'reviewed');
   assert.ok(s.proofOfFunds.approvedAt);
   assert.equal(s.proofOfFunds.approvedBy, USER);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   await h.svc.run(TENANT, MATTER, { type: 'client_decision_recorded', actor: USER, subject: 'exchange_authority', decision: 'authorised' });
   s = await h.svc.getState(TENANT, MATTER);

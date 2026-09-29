@@ -92,3 +92,25 @@ export function firstDecision(state: MatterState, kind?: DecisionKind): Decision
 
 /** The draft contract in the pack (the title alone leaves the contract pack still to chase). */
 export const contractClear = () => ({ sellers: ['Sam Seller'], buyers: ['Ann Smith'], propertyAddress: '1 Test St', titleNumber: 'AB123456', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [], confidence: 0.95 });
+
+/**
+ * The contract ready to exchange, as a real file has it: the draft on file (a purchase), approved
+ * (the review task on a purchase, the buyer's solicitor's approval on a sale), and our client's signed part held.
+ */
+export async function readyContract(h: Harness, matterId = MATTER): Promise<void> {
+  try { await readyContractStrict(h, matterId); } catch { /* not at a stage where the contract can be approved or signed: the test is about something earlier */ }
+}
+async function readyContractStrict(h: Harness, matterId: string): Promise<void> {
+  const { profileOf } = await import('../../../lib/server/engine/transactions');
+  const seed = (facts: unknown, docType = 'PDF') => h.ports.documents.seed({ tenantId: TENANT, matterId, docType, extractedFacts: facts }).id;
+  let s = await h.svc.getState(TENANT, matterId);
+  if (!profileOf(s.transactionType).hasExchange) return;
+  if (profileOf(s.transactionType).side === 'buyer' && !s.readiness.contractDocumentId) { await h.svc.contractReceived(TENANT, matterId, seed(contractClear(), 'CONTRACT')); s = await h.svc.getState(TENANT, matterId); }
+  if (!s.readiness.contractApprovedAt) {
+    const d = Object.values(s.decisions).find((x) => x.kind === 'contract' && x.status === 'pending');
+    if (d) { await h.svc.openDecisionSource(TENANT, matterId, d.eventId, USER); await h.svc.resolveDecision(TENANT, matterId, d.eventId, USER, 'approve', 'Approved for signature'); }
+    else await h.svc.run(TENANT, matterId, { type: 'contract_approved', actor: USER });
+    s = await h.svc.getState(TENANT, matterId);
+  }
+  if (!s.readiness.signedContractHeldAt) await h.svc.run(TENANT, matterId, { type: 'signed_contract_held', actor: USER, documentId: seed({ content: 'signed contract' }, 'SIGNED_CONTRACT') } as never);
+}

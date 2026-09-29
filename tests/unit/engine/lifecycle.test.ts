@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { project } from '../../../lib/server/engine/projection';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { isUserActor, type EngineEvent } from '../../../lib/server/engine/types';
-import { titleClear, harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge, contractClear } from './helpers';
+import { titleClear, harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge, contractClear, readyContract } from './helpers';
 
 test('full lifecycle: instruction → post_completion, with every decision cited, approved and replayable', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z'));
@@ -92,8 +92,10 @@ test('full lifecycle: instruction → post_completion, with every decision cited
   assert.equal(r.state.stage, 'pre_exchange');
 
   // ── pre_exchange → exchanged ──
+  await readyContract(h);
   r = await svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER, amountPennies: 3_500_000 });
   assert.equal(r.state.exchange.conditionsMet, true, 'conditions derived automatically once the deposit lands');
+  await readyContract(h);
   r = await svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' });
   assert.equal(r.state.stage, 'exchanged');
   assert.ok(ports.clientComms.sent.some((m) => m.template === 'exchanged'));

@@ -199,7 +199,34 @@ const proofOfFunds = (price: number, advance: number | null): ScenarioStep[] => 
   }, { flaggedOnly: true }),
 ];
 
+/** The contract, ready to exchange: the draft in the pack approved from its task, and our client's signed part back. */
+const contractBuyer = (): ScenarioStep[] => [
+  step('contract', 'The draft contract reviewed and approved for signature', async (c) => {
+    let s = await c.svc.getState(c.tenantId, c.matterId);
+    if (!s.readiness.contractDocumentId) {
+      const doc = await c.doc({ docType: 'CONTRACT', fileName: 'draft-contract.txt', facts: F.contract(), body: F.body('Draft contract', ['Standard Conditions of Sale (5th edition)', 'Deposit 10%']) });
+      await c.svc.contractReceived(c.tenantId, c.matterId, doc);
+      s = await c.svc.getState(c.tenantId, c.matterId);
+    }
+    if (s.readiness.contractApprovedAt) return;
+    if (Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending')) await c.resolve('contract', 'approve', 'Terms checked against the report on title; approved for signature.');
+    else await c.run({ type: 'contract_approved' });
+  }),
+  step('contract_signed', "The client's signed contract comes back", async (c) => {
+    const doc = await c.doc({ docType: 'SIGNED_CONTRACT', fileName: 'signed-contract.txt', facts: { content: 'signed contract' }, body: F.body('Contract', ['Signed by the buyer, undated']) });
+    await c.run({ type: 'signed_contract_held', documentId: doc });
+  }),
+];
+const contractSeller = (): ScenarioStep[] => [
+  step('contract_approved', "The buyer's solicitor approves the contract", async (c) => { await c.run({ type: 'contract_approved' }); }),
+  step('contract_signed', "The client's signed contract comes back", async (c) => {
+    const doc = await c.doc({ docType: 'SIGNED_CONTRACT', fileName: 'signed-contract.txt', facts: { content: 'signed contract' }, body: F.body('Contract', ['Signed by the seller, undated']) });
+    await c.run({ type: 'signed_contract_held', documentId: doc });
+  }),
+];
+
 const exchangeBuyer = (price: number, deposit: number, advance: number | null): ScenarioStep[] => [
+  ...contractBuyer(),
   step('deposit', 'Deposit received on client account', async (c) => { await c.run({ type: 'deposit_received', amountPennies: deposit }); }),
   step('authority', 'The client authorises exchange', async (c) => { await c.run({ type: 'client_decision_recorded', subject: 'exchange_authority', decision: 'authorised', note: 'Authority given by email after the report on title.' }); }),
   step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
@@ -326,6 +353,7 @@ export const SCENARIOS: Scenario[] = [
       step('replies', 'Replies sent to the buyer\'s enquiries', async (c) => { await c.run({ type: 'enquiry_replies_sent', enquiryIds: ['BE1', 'BE-Boundary'] }); }),
       step('redemption_request', 'Redemption statement requested from the lender', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 18_250_000, validUntil: F.completionDate(3), dailyInterestPennies: 2_100 }); }),
+      ...contractSeller(),
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
       step('transfer_deed', 'Transfer deed (TR1) executed by the seller', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Seller'] }); }),
@@ -360,6 +388,7 @@ export const SCENARIOS: Scenario[] = [
       step('pack_sent', 'Contract pack sent to the buyer\'s solicitor', async (c) => { await c.run({ type: 'contract_pack_sent' }); }),
       step('redemption_request', 'Redemption statement requested', async (c) => { const st = await c.svc.getState(c.tenantId, c.matterId); if (st.redemption.status === 'not_started') await c.run({ type: 'request_redemption_statement', lender: 'Big Bank plc' }); }),
       step('redemption', 'Redemption statement received', async (c) => { await c.run({ type: 'redemption_statement_received', redemptionPennies: 9_000_000, validUntil: F.completionDate(3) }); }),
+      ...contractSeller(),
       step('exchange', 'Contracts exchanged', async (c) => { await c.run({ type: 'contracts_exchanged', completionDate: F.completionDate() }); }),
       step('statement', 'Completion statement drafted and produced', async (c) => { const { documentId } = await c.svc.draftCompletionStatement(c.tenantId, c.matterId); await c.run({ type: 'completion_statement_generated', documentId }); }),
       step('transfer_deed', 'Transfer deed (TR1) executed by the seller', async (c) => { await c.run({ type: 'transfer_deed_executed', parties: ['Sandbox Seller'] }); }),

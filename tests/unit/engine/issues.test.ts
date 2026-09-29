@@ -10,7 +10,7 @@ import { stageBlockers } from '../../../lib/server/engine/machine';
 import { deadlineActions } from '../../../lib/server/engine/sla';
 import { ISSUE_KIND_SPECS, ISSUE_KINDS, ISSUE_RESOLUTIONS, ISSUE_KIND_SPEC } from '../../../lib/server/engine/issues';
 import { openIssues, pendingDecisions } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, offerClear, titleClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, offerClear, titleClear, readyContract } from './helpers';
 
 /** Drive a matter to pre_exchange with everything cleared (lender-funded by default). */
 async function toPreExchange(h: ReturnType<typeof harness>, opts: { hasLender?: boolean } = {}) {
@@ -75,11 +75,13 @@ test('survey defect → renegotiation: the issue holds exchange, a price reducti
   await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
   await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
   await h.svc.run(TENANT, MATTER, { type: 'update_issue', actor: USER, issueId, status: 'negotiating', note: 'Client asked for £10k off; agent relaying to the seller' });
+  await readyContract(h);
   const dep = await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   s = dep.state;
   assert.equal(s.stage, 'pre_exchange');
   assert.equal(s.exchange.conditionsMet, false, 'exchange conditions are not derived while an issue holds exchange');
   assert.ok(stageBlockers(s).some((b) => b.startsWith('issue: Survey defect')), stageBlockers(s).join(' | '));
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /Cannot exchange while an issue is open: Survey defect/);
   // Wrong resolution for the kind, and a reduction without the new price, are refused.
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'grant_obtained' }), /not resolved by/);
@@ -97,10 +99,12 @@ test('survey defect → renegotiation: the issue holds exchange, a price reducti
   assert.equal(lender.raisedBy, 'system');
   assert.deepEqual(lender.origin, { issueId, resolution: 'price_reduced' });
   assert.equal(s.exchange.conditionsMet, false, 'the lender has to confirm the offer stands before exchange');
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /Lender approval needed/);
   const ok = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: lender.id, resolution: 'lender_confirmed', note: 'Revised offer at the lower price received' });
   assert.ok(ok.events.some((e) => e.type === 'exchange_conditions_met'), 'exchange conditions derive as soon as the last hold is released');
   assert.ok(ok.events.find((e) => e.type === 'exchange_conditions_met' && (e.payload as { conditions: string[] }).conditions.includes('no open issue holding exchange')));
+  await readyContract(h);
   const ex = await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   assert.equal(ex.state.stage, 'exchanged');
 });
@@ -114,6 +118,7 @@ test('down-valuation → new lender: resolving with new_lender reopens the mortg
   assert.deepEqual(res.events.map((e) => e.type), ['issue_resolved', 'mortgage_offer_withdrawn']);
   assert.equal(res.state.mortgage.status, 'awaiting');
   assert.ok(stageBlockers(res.state).some((b) => b.startsWith('mortgage offer awaiting')));
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /mortgage offer is awaiting/);
   // The new lender's offer is judged afresh, and exchange is open again.
   await h.svc.mortgageOfferReceived(TENANT, MATTER, h.doc({ ...offerClear(), lender: 'Other Building Society', expiryDate: '2027-04-01' }));
@@ -166,11 +171,13 @@ test('indemnity as a decision option: choosing it on a flagged search on a lende
 test('chain not ready: holds exchange while the deposit is in; a person may release the hold with a note; withdrawn issues stop holding', async () => {
   const h = harness();
   await toPreExchange(h);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.exchange.conditionsMet, true);
   const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'chain_dependency', title: 'Seller\'s onward purchase: management pack still outstanding' });
   const id = (r.events[0].payload as { issueId: string }).issueId;
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /Chain dependency/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'update_issue', actor: USER, issueId: id, status: 'open', gate: 'none' }), /needs a note/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'update_issue', actor: USER, issueId: id, status: 'open' }), /Nothing to update/);
@@ -183,6 +190,7 @@ test('chain not ready: holds exchange while the deposit is in; a person may rele
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.issues[id].status, 'withdrawn');
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'chain_ready' }), /already withdrawn/);
+  await readyContract(h);
   const ex = await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   assert.equal(ex.state.stage, 'exchanged');
 });
@@ -204,7 +212,9 @@ test('fatal issue: the chain collapses on exchange day — one command ends the 
 test('after exchange: an issue defaults to holding completion (exchange is history); completion cannot be confirmed while it holds; completed_late resolves it', async () => {
   const h = harness();
   await toPreExchange(h);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   await h.svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   let s = await h.svc.getState(TENANT, MATTER);

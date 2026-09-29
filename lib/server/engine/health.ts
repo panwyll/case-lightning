@@ -132,6 +132,7 @@ export interface CaseHealth {
 }
 
 const WAIT_LABEL: Record<string, string> = {
+  transfer_deed: "The seller's signed TR1",
   search: 'Search result',
   enquiry: 'Reply to enquiry',
   id_check: 'ID / AML result',

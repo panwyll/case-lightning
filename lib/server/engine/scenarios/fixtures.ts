@@ -112,3 +112,6 @@ export const statement = (holder: string, closingPennies: number, employer = 'Sa
     transactions, salaryCredits: [0, 30, 60].map((d) => ({ date: days(d + 2), amountPennies: salary, payer: employer })), confidence: 0.95,
   };
 };
+
+/** A clean draft contract, as the seller's solicitor sends it in the pack. */
+export const contract = () => ({ sellers: ['Sandbox Seller'], buyers: ['Sandbox Buyer'], propertyAddress: '12 Example Street, Sampletown', titleNumber: 'AB123456', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [], confidence: 0.95 });

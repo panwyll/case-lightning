@@ -90,6 +90,7 @@ export interface RunResult {
 export interface FirstRequest { to: 'seller_solicitor' | 'lender' | 'estate_agent' | 'client'; template: string; buyerOnly?: boolean; optional?: boolean }
 export const FIRST_REQUESTS: Partial<Record<EventType, FirstRequest>> = {
   contract_pack_requested: { to: 'seller_solicitor', template: 'request_contract_pack' },
+  signed_transfer_requested: { to: 'seller_solicitor', template: 'request_signed_transfer', buyerOnly: true },
   management_pack_requested: { to: 'seller_solicitor', template: 'request_management_pack', buyerOnly: true },
   redemption_statement_requested: { to: 'lender', template: 'request_redemption_statement' },
   lender_consent_requested: { to: 'lender', template: 'request_lender_consent' },
@@ -795,7 +796,9 @@ export class EngineService {
       ...(points.length ? ['', `Points (${points.length}):`, ...points.map((p) => `• ${p.description}`)] : f ? ['', 'Nothing in the contract flagged.'] : []),
       ...(mismatches.length ? ['', 'Not matching the case:', ...mismatches.map((i) => `• ${i.title}`)] : []),
     ].join('\n');
-    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary });
+    // The decision cites the contract itself, and each flagged point where the read found it.
+    const citations = [{ documentId: docId, label: 'The contract' }, ...points.filter((p) => p.locator).map((p) => ({ documentId: docId, locator: p.locator, label: p.description }))];
+    await this.run(tenantId, matterId, { type: 'raise_contract_review', documentId: docId, summary, citations });
   }
 
   /** A document behind the seller's forms (a policy, a permission, a certificate, a guarantee): read, and shown with the title. */

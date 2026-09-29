@@ -917,6 +917,11 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       break;
     }
     // ── leasehold ──
+    case 'signed_transfer_requested': {
+      s.deeds = { ...s.deeds, transferRequestedAt: e.createdAt };
+      openWait(s, 'transfer_deed', '', e);
+      break;
+    }
     case 'contract_pack_requested': {
       s.contractPack = { ...s.contractPack, requestedAt: e.createdAt };
       openWait(s, 'contract_pack', '', e);
@@ -1167,6 +1172,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'transfer_deed_executed': {
       s.deeds.transferDeedAt = e.createdAt;
+      closeWait(s, 'transfer_deed', '', e);
       break;
     }
     case 'deed_of_trust_executed': {

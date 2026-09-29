@@ -43,7 +43,7 @@ export async function uploadFor(api: Api, matterId: string, spec: { wants: strin
 
 /** The button a step shows on the Tasks list: its own action (the same words as on the case), which opens its form in place. */
 export const STEP_ACTION_LABEL: Record<string, string> = {
-  contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', buyer_enquiries: 'Record Replies Sent',
+  contract_pack: 'Record Sent', management_pack_sale: 'Record Requested', contract_approved_sale: 'Record Approved', contract_approve: 'Approve Contract', proof_of_funds_request: 'Send The Form', buyer_enquiries: 'Record Replies Sent',
   exchange: 'Contracts Exchanged', completion_statement: 'Send To Client', certificate_of_title: 'Record Sent', bankruptcy_search: 'Record Clear',
   priority_search: 'Record Made', funds_request: 'Request Funds', completion_monies: 'Record Received', consideration: 'Record Received',
   completion_payment: 'Authorise', redemption_payment: 'Authorise', completion: 'Confirm Completion', balance_to_client: 'Authorise',
@@ -66,6 +66,7 @@ export const WAIT_ACTIONS: Record<string, WaitAction> = {
   property_forms: { label: 'Upload The Forms', upload: { wants: ['property_forms'], what: "the property forms", routing: () => ({ role: 'property_forms' }) } },
   id_check: { label: 'Upload The Result', upload: { wants: ['id_check'], what: 'the ID check result', routing: () => ({ role: 'id_check' }) } },
   signed_documents: { label: 'Record Signed Copy' },
+  transfer_deed: { label: 'Record Signed TR1' },
   funds: { label: 'Record Received' },
   deposit: { label: 'Record Received' },
   redemption: { label: 'Record Received' },

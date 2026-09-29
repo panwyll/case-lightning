@@ -34,15 +34,21 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   const completionDate = s.exchange.completionDate ?? s.targetCompletionDate ?? null;
   const out: DueStep[] = [];
   const add = (x: DueStep) => out.push(x);
+  // A step is offered only once the machine accepts it (a sale acts on the pack and the management pack once the ID check has cleared).
+  const STAGE_ORDER = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
+  const atLeast = (st: string) => STAGE_ORDER.indexOf(s.stage) >= STAGE_ORDER.indexOf(st);
 
   // ── Before exchange ──
+  // The firm's policy wants proof of funds and the form never went (the start-of-case send was not made or not approved): send it.
+  if (buyer && s.requireProofOfFunds && s.proofOfFunds.status === 'not_started' && !exchanged && !completed)
+    add({ key: 'proof_of_funds_request', lane: 'proof_of_funds', title: 'Send the client the proof-of-funds form' });
   if (!completed && (seller || remo || toe) && s.title.status === 'awaiting')
     add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them' });
-  if (seller && p.hasExchange && !s.contractPack.sentAt && s.propertyForms.status === 'received' && s.title.status !== 'awaiting')
+  if (seller && p.hasExchange && atLeast('pre_contract') && !s.contractPack.sentAt && s.propertyForms.status === 'received' && s.title.status !== 'awaiting')
     add({ key: 'contract_pack', lane: 'exchange', title: "Send the contract pack to the buyer's solicitor" });
-  if (tt === 'leasehold_sale' && s.managementPack.status === 'not_started')
+  if (tt === 'leasehold_sale' && atLeast('pre_contract') && s.managementPack.status === 'not_started')
     add({ key: 'management_pack_sale', lane: 'leasehold', title: 'Ask the managing agent for the management pack (LPE1)' });
-  if (seller && s.contractPack.sentAt && !s.readiness.contractApprovedAt && !exchanged)
+  if (seller && s.contractPack.sentAt && atLeast('contract_review') && !s.readiness.contractApprovedAt && !exchanged)
     add({ key: 'contract_approved_sale', lane: 'exchange', title: "Record the buyer's solicitor approving the contract" });
   // A purchase's contract on file but no approval task on the list (it arrived before contract review, or the case was moved on by hand): approve it here.
   if (buyer && p.hasExchange && s.readiness.contractDocumentId && !s.readiness.contractApprovedAt && !exchanged && ['contract_review', 'pre_exchange'].includes(s.stage) && !Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending'))
@@ -76,7 +82,10 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'completion_payment', lane: 'completion', title: "Authorise the completion payment to the seller's solicitor", dueDate: completionDate });
   if ((seller || remo) && s.redemption.status === 'received' && s.stage === 'pre_completion' && !paid('lender'))
     add({ key: 'redemption_payment', lane: 'redemption', title: 'Authorise the redemption payment to the lender', dueDate: completionDate });
-  if (s.stage === 'pre_completion' && !completed && s.completion.fundsReceivedAt && (!buyer || paid('seller_solicitor', 'completion_monies')))
+  // Confirm completion only when that is the one thing left (the signed TR1 in, the money in and paid): offered before, it is refused.
+  // No money moves on some transfers (a court order, a gift of a share): then completion needs no funds in.
+  const fundsExpected = fundsFrom.some((f) => (f === 'lender' && s.hasLender) || f === 'client' || f === 'buyer_solicitor' || f === 'isa_provider' || (f === 'incoming_owner' && (s.considerationPennies ?? 0) > 0));
+  if (s.stage === 'pre_completion' && !completed && (s.completion.fundsReceivedAt || !fundsExpected) && (!buyer || paid('seller_solicitor', 'completion_monies')) && stageBlockers(s).every((b) => b === 'completion not confirmed'))
     add({ key: 'completion', lane: 'completion', title: 'Confirm completion', dueDate: completionDate });
 
   // ── After completion ──
@@ -89,7 +98,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null });
   if (completed && tt === 'leasehold_purchase' && !(s.postCompletion as { noticeOfAssignmentAt?: string | null }).noticeOfAssignmentAt)
     add({ key: 'notice_of_assignment', lane: 'leasehold', title: 'Serve notice of assignment (and charge) on the landlord' });
-  if (s.stage === 'post_completion' && stageBlockers(s).length === 0)
+  if (s.stage === 'post_completion' && stageBlockers(s).every((b) => b === 'matter complete'))
     add({ key: 'close_file', lane: 'registration', title: 'Close the file' });
   return out;
 }

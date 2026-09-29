@@ -776,6 +776,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'contract_pack': return act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true });
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
+      case 'proof_of_funds_request': return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'request_proof_of_funds' })}>Send The Form</BusyButton>;
       case 'contract_approve': return act('exchange', 'contract_approved', 'Approve Contract', {}, { primary: true });
       case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
       case 'exchange': return act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true });
@@ -813,6 +814,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
       case 'deposit': return act('exchange', 'deposit_received', 'Record Received');
       case 'insurance': return act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance');
+      case 'transfer_deed': return act('signing', 'transfer_deed_executed', 'Record Signed TR1', { parties: ['The seller'] }, { primary: true });
       // Each deed the client was sent, recorded as it comes back signed (the form takes the scan).
       case 'signed_documents': {
         const SIGN_CMD = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;

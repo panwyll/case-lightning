@@ -54,6 +54,7 @@ export const DEFAULT_SLA: SlaConfig = {
   // The client's own arrangements, checked on so they never drift: the mortgage offer every two weeks from a fortnight in, the survey from a week in.
   mortgage_offer: { waitKey: 'mortgage_offer', chaseAfter: 10, chaseEvery: 10, escalateAfter: 25, reEscalateAfter: 10, recipientRole: 'client', template: 'chase_mortgage_offer' },
   survey: { waitKey: 'survey', chaseAfter: 5, chaseEvery: 7, escalateAfter: 20, reEscalateAfter: 10, recipientRole: 'client', template: 'chase_survey' },
+  transfer_deed: { waitKey: 'transfer_deed', chaseAfter: 3, chaseEvery: 2, escalateAfter: 8, reEscalateAfter: 3, recipientRole: 'seller_solicitor', template: 'chase_signed_transfer' },
   contract_pack: { waitKey: 'contract_pack', chaseAfter: 5, chaseEvery: 3, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'seller_solicitor', template: 'chase_contract_pack' },
   lender_consent: { waitKey: 'lender_consent', chaseAfter: 5, chaseEvery: 5, escalateAfter: 15, reEscalateAfter: 5, recipientRole: 'lender', template: 'chase_lender_consent' },
   // The client owes us: the deposit before exchange, their answers (how they own it, authority to exchange), insurance from exchange.

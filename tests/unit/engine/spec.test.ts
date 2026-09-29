@@ -14,7 +14,7 @@ import { TRIGGERS } from '../../../lib/server/engine/triggers';
 import { TRANSACTION_PROFILES } from '../../../lib/server/engine/transactions';
 import { TRANSACTION_TYPES } from '../../../lib/server/engine/types';
 import { WORKSTREAMS } from '../../../lib/server/engine/issues';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, titleClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, titleClear, readyContract } from './helpers';
 
 const spec = machineSpec();
 
@@ -104,6 +104,7 @@ test('spec: the stage spine is reachable in order by running the machine end to 
   await resolve(h, firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
   await h.svc.sendReportOnTitle(TENANT, MATTER, USER);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   await h.svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   const moves = h.store.dump(TENANT, MATTER).filter((e) => e.type === 'stage_advanced').map((e) => (e.payload as { to: string }).to);

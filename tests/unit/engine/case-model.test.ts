@@ -10,7 +10,7 @@ import { caseGraph, gate, lifecycle, nextActions, requirements, whyNot, workstre
 import { timedIssueActions } from '../../../lib/server/engine/sla';
 import { ISSUE_KIND_SPECS } from '../../../lib/server/engine/issues';
 import { openIssues, pendingDecisions } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, readyContract } from './helpers';
 
 const SURVEY = { surveyType: 'level3' as const, surveyor: 'J Bloggs MRICS', summary: 'Generally sound; damp to the rear addition and a tired roof covering.', recommendations: [
   { code: 'DAMP_REAR', text: 'High moisture readings to the rear addition; a specialist damp and timber report is recommended before exchange.', furtherInvestigation: true, specialist: 'Damp and timber', severity: 'medium' as const, locator: { page: 14 } },
@@ -100,6 +100,7 @@ test('survey: facts are automated (report received, further investigation recomm
   assert.equal(lifecycle(s), 'ready_to_exchange');
   assert.equal(gate(s, 'exchange').ready, true);
   assert.equal(workstreams(s).find((w) => w.id === 'survey')!.status, 'complete');
+  await readyContract(h);
   const ex = await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   assert.equal(lifecycle(ex.state), 'exchanged');
 });

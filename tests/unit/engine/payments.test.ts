@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { currentBankDetails, VERIFICATION_METHODS, REJECTED_VERIFICATION_METHODS } from '../../../lib/server/engine/types';
 import { buildAuditReport } from '../../../lib/server/engine/audit';
-import { harness, resolve, TENANT, MATTER, USER, SENIOR, idClear, searchClear, titleClear } from './helpers';
+import { harness, resolve, TENANT, MATTER, USER, SENIOR, idClear, searchClear, titleClear, readyContract } from './helpers';
 
 const sortCode = '401234';
 const details = (n: string, name = 'Smith & Co Client Account') => ({ sortCode, accountNumber: n, accountName: name, firmName: 'Smith & Co' });
@@ -20,6 +20,7 @@ async function toPreCompletion(h: ReturnType<typeof harness>) {
   await resolve(h, rot.eventId, 'approve');
   await svc.sendReportOnTitle(TENANT, MATTER, USER);
   await svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-11-27' });
   await svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   await svc.run(TENANT, MATTER, { type: 'transfer_deed_executed', actor: USER, parties: ['Buyer'] });

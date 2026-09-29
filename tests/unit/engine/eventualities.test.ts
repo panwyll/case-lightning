@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { deadlineActions } from '../../../lib/server/engine/sla';
 import { pendingDecisions, isFinished } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, offerClear, titleClear, replyClear, titleWithCharge, contractClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, offerClear, titleClear, replyClear, titleWithCharge, contractClear, readyContract } from './helpers';
 
 /** Drive a lender-funded matter to pre_exchange with everything cleared. */
 async function toPreExchange(h: ReturnType<typeof harness>, opts: { expiry?: string } = {}) {
@@ -78,17 +78,20 @@ test('search re-issue: a cleared search can be ordered again (lender freshness r
 test('mortgage offer withdrawn before exchange: the sub-flow reopens, exchange is blocked until a new offer clears; the new offer is judged afresh', async () => {
   const h = harness();
   await toPreExchange(h);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   let s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.exchange.conditionsMet, true);
   const r = await h.svc.run(TENANT, MATTER, { type: 'mortgage_offer_withdrawn', actor: USER, reason: 'Lender withdrew after a down-valuation' });
   assert.equal(r.state.mortgage.status, 'awaiting');
   assert.ok(stageBlockers(r.state)[0].startsWith('mortgage offer awaiting'));
+  await readyContract(h);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /Cannot exchange: the mortgage offer is awaiting/);
   await h.svc.mortgageOfferReceived(TENANT, MATTER, h.doc({ ...offerClear(), amountPennies: 24_000_000, expiryDate: '2027-04-01' }));
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.mortgage.status, 'cleared');
   assert.equal(s.mortgage.facts?.amountPennies, 24_000_000, 'the re-issued offer is the one on file');
+  await readyContract(h);
   const ex = await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   assert.equal(ex.state.stage, 'exchanged');
 });
@@ -100,7 +103,9 @@ test('dates: target dates re-planned before exchange; after exchange the contrac
   assert.equal(t.state.targetExchangeDate, '2026-12-04');
   assert.equal(t.state.targetCompletionDate, '2026-12-11', 'unchanged field kept');
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'change_completion_date', actor: USER, completionDate: '2026-12-18' }), /not exchanged/);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'set_target_dates', actor: USER, targetExchangeDate: '2027-01-01' }), /contractual/);
   const c = await h.svc.run(TENANT, MATTER, { type: 'change_completion_date', actor: USER, completionDate: '2026-12-18', reason: 'Agreed with the seller — removals' });
@@ -120,7 +125,7 @@ test('dates: target dates re-planned before exchange; after exchange the contrac
   // The certificate of title is due too (the lender's notice before completion); only the notice is under test here.
   assert.deepEqual(acts.map((a) => a.kind).filter((k) => k !== 'certificate_of_title'), ['notice_to_complete']);
   const tick = await h.svc.tick(TENANT, MATTER);
-  assert.equal(tick.escalations, 4, "the notice, the certificate of title, the buildings insurance still not evidenced, and the mortgage deed (sent when the offer cleared) never returned signed");
+  assert.equal(tick.escalations, 5, "the notice, the certificate of title, the buildings insurance still not evidenced, the mortgage deed (sent when the offer cleared) never returned signed, and the seller's signed TR1 (asked for on exchange) not in");
   assert.deepEqual(await h.svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 }, 'raised once');
   const dl = pendingDecisions(await h.svc.getState(TENANT, MATTER)).find((x) => x.subject === 'deadline:notice_to_complete:2027-01-06')!;
   assert.match(dl.summary, /expires on 2027-01-06/);
@@ -139,7 +144,9 @@ test('deadlines we owe: mortgage offer expiry before exchange and the 14-day SDL
   assert.match(esc.summary, /expires on 2026-10-05 and contracts are not exchanged/);
   // Exchange and complete; the SDLT deadline runs from completion.
   await resolve(h, esc.eventId, 'approve', SENIOR, 'Extension requested from lender');
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-10-02' });
   await h.svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   // Bank details + payment (addendum 2) so completion can be confirmed.
@@ -205,7 +212,9 @@ test('enquiries: one the handler no longer needs is withdrawn (wait closes, stag
 test('post-completion: an HMLR requisition is a decision citing the letter, blocks the registration gate until answered, and has a reply deadline the timer watches', async () => {
   const h = harness();
   await toPreExchange(h);
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h);
   await h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'hmlr_requisition_received', actor: 'external', documentId: h.doc(null), deadline: '2027-01-20' }), /No AP1/);
   // Fast-forward through completion via the log directly (the payment path is covered elsewhere).
@@ -220,7 +229,9 @@ test('post-completion: an HMLR requisition is a decision citing the letter, bloc
   await h2.svc.draftReportOnTitle(TENANT, MATTER);
   await resolve(h2, firstDecision(await h2.svc.getState(TENANT, MATTER), 'report_on_title').eventId, 'approve');
   await h2.svc.sendReportOnTitle(TENANT, MATTER, USER);
+  await readyContract(h2);
   await h2.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  await readyContract(h2);
   await h2.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' });
   await h2.svc.run(TENANT, MATTER, { type: 'completion_statement_generated', actor: USER });
   const firm = await h2.svc.recordBankDetails(TENANT, MATTER, { actor: USER, payeeKind: 'firm_client_account', details: { sortCode: '401234', accountNumber: '00112233', accountName: 'Client A/C', firmName: null }, sourceChannel: 'manual' });

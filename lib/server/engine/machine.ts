@@ -113,7 +113,7 @@ import {
   type TitlePlanFacts,
   type SupportingDocFacts,
   openIssues,
-  isManualStep, type ManualStepFacts, MANUAL_STEP_REQUIRED } from './types';
+  isManualStep, type ManualStepFacts, MANUAL_STEP_REQUIRED, deedsToSign } from './types';
 
 /** An optional AI-produced summary handed in by the service (component #3). The verdict is never AI's. */
 export interface SummaryOverride {
@@ -425,6 +425,9 @@ export function assertDecisionSpec(d: DecisionSpec): void {
 // ───────────────────────────── stage gates ─────────────────────────────
 
 /** Why the matter cannot leave its current stage yet (empty = it can). Exported for the dashboard. */
+/** Nobody exchanges without an approved contract and our own client's signed part on file. */
+const contractReady = (s: MatterState): boolean => !!s.readiness.contractApprovedAt && !!s.readiness.signedContractHeldAt;
+
 export function stageBlockers(s: MatterState): string[] {
   if (!s.enrolled) return ['not enrolled'];
   if (s.abandoned) return [`matter abandoned (${s.abandoned.reason.replace(/_/g, ' ')})`];
@@ -460,6 +463,9 @@ export function stageBlockers(s: MatterState): string[] {
       b.push(...issueBlockers(s, 'exchange'));
       if (proofOfFundsHolds(s)) b.push(`proof of funds ${proofOfFundsHoldReason(s)}`);
       if (surveyHolds(s)) b.push(`survey: client not yet ${s.survey.status === 'further_investigation' ? 'able to decide — further investigation outstanding' : s.survey.status === 'client_renegotiating' ? 'satisfied — renegotiating' : 'confirmed satisfied with the physical condition'}`);
+      if (!s.readiness.contractApprovedAt) b.push(s.readiness.contractDocumentId ? 'contract not yet approved' : "draft contract not yet received from the seller's solicitor");
+      else if (!s.readiness.signedContractHeldAt) b.push("our client's signed contract not on file");
+      if (!s.deposit.received) b.push('deposit not received');
       if (exchangeAuthorityHolds(s)) b.push('client has not yet authorised exchange');
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
@@ -527,6 +533,8 @@ function saleBlockers(s: MatterState): string[] {
       if (s.hasExistingMortgage && s.redemption.status === 'not_started') b.push('redemption statement not requested');
       if (s.hasExistingMortgage && s.redemption.status === 'requested') b.push('redemption statement awaited');
       b.push(...issueBlockers(s, 'exchange'));
+      if (!s.readiness.contractApprovedAt) b.push("contract not yet approved by the buyer's solicitor");
+      else if (!s.readiness.signedContractHeldAt) b.push("our client's signed contract not on file");
       if (exchangeAuthorityHolds(s)) b.push('client has not yet authorised exchange');
       if (!s.exchange.exchangedAt) b.push(s.exchange.conditionsMet ? 'contracts not yet exchanged' : 'exchange conditions not met');
       break;
@@ -675,9 +683,12 @@ function automatic(state: MatterState, now: Date): NewEvent[] {
     } else if (side === 'buyer' && s.enrolled && !s.contractPack.requestedAt && !s.title.documentId && !s.abandoned) {
       // A purchase asks the seller's solicitor for the draft contract pack at instruction, not after the client's checks: the clock on it starts the day we are instructed.
       ev = { type: 'contract_pack_requested', actor: SYSTEM, payload: { to: 'seller_solicitor' } };
-    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && (!s.hasLender || isResolved(s.mortgage.status)) && gatingBesidesChain(s).length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'buyer' && s.enrolled && !!s.exchange.exchangedAt && !s.completion.confirmedAt && !s.deeds.transferDeedAt && !s.deeds.transferRequestedAt && !deedsToSign(s).includes('transfer') && !s.abandoned) {
+      // The seller signs the TR1; after exchange their solicitor is asked for it, so it is here for completion (and chased).
+      ev = { type: 'signed_transfer_requested', actor: SYSTEM, payload: { to: 'seller_solicitor' } };
+    } else if (side === 'buyer' && s.enrolled && s.stage === 'pre_exchange' && s.deposit.received && !s.exchange.conditionsMet && contractReady(s) && (!s.hasLender || isResolved(s.mortgage.status)) && gatingBesidesChain(s).length === 0 && !proofOfFundsHolds(s) && !surveyHolds(s) && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['report on title sent', 'title resolved', 'searches resolved', 'deposit received', s.hasLender ? 'mortgage offer resolved' : 'cash purchase', 'no open issue holding exchange'] } };
-    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && gatingBesidesChain(s).length === 0 && !exchangeAuthorityHolds(s)) {
+    } else if (side === 'seller' && s.enrolled && s.stage === 'pre_exchange' && !s.exchange.conditionsMet && contractReady(s) && (!s.hasExistingMortgage || s.redemption.status === 'received') && Object.values(s.inboundEnquiries).every((q) => q.repliedAt) && gatingBesidesChain(s).length === 0 && !exchangeAuthorityHolds(s)) {
       ev = { type: 'exchange_conditions_met', actor: SYSTEM, payload: { conditions: ['contract pack sent', "buyer's enquiries answered", s.hasExistingMortgage ? 'redemption figure known' : 'unencumbered', 'no open issue holding exchange', s.requireExchangeAuthority ? 'client authorised exchange' : 'authority not required by policy'] } };
     } else {
       const to = nextStage(s);
@@ -1183,6 +1194,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (unidentified.length) reject(`Cannot exchange: ID / AML not resolved for ${unidentified.map((pc) => pc.label).join(', ')}.`);
       const holding = issuesGating(s, 'exchange');
       if (holding.length) reject(`Cannot exchange while ${holding.length === 1 ? 'an issue is' : `${holding.length} issues are`} open: ${holding.map((i) => `${ISSUE_KIND_SPEC[i.kind].label} — ${i.title}`).join('; ')}. Resolve, withdraw or re-gate ${holding.length === 1 ? 'it' : 'them'} first.`);
+      if (!s.readiness.contractApprovedAt) reject('Cannot exchange: the contract is not approved.');
+      if (!s.readiness.signedContractHeldAt) reject("Cannot exchange: our client's signed contract is not on file.");
       if (!s.exchange.conditionsMet) reject('Exchange conditions are not met (deposit received?).');
       if (s.exchange.exchangedAt) reject('Contracts already exchanged.');
       if (Number.isNaN(Date.parse(cmd.completionDate))) reject('A valid completion date is required to exchange.', 400);
@@ -1299,8 +1312,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireStageAtLeast(s, 'completed', 'AP1 submission');
       if (profile(s).registration !== 'ap1') reject(`No application to register on a ${profile(s).label.toLowerCase()} — the buyer's solicitor registers; we discharge.`);
       if (s.postCompletion.ap1SubmittedAt) reject('AP1 already submitted.');
-      // HM Land Registry needs the SDLT5 (or a return that was not required) with the application.
-      if (!s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) reject('The SDLT return has not been filed, nor recorded as not required; HM Land Registry needs the SDLT5 with the AP1.');
+      // HM Land Registry needs the SDLT5 (or a return that was not required) with an application for a transfer; a remortgage has none.
+      if ((profile(s).side === 'buyer' || s.transactionType === 'transfer_of_equity') && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt) reject('The SDLT return has not been filed, nor recorded as not required; HM Land Registry needs the SDLT5 with the AP1.');
       return [{ type: 'ap1_submitted', actor: cmd.actor, payload: { reference: cmd.reference ?? null } }];
     }
     case 'ap1_confirmed': {
