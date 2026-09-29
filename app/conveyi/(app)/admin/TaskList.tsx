@@ -19,8 +19,6 @@ import { Waiting, WORK_CSS } from './EngineWork';
  * anything else is a step on the case. Waiting sits underneath and chases itself.
  */
 const CSS = `
-.tl-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.tl-bar label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
 .tl-msg{font-size:12.5px;font-weight:600;margin-top:4px;color:#92400e}
 .tl-msg.ok{color:#15803d}
 .tl-step{padding:12px 14px 14px 40px}
@@ -36,15 +34,15 @@ const CSS = `
 .tl-dis-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #f1f5f9;font-size:13px;color:#334155}
 .tl-dis-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tl-dis-row .m{color:#94a3b8;font-size:12px;white-space:nowrap}
-.tl-q{position:relative;flex:1;min-width:220px;max-width:420px}
+.tl-lab{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-lab select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit}
+.tl-q{position:relative;flex:1;min-width:200px;max-width:340px}
 .tl-q svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8}
 .tl-q input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px 6px 32px;font-size:12.5px;font-family:inherit}
 .tl-q input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
-.tl-bar select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit;max-width:280px}
-.tl-bar .n{margin-left:auto;font-size:12.5px;color:#94a3b8;font-variant-numeric:tabular-nums}
 .tl-groups{background:#fff;border:1px solid #e2dcf5;border-radius:12px;overflow:hidden;margin-bottom:12px}
 .tl-group + .tl-group{border-top:1px solid #e2dcf5}
-.tl-case{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#f3f0fb;color:inherit;cursor:pointer;user-select:none}
+.tl-case{display:flex;align-items:center;gap:10px;padding:7px 14px;background:#f3f0fb;color:inherit;cursor:pointer;user-select:none}
 .tl-case:hover{background:#ece7fa}
 .tl-case .chev{display:inline-flex;color:#5A27E0;transition:transform .12s}
 .tl-case .chev.open{transform:rotate(90deg)}
@@ -54,8 +52,8 @@ const CSS = `
 .tl-case b{font-size:13.5px;font-weight:800;color:#0f172a}
 .tl-case .ref{font-size:12px;color:#5A27E0;font-weight:700}
 .tl-case .who{font-size:12px;color:#64748b;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
-.tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:13px 14px 13px 40px;border-top:1px solid #e6e8ee}
-.tl-task:first-of-type{border-top:0}
+.tl-task{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 14px;align-items:center;padding:9px 14px 9px 40px}
+.tl-item + .tl-item .tl-task{border-top:1px solid #eceef3}
 .tl-task .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
 .tl-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
 .tl-chip.prop{color:#5A27E0;background:#f5f3ff}
@@ -72,6 +70,7 @@ const CSS = `
 .tl-item.open{background:#f8f7ff;box-shadow:inset 3px 0 0 #5A27E0;border-top:1px solid #e6e8ee;border-bottom:1px solid #e6e8ee;margin:6px 0}
 .tl-item.open .tl-task{border-top:0}
 .tl-item.open + .tl-item .tl-task{border-top:0}
+.tl-item.open .tl-task{padding-top:11px}
 .tl-open{padding:0 14px 14px 40px}
 .tl-open .dp.inline{border:1px solid #e6e8ee;border-radius:12px;background:#fff}
 .tl-for{font-size:11.5px;font-weight:700;color:#64748b;background:#f1f5f9;border-radius:999px;padding:4px 10px;white-space:nowrap}
@@ -83,7 +82,8 @@ const CSS = `
 .tl-clear .t{color:#94a3b8;font-size:12px;margin-left:auto;font-variant-numeric:tabular-nums}
 `;
 
-type Sort = 'urgency' | 'due' | 'case';
+export type TaskSort = 'urgency' | 'due' | 'case';
+type Sort = TaskSort;
 const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
 const dayMs = 86_400_000;
 /** When a task arose, as a time: today and yesterday by clock time, older by date. */
@@ -98,13 +98,22 @@ const ageDays = (i: WorkItem, now: number): number | null => (i.since ? Math.flo
 /** The task in a sentence, without the engine's prefixes. */
 const sentence = (w: string): string => w.replace(/^Decide:\s*/i, '').trim().replace(/^\w/, (c) => c.toUpperCase());
 
-export default function TaskList({ who }: { who: string }) {
+/** Sort and search live in the page header (TaskTools), beside Assigned To. */
+export function TaskTools({ sort, setSort, q, setQ }: { sort: TaskSort; setSort: (s: TaskSort) => void; q: string; setQ: (q: string) => void }) {
+  return (
+    <>
+      <style>{CSS}</style>
+      <label className="tl-lab">Sort<select value={sort} onChange={(e) => setSort(e.target.value as TaskSort)}><option value="urgency">Urgency</option><option value="due">Due Date</option><option value="case">Case</option></select></label>
+      <div className="tl-q"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, clients or tasks" aria-label="Search tasks" /></div>
+    </>
+  );
+}
+
+export default function TaskList({ who, sort, q }: { who: string; sort: TaskSort; q: string }) {
   const [data, setData] = useState<{ do: WorkItem[]; waiting: WorkItem[]; escalate: WorkItem[]; viewerRole?: string } | null>(null);
   // An assistant sees every task on their cases; the ones that are a conveyancer's call say so instead of offering Approve.
   const forConveyancer = (i: WorkItem): boolean => data?.viewerRole === 'ASSISTANT' && !i.assistantCan;
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
-  const [sort, setSort] = useState<Sort>('urgency');
-  const [q, setQ] = useState('');
   // Tasks dismissed from the tray: listed under Dismissed, restorable.
   const [dismissed, setDismissed] = useState<Array<{ id: string; matterId: string; ref: string; title: string | null; dismissedAt: string; dismissedBy: string | null; matterRef: string | null; propertyAddress: string | null }>>([]);
   const [showDismissed, setShowDismissed] = useState(false);
@@ -236,13 +245,9 @@ export default function TaskList({ who }: { who: string }) {
   return (
     <div>
       <style>{WORK_CSS + CSS}</style>
-      <div className="tl-bar">
-        <label>Sort<select value={sort} onChange={(e) => setSort(e.target.value as Sort)}><option value="urgency">Urgency</option><option value="due">Due Date</option><option value="case">Case</option></select></label>
-        <div className="tl-q"><Search size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cases, clients or tasks" aria-label="Search tasks" /></div>
-        <span className="n">{tasks.length} task{tasks.length === 1 ? '' : 's'}{groups.length > 1 ? ` across ${groups.length} cases` : ''}</span>
-      </div>
       {outcome && <div className={`tl-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
-      {tasks.length === 0 && checkedAt && (
+      {tasks.length === 0 && checkedAt && q.trim() && <div className="tl-clear" style={{ color: "#64748b" }}><Search size={16} /><span>Nothing Matches</span></div>}
+      {tasks.length === 0 && checkedAt && !q.trim() && (
         <div className="tl-clear"><CheckCircle size={16} /><span>All clear</span><span className="t">checked {checkedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span></div>
       )}
       {groups.length > 0 && <div className="tl-groups">

@@ -13,9 +13,9 @@ import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
-import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check, Search } from '@/app/shared/icons';
+import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check, Search, Plus } from '@/app/shared/icons';
 import { decisionTask } from './EngineWork';
-import TaskList from './TaskList';
+import TaskList, { TaskTools, type TaskSort } from './TaskList';
 import { DocGenerate } from './DocGenerate';
 
 interface MatterHit {
@@ -475,6 +475,8 @@ function AdminPageInner() {
   // so the web app is operable day-to-day without the add-in.
   /** Whose tasks the tray shows: '' is everyone's. */
   const [assignee, setAssignee] = useState('');
+  const [taskSort, setTaskSort] = useState<TaskSort>('urgency');
+  const [taskQ, setTaskQ] = useState('');
   const [myworkSort, setMyworkSort] = useState<'smart' | 'due' | 'matter'>('smart');
   const [myworkFolded, setMyworkFolded] = useState<Set<string>>(new Set());
   const [myworkOpen, setMyworkOpen] = useState<string>('');
@@ -1054,14 +1056,15 @@ function AdminPageInner() {
           </>)}
           {tab === 'mywork' && (
             <>
+              <TaskTools sort={taskSort} setSort={setTaskSort} q={taskQ} setQ={setTaskQ} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned to</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned To</span>
                 <select value={assignee} onChange={(e) => setAssignee(e.target.value)} style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700, color: '#0f172a', background: '#fff', cursor: 'pointer' }}>
                   <option value="">Anyone</option>
                   {members.map((u) => (<option key={u.id} value={u.id}>{u.display_name || u.email}{u.id === me?.userId ? ' (me)' : ''}</option>))}
                 </select>
               </label>
-              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>＋ New case</button>
+              <button onClick={() => setShowNewMatter(true)} style={{ marginLeft: 0, padding: '6px 14px', background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Plus size={16} />New Case</button>
             </>
           )}
         </div>}
@@ -1249,7 +1252,7 @@ function AdminPageInner() {
 
         {tab === 'mywork' && (
           <>
-            <TaskList who={assignee} />
+            <TaskList who={assignee} sort={taskSort} q={taskQ} />
           </>
         )}
 

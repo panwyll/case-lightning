@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import TaskList from '@/app/conveyi/(app)/admin/TaskList';
+import TaskList, { TaskTools, type TaskSort } from '@/app/conveyi/(app)/admin/TaskList';
 import { useEngine } from '@/app/shared/engine/useEngine';
 import { WorkPanel } from '@/app/shared/engine/WorkPanel';
 import { api } from '@/app/shared/engine/api';
@@ -45,7 +45,23 @@ export function Harness() {
       {typeof window !== 'undefined' && window.location.hash.startsWith('#step:')
         ? <StepReview api={api} matterId={MATTER} stepKey={window.location.hash.slice('#step:'.length)} onDone={() => {}} />
         : typeof window !== 'undefined' && window.location.hash === '#templates' ? <EmailTemplates />
-        : view === 'tasks' ? <TaskList who="" /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
+        : view === 'tasks' ? <HarnessTasks /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
     </div>
+  );
+}
+
+/** The Tasks tab as the app shows it: title, Sort and Search on the header line, then the list. */
+function HarnessTasks() {
+  const [sort, setSort] = useState<TaskSort>('urgency');
+  const [q, setQ] = useState('');
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12, minHeight: 36 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 800, margin: 0, color: '#0f172a' }}>Tasks</h1>
+        <TaskTools sort={sort} setSort={setSort} q={q} setQ={setQ} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', fontSize: 12.5, fontWeight: 700, color: '#64748b' }}>Assigned To<select style={{ border: '1px solid #d0d5dd', borderRadius: 8, padding: '5px 10px', fontSize: 12.5, fontWeight: 700 }}><option>Anyone</option></select></label>
+      </div>
+      <TaskList who="" sort={sort} q={q} />
+    </>
   );
 }
