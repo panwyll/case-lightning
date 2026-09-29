@@ -1,3 +1,5 @@
+import { addWorkingDays, subtractWorkingDays } from './working-days';
+import { resolveWithinWorkingDays, type IssueGate, type IssueKind } from './issues';
 /**
  * Projection: fold the immutable event log into the current MatterState.
  *
@@ -787,6 +789,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
         enquiryIds: [],
         severity: p.severity ?? 'warning',
         causedBy: p.causedBy ?? null,
+        resolveBy: p.resolveBy ?? defaultResolveBy(s, p.kind, p.gate, e.createdAt),
         history: [{ at: e.createdAt, by: e.actor, what: `raised (${p.kind.replace(/_/g, ' ')}, ${p.severity ?? 'warning'}, holds ${p.gate === 'none' ? 'nothing' : p.gate}${p.party ? `, re ${p.party}` : ''}${p.causedBy ? `, discovered while dealing with ${p.causedBy}` : ''})` }],
       };
       break;
@@ -798,8 +801,9 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       i.status = p.status;
       if (p.gate) i.gate = p.gate;
       if (p.party !== undefined) i.party = p.party;
+      if (p.resolveBy) i.resolveBy = p.resolveBy;
       i.updatedAt = e.createdAt;
-      i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.note ? `: ${p.note}` : ''}` });
+      i.history.push({ at: e.createdAt, by: e.actor, what: `${p.status}${p.gate ? ` (now holds ${p.gate === 'none' ? 'nothing' : p.gate})` : ''}${p.resolveBy ? ` (resolve by ${p.resolveBy})` : ''}${p.note ? `: ${p.note}` : ''}` });
       break;
     }
     case 'issue_resolved': {
@@ -812,6 +816,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       i.resolvedBy = e.actor;
       i.costPennies = p.costPennies ?? null;
       i.paidBy = p.paidBy ?? null;
+      i.details = p.details ?? null;
+      i.evidenceDocumentId = p.documentId ?? null;
+      // An extension moves the offer's expiry (the deadline timer reads it).
+      if (p.resolution === 'offer_extended' && typeof p.details?.newExpiry === 'string' && s.mortgage.facts) s.mortgage.facts.expiryDate = p.details.newExpiry;
       i.updatedAt = e.createdAt;
       i.history.push({ at: e.createdAt, by: e.actor, what: `resolved: ${p.resolution.replace(/_/g, ' ')}${p.costPennies != null ? ` (£${(p.costPennies / 100).toLocaleString('en-GB')}${p.paidBy ? `, paid by ${p.paidBy}` : ''})` : ''}${p.note ? ` — ${p.note}` : ''}` });
       settleSurvey(s);
@@ -1276,3 +1284,19 @@ function subjectOf(e: EngineEvent): string | null {
   return null;
 }
 
+
+/**
+ * When an issue should be sorted by, if nobody said: the kind's window in working days from
+ * the raise, but no later than the working day before the target date of what it holds.
+ */
+function defaultResolveBy(s: MatterState, kind: IssueKind, gate: IssueGate, raisedAt: string): string {
+  const day = (d: Date) => d.toISOString().slice(0, 10);
+  const raised = new Date(raisedAt);
+  let by = day(addWorkingDays(raised, resolveWithinWorkingDays(kind)));
+  const target = gate === 'exchange' ? s.targetExchangeDate : gate === 'completion' ? s.targetCompletionDate : null;
+  if (target) {
+    const before = day(subtractWorkingDays(new Date(`${target}T12:00:00Z`), 1));
+    if (before < by && before > day(raised)) by = before;
+  }
+  return by;
+}

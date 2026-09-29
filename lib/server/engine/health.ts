@@ -17,7 +17,7 @@
  * than just show it, and a suggested next action. Pure: (state, now) → health.
  */
 import { DEFAULT_SLA, DEADLINE_LEAD, deadlineActions, dueActions, type SlaConfig } from './sla';
-import { ISSUE_KIND_SPEC, type Workstream } from './issues';
+import { ISSUE_KIND_SPEC, isContextKind, type Workstream } from './issues';
 import { awayNow, openIssues, openWaits, pendingDecisions, type MatterState, type Stage, type WaitState } from './types';
 import { profileOf } from './transactions';
 import { dueSteps } from './due';
@@ -58,12 +58,14 @@ function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBan
   const due = dueSteps(s, now);
   const oursLate = reasons.some((r) =>
     r.code === 'issue_stale' || r.code === 'deadline_passed' || r.code === 'hard_stop'
+    || (r.code === 'issue_overdue' && oursIssue(r))
     || (r.code === 'decision_pending' && r.band !== 'attention')
     || (r.code === 'deadline_near' && r.band === 'critical')
     || (r.code === 'issue_critical' && !JEOPARDY.has(issueOf(r)?.kind ?? '')))
     || due.some((d) => !!d.dueDate && d.dueDate < today);
   const theirsLate = reasons.some((r) =>
     r.code === 'wait_overdue' || r.code === 'wait_escalated'
+    || (r.code === 'issue_overdue' && !oursIssue(r))
     || (r.code === 'chase_due' && !/ is away$/.test(r.headline))
     || (r.code === 'issue_blocking' && r.band === 'blocked' && !oursIssue(r))
     || (r.code === 'stage_overrun' && r.band === 'delayed'));
@@ -89,7 +91,7 @@ export const HEALTH_LABEL: Record<HealthBand, string> = {
 
 export type ReasonCode =
   | 'wait_overdue' | 'wait_escalated' | 'chase_due'
-  | 'issue_blocking' | 'issue_critical' | 'issue_stale'
+  | 'issue_blocking' | 'issue_critical' | 'issue_stale' | 'issue_overdue'
   | 'decision_pending' | 'hard_stop'
   | 'deadline_near' | 'deadline_passed'
   | 'stage_overrun' | 'manual_handling' | 'abandoned' | 'step_due';
@@ -257,6 +259,11 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
       reasons.push({ code: 'issue_blocking', band: 'blocked', headline: `${holds === 'exchange' ? 'Exchange' : 'Completion'} blocked — ${clean(i.title)}`, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     } else if (age >= DEADLINE_LEAD.stale_issue) {
       reasons.push({ code: 'issue_stale', band: 'attention', headline: `${spec.label} untouched for ${plural(age, 'working day')}`, why, suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
+    }
+    // Past the date it was to be sorted by: late, on us or on whoever owns the next step.
+    const today = now.toISOString().slice(0, 10);
+    if (i.resolveBy && i.resolveBy < today && !JEOPARDY.has(i.kind) && !isContextKind(i.kind)) {
+      reasons.push({ code: 'issue_overdue', band: ours ? 'blocked' : 'delayed', headline: `${named} — due ${i.resolveBy}`, why: [...why, `It was to be sorted by ${i.resolveBy}.`], suggested, workstream: spec.workstreams[0] ?? null, ref: { type: 'issue', id: i.id }, ageWorkingDays: age });
     }
   }
 

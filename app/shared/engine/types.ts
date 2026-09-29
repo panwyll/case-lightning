@@ -186,14 +186,21 @@ export interface IssueRow {
   severity?: 'info' | 'warning' | 'critical';
   causedBy?: string | null;
   history: Array<{ at: string; by: string; what: string }>;
+  /** When it should be sorted by (YYYY-MM-DD). */
+  resolveBy?: string | null;
+  details?: Record<string, string | number | boolean | null> | null;
+  evidenceDocumentId?: string | null;
 }
+export interface ResolutionField { key: string; label: string; type: 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer'; required: boolean }
 
 /** The issue catalogue as /engine/spec publishes it (kinds, groups, resolutions). */
 export interface IssueCatalogue {
   groups: Array<{ id: string; label: string }>;
-  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean }>;
-  resolutions: Array<{ id: string; label: string; effects: string[] }>;
+  kinds: Array<{ kind: string; group: string; label: string; arisesFrom: string; gate: 'exchange' | 'completion' | 'none'; stages: string[]; resolutions: string[]; note: string; overlaps?: string; context?: boolean; escalateAfterWorkingDays?: number | null; responsible?: string }>;
+  resolutions: Array<{ id: string; label: string; title?: string; fields?: ResolutionField[]; noteRequired?: boolean; effect?: string | null; effects: string[] }>;
   staleAfterWorkingDays: number;
+  formless?: string[];
+  chips?: Record<string, string>;
 }
 
 export type TransactionType = 'freehold_purchase' | 'leasehold_purchase' | 'freehold_sale' | 'leasehold_sale' | 'remortgage' | 'transfer_of_equity';
@@ -221,6 +228,8 @@ export interface ProfileView {
 }
 
 export interface EngineState {
+  matterId: string;
+  tenantId?: string;
   enrolled: boolean;
   transactionType: TransactionType | null;
   parties?: number;

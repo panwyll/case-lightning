@@ -97,7 +97,11 @@ const sellerForms = (leasehold: boolean): ScenarioStep[] => [
   step('seller_forms_issues', "The TA6 issues resolved: consents obtained by indemnity, the knotweed guarantee on file", async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
     for (const i of Object.values(s.issues).filter((i) => (i.title.startsWith('TA6:') || i.title.startsWith("Seller's forms:")) && (i.status === 'open' || i.status === 'negotiating'))) {
-      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: i.kind === 'building_regs_missing' ? 'indemnity_policy' : 'evidence_provided', note: i.kind === 'building_regs_missing' ? 'Building regulations indemnity policy quoted and accepted by the lender.' : 'Treatment plan and insurance-backed guarantee received; lender content.' });
+      const indemnity = i.kind === 'building_regs_missing';
+      const evidence = await c.doc({ docType: 'SUPPORTING_DOCUMENT', fileName: indemnity ? 'building-regs-indemnity-policy.txt' : 'knotweed-guarantee.txt', facts: { content: indemnity ? 'Indemnity policy' : 'Guarantee' }, body: indemnity ? 'Building regulations indemnity policy\nInsurer: Mock Legal Indemnities\nPremium: £95' : 'Knotweed treatment plan and insurance-backed guarantee' });
+      await c.run(indemnity
+        ? { type: 'resolve_issue', issueId: i.id, resolution: 'indemnity_policy', note: 'Building regulations indemnity policy quoted and accepted by the lender.', costPennies: 9500, paidBy: 'seller', documentId: evidence, details: { insurer: 'Mock Legal Indemnities' } }
+        : { type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Treatment plan and insurance-backed guarantee received; lender content.', documentId: evidence });
     }
     // An indemnity policy tells the lender (the engine raises that itself); the lender confirms.
     const after = await c.svc.getState(c.tenantId, c.matterId);
@@ -236,7 +240,8 @@ const exchangeBuyer = (price: number, deposit: number, advance: number | null): 
   step('landlord_consents', "What the landlord required on assignment is done (deed of covenant signed, certificate of compliance obtained)", async (c) => {
     const s = await c.svc.getState(c.tenantId, c.matterId);
     for (const i of Object.values(s.issues).filter((i) => i.kind === 'missing_consent' && i.title.startsWith('After completion:') && (i.status === 'open' || i.status === 'negotiating'))) {
-      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'consent_obtained', note: 'Deed of covenant signed at completion; certificate of compliance received from the management company and lodged with the AP1.' });
+      const cert = await c.doc({ docType: 'SUPPORTING_DOCUMENT', fileName: 'certificate-of-compliance.txt', facts: { content: 'Certificate of compliance' }, body: 'Certificate of compliance from the management company' });
+      await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'consent_obtained', note: 'Deed of covenant signed at completion; certificate of compliance received from the management company and lodged with the AP1.', documentId: cert });
     }
   }),
   step('close', 'Matter closed', async (c) => { await c.run({ type: 'close_matter' }); }),
@@ -306,7 +311,10 @@ export const SCENARIOS: Scenario[] = [
       }),
       step('forms_issues', 'What the TA6 discloses is dealt with before the pack goes out', async (c) => {
         const s = await c.svc.getState(c.tenantId, c.matterId);
-        for (const i of Object.values(s.issues).filter((i) => (i.title.startsWith('TA6:') || i.title.startsWith("Seller's forms:")) && (i.status === 'open' || i.status === 'negotiating'))) await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Disclosed in full with the paperwork in the pack.' });
+        for (const i of Object.values(s.issues).filter((i) => (i.title.startsWith('TA6:') || i.title.startsWith("Seller's forms:")) && (i.status === 'open' || i.status === 'negotiating'))) {
+          const paper = await c.doc({ docType: 'SUPPORTING_DOCUMENT', fileName: `disclosure-${i.id}.txt`, facts: { content: 'Disclosure paperwork' }, body: `Paperwork for: ${i.title}` });
+          await c.run({ type: 'resolve_issue', issueId: i.id, resolution: 'evidence_provided', note: 'Disclosed in full with the paperwork in the pack.', documentId: paper });
+        }
       }, { flaggedOnly: true }),
       step('title', 'Official copies received (with the charge to redeem)', async (c) => {
         const doc = await c.doc({ docType: 'TITLE', fileName: 'official-copy-of-the-register.txt', facts: F.titleWithCharge(), body: F.body('Official copy of the register', ['Title number AB123456', 'Tenure: freehold', 'C1 Registered charge dated 12 May 2019 in favour of Big Bank plc']) });

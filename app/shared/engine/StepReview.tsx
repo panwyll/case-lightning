@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { useEngine } from './useEngine';
-import { WorkPanel } from './WorkPanel';
+import { WorkPanel, WORK_CSS } from './WorkPanel';
 import { IssuesPanel } from './IssuesPanel';
 import type { Api } from './types';
 
@@ -12,37 +12,32 @@ import type { Api } from './types';
  */
 export function StepReview({ api, matterId, stepKey, onDone }: { api: Api; matterId: string; stepKey: string; onDone: () => void }) {
   const eng = useEngine(matterId, api);
-  const [checking, setChecking] = useState(false);
-  const polls = useRef<ReturnType<typeof setTimeout> | null>(null);
   const due = eng.view ? (eng.view.due ?? []).some((d) => d.key === stepKey) : true;
-  useEffect(() => { if (eng.view && !due) onDone(); }, [eng.view, due]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => { if (polls.current) clearTimeout(polls.current); }, []);
-  const changed = () => {
-    setChecking(true);
-    let n = 0;
-    const tick = () => { void eng.load(); if (++n < 8) polls.current = setTimeout(tick, 4000); else setChecking(false); };
-    tick();
-  };
+  // Done: the confirmation stays on screen a moment, then the task leaves the list.
+  useEffect(() => { if (!eng.view || due) return; const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [eng.view, due]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
   return (
     <div>
-      <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={changed} notice={eng.notice} section="step" stepKey={stepKey} />
-      {checking && due && <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 8 }}>Uploaded. Reading it now…</div>}
+      {eng.err && <div style={{ fontSize: 12.5, color: '#b91c1c', marginBottom: 6 }}>{eng.err}</div>}
+      {!due && <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d', marginBottom: 6 }}>Done.</div>}
+      <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={null} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section="step" stepKey={stepKey} />
     </div>
   );
 }
 
 /** One issue, dealt with from the Tasks list: its Resolve / Try Again / password / More actions, in place. `onDone` fires once it is closed. */
-export function IssueReview({ api, matterId, issueId, onDone }: { api: Api; matterId: string; issueId: string; onDone: () => void }) {
+export function IssueReview({ api, matterId, issueId, onDone, onCancel }: { api: Api; matterId: string; issueId: string; onDone: () => void; onCancel?: () => void }) {
   const eng = useEngine(matterId, api);
   const st = eng.view?.state.issues?.[issueId]?.status;
   const live = st === 'open' || st === 'negotiating';
-  useEffect(() => { if (eng.view && !live) onDone(); }, [eng.view, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Resolved: the confirmation stays on screen a moment, then the task leaves the list.
+  useEffect(() => { if (!eng.view || live) return; const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [eng.view, live]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
   return (
     <div>
       {eng.err && <div style={{ fontSize: 12.5, color: '#b91c1c', marginBottom: 6 }}>{eng.err}</div>}
-      <IssuesPanel api={api} state={eng.view.state} busy={eng.busy} cmd={eng.cmd} onChanged={() => void eng.load()} only={issueId} />
+      <style>{WORK_CSS}</style>
+      <IssuesPanel api={api} state={eng.view.state} busy={eng.busy} cmd={eng.cmd} onChanged={() => void eng.load()} only={issueId} onCancel={onCancel} err={eng.err} />
     </div>
   );
 }

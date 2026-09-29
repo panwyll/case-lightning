@@ -83,7 +83,7 @@ test('survey defect → renegotiation: the issue holds exchange, a price reducti
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'contracts_exchanged', actor: USER, completionDate: '2026-12-11' }), /Cannot exchange while an issue is open: Survey defect/);
   // Wrong resolution for the kind, and a reduction without the new price, are refused.
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'grant_obtained' }), /not resolved by/);
-  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'price_reduced' }), /new agreed price/);
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'price_reduced' }), /Price Reduced needs: New Price/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'price_reduced', newPricePennies: 33_000_000 }), /below the current price/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: 'system', issueId, resolution: 'price_reduced', newPricePennies: 31_500_000 }), /people/);
   const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId, resolution: 'price_reduced', newPricePennies: 31_500_000, note: 'Seller agreed £10k off' });
@@ -110,7 +110,7 @@ test('down-valuation → new lender: resolving with new_lender reopens the mortg
   await toPreExchange(h);
   const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'valuation_issue', title: 'Lender valued at £300k against £325k agreed' });
   const id = (r.events[0].payload as { issueId: string }).issueId;
-  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'new_lender', note: 'Broker moving the application to a lender whose panel valuer will revisit' });
+  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'new_lender', details: { lender: 'Nationwide' }, note: 'Broker moving the application to a lender whose panel valuer will revisit' });
   assert.deepEqual(res.events.map((e) => e.type), ['issue_resolved', 'mortgage_offer_withdrawn']);
   assert.equal(res.state.mortgage.status, 'awaiting');
   assert.ok(stageBlockers(res.state).some((b) => b.startsWith('mortgage offer awaiting')));
@@ -124,7 +124,7 @@ test('down-valuation → new lender: resolving with new_lender reopens the mortg
   const h2 = harness();
   await toPreExchange(h2);
   const r2 = await h2.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'valuation_issue', title: 'Down-valued by £15k' });
-  const res2 = await h2.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: (r2.events[0].payload as { issueId: string }).issueId, resolution: 'buyer_covers_shortfall', note: 'Client topping up the deposit from savings' });
+  const res2 = await h2.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: (r2.events[0].payload as { issueId: string }).issueId, resolution: 'buyer_covers_shortfall', costPennies: 1_000_000, paidBy: 'buyer', note: 'Client topping up the deposit from savings' });
   assert.deepEqual(res2.events.map((e) => e.type), ['issue_resolved']);
   assert.equal(openIssues(res2.state).length, 0);
 });
@@ -134,7 +134,7 @@ test('missing building regs → indemnity: on a lender-funded purchase the lende
   await toPreExchange(h);
   const r = await h.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'building_regs_missing', title: 'Loft conversion 2016, no completion certificate' });
   const id = (r.events[0].payload as { issueId: string }).issueId;
-  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'indemnity_policy', note: 'Seller paying for a £180 policy' });
+  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'indemnity_policy', details: { insurer: 'CLS' }, costPennies: 18_000, paidBy: 'seller', note: 'Seller paying for a £180 policy' });
   assert.deepEqual(res.events.map((e) => e.type), ['issue_resolved', 'issue_raised']);
   assert.equal(openIssues(res.state)[0].kind, 'lender_approval');
   assert.match(openIssues(res.state)[0].title, /indemnity policy obtained/);
@@ -142,7 +142,7 @@ test('missing building regs → indemnity: on a lender-funded purchase the lende
   const cash = harness();
   await toPreExchange(cash, { hasLender: false });
   const r2 = await cash.svc.run(TENANT, MATTER, { type: 'raise_issue', actor: USER, kind: 'building_regs_missing', title: 'Rear extension, no sign-off' });
-  const res2 = await cash.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: (r2.events[0].payload as { issueId: string }).issueId, resolution: 'indemnity_policy' });
+  const res2 = await cash.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: (r2.events[0].payload as { issueId: string }).issueId, resolution: 'indemnity_policy', details: { insurer: 'CLS' }, costPennies: 18_000, paidBy: 'seller' });
   assert.deepEqual(res2.events.map((e) => e.type), ['issue_resolved'], 'no lender to tell');
 });
 
@@ -246,7 +246,7 @@ test('stale issue timer: an issue nobody touches for 10 working days is raised o
   h.advanceDays(3);
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(deadlineActions(s, h.ports.now()).filter((d) => d.kind === 'stale_issue').length, 0, 'the clock restarted at the update');
-  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', note: 'Donor ID, gift letter and 3 months\' statements on file' });
+  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', documentId: 'doc-gift-letter', note: 'Donor ID, gift letter and 3 months\' statements on file' });
   h.advanceDays(30);
   assert.equal(deadlineActions(await h.svc.getState(TENANT, MATTER), h.ports.now()).filter((d) => d.kind === 'stale_issue').length, 0, 'resolved issues are not stale');
 });

@@ -23,7 +23,7 @@
 import { noteTaskTitle, nothingToActTitle } from './notes';
 import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
-import { ISSUE_KIND_SPEC } from './issues';
+import { ISSUE_CHIP, ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
 import { dueSteps } from './due';
@@ -312,11 +312,16 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
     });
   }
 
-  // ── DO: issues whose next step is ours ──
+  // ── DO: issues whose next step is ours, and anyone's once it is past its resolve-by date ──
+  const acting = profileOf(s.transactionType).side;
+  const today = now.toISOString().slice(0, 10);
   for (const i of openIssues(s)) {
     const spec = ISSUE_KIND_SPEC[i.kind];
     if (spec.context) continue; // context: on the file and in status answers, not a task
-    if (spec.responsible !== 'conveyancer' && spec.responsible !== 'mlro') continue;
+    // The catalogue speaks from the buyer's side: on a sale, what the seller's side owes is ours to do.
+    const ours = spec.responsible === 'conveyancer' || spec.responsible === 'mlro' || (spec.responsible === 'seller_side' && acting === 'seller');
+    const late = !!i.resolveBy && i.resolveBy < today;
+    if (!ours && !late) continue;
     if (i.enquiryIds.some((q) => s.enquiries[q] && s.enquiries[q].status !== 'cleared' && s.enquiries[q].status !== 'reviewed')) continue; // tracked by a live enquiry → it is a WAITING, not a DO
     out.push({
       ...base,
@@ -325,15 +330,15 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       kind: i.kind === 'send_failed' && /\[(proposal|retry):/.test(i.detail ?? '') ? 'issue:send_failed:retry' : i.kind === 'file_locked' && /\[doc:[0-9a-f-]{36}\]/.test(i.detail ?? '') ? 'issue:file_locked' : 'issue',
       // A locked file is opened from the task itself: the password goes against this document.
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
-      chip: i.kind === 'send_failed' ? 'Send failed' : i.kind === 'file_locked' ? 'Locked file' : 'Issue',
-      // A list issue (the seller's forms) already says what to do; others lead with the kind's first action.
-      what: spec.actions[0] && !i.title.startsWith("Seller's forms:") ? `${spec.actions[0]}: ${i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim()}` : i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
+      // The chip says what kind of problem; the line is the problem itself, as it was raised.
+      chip: i.kind === 'send_failed' ? 'Not Sent' : i.kind === 'file_locked' ? 'Locked File' : ISSUE_CHIP[i.kind] ?? spec.label,
+      what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim(),
       unblocks: i.gate === 'none' ? null : i.gate === 'exchange' ? 'Exchange' : 'Completion',
       actionOwner: spec.responsible === 'mlro' ? 'mlro' : 'conveyancer',
       urgency: i.severity === 'critical' ? 'critical' : i.gate !== 'none' ? 'blocked' : 'attention',
       workstream: spec.workstreams[0] ?? null,
       since: i.raisedAt, sinceWorkingDays: wd(i.updatedAt, now, cal), slaWorkingDays: spec.escalateAfterWorkingDays ?? null,
-      chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: null, chaseDue: false,
+      chaseInWorkingDays: null, chasesSent: 0, mode: null, escalatesInWorkingDays: null, escalated: false, dueBy: i.resolveBy ?? null, chaseDue: false,
       ref: { type: 'issue', id: i.id },
     });
   }

@@ -122,7 +122,7 @@ test('flow: fire the form → the client wait opens and is chased → submission
   const dep = await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
   const depIssue = openIssues(dep.state).find((i) => i.kind === 'aml_kyc_problem');
   assert.ok(depIssue && /Deposit received before proof of funds/.test(depIssue.title), 'money accepted before sign-off is recorded as an issue holding exchange');
-  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: depIssue!.id, resolution: 'accepted_as_is', note: 'MLRO: deposit held in client account pending sign-off; not applied' });
+  await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: depIssue!.id, resolution: 'accepted_as_is', details: { advised: true }, note: 'MLRO: deposit held in client account pending sign-off; not applied' });
   s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.stage, 'pre_exchange');
   assert.ok(stageBlockers(s).includes('proof of funds requested from the client'), stageBlockers(s).join(' | '));
@@ -305,8 +305,8 @@ test('issues: party, cost of the fix, and an enquiry raised from an issue', asyn
   assert.deepEqual(q.state.issues[id].enquiryIds, [`${id}-E1`]);
   assert.match(q.state.issues[id].history.at(-1)!.what, /enquiry ISS-1-E1 raised/);
   await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'raise_enquiry', actor: USER, subject: 'x', origin: { issueId: 'ISS-9' } }), /not found/);
-  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', costPennies: 18_000 }), /who paid/);
-  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', costPennies: 18_000, paidBy: 'buyer', note: 'New passport; certified copy on file' });
+  await assert.rejects(h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', documentId: 'doc-passport', costPennies: 18_000 }), /who paid/);
+  const res = await h.svc.run(TENANT, MATTER, { type: 'resolve_issue', actor: USER, issueId: id, resolution: 'evidence_provided', documentId: 'doc-passport', costPennies: 18_000, paidBy: 'buyer', note: 'New passport; certified copy on file' });
   assert.equal(res.state.issues[id].costPennies, 18_000);
   assert.equal(res.state.issues[id].paidBy, 'buyer');
   assert.match(res.state.issues[id].history.at(-1)!.what, /£180, paid by buyer/);

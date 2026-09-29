@@ -428,3 +428,116 @@ export const FATAL_ABANDON_REASON_BY_GROUP: Record<IssueGroup, 'client_withdrew'
   completion: 'other',
   other: 'other',
 };
+
+/** The name of an outcome on a button or a picker. */
+export const RESOLUTION_TITLE: Record<IssueResolution, string> = {
+  price_reduced: 'Price Reduced',
+  buyer_covers_shortfall: 'Buyer Covers The Shortfall',
+  retention_agreed: 'Retention Agreed',
+  works_before_exchange: 'Seller Did The Works',
+  indemnity_policy: 'Indemnity Policy',
+  regularisation_certificate: 'Regularisation Certificate',
+  retrospective_consent: 'Retrospective Consent',
+  consent_obtained: 'Consent Obtained',
+  specialist_report_clear: 'Specialist Report Clear',
+  evidence_provided: 'Evidence Provided',
+  deed_or_declaration: 'Deed Or Declaration',
+  deed_of_variation: 'Deed Of Variation',
+  lease_extended: 'Lease Extended',
+  restriction_complied: 'Restriction Complied With',
+  document_reexecuted: 'Document Re-Executed',
+  received: 'Received',
+  offer_extended: 'Offer Extended',
+  condition_satisfied: 'Condition Satisfied',
+  new_lender: 'New Lender',
+  revaluation_upheld: 'Valuation Upheld',
+  lender_confirmed: 'Lender Confirmed',
+  chain_ready: 'Chain Ready',
+  grant_obtained: 'Grant Obtained',
+  attorney_verified: 'Attorney Verified',
+  insolvency_cleared: 'Insolvency Cleared',
+  deposit_agreed: 'Deposit Agreed',
+  funds_in_place: 'Funds In Place',
+  completed_late: 'Completed Late',
+  dates_replanned: 'Dates Re-Planned',
+  accepted_as_is: 'Accepted As Is',
+  other: 'Other',
+};
+
+/**
+ * What each outcome asks for when someone records it: the form differs by outcome, and the
+ * machine refuses a person's resolution missing a required field. `cost` and `newPrice` land on
+ * the issue's cost and the price; `paidBy` is who paid; everything else is kept on the event.
+ * A `document` is a file on the case (picked, or uploaded there and then).
+ */
+export type ResolutionFieldType = 'money' | 'date' | 'text' | 'lender' | 'document' | 'confirm' | 'payer';
+export interface ResolutionField { key: string; label: string; type: ResolutionFieldType; required: boolean }
+const f = (key: string, label: string, type: ResolutionFieldType, required = true): ResolutionField => ({ key, label, type, required });
+const PAYER = f('paidBy', 'Paid By', 'payer');
+export const RESOLUTION_FIELDS: Record<IssueResolution, ResolutionField[]> = {
+  price_reduced: [f('newPrice', 'New Price', 'money')],
+  buyer_covers_shortfall: [f('cost', 'Shortfall', 'money')],
+  retention_agreed: [f('cost', 'Retention', 'money'), f('releasedWhen', 'Released When', 'text'), PAYER],
+  works_before_exchange: [f('works', 'Works Done', 'text'), f('documentId', 'Evidence', 'document', false), f('cost', 'Cost', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  indemnity_policy: [f('insurer', 'Insurer', 'text'), f('cost', 'Premium', 'money'), PAYER, f('documentId', 'Policy', 'document', false)],
+  regularisation_certificate: [f('documentId', 'Certificate', 'document'), f('cost', 'Fee', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  retrospective_consent: [f('documentId', 'Consent', 'document'), f('cost', 'Fee', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  consent_obtained: [f('documentId', 'Consent', 'document'), f('cost', 'Fee', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  specialist_report_clear: [f('documentId', 'Report', 'document')],
+  evidence_provided: [f('documentId', 'Evidence', 'document')],
+  deed_or_declaration: [f('documentId', 'Deed Or Declaration', 'document'), f('cost', 'Cost', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  deed_of_variation: [f('documentId', 'Deed Of Variation', 'document'), f('cost', 'Cost', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  lease_extended: [f('newTerm', 'New Term', 'text'), f('cost', 'Premium', 'money', false), f('paidBy', 'Paid By', 'payer', false)],
+  restriction_complied: [f('documentId', 'Certificate Or Consent', 'document')],
+  document_reexecuted: [f('documentId', 'Re-Executed Document', 'document')],
+  received: [f('documentId', 'What Arrived', 'document', false)],
+  offer_extended: [f('newExpiry', 'New Expiry', 'date')],
+  condition_satisfied: [f('documentId', 'Evidence', 'document', false)],
+  new_lender: [f('lender', 'New Lender', 'lender')],
+  revaluation_upheld: [f('valuation', 'Valuation', 'money')],
+  lender_confirmed: [f('documentId', "Lender's Confirmation", 'document', false)],
+  chain_ready: [],
+  grant_obtained: [f('documentId', 'Grant', 'document')],
+  attorney_verified: [f('documentId', 'Registered LPA', 'document')],
+  insolvency_cleared: [f('documentId', 'Evidence', 'document')],
+  deposit_agreed: [f('deposit', 'Deposit Agreed', 'money')],
+  funds_in_place: [f('documentId', 'Evidence', 'document', false)],
+  completed_late: [],
+  dates_replanned: [f('targetExchangeDate', 'Target Exchange', 'date', false), f('targetCompletionDate', 'Target Completion', 'date', false)],
+  accepted_as_is: [f('advised', 'Client Advised In Writing', 'confirm')],
+  other: [],
+};
+/** Kinds closed by their own action (Try Again, the password), not by the resolve form. */
+export const FORMLESS_KINDS: ReadonlySet<IssueKind> = new Set(['send_failed', 'file_locked']);
+/** Outcomes whose note is required (the only record of what happened). */
+export const NOTE_REQUIRED: ReadonlySet<IssueResolution> = new Set(['other', 'accepted_as_is']);
+/** What recording the outcome does to the rest of the case, in a few words. */
+export const RESOLUTION_EFFECT: Partial<Record<IssueResolution, string>> = {
+  price_reduced: 'Updates the price',
+  indemnity_policy: 'Adds a task to tell the lender',
+  retention_agreed: 'Adds a task to tell the lender',
+  new_lender: 'Sets the current offer aside',
+  offer_extended: 'Moves the offer expiry',
+  dates_replanned: 'Moves the target dates',
+};
+/** The working days an issue of this kind is given to be sorted, when nobody sets a date. */
+export const resolveWithinWorkingDays = (kind: IssueKind): number => ISSUE_KIND_SPEC[kind]?.escalateAfterWorkingDays ?? 10;
+
+/** A kind's name on a chip: short, Title Case. */
+export const ISSUE_CHIP: Record<IssueKind, string> = {
+  company_buyer_checks: 'Company Buyer', buy_to_let_conditions: 'Buy To Let', new_build_pack: 'New Build', auction_conditions: 'Auction', isa_bonus: 'ISA Bonus',
+  second_charge_consent: 'Second Charge', shared_ownership_terms: 'Shared Ownership', unrepresented_counterparty: 'Unrepresented', court_order_transfer: 'Court Order',
+  right_to_buy_terms: 'Right To Buy', flying_freehold: 'Flying Freehold', commonhold_terms: 'Commonhold', sdlt_basis: 'SDLT', cdd_refresh: 'CDD Refresh',
+  building_safety: 'Building Safety', title_defect: 'Title', title_restriction: 'Restriction', missing_easement: 'Easement', restrictive_covenant: 'Covenant',
+  boundary_discrepancy: 'Boundary', missing_consent: 'Consent', lease_defect: 'Lease', short_lease: 'Short Lease', service_charge_issue: 'Service Charge',
+  ground_rent_issue: 'Ground Rent', freeholder_info_outstanding: 'Management Pack', planning_permission_missing: 'Planning', building_regs_missing: 'Building Regs',
+  search_adverse_entry: 'Search', search_delayed: 'Search Delayed', enquiry_unanswered: 'Enquiry', enquiry_unsatisfactory: 'Enquiry', source_of_funds: 'Source Of Funds',
+  aml_kyc_problem: 'AML', mortgage_offer_outstanding: 'Mortgage Offer', mortgage_condition_outstanding: 'Mortgage Condition', mortgage_offer_expiring: 'Offer Expiring',
+  mortgage_offer_expired: 'Offer Expired', valuation_issue: 'Valuation', lender_approval: 'Tell The Lender', deposit_issue: 'Deposit',
+  completion_funds_shortfall: 'Shortfall', lender_funds_delayed: 'Lender Funds', chain_dependency: 'Chain', seller_delay: 'Seller Delay', buyer_delay: 'Buyer Delay',
+  third_party_consent: 'Consent', document_execution_problem: 'Signing', occupier_consent: 'Occupier', probate_issue: 'Probate', power_of_attorney_issue: 'Attorney',
+  bankruptcy_insolvency: 'Insolvency', survey_defect: 'Survey', environmental_risk: 'Environmental', third_party_encumbrance: 'Encumbrance', document_missing: 'Missing Document',
+  disclosure_concern: 'Disclosure', completion_failure: 'Completion', survey_further_investigation: 'Further Investigation', survey_report_outstanding: 'Survey Report',
+  transaction_at_risk: 'At Risk', mortgage_at_risk: 'Mortgage At Risk', unknown_correspondent: 'Unknown Sender', document_revised: 'Revised Document',
+  document_mismatch: 'Mismatch', file_locked: 'Locked File', send_failed: 'Not Sent', other: 'Issue',
+};

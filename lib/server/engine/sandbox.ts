@@ -71,26 +71,29 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
   const chaser = new ProductionChaser(outboxDeps);
   const notes = new DeterministicNoteReader();
   const pick = async <T>(tenantId: string, matterId: string, real: T, mock: T): Promise<T> => ((await isSandboxMatter(tenantId, matterId)) ? mock : real);
+  // Reading is not an outward effect: a scenario's own file (it carries its facts) is read by the fixture, but a real file a
+  // person uploads to a sandbox is read for real — otherwise it is never read and the step it answers never moves.
+  const pickDoc = async <T>(doc: { tenantId: string; matterId: string; extractedFacts: unknown }, real: T, mock: T): Promise<T> => (doc.extractedFacts != null && (await isSandboxMatter(doc.tenantId, doc.matterId)) ? mock : real);
   return {
     ...base,
     extractor: {
       name: base.extractor.name,
-      extractSearch: async (doc, t) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractSearch(doc, t),
-      extractEnquiryReply: async (doc, id) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractEnquiryReply(doc, id),
-      extractMortgageOffer: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractMortgageOffer(doc),
-      extractTitle: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractTitle(doc),
-      extractSupportingDocument: async (doc) => { const x = await pick(doc.tenantId, doc.matterId, base.extractor, fixture); if (!x.extractSupportingDocument) throw new Error('No supporting-document reader here.'); return x.extractSupportingDocument(doc); },
-      extractTitlePlan: async (doc) => { const x = await pick(doc.tenantId, doc.matterId, base.extractor, fixture); if (!x.extractTitlePlan) throw new Error('No title plan reader here.'); return x.extractTitlePlan(doc); },
-      extractIdCheck: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractIdCheck(doc),
-      extractContract: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractContract(doc),
-      extractLease: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractLease(doc),
-      extractManagementPack: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractManagementPack(doc),
-      extractStatement: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractStatement(doc),
-      extractEvidence: async (doc) => { const ex = await pick(doc.tenantId, doc.matterId, base.extractor, fixture); if (ex.extractEvidence) return ex.extractEvidence(doc); const st = await ex.extractStatement(doc); return { kind: st ? 'bank_statement' : 'other', statement: st, payslip: null }; },
-      extractSurvey: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractSurvey(doc),
-      extractPropertyForms: async (doc) => (await pick(doc.tenantId, doc.matterId, base.extractor, fixture)).extractPropertyForms(doc),
+      extractSearch: async (doc, t) => (await pickDoc(doc, base.extractor, fixture)).extractSearch(doc, t),
+      extractEnquiryReply: async (doc, id) => (await pickDoc(doc, base.extractor, fixture)).extractEnquiryReply(doc, id),
+      extractMortgageOffer: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractMortgageOffer(doc),
+      extractTitle: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractTitle(doc),
+      extractSupportingDocument: async (doc) => { const x = await pickDoc(doc, base.extractor, fixture); if (!x.extractSupportingDocument) throw new Error('No supporting-document reader here.'); return x.extractSupportingDocument(doc); },
+      extractTitlePlan: async (doc) => { const x = await pickDoc(doc, base.extractor, fixture); if (!x.extractTitlePlan) throw new Error('No title plan reader here.'); return x.extractTitlePlan(doc); },
+      extractIdCheck: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractIdCheck(doc),
+      extractContract: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractContract(doc),
+      extractLease: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractLease(doc),
+      extractManagementPack: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractManagementPack(doc),
+      extractStatement: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractStatement(doc),
+      extractEvidence: async (doc) => { const ex = await pickDoc(doc, base.extractor, fixture); if (ex.extractEvidence) return ex.extractEvidence(doc); const st = await ex.extractStatement(doc); return { kind: st ? 'bank_statement' : 'other', statement: st, payslip: null }; },
+      extractSurvey: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractSurvey(doc),
+      extractPropertyForms: async (doc) => (await pickDoc(doc, base.extractor, fixture)).extractPropertyForms(doc),
     },
-    classifier: base.classifier ? { name: base.classifier.name, classify: async (doc) => ((await isSandboxMatter(doc.tenantId, doc.matterId)) ? { role: 'other', searchType: null, enquiryReferences: [], titleNumber: null, lender: null, confidence: 0, reason: 'sandbox: file with an explicit role' } : base.classifier!.classify(doc)) } : base.classifier,
+    classifier: base.classifier ? { name: base.classifier.name, classify: async (doc) => (doc.extractedFacts != null && (await isSandboxMatter(doc.tenantId, doc.matterId)) ? { role: 'other', searchType: null, enquiryReferences: [], titleNumber: null, lender: null, confidence: 0, reason: 'sandbox: file with an explicit role' } : base.classifier!.classify(doc)) } : base.classifier,
     summariser: { name: base.summariser.name, summarise: async (input) => (await pick(input.state.tenantId, input.state.matterId, base.summariser, summariser)).summarise(input) },
     reportDrafter: { name: base.reportDrafter.name, draft: async (input) => (await pick(input.state.tenantId, input.state.matterId, base.reportDrafter, drafter)).draft(input) },
     pofSummariser: base.pofSummariser ? { name: base.pofSummariser.name, summarise: async (input) => ((await isSandboxMatter(input.state.tenantId, input.state.matterId)) ? null : base.pofSummariser!.summarise(input)) } : base.pofSummariser,

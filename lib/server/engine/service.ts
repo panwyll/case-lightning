@@ -1716,9 +1716,11 @@ export class EngineService {
   private async recordSendFailure(tenantId: string, matterId: string, action: string, detail: Record<string, unknown>, err: unknown): Promise<void> {
     const ex = explainSendError(err);
     const kind = typeof detail.kind === 'string' ? detail.kind : null;
-    const role = typeof detail.recipientRole === 'string' ? detail.recipientRole.replace(/_/g, ' ') : 'the client';
-    const what = kind === 'proof_of_funds_request' ? 'The proof-of-funds form to the client' : kind === 'id_check_request' ? 'The ID / AML check request' : action === 'chase' ? `The chase to ${role}` : action === 'acknowledgement' ? `The acknowledgement to ${role}` : action === 'search_order' ? 'The search order' : action === 'client_update' ? 'The update to the client' : `The ${action.replace(/_/g, ' ')}`;
-    const title = `${what} did not go: ${ex.reason.replace(/[.!]*$/, '')}`;
+    const ROLE: Record<string, string> = { seller_solicitor: "the seller's solicitor", buyer_solicitor: "the buyer's solicitor", lender: 'the lender', estate_agent: 'the estate agent', client: 'the client', search_provider: 'the search provider' };
+    const role = typeof detail.recipientRole === 'string' ? ROLE[detail.recipientRole] ?? `the ${detail.recipientRole.replace(/_/g, ' ')}` : 'the client';
+    // The title says what did not go; why, and what to do, are the issue's detail.
+    const what = kind === 'proof_of_funds_request' ? 'Proof-of-funds form to the client' : kind === 'id_check_request' ? 'ID check request to the client' : kind === 'request' ? `Request to ${role}` : action === 'chase' ? `Chase to ${role}` : action === 'acknowledgement' ? `Acknowledgement to ${role}` : action === 'search_order' ? 'Search order' : action === 'client_update' ? 'Update to the client' : action.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+    const title = `${what} not sent`;
     const proposalId = typeof detail.__proposalEventId === 'string' ? detail.__proposalEventId : null;
     const outside = this.ports.outsideAutomation ?? (<T,>(fn: () => Promise<T>) => fn());
     try {

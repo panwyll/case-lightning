@@ -8,6 +8,8 @@ import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
 import { paths } from '@/lib/paths';
 import { DismissButton, DismissedTasks, dismissTask } from './Dismissed';
+import { UploadButton, BusyButton } from './BusyButton';
+import { STEP_UPLOADS, uploadForStep, type UploadOutcome } from './stepUploads';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
@@ -21,6 +23,8 @@ import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail,
  * the server returns (docs/transaction-types.md); nothing here is duplicated per type.
  */
 export const WORK_CSS = `
+.ep-upmsg{font-size:12.5px;font-weight:600;color:#92400e;margin-top:6px;line-height:1.4}
+.ep-upmsg.ok{color:#15803d}
 .ep{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;font-size:13px}
 .ep-steps{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0 12px}
 .ep-shapes{display:flex;flex-wrap:wrap;gap:6px 14px;grid-column:1 / -1}
@@ -612,6 +616,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     try { await dismissTask(api, matterId, `step:${key}`, title); setDisTick((n) => n + 1); onChanged?.(); }
     catch (e: unknown) { setGoneSteps((cur) => { const n = new Set(cur); n.delete(key); return n; }); setDisErr(e instanceof Error ? e.message : 'Could not dismiss it.'); }
   };
+  // What a step's upload did: read as what the step needs, or filed but read as something else (the step stays, and says why).
+  const [upMsg, setUpMsg] = useState<Record<string, UploadOutcome>>({});
   // A chase sent by hand shows as sent on its button for 20 seconds.
   const [chaseSent, setChaseSent] = useState<Record<string, number>>({});
   const [chasing, setChasing] = useState<string | null>(null);
@@ -663,7 +669,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const authorise = (kind: string, purpose: 'completion_monies' | 'other', label: string, amountPennies?: number | null) => {
     const list = verified(kind);
     if (!list.length) return <span className="ep-block" style={{ display: 'inline-block', marginRight: 6 }}>No verified {pretty(kind)} bank details.</span>;
-    return <span>{pickAccount(kind, list)}<button className="ep-btn primary" disabled={busy} onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</button></span>;
+    return <span>{pickAccount(kind, list)}<BusyButton disabled={busy} busyLabel="Authorising…" doneLabel="Authorised" onClick={() => cmd({ type: 'payment_authorised', payeeKind: kind, bankDetailsId: payFrom[kind] ?? list[0].id, purpose, amountPennies: amountPennies ?? undefined })}>{label}</BusyButton></span>;
   };
   const ask = (q: string, dflt = '') => window.prompt(q, dflt);
   // A contracted milestone opens its completion sheet in the lane; the sheet gathers the
@@ -681,9 +687,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const act = (laneId: string, type: string, label: string, extra: Record<string, unknown> = {}, opts: { primary?: boolean; disabled?: boolean; title?: string } = {}) => {
     const c: CompletionContract | undefined = contracts[type];
     return (
-      <button className={`ep-btn${opts.primary ? ' primary' : ''}`} disabled={busy || opts.disabled} title={opts.title ?? c?.effect} onClick={() => (c ? openSheet(laneId, type, extra) : void cmd({ type, ...extra }))}>
-        {label}
-      </button>
+      c
+        ? <button className={`ep-btn${opts.primary ? ' primary' : ''}`} disabled={busy || opts.disabled} title={opts.title ?? c?.effect} onClick={() => openSheet(laneId, type, extra)}>{label}</button>
+        : <BusyButton className={`ep-btn${opts.primary ? ' primary' : ''}`} disabled={busy || opts.disabled} title={opts.title} doneLabel="Recorded" onClick={() => cmd({ type, ...extra })}>{label}</BusyButton>
     );
   };
   // Read a filed report again from scratch (new questions, or a bad first read).
@@ -761,7 +767,11 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   const dueAction = (key: string): ReactNode => {
     const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt).map((q) => q.id);
     switch (key) {
-      case 'official_copies': return <label className="ep-btn primary" style={{ margin: 0, cursor: 'pointer' }}>Upload Official Copies<input type="file" multiple hidden onChange={(e) => { const fs = Array.from(e.target.files ?? []); e.target.value = ''; void (async () => { for (const f of fs) await uploadCaseFile(api, matterId, f, {}); onChanged?.(); })(); }} /></label>;
+      case 'official_copies': return <UploadButton label={STEP_UPLOADS.official_copies.label} onFiles={async (files, progress) => {
+        setUpMsg((m) => { const n = { ...m }; delete n[key]; return n; });
+        try { const out = await uploadForStep(api, matterId, key, files, progress); setUpMsg((m) => ({ ...m, [key]: out })); onChanged?.(); return out.ok; }
+        catch (e: unknown) { setUpMsg((m) => ({ ...m, [key]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
+      }} />;
       case 'contract_pack': return act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true });
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
@@ -1287,6 +1297,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           {dueAction(stepKey) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}
         </div>
       )}
+      {section === 'step' && stepKey && upMsg[stepKey] && <div className={`ep-upmsg${upMsg[stepKey].ok ? ' ok' : ''}`}>{upMsg[stepKey].text}</div>}
 
       {section === 'todo' && (<>
         {(view.due?.length ?? 0) > 0 && (
@@ -1296,12 +1307,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                 <b>{d.title}</b>
                 {d.dueDate && <span className="d" style={{ display: 'block', color: d.dueDate < new Date().toISOString().slice(0, 10) ? '#b91c1c' : '#b45309', fontWeight: 600 }}>By {fmtDay(d.dueDate)}</span>}
                 <div className="acts" style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{dueAction(d.key) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}</div>
+                {upMsg[d.key] && <div className={`ep-upmsg${upMsg[d.key].ok ? ' ok' : ''}`}>{upMsg[d.key].text}</div>}
               </div>
             ))}
           </div>
         )}
         <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} hideWhenEmpty />
-        {Object.values(s.issues ?? {}).some((i) => i.status === 'open' || i.status === 'negotiating') && <div style={{ margin: '14px 0 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>}
+        {Object.values(s.issues ?? {}).some((i) => i.status === 'open' || i.status === 'negotiating') && <div style={{ margin: '14px 0 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} err={err} /></div>}
       </>)}
 
       {section === 'tasks' && (<>
@@ -1315,12 +1327,13 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
               {d.dueDate && <span className="d" style={{ display: 'block', color: d.dueDate < new Date().toISOString().slice(0, 10) ? '#b91c1c' : '#b45309', fontWeight: 600 }}>By {fmtDay(d.dueDate)}</span>}
               {d.detail && <span className="d" style={{ display: 'block' }}>{d.detail}</span>}
               <div className="acts" style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{dueAction(d.key)}</div>
+              {upMsg[d.key] && <div className={`ep-upmsg${upMsg[d.key].ok ? ' ok' : ''}`}>{upMsg[d.key].text}</div>}
             </div>
           ))}
         </div>
       )}
-      <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} onDismissed={() => { setDisTick((n) => n + 1); onChanged?.(); }} reloadKey={restoreTick} />
-      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>
+      <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} onDismissed={() => { setDisTick((n) => n + 1); onChanged?.(); }} reloadKey={restoreTick} hideWhenEmpty={(view.due?.length ?? 0) > 0} />
+      <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} err={err} /></div>
       <DismissedTasks api={api} matterId={matterId} reloadKey={disTick} onRestored={() => { setGoneSteps(new Set()); setRestoreTick((n) => n + 1); onChanged?.(); }} />
 
       {openWaits.length > 0 && (

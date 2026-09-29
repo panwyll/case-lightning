@@ -5,6 +5,8 @@ import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
+import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
+import { STEP_ACTION_LABEL, STEP_UPLOADS, uploadForStep, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
@@ -18,6 +20,8 @@ import { Waiting, WORK_CSS } from './EngineWork';
 const CSS = `
 .tl-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .tl-bar label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-msg{font-size:12.5px;font-weight:600;margin-top:4px;color:#92400e}
+.tl-msg.ok{color:#15803d}
 .tl-step{padding:12px 14px 14px 40px}
 .tl-x{width:28px;height:28px;padding:0;border:0;background:none;color:#94a3b8;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .tl-x:hover{background:#fee2e2;color:#b91c1c}
@@ -102,6 +106,8 @@ export default function TaskList({ who }: { who: string }) {
   // Tasks dismissed from the tray: listed under Dismissed, restorable.
   const [dismissed, setDismissed] = useState<Array<{ id: string; matterId: string; ref: string; title: string | null; dismissedAt: string; dismissedBy: string | null; matterRef: string | null; propertyAddress: string | null }>>([]);
   const [showDismissed, setShowDismissed] = useState(false);
+  // What an upload from the list did, per task: read as what the step needs, or filed but read as something else.
+  const [stepMsg, setStepMsg] = useState<Record<string, UploadOutcome>>({});
   const [disSort, setDisSort] = useState<'newest' | 'oldest' | 'case'>('newest');
   const [disBy, setDisBy] = useState('');
   const loadDismissed = useCallback(() => { api<{ dismissed: typeof dismissed }>('/tasks/dismissed').then((r) => setDismissed(r.dismissed)).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -140,41 +146,42 @@ export default function TaskList({ who }: { who: string }) {
   const markDone = (id: string) => setDone((cur) => new Map(cur).set(id, Date.now()));
   const loadSeq = useRef(0);
   const [quickErr, setQuickErr] = useState<{ id: string; text: string } | null>(null);
-  const [retrying, setRetrying] = useState<string | null>(null);
-  const retry = async (matterId: string, issueId: string) => {
-    setRetrying(issueId); setQuickErr(null);
-    try { await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'retry_issue', issueId }) }); await load(); window.dispatchEvent(new Event('conveyi:counts')); }
-    catch (e: unknown) { setQuickErr({ id: issueId, text: e instanceof Error ? e.message : 'Could not send it again.' }); }
-    finally { setRetrying(null); }
+  /** Send a failed message again: the button says Sent, then the task leaves; a refusal stays on the row with why. */
+  const retry = async (matterId: string, issueId: string): Promise<boolean> => {
+    setQuickErr(null);
+    try {
+      await api(`/matters/${matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'retry_issue', issueId }) });
+      setTimeout(() => { markDone(issueId); void load(); window.dispatchEvent(new Event('conveyi:counts')); }, 2000);
+      return true;
+    } catch (e: unknown) { setQuickErr({ id: issueId, text: e instanceof Error ? e.message : 'Could not send it again.' }); return false; }
   };
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [pwd, setPwd] = useState('');
-  const [unlockBusy, setUnlockBusy] = useState(false);
   /** What the last unlock did, said plainly for a few seconds. */
   const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => { if (!outcome) return; const t = setTimeout(() => setOutcome(null), 8000); return () => clearTimeout(t); }, [outcome]);
   /** A locked file opened from its task: the right password unlocks it, closes the task and reads the file. */
-  const unlock = async (i: WorkItem) => {
-    setUnlockBusy(true); setQuickErr(null);
+  const unlock = async (i: WorkItem): Promise<boolean> => {
+    setQuickErr(null);
     try {
       const r = await api<{ note: string | null; warning: string | null }>(`/documents/${i.documentId}/unlock`, { method: 'POST', body: JSON.stringify({ password: pwd, from: 'task' }) });
-      setUnlockingId(null); setPwd('');
       setOutcome({ ok: !r.warning, text: r.warning ?? r.note ?? 'Unlocked.' });
-      await load(); window.dispatchEvent(new Event('conveyi:counts'));
+      setTimeout(() => { setUnlockingId(null); setPwd(''); void load(); window.dispatchEvent(new Event('conveyi:counts')); }, 1800);
+      return true;
     }
-    catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); }
-    finally { setUnlockBusy(false); }
+    catch (e: unknown) { setQuickErr({ id: i.ref?.id ?? i.id, text: e instanceof Error ? e.message : 'That password does not open the file.' }); return false; }
   };
-  const quickApprove = async (_key: string, eventId: string) => {
+  /** Approve from the row: the button spins, says Approved, then the task leaves; a refusal stays on the row with why. */
+  const quickApprove = async (_key: string, eventId: string): Promise<boolean> => {
     busyOn(eventId, true);
     setQuickErr(null);
-    markDone(eventId);
-    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); void load(); }
+    const gone = () => setTimeout(() => { markDone(eventId); void load(); window.dispatchEvent(new Event('conveyi:counts')); }, 1500);
+    try { await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option: 'approve' }) }); gone(); return true; }
     catch (e: unknown) {
-      if ((e as { status?: number }).status !== 409) {
-        setDone((cur) => { const n = new Map(cur); n.delete(eventId); return n; });
-        setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' });
-      }
+      // Already dealt with elsewhere: it goes the same way.
+      if ((e as { status?: number }).status === 409) { gone(); return true; }
+      setQuickErr({ id: eventId, text: e instanceof Error ? e.message : 'Could not approve.' });
+      return false;
     }
     finally { busyOn(eventId, false); }
   };
@@ -261,21 +268,36 @@ export default function TaskList({ who }: { who: string }) {
                   <div>
                     <div className="what">{i.kind && <span className={`tl-chip${i.kind.startsWith('proposal') ? ' prop' : ''}`}>{i.chip ?? chipLabel(i.kind)}</span>}{sentence(i.what)}</div>
                     {quickErr?.id === i.ref?.id && <div className="sub" style={{ color: '#b91c1c' }}>{quickErr.text}</div>}
-                    {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : `Unblocks ${i.unblocks!.toLowerCase()}`}</div>}
+                    {stepMsg[key] && <div className={`tl-msg${stepMsg[key].ok ? ' ok' : ''}`}>{stepMsg[key].text}</div>}
+                    {(i.unblocks || i.bucket === 'escalate') && <div className="sub">{i.bucket === 'escalate' ? 'Escalated: writing again will not fix it' : (i.ref?.type === 'issue' ? `Stops ${i.unblocks!.toLowerCase()}` : `Unblocks ${i.unblocks!.toLowerCase()}`)}</div>}
                   </div>
                   <span className={`age${due != null && due < 0 ? ' over' : due != null && due <= 2 ? ' soon' : ''}`}>{due != null ? (due < 0 ? `${-due}d overdue` : due === 0 ? 'due today' : `due in ${due}d`) : i.since ? stamp(i.since) : ''}</span>
                   <span className="tl-acts">
                   {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
-                  {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving.has(i.ref.id)} onClick={() => void quickApprove(key, i.ref.id)}>{approving.has(i.ref.id) ? 'Approving…' : 'Approve'}</button>}
-                  {isDecision || isStep
-                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                  {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <BusyButton className="tl-btn go" busyLabel="Approving…" doneLabel="Approved" onClick={() => quickApprove(key, i.ref.id)}>Approve</BusyButton>}
+                  {isStep && STEP_UPLOADS[i.ref.id]
+                    ? <UploadButton label={STEP_UPLOADS[i.ref.id].label} className="tl-btn go" onFiles={async (files, progress) => {
+                        setStepMsg((m) => { const n = { ...m }; delete n[key]; return n; });
+                        try {
+                          const out = await uploadForStep(api, i.matterId, i.ref.id, files, progress);
+                          setStepMsg((m) => ({ ...m, [key]: out }));
+                          window.dispatchEvent(new Event('conveyi:counts'));
+                          // Done: the row says so, then leaves; not done: it stays and says why.
+                          if (out.ok) setTimeout(() => { markDone(i.ref.id); void load(); }, 2500);
+                          // The tick only when the step is done; a file read as something else leaves the button as it was, with the reason under the task.
+                          return out.ok;
+                        } catch (e: unknown) { setStepMsg((m) => ({ ...m, [key]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
+                      }} />
+                    : isDecision || isStep
+                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? STEP_ACTION_LABEL[i.ref.id] ?? 'Open' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? STEP_ACTION_LABEL[i.ref.id] ?? 'Open' : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
-                        ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><button type="button" className="tl-btn go" disabled={!pwd || unlockBusy} onClick={() => void unlock(i)}>{unlockBusy ? 'Unlocking…' : 'Unlock'}</button></span>
+                        ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
-                      {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
-                      {isIssue || isDeadline
-                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                      {i.kind === 'issue:send_failed:retry' && <BusyButton className="tl-btn go" busyLabel="Sending…" doneLabel="Sent" onClick={() => retry(i.matterId, i.ref.id)}>Try Again</BusyButton>}
+                      {(isIssue && i.kind === 'issue') || isDeadline
+                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : isIssue ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isIssue ? 'Resolve' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : isIssue ? 'Resolve ' : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                        : isIssue ? null
                         : <a className="tl-btn" href={paths.matter(i.matterId)}>Open Case <ChevronRight size={14} /></a>}
                     </>}
                   <button type="button" className="tl-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={() => void dismiss(i)}><X size={16} /></button>
@@ -288,7 +310,7 @@ export default function TaskList({ who }: { who: string }) {
                 )}
                 {isOpen && isIssue && (
                   <div className="tl-open tl-step">
-                    <IssueReview api={api} matterId={i.matterId} issueId={i.ref.id} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
+                    <IssueReview api={api} matterId={i.matterId} issueId={i.ref.id} onCancel={() => setOpen((cur) => (cur === key ? null : cur))} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}
                 {isOpen && isDeadline && (

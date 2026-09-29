@@ -991,11 +991,11 @@ export interface Payloads {
   auto_clear_confirmed: { decisionEventId: string; subFlow: SubFlow; subject: string; option: DecisionOption; note?: string | null };
   // ── issues (docs/engine-issues.md) ──
   /** A person (or, for lender_approval, the machine) recorded that something is wrong and the matter has to wait for it. */
-  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null };
+  issue_raised: { issueId: string; kind: IssueKind; title: string; detail: string | null; gate: IssueGate; stage: Stage; sourceDocumentId: string | null; origin?: { issueId: string; resolution: IssueResolution } | null; party?: string | null; /** Severity at raise (defaults to the kind's). */ severity?: IssueSeverity | null; /** The issue whose investigation discovered this one (DISCOVERED_BY / chains of ordinary issues). */ causedBy?: string | null; resolveBy?: string | null };
   /** Progress on an open issue: negotiating, a note, a gate change (e.g. accepted to carry to completion), the party it concerns. */
-  issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null };
+  issue_updated: { issueId: string; status: 'open' | 'negotiating'; note: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null };
   /** Resolved with one of the kind's realistic outcomes and, where money changed hands, what it cost and who paid. Side-effects (price change, lender approval) are separate events that follow it. */
-  issue_resolved: { issueId: string; resolution: IssueResolution; note: string | null; costPennies?: number | null; paidBy?: IssuePaidBy | null };
+  issue_resolved: { issueId: string; resolution: IssueResolution; note: string | null; costPennies?: number | null; paidBy?: IssuePaidBy | null; details?: Record<string, string | number | boolean | null> | null; documentId?: string | null };
   /** Raised in error / overtaken / the client dropped it. */
   issue_withdrawn: { issueId: string; reason: string };
   /** The issue killed the transaction (the matter is abandoned in the same command). */
@@ -1410,6 +1410,11 @@ export interface IssueState {
   /** The issue whose investigation discovered this one. */
   causedBy: string | null;
   history: Array<{ at: string; by: Actor; what: string }>;
+  /** The date it should be sorted by (YYYY-MM-DD): set at raise from the kind's window (before the gate's target date), and movable. Past it, the issue is late. */
+  resolveBy?: string | null;
+  /** What the outcome recorded (the resolve form's fields), and the file that evidences it. */
+  details?: Record<string, string | number | boolean | null> | null;
+  evidenceDocumentId?: string | null;
   /** For a surveyor's further investigation: what the client said to do about it (ask the seller for evidence, get access, or leave it). */
   route?: 'evidence' | 'pursue' | 'waive' | null;
 }

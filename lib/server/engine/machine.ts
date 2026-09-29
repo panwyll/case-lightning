@@ -21,7 +21,8 @@ import { assertCompletion, CompletionError, type Completion } from './completion
 import type { DeadlineKind } from './sla';
 import { validateNoteActions, summariseNoteActions, nothingToActSummary, type NoteActionDraft } from './notes';
 import { investigationGroups, investigationTitle } from './survey-review';
-import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+import { ISSUE_SEVERITIES, type IssueSeverity, FATAL_ABANDON_REASON_BY_GROUP, ISSUE_KIND_SPEC, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, RESOLUTION_LABEL, RESOLUTION_FIELDS, RESOLUTION_TITLE, FORMLESS_KINDS, type IssueGate, type IssueKind, type IssueResolution } from './issues';
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 import { SHAPE_SPEC, fundsFromFor, type CaseShape } from './shapes';
 import { buildDecision, offeredOptions, evaluateEnquiryReply, evaluateIdCheck, evaluateLease, evaluateMortgageOffer, evaluateSearch, evaluateTitle, OPTIONS_FOR, optionLabel, type Verdict } from './rules';
 import { propertyFormsIssues } from './property-forms';
@@ -168,15 +169,15 @@ type CommandBody =
   | { type: 'record_handler_change'; actor: Actor; fromUserId: string | null; toUserId: string; reason?: string | null }
   | { type: 'raise_deadline_escalation'; kind: DeadlineKind; dueDate: string; subject: string; summary: string; sourceDocumentId: string }
   // ── issues (docs/engine-issues.md) ──
-  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null; party?: string | null; severity?: IssueSeverity | null; causedBy?: string | null }
+  | { type: 'raise_issue'; actor: Actor; issueId?: string | null; kind: IssueKind; title: string; detail?: string | null; gate?: IssueGate | null; documentId?: string | null; party?: string | null; severity?: IssueSeverity | null; causedBy?: string | null; resolveBy?: string | null }
   | { type: 'set_issue_severity'; actor: Actor; issueId: string; severity: IssueSeverity; reason: string }
   // ── case model: survey workstream, client decisions, closure ──
   | { type: 'survey_received'; actor: Actor; documentId: string; surveyType: SurveyType; facts: SurveyFacts; extractor: string }
   | { type: 'specialist_report_received'; actor: Actor; documentId: string; facts: SurveyFacts; forIssueId?: string | null; extractor: string }
   | { type: 'client_decision_recorded'; actor: Actor; subject: ClientDecisionSubject; decision: string; note?: string | null; evidenceDocumentId?: string | null; approvedEventId?: string | null; scope?: string[] | null }
   | { type: 'close_matter'; actor: Actor; reason?: string | null }
-  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null }
-  | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null }
+  | { type: 'update_issue'; actor: Actor; issueId: string; status: 'open' | 'negotiating'; note?: string | null; gate?: IssueGate | null; party?: string | null; resolveBy?: string | null }
+  | { type: 'resolve_issue'; actor: Actor; issueId: string; resolution: IssueResolution; note?: string | null; newPricePennies?: number | null; costPennies?: number | null; paidBy?: IssuePaidBy | null; details?: Record<string, string | number | boolean | null> | null; documentId?: string | null }
   // ── proof of funds (docs/proof-of-funds.md) ──
   | { type: 'request_proof_of_funds'; actor: Actor; requestId: string; channel: string; messageId?: string | null; to?: string | null; formUrl?: string | null; sendError?: string | null; followUpOf?: string | null; noteToClient?: string | null; queryIds?: string[] }
   | { type: 'proof_of_funds_submitted'; actor: Actor; requestId: string; documentId: string; facts: ProofOfFundsFacts; review?: TransactionReview | null; answers?: Array<{ queryId: string; answer: string; evidenceDocumentIds: string[] }> | null; summary?: SummaryOverride | null }
@@ -1556,7 +1557,8 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (gate === 'exchange' && s.exchange.exchangedAt) gate = 'completion';
       if (cmd.causedBy && !s.issues[cmd.causedBy]) reject(`Issue ${cmd.causedBy} (causedBy) not found.`, 404);
       if (cmd.severity && !ISSUE_SEVERITIES.includes(cmd.severity)) reject(`Unknown severity "${cmd.severity}".`, 400);
-      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null, severity: cmd.severity ?? spec.severity, causedBy: cmd.causedBy ?? null }, sourceDocumentId: cmd.documentId ?? null }];
+      if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
+      return [{ type: 'issue_raised', actor: cmd.actor, payload: { issueId, kind: cmd.kind, title: cmd.title.trim(), detail: cmd.detail?.trim() || null, gate, stage: s.stage, sourceDocumentId: cmd.documentId ?? null, origin: null, party: cmd.party?.trim() || null, severity: cmd.severity ?? spec.severity, causedBy: cmd.causedBy ?? null, ...(cmd.resolveBy ? { resolveBy: cmd.resolveBy } : {}) }, sourceDocumentId: cmd.documentId ?? null }];
     }
     case 'set_issue_severity': {
       requireEnrolled(s);
@@ -1671,9 +1673,11 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (cmd.gate === 'exchange' && s.exchange.exchangedAt) reject('Contracts are exchanged: an issue can only hold completion (or nothing) now.', 400);
       const gate = cmd.gate && cmd.gate !== i.gate ? cmd.gate : null;
       const party = cmd.party !== undefined && (cmd.party?.trim() || null) !== i.party ? (cmd.party?.trim() || null) : undefined;
-      if (cmd.status === i.status && !gate && party === undefined && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate or the party.', 400);
+      if (cmd.resolveBy && !ISO_DAY.test(cmd.resolveBy)) reject('The resolve-by date must be a date (YYYY-MM-DD).', 400);
+      const resolveBy = cmd.resolveBy && cmd.resolveBy !== i.resolveBy ? cmd.resolveBy : null;
+      if (cmd.status === i.status && !gate && party === undefined && !resolveBy && !cmd.note?.trim()) reject('Nothing to update: give a note, a new status, a new gate, a date or the party.', 400);
       if (gate === 'none' && !cmd.note?.trim()) reject('Releasing an issue\'s hold on the matter needs a note saying why (the client accepts the risk, the lender is content…).', 400);
-      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}) } }];
+      return [{ type: 'issue_updated', actor: cmd.actor, payload: { issueId: i.id, status: cmd.status, note: cmd.note?.trim() || null, gate, ...(party !== undefined ? { party } : {}), ...(resolveBy ? { resolveBy } : {}) } }];
     }
     case 'resolve_issue': {
       requireEnrolled(s);
@@ -1687,12 +1691,25 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       const spec = ISSUE_KIND_SPEC[i.kind];
       if (!spec.resolutions.includes(cmd.resolution)) reject(`"${spec.label}" is not resolved by "${RESOLUTION_LABEL[cmd.resolution] ?? cmd.resolution}". Realistic outcomes: ${spec.resolutions.map((r) => RESOLUTION_LABEL[r]).join('; ')}.`, 400);
       const note = cmd.note?.trim() || null;
+      // A person records the outcome with what it needs (the form differs by outcome).
+      const details = cmd.details ?? {};
+      if (isUserActor(cmd.actor) && !FORMLESS_KINDS.has(i.kind)) {
+        const given = (k: string) => k === 'newPrice' ? cmd.newPricePennies != null : k === 'cost' ? cmd.costPennies != null : k === 'paidBy' ? !!cmd.paidBy : k === 'documentId' ? !!cmd.documentId : details[k] != null && details[k] !== '' && details[k] !== false;
+        const missing = RESOLUTION_FIELDS[cmd.resolution].filter((x) => x.required && !given(x.key)).map((x) => x.label);
+        if (missing.length) reject(`${RESOLUTION_TITLE[cmd.resolution]} needs: ${missing.join(', ')}.`, 400);
+        for (const x of RESOLUTION_FIELDS[cmd.resolution]) if (x.type === 'date' && details[x.key] != null && !ISO_DAY.test(String(details[x.key]))) reject(`${x.label} must be a date (YYYY-MM-DD).`, 400);
+        if (cmd.resolution === 'dates_replanned' && !details.targetExchangeDate && !details.targetCompletionDate) reject('Give the new target exchange or completion date.', 400);
+      }
       if (cmd.resolution === 'other' && !note) reject('Say how it was resolved.', 400);
       if (cmd.resolution === 'accepted_as_is' && !note) reject('Record the advice given: the client is accepting this as it stands.', 400);
       if (cmd.costPennies != null && (!Number.isInteger(cmd.costPennies) || cmd.costPennies < 0)) reject('The cost must be a whole number of pennies.', 400);
       if (cmd.paidBy && !ISSUE_PAID_BY.includes(cmd.paidBy)) reject(`Unknown payer "${cmd.paidBy}".`, 400);
       if (cmd.costPennies != null && cmd.costPennies > 0 && !cmd.paidBy) reject('Say who paid the cost (buyer, seller, shared, lender, other).', 400);
-      const out: NewEvent[] = [{ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: cmd.resolution, note, costPennies: cmd.costPennies ?? null, paidBy: cmd.paidBy ?? null }, sourceDocumentId: i.sourceDocumentId }];
+      const out: NewEvent[] = [{ type: 'issue_resolved', actor: cmd.actor, payload: { issueId: i.id, resolution: cmd.resolution, note, costPennies: cmd.costPennies ?? null, paidBy: cmd.paidBy ?? null, ...(cmd.details && Object.keys(cmd.details).length ? { details: cmd.details } : {}), ...(cmd.documentId ? { documentId: cmd.documentId } : {}) }, sourceDocumentId: i.sourceDocumentId }];
+      // New target dates are the case's target dates.
+      if (cmd.resolution === 'dates_replanned' && (details.targetExchangeDate || details.targetCompletionDate)) {
+        out.push({ type: 'target_dates_changed', actor: cmd.actor, payload: { targetExchangeDate: (details.targetExchangeDate as string) || s.targetExchangeDate, targetCompletionDate: (details.targetCompletionDate as string) || s.targetCompletionDate, reason: `${spec.label}: ${i.title}`, previous: { targetExchangeDate: s.targetExchangeDate, targetCompletionDate: s.targetCompletionDate } } });
+      }
       if (PRICE_RESOLUTIONS.has(cmd.resolution)) {
         if (s.exchange.exchangedAt) reject('Contracts are exchanged: the price is contractual now and cannot be reduced by resolving an issue.');
         const to = cmd.newPricePennies;

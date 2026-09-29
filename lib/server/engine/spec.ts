@@ -16,7 +16,7 @@ import { USER_COMMANDS, type Command } from './machine';
 import { DECISION_EVENT_TYPES, DECISION_KINDS, EVENT_TYPES, STAGES, SUB_FLOWS, TRANSACTION_TYPES, type DecisionKind, type DecisionOption, type EventType, type Stage, type SubFlow, type TransactionType, type WaitKey } from './types';
 import { TRANSACTION_PROFILES, type TransactionProfile } from './transactions';
 import { TRIGGERS, type TriggerSpec } from './triggers';
-import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
+import { ISSUE_GROUPS, ISSUE_GROUP_LABEL, ISSUE_KIND_SPECS, ISSUE_RESOLUTIONS, RESOLUTION_LABEL, RESOLUTION_TITLE, RESOLUTION_FIELDS, RESOLUTION_EFFECT, NOTE_REQUIRED, FORMLESS_KINDS, ISSUE_CHIP, type ResolutionField, LENDER_NOTIFY_RESOLUTIONS, PRICE_RESOLUTIONS, REOPENS_OFFER, type IssueKindSpec, type IssueGroup, type IssueResolution } from './issues';
 import { MIN_CLASSIFICATION_CONFIDENCE } from './ingest';
 
 export type CommandType = Command['type'];
@@ -109,8 +109,10 @@ export interface MachineSpec {
   issues: {
     groups: Array<{ id: IssueGroup; label: string }>;
     kinds: IssueKindSpec[];
-    resolutions: Array<{ id: IssueResolution; label: string; effects: string[] }>;
+    resolutions: Array<{ id: IssueResolution; label: string; title: string; fields: ResolutionField[]; noteRequired: boolean; effect: string | null; effects: string[] }>;
     staleAfterWorkingDays: number;
+    formless: string[];
+    chips: Record<string, string>;
   };
 }
 
@@ -404,6 +406,10 @@ export function machineSpec(): MachineSpec {
       resolutions: ISSUE_RESOLUTIONS.map((id) => ({
         id,
         label: RESOLUTION_LABEL[id],
+        title: RESOLUTION_TITLE[id],
+        fields: RESOLUTION_FIELDS[id],
+        noteRequired: NOTE_REQUIRED.has(id),
+        effect: RESOLUTION_EFFECT[id] ?? null,
         effects: [
           ...(PRICE_RESOLUTIONS.has(id) ? ['records price_changed (new price required, before exchange only)'] : []),
           ...(LENDER_NOTIFY_RESOLUTIONS.has(id) ? ['lender-funded purchase: raises a lender_approval issue holding exchange'] : []),
@@ -411,6 +417,8 @@ export function machineSpec(): MachineSpec {
         ],
       })),
       staleAfterWorkingDays: DEADLINE_LEAD.stale_issue,
+      formless: [...FORMLESS_KINDS],
+      chips: ISSUE_CHIP,
     },
   };
   const version = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 12);
