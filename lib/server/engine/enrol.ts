@@ -13,7 +13,8 @@ function transactionTypeOf(track: string | null): TransactionType {
 }
 
 /** Enrol one matter if it is open and not yet on the engine. Returns true when it enrolled it. */
-export async function enrolIfUntracked(tenantId: string, matterId: string, actor: string = SYSTEM): Promise<boolean> {
+/** `funding`: what the New Case form said; otherwise a lender on the matter means a mortgage (a purchase) or one to pay off (a sale or remortgage). */
+export async function enrolIfUntracked(tenantId: string, matterId: string, actor: string = SYSTEM, funding: { hasLender?: boolean; hasExistingMortgage?: boolean } = {}): Promise<boolean> {
   const m = await runAsSystem(() =>
     queryOne<{ status: string | null; track: string | null; lender: string | null; exchange_target_date: string | null; completion_target_date: string | null; enrolled: string | null }>(
       `select m.status, m.track, m.lender, m.exchange_target_date::text, m.completion_target_date::text, s.state->>'enrolled' as enrolled
@@ -30,7 +31,8 @@ export async function enrolIfUntracked(tenantId: string, matterId: string, actor
     type: 'enrol',
     actor,
     transactionType: transactionTypeOf(m.track),
-    hasLender: !!m.lender,
+    hasLender: funding.hasLender ?? (m.track === 'SALE' ? false : !!m.lender),
+    hasExistingMortgage: funding.hasExistingMortgage ?? (m.track === 'SALE' ? !!m.lender : m.track === 'REMORTGAGE'),
     targetExchangeDate: m.exchange_target_date,
     targetCompletionDate: m.completion_target_date,
     counterpartyType,

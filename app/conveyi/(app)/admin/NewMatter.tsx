@@ -55,6 +55,8 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
   const [agentName, setAgentName] = useState('');
   const [agentEmail, setAgentEmail] = useState('');
   const [lender, setLender] = useState('');
+  // A purchase is on a mortgage or cash; a sale has a mortgage to pay off or not. It shapes the case's flow.
+  const [mortgaged, setMortgaged] = useState(true);
   // The client's chain: on a purchase, their sale (and the reverse), if the firm acts on it too. Linked as the case is created.
   const [chainOptions, setChainOptions] = useState<ChainOption[]>([]);
   const [linkTo, setLinkTo] = useState('');
@@ -154,7 +156,8 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           otherParties: list(others),
           otherSide: track !== 'REMORTGAGE' && sideKnown ? { firm: firm.trim(), contactName: sideName.trim() || undefined, email: sideEmail.trim().toLowerCase() } : null,
           agent: agentName.trim() ? { name: agentName.trim(), email: agentEmail.trim() ? agentEmail.trim().toLowerCase() : undefined } : null,
-          lender: lender.trim() || undefined,
+          lender: mortgaged || track === 'REMORTGAGE' ? lender.trim() || undefined : undefined,
+          funding: track === 'SALE' ? { hasExistingMortgage: mortgaged } : track === 'REMORTGAGE' ? { hasLender: true, hasExistingMortgage: true } : { hasLender: mortgaged },
           exchangeTargetDate: exchange || undefined,
           completionTargetDate: completion || undefined,
           linkedMatterId: track !== 'REMORTGAGE' && chainMode === 'existing' && linkTo ? linkTo : undefined,
@@ -262,10 +265,21 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         <div style={S.sec}>{weAre}{clients.length > 1 ? 's' : ''} (our client{clients.length > 1 ? 's' : ''})</div>
         {clients.map(person)}
         <button type="button" onClick={() => setClients((cs) => [...cs, blank()])} style={{ ...S.link, marginTop: 6 }}>+ Add another {weAre.toLowerCase()}</button>
-        {/* The clients' lender sits with them: the new mortgage on a purchase or remortgage, the one to pay off on a sale. */}
-        <div style={{ maxWidth: 360, marginTop: 10 }}>
-          <label style={S.lbl}>{track === 'SALE' ? 'Current mortgage lender' : 'Lender'}</label>
-          <LenderPicker api={api} value={lender} onChange={setLender} inputStyle={S.input} />
+        {/* How the clients fund it sits with them: a mortgage or cash on a purchase, a mortgage to pay off on a sale. It shapes the case's flow. */}
+        <div style={{ marginTop: 12 }}>
+          {track !== 'REMORTGAGE' && (
+            <div role="group" aria-label={track === 'SALE' ? 'Existing mortgage' : 'Funding'} style={{ display: 'inline-flex', border: '1px solid #cbd5e1', borderRadius: 8, overflow: 'hidden', marginBottom: 8 }}>
+              {([[true, track === 'SALE' ? 'Mortgage To Pay Off' : 'Mortgage'], [false, track === 'SALE' ? 'No Mortgage' : 'Cash Purchase']] as const).map(([v, l], n) => (
+                <button key={l} type="button" aria-pressed={mortgaged === v} onClick={() => setMortgaged(v)} style={{ border: 0, borderLeft: n ? '1px solid #e2e8f0' : 0, background: mortgaged === v ? '#5A27E0' : '#fff', color: mortgaged === v ? '#fff' : '#334155', padding: '6px 12px', font: 'inherit', fontSize: 12.5, cursor: 'pointer' }}>{l}</button>
+              ))}
+            </div>
+          )}
+          {(mortgaged || track === 'REMORTGAGE') && (
+            <div style={{ maxWidth: 360 }}>
+              <label style={S.lbl}>{track === 'SALE' ? 'Current lender' : track === 'REMORTGAGE' ? 'New lender' : 'Lender (if known)'}</label>
+              <LenderPicker api={api} value={lender} onChange={setLender} inputStyle={S.input} />
+            </div>
+          )}
         </div>
 
         {track !== 'REMORTGAGE' && (

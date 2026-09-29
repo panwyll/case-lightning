@@ -61,6 +61,8 @@ export interface CreateMatterInput {
   lender?: string;
   chainPosition?: string;
   track?: 'PURCHASE' | 'SALE' | 'REMORTGAGE';
+  /** Said on the New Case form: a purchase with a mortgage (the lender may not be known yet) or cash; a sale or remortgage with a mortgage to pay off. */
+  funding?: { hasLender?: boolean; hasExistingMortgage?: boolean };
 }
 
 export interface CreateMatterResult {
@@ -202,7 +204,7 @@ export async function createMatter(user: SessionUser, input: CreateMatterInput):
   });
 
   // On the engine from the start. Best-effort: a matter exists even if enrolment fails.
-  await enrolIfUntracked(user.tenantId, matterId, user.userId).catch(() => {});
+  await enrolIfUntracked(user.tenantId, matterId, user.userId, input.funding ?? {}).catch(() => {});
 
   return {
     id: matterId,

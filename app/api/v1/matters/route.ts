@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
         track: z.enum(['PURCHASE', 'SALE', 'REMORTGAGE']).optional(),
         /** The client's other half of the chain (their sale, or their purchase), linked as the case is created. */
         linkedMatterId: z.string().uuid().optional(),
+        funding: z.object({ hasLender: z.boolean().optional(), hasExistingMortgage: z.boolean().optional() }).optional(),
         addressParts: z.record(z.string()).optional(),
         purchasePricePennies: z.number().int().nonnegative().optional(),
         parties: z.array(z.object({ name: z.string().trim().min(1), email: z.string().trim().email(), phone: z.string().trim().optional() })).optional(),
