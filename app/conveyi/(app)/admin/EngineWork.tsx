@@ -1,5 +1,7 @@
 'use client';
-import { Spin } from '@/app/shared/engine/BusyButton';
+import { BusyButton, UploadButton } from '@/app/shared/engine/BusyButton';
+import { WaitReview } from '@/app/shared/engine/StepReview';
+import { WAIT_ACTIONS, uploadFor, type UploadOutcome } from '@/app/shared/engine/stepUploads';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
@@ -46,6 +48,12 @@ export const WORK_CSS = `
 .wk-send{font-size:11px;font-weight:700;color:#0f172a;background:#fff;border:1px solid #e2e8f0;border-radius:7px;padding:2px 8px;cursor:pointer}
 .wk-send:hover{background:#f8fafc}
 .wk-send:disabled{opacity:.6;cursor:default}
+.wk-send.go{background:#5A27E0;border-color:#5A27E0;color:#fff}
+.wk-send.go:hover{background:#4c1fc4}
+.wk-send.on{background:#fff;color:#5A27E0}
+.wk-msg{font-size:12px;font-weight:600;color:#92400e;margin-top:3px;text-align:right}
+.wk-msg.ok{color:#15803d}
+.wk-open{grid-column:1 / -1;padding:6px 0 4px}
 .wk-who{display:flex;gap:6px;flex-wrap:wrap}
 .wk-who span{font-size:11.5px;font-weight:700;color:#334155;background:#f1f5f9;border-radius:999px;padding:2px 9px;white-space:nowrap;cursor:pointer}
 .wk-who span:hover{background:#ede9fe;color:#5A27E0}
@@ -148,24 +156,25 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
   const items = whoFilter ? all.filter((i) => i.actionOwner === whoFilter) : all;
   // A search above narrows it: open, so the matches show.
   const expanded = open || (total != null && total !== all.length);
-  const [sending, setSending] = useState<string | null>(null);
-  const [sendErr, setSendErr] = useState<string | null>(null);
+  const [sendErr, setSendErr] = useState<{ id: string; text: string } | null>(null);
   // Send the chase now: the same template and record the timer would use, sent by a person.
-  const sendNow = async (i: WorkItem) => {
+  const sendNow = async (i: WorkItem): Promise<boolean> => {
     const at = i.ref.id.indexOf(':');
     const waitKey = at < 0 ? i.ref.id : i.ref.id.slice(0, at);
     const subject = at < 0 ? null : i.ref.id.slice(at + 1) || null;
-    setSending(i.id);
     setSendErr(null);
     try {
       await api(`/matters/${i.matterId}/engine`, { method: 'POST', body: JSON.stringify({ type: 'chase_now', waitKey, subject }) });
-      onChanged();
+      setTimeout(onChanged, 1500);
+      return true;
     } catch (e: unknown) {
-      setSendErr(e instanceof Error ? e.message : 'The chase could not be sent.');
-    } finally {
-      setSending(null);
+      setSendErr({ id: i.id, text: e instanceof Error ? e.message : 'The chase could not be sent.' });
+      return false;
     }
   };
+  // A wait answered some other way, from the row: the document uploaded, or its record form opened in place.
+  const [openWait, setOpenWait] = useState<string | null>(null);
+  const [waitMsg, setWaitMsg] = useState<Record<string, UploadOutcome>>({});
   const [waitSort, setWaitSort] = useState<'overdue' | 'chase' | 'asked' | 'case'>('overdue');
   const ORDER: Record<typeof waitSort, (a: WorkItem, b: WorkItem) => number> = {
     overdue: pressing,
@@ -199,6 +208,12 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
           <a className="wk-case-h" href={paths.matter(g.matterId)}><House band={g.band} size={16} /><b>{g.address}</b>{g.ref && <span>{g.ref}</span>}{g.clients && <span>{g.clients}</span>}<span className="n">{g.items.length}</span></a>
           {g.items.map((i) => {
         const who = OWNER[i.actionOwner] ?? pretty(i.actionOwner);
+        const wkey = `${i.matterId}:${i.ref.id}`;
+        const wait = i.ref.type === 'wait' ? i.ref.id : null;
+        const at = wait ? wait.indexOf(':') : -1;
+        const waitKind = wait ? (at < 0 ? wait : wait.slice(0, at)) : null;
+        const subject = wait && at >= 0 ? wait.slice(at + 1) : '';
+        const wa = waitKind ? WAIT_ACTIONS[waitKind] : undefined;
         const chasing = i.chaseDue ? <span className="over">Chasing {who} on the next sweep</span>
           : i.chaseInWorkingDays != null ? <span>Chasing {who} in {i.chaseInWorkingDays} working day{i.chaseInWorkingDays === 1 ? '' : 's'}</span>
           : <span>No further chase scheduled</span>;
@@ -211,12 +226,20 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
               {i.since && <div className="meta">Asked {day(i.since)}{i.openedBy ? ` by ${i.openedBy === 'system' || i.openedBy === 'ai' ? 'the system' : i.openedBy === 'external' ? 'the other side' : i.openedBy}` : ''}</div>}
             </a>
             <span className="right">
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 {chasing}
-                <button type="button" className="wk-send" disabled={sending !== null} onClick={() => void sendNow(i)}>{sending === i.id ? <Spin>Sending…</Spin> : 'Send Now'}</button>
+                {wa?.upload && <UploadButton label={wa.label} className="wk-send go" onFiles={async (files, progress) => {
+                  setWaitMsg((m) => { const n = { ...m }; delete n[wkey]; return n; });
+                  try { const out = await uploadFor(api, i.matterId, { ...wa.upload!, routing: wa.upload!.routing?.(subject) }, files, progress); setWaitMsg((m) => ({ ...m, [wkey]: out })); if (out.ok) setTimeout(onChanged, 2500); return out.ok; }
+                  catch (e: unknown) { setWaitMsg((m) => ({ ...m, [wkey]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
+                }} />}
+                {wa && !wa.upload && <button type="button" className={`wk-send go${openWait === wkey ? ' on' : ''}`} onClick={() => setOpenWait(openWait === wkey ? null : wkey)}>{openWait === wkey ? 'Close' : wa.label}</button>}
+                <BusyButton className="wk-send" busyLabel="Sending…" doneLabel="Sent" onClick={() => sendNow(i)}>Chase Now</BusyButton>
               </div>
-              {sendErr && sending === null && <div className="over" style={{ marginTop: 2 }}>{sendErr}</div>}
+              {sendErr?.id === i.id && <div className="over" style={{ marginTop: 2 }}>{sendErr.text}</div>}
+              {waitMsg[wkey] && <div className={`wk-msg${waitMsg[wkey].ok ? ' ok' : ''}`}>{waitMsg[wkey].text}</div>}
             </span>
+            {openWait === wkey && <div className="wk-open"><WaitReview api={api} matterId={i.matterId} wait={i.ref.id} onDone={() => { setOpenWait(null); onChanged(); }} /></div>}
           </div>
         );
       })}

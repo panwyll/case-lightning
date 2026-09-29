@@ -1861,5 +1861,20 @@ export function deedsToSign(s: MatterState): SignedDocument[] {
   if (TENANTS_IN_COMMON.has(String(s.clientDecisions?.ownership_basis?.decision ?? ''))) out.push('deed_of_trust');
   return out;
 }
+/**
+ * The deeds ready to go to the client now: the mortgage deed once the offer is cleared (it does not wait for the contract),
+ * the contract and a purchase's TR1 once the contract is approved, a sale's TR1 once the buyer's side has approved the
+ * contract, a transfer of equity's TR1 once the lender consents, the declaration of trust once the clients chose to hold
+ * as tenants in common.
+ */
+export function deedsReadyToSign(s: MatterState): SignedDocument[] {
+  const tt = s.transactionType ?? 'freehold_purchase';
+  const approved = !!(s.readiness.contractApprovedAt || s.readiness.signedContractHeldAt);
+  return deedsToSign(s).filter((d) =>
+    d === 'mortgage_deed' ? s.mortgage.status === 'cleared' || s.mortgage.status === 'reviewed'
+    : d === 'transfer' ? (tt === 'transfer_of_equity' ? s.lenderConsent.status === 'received' || s.lenderConsent.status === 'not_required' : approved)
+    : d === 'deed_of_trust' ? true
+    : approved);
+}
 /** Whether a deed on the list has been signed and recorded. */
 export const deedSigned = (s: MatterState, d: SignedDocument): boolean => (d === 'contract' ? !!s.readiness.signedContractHeldAt : d === 'transfer' ? !!s.deeds.transferDeedAt : d === 'mortgage_deed' ? !!s.deeds.mortgageDeedAt : !!s.deeds.deedOfTrustAt);

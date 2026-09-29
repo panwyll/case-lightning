@@ -366,7 +366,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       s.title.facts = s.title.lease && !p.facts.lease ? { ...p.facts, lease: s.title.lease } : p.facts;
       if (p.facts.lease) s.title.lease = p.facts.lease;
       s.title.documentId = e.sourceDocumentId ?? s.title.documentId;
-      closeWait(s, 'contract_pack', '', e);
+      closePackIfIn(s, e);
       s.title.decisionEventId = null;
       break;
     }
@@ -654,7 +654,8 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'signing_pack_sent': {
       const p = e.payload as Payloads['signing_pack_sent'];
-      s.signing = { ...s.signing, packSentAt: e.createdAt, documents: p.documents, methods: { ...s.signing.methods, ...p.methods } };
+      // A pack adds its deeds to what the client has been sent (the mortgage deed can go before the contract).
+      s.signing = { ...s.signing, packSentAt: e.createdAt, documents: [...new Set([...s.signing.documents, ...p.documents])], methods: { ...s.signing.methods, ...p.methods } };
       openWait(s, 'signed_documents', '', e);
       break;
     }
@@ -860,6 +861,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'contract_filed': {
       s.readiness.contractDocumentId = (e.payload as Payloads['contract_filed']).documentId;
+      closePackIfIn(s, e);
       break;
     }
     case 'contract_review_raised':
@@ -1082,7 +1084,7 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
       switch (kind) {
         case 'id_check': s.idCheck.status = 'reviewed'; close('id_check'); break;
         case 'proof_of_funds': s.proofOfFunds.status = 'reviewed'; close('proof_of_funds'); break;
-        case 'title': s.title.status = 'reviewed'; close('contract_pack');
+        case 'title': s.title.status = 'reviewed'; closePackIfIn(s, e);
           if (p.facts?.titleNumber) s.title.facts = s.title.facts ? { ...s.title.facts, titleNumber: p.facts.titleNumber } : { titleNumber: p.facts.titleNumber, tenure: s.transactionType?.startsWith('leasehold') ? 'leasehold' : 'freehold', restrictions: [], charges: [], covenants: [], confidence: 1 };
           break;
         case 'report_on_title': s.reportOnTitle = { ...s.reportOnTitle, status: 'sent', sentAt: e.createdAt, interim: false }; break;
@@ -1299,4 +1301,13 @@ function defaultResolveBy(s: MatterState, kind: IssueKind, gate: IssueGate, rais
     if (before < by && before > day(raised)) by = before;
   }
   return by;
+}
+
+/**
+ * The contract pack is in when the draft contract and the title are both on file: the title alone
+ * (official copies often come first) leaves the contract still to chase, and a contract that never
+ * arrives can never be approved.
+ */
+function closePackIfIn(s: MatterState, e: EngineEvent): void {
+  if (s.readiness.contractDocumentId && s.title.status !== 'awaiting') closeWait(s, 'contract_pack', '', e);
 }

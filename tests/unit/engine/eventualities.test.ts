@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { deadlineActions } from '../../../lib/server/engine/sla';
 import { pendingDecisions, isFinished } from '../../../lib/server/engine/types';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, offerClear, titleClear, replyClear, titleWithCharge } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, SENIOR, idClear, searchClear, searchFlagged, offerClear, titleClear, replyClear, titleWithCharge, contractClear } from './helpers';
 
 /** Drive a lender-funded matter to pre_exchange with everything cleared. */
 async function toPreExchange(h: ReturnType<typeof harness>, opts: { expiry?: string } = {}) {
@@ -21,6 +21,7 @@ async function toPreExchange(h: ReturnType<typeof harness>, opts: { expiry?: str
   const md = pendingDecisions(mid).find((d) => d.kind === 'mortgage');
   if (md) await resolve(h, md.eventId, 'approve', USER, 'Near-expiry noted; exchange planned within the offer period');
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.contractReceived(TENANT, MATTER, h.doc(contractClear()));
   await h.svc.draftReportOnTitle(TENANT, MATTER);
   const rot = firstDecision(await h.svc.getState(TENANT, MATTER), 'report_on_title');
   await resolve(h, rot.eventId, 'approve');
@@ -119,7 +120,7 @@ test('dates: target dates re-planned before exchange; after exchange the contrac
   // The certificate of title is due too (the lender's notice before completion); only the notice is under test here.
   assert.deepEqual(acts.map((a) => a.kind).filter((k) => k !== 'certificate_of_title'), ['notice_to_complete']);
   const tick = await h.svc.tick(TENANT, MATTER);
-  assert.equal(tick.escalations, 3, "the notice, the certificate of title and the buildings insurance still not evidenced");
+  assert.equal(tick.escalations, 4, "the notice, the certificate of title, the buildings insurance still not evidenced, and the mortgage deed (sent when the offer cleared) never returned signed");
   assert.deepEqual(await h.svc.tick(TENANT, MATTER), { chases: 0, escalations: 0 }, 'raised once');
   const dl = pendingDecisions(await h.svc.getState(TENANT, MATTER)).find((x) => x.subject === 'deadline:notice_to_complete:2027-01-06')!;
   assert.match(dl.summary, /expires on 2027-01-06/);

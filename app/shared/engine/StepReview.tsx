@@ -52,3 +52,20 @@ export function CaseTodoReview({ api, matterId }: { api: Api; matterId: string }
     </div>
   );
 }
+
+/** Something the case is waiting for, recorded from the Tasks list (its form in place). `onDone` fires once the wait has closed. */
+export function WaitReview({ api, matterId, wait, onDone }: { api: Api; matterId: string; wait: string; onDone: () => void }) {
+  const eng = useEngine(matterId, api);
+  const at = wait.indexOf(':');
+  const key = at < 0 ? wait : wait.slice(0, at), subject = at < 0 ? '' : wait.slice(at + 1);
+  const open = eng.view ? eng.view.state.waits.some((w) => w.key === key && w.subject === subject && !w.closedAt) : true;
+  useEffect(() => { if (!eng.view || open) return; const t = setTimeout(onDone, 2500); return () => clearTimeout(t); }, [eng.view, open]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
+  return (
+    <div>
+      {eng.err && <div style={{ fontSize: 12.5, color: '#b91c1c', marginBottom: 6 }}>{eng.err}</div>}
+      {!open && <div style={{ fontSize: 13, fontWeight: 700, color: '#15803d', marginBottom: 6 }}>Done.</div>}
+      <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={null} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section="wait" stepKey={wait} />
+    </div>
+  );
+}

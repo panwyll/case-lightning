@@ -10,11 +10,11 @@ import { DecisionFeed } from './DecisionFeed';
 import { paths } from '@/lib/paths';
 import { DismissButton, DismissedTasks, dismissTask } from './Dismissed';
 import { UploadButton, BusyButton } from './BusyButton';
-import { STEP_UPLOADS, uploadForStep, type UploadOutcome } from './stepUploads';
+import { STEP_UPLOADS, WAIT_ACTIONS, uploadFor, uploadForStep, type UploadOutcome } from './stepUploads';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
-import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, Zap } from '@/app/shared/icons';
+import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail, User, X, Zap } from '@/app/shared/icons';
 
 /**
  * The work panel for one matter: where it is on this transaction type's spine, what
@@ -605,7 +605,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place). */ stepKey?: string }) {
+export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo' | 'wait'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place); section 'wait': the wait, as `key:subject`. */ stepKey?: string }) {
   // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
   const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
   const [disTick, setDisTick] = useState(0);
@@ -776,6 +776,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'contract_pack': return act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true });
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
+      case 'contract_approve': return act('exchange', 'contract_approved', 'Approve Contract', {}, { primary: true });
       case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
       case 'exchange': return act('exchange', 'contracts_exchanged', 'Contracts Exchanged', {}, { primary: true });
       case 'completion_statement': return act('exchange', 'completion_statement_generated', 'Send To Client', {}, { primary: true });
@@ -812,12 +813,34 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'registration': return act('registration', 'ap1_confirmed', 'Record Registered');
       case 'deposit': return act('exchange', 'deposit_received', 'Record Received');
       case 'insurance': return act('pre_completion_checks', 'buildings_insurance_confirmed', 'Record Insurance');
+      // Each deed the client was sent, recorded as it comes back signed (the form takes the scan).
+      case 'signed_documents': {
+        const SIGN_CMD = { contract: 'signed_contract_held', transfer: 'transfer_deed_executed', mortgage_deed: 'mortgage_deed_executed', deed_of_trust: 'deed_of_trust_executed' } as const;
+        const SIGN_LABEL = { contract: 'Signed Contract', transfer: 'Signed TR1', mortgage_deed: 'Signed Mortgage Deed', deed_of_trust: 'Signed Declaration' } as const;
+        const signedAt = (d: keyof typeof SIGN_CMD) => (d === 'contract' ? s.readiness.signedContractHeldAt : d === 'transfer' ? s.deeds?.transferDeedAt : d === 'mortgage_deed' ? s.deeds?.mortgageDeedAt : s.deeds?.deedOfTrustAt);
+        const extra = (d: keyof typeof SIGN_CMD): Record<string, unknown> => (d === 'contract' ? {} : d === 'transfer' ? { witnessed: true, parties: s.partyNames?.length ? s.partyNames : undefined } : d === 'mortgage_deed' ? { witnessed: true } : { parties: s.partyNames });
+        const out = (s.signing?.documents ?? []).filter((d) => !signedAt(d as keyof typeof SIGN_CMD)) as Array<keyof typeof SIGN_CMD>;
+        return out.length ? <>{out.map((d) => <span key={d}>{act('signing', SIGN_CMD[d], `Record ${SIGN_LABEL[d]}`, extra(d), { primary: true })}</span>)}</> : null;
+      }
       case 'funds': return act('completion', 'funds_received', 'Record Received', { fromRole: subject });
       case 'client_decision': return subject === 'exchange_authority'
         ? act('exchange', 'client_decision_recorded', 'Client Authorised', { subject: 'exchange_authority', decision: 'authorised' })
         : <>{(['joint_tenants', 'tenants_in_common_equal', 'tenants_in_common_unequal'] as const).map((d) => <span key={d}>{act('co_ownership', 'client_decision_recorded', pretty(d), { subject: 'ownership_basis', decision: d })}</span>)}</>;
       default: return null;
     }
+  };
+  // What the case is waiting for, when it arrives some other way: its record form, or the document uploaded (read, and the wait closes).
+  const waitAction = (key: string, subject: string): ReactNode => {
+    const confirm = waitConfirm(key, subject);
+    if (confirm) return confirm;
+    const up = WAIT_ACTIONS[key]?.upload;
+    if (!up) return null;
+    const mk = `wait:${key}:${subject}`;
+    return <UploadButton label={WAIT_ACTIONS[key].label} onFiles={async (files, progress) => {
+      setUpMsg((m) => { const n = { ...m }; delete n[mk]; return n; });
+      try { const out = await uploadFor(api, matterId, { ...up, routing: up.routing?.(subject) }, files, progress); setUpMsg((m) => ({ ...m, [mk]: out })); onChanged?.(); return out.ok; }
+      catch (e: unknown) { setUpMsg((m) => ({ ...m, [mk]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
+    }} />;
   };
   const sheetDialog = sheet && sheet.type === 'client_decision_recorded' ? (
     <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
@@ -1299,6 +1322,15 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         </div>
       )}
       {section === 'step' && stepKey && upMsg[stepKey] && <div className={`ep-upmsg${upMsg[stepKey].ok ? ' ok' : ''}`}>{upMsg[stepKey].text}</div>}
+      {section === 'wait' && stepKey && (() => {
+        const at = stepKey.indexOf(':');
+        const key = at < 0 ? stepKey : stepKey.slice(0, at), subject = at < 0 ? '' : stepKey.slice(at + 1);
+        const mk = `wait:${key}:${subject}`;
+        return <>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>{waitAction(key, subject) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}</div>
+          {upMsg[mk] && <div className={`ep-upmsg${upMsg[mk].ok ? ' ok' : ''}`}>{upMsg[mk].text}</div>}
+        </>;
+      })()}
 
       {section === 'todo' && (<>
         {(view.due?.length ?? 0) > 0 && (
@@ -1360,8 +1392,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
                   ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}
-                  <div className="acts" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{waitConfirm(w.key, w.subject)}<button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? <Spin>Sending…</Spin> : chased ? 'Chase Again' : 'Chase Now'}</button></div>
-                  {chaseFailed === wk && notice?.kind === 'err' && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4, fontSize: 12, color: '#b91c1c' }}><span style={{ flex: 1 }}>Not sent: {notice.text}</span><button type="button" aria-label="Dismiss" onClick={() => setChaseFailed(null)} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button></div>}
+                  <div className="acts" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{waitAction(w.key, w.subject)}<button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? <Spin>Sending…</Spin> : chased ? 'Chase Again' : 'Chase Now'}</button></div>
+                  {upMsg[`wait:${w.key}:${w.subject}`] && <div className={`ep-upmsg${upMsg[`wait:${w.key}:${w.subject}`].ok ? ' ok' : ''}`}>{upMsg[`wait:${w.key}:${w.subject}`].text}</div>}
+                  {chaseFailed === wk && notice?.kind === 'err' && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4, fontSize: 12, color: '#b91c1c' }}><span style={{ flex: 1 }}>Not sent: {notice.text}</span><button type="button" aria-label="Dismiss" onClick={() => setChaseFailed(null)} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, lineHeight: 0 }}><X size={16} /></button></div>}
                 </div>
               );
             })}

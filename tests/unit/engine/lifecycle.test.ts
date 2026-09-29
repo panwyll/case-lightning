@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { project } from '../../../lib/server/engine/projection';
 import { stageBlockers } from '../../../lib/server/engine/machine';
 import { isUserActor, type EngineEvent } from '../../../lib/server/engine/types';
-import { titleClear, harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge } from './helpers';
+import { titleClear, harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, searchFlagged, searchLowConfidence, replyClear, replyPartial, offerSpecial, titleWithCharge, contractClear } from './helpers';
 
 test('full lifecycle: instruction → post_completion, with every decision cited, approved and replayable', async () => {
   const h = harness(new Date('2026-09-14T09:00:00Z'));
@@ -201,6 +201,7 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   assert.equal((await svc.getState(TENANT, MATTER)).searches.LLC1.status, 'ordered');
   // The seller's solicitor sends the pack straight away, so the only clock running is the search's.
   await svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await svc.contractReceived(TENANT, MATTER, h.doc(contractClear()));
   await svc.run(TENANT, MATTER, { type: 'record_survey_plan', actor: USER, plan: 'none' });
 
   ports.setNow(new Date('2026-09-25T09:00:00Z')); // 9 working days
@@ -229,7 +230,9 @@ test('timers: an unanswered search is chased at day 10 and escalated at day 18 w
   const pending = await h.store.listPendingDecisions(TENANT);
   // With the search back, title, searches and enquiries are all resolved: the report on title drafted itself.
   assert.equal(pending.filter((d) => d.kind === 'report_on_title').length, 1, 'the report on title is drafted for approval');
-  assert.equal(pending.filter((d) => d.kind !== 'auto_clear' && d.kind !== 'report_on_title').length, 0, 'nothing else waits on a person');
+  // The contract in the pack is at contract review now: it is the other thing on the Tasks tab, to approve for signature.
+  assert.equal(pending.filter((d) => d.kind === 'contract').length, 1, 'the contract is on the Tasks tab to approve');
+  assert.equal(pending.filter((d) => d.kind !== 'auto_clear' && d.kind !== 'report_on_title' && d.kind !== 'contract').length, 0, 'nothing else waits on a person');
 });
 
 test('extraction failure never stalls the matter — it becomes a human decision', async () => {

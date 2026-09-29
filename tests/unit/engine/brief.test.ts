@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, titleClear } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, titleClear, contractClear } from './helpers';
 import { caseBrief, clientStatusAnswer, renderForDrafting } from '../../../lib/server/engine/brief';
 import { DEFAULT_SLA } from '../../../lib/server/engine/sla';
 import { isStatusQuestion, guardClientQuestion } from '../../../lib/server/comms/guard';
@@ -138,6 +138,7 @@ test('a chase to the CLIENT is not paired with an update telling the client we c
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   // The pack is in, so the only thing owed is the client's own ID check.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.contractReceived(TENANT, MATTER, h.doc(contractClear()));
   h.ports.clientComms.sent.length = 0;
   h.advanceDays(Math.ceil(DEFAULT_SLA.id_check.chaseAfter * 1.4) + 2);
   await h.svc.tick(TENANT, MATTER);

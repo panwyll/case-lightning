@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, titleWithCharge } from './helpers';
+import { harness, resolve, firstDecision, TENANT, MATTER, USER, idClear, searchClear, offerClear, titleClear, titleWithCharge, contractClear } from './helpers';
 import { caseHealth, rollup, summariseHealth, HEALTH_RANK } from '../../../lib/server/engine/health';
 import { matterWork, buckets } from '../../../lib/server/engine/work';
 import { DEFAULT_SLA } from '../../../lib/server/engine/sla';
@@ -30,6 +30,7 @@ test('health is expected progress, not age: a 100-day-old case whose outstanding
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
   // The seller's solicitor sent the pack straight away; a long instruction phase — the ID check came back on day 100.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.contractReceived(TENANT, MATTER, h.doc(contractClear()));
   h.advanceDays(100);
   await h.svc.idCheckResultReceived(TENANT, MATTER, h.doc(idClear()));
   const s = await h.svc.getState(TENANT, MATTER);
@@ -51,9 +52,19 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
   await h.svc.searchReturned(TENANT, MATTER, 'CON29', h.doc(searchClear('CON29')));
   // The seller's solicitor sent the pack too, so nothing at all is owed by anyone else.
   await h.svc.titleReceived(TENANT, MATTER, h.doc(titleClear()));
+  await h.svc.contractReceived(TENANT, MATTER, h.doc(contractClear()));
   // The report on title drafted itself; it is sent back, so nothing is waiting on us either.
   const rot = Object.values((await h.svc.getState(TENANT, MATTER)).decisions).find((d) => d.kind === 'report_on_title' && d.status === 'pending')!;
   await resolve(h, rot.eventId, 'reject', USER, 'Redo later');
+  // The contract is approved and the deposit is in: nothing waits on us or anyone else.
+  const contract = Object.values((await h.svc.getState(TENANT, MATTER)).decisions).find((d) => d.kind === 'contract' && d.status === 'pending');
+  if (contract) await resolve(h, contract.eventId, 'approve', USER, 'Approved for signature');
+  if (!(await h.svc.getState(TENANT, MATTER)).deposit.received) await h.svc.run(TENANT, MATTER, { type: 'deposit_received', actor: USER });
+  // The client signs and returns the pack.
+  for (const d of (await h.svc.getState(TENANT, MATTER)).signing.documents) {
+    const type = d === 'contract' ? 'signed_contract_held' : d === 'mortgage_deed' ? 'mortgage_deed_executed' : d === 'transfer' ? 'transfer_deed_executed' : 'deed_of_trust_executed';
+    await h.svc.run(TENANT, MATTER, { type, actor: USER, documentId: h.doc({}) } as never);
+  }
   const s = await h.svc.getState(TENANT, MATTER);
   assert.equal(s.waits.filter((w) => !w.closedAt).length, 0);
   const now = h.advanceDays(70); // ~50 working days in pre-contract; 20 is typical

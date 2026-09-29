@@ -89,3 +89,6 @@ export function firstDecision(state: MatterState, kind?: DecisionKind): Decision
   if (!d) throw new Error(`no pending ${kind ?? 'blocking'} decision`);
   return d;
 }
+
+/** The draft contract in the pack (the title alone leaves the contract pack still to chase). */
+export const contractClear = () => ({ sellers: ['Sam Seller'], buyers: ['Ann Smith'], propertyAddress: '1 Test St', titleNumber: 'AB123456', pricePennies: 30_000_000, depositPennies: 3_000_000, depositHolder: 'stakeholder', completionDate: null, chattelsPricePennies: null, vat: null, incorporatedConditions: 'Standard Conditions of Sale (5th ed.)', noticeToCompleteDays: 10, fixturesListPresent: true, specialConditions: [], indemnities: [], flags: [], confidence: 0.95 });

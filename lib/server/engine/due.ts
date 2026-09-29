@@ -44,6 +44,9 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
     add({ key: 'management_pack_sale', lane: 'leasehold', title: 'Ask the managing agent for the management pack (LPE1)' });
   if (seller && s.contractPack.sentAt && !s.readiness.contractApprovedAt && !exchanged)
     add({ key: 'contract_approved_sale', lane: 'exchange', title: "Record the buyer's solicitor approving the contract" });
+  // A purchase's contract on file but no approval task on the list (it arrived before contract review, or the case was moved on by hand): approve it here.
+  if (buyer && p.hasExchange && s.readiness.contractDocumentId && !s.readiness.contractApprovedAt && !exchanged && ['contract_review', 'pre_exchange'].includes(s.stage) && !Object.values(s.decisions).some((d) => d.kind === 'contract' && d.status === 'pending'))
+    add({ key: 'contract_approve', lane: 'exchange', title: 'Approve the contract for signature' });
   const unreplied = Object.values(s.inboundEnquiries ?? {}).filter((q) => !q.repliedAt);
   if (seller && unreplied.length && !exchanged)
     add({ key: 'buyer_enquiries', lane: 'enquiries', title: `Reply to the buyer's enquiries (${unreplied.length})` });
