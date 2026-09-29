@@ -4,6 +4,7 @@ import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
+import { StepReview } from '@/app/shared/engine/StepReview';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
@@ -17,6 +18,7 @@ import { Waiting, WORK_CSS } from './EngineWork';
 const CSS = `
 .tl-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .tl-bar label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-step{padding:12px 14px 14px 40px}
 .tl-x{width:28px;height:28px;padding:0;border:0;background:none;color:#94a3b8;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
 .tl-x:hover{background:#fee2e2;color:#b91c1c}
 .tl-dis{margin-top:14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
@@ -235,6 +237,7 @@ export default function TaskList({ who }: { who: string }) {
           </div>
           {!folded.has(g.matterId) && g.items.map((i) => {
             const isDecision = i.ref?.type === 'decision';
+            const isStep = i.ref?.type === 'step';
             const key = `${i.matterId}:${i.id}`;
             const isOpen = open === key;
             const due = dueIn(i, now);
@@ -250,7 +253,7 @@ export default function TaskList({ who }: { who: string }) {
                   <span className="tl-acts">
                   {isDecision && forConveyancer(i) && <span className="tl-for">For A Conveyancer</span>}
                   {isDecision && !forConveyancer(i) && quickApprovable(i.kind) && !isOpen && <button type="button" className="tl-btn go" disabled={approving.has(i.ref.id)} onClick={() => void quickApprove(key, i.ref.id)}>{approving.has(i.ref.id) ? 'Approving…' : 'Approve'}</button>}
-                  {isDecision
+                  {isDecision || isStep
                     ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
@@ -265,6 +268,11 @@ export default function TaskList({ who }: { who: string }) {
                 {isOpen && isDecision && (
                   <div className="tl-open">
                     <DecisionPanel eventId={i.ref.id} inline onResolved={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
+                  </div>
+                )}
+                {isOpen && isStep && (
+                  <div className="tl-open tl-step">
+                    <StepReview api={api} matterId={i.matterId} stepKey={i.ref.id} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
                   </div>
                 )}
               </div>

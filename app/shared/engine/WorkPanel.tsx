@@ -6,6 +6,7 @@ import { IssuesPanel } from './IssuesPanel';
 import { AddNote } from './NotesPanel';
 import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
+import { paths } from '@/lib/paths';
 import { DismissButton, DismissedTasks, dismissTask } from './Dismissed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
@@ -599,7 +600,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow' }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' }) {
+export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place). */ stepKey?: string }) {
   // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
   const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
   const [disTick, setDisTick] = useState(0);
@@ -1266,7 +1267,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
   return (
     <div className="ep" onClickCapture={(e) => { const l = (e.target as HTMLElement).closest('[data-lane]'); if (l) setActiveLane(l.getAttribute('data-lane')); }}>
       <style>{WORK_CSS}</style>
-      {s.manualHandling.required && <div className="ep-err" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span>Manual mode: {pretty(s.manualHandling.reason ?? '')}.</span><button className="ep-btn" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { const r = window.prompt('Resume automation on this case? Say why (e.g. the tenure is confirmed freehold).'); if (r && r.trim().length >= 3) void cmd({ type: 'resume_automation', reason: r.trim() }); }}>Resume Automation</button></div>}
+      {section !== 'step' && s.manualHandling.required && <div className="ep-err" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span>Manual mode: {pretty(s.manualHandling.reason ?? '')}.</span><button className="ep-btn" style={{ margin: '0 0 0 auto' }} disabled={busy} onClick={() => { const r = window.prompt('Resume automation on this case? Say why (e.g. the tenure is confirmed freehold).'); if (r && r.trim().length >= 3) void cmd({ type: 'resume_automation', reason: r.trim() }); }}>Resume Automation</button></div>}
 
       {section === 'flow' && <Flow tiers={PHASES.map((ph) => ({ id: ph.id, label: ph.label, items: ph.lanes.map((id) => lanes.find((l) => l.id === id)).filter((l): l is LaneDef => !!l), unfed: new Set(ph.unfed ?? []), feeds: ph.feeds })).filter((c) => c.items.length)} current={current} toggle={toggle} noticeFor={noticeFor} />}
       {section === 'flow' && (
@@ -1280,6 +1281,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
       {sheetDialog}
       {readDialog}
+
+      {section === 'step' && stepKey && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {dueAction(stepKey) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}
+        </div>
+      )}
 
       {section === 'tasks' && (<>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div><AddNote busy={busy} cmd={cmd} /></div>
