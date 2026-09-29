@@ -128,8 +128,12 @@ test('escalate hands the same source to a senior; resolving the escalation resol
   ]);
   const d = firstDecision(state);
   let s = decide(state, { type: 'open_decision_source', userId: USER, decisionEventId: d.eventId, documentId: 'd-con29' }, { now }).state;
-  const esc = decide(s, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'escalate', note: 'Not sure this is standard' }, { now });
+  // An escalation names who it goes to (it lands on their Tasks list), and it is not to oneself.
+  assert.throws(() => decide(s, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'escalate', note: 'Not sure this is standard' }, { now }), /Choose who to escalate it to/);
+  assert.throws(() => decide(s, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'escalate', note: 'Not sure', escalateTo: USER }, { now }), /someone else/);
+  const esc = decide(s, { type: 'resolve_decision', userId: USER, decisionEventId: d.eventId, option: 'escalate', note: 'Not sure this is standard', escalateTo: '44444444-4444-4444-8444-444444444444' }, { now });
   assert.deepEqual(esc.events.map((e) => e.type), ['search_reviewed', 'escalation_raised']);
+  assert.equal((esc.events[1].payload as { assignedTo?: string }).assignedTo, '44444444-4444-4444-8444-444444444444', 'on the senior\'s list');
   s = esc.state;
   assert.equal(s.decisions[d.eventId].status, 'escalated');
   assert.equal(s.searches.CON29.status, 'flagged'); // still unresolved

@@ -80,7 +80,8 @@ export const titleLeasehold = (): TitleFacts => ({ ...titleClear(), tenure: 'lea
 /** Resolve a decision the honest way: open the source first, then choose. */
 export async function resolve(h: Harness, decisionEventId: string, option: 'approve' | 'refer_to_client' | 'request_further' | 'escalate' | 'reject' | 'indemnity', userId = USER, note?: string) {
   await h.svc.openDecisionSource(TENANT, MATTER, decisionEventId, userId);
-  return h.svc.resolveDecision(TENANT, MATTER, decisionEventId, userId, option, note);
+  // An escalation names who it goes to: the senior (or, from the senior, back to the handler).
+  return h.svc.resolveDecision(TENANT, MATTER, decisionEventId, userId, option, note, null, null, null, null, option === 'escalate' ? (userId === SENIOR ? USER : SENIOR) : null);
 }
 
 /** The first pending decision that gates progress (assist-level auto-clear reviews excluded), optionally of one kind. */

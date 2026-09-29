@@ -289,7 +289,7 @@ export default function TaskList({ who }: { who: string }) {
                         } catch (e: unknown) { setStepMsg((m) => ({ ...m, [key]: { ok: false, text: e instanceof Error ? e.message : 'The upload failed.' } })); return false; }
                       }} />
                     : isDecision || isStep
-                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? STEP_ACTION_LABEL[i.ref.id] ?? 'Open' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? STEP_ACTION_LABEL[i.ref.id] ?? 'Open' : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                    ? <button type="button" className={`tl-btn${isOpen ? ' on' : isStep ? ' go' : ''}`} aria-label={isOpen ? 'Collapse' : isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : `${isStep ? (i.ref.id.startsWith('resend:') ? 'Send It' : STEP_ACTION_LABEL[i.ref.id] ?? 'Open') : 'Review'} `}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                     : <>
                       {i.kind === 'issue:file_locked' && i.documentId && (unlockingId === i.id
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><BusyButton className="tl-btn go" disabled={!pwd} busyLabel="Unlocking…" doneLabel="Unlocked" onClick={() => unlock(i)}>Unlock</BusyButton></span>

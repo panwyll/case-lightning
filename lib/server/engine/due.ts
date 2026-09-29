@@ -22,6 +22,22 @@ export interface DueStep {
 
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
+/** Messages the case cannot move without: the step each one is part of. */
+const ESSENTIAL_UPDATES = new Set(['deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request']);
+const RESEND_TITLE: Record<string, (d: { searchType?: string }) => string> = {
+  search_order: (d) => `Order the ${d.searchType ?? ''} search`.replace('  ', ' '),
+  id_check_request: () => 'Send the client the ID check',
+  proof_of_funds_request: () => 'Send the client the proof-of-funds form',
+  signing_pack: () => 'Send the client the signing pack',
+  deposit_request: () => 'Ask the client for the deposit',
+  property_forms_request: () => 'Send the client the property forms',
+  exchange_authority_request: () => "Ask the client for authority to exchange",
+  balance_request: () => 'Ask the client for the balance of the completion money',
+  ownership_basis_request: () => 'Ask the clients how they will own the property',
+  buildings_insurance_request: () => 'Ask the client for buildings insurance from exchange',
+};
+const RESEND_LANE: Record<string, string> = { search_order: 'searches', id_check_request: 'id_aml', proof_of_funds_request: 'source_of_funds', signing_pack: 'signing', deposit_request: 'exchange', property_forms_request: 'property_forms', exchange_authority_request: 'exchange', balance_request: 'completion', ownership_basis_request: 'co_ownership', buildings_insurance_request: 'pre_completion_checks' };
+
 export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (!s.enrolled || s.abandoned || s.closedAt) return [];
   const tt = s.transactionType ?? 'freehold_purchase';
@@ -38,9 +54,33 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   const STAGE_ORDER = ['instruction', 'pre_contract', 'contract_review', 'pre_exchange', 'exchanged', 'pre_completion', 'completed', 'post_completion'];
   const atLeast = (st: string) => STAGE_ORDER.indexOf(s.stage) >= STAGE_ORDER.indexOf(st);
 
+  // ── A person said no to sending something the case cannot do without (the ID check, the signing pack, a search order,
+  // the deposit request…): refusing the message is not refusing the step. Until it is done another way, it is a task. ──
+  for (const pr of Object.values(s.proposals)) {
+    if (pr.status !== 'rejected' || !pr.resolvedBy || pr.resolvedBy === 'system' || completed) continue;
+    const d = pr.detail as { kind?: string; template?: string; searchType?: string; documents?: string[] };
+    const what = pr.action === 'search_order' ? 'search_order' : d.kind ?? d.template ?? '';
+    const still =
+      what === 'search_order' ? !!d.searchType && !s.searches[d.searchType as keyof typeof s.searches]
+      : what === 'id_check_request' ? s.idCheck.status === 'not_started'
+      : what === 'proof_of_funds_request' ? s.proofOfFunds.status === 'not_started'
+      : what === 'signing_pack' ? (d.documents ?? []).some((x) => !s.signing.documents.includes(x as never))
+      : ESSENTIAL_UPDATES.has(what) ? !s.clientUpdateLastSentAt[what] || s.clientUpdateLastSentAt[what] < (pr.resolvedAt ?? '')
+      : false;
+    if (!still) continue;
+    // Asked again since (pending or approved): that one is the task.
+    if (Object.values(s.proposals).some((q) => q.eventId !== pr.eventId && q.status !== 'rejected' && q.proposedAt > pr.proposedAt && q.action === pr.action && JSON.stringify(q.detail.kind ?? q.detail.template ?? q.detail.searchType) === JSON.stringify(d.kind ?? d.template ?? d.searchType))) continue;
+    add({ key: `resend:${pr.eventId}`, lane: RESEND_LANE[what] ?? 'case', title: RESEND_TITLE[what] ? RESEND_TITLE[what](d) : 'Send what was held back' });
+  }
+
   // ── Before exchange ──
+  // A report a person sent back is written again (their note says what to change); the case cannot move until it goes.
+  if (buyer && s.reportOnTitle.status === 'rejected' && !exchanged)
+    add({ key: 'report_on_title_redraft', lane: 'report_on_title', title: 'Draft the report on title again' });
   // The firm's policy wants proof of funds and the form never went (the start-of-case send was not made or not approved): send it.
-  if (buyer && s.requireProofOfFunds && s.proofOfFunds.status === 'not_started' && !exchanged && !completed)
+  // Something is already in hand when a proposal for it is waiting, or a person held one back (its own task, below, sends it).
+  const everProposed = (kind: string) => Object.values(s.proposals).some((q) => ((q.detail as { kind?: string }).kind === kind || (q.detail as { template?: string }).template === kind) && (q.status === 'pending' || (q.status === 'rejected' && !!q.resolvedBy && q.resolvedBy !== 'system')));
+  if (buyer && s.requireProofOfFunds && s.proofOfFunds.status === 'not_started' && !exchanged && !completed && !everProposed('proof_of_funds_request'))
     add({ key: 'proof_of_funds_request', lane: 'proof_of_funds', title: 'Send the client the proof-of-funds form' });
   if (!completed && (seller || remo || toe) && s.title.status === 'awaiting')
     add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them' });

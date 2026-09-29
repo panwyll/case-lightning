@@ -12,6 +12,8 @@ import { pendingDecisions } from '@/lib/server/engine/types';
 import { requireDeciderFor, resolveSchema, assertEngaged } from '@/lib/server/engine/http';
 import { decisionTask } from '@/lib/server/engine/work';
 import { writeAudit } from '@/lib/server/audit';
+import { queryOne } from '@/lib/server/db';
+import { canAccessMatter } from '@/lib/server/access';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,12 +38,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ eve
       const dec = st.decisions[eventId];
       requireDeciderFor(user, dec ? decisionTask(st, dec).kind : null);
     }
+    // An escalation goes to a colleague who can open this case.
+    if (input.option === 'escalate' && input.escalateTo) {
+      const to = await queryOne<{ id: string; role: string }>(`select id, role from app_user where tenant_id = $1 and id = $2`, [user.tenantId, input.escalateTo]);
+      if (!to || !(await canAccessMatter({ ...user, userId: to.id, role: to.role as never, caseAccess: undefined, mailboxAccess: undefined } as never, d.matterId))) return fail(Object.assign(new Error('That person cannot open this case. Choose someone who can.'), { status: 400 }));
+    }
     // Addendum 3 §3: the engagement gate (scroll or dwell on the source) is checked here too, not only in the UI.
     // It guards decisions whose source is somebody else's document. A proposal or a held clear is the engine's own
     // text: the summary is the whole of it, so there is nothing to read before deciding.
     const engagement = d.kind === 'proposal' || d.kind === 'auto_clear' ? (input.engagement ?? { scrolledSource: false, dwellMs: 0 }) : assertEngaged(input.engagement ?? null);
     // Answer once the decision is recorded; what it sets off (drafting, sending) runs after the response.
-    const result = await withDeferredEffects((work) => after(work), () => svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null, input.edited ?? null));
+    const result = await withDeferredEffects((work) => after(work), () => svc.resolveDecision(user.tenantId, d.matterId, eventId, user.userId, input.option, input.note ?? null, input.verification ?? null, engagement, input.selection ?? null, input.edited ?? null, input.escalateTo ?? null));
     await writeAudit({ tenantId: user.tenantId, matterId: d.matterId, actorUserId: user.userId, actionType: 'ENGINE_DECISION_RESOLVED', actionStatus: 'SUCCESS', payload: { decisionEventId: eventId, kind: d.kind, option: input.option, hasNote: !!input.note, verificationMethod: input.verification?.method ?? null, engagement, selection: input.selection ?? null } }).catch(() => {});
     return ok({ events: result.events, stage: result.state.stage, blockers: stageBlockers(result.state), pendingDecisions: pendingDecisions(result.state) });
   } catch (error) {

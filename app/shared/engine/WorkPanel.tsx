@@ -58,7 +58,7 @@ export const WORK_CSS = `
 .ep-tier{position:relative;padding:34px 18px 26px;background:#fff}
 .ep-tier:nth-child(even){background:#f8fafc}
 .ep-tier + .ep-tier{border-top:1px solid #eef1f5}
-.ep-tier-l{position:absolute;z-index:6;right:14px;top:9px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:3px 10px}
+.ep-tier-l{position:absolute;z-index:6;right:7px;top:5px;display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#94a3b8;white-space:nowrap;background:#fff;border:1px solid #e6e8ee;border-radius:999px;padding:3px 10px}
 .ep-tier-l i{width:7px;height:7px;border-radius:99px;display:inline-block}
 .ep-tier-l.done{color:#15803d}
 .ep-tier-l.blocked{color:#b91c1c}
@@ -776,6 +776,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'contract_pack': return act('exchange', 'contract_pack_sent', 'Record Sent', {}, { primary: true });
       case 'management_pack_sale': return act('leasehold', 'management_pack_requested', 'Record Requested', {}, { primary: true });
       case 'contract_approved_sale': return act('exchange', 'contract_approved', 'Record Approved', {}, { primary: true });
+      case 'report_on_title_redraft': return <BusyButton busyLabel="Drafting…" doneLabel="Drafted" disabled={busy} onClick={() => cmd({ type: 'draft_report_on_title' })}>Draft Again</BusyButton>;
       case 'proof_of_funds_request': return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'request_proof_of_funds' })}>Send The Form</BusyButton>;
       case 'contract_approve': return act('exchange', 'contract_approved', 'Approve Contract', {}, { primary: true });
       case 'buyer_enquiries': return act('enquiries', 'enquiry_replies_sent', 'Record Replies Sent', { enquiryIds: unreplied }, { primary: true });
@@ -802,7 +803,10 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       case 'close_file': return closing
         ? <><button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => { setClosing(false); void cmd({ type: 'close_matter' }); }}>Confirm Close</button><button className="ep-btn" style={{ margin: 0 }} onClick={() => setClosing(false)}>Cancel</button></>
         : <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy} onClick={() => setClosing(true)}>Close File</button>;
-      default: return null;
+      default:
+        // Something a person held back that the case still needs: send it after all.
+        if (key.startsWith('resend:')) return <BusyButton busyLabel="Sending…" doneLabel="Sent" disabled={busy} onClick={() => cmd({ type: 'retry_action', proposalEventId: key.slice('resend:'.length) })}>Send It</BusyButton>;
+        return null;
     }
   };
   // What someone else owed us, confirmed when it is in (where nothing reads it in by itself).

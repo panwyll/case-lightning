@@ -202,6 +202,8 @@ export function assertEngaged(engagement: Engagement | null | undefined): Engage
 
 export const resolveSchema = z.object({
   option: z.enum(DECISION_OPTIONS),
+  /** Escalating: the colleague it goes to (someone who can open the case). */
+  escalateTo: z.string().uuid().nullish(),
   /** A proposal approved with its words changed: what actually goes. */
   edited: z.object({ subject: z.string().max(300).nullish(), body: z.string().max(20000).nullish() }).nullish(),
   note: z.string().max(4000).nullish(),

@@ -134,11 +134,13 @@ export function DecisionCard({ decision: d, api, onResolved, compact = false, sh
           )}
           <textarea className="dc-note" rows={2} placeholder="Note for the record (what you checked, why)…" value={note} onChange={(e) => setNote(e.target.value)} />
           <div>
-            {d.options.map((o) => (
+            {d.options.filter((o) => o !== 'escalate').map((o) => (
               <button key={o} className="dc-btn" disabled={!canDecide || busy || (isBank && o === 'verify' && !method)} title={canDecide ? (isBank && o === 'verify' && !method ? 'Choose the verification method first' : '') : 'Open the source document first'} onClick={() => resolve(o)}>
                 {OPTION_LABEL_BY_KIND[d.kind]?.[o] ?? OPTION_LABEL[o] ?? pretty(o)}
               </button>
             ))}
+            {/* Escalating names who it goes to: that choice is on the decision's own page. */}
+            {d.options.includes('escalate' as never) && <a className="dc-btn" href={`/conveyi/decisions/${d.eventId}`} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>Escalate…</a>}
           </div>
           {!canDecide && <div className="dc-warn">Open the source to decide.</div>}
           {err && <div className="dc-err">{err}</div>}

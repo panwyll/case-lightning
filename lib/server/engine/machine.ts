@@ -139,7 +139,7 @@ type CommandBody =
   | { type: 'title_extracted'; actor: Actor; documentId: string; facts: TitleFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'lease_extracted'; actor: Actor; documentId: string; facts: LeaseFacts; extractor: string; summary?: SummaryOverride | null }
   | { type: 'open_decision_source'; userId: string; decisionEventId: string; documentId: string }
-  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null }
+  | { type: 'resolve_decision'; userId: string; decisionEventId: string; option: DecisionOption; note?: string | null; verification?: { method: string; reference?: string | null } | null; engagement?: Engagement | null; selection?: string[] | null; edited?: { subject?: string | null; body?: string | null } | null; /** Escalating: the person it goes to (required). */ escalateTo?: string | null }
   | { type: 'record_note'; actor: Actor; kind: NoteKind; text: string; noteId?: string | null; documentId?: string | null; durationSeconds?: number | null; from?: NoteSender | null }
   | { type: 'note_extracted'; noteId: string; drafts: NoteActionDraft[]; extractor: string; /** Filed without anyone looking (a reply on a filed conversation): put before a person even when nothing is proposed. */ surface?: boolean }
   | { type: 'note_action_refused'; noteId: string; actionId: string; reason: string }
@@ -1128,7 +1128,10 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       if (d.kind !== 'proposal' && d.kind !== 'auto_clear' && !d.openedBy.includes(cmd.userId)) reject('Open the source document before resolving this decision.', 412);
       // Addendum 3 §3: anything other than approving/verifying needs a reason, stored on the resolving event.
       if (cmd.option !== 'approve' && cmd.option !== 'verify' && !(cmd.note ?? '').trim()) reject(`Give a reason for choosing "${optionLabel(cmd.option)}".`, 400);
-      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null, cmd.edited ?? null);
+      // An escalation goes to a named person: it lands on their Tasks list.
+      if (cmd.option === 'escalate' && !cmd.escalateTo) reject('Choose who to escalate it to.', 400);
+      if (cmd.option === 'escalate' && cmd.escalateTo === cmd.userId) reject('Escalate it to someone else.', 400);
+      return resolveEvents(s, d, cmd.option, cmd.note ?? null, cmd.userId, cmd.verification ?? null, cmd.engagement ?? null, cmd.selection ?? null, cmd.edited ?? null, cmd.escalateTo ?? null);
     }
 
     // ── Report on title ──
@@ -2305,7 +2308,7 @@ function decideCore(s: MatterState, cmd: Command, ctx: DecideContext): NewEvent[
       requireEnrolled(s);
       const pr = s.proposals[cmd.proposalEventId];
       if (!pr) reject('Proposal not found.', 404);
-      if (pr.status !== 'failed') reject('Only a failed action can be tried again.');
+      if (pr.status !== 'failed' && pr.status !== 'rejected') reject('Only a failed or held-back action can be sent.');
       return [{ type: 'action_retried', actor: cmd.actor, payload: { proposalEventId: cmd.proposalEventId, action: cmd.action } }];
     }
 
@@ -2409,7 +2412,7 @@ function pendingDecision(s: MatterState, id: string): DecisionState {
 }
 
 /** Events for a human's resolution of a pending decision. */
-function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null } | null = null): NewEvent[] {
+function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption, note: string | null, userId: string, verification: { method: string; reference?: string | null } | null = null, engagement: Engagement | null = null, selection: string[] | null = null, editedIn: { subject?: string | null; body?: string | null } | null = null, escalateTo: string | null = null): NewEvent[] {
   const out: NewEvent[] = [];
   const subject = d.subject ?? '';
 
@@ -2469,10 +2472,9 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
   // handler saw. Resolving that later also resolves the original sub-flow.
   if (option === 'escalate' && d.kind !== 'escalation') {
     if (d.kind === 'auto_clear') {
-      const [subFlow, ...rest] = subject.split(':');
-      out.push({ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: d.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option, note }, sourceDocumentId: d.sourceDocumentId });
-    } else if (d.kind === 'bank_details' || d.kind === 'requisition') {
-      // handled via the generic escalation (the bank record stays unverified / the requisition stays open)
+      // The clear stays held until the senior answers (confirming it now would throw the held clear away).
+    } else if (d.kind === 'bank_details' || d.kind === 'requisition' || d.kind === 'report_on_title' || d.kind === 'note_actions') {
+      // handled via the generic escalation (the bank record stays unverified, the requisition open, the draft or the proposal waiting): the senior's answer settles it
     } else {
       out.push(reviewedEvent(s, d, option, note, userId, subject, engagement));
     }
@@ -2485,7 +2487,7 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
       options: OPTIONS_FOR.escalation,
       summarisedBy: d.summarisedBy,
     };
-    out.push({ type: 'escalation_raised', actor: userId, payload: { waitKey: null, subject, reason: note ?? 'escalated by handler', decision, origin: { decisionEventId: d.eventId, kind: d.kind } }, sourceDocumentId: d.sourceDocumentId });
+    out.push({ type: 'escalation_raised', actor: userId, payload: { waitKey: null, subject, reason: note ?? 'escalated by handler', decision, origin: { decisionEventId: d.eventId, kind: d.kind }, assignedTo: escalateTo }, sourceDocumentId: d.sourceDocumentId });
     return out;
   }
 
@@ -2503,14 +2505,33 @@ function resolveEvents(s: MatterState, d: DecisionState, option: DecisionOption,
           options: OPTIONS_FOR.escalation,
           summarisedBy: d.summarisedBy,
         };
-        out.push({ type: 'escalation_raised', actor: userId, payload: { waitKey: null, subject, reason: note ?? 'escalated again', decision, origin: d.origin }, sourceDocumentId: d.sourceDocumentId });
+        out.push({ type: 'escalation_raised', actor: userId, payload: { waitKey: null, subject, reason: note ?? 'escalated again', decision, origin: d.origin, assignedTo: escalateTo }, sourceDocumentId: d.sourceDocumentId });
         return out;
       }
       // Resolving the escalation resolves the sub-flow it came from (user escalations).
       const origin = d.origin;
       if (origin) {
         const od = s.decisions[origin.decisionEventId];
-        if (od) out.push(reviewedEvent(s, od, option, note, userId, od.subject ?? ''));
+        // The senior's answer settles what was escalated, in that decision's own terms.
+        if (od && od.status !== 'actioned') {
+          const yes = option === 'approve';
+          if (od.kind === 'report_on_title') {
+            if (s.reportOnTitle.draftId === od.subject && s.reportOnTitle.status === 'drafted') out.push(yes ? { type: 'report_on_title_approved', actor: userId, payload: { draftId: od.subject as string, decisionEventId: od.eventId, note }, sourceDocumentId: od.sourceDocumentId } : { type: 'report_on_title_rejected', actor: userId, payload: { draftId: od.subject as string, decisionEventId: od.eventId, note }, sourceDocumentId: od.sourceDocumentId });
+          } else if (od.kind === 'proposal') {
+            const p = s.proposals[od.eventId];
+            if (p && p.status === 'pending') out.push(yes ? { type: 'action_approved', actor: userId, payload: { proposalEventId: od.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: od.sourceDocumentId } : { type: 'action_rejected', actor: userId, payload: { proposalEventId: od.eventId, action: p.action, detail: p.detail, note }, sourceDocumentId: od.sourceDocumentId });
+          } else if (od.kind === 'auto_clear') {
+            // The senior's answer settles the held clear: it is applied, and the auto-clear confirmed with their note.
+            const [subFlow, ...rest] = (od.subject ?? '').split(':');
+            const held = s.pendingAutoClears[od.eventId];
+            if (held) out.push(held);
+            out.push({ type: 'auto_clear_confirmed', actor: userId, payload: { decisionEventId: od.eventId, subFlow: subFlow as SubFlow, subject: rest.join(':'), option: 'approve', note: `Escalated and settled: ${note ?? option}` }, sourceDocumentId: od.sourceDocumentId });
+          } else if (od.kind === 'bank_details' || od.kind === 'requisition' || od.kind === 'note_actions' || od.kind === 'escalation') {
+            // Settled by its own command (a verification, a reply, the note's actions): the escalation only records the senior's view.
+          } else if (od.kind === 'contract') {
+            if (yes) out.push({ type: 'contract_approved', actor: userId, payload: { note, decisionEventId: od.eventId }, sourceDocumentId: od.sourceDocumentId });
+          } else out.push(reviewedEvent(s, od, option, note, userId, od.subject ?? ''));
+        }
       }
       return out;
     }

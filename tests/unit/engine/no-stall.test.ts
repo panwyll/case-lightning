@@ -19,7 +19,7 @@ import { ISSUE_KIND_SPEC, RESOLUTION_FIELDS } from '../../../lib/server/engine/i
 import { profileOf } from '../../../lib/server/engine/transactions';
 import { openIssues, openWaits, surfacedDecisions, type MatterState, type TransactionType } from '../../../lib/server/engine/types';
 import * as F from '../../../lib/server/engine/scenarios/fixtures';
-import { TENANT, MATTER, USER } from './helpers';
+import { TENANT, MATTER, USER, SENIOR } from './helpers';
 import { contractClear } from './helpers';
 
 const PRICE = 30_000_000, ADVANCE = 22_500_000;
@@ -55,7 +55,11 @@ function movers(s: MatterState, now: Date) {
   };
 }
 
-async function drive(c: Case) {
+/** How the conveyancer answers a decision the first time it sees it: the default approves; an alternative is taken once, where offered, then approved when it comes back. */
+type Policy = 'approve' | 'request_further' | 'reject' | 'escalate' | 'refer_to_client' | 'indemnity';
+
+async function drive(c: Case, policy: Policy = 'approve') {
+  const seen = new Set<string>();
   const store = new MemoryEventStore();
   const ports = mockPorts(new Date('2026-09-14T09:00:00Z'));
   const svc = new EngineService(store, ports);
@@ -86,9 +90,16 @@ async function drive(c: Case) {
     const m = movers(s, now);
     // 1. A decision: approve (verify bank details, choose an option the decision offers).
     for (const d of m.decisions) {
-      const option = d.kind === 'bank_details' ? 'verify' : d.options.includes('approve' as never) ? 'approve' : d.options[0];
-      await svc.openDecisionSource(TENANT, MATTER, d.eventId, USER);
-      await svc.resolveDecision(TENANT, MATTER, d.eventId, USER, option as never, 'done from the Tasks list', d.kind === 'bank_details' ? { method: 'phone_callback_known_number' } : null);
+      // Each redraft of the report is a new decision with a new id: it is the same thing to the conveyancer.
+      // (so do proof-of-funds rounds and contract drafts: one round of the alternative, then the next is approved).
+      const key = ['report_on_title', 'proof_of_funds', 'contract'].includes(d.kind) ? d.kind : `${d.kind}:${d.subject ?? ''}`;
+      const alt = policy !== 'approve' && !seen.has(key) && d.options.includes(policy as never);
+      seen.add(key);
+      const option = alt ? policy : d.kind === 'bank_details' ? 'verify' : d.options.includes('approve' as never) ? 'approve' : d.options[0];
+      // Whoever it is on the list of: an escalation's assignee, else the handler. Escalating names a senior.
+      const by = d.assignedTo ?? USER;
+      await svc.openDecisionSource(TENANT, MATTER, d.eventId, by);
+      await svc.resolveDecision(TENANT, MATTER, d.eventId, by, option as never, 'done from the Tasks list', d.kind === 'bank_details' && option === 'verify' ? { method: 'phone_callback_known_number' } : null, null, null, null, option === 'escalate' ? (by === SENIOR ? USER : SENIOR) : null);
       return `decision ${d.kind}${d.subject ? ` (${d.subject})` : ''}: ${option}`;
     }
     // 2. A step due from us.
@@ -96,6 +107,7 @@ async function drive(c: Case) {
       const completion = s.exchange.completionDate ?? F.completionDate();
       const cmds: Record<string, () => Promise<unknown>> = {
         proof_of_funds_request: () => svc.requestProofOfFunds(TENANT, MATTER, USER),
+        report_on_title_redraft: () => svc.draftReportOnTitle(TENANT, MATTER),
         official_copies: () => svc.titleReceived(TENANT, MATTER, doc(c.flagged ? F.titleWithCharge() : F.titleClear())),
         contract_pack: () => run({ type: 'contract_pack_sent' }),
         management_pack_sale: () => run({ type: 'management_pack_requested', from: 'Block Managers Ltd' }),
@@ -120,7 +132,7 @@ async function drive(c: Case) {
         notice_of_assignment: () => run({ type: 'notice_of_assignment_served', servedOn: 'the landlord', reference: 'NOA-1' }),
         close_file: () => run({ type: 'close_matter' }),
       };
-      const f = cmds[d.key];
+      const f = d.key.startsWith('resend:') ? () => svc.retryFailedAction(TENANT, MATTER, d.key.slice('resend:'.length), USER) : cmds[d.key];
       if (!f) throw new Error(`due step "${d.key}" has no action on the Tasks list`);
       await f();
       return `step ${d.key}`;
@@ -212,9 +224,9 @@ async function drive(c: Case) {
   return { closed: false, log, stall: 'ran 300 actions without closing', blockers: stageBlockers(await state()) };
 }
 
-for (const c of CASES) {
-  test(`no stall: a ${c.id} runs from instruction to a closed file on the Tasks list alone`, async () => {
-    const r = await drive(c);
+for (const c of CASES) for (const policy of ['approve', 'request_further', 'reject', 'escalate', 'refer_to_client', 'indemnity'] as Policy[]) {
+  test(`no stall: a ${c.id}${policy === 'approve' ? '' : ` (each decision first answered ${policy.replace(/_/g, ' ')})`} runs from instruction to a closed file on the Tasks list alone`, async () => {
+    const r = await drive(c, policy);
     if (!r.closed && process.env.STALL_LOG) console.log(r.log.join('\n'));
     assert.ok(r.closed, `${c.id} stalled ${r.stall}\n  blockers: ${(r.blockers ?? []).join('; ') || '(none)'}\n  last: ${r.log.slice(-6).join(' | ')}`);
   });

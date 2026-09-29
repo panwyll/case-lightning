@@ -381,6 +381,14 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     }
   }, [d, source]);
 
+  // Escalating names the colleague it goes to (someone who can open the case): it lands on their Tasks list.
+  const [escalateTo, setEscalateTo] = useState('');
+  const [people, setPeople] = useState<Array<{ id: string; name: string; title: string | null }> | null>(null);
+  useEffect(() => {
+    if (choice !== 'escalate' || people || !d) return;
+    api<{ people: Array<{ id: string; name: string; title: string | null }> }>(`/matters/${d.matterId}/escalate-to`).then((r) => setPeople(r.people)).catch(() => setPeople([]));
+  }, [choice, people, d]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const resolve = async (option: string) => {
     if (!d) return;
     setBusy(true);
@@ -388,7 +396,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
     try {
       const engagement: Engagement = { scrolledSource: scrolled, dwellMs: dwell };
       const selection = detail?.noteActions && option === 'approve' ? [...(picked ?? [])] : null;
-      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? editedBody() : null }) });
+      await api(`/decisions/${eventId}/resolve`, { method: 'POST', body: JSON.stringify({ option, note: note.trim() || null, verification: isBank && option === 'verify' ? { method, reference: reference || null } : null, engagement, selection, edited: option === 'approve' ? editedBody() : null, escalateTo: option === 'escalate' ? escalateTo || null : null }) });
       setEditing(false);
       setDone(option);
       // The list moves on at once; the panel's own refresh happens behind it.
@@ -617,6 +625,15 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   <textarea className="eg-ta" rows={2} autoFocus value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you checked, and why this is the right call…" />
                 </div>
               )}
+              {choice === 'escalate' && (
+                <div>
+                  <label style={{ fontSize: 12.5, fontWeight: 700 }}>Escalate To</label>
+                  <select className="eg-sel" style={{ display: 'block', minWidth: 260, marginTop: 4 }} value={escalateTo} onChange={(e) => setEscalateTo(e.target.value)}>
+                    <option value="">{people === null ? 'Loading…' : people.length ? 'Choose who…' : 'Nobody else can open this case'}</option>
+                    {(people ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}{p.title ? ` · ${p.title}` : ''}</option>)}
+                  </select>
+                </div>
+              )}
               {choice && !needsReason(choice) && <textarea className="eg-ta" rows={1} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note for the record…" />}
               <div className="dp-opts">
                 {d.options.map((o) => (
@@ -631,7 +648,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                   </button>
                 ))}
                 {choice && (
-                  <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim())} onClick={() => resolve(choice)}>
+                  <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim()) || (choice === 'escalate' && !escalateTo)} onClick={() => resolve(choice)}>
                     {busy ? <Spin>Recording…</Spin> : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
                   </button>
                 )}

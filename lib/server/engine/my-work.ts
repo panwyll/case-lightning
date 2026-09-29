@@ -17,8 +17,9 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
   const all = !!opts.all && (canCover(user) || user.role === 'ASSISTANT');
   const who = opts.who && (canCover(user) || opts.who === user.userId) ? opts.who : user.userId;
   const svc = engine();
+  // One person's list is their cases, plus anything escalated to them on someone else's: so every case is read, then narrowed.
   const [states, subflows] = await Promise.all([
-    svc.eventStore.listStates(user.tenantId, { assignedTo: all ? null : who, limit: opts.limit ?? 300 }),
+    svc.eventStore.listStates(user.tenantId, { assignedTo: null, limit: all ? opts.limit ?? 300 : 1000 }),
     svc.eventStore.loadLevels(user.tenantId),
   ]);
   const now = new Date();
@@ -28,7 +29,10 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
     if (visible && !visible.has(state.matterId)) continue;
     // The case's own colour (whose move it is), so the list's house matches the Case View.
     const caseBand = caseHealth(state, now).band;
-    items.push(...matterWork(state, now, { ...meta, levels: subflows }).items.map((i) => ({ ...i, caseBand })));
+    // An escalation belongs to whoever it was escalated to; everything else to the case's handler.
+    const theirs = (i: WorkItem) => { const to = i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null; return to ? to === who : meta.assignedTo === who; };
+    const list = matterWork(state, now, { ...meta, levels: subflows }).items.filter((i) => all || theirs(i));
+    items.push(...list.map((i) => ({ ...i, caseBand })));
   }
-  return { items, matters: states.length };
+  return { items, matters: all ? states.length : states.filter((x) => x.meta.assignedTo === who).length };
 }

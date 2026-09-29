@@ -568,6 +568,10 @@ function applyInPlace(s: MatterState, e: EngineEvent): MatterState {
     }
     case 'escalation_raised': {
       const p = e.payload as Payloads['escalation_raised'];
+      if (p.assignedTo && s.decisions[e.id]) s.decisions[e.id].assignedTo = p.assignedTo;
+      // What was escalated is with the senior now: off the handler's list until the escalation settles it.
+      const origin = p.origin ? s.decisions[p.origin.decisionEventId] : null;
+      if (origin && origin.status === 'pending') origin.status = 'escalated';
       if (p.waitKey) {
         const w = findOpenWait(s, p.waitKey, p.subject);
         if (w) w.escalations.push({ eventId: e.id, raisedAt: e.createdAt, resolvedAt: null });

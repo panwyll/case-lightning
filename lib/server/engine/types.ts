@@ -692,6 +692,8 @@ export interface DecisionState extends DecisionSpec {
   subject: string | null;
   /** For escalations: the decision that was escalated (resolving the escalation resolves it too). */
   origin: { decisionEventId: string; kind: DecisionKind } | null;
+  /** For a person's escalation: who it was escalated to (it is on their Tasks list, not the handler's). */
+  assignedTo?: string | null;
 }
 
 /** Addendum 3 §3: how the handler engaged with the source before deciding (recorded on the resolving event). */
@@ -938,6 +940,8 @@ export interface Payloads {
     decision: DecisionSpec;
     /** The decision that was escalated (user escalations). Resolving the escalation resolves it too. */
     origin?: { decisionEventId: string; kind: DecisionKind } | null;
+    /** Who a person escalated it to; a timer's escalation goes to the case's handler. */
+    assignedTo?: string | null;
   };
   escalation_resolved: { escalationEventId: string; decisionEventId: string; option: DecisionOption; note?: string | null };
 

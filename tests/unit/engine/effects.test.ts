@@ -73,7 +73,7 @@ test('a failed send can be tried again in one click: the same message goes, the 
   assert.equal(h.ports.clientComms.sent.length, before + 1, 'the same message went');
   assert.equal(s.proposals[proposal.eventId].status, 'approved');
   assert.equal(s.issues[task.id].status, 'resolved');
-  await assert.rejects(h.svc.retryFailedAction(TENANT, MATTER, proposal.eventId, USER), /Only a failed action/);
+  await assert.rejects(h.svc.retryFailedAction(TENANT, MATTER, proposal.eventId, USER), /Only a failed or held-back action/);
 });
 
 test('the proof-of-funds form can be sent again with the same link', async () => {

@@ -907,8 +907,8 @@ export class EngineService {
     return { document, result };
   }
 
-  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null, edited?: { subject?: string | null; body?: string | null } | null): Promise<RunResult> {
-    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null, edited: edited ?? null });
+  async resolveDecision(tenantId: string, matterId: string, decisionEventId: string, userId: string, option: DecisionOption, note?: string | null, verification?: { method: string; reference?: string | null } | null, engagement?: Engagement | null, selection?: string[] | null, edited?: { subject?: string | null; body?: string | null } | null, escalateTo?: string | null): Promise<RunResult> {
+    return this.run(tenantId, matterId, { type: 'resolve_decision', userId, decisionEventId, option, note: note ?? null, verification: verification ?? null, engagement: engagement ?? null, selection: selection ?? null, edited: edited ?? null, escalateTo: escalateTo ?? null });
   }
 
   /**
@@ -1768,7 +1768,8 @@ export class EngineService {
     const s = await this.getState(tenantId, matterId);
     const pr = s.proposals[proposalEventId];
     if (!pr) throw Object.assign(new Error('Proposal not found.'), { status: 404 });
-    if (pr.status !== 'failed') throw Object.assign(new Error('Only a failed action can be tried again.'), { status: 409 });
+    // A failed send is tried again; one a person held back is sent after all (its step is still needed).
+    if (pr.status !== 'failed' && pr.status !== 'rejected') throw Object.assign(new Error('Only a failed or held-back action can be sent.'), { status: 409 });
     try {
       await this.perform(tenantId, matterId, pr.action, pr.detail as Record<string, unknown>);
     } catch (err) {
