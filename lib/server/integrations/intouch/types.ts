@@ -116,13 +116,6 @@ export interface InTouchMilestoneUpdate {
   at?: string | null;
 }
 
-export interface InTouchTokens {
-  accessToken: string;
-  refreshToken: string | null;
-  expiresAt: number;
-  scope: string | null;
-}
-
 export interface InTouchListOptions {
   cursor?: string | null;
   limit?: number;
@@ -136,11 +129,18 @@ export interface InTouchPage<T> {
 }
 
 export interface InTouchWebhookEvent {
+  /** sha256 of the raw body: InTouch sends no delivery id, and its retries repeat the body. */
   id: string | null;
+  /** Normalised: 'form_completion' | 'matter_state_change' | 'task_state_change' | anything else InTouch adds. */
   type: string;
+  /** Not documented in the payload; read defensively from `data` when InTouch does include it. */
   caseId: string | null;
   /** The resource the event points AT. We re-read it; we never trust the body. */
   resourceId: string | null;
+  /** The envelope's flat "triggered.by.email" — the fallback for finding the case. */
+  triggeredByEmail: string | null;
+  /** The envelope's `timestamp` (UTC ISO 8601). */
+  occurredAt: string | null;
   receivedAt: string;
   raw: Record<string, unknown>;
 }
@@ -153,7 +153,8 @@ export interface InTouchConnectionRow {
   accountName: string | null;
   status: InTouchConnectionStatus;
   statusDetail: string | null;
-  webhookSubId: string | null;
+  /** The per-firm URL the admin pastes into InTouch (Settings > API > Webhooks). Null until credentials are saved. */
+  webhookUrl: string | null;
   lastSyncAt: string | null;
   lastSyncDetail: InTouchSyncSummary | null;
   connectedAt: string | null;

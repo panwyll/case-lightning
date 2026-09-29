@@ -6,35 +6,45 @@
  * where the client and the estate agent watch the case move. CONVEYi is where the case
  * itself is reasoned about. The two meet here.
  *
- * As with LEAP (docs/leap-integration.md), InTouch's API reference is behind developer
- * registration and could not be read from the build environment. Everything below is an
- * ASSUMED shape, written so it can be corrected in ONE place:
+ * What InTouch's public help centre (help.intouch.cloud) documents, and so is KNOWN:
+ *   - auth is a static API key the firm generates in InTouch (Settings > API > Keys), sent
+ *     in the `x-intouch-o-token` header over HTTPS. There is no OAuth;
+ *   - webhooks are set up by the firm IN THE INTOUCH UI (Settings > API > Webhooks, "Add
+ *     Webhook" with a URL). There is no API to subscribe;
+ *   - the webhook events are Form Completion, Matter State Change and Task State Change,
+ *     in a flat envelope: { "event": "Form_Completion", "triggered.by.name", "triggered.by.email",
+ *     "timestamp", "data": {…} } (keys with literal dots). Deliveries are not signed;
+ *     they are retried at +10m, +60m, +180m and +24h until a 2xx. Dates are UTC ISO 8601;
+ *   - clients should parse permissively (ignore unknown attributes); there is no uptime
+ *     guarantee, so the client retries;
+ *   - the API and webhooks are on the Premium/Enterprise plans only.
  *
- *   - hosts come from env (INTOUCH_API_BASE_URL, INTOUCH_AUTH_BASE_URL) — nothing invented;
+ * The full endpoint reference lives inside the customer's InTouch account and is not
+ * public. So the base URL and every resource PATH below are still ASSUMED, written so
+ * they can be corrected in ONE place:
+ *
+ *   - the host comes from the firm's settings (or INTOUCH_API_BASE_URL) — nothing invented;
  *   - paths are relative and live only here;
  *   - InTouch's raw JSON is normalised only in mapping.ts, which reads defensively from
  *     several candidate field names;
  *   - mock.ts serves exactly this map, so the client is exercised end to end today and
  *     the same tests re-run against the real thing.
  *
- * Confirm against the reference:
- *   [ ] OAuth client-credentials vs authorization-code   [ ] token path and audience
- *   [ ] API key header name                              [ ] case/instruction resource path
+ * Checklist:
+ *   [x] auth: API key in `x-intouch-o-token`             [x] no OAuth
+ *   [x] webhook events (three)                           [x] webhook payload envelope
+ *   [x] webhooks configured in the InTouch UI            [x] webhooks are not signed
+ *   [ ] base URL                                          [ ] case/matter resource path
+ *   [ ] party, form, ID-check, document paths            [ ] pagination parameters
  *   [ ] identity-check result shape and outcome values   [ ] form types and their codes
- *   [ ] document download (redirect vs bytes)            [ ] milestone vocabulary
- *   [ ] webhook event names + signature header/scheme    [ ] pagination parameters
+ *   [ ] document download (redirect vs bytes)            [ ] milestone write-back
+ *   [ ] a case id in each webhook's `data`
  */
 export const INTOUCH_API_VERSION = 'v1';
 
 const V = `/api/${INTOUCH_API_VERSION}`;
 
 export const INTOUCH_ENDPOINTS = {
-  // OAuth 2.0. InTouch is a server-to-server integration for the firm, so the default is
-  // the client-credentials grant with the firm's own client id/secret; the
-  // authorization-code path is kept for the case where InTouch requires a user to consent.
-  token: '/oauth/token',
-  authorize: '/oauth/authorize',
-
   /** Who we are connected as — used to show the firm's name after connecting. */
   account: `${V}/account`,
 
@@ -56,32 +66,26 @@ export const INTOUCH_ENDPOINTS = {
   documentDownload: (id: string) => `${V}/documents/${encodeURIComponent(id)}/download`,
   identityCheck: (id: string) => `${V}/identity-checks/${encodeURIComponent(id)}`,
   form: (id: string) => `${V}/forms/${encodeURIComponent(id)}`,
-
-  webhooks: `${V}/webhooks`,
 } as const;
 
-/** Sent on every request alongside the bearer token, when the firm has been issued one. */
-export const INTOUCH_API_KEY_HEADER = 'x-api-key';
-/** Assumed HMAC-SHA256 hex over the raw body. */
-export const INTOUCH_WEBHOOK_SIGNATURE_HEADER = 'x-intouch-signature';
-/** Delivery id, for idempotency, when present. */
-export const INTOUCH_WEBHOOK_DELIVERY_HEADER = 'x-intouch-delivery';
-
-/** Least privilege: read what the client produced, write milestones and requests back. */
-export const INTOUCH_SCOPES = ['cases:read', 'parties:read', 'documents:read', 'identity:read', 'forms:read', 'milestones:write', 'requests:write'];
+/** The firm's API key rides every request in this header (documented). */
+export const INTOUCH_API_TOKEN_HEADER = 'x-intouch-o-token';
 
 /**
- * The webhook events we subscribe to. Each is a POINTER only — the handler re-reads the
- * resource from InTouch rather than trusting the payload, exactly as the LEAP webhook does.
+ * The webhook events InTouch documents, in normalised form (see normaliseInTouchEvent).
+ * The firm ticks them when it adds our URL in InTouch. Each is a POINTER only — the
+ * handler re-reads the case from InTouch rather than trusting the payload.
  */
-export const INTOUCH_WEBHOOK_EVENTS = [
-  'case.created',
-  'case.updated',
-  'identity_check.completed',
-  'form.completed',
-  'document.uploaded',
-] as const;
+export const INTOUCH_WEBHOOK_EVENTS = ['form_completion', 'matter_state_change', 'task_state_change'] as const;
 export type InTouchWebhookEventName = (typeof INTOUCH_WEBHOOK_EVENTS)[number];
+
+/** "Form_Completion", "Matter State Change", "task-state-change" → "form_completion" … */
+export function normaliseInTouchEvent(v: unknown): string {
+  return String(v ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
 
 /**
  * The forms a client completes in InTouch, and the engine's own name for each.

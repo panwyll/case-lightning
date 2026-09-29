@@ -12,9 +12,10 @@
  *   anything else the client uploaded   ──► document row ──► the ordinary ingest path
  *   the engine's lifecycle              ──► a milestone on the client portal
  *
- * Two triggers feed the same functions — webhooks (InTouch tells us) and polling with a
- * watermark (we ask what changed) — because per-resource webhook coverage is one of the
- * things the gated reference has to confirm. Both are idempotent: every upsert is keyed
+ * Two triggers feed the same functions — webhooks (InTouch tells us: Form Completion,
+ * Matter State Change, Task State Change) and polling with a watermark (we ask what
+ * changed) — because the webhooks only cover some of what a client produces, and their
+ * payload does not reliably say which case it is about. Both are idempotent: every upsert is keyed
  * on the InTouch id, and every engine command is one the machine would accept by hand.
  *
  * What this file will NOT do: decide anything. An identity check that comes back "refer"
@@ -41,6 +42,11 @@ export interface InTouchMirrorStore {
   /** Upsert the matter row from InTouch's view of it. Returns whether we just created it. */
   upsertMatter(tenantId: string, c: InTouchCase, extras: { assignedTo: string | null; createdBy: string | null }): Promise<{ matterId: string; created: boolean }>;
   matterByCaseId(tenantId: string, intouchCaseId: string): Promise<InTouchMirrorRef | null>;
+  /**
+   * The one open InTouch-mirrored matter of this firm with a contact at this email, or
+   * null when there is none OR more than one. Never a guess across several.
+   */
+  matterByContactEmail(tenantId: string, email: string): Promise<InTouchMirrorRef | null>;
   upsertContacts(tenantId: string, matterId: string, parties: InTouchParty[]): Promise<void>;
   /** Mirror a document. `fetchBytes` is called only when this store keeps bytes locally. */
   upsertDocument(tenantId: string, matterId: string, d: InTouchDocument, fetchBytes: () => Promise<{ bytes: Buffer; mimeType: string | null; fileName: string | null }>): Promise<{ documentId: string; created: boolean }>;
@@ -280,33 +286,59 @@ export function isForward(from: string | null, to: InTouchMilestone): boolean {
   return b > a;
 }
 
-/** A webhook is a POINTER. Re-read the resource from InTouch; never trust the body. */
+/**
+ * A webhook is a POINTER. Re-read the case from InTouch; never trust the body.
+ *
+ *   matter_state_change           → mirror the matter and its parties, then its facts
+ *   form_completion, task_state_change → the facts of the mirrored matter
+ *
+ * InTouch does not document a case id in the payload. When there is none, the person who
+ * triggered it ("triggered.by.email") finds the matter — but only if they are a contact
+ * on exactly ONE open InTouch-mirrored matter of this firm. Anything else is skipped and
+ * the 15-minute poll picks it up. That is safe because nothing is taken from the body:
+ * the worst a wrong pointer could do is re-read that matter's own InTouch data.
+ */
 export async function applyWebhook(deps: InTouchSyncDeps, tenantId: string, event: InTouchWebhookEvent): Promise<InTouchSyncSummary> {
   const out = empty();
-  if (!event.caseId) {
+  const known = event.type === 'matter_state_change' || event.type === 'form_completion' || event.type === 'task_state_change';
+  if (!known) {
     out.skipped += 1;
     return out;
   }
-  if (event.type === 'case.created' || event.type === 'case.updated') {
-    const c = await deps.api.getCase(event.caseId);
+
+  let ref: InTouchMirrorRef | null = null;
+  let caseId = event.caseId;
+  if (!caseId && event.triggeredByEmail) {
+    ref = await deps.store.matterByContactEmail(tenantId, event.triggeredByEmail);
+    caseId = ref?.intouchCaseId ?? null;
+  }
+  if (!caseId) {
+    out.skipped += 1;
+    return out;
+  }
+
+  if (event.type === 'matter_state_change') {
+    const c = await deps.api.getCase(caseId);
     if (!c || !isEnrollableCase(c)) {
       out.skipped += 1;
       return out;
     }
     const assignedTo = await deps.store.feeEarnerToUser(tenantId, c.feeEarner);
-    const { matterId, created } = await deps.store.upsertMatter(tenantId, c, { assignedTo, createdBy: assignedTo ?? deps.systemUserId });
+    const { created } = await deps.store.upsertMatter(tenantId, c, { assignedTo, createdBy: assignedTo ?? deps.systemUserId });
     out.cases += 1;
     if (created) out.created += 1;
+    ref = await deps.store.matterByCaseId(tenantId, c.id);
+    if (!ref) return out;
     const parties = await deps.api.caseParties(c.id);
     if (parties.length) {
-      await deps.store.upsertContacts(tenantId, matterId, parties);
+      await deps.store.upsertContacts(tenantId, ref.matterId, parties);
       out.parties += parties.length;
     }
-    return out;
   }
-  const ref = await deps.store.matterByCaseId(tenantId, event.caseId);
+
+  ref ??= await deps.store.matterByCaseId(tenantId, caseId);
   if (!ref) {
-    // The case is not mirrored yet — the next full sync will pick it up.
+    // The case is not mirrored yet — the next sync will pick it up.
     out.skipped += 1;
     return out;
   }

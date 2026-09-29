@@ -39,10 +39,78 @@ the engine's lifecycle              ──► one milestone on the client portal
 ```
 
 Two triggers feed the same functions — **webhooks** (InTouch tells us) and **polling**
-every 15 minutes with a watermark (we ask what changed) — because per-resource webhook
-coverage is one of the things the gated reference has to confirm. Both are idempotent:
-every fact is keyed on InTouch's own id in `intouch_applied`, so a fact lands exactly
-once however many times a webhook fires or a sync re-reads the case.
+every 15 minutes with a watermark (we ask what changed) — because InTouch's webhooks only
+cover three events and their payload does not reliably say which case they are about.
+Both are idempotent: every fact is keyed on InTouch's own id in `intouch_applied`, so a
+fact lands exactly once however many times a webhook fires or a sync re-reads the case.
+
+## What InTouch documents
+
+From InTouch's public help centre (help.intouch.cloud, checked 2026-09). The full endpoint
+reference is inside the customer's InTouch account and is not public.
+
+- **Plan.** The API and webhooks are on the **Premium and Enterprise** plans only. A firm
+  on a lower plan cannot connect.
+- **Auth.** A static API key the firm generates in InTouch under **Settings > API**
+  ("Keys"), sent on every request in the `x-intouch-o-token` header, over HTTPS only.
+  There is no OAuth: no client id, no secret, no token to refresh.
+- **Parsing.** InTouch asks integrators to parse permissively and ignore attributes they
+  do not know; `mapping.ts` already reads every field defensively.
+- **Availability.** No uptime guarantee. The client retries network errors, 429 and 5xx
+  with backoff; a 401/403 is never retried (the key was refused).
+- **Webhooks are set up in the InTouch UI**, not through the API: **Settings > API >
+  Webhooks**, "Add Webhook" with a URL, picking which forms count for Form Completion.
+  There is no API to subscribe.
+- **Events:** Form Completion, Matter State Change, Task State Change.
+- **Payload.** Form Completion is documented as a flat envelope, keys with literal dots:
+
+  ```json
+  { "event": "Form_Completion",
+    "triggered.by.name": "…", "triggered.by.email": "…",
+    "timestamp": "2020-01-03T17:01:23Z",
+    "data": { "…the form's fields…": "…" } }
+  ```
+
+  It carries **no documented case id**. The other two events' payloads are not documented;
+  we assume the same envelope (`Matter_State_Change`, `Task_State_Change`).
+- **Delivery.** Not signed. Retried at +10 minutes, +60 minutes, +180 minutes and +24 hours
+  until a 2xx. Dates are UTC ISO 8601.
+
+## Webhooks
+
+Because InTouch does not sign deliveries, each firm gets its **own webhook URL** carrying
+a secret:
+
+```
+https://<app>/api/v1/integrations/intouch/webhook?firm=<tenant id>&key=<webhook key>
+```
+
+The key is 32 random bytes we generate the first time the firm saves its InTouch details,
+stored encrypted with them, and kept across reconnects. The route compares it in constant
+time and refuses anything else with a 401 before reading the body. Once connected, the
+InTouch page shows the URL with a Copy button; the admin adds it in InTouch under
+**Settings > API** for Form Completion, Matter State Change and Task State Change.
+
+What each event does (the body is a pointer; the case is always re-read from InTouch):
+
+| Event | Does |
+| --- | --- |
+| Matter State Change | mirrors the matter and its parties (as a sync would), then its facts |
+| Form Completion | re-reads the mirrored matter's ID checks, forms and documents |
+| Task State Change | the same |
+| anything else | skipped |
+
+**Finding the case.** A case id is read from `data` where InTouch includes one
+(`matterId`, `matter.id`, `caseId`, `case.id`; a matter event's own `id`). When there is
+none, the envelope's `triggered.by.email` is matched against contacts: only if that person
+is on **exactly one** open InTouch-mirrored matter of the firm (and is not one of the
+firm's own users) is the event applied to it. Otherwise it is skipped and the next poll
+picks the change up. Never a guess across several matters.
+
+**Answers.** Once authenticated, the route always answers 2xx — even for a skip — because
+a skip will not change on retry. A sync that throws answers 500, so InTouch's retry
+schedule re-delivers it. There is no delivery id; the event id is the SHA-256 of the raw
+body, which InTouch's retries repeat.
 
 ## Details worth knowing
 
@@ -98,52 +166,63 @@ themselves go to InTouch, and everything else goes to LEAP alone.
 
 ## What is assumed, and where to fix it
 
-InTouch's API reference is behind developer registration and was not readable from the
-build environment — the same position LEAP was in (docs/leap-integration.md). Everything
+The auth scheme and the webhooks are now known (above). The resource paths and the base URL
+are not — they are in the endpoint reference inside the firm's InTouch account. Everything
 provider-specific is therefore isolated:
 
 | Assumption | File | Confirm against the reference |
 | --- | --- | --- |
-| OAuth grant (client-credentials by default), token path | `endpoints.ts`, `client.ts` | which grant, token path, audience, whether a user must consent |
-| `x-api-key` on every request | `endpoints.ts` | header name, and whether the key rides the token request too |
-| Resource paths: `/cases`, `/cases/{id}/parties\|documents\|forms\|identity-checks\|milestones` | `endpoints.ts` | exact paths and verbs; whether milestones are writable |
+| Base URL | firm settings / `INTOUCH_API_BASE_URL` | none invented |
+| Resource paths: `/api/v1/account`, `/cases`, `/cases/{id}/parties\|documents\|forms\|identity-checks\|milestones` | `endpoints.ts` | exact paths and verbs; whether milestones are writable |
 | Identity outcome values, flag shape | `mapping.ts` | the real vocabulary — the unknown-outcome guard stays either way |
 | Form slugs → TA6/TA7/TA10/TA13/LPE1 | `endpoints.ts` (`INTOUCH_FORM_CODES`) | the real slugs |
 | Pagination (`limit` + `cursor`/`offset`, `updatedSince`), list envelopes | `client.ts` (`page()`) | parameter names and envelope |
 | Milestone vocabulary | `endpoints.ts` (`INTOUCH_MILESTONES`) | what the portal actually displays |
 | Document upload (not in the client yet): path, multipart or JSON, folder or category, and whether a document can be staff-only | `endpoints.ts`, `client.ts` | needed for saving received files down |
-| Webhook events, HMAC-SHA256 in `x-intouch-signature` | `endpoints.ts`, `client.ts` | event names, signature scheme, which resources emit |
-| Hosts | env (`INTOUCH_API_BASE_URL`, `INTOUCH_AUTH_BASE_URL`) | none invented |
+| Matter/Task State Change payloads, and where a case id sits in `data` | `mapping.ts` (`toWebhookEvent`) | only Form Completion is documented |
 
-`mock.ts` serves exactly that map, and the tests drive the **real** HTTP client against
-it — token refresh, retry and backoff, paging, downloads, webhook signatures, the mapping
-seam. When the reference opens, the same tests re-run against InTouch and a disagreement
-shows up as a mapping fix, not a rewrite.
+`mock.ts` serves exactly that map and checks the `x-intouch-o-token` header (401 without
+it), and the tests drive the **real** HTTP client against it — the key header, retry and
+backoff, paging, downloads, the documented webhook envelope, the mapping seam. When the
+reference opens, the same tests re-run against InTouch and a disagreement shows up as a
+mapping fix, not a rewrite.
+
+### Ask InTouch / the firm
+
+- The **base URL** for the firm's API (per region or per firm?).
+- **Access to the endpoint reference** inside the firm's account (or a copy).
+- Whether webhooks **can be signed** (a secret or HMAC header), so the URL key can become
+  a second factor rather than the only one.
+- Whether webhook payloads carry the **matter/case id**, and the payloads for Matter State
+  Change and Task State Change.
+- The **case, party, form, ID-check and document** endpoints, their fields and pagination.
+- Whether **milestones** (or the portal's case status) can be **written back**, and the
+  vocabulary the portal shows.
+- Whether there is a **staff-only document area** (see "Saving received files down").
 
 ## Configuration
 
-Each firm connects its own InTouch account. An admin enters the firm's details at
-**/conveyi/integrations/intouch**:
+Each firm connects its own InTouch account (Premium or Enterprise plan). An admin enters
+at **/conveyi/integrations/intouch**:
 
 ```
-InTouch API address   the firm's region host
-Client ID / secret    the firm's own credentials, issued by InTouch
-API key               optional, if the firm is issued one
-Webhook secret        optional; an unsigned webhook is refused when this is set
-Sign-in address       optional; defaults to the API address
+API Address   the firm's InTouch API host (https only)
+API Key       generated in InTouch under Settings > API
 ```
 
 They are stored encrypted against the firm (`intouch_connection.credentials_enc`,
-migration 078). A secret left blank on a later edit keeps the one already saved. If
-InTouch refuses them, the page says so and keeps what was typed.
+migration 078), with the webhook key we generate. A key left blank on a later edit keeps
+the one already saved. **Connect** reads the account back to prove the key; only that
+marks the firm connected. If InTouch refuses, the page says so in plain terms and keeps
+what was typed. A row saved in the old OAuth shape (no API key) reads as not connected.
 
-The `INTOUCH_*` env vars (`INTOUCH_API_BASE_URL`, `INTOUCH_AUTH_BASE_URL`,
-`INTOUCH_CLIENT_ID`, `INTOUCH_CLIENT_SECRET`, `INTOUCH_API_KEY`, `INTOUCH_WEBHOOK_SECRET`)
-are only a fallback for a deployment that serves one firm. `INTOUCH_GRANT`
-(`client_credentials` by default, or `authorization_code`) stays deployment-wide.
+`INTOUCH_API_BASE_URL` and `INTOUCH_API_TOKEN` are only a fallback for a deployment that
+serves one firm; the webhook URL still needs the firm to press Connect once so a key is
+issued.
 
-The same page carries the milestone switch and what has come across. Disconnecting stops all reading and all
-pushing at once; what is already mirrored stays on the matter, because it is the firm's
-own case file.
+The same page carries the webhook URL, the milestone switch and what has come across.
+Disconnecting stops all reading and all pushing at once; the saved address and keys stay
+so reconnecting is one click, and what is already mirrored stays on the matter, because it
+is the firm's own case file.
 
 ![The InTouch settings page](demo/34-intouch.png)

@@ -8,14 +8,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * What the settings page shows: the firm's saved InTouch details (never the secrets), the
- * connection, and what it has brought in.
+ * What the settings page shows: the firm's saved InTouch details (never the API key), the
+ * connection with the webhook URL to paste into InTouch, and what it has brought in.
  */
 export async function GET() {
   try {
     assertFeature('auth');
     const user = await requireUser();
-    const connection = await inTouchConnection(user.tenantId);
+    const row = await inTouchConnection(user.tenantId);
+    // The webhook URL carries the key that authenticates InTouch's deliveries: admins only.
+    const connection = row && user.role !== 'ADMIN' ? { ...row, webhookUrl: null } : row;
     const [counts] = await query<{ cases: string; identity_checks: string; forms: string; documents: string }>(
       `select
          (select count(*) from matter where tenant_id = $1 and intouch_case_id is not null)::text as cases,
@@ -28,9 +30,7 @@ export async function GET() {
     return ok({
       configured: !!creds,
       canManage: user.role === 'ADMIN',
-      credentials: creds
-        ? { source: creds.source, apiBaseUrl: creds.apiBaseUrl, authBaseUrl: creds.authBaseUrl, clientId: creds.clientId, hasSecret: !!creds.clientSecret, hasApiKey: !!creds.apiKey, hasWebhookSecret: !!creds.webhookSecret }
-        : null,
+      credentials: creds ? { source: creds.source, apiBaseUrl: creds.apiBaseUrl, hasApiToken: !!creds.apiToken } : null,
       connection,
       counts: { cases: Number(counts.cases), identityChecks: Number(counts.identity_checks), forms: Number(counts.forms), documents: Number(counts.documents) },
     });

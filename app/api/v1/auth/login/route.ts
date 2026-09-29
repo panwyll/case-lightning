@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { assertFeature } from '@/lib/server/config';
-import { getAuthUrl } from '@/lib/server/oauth';
+import { getAdminConsentUrl, getAuthUrl } from '@/lib/server/oauth';
 import { OAUTH_STATE_COOKIE, OAUTH_FLOW_COOKIE, OAUTH_NEXT_COOKIE } from '@/lib/server/session';
 import { fail } from '@/lib/server/http';
 
@@ -10,6 +10,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   try {
     assertFeature('auth');
+    // ?admin=1 is the IT admin approving CONVEYi for the whole firm (/conveyi/it-admin).
+    if (req.nextUrl.searchParams.get('admin')) {
+      const state = `ac.${crypto.randomUUID()}`;
+      const res = NextResponse.redirect(getAdminConsentUrl(state));
+      res.cookies.set(OAUTH_STATE_COOKIE, state, { path: '/', httpOnly: true, sameSite: 'lax', secure: true, maxAge: 1800 });
+      return res;
+    }
     const state = crypto.randomUUID();
     // ?consent=1 forces a fresh consent screen (the "reconnect" path after a scope was
     // added); ?prompt=select_account lets the user pick a different account. Plain

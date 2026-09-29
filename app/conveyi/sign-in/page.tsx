@@ -116,7 +116,7 @@ function SignIn() {
         </div>
 
         <p className="si-foot">
-          New firm? <a href={paths.getStarted}>Start a trial</a> · Stuck? <a href={paths.support}>Support</a>
+          New firm? <a href={paths.getStarted}>Start a trial</a> · IT admin? <a href="/conveyi/it-admin">Approve CONVEYi</a> · Stuck? <a href={paths.support}>Support</a>
         </p>
       </div>
     </main>

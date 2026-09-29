@@ -1,146 +1,154 @@
 /**
- * The production wiring for InTouch: Postgres-backed token store and mirror store, the
- * client, and the small helpers the API routes use.
+ * The production wiring for InTouch: the firm's API key, the Postgres-backed mirror
+ * store, the client, and the small helpers the API routes use.
  *
  * Everything here runs as the automation role with no user bound (runAsSystem): a sync or
  * a webhook has no signed-in person behind it, and the database's own enforcement means
  * nothing arriving from InTouch can write a payment or a send event however it is shaped.
  */
+import crypto from 'node:crypto';
 import { query, queryOne, runAsSystem } from '../../db';
 import { putBlob } from '../../blob-store';
 import { encryptSecret, decryptSecret } from '../../crypto';
 import { config } from '../../config';
 import { paths } from '../../../paths';
 import { engine } from '../../engine/adapters';
-import { InTouchHttpClient, type InTouchApi, type InTouchClientConfig, type InTouchTokenStore } from './client';
+import { InTouchHttpClient, type InTouchApi, type InTouchClientConfig } from './client';
 import { InTouchError } from './types';
-import type { InTouchCase, InTouchConnectionRow, InTouchDocument, InTouchParty, InTouchSyncSummary, InTouchTokens } from './types';
+import type { InTouchCase, InTouchConnectionRow, InTouchDocument, InTouchParty, InTouchSyncSummary } from './types';
 import type { InTouchMirrorRef, InTouchMirrorStore, InTouchSyncDeps } from './sync';
 import { enrolIfUntracked } from '../../engine/enrol';
 
 /**
- * A firm's own InTouch credentials: which InTouch host it is on, and the client id/secret
- * (plus API key and webhook secret where InTouch issued them). Entered by the firm's admin
- * on the InTouch page and stored encrypted; the INTOUCH_* env vars are only a fallback for
- * a deployment that serves one firm.
+ * A firm's own InTouch credentials: which InTouch host it is on, the API key it generated
+ * in InTouch (Settings > API > Keys), and the key WE generated that authenticates its
+ * webhooks — InTouch does not sign deliveries, so the per-firm URL carries a secret.
+ * Entered by the firm's admin on the InTouch page and stored encrypted
+ * (intouch_connection.credentials_enc); INTOUCH_API_BASE_URL + INTOUCH_API_TOKEN are only
+ * a fallback for a deployment that serves one firm.
  */
 export interface InTouchFirmCredentials {
   apiBaseUrl: string;
-  authBaseUrl: string | null;
-  clientId: string;
-  clientSecret: string;
-  apiKey: string | null;
-  webhookSecret: string | null;
+  apiToken: string;
+  webhookKey: string;
 }
 
-function envCredentials(): InTouchFirmCredentials | null {
-  if (!config.intouchApiBaseUrl || !config.intouchClientId || !config.intouchClientSecret) return null;
-  return {
-    apiBaseUrl: config.intouchApiBaseUrl,
-    authBaseUrl: config.intouchAuthBaseUrl ?? null,
-    clientId: config.intouchClientId,
-    clientSecret: config.intouchClientSecret,
-    apiKey: config.intouchApiKey ?? null,
-    webhookSecret: config.intouchWebhookSecret ?? null,
-  };
+export type InTouchSavedCredentials = Omit<InTouchFirmCredentials, 'webhookKey'> & {
+  /** Null only for the env fallback before the firm has pressed Connect. */
+  webhookKey: string | null;
+  source: 'firm' | 'deployment';
+};
+
+function envCredentials(): Omit<InTouchSavedCredentials, 'source'> | null {
+  if (!config.intouchApiBaseUrl || !config.intouchApiToken) return null;
+  return { apiBaseUrl: config.intouchApiBaseUrl, apiToken: config.intouchApiToken, webhookKey: null };
 }
 
-/** The firm's saved credentials, then the deployment's; null when neither exists. */
-export async function inTouchCredentials(tenantId: string): Promise<(InTouchFirmCredentials & { source: 'firm' | 'deployment' }) | null> {
+/** The firm's saved row, decrypted. An old-shaped row (OAuth era, no apiToken) reads as partial. */
+async function savedRow(tenantId: string): Promise<Partial<InTouchFirmCredentials> | null> {
   const r = await runAsSystem(() => queryOne<{ credentials_enc: string | null }>(`select credentials_enc from intouch_connection where tenant_id = $1`, [tenantId])).catch(() => null);
-  if (r?.credentials_enc) return { ...(JSON.parse(decryptSecret(r.credentials_enc)) as InTouchFirmCredentials), source: 'firm' };
-  const env = envCredentials();
-  return env ? { ...env, source: 'deployment' } : null;
+  if (!r?.credentials_enc) return null;
+  try {
+    return JSON.parse(decryptSecret(r.credentials_enc)) as Partial<InTouchFirmCredentials>;
+  } catch {
+    return null;
+  }
 }
 
-export async function saveInTouchCredentials(tenantId: string, creds: InTouchFirmCredentials): Promise<void> {
+/**
+ * The firm's saved credentials, then the deployment's; null when neither exists. A saved
+ * row without an API key (the old OAuth shape) is not a connection.
+ */
+export async function inTouchCredentials(tenantId: string): Promise<InTouchSavedCredentials | null> {
+  const row = await savedRow(tenantId);
+  if (row?.apiBaseUrl && row.apiToken) return { apiBaseUrl: row.apiBaseUrl, apiToken: row.apiToken, webhookKey: row.webhookKey ?? null, source: 'firm' };
+  const env = envCredentials();
+  return env ? { ...env, webhookKey: row?.webhookKey ?? null, source: 'deployment' } : null;
+}
+
+/** The key the firm's webhook URL must carry, or null when none has been issued. */
+export async function inTouchWebhookKey(tenantId: string): Promise<string | null> {
+  return (await savedRow(tenantId))?.webhookKey ?? null;
+}
+
+/** Save the address and key; the webhook key is generated once and then kept. */
+export async function saveInTouchCredentials(tenantId: string, creds: { apiBaseUrl: string; apiToken: string }): Promise<InTouchFirmCredentials> {
+  const webhookKey = (await savedRow(tenantId))?.webhookKey ?? crypto.randomBytes(32).toString('hex');
+  const full: InTouchFirmCredentials = { apiBaseUrl: creds.apiBaseUrl, apiToken: creds.apiToken, webhookKey };
   await runAsSystem(() =>
     query(
       `insert into intouch_connection (tenant_id, credentials_enc, updated_at) values ($1,$2,now())
        on conflict (tenant_id) do update set credentials_enc = excluded.credentials_enc, updated_at = now()`,
-      [tenantId, encryptSecret(JSON.stringify(creds))]
+      [tenantId, encryptSecret(JSON.stringify(full))]
     )
   );
+  return full;
 }
 
 export async function markInTouchError(tenantId: string, detail: string): Promise<void> {
   await runAsSystem(() => query(`update intouch_connection set status = 'ERROR', status_detail = $2, updated_at = now() where tenant_id = $1`, [tenantId, detail]));
 }
 
-export function inTouchClientConfig(creds: InTouchFirmCredentials): InTouchClientConfig {
-  return {
-    apiBaseUrl: creds.apiBaseUrl,
-    authBaseUrl: creds.authBaseUrl,
-    clientId: creds.clientId,
-    clientSecret: creds.clientSecret,
-    apiKey: creds.apiKey,
-    redirectUri: config.intouchRedirectUri,
-    webhookSecret: creds.webhookSecret,
-    grant: config.intouchGrant,
-  };
+/** InTouch accepted the key (account() read back): the connection is live. */
+export async function markInTouchConnected(tenantId: string, meta: { accountId: string | null; accountName: string | null; connectedBy: string | null }): Promise<void> {
+  await runAsSystem(() =>
+    query(
+      `update intouch_connection set status = 'CONNECTED', status_detail = null, account_id = $2, account_name = $3,
+              connected_by = coalesce($4, connected_by), connected_at = now(), updated_at = now()
+        where tenant_id = $1`,
+      [tenantId, meta.accountId, meta.accountName, meta.connectedBy]
+    )
+  );
 }
 
-export class PgInTouchTokenStore implements InTouchTokenStore {
-  async load(tenantId: string): Promise<InTouchTokens | null> {
-    const r = await runAsSystem(() => queryOne<{ tokens_enc: string | null; status: string }>(`select tokens_enc, status from intouch_connection where tenant_id = $1`, [tenantId]));
-    if (!r?.tokens_enc || r.status === 'DISCONNECTED') return null;
-    return JSON.parse(decryptSecret(r.tokens_enc)) as InTouchTokens;
-  }
-  async save(tenantId: string, tokens: InTouchTokens): Promise<void> {
-    await runAsSystem(() =>
-      query(
-        `insert into intouch_connection (tenant_id, tokens_enc, status, status_detail, updated_at) values ($1,$2,'CONNECTED',null,now())
-         on conflict (tenant_id) do update set tokens_enc = excluded.tokens_enc, status = 'CONNECTED', status_detail = null, updated_at = now()`,
-        [tenantId, encryptSecret(JSON.stringify(tokens))]
-      )
-    );
-  }
-  async markDisconnected(tenantId: string, reason: string): Promise<void> {
-    await runAsSystem(() => query(`update intouch_connection set status = 'DISCONNECTED', status_detail = $2, updated_at = now() where tenant_id = $1`, [tenantId, reason]));
-  }
+export function inTouchClientConfig(creds: { apiBaseUrl: string; apiToken: string }): InTouchClientConfig {
+  return { apiBaseUrl: creds.apiBaseUrl, apiToken: creds.apiToken };
 }
 
 export async function inTouchClient(tenantId: string): Promise<InTouchApi & InTouchHttpClient> {
   const creds = await inTouchCredentials(tenantId);
   if (!creds) throw new InTouchError('InTouch is not connected for this firm — connect it from the integrations page.', 503, false);
-  return new InTouchHttpClient(inTouchClientConfig(creds), tenantId, new PgInTouchTokenStore());
+  return new InTouchHttpClient(inTouchClientConfig(creds), tenantId);
 }
 
 export async function inTouchConnection(tenantId: string): Promise<InTouchConnectionRow | null> {
-  const r = await queryOne<{ tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; webhook_sub_id: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean }>(
-    `select tenant_id, account_id, account_name, status, status_detail, webhook_sub_id, last_sync_at, last_sync_detail, connected_at, milestones_enabled from intouch_connection where tenant_id = $1`,
+  const r = await queryOne<{ tenant_id: string; account_id: string | null; account_name: string | null; status: InTouchConnectionRow['status']; status_detail: string | null; last_sync_at: Date | null; last_sync_detail: InTouchSyncSummary | null; connected_at: Date | null; milestones_enabled: boolean }>(
+    `select tenant_id, account_id, account_name, status, status_detail, last_sync_at, last_sync_detail, connected_at, milestones_enabled from intouch_connection where tenant_id = $1`,
     [tenantId]
   );
-  return r
-    ? {
-        tenantId: r.tenant_id,
-        accountId: r.account_id,
-        accountName: r.account_name,
-        status: r.status,
-        statusDetail: r.status_detail,
-        webhookSubId: r.webhook_sub_id,
-        lastSyncAt: r.last_sync_at?.toISOString() ?? null,
-        lastSyncDetail: r.last_sync_detail,
-        connectedAt: r.connected_at?.toISOString() ?? null,
-        milestonesEnabled: r.milestones_enabled,
-      }
-    : null;
+  if (!r) return null;
+  const creds = await inTouchCredentials(tenantId);
+  const key = creds?.webhookKey ?? null;
+  return {
+    tenantId: r.tenant_id,
+    accountId: r.account_id,
+    accountName: r.account_name,
+    // An old-shaped row (no API key) is not a connection, whatever its status says.
+    status: r.status === 'CONNECTED' && !creds ? 'DISCONNECTED' : r.status,
+    statusDetail: r.status_detail,
+    webhookUrl: key ? inTouchWebhookUrl(tenantId, key) : null,
+    lastSyncAt: r.last_sync_at?.toISOString() ?? null,
+    lastSyncDetail: r.last_sync_detail,
+    connectedAt: r.connected_at?.toISOString() ?? null,
+    milestonesEnabled: r.milestones_enabled,
+  };
 }
 
-export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; webhookSubId?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean }): Promise<void> {
+export async function setInTouchConnectionMeta(tenantId: string, meta: { accountId?: string | null; accountName?: string | null; connectedBy?: string | null; milestonesEnabled?: boolean }): Promise<void> {
   await runAsSystem(() =>
     query(
-      `update intouch_connection set account_id = coalesce($2, account_id), account_name = coalesce($3, account_name), webhook_sub_id = coalesce($4, webhook_sub_id),
-              connected_by = coalesce($5, connected_by), milestones_enabled = coalesce($6, milestones_enabled),
+      `update intouch_connection set account_id = coalesce($2, account_id), account_name = coalesce($3, account_name),
+              connected_by = coalesce($4, connected_by), milestones_enabled = coalesce($5, milestones_enabled),
               connected_at = coalesce(connected_at, now()), updated_at = now()
         where tenant_id = $1`,
-      [tenantId, meta.accountId ?? null, meta.accountName ?? null, meta.webhookSubId ?? null, meta.connectedBy ?? null, meta.milestonesEnabled ?? null]
+      [tenantId, meta.accountId ?? null, meta.accountName ?? null, meta.connectedBy ?? null, meta.milestonesEnabled ?? null]
     )
   );
 }
 
+/** Stop reading and pushing. The saved address, key and webhook key stay, so reconnecting is one click. */
 export async function disconnectInTouch(tenantId: string): Promise<void> {
-  await runAsSystem(() => query(`update intouch_connection set tokens_enc = null, status = 'DISCONNECTED', status_detail = 'Disconnected by the firm', milestones_enabled = false, updated_at = now() where tenant_id = $1`, [tenantId]));
+  await runAsSystem(() => query(`update intouch_connection set status = 'DISCONNECTED', status_detail = 'Disconnected by the firm', milestones_enabled = false, updated_at = now() where tenant_id = $1`, [tenantId]));
 }
 
 /** InTouch's side → the matter track the rest of CaseLightning uses. */
@@ -196,6 +204,24 @@ export class PgInTouchMirrorStore implements InTouchMirrorStore {
   async matterByCaseId(tenantId: string, intouchCaseId: string): Promise<InTouchMirrorRef | null> {
     const r = await runAsSystem(() => queryOne<{ id: string; intouch_milestone: string | null }>(`select id, intouch_milestone from matter where tenant_id = $1 and intouch_case_id = $2`, [tenantId, intouchCaseId]));
     return r ? { matterId: r.id, intouchCaseId, lastMilestone: r.intouch_milestone } : null;
+  }
+
+  async matterByContactEmail(tenantId: string, email: string): Promise<InTouchMirrorRef | null> {
+    const rows = await runAsSystem(() =>
+      query<{ id: string; intouch_case_id: string; intouch_milestone: string | null }>(
+        `select distinct m.id, m.intouch_case_id, m.intouch_milestone
+           from matter m
+           join matter_contact mc on mc.matter_id = m.id and mc.tenant_id = m.tenant_id
+          where m.tenant_id = $1 and m.intouch_case_id is not null and m.status <> 'CLOSED'
+            and lower(mc.email) = lower($2)
+            -- the firm's own people are on every case: never a signal (matching self-address rule)
+            and not exists (select 1 from app_user u where u.tenant_id = $1 and lower(u.email) = lower($2))
+          limit 2`,
+        [tenantId, email]
+      )
+    );
+    if (rows.length !== 1) return null;
+    return { matterId: rows[0].id, intouchCaseId: rows[0].intouch_case_id, lastMilestone: rows[0].intouch_milestone };
   }
 
   async upsertContacts(tenantId: string, matterId: string, parties: InTouchParty[]): Promise<void> {
@@ -302,6 +328,11 @@ export async function inTouchSyncDeps(tenantId: string): Promise<InTouchSyncDeps
   };
 }
 
-/** Where InTouch sends us webhooks, and where a firm manages the connection. */
-export const inTouchWebhookUrl = () => `${config.appUrl}/api/v1/integrations/intouch/webhook`;
+/**
+ * Where this firm's InTouch sends webhooks — the admin pastes it into InTouch under
+ * Settings > API > Webhooks. `firm` says whose; `key` proves it, since InTouch does not sign.
+ */
+export const inTouchWebhookUrl = (tenantId: string, key: string) =>
+  `${config.appUrl}/api/v1/integrations/intouch/webhook?firm=${encodeURIComponent(tenantId)}&key=${encodeURIComponent(key)}`;
+/** Where a firm manages the connection. */
 export const inTouchSettingsPath = () => `${paths.leap.replace('/leap', '/intouch')}`;

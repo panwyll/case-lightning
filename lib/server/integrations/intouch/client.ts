@@ -2,22 +2,25 @@
  * The InTouch API as the rest of the product sees it (InTouchApi), and the HTTP client
  * that implements it.
  *
- * Auth: a firm's connection is server-to-server, so the default grant is
- * client-credentials with the firm's own client id/secret; the authorization-code path is
- * kept for the case where InTouch requires a person to consent. Tokens live in an
- * InTouchTokenStore (Postgres, encrypted — adapters.ts); the client refreshes 60s before
- * expiry and once more on a 401, then gives up with a non-retryable InTouchError so the
- * sync marks the connection as needing attention instead of hammering InTouch.
+ * Auth (documented): a static API key the firm generates in InTouch under Settings > API,
+ * sent in `x-intouch-o-token` on every request, over HTTPS. There is no OAuth, no token
+ * to refresh and nothing to store but the key. A 401/403 means InTouch did not accept the
+ * key: that is a non-retryable InTouchError, so the sync marks the connection as needing
+ * attention instead of hammering InTouch.
  *
- * Every URL comes from endpoints.ts; every payload goes through mapping.ts. This file
- * knows about retries, pagination and downloads, and nothing about field names.
+ * InTouch gives no uptime guarantee, so transient failures (network, 429, 5xx) are retried
+ * with backoff. Every URL comes from endpoints.ts; every payload goes through mapping.ts
+ * (which parses permissively, as InTouch asks). This file knows about retries, pagination
+ * and downloads, and nothing about field names.
  */
-import crypto from 'node:crypto';
-import { INTOUCH_API_KEY_HEADER, INTOUCH_ENDPOINTS, INTOUCH_SCOPES, INTOUCH_WEBHOOK_SIGNATURE_HEADER, type InTouchMilestone } from './endpoints';
+import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS, type InTouchMilestone } from './endpoints';
 import { milestoneBody, pick, toAccount, toCase, toDocument, toForm, toIdentityCheck, toParty, toWebhookEvent } from './mapping';
-import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchForm, type InTouchIdentityCheck, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchTokens, type InTouchWebhookEvent } from './types';
+import { InTouchError, type InTouchAccount, type InTouchCase, type InTouchDocument, type InTouchForm, type InTouchIdentityCheck, type InTouchListOptions, type InTouchPage, type InTouchParty, type InTouchWebhookEvent } from './types';
 
-/** Everything CONVEYi asks of InTouch. mock.ts implements it in memory. */
+/**
+ * Everything CONVEYi asks of InTouch. mock.ts implements it over HTTP. Webhooks are not
+ * here: InTouch has no API to subscribe — the firm adds our URL in the InTouch UI.
+ */
 export interface InTouchApi {
   readonly name: string;
   account(): Promise<InTouchAccount>;
@@ -37,26 +40,13 @@ export interface InTouchApi {
   requestIdentityCheck(caseId: string, partyId: string): Promise<{ id: string }>;
   /** Ask InTouch to send the client a form to fill in. */
   requestForm(caseId: string, code: string): Promise<{ id: string }>;
-  subscribeWebhook(url: string, events: readonly string[]): Promise<{ id: string }>;
-}
-
-export interface InTouchTokenStore {
-  load(tenantId: string): Promise<InTouchTokens | null>;
-  save(tenantId: string, tokens: InTouchTokens): Promise<void>;
-  markDisconnected(tenantId: string, reason: string): Promise<void>;
 }
 
 export interface InTouchClientConfig {
+  /** The firm's InTouch API address (assumed; the reference is inside the firm's account). */
   apiBaseUrl: string;
-  /** Defaults to apiBaseUrl when InTouch issues tokens from the same host. */
-  authBaseUrl?: string | null;
-  clientId: string;
-  clientSecret: string;
-  apiKey?: string | null;
-  redirectUri?: string | null;
-  webhookSecret?: string | null;
-  /** 'client_credentials' (default) or 'authorization_code'. */
-  grant?: 'client_credentials' | 'authorization_code';
+  /** The API key the firm generated in InTouch (Settings > API > Keys). */
+  apiToken: string;
   maxRetries?: number;
   backoffMs?: number;
   pageSize?: number;
@@ -79,97 +69,15 @@ export const fetchTransport: HttpTransport = async (url, init) => {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * Verify a webhook signature: HMAC-SHA256 hex over the RAW body, compared in constant
- * time. An unsigned delivery is rejected when a secret is configured — an unauthenticated
- * webhook is an open door into the case file.
- */
-export function verifyWebhookSignature(rawBody: string, header: string | null, secret: string | null): boolean {
-  if (!secret) return true; // nothing configured yet: the route decides whether to allow it
-  if (!header) return false;
-  const expected = crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
-  const given = header.replace(/^sha256=/i, '').trim();
-  const a = Buffer.from(expected, 'utf8');
-  const b = Buffer.from(given, 'utf8');
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
-}
-
 export class InTouchHttpClient implements InTouchApi {
   readonly name = 'intouch';
-  private inflight: Promise<InTouchTokens> | null = null;
 
   constructor(
     private cfg: InTouchClientConfig,
-    private tenantId: string,
-    private tokens: InTouchTokenStore,
+    readonly tenantId: string | null = null,
     private transport: HttpTransport = fetchTransport,
-    private now: () => number = () => Date.now()
+    readonly now: () => number = () => Date.now()
   ) {}
-
-  private get authBase(): string {
-    return (this.cfg.authBaseUrl || this.cfg.apiBaseUrl).replace(/\/+$/, '');
-  }
-
-  // ───────────── auth ─────────────
-
-  static authorizeUrl(cfg: Pick<InTouchClientConfig, 'apiBaseUrl' | 'authBaseUrl' | 'clientId' | 'redirectUri'>, state: string): string {
-    const qs = new URLSearchParams({ response_type: 'code', client_id: cfg.clientId, redirect_uri: cfg.redirectUri ?? '', scope: INTOUCH_SCOPES.join(' '), state });
-    return `${(cfg.authBaseUrl || cfg.apiBaseUrl).replace(/\/+$/, '')}${INTOUCH_ENDPOINTS.authorize}?${qs}`;
-  }
-
-  /** Exchange an authorization code (only used when InTouch requires user consent). */
-  async connectWithCode(code: string): Promise<InTouchTokens> {
-    const t = await this.tokenRequest({ grant_type: 'authorization_code', code, redirect_uri: this.cfg.redirectUri ?? '' });
-    await this.tokens.save(this.tenantId, t);
-    return t;
-  }
-
-  /** Connect with the firm's own credentials — the normal path. */
-  async connectWithClientCredentials(): Promise<InTouchTokens> {
-    const t = await this.tokenRequest({ grant_type: 'client_credentials', scope: INTOUCH_SCOPES.join(' ') });
-    await this.tokens.save(this.tenantId, t);
-    return t;
-  }
-
-  private async tokenRequest(params: Record<string, string>): Promise<InTouchTokens> {
-    const res = await this.transport(`${this.authBase}${INTOUCH_ENDPOINTS.token}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', ...(this.cfg.apiKey ? { [INTOUCH_API_KEY_HEADER]: this.cfg.apiKey } : {}) },
-      body: new URLSearchParams({ client_id: this.cfg.clientId, client_secret: this.cfg.clientSecret, ...params }).toString(),
-    });
-    const text = await res.text();
-    if (res.status !== 200) throw new InTouchError(`InTouch token request failed (${res.status}): ${text.slice(0, 200)}`, res.status, res.status >= 500);
-    const body = JSON.parse(text) as { access_token: string; refresh_token?: string; expires_in?: number; scope?: string };
-    return { accessToken: body.access_token, refreshToken: body.refresh_token ?? null, expiresAt: this.now() + (body.expires_in ?? 3600) * 1000, scope: body.scope ?? null };
-  }
-
-  private async accessToken(force = false): Promise<string> {
-    const current = await this.tokens.load(this.tenantId);
-    if (!current) throw new InTouchError('InTouch is not connected for this firm — connect it from the integrations page.', 503, false);
-    if (!force && current.expiresAt - 60_000 > this.now()) return current.accessToken;
-    if (!this.inflight) {
-      // A client-credentials connection just asks for another token; an authorization-code
-      // one needs its refresh token, and without one the firm has to reconnect.
-      const renew =
-        current.refreshToken
-          ? this.tokenRequest({ grant_type: 'refresh_token', refresh_token: current.refreshToken })
-          : (this.cfg.grant ?? 'client_credentials') === 'client_credentials'
-          ? this.tokenRequest({ grant_type: 'client_credentials', scope: INTOUCH_SCOPES.join(' ') })
-          : Promise.reject(new InTouchError('InTouch token expired and no refresh token is held — reconnect.', 401, false));
-      this.inflight = renew
-        .then(async (t) => {
-          const merged = { ...t, refreshToken: t.refreshToken ?? current.refreshToken };
-          await this.tokens.save(this.tenantId, merged);
-          return merged;
-        })
-        .catch(async (err: InTouchError) => {
-          if (!err.retryable) await this.tokens.markDisconnected(this.tenantId, err.message);
-          throw err;
-        })
-        .finally(() => (this.inflight = null));
-    }
-    return (await this.inflight).accessToken;
-  }
 
   // ───────────── transport ─────────────
 
@@ -178,17 +86,15 @@ export class InTouchHttpClient implements InTouchApi {
     const backoff = this.cfg.backoffMs ?? 500;
     const qs = opts.query ? Object.entries(opts.query).filter(([, v]) => v !== undefined && v !== null && v !== '') : [];
     const url = `${this.cfg.apiBaseUrl.replace(/\/+$/, '')}${path}${qs.length ? `?${new URLSearchParams(qs.map(([k, v]) => [k, String(v)]))}` : ''}`;
-    let refreshed = false;
+    if (!this.cfg.apiToken) throw new InTouchError('InTouch is not connected for this firm — connect it from the integrations page.', 503, false);
     for (let attempt = 0; ; attempt++) {
       let res: HttpResponse;
       try {
-        const token = await this.accessToken(false);
         res = await this.transport(url, {
           method,
           headers: {
-            authorization: `Bearer ${token}`,
+            [INTOUCH_API_TOKEN_HEADER]: this.cfg.apiToken,
             accept: opts.raw ? '*/*' : 'application/json',
-            ...(this.cfg.apiKey ? { [INTOUCH_API_KEY_HEADER]: this.cfg.apiKey } : {}),
             ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
           },
           body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -199,11 +105,7 @@ export class InTouchHttpClient implements InTouchApi {
         await sleep(backoff * 2 ** attempt);
         continue;
       }
-      if (res.status === 401 && !refreshed) {
-        refreshed = true;
-        await this.accessToken(true);
-        continue;
-      }
+      if (res.status === 401 || res.status === 403) throw new InTouchError('InTouch did not accept the API key.', res.status, false);
       if (res.status === 404) return null as T;
       if (res.status === 429 || res.status >= 500) {
         if (attempt >= max) throw new InTouchError(`InTouch error ${res.status} after ${attempt + 1} attempts`, res.status, true);
@@ -241,7 +143,10 @@ export class InTouchHttpClient implements InTouchApi {
   // ───────────── resources ─────────────
 
   async account(): Promise<InTouchAccount> {
-    return toAccount(await this.request<unknown>('GET', INTOUCH_ENDPOINTS.account));
+    const body = await this.request<unknown>('GET', INTOUCH_ENDPOINTS.account);
+    // Everywhere else a 404 is "no such thing"; here it means the address is wrong.
+    if (!body) throw new InTouchError('InTouch did not recognise that address.', 404, false);
+    return toAccount(body);
   }
 
   async listCases(opts?: InTouchListOptions): Promise<InTouchPage<InTouchCase>> {
@@ -314,11 +219,6 @@ export class InTouchHttpClient implements InTouchApi {
     const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.requestForm(caseId), { code });
     return { id: String(pick(body, ['id', 'formId']) ?? '') };
   }
-
-  async subscribeWebhook(url: string, events: readonly string[]): Promise<{ id: string }> {
-    const body = await this.request<unknown>('POST', INTOUCH_ENDPOINTS.webhooks, { url, events: [...events], secret: this.cfg.webhookSecret ?? undefined });
-    return { id: String(pick(body, ['id', 'subscriptionId', 'webhookId']) ?? '') };
-  }
 }
 
-export { toWebhookEvent, INTOUCH_WEBHOOK_SIGNATURE_HEADER, type InTouchWebhookEvent };
+export { toWebhookEvent, type InTouchWebhookEvent };

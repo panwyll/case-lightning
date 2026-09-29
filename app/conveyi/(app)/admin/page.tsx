@@ -1,7 +1,7 @@
 'use client';
 import { Spin } from '@/app/shared/engine/BusyButton';
 import { BackLink } from '@/app/shared/BackLink';
-import { FirmDetails, MySignature } from './FirmDetails';
+import { BaselineCard, FirmDetails, MySignature } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
@@ -659,6 +659,7 @@ function AdminPageInner() {
   const [editing, setEditing] = useState<string | 'new' | null>(null); // user id, 'new', or closed
   const [person, setPerson] = useState<{ name: string; email: string; role: string; caseAccess: 'all' | 'selected'; mailboxAccess: 'own' | 'all' | 'selected'; covers: string[]; mailboxes: string[] }>(blankPerson);
   const [personBusy, setPersonBusy] = useState(false);
+  const [itCopied, setItCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('CONVEYANCER');
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -1048,7 +1049,8 @@ function AdminPageInner() {
           {tab === 'mywork' && <RefreshButton label="Refresh Tasks" onRefresh={() => new Promise<void>((done) => window.dispatchEvent(new CustomEvent('conveyi:refresh-tasks', { detail: { done } })))} />}
           {tab === 'team' && (<>
             <span style={{ fontSize: 13, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>{users.length} of 100</span>
-            <button style={{ ...btnPrimary, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
+            <button style={{ ...btnGhost, marginLeft: 'auto', height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }} title="The page your IT admin opens to approve CONVEYi for everyone at the firm" onClick={() => { void navigator.clipboard.writeText(`${window.location.origin}/conveyi/it-admin`).then(() => { setItCopied(true); setTimeout(() => setItCopied(false), 2000); }); }}>{itCopied ? <><Check size={16} />Link Copied</> : 'Copy IT Approval Link'}</button>
+            <button style={{ ...btnPrimary, height: 34, padding: '0 14px', fontSize: 13, display: 'inline-flex', alignItems: 'center' }} onClick={openNew} title="Create the account now — name, role and access — and email them a sign-in link.">New</button>
           </>)}
           {tab === 'mywork' && (
             <>
@@ -1531,7 +1533,7 @@ function AdminPageInner() {
                 <button key={k} role="tab" aria-selected={firmTab === k} onClick={() => setFirmTab(k)} style={{ padding: '8px 12px', fontSize: 13, fontWeight: 600, color: firmTab === k ? '#5A27E0' : '#64748b', border: 0, background: 'none', cursor: 'pointer', borderBottom: `2px solid ${firmTab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>{l}</button>
               ))}
             </div>
-            {firmTab === 'details' ? <FirmDetails canEdit={me?.role === 'ADMIN'} /> : <MySignature />}
+            {firmTab === 'details' ? <><FirmDetails canEdit={me?.role === 'ADMIN'} /><BaselineCard canEdit={me?.role === 'ADMIN'} /></> : <MySignature />}
           </>
         )}
         {tab === 'rules' && <RulesPanel canApprove={me?.role === 'ADMIN'} canPropose={me?.role === 'ADMIN' || me?.role === 'CONVEYANCER'} />}

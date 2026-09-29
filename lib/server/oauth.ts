@@ -51,6 +51,23 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   });
 }
 
+/**
+ * Microsoft's admin-consent screen: an IT admin approves CONVEYi for the whole firm in one
+ * go, so staff whose Microsoft 365 blocks user consent can sign in. `.default` asks for
+ * exactly what the app registration lists (never a scope that is not on it). Microsoft
+ * returns to the normal callback with ?admin_consent=True (or ?error=…) and our state,
+ * prefixed `ac.` so the callback knows which leg it is.
+ */
+export function getAdminConsentUrl(state: string): string {
+  const qs = new URLSearchParams({
+    client_id: config.azureClientId!,
+    redirect_uri: config.azureRedirectUri,
+    scope: 'https://graph.microsoft.com/.default',
+    state,
+  });
+  return `https://login.microsoftonline.com/organizations/v2.0/adminconsent?${qs.toString()}`;
+}
+
 export function getAuthUrl(state: string, prompt?: 'consent' | 'select_account'): string {
   const base = `https://login.microsoftonline.com/${config.azureTenantId}/oauth2/v2.0/authorize`;
   const qs = new URLSearchParams({

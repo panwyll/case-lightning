@@ -21,6 +21,8 @@ import { chainEvents } from './audit';
 import { DEFAULT_SLA, withOverrides, type SlaConfig, type SlaRule } from './sla';
 import { caseHealth, summariseHealth, type HealthSummary } from './health';
 import { lifecycle, type Lifecycle } from './graph';
+import { matterWork } from './work';
+import { syncTaskRecords } from './task-record';
 import { DEFAULT_LEVELS, ENGINE_ACTIONS, TRUST_LEVELS, type EngineAction, LEGACY_STAGE, STAGES, SUB_FLOWS, SUBFLOW_OF_KIND, openIssues, pendingDecisions, surfacedDecisions, withStateDefaults, type DecisionState, type EngineEvent, type MatterState, type NewEvent, type SubFlow, type LevelConfig, type TrustLevel, type TransactionType, type WaitKey } from './types';
 
 export interface MatterTx {
@@ -627,6 +629,18 @@ async function refreshReadModels(client: pg.PoolClient, state: MatterState, appe
       )
     );
   }
+  // When each task appeared and left, and who cleared it (task-record.ts, migration 114).
+  await bestEffort(client, 'tasks', async () => {
+    const m = await client.query<{ assigned_to: string | null }>(`select assigned_to from matter where id = $1 and tenant_id = $2`, [state.matterId, state.tenantId]);
+    const handler = m.rows[0]?.assigned_to ?? null;
+    const items = matterWork(state, new Date(), { assignedTo: handler }).items;
+    await syncTaskRecords((sql, params) => client.query(sql, params), state.tenantId, [{
+      matterId: state.matterId,
+      items,
+      ownerOf: (i) => (i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null) ?? handler,
+      finished: !!(state.postCompletion.ap1ConfirmedAt ?? state.abandoned?.at),
+    }], { seq: state.lastSeq, actor: appended[0]?.actor ?? null });
+  });
   // Addendum 3 §2: keep matter.shadow_mode in step with the log (it is queryable without projecting).
   if (appended.some((e) => e.type === 'matter_created' || e.type === 'shadow_mode_changed')) {
     await bestEffort(client, 'shadow', () => client.query(`update matter set shadow_mode = $1 where id = $2 and tenant_id = $3`, [state.shadowMode, state.matterId, state.tenantId]));

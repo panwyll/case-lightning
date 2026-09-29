@@ -1,6 +1,6 @@
 /**
- * The InTouch connector, end to end over the mock: the real HTTP client (token, refresh,
- * retry, paging, download, webhook signing) against MockInTouch, the real mapping seam,
+ * The InTouch connector, end to end over the mock: the real HTTP client (API key header,
+ * retry, paging, download) against MockInTouch, InTouch's documented webhook envelope, the real mapping seam,
  * and the real engine underneath on the in-memory store.
  *
  * The point of these tests is not that the code runs. It is that the two rules the
@@ -14,12 +14,13 @@ import { EngineService } from '../../../lib/server/engine/service';
 import { MemoryEventStore } from '../../../lib/server/engine/store';
 import { mockPorts } from '../../../lib/server/engine/mocks';
 import { blockingDecisions, type MatterState } from '../../../lib/server/engine/types';
-import { MockInTouch, MemoryInTouchTokenStore } from '../../../lib/server/integrations/intouch/mock';
-import { InTouchHttpClient, verifyWebhookSignature } from '../../../lib/server/integrations/intouch/client';
+import crypto from 'node:crypto';
+import { MockInTouch } from '../../../lib/server/integrations/intouch/mock';
+import { InTouchHttpClient } from '../../../lib/server/integrations/intouch/client';
 import { milestoneFor, pick, toCase, toDocument, toForm, toIdentityCheck, toParty, toPennies, toWebhookEvent } from '../../../lib/server/integrations/intouch/mapping';
 import { applyWebhook, disclosuresFrom, hintFor, idFactsFrom, isEnrollableCase, isForward, syncInTouch, type InTouchMirrorRef, type InTouchMirrorStore, type InTouchSyncDeps } from '../../../lib/server/integrations/intouch/sync';
-import type { InTouchCase, InTouchDocument, InTouchParty, InTouchSyncSummary } from '../../../lib/server/integrations/intouch/types';
-import { INTOUCH_ENDPOINTS } from '../../../lib/server/integrations/intouch/endpoints';
+import { InTouchError, type InTouchCase, type InTouchDocument, type InTouchParty, type InTouchSyncSummary } from '../../../lib/server/integrations/intouch/types';
+import { INTOUCH_API_TOKEN_HEADER, normaliseInTouchEvent } from '../../../lib/server/integrations/intouch/endpoints';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const ALICE = '33333333-3333-4333-8333-333333333333';
@@ -50,6 +51,12 @@ class MemoryMirror implements InTouchMirrorStore {
   async matterByCaseId(_t: string, id: string): Promise<InTouchMirrorRef | null> {
     const m = this.matters.get(id);
     return m ? { matterId: m.matterId, intouchCaseId: id, lastMilestone: m.lastMilestone } : null;
+  }
+  async matterByContactEmail(_t: string, email: string): Promise<InTouchMirrorRef | null> {
+    const hits = [...this.matters.entries()].filter(([, v]) => (this.contacts.get(v.matterId) ?? []).some((p) => p.email?.toLowerCase() === email.toLowerCase()));
+    if (hits.length !== 1) return null;
+    const [id, v] = hits[0];
+    return { matterId: v.matterId, intouchCaseId: id, lastMilestone: v.lastMilestone };
   }
   async upsertContacts(_t: string, matterId: string, parties: InTouchParty[]) {
     this.contacts.set(matterId, parties);
@@ -90,20 +97,20 @@ class MemoryMirror implements InTouchMirrorStore {
   }
 }
 
-function harness(opts: { webhookSecret?: string } = {}) {
-  const itouch = new MockInTouch({ clientId: 'cid', clientSecret: 'secret', webhookSecret: opts.webhookSecret ?? 'hook-secret' });
-  const tokens = new MemoryInTouchTokenStore();
-  const client = new InTouchHttpClient(
-    { apiBaseUrl: 'https://intouch.test', clientId: 'cid', clientSecret: 'secret', webhookSecret: opts.webhookSecret ?? 'hook-secret', backoffMs: 1 },
-    TENANT,
-    tokens,
-    itouch.transport
-  );
+function harness() {
+  const itouch = new MockInTouch({ apiToken: 'firm-key' });
+  const client = new InTouchHttpClient({ apiBaseUrl: 'https://intouch.test', apiToken: 'firm-key', backoffMs: 1 }, TENANT, itouch.transport);
   const ports = mockPorts(new Date('2026-09-14T09:00:00Z'));
   const engine = new EngineService(new MemoryEventStore(FIXTURE_LEVELS), ports);
   const store = new MemoryMirror(ports.documents);
   const deps: InTouchSyncDeps = { api: client, store, engine, systemUserId: ALICE, log: () => {} };
-  return { itouch, tokens, client, engine, store, deps, ports };
+  return { itouch, client, engine, store, deps, ports };
+}
+
+/** A webhook as InTouch delivers it: the raw body, parsed the way the route parses it. */
+function hook(event: string, data: Record<string, unknown>, by?: { email?: string }) {
+  const raw = MockInTouch.webhookBody(event, data, by);
+  return toWebhookEvent(JSON.parse(raw), raw);
 }
 
 /** The engine has to be enrolled before it will take facts; the sync mirrors, a person enrols. */
@@ -194,23 +201,45 @@ test('a document hint is only offered where the category is unambiguous', () => 
 
 // ───────────────────────────── the client over HTTP ─────────────────────────────
 
-test('the client gets a token, reads the account, and pages through cases', async () => {
+test('every request carries the firm\'s API key in x-intouch-o-token', async () => {
   const h = harness();
   for (let i = 0; i < 5; i++) h.itouch.seed({ reference: `IT-${i}` });
-  await h.client.connectWithClientCredentials();
-  assert.equal((await h.client.account()).name, 'Demo Conveyancing LLP');
-  const first = await h.client.listCases({ limit: 2 });
+  const seen: Array<Record<string, string>> = [];
+  const spy = new InTouchHttpClient({ apiBaseUrl: 'https://intouch.test', apiToken: 'firm-key', backoffMs: 1 }, TENANT, (url, init) => {
+    seen.push(init.headers);
+    return h.itouch.transport(url, init);
+  });
+  assert.equal((await spy.account()).name, 'Demo Conveyancing LLP');
+  const first = await spy.listCases({ limit: 2 });
   assert.equal(first.items.length, 2);
   assert.ok(first.next);
-  const second = await h.client.listCases({ limit: 2, cursor: first.next });
+  const second = await spy.listCases({ limit: 2, cursor: first.next });
   assert.equal(second.items.length, 2);
   assert.notEqual(first.items[0].id, second.items[0].id);
+  assert.ok(seen.length >= 3);
+  for (const hdr of seen) {
+    assert.equal(hdr[INTOUCH_API_TOKEN_HEADER], 'firm-key');
+    assert.equal(hdr.authorization, undefined, 'no bearer token: InTouch has no OAuth');
+  }
+});
+
+test('a key InTouch does not accept is a 401, and it is not retried', async () => {
+  const h = harness();
+  const wrong = new InTouchHttpClient({ apiBaseUrl: 'https://intouch.test', apiToken: 'not-the-key', backoffMs: 1 }, TENANT, h.itouch.transport);
+  const before = h.itouch.calls.length;
+  await assert.rejects(
+    () => wrong.account(),
+    (err: unknown) => err instanceof InTouchError && err.status === 401 && err.retryable === false && /did not accept the API key/.test(err.message)
+  );
+  assert.equal(h.itouch.calls.length - before, 1, 'one request, no retries');
+  h.itouch.failNext = 1;
+  h.itouch.failStatus = 403;
+  await assert.rejects(() => h.client.listCases(), (err: unknown) => err instanceof InTouchError && err.status === 403 && !err.retryable);
 });
 
 test('a 500 is retried and then succeeds; a 400 is not retried', async () => {
   const h = harness();
   h.itouch.seed();
-  await h.client.connectWithClientCredentials();
   h.itouch.failNext = 2;
   const page = await h.client.listCases();
   assert.equal(page.items.length, 1, 'recovered after two failures');
@@ -219,35 +248,13 @@ test('a 500 is retried and then succeeds; a 400 is not retried', async () => {
   await assert.rejects(() => h.client.listCases(), /rejected the request \(400\)/);
 });
 
-test('an expired token is refreshed once, transparently', async () => {
-  const h = harness();
-  h.itouch.seed();
-  await h.client.connectWithClientCredentials();
-  // Force expiry: the store holds the only copy.
-  const held = (await h.tokens.load(TENANT)) as { expiresAt: number };
-  await h.tokens.save(TENANT, { ...held, expiresAt: Date.now() - 1 });
-  const page = await h.client.listCases();
-  assert.equal(page.items.length, 1);
-  assert.ok(h.itouch.calls.filter((c) => c.path === INTOUCH_ENDPOINTS.token).length >= 2, 'it asked for a new token');
-});
-
 test('downloading a document returns the bytes and the filename', async () => {
   const h = harness();
   const caseId = h.itouch.seed();
   const docId = h.itouch.addDocument(caseId, { fileName: 'Proof.pdf', content: 'hello' });
-  await h.client.connectWithClientCredentials();
   const got = await h.client.downloadDocument(docId);
   assert.equal(got.bytes.toString('utf8'), 'hello');
   assert.equal(got.mimeType, 'application/pdf');
-});
-
-test('a webhook signature is verified, and an unsigned delivery is refused when a secret is set', () => {
-  const h = harness({ webhookSecret: 's3cret' });
-  const body = JSON.stringify({ type: 'form.completed', data: { caseId: 'c1', id: 'f1' } });
-  assert.equal(verifyWebhookSignature(body, h.itouch.sign(body), 's3cret'), true);
-  assert.equal(verifyWebhookSignature(body, h.itouch.sign(body), 'wrong'), false);
-  assert.equal(verifyWebhookSignature(body, null, 's3cret'), false);
-  assert.equal(verifyWebhookSignature(body + ' ', h.itouch.sign(body), 's3cret'), false, 'a tampered body fails');
 });
 
 // ───────────────────────────── the sync ─────────────────────────────
@@ -259,7 +266,6 @@ test('a quote is not a case; an instruction is', async () => {
   const h = harness();
   h.itouch.seed({ status: 'quote' });
   h.itouch.seed({ status: 'instructed' });
-  await h.client.connectWithClientCredentials();
   const out = await syncInTouch(h.deps, TENANT);
   assert.equal(out.cases, 1);
   assert.equal(out.created, 1);
@@ -269,7 +275,6 @@ test('a quote is not a case; an instruction is', async () => {
 test('a case becomes a matter with its parties, and the fee earner becomes our handler', async () => {
   const h = harness();
   h.itouch.seed({ parties: [{ id: 'p1', role: 'buyer', firstName: 'Priya', lastName: 'Okafor', email: 'priya@example.com' }, { id: 'p2', role: 'Estate Agent', company: 'Hometown Lettings' }] });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   const parties = h.store.contacts.get(ref.matterId)!;
@@ -281,7 +286,6 @@ test('a completed identity check becomes the engine\'s ordinary ID decision — 
   const h = harness();
   const caseId = h.itouch.seed();
   h.itouch.addIdentityCheck(caseId, { outcome: 'refer', flags: [{ code: 'pep_match', severity: 'medium', description: 'Possible PEP match' }] });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT); // mirrors the case
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId);
@@ -297,7 +301,6 @@ test('a check that is still pending records nothing at all', async () => {
   const h = harness();
   const caseId = h.itouch.seed();
   h.itouch.addIdentityCheck(caseId, { outcome: 'pending' });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId);
@@ -309,7 +312,6 @@ test('a completed TA6 lands as a form with the client\'s own disclosures attache
   const h = harness();
   const caseId = h.itouch.seed({ type: 'sale' });
   h.itouch.addForm(caseId, { code: 'ta6', answers: { disputes: 'Yes — ongoing boundary dispute with number 14' } });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId, 'freehold_sale');
@@ -323,7 +325,6 @@ test('a form the machine says does not belong here is a skip, not a failure', as
   const h = harness();
   const caseId = h.itouch.seed({ type: 'purchase' });
   h.itouch.addForm(caseId, { code: 'ta6' });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId); // a purchase: property forms are the seller's side
@@ -338,7 +339,6 @@ test('nothing lands twice, however many times the sync runs', async () => {
   const caseId = h.itouch.seed({ type: 'sale' });
   h.itouch.addIdentityCheck(caseId, { outcome: 'clear' });
   h.itouch.addForm(caseId, { code: 'ta6' });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId, 'freehold_sale');
@@ -354,7 +354,6 @@ test('one broken case does not stop the rest of the firm syncing', async () => {
   const h = harness();
   h.itouch.seed({ id: 'good-1' });
   h.itouch.seed({ id: 'good-2' });
-  await h.client.connectWithClientCredentials();
   // Make parties blow up for one case only.
   const realParties = h.client.caseParties.bind(h.client);
   h.deps.api = new Proxy(h.client, {
@@ -371,7 +370,6 @@ test('one broken case does not stop the rest of the firm syncing', async () => {
 test('the engine\'s state becomes a milestone on the client portal, once, and never backwards', async () => {
   const h = harness();
   const caseId = h.itouch.seed();
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId);
@@ -387,7 +385,6 @@ test('the engine\'s state becomes a milestone on the client portal, once, and ne
 test('a matter in shadow mode says nothing to the client', async () => {
   const h = harness();
   const caseId = h.itouch.seed();
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await h.engine.run(TENANT, ref.matterId, { type: 'enrol', actor: ALICE, hasLender: true, requiredSearches: [], shadowMode: true });
@@ -400,7 +397,6 @@ test('milestones stay off entirely until the firm turns them on', async () => {
   const h = harness();
   const caseId = h.itouch.seed();
   h.store.milestones = false;
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId);
@@ -411,37 +407,100 @@ test('milestones stay off entirely until the firm turns them on', async () => {
 
 // ───────────────────────────── webhooks ─────────────────────────────
 
+test('webhook: InTouch\'s documented Form_Completion envelope is read, flat dotted keys and all', () => {
+  const raw = '{"event":"Form_Completion","triggered.by.name":"Priya Okafor","triggered.by.email":"Priya@Example.com","timestamp":"2020-01-03T17:01:23Z","data":{"Full name":"Priya Okafor","Any disputes?":"No"}}';
+  const e = toWebhookEvent(JSON.parse(raw), raw);
+  assert.equal(e.type, 'form_completion');
+  assert.equal(e.triggeredByEmail, 'priya@example.com');
+  assert.equal(e.occurredAt, '2020-01-03T17:01:23.000Z');
+  assert.equal(e.caseId, null, 'Form Completion carries no case id');
+  // No delivery id is sent, and retries repeat the body: the id is the body's hash.
+  assert.equal(e.id, crypto.createHash('sha256').update(raw, 'utf8').digest('hex'));
+  assert.equal(toWebhookEvent(JSON.parse(raw), raw).id, e.id);
+  // A direct dotted key is found before a nested path is tried.
+  assert.equal(pick({ 'a.b': 1, a: { b: 2 } }, ['a.b']), 1);
+  assert.equal(pick({ a: { b: 2 } }, ['a.b']), 2);
+});
+
+test('webhook: event names normalise, and a case id is read from data where InTouch includes one', () => {
+  assert.equal(normaliseInTouchEvent('Matter_State_Change'), 'matter_state_change');
+  assert.equal(normaliseInTouchEvent('Task State Change'), 'task_state_change');
+  assert.equal(hook('Task_State_Change', { matterId: 'c9', taskId: 't1' }).caseId, 'c9');
+  assert.equal(hook('Task_State_Change', { matter: { id: 'c8' } }).caseId, 'c8');
+  assert.equal(hook('Matter_State_Change', { id: 'c7', state: 'Instructed' }).caseId, 'c7', "a matter event's own id is the matter");
+  assert.equal(hook('Task_State_Change', { id: 't1' }).caseId, null, "a task's own id is not a case");
+});
+
 test('a webhook is a pointer: the resource is re-read, never taken from the body', async () => {
   const h = harness();
   const caseId = h.itouch.seed({ type: 'sale' });
-  await h.client.connectWithClientCredentials();
   await syncInTouch(h.deps, TENANT);
   const [ref] = await h.store.mirrors();
   await enrol(h.deps, ref.matterId, 'freehold_sale');
   h.itouch.addForm(caseId, { code: 'ta10' });
 
   // The body LIES about the form code; the re-read is what counts.
-  const event = toWebhookEvent({ type: 'form.completed', data: { caseId, id: 'made-up', code: 'TA6' } });
-  const out = await applyWebhook(h.deps, TENANT, event);
+  const out = await applyWebhook(h.deps, TENANT, hook('Form_Completion', { matterId: caseId, code: 'TA6' }));
   assert.equal(out.forms, 1);
   const state = await h.engine.getState(TENANT, ref.matterId);
   assert.ok(state.propertyForms.forms.includes('TA10'), 'the real form, not the one the body claimed');
   assert.ok(!state.propertyForms.forms.includes('TA6'));
 });
 
+test('no case id: the person who triggered it finds the matter when they are on exactly one', async () => {
+  const h = harness();
+  const caseId = h.itouch.seed({ type: 'sale', parties: [{ id: 'p1', role: 'seller', firstName: 'Sam', lastName: 'Seller', email: 'sam@example.com' }] });
+  await syncInTouch(h.deps, TENANT);
+  const [ref] = await h.store.mirrors();
+  await enrol(h.deps, ref.matterId, 'freehold_sale');
+  h.itouch.addForm(caseId, { code: 'ta6' });
+  const out = await applyWebhook(h.deps, TENANT, hook('Form_Completion', { 'Any disputes?': 'No' }, { email: 'SAM@example.com' }));
+  assert.equal(out.skipped, 0);
+  assert.equal(out.forms, 1);
+});
+
+test('no case id and the person is on two matters: skipped, never guessed', async () => {
+  const h = harness();
+  const party = { role: 'seller', firstName: 'Sam', lastName: 'Seller', email: 'sam@example.com' };
+  const a = h.itouch.seed({ type: 'sale', parties: [{ id: 'p1', ...party }] });
+  const b = h.itouch.seed({ type: 'sale', parties: [{ id: 'p2', ...party }] });
+  await syncInTouch(h.deps, TENANT);
+  for (const ref of await h.store.mirrors()) await enrol(h.deps, ref.matterId, 'freehold_sale');
+  h.itouch.addForm(a, { code: 'ta6' });
+  h.itouch.addForm(b, { code: 'ta6' });
+  const out = await applyWebhook(h.deps, TENANT, hook('Form_Completion', {}, { email: 'sam@example.com' }));
+  assert.equal(out.skipped, 1);
+  assert.equal(out.forms, 0);
+  // Nor for someone on no matter at all.
+  assert.equal((await applyWebhook(h.deps, TENANT, hook('Form_Completion', {}, { email: 'nobody@example.com' }))).skipped, 1);
+});
+
 test('a webhook for a case we do not mirror is ignored, not guessed at', async () => {
   const h = harness();
-  await h.client.connectWithClientCredentials();
-  const out = await applyWebhook(h.deps, TENANT, toWebhookEvent({ type: 'form.completed', data: { caseId: 'never-seen', id: 'f' } }));
+  const out = await applyWebhook(h.deps, TENANT, hook('Task_State_Change', { matterId: 'never-seen', taskId: 't' }));
   assert.equal(out.skipped, 1);
   assert.equal(out.forms, 0);
 });
 
-test('case.created through a webhook mirrors the case the same way a sync would', async () => {
+test('Matter_State_Change mirrors the case and its parties the same way a sync would', async () => {
   const h = harness();
-  const caseId = h.itouch.seed({ status: 'instructed' });
-  await h.client.connectWithClientCredentials();
-  const out = await applyWebhook(h.deps, TENANT, toWebhookEvent({ type: 'case.created', data: { caseId } }));
+  const caseId = h.itouch.seed({ status: 'instructed', parties: [{ id: 'p1', role: 'buyer', firstName: 'Priya', lastName: 'Okafor', email: 'priya@example.com' }] });
+  const out = await applyWebhook(h.deps, TENANT, hook('Matter_State_Change', { matterId: caseId, state: 'Instructed' }));
   assert.equal(out.created, 1);
+  assert.equal(out.parties, 1);
+  const mirrors = await h.store.mirrors();
+  assert.equal(mirrors.length, 1);
+  assert.equal(h.store.contacts.get(mirrors[0].matterId)?.[0].email, 'priya@example.com');
+  // Again: an update, not a second matter.
+  const again = await applyWebhook(h.deps, TENANT, hook('Matter_State_Change', { matterId: caseId, state: 'Active' }));
+  assert.equal(again.created, 0);
   assert.equal((await h.store.mirrors()).length, 1);
+});
+
+test('an event InTouch has not documented is skipped', async () => {
+  const h = harness();
+  const caseId = h.itouch.seed();
+  const out = await applyWebhook(h.deps, TENANT, hook('Invoice_Paid', { matterId: caseId }));
+  assert.equal(out.skipped, 1);
+  assert.equal(out.cases, 0);
 });

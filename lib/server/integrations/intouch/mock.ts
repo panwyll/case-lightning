@@ -2,13 +2,12 @@
  * An in-memory InTouch that serves exactly the endpoint map in endpoints.ts.
  *
  * This is not a convenience: it is how the connector is exercised end to end while the
- * real reference is behind registration. The tests drive the SAME HTTP client against
- * this transport, so retries, pagination, token refresh, webhook signatures and the
+ * real reference is inside the firm's InTouch account. The tests drive the SAME HTTP
+ * client against this transport, so the API-key header, retries, pagination and the
  * mapping seam are all real. When the reference opens, the same tests re-run against
  * InTouch and any disagreement shows up as a mapping fix, not a rewrite.
  */
-import crypto from 'node:crypto';
-import { INTOUCH_ENDPOINTS, INTOUCH_WEBHOOK_SIGNATURE_HEADER } from './endpoints';
+import { INTOUCH_API_TOKEN_HEADER, INTOUCH_ENDPOINTS } from './endpoints';
 import type { HttpResponse, HttpTransport } from './client';
 
 export interface MockCaseSeed {
@@ -48,16 +47,15 @@ const json = (status: number, body: unknown): HttpResponse => ({
 export class MockInTouch {
   readonly cases = new Map<string, Stored>();
   readonly bytes = new Map<string, Buffer>();
-  readonly webhooks: Array<{ id: string; url: string; events: string[] }> = [];
   /** Every request the client made — tests assert on paths, not on internals. */
   readonly calls: Array<{ method: string; path: string; body?: unknown }> = [];
   /** Flip to make the next N requests fail, to exercise retry and backoff. */
   failNext = 0;
   failStatus = 500;
   private seq = 0;
-  private tokenIssued = 0;
 
-  constructor(private opts: { clientId?: string; clientSecret?: string; webhookSecret?: string; tokenTtlSeconds?: number } = {}) {}
+  /** `apiToken`: the only key this InTouch accepts in `x-intouch-o-token`. */
+  constructor(private opts: { apiToken?: string } = {}) {}
 
   private id(prefix: string): string {
     this.seq += 1;
@@ -131,12 +129,9 @@ export class MockInTouch {
     return this.cases.get(caseId)?.milestones ?? [];
   }
 
-  /** Sign a body the way the real InTouch is assumed to, for webhook tests. */
-  sign(body: string): string {
-    return crypto.createHmac('sha256', this.opts.webhookSecret ?? 'mock-secret').update(body, 'utf8').digest('hex');
-  }
-  get signatureHeader(): string {
-    return INTOUCH_WEBHOOK_SIGNATURE_HEADER;
+  /** A webhook body in InTouch's documented envelope (flat keys with literal dots). */
+  static webhookBody(event: string, data: Record<string, unknown>, by: { name?: string; email?: string } = {}): string {
+    return JSON.stringify({ event, 'triggered.by.name': by.name ?? 'Priya Okafor', 'triggered.by.email': by.email ?? 'priya@example.com', timestamp: '2026-09-20T17:01:23Z', data });
   }
 
   /** The transport to hand to InTouchHttpClient. */
@@ -151,17 +146,8 @@ export class MockInTouch {
       return json(this.failStatus, { error: 'mock failure' });
     }
 
-    // ── token ──
-    if (path === INTOUCH_ENDPOINTS.token) {
-      const form = new URLSearchParams(String(init.body ?? ''));
-      if (this.opts.clientId && form.get('client_id') !== this.opts.clientId) return json(401, { error: 'invalid_client' });
-      if (this.opts.clientSecret && form.get('client_secret') !== this.opts.clientSecret) return json(401, { error: 'invalid_client' });
-      this.tokenIssued += 1;
-      return json(200, { access_token: `mock-token-${this.tokenIssued}`, refresh_token: 'mock-refresh', expires_in: this.opts.tokenTtlSeconds ?? 3600, scope: 'cases:read' });
-    }
-
-    // Everything else needs a bearer token.
-    if (!/^Bearer mock-token-/.test(init.headers.authorization ?? '')) return json(401, { error: 'unauthorised' });
+    // Every request needs the firm's API key.
+    if ((init.headers[INTOUCH_API_TOKEN_HEADER] ?? '') !== (this.opts.apiToken ?? 'mock-key')) return json(401, { error: 'unauthorised' });
 
     if (path === INTOUCH_ENDPOINTS.account) return json(200, { id: 'acct-1', name: 'Demo Conveyancing LLP', reference: 'DEMO' });
 
@@ -172,15 +158,6 @@ export class MockInTouch {
       const all = [...this.cases.values()].map((c) => c.raw).filter((r) => !since || String(r.updatedAt ?? '') > since);
       const slice = all.slice(offset, offset + limit);
       return json(200, { items: slice, total: all.length });
-    }
-
-    if (path === INTOUCH_ENDPOINTS.webhooks && init.method === 'POST') {
-      const b = (body ?? {}) as { url?: string; events?: string[] };
-      const existing = this.webhooks.find((w) => w.url === b.url);
-      if (existing) return json(200, { id: existing.id });
-      const id = this.id('hook');
-      this.webhooks.push({ id, url: b.url ?? '', events: b.events ?? [] });
-      return json(200, { id });
     }
 
     // ── per-case resources ──
@@ -247,21 +224,5 @@ function safeParse(s: string): unknown {
     return JSON.parse(s);
   } catch {
     return s;
-  }
-}
-
-/** A token store backed by memory, for tests. */
-export class MemoryInTouchTokenStore {
-  private tokens = new Map<string, unknown>();
-  disconnected: Array<{ tenantId: string; reason: string }> = [];
-  async load(tenantId: string) {
-    return (this.tokens.get(tenantId) as never) ?? null;
-  }
-  async save(tenantId: string, t: unknown) {
-    this.tokens.set(tenantId, t);
-  }
-  async markDisconnected(tenantId: string, reason: string) {
-    this.tokens.delete(tenantId);
-    this.disconnected.push({ tenantId, reason });
   }
 }

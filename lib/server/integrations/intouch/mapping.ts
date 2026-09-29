@@ -8,15 +8,27 @@
  *
  * Everything here is pure and unit-tested against fixtures.
  */
-import { INTOUCH_FORM_CODES, type InTouchMilestone } from './endpoints';
+import crypto from 'node:crypto';
+import { INTOUCH_FORM_CODES, normaliseInTouchEvent, type InTouchMilestone } from './endpoints';
 import type { InTouchAccount, InTouchCase, InTouchCaseStatus, InTouchDocument, InTouchForm, InTouchIdentityCheck, InTouchIdOutcome, InTouchParty, InTouchPartyRole, InTouchTransactionSide, InTouchWebhookEvent } from './types';
 
 type Raw = Record<string, unknown>;
 
-/** Case-insensitive, dotted-path tolerant pick of the first present candidate key. */
+/**
+ * Case-insensitive, dotted-path tolerant pick of the first present candidate key.
+ *
+ * A candidate is first tried as a literal key — InTouch's webhook envelope has flat keys
+ * with dots in them ("triggered.by.email") — and only then as a path into nested objects.
+ */
 export function pick(raw: unknown, keys: string[]): unknown {
   if (!raw || typeof raw !== 'object') return undefined;
   for (const key of keys) {
+    if (key.includes('.')) {
+      const obj = raw as Raw;
+      const direct = Object.keys(obj).find((k) => k.toLowerCase() === key.toLowerCase());
+      const v = direct === undefined ? undefined : obj[direct];
+      if (v !== undefined && v !== null && v !== '') return v;
+    }
     const parts = key.split('.');
     let cur: unknown = raw;
     for (const part of parts) {
@@ -197,15 +209,37 @@ export function toDocument(raw: unknown, caseId: string): InTouchDocument {
   };
 }
 
-export function toWebhookEvent(raw: unknown, headers: Record<string, string> = {}): InTouchWebhookEvent {
-  const data = pick(raw, ['data', 'payload', 'resource', 'body']) ?? raw;
+/**
+ * InTouch's documented webhook envelope → our event.
+ *
+ *   { "event": "Form_Completion", "triggered.by.name": "…", "triggered.by.email": "…",
+ *     "timestamp": "2020-01-03T17:01:23Z", "data": { …form fields… } }
+ *
+ * Only Form Completion's payload is documented, and it carries no case id; Matter State
+ * Change and Task State Change are assumed to share the envelope. So the case id is read
+ * defensively from `data` (and the envelope), and when there is none the sync falls back
+ * to the person who triggered it. There is no delivery id, and InTouch's retries repeat
+ * the body, so the event id is a hash of the raw body.
+ */
+export function toWebhookEvent(raw: unknown, rawBody?: string): InTouchWebhookEvent {
+  const body = rawBody ?? JSON.stringify(raw ?? null);
+  const data = pick(raw, ['data', 'payload']);
+  const type = normaliseInTouchEvent(pick(raw, ['event', 'type', 'eventType']));
+  const caseKeys = ['matterId', 'matter.id', 'matter_id', 'caseId', 'case.id', 'case_id'];
+  const caseId =
+    str(pick(data, caseKeys)) ??
+    str(pick(raw, caseKeys)) ??
+    // A matter event's own `id` is the matter.
+    (type === 'matter_state_change' ? str(pick(data, ['id'])) : null);
   return {
-    id: str(pick(raw, ['id', 'eventId', 'deliveryId'])) ?? str(headers['x-intouch-delivery']),
-    type: norm(pick(raw, ['type', 'eventType', 'event', 'name'])).replace(/_/g, '.'),
-    caseId: str(pick(data, ['caseId', 'case.id', 'caseID'])) ?? str(pick(raw, ['caseId'])),
-    resourceId: str(pick(data, ['id', 'resourceId', 'documentId', 'formId', 'checkId', 'identityCheckId'])),
+    id: crypto.createHash('sha256').update(body, 'utf8').digest('hex'),
+    type,
+    caseId,
+    resourceId: str(pick(data, ['taskId', 'task.id', 'formId', 'form.id', 'documentId', 'id'])),
+    triggeredByEmail: str(pick(raw, ['triggered.by.email', 'triggeredBy.email', 'triggered_by_email', 'triggeredByEmail']))?.trim().toLowerCase() || null,
+    occurredAt: iso(pick(raw, ['timestamp', 'occurredAt'])),
     receivedAt: new Date().toISOString(),
-    raw: (raw && typeof raw === 'object' ? (raw as Raw) : {}),
+    raw: raw && typeof raw === 'object' ? (raw as Raw) : {},
   };
 }
 

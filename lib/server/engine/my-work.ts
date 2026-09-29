@@ -8,6 +8,11 @@ import { engine } from './adapters';
 import { visibleMatterIds } from '../access';
 import { matterWork, type WorkItem } from './work';
 import type { SessionUser } from '../types';
+import { after } from 'next/server';
+import { query } from '../db';
+import { syncTaskRecords, type MatterTasks } from './task-record';
+
+const lastSync = new Map<string, number>();
 
 export const canCover = (user: SessionUser): boolean => user.role === 'ADMIN' || user.role === 'CONVEYANCER';
 
@@ -24,6 +29,7 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
   ]);
   const now = new Date();
   const items: WorkItem[] = [];
+  const seen: MatterTasks[] = [];
   const visible = await visibleMatterIds(user);
   for (const { state, meta } of states) {
     if (visible && !visible.has(state.matterId)) continue;
@@ -31,8 +37,17 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
     const caseBand = caseHealth(state, now).band;
     // An escalation belongs to whoever it was escalated to; everything else to the case's handler.
     const theirs = (i: WorkItem) => { const to = i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null; return to ? to === who : meta.assignedTo === who; };
-    const list = matterWork(state, now, { ...meta, levels: subflows }).items.filter((i) => all || theirs(i));
+    const full = matterWork(state, now, { ...meta, levels: subflows }).items;
+    seen.push({ matterId: state.matterId, items: full, ownerOf: (i) => (i.ref.type === 'decision' ? state.decisions[i.ref.id]?.assignedTo : null) ?? meta.assignedTo ?? null, finished: !!(state.postCompletion.ap1ConfirmedAt ?? state.abandoned?.at) });
+    const list = full.filter((i) => all || theirs(i));
     items.push(...list.map((i) => ({ ...i, caseBand })));
+  }
+  // Tasks that come and go with the clock (a deadline, a chase falling due) are caught here.
+  // At most every five minutes per firm (the badge reads this list too), after the response.
+  if (Date.now() - (lastSync.get(user.tenantId) ?? 0) > 5 * 60_000) {
+    lastSync.set(user.tenantId, Date.now());
+    const run = () => syncTaskRecords((sql, params) => query(sql, params), user.tenantId, seen).catch(() => {});
+    try { after(run); } catch { void run(); }
   }
   return { items, matters: all ? states.length : states.filter((x) => x.meta.assignedTo === who).length };
 }

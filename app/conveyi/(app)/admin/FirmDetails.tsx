@@ -1,10 +1,10 @@
 'use client';
-import { Spin } from '@/app/shared/engine/BusyButton';
+import { BusyButton, Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 
 type Firm = { name: string; addressLine1: string | null; addressLine2: string | null; town: string | null; postcode: string | null; phone: string | null; sraNumber: string | null; website: string | null; logoUrl?: string | null; signatureNotice?: string | null };
-const PROVIDERS: Array<[string, string]> = [['none', 'Wet ink only'], ['infotrack', 'InfoTrack'], ['intouch', 'InTouch'], ['leap', 'LEAP']];
+const PROVIDERS: Array<[string, string]> = [['none', 'Wet Ink Only'], ['infotrack', 'InfoTrack'], ['intouch', 'InTouch'], ['leap', 'LEAP']];
 
 /** The firm's details (where signed originals come back, what an email footer says) and how it signs deeds. */
 export function FirmDetails({ canEdit }: { canEdit: boolean }) {
@@ -34,17 +34,17 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
       <style>{CSS}</style>
       <div className="fd-h">Firm</div>
       <div className="fd-grid">
-        {field('Firm name', 'name')}
+        {field('Firm Name', 'name')}
         {field('Address', 'addressLine1', { placeholder: 'Street' })}
         {field('', 'addressLine2', { placeholder: 'Line 2' })}
         {field('Town', 'town', { width: 240 })}
         {field('Postcode', 'postcode', { width: 140 })}
         {field('Phone', 'phone', { width: 240, inputMode: 'tel' })}
-        {field('SRA number', 'sraNumber', { width: 160, inputMode: 'numeric' })}
+        {field('SRA Number', 'sraNumber', { width: 160, inputMode: 'numeric' })}
         {field('Website', 'website', { inputMode: 'url' })}
         {field('Logo', 'logoUrl', { placeholder: 'https:// link to the logo image', inputMode: 'url' })}
-        <label className="fd-row"><span>Signature notice</span><textarea className="fd-in" rows={2} value={f.signatureNotice ?? ''} onChange={(e) => setF({ ...f, signatureNotice: e.target.value })} disabled={!canEdit} placeholder="We will never change our bank details by email. Call us before sending money." /></label>
-        <label className="fd-row"><span>Electronic signing</span>
+        <label className="fd-row"><span>Signature Notice</span><textarea className="fd-in" rows={2} value={f.signatureNotice ?? ''} onChange={(e) => setF({ ...f, signatureNotice: e.target.value })} disabled={!canEdit} placeholder="We will never change our bank details by email. Call us before sending money." /></label>
+        <label className="fd-row"><span>Electronic Signing</span>
           <select className="fd-in" value={provider} onChange={(e) => setProvider(e.target.value)} disabled={!canEdit} style={{ maxWidth: 240 }}>
             {PROVIDERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
@@ -86,7 +86,49 @@ export function MySignature() {
   );
 }
 
+type Baseline = { weeksPurchase: number | null; weeksSale: number | null; casesPerConveyancer: number | null; hoursPerCase: number | null; recordedAt?: string; recordedBy?: string | null };
+const BASELINE: Array<[keyof Baseline, string, string]> = [
+  ['weeksPurchase', 'Weeks To Complete A Purchase', 'e.g. 16'],
+  ['weeksSale', 'Weeks To Complete A Sale', 'e.g. 14'],
+  ['casesPerConveyancer', 'Open Cases Per Conveyancer', 'e.g. 60'],
+  ['hoursPerCase', 'Hours Per Case', 'e.g. 12'],
+];
+
+/** The firm's own figures from before CONVEYi: the "before" in any "faster than before" (docs/analytics.md). */
+export function BaselineCard({ canEdit }: { canEdit: boolean }) {
+  const [b, setB] = useState<Record<string, string> | null>(null);
+  const [saved, setSaved] = useState<Baseline | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const fill = (x: Baseline | null) => { setSaved(x); setB(Object.fromEntries(BASELINE.map(([k]) => [k, x?.[k] == null ? '' : String(x[k])]))); };
+  useEffect(() => { api<{ baseline: Baseline | null }>('/admin/baseline').then((r) => fill(r.baseline)).catch(() => fill(null)); }, []);
+  if (!b) return null;
+  const save = async () => {
+    setErr(null);
+    const body = Object.fromEntries(BASELINE.map(([k]) => { const v = b[k].trim(); return [k, v === '' ? null : Number(v)]; }));
+    if (Object.values(body).some((v) => v != null && (!Number.isFinite(v) || v <= 0))) { setErr('Figures must be positive numbers.'); return false; }
+    try { fill((await api<{ baseline: Baseline }>('/admin/baseline', { method: 'PUT', body: JSON.stringify(body) })).baseline); return true; }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not save.'); return false; }
+  };
+  return (
+    <div className="fd">
+      <style>{CSS}</style>
+      <div className="fd-h">Before CONVEYi</div>
+      <div className="fd-grid">
+        {BASELINE.map(([k, label, ph]) => (
+          <label key={k} className="fd-row"><span>{label}</span><input className="fd-in" inputMode="decimal" value={b[k]} onChange={(e) => setB({ ...b, [k]: e.target.value })} disabled={!canEdit} placeholder={ph} style={{ maxWidth: 140 }} /></label>
+        ))}
+      </div>
+      <div className="fd-a">
+        {canEdit && <BusyButton className="fd-btn" busyLabel="Saving…" doneLabel="Saved" onClick={save}>Save</BusyButton>}
+        {saved?.recordedAt && <span className="fd-meta">Recorded {new Date(saved.recordedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{saved.recordedBy ? ` by ${saved.recordedBy}` : ''}</span>}
+        {err && <span className="fd-note" style={{ color: '#b91c1c' }}>{err}</span>}
+      </div>
+    </div>
+  );
+}
+
 const CSS = `
+.fd-meta{font-size:12.5px;color:#94a3b8}
 .fd-sig{min-height:120px;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;background:#fff;overflow:auto;outline:none;font-family:Segoe UI,Arial,sans-serif;font-size:13px}
 .fd-sig:focus{border-color:#5A27E0;box-shadow:0 0 0 3px rgba(90,39,224,.15)}
 .fd-btn2{background:#fff;color:#334155;border:1px solid #cbd5e1;border-radius:8px;padding:7px 14px;font-weight:700;font-size:13px;cursor:pointer}
