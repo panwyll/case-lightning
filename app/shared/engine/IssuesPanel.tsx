@@ -54,7 +54,7 @@ const CSS = `
 .is-dlg .f{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
 `;
 
-export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; onChanged?: () => void }) {
+export function IssuesPanel({ api, state, busy, cmd, onChanged, only }: { api: Api; state: EngineState; busy: boolean; cmd: (body: Record<string, unknown>) => Promise<unknown>; onChanged?: () => void; /** Just this issue, with its actions (the Tasks list opens it in place). */ only?: string }) {
   const [cat, setCat] = useState<IssueCatalogue | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [unfold, setUnfold] = useState<Set<string>>(new Set());
@@ -219,6 +219,16 @@ export function IssuesPanel({ api, state, busy, cmd, onChanged }: { api: Api; st
   const special = withdrawing || draft.kind === PRICE || draft.kind === DATE;
   const [newValue, setNewValue] = useState('');
   const specialReady = draft.kind === PRICE ? /\d/.test(newValue) : draft.kind === DATE ? /^\d{4}-\d{2}-\d{2}$/.test(newValue) : true;
+  if (only) {
+    const one = live.find((i) => i.id === only);
+    return (
+      <div className="is">
+        <style>{CSS}</style>
+        {outcome && <div className={`is-out${outcome.ok ? '' : ' warn'}`} role="status">{outcome.text}</div>}
+        {one ? <div className="is-list">{row(one, isContext(one))}</div> : null}
+      </div>
+    );
+  }
   return (
     <div className="is">
       <style>{CSS}</style>

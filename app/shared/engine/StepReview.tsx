@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEngine } from './useEngine';
 import { WorkPanel } from './WorkPanel';
+import { IssuesPanel } from './IssuesPanel';
 import type { Api } from './types';
 
 /**
@@ -27,6 +28,21 @@ export function StepReview({ api, matterId, stepKey, onDone }: { api: Api; matte
     <div>
       <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={changed} notice={eng.notice} section="step" stepKey={stepKey} />
       {checking && due && <div style={{ fontSize: 12.5, color: '#64748b', marginTop: 8 }}>Uploaded. Reading it now…</div>}
+    </div>
+  );
+}
+
+/** One issue, dealt with from the Tasks list: its Resolve / Try Again / password / More actions, in place. `onDone` fires once it is closed. */
+export function IssueReview({ api, matterId, issueId, onDone }: { api: Api; matterId: string; issueId: string; onDone: () => void }) {
+  const eng = useEngine(matterId, api);
+  const st = eng.view?.state.issues?.[issueId]?.status;
+  const live = st === 'open' || st === 'negotiating';
+  useEffect(() => { if (eng.view && !live) onDone(); }, [eng.view, live]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
+  return (
+    <div>
+      {eng.err && <div style={{ fontSize: 12.5, color: '#b91c1c', marginBottom: 6 }}>{eng.err}</div>}
+      <IssuesPanel api={api} state={eng.view.state} busy={eng.busy} cmd={eng.cmd} onChanged={() => void eng.load()} only={issueId} />
     </div>
   );
 }
