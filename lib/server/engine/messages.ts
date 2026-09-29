@@ -64,7 +64,7 @@ export function engineMessages(levels: LevelConfig) {
 }
 
 
-export interface MessageInfo { when: string; to: string; requires: string[]; /** every placeholder the built-in wording uses, for the editor's insert row */ vars: string[] }
+export interface MessageInfo { when: string; to: string; /** Update, Chaser, Acknowledgement or Notice: the editor's subsections. */ kind?: string; requires: string[]; /** every placeholder the built-in wording uses, for the editor's insert row */ vars: string[] }
 
 const varsOf = (t: { subject: string; body: string } | undefined): string[] => (t ? Array.from(new Set(`${t.subject}\n${t.body}`.match(/\{\{(\w+)\}\}/g) ?? [])).map((s) => s.slice(2, -2)) : []);
 
@@ -84,5 +84,7 @@ export function messageInfo(): Record<string, MessageInfo> {
     if (!out[k] && kind && out[base]) out[k] = { ...out[base], when: `${out[base].when} (on ${KIND[kind] ?? kind})`, requires: t.requires, vars: varsOf(t) };
   }
   for (const [k, t] of Object.entries(all)) if (!out[k]) out[k] = { vars: varsOf(t), when: k === 'qa_routed_to_human' ? 'A client question the assistant cannot answer safely' : k === 'chase_update_agent' ? 'We chase someone on the client\'s behalf' : 'Used by the engine', to: t.channel === 'client' ? 'Client' : k === 'chase_update_agent' ? 'Estate agent' : 'The party', requires: t.requires };
+  const KINDS: Array<[Record<string, unknown>, string]> = [[ACKS, 'Acknowledgements'], [CHASES, 'Chasers'], [PARTY_NOTICES, 'Notices'], [CLIENT_UPDATES, 'Updates']];
+  for (const [k, v] of Object.entries(out)) v.kind = KINDS.find(([set]) => k in set)?.[1] ?? 'Updates';
   return out;
 }

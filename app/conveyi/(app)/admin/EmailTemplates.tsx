@@ -1,6 +1,6 @@
 'use client';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Paperclip, Check } from '@/app/shared/icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Paperclip, Check, Search } from '@/app/shared/icons';
 import { CaseSearch, type CaseHit } from '@/app/shared/engine/CaseSearch';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -31,12 +31,27 @@ const SAMPLE: Record<string, string> = {
 };
 /** "exchanged__sale" reads "Exchanged · Sale". */
 const engineName = (k: string) => { const [base, kind] = k.split('__'); const n = base.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()); return kind ? `${n} · ${kind === 'transfer' ? 'Transfer Of Equity' : kind.replace(/^./, (c) => c.toUpperCase())}` : n; };
+type Info = { when: string; to: string; kind?: string; requires: string[]; vars: string[] };
+/** The top tabs: who a template goes to; the firm's own templates last. */
+const TABS = ['All', 'Client', 'Solicitors', 'Lender', 'Others', "Firm's Own"] as const;
+type Tab = (typeof TABS)[number];
+const tabOf = (t: Tpl, info: Info | undefined): Exclude<Tab, 'All'> => {
+  if (t.category !== 'Engine') return "Firm's Own";
+  const to = info?.to ?? '';
+  if (/^client/i.test(to)) return 'Client';
+  if (/solicitor/i.test(to)) return 'Solicitors';
+  if (/^lender/i.test(to)) return 'Lender';
+  return 'Others';
+};
+const SECTION_ORDER = ['Updates', 'Chasers', 'Acknowledgements', 'Notices'];
 const fill = (s: string) => (s || '').replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k) => SAMPLE[k] ?? `{{${k}}}`);
 
 export default function EmailTemplates() {
-  const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [templates, setTemplates] = useState<Tpl[] | null>(null);
+  const [tab, setTab] = useState<Tab>('All');
+  const [q, setQ] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTpl[]>([]);
-  const [engine, setEngine] = useState<Record<string, { when: string; to: string; requires: string[]; vars: string[] }>>({});
+  const [engine, setEngine] = useState<Record<string, Info>>({});
   const [sel, setSel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -48,7 +63,7 @@ export default function EmailTemplates() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api<{ templates: Tpl[]; docTemplates: DocTpl[]; engine?: Record<string, { when: string; to: string; requires: string[]; vars: string[] }> }>('/admin/templates');
+      const r = await api<{ templates: Tpl[]; docTemplates: DocTpl[]; engine?: Record<string, Info> }>('/admin/templates');
       setTemplates(r.templates ?? []);
       setDocTemplates(r.docTemplates ?? []);
       setEngine(r.engine ?? {});
@@ -57,11 +72,28 @@ export default function EmailTemplates() {
       const hit = want ? (r.templates ?? []).find((t) => t.name === want) : null;
       if (hit) setSel(hit.id);
     }
-    catch (e: any) { setErr(e?.message || 'Could not load templates.'); }
+    catch (e: any) { setErr(e?.message || 'Could not load templates.'); setTemplates((cur) => cur ?? []); }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const cur = templates.find((t) => t.id === sel) || null;
+  const cur = (templates ?? []).find((t) => t.id === sel) || null;
+  const label = (t: Tpl) => (t.category === 'Engine' ? engineName(t.name) : t.name);
+  const counts = useMemo(() => { const c: Record<string, number> = { All: templates?.length ?? 0 }; for (const t of templates ?? []) { const k = tabOf(t, engine[t.name]); c[k] = (c[k] ?? 0) + 1; } return c; }, [templates, engine]);
+  // The list: this tab, the words typed (name, when it sends, subject, body), in subsections.
+  const sections = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const m = new Map<string, Tpl[]>();
+    for (const t of templates ?? []) {
+      const info = engine[t.name];
+      if (tab !== 'All' && tabOf(t, info) !== tab) continue;
+      const hay = `${label(t)} ${info?.when ?? ''} ${info?.to ?? ''} ${t.subjectTemplate ?? ''} ${t.bodyTemplate}`.toLowerCase();
+      if (!words.every((w) => hay.includes(w))) continue;
+      const sec = t.category === 'Engine' ? (info?.kind ?? 'Updates') : (t.category || 'General');
+      m.set(sec, [...(m.get(sec) ?? []), t]);
+    }
+    const rank = (k: string) => { const i = SECTION_ORDER.indexOf(k); return i < 0 ? 99 : i; };
+    return [...m.entries()].sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0])).map(([k, list]) => [k, list.sort((a, b) => label(a).localeCompare(label(b)))] as const);
+  }, [templates, engine, tab, q]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setLive(null); setLiveErr(null);
     if (!cur || !previewCase) return;
@@ -71,13 +103,13 @@ export default function EmailTemplates() {
     }, 350);
     return () => clearTimeout(t);
   }, [cur?.id, cur?.subjectTemplate, cur?.bodyTemplate, previewCase?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (patch: Partial<Tpl>) => setTemplates((ts) => ts.map((t) => t.id === sel ? { ...t, ...patch } : t));
+  const set = (patch: Partial<Tpl>) => setTemplates((ts) => (ts ?? []).map((t) => t.id === sel ? { ...t, ...patch } : t));
 
   const save = async (t: Tpl) => {
     try {
       const r = await api<{ template: Tpl }>(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateIds: t.attachDocTemplateIds ?? [] }) });
       // The server may have de-duplicated the name (macOS-style _1); reflect what it stored.
-      if (r?.template?.name && r.template.name !== t.name) setTemplates((ts) => ts.map((x) => x.id === t.id ? { ...x, name: r.template.name } : x));
+      if (r?.template?.name && r.template.name !== t.name) setTemplates((ts) => (ts ?? []).map((x) => x.id === t.id ? { ...x, name: r.template.name } : x));
       setSaved(true); setTimeout(() => setSaved(false), 1200);
     } catch (e: any) { setErr(e?.message || 'Could not save.'); }
   };
@@ -90,7 +122,7 @@ export default function EmailTemplates() {
   const archive = async (t: Tpl) => {
     if (!window.confirm(`Archive "${t.name}"? It stops appearing in the drafter and workflow.`)) return;
     await api(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ isActive: false }) }).catch(() => {});
-    setTemplates((ts) => ts.filter((x) => x.id !== t.id)); setSel(null);
+    setTemplates((ts) => (ts ?? []).filter((x) => x.id !== t.id)); setSel(null);
   };
   const insertPlaceholder = (key: string) => {
     if (!cur) return;
@@ -112,22 +144,39 @@ export default function EmailTemplates() {
         <button onClick={create} style={{ ...btn, height: 34, padding: '0 14px', fontSize: 13, fontWeight: 700, background: '#5A27E0', color: '#fff', border: 'none', borderRadius: 9, display: 'inline-flex', alignItems: 'center' }}>New Template</button>
       </div>
       {err && <div style={{ ...card, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca' }}>{err}</div>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid #e8eaf0' }}>
+        <div role="tablist" style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          {TABS.map((k) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 'none', background: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: tab === k ? '#5A27E0' : '#64748b', borderBottom: `2px solid ${tab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>
+              {k}{templates ? <span style={{ marginLeft: 6, fontWeight: 600, color: '#94a3b8' }}>{counts[k] ?? 0}</span> : null}
+            </button>
+          ))}
+        </div>
+        <div style={{ position: 'relative', marginLeft: 'auto', width: 260, maxWidth: '100%', marginBottom: 6 }}>
+          <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex' }}><Search size={16} /></span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search templates" aria-label="Search templates" style={{ ...input, paddingLeft: 32 }} />
+        </div>
+      </div>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
         {/* List */}
-        <div style={{ ...card, width: 220, flex: 'none', padding: 8, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto' }}>
-          {templates.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>No templates yet.</div>}
-          {templates.map((t) => (
+        <div style={{ ...card, width: 260, flex: 'none', padding: 8, maxHeight: 'calc(100vh - 240px)', overflowY: 'auto' }}>
+          {templates === null && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>Loading…</div>}
+          {templates !== null && sections.length === 0 && <div style={{ fontSize: 12.5, color: '#94a3b8', padding: 8 }}>{templates.length === 0 ? 'No templates yet.' : 'No templates match.'}</div>}
+          {sections.map(([sec, list]) => (<div key={sec} style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', padding: '8px 9px 4px' }}>{sec} <span style={{ fontWeight: 600 }}>{list.length}</span></div>
+          {list.map((t) => (
             <button key={t.id} onClick={() => setSel(t.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: sel === t.id ? '#F2EEFC' : 'transparent', cursor: 'pointer', marginBottom: 2 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{t.category === 'Engine' ? engineName(t.name) : t.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{label(t)}</div>
               <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category === 'Engine' ? (engine[t.name]?.to ?? 'Engine') : `${t.category} · ${t.styleTag}`}</div>
             </button>
           ))}
+          </div>))}
         </div>
 
         {/* Editor */}
         {cur ? (
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 'calc(100vh - 190px)', overflowY: 'auto', paddingRight: 4 }}>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 'calc(100vh - 240px)', overflowY: 'auto', paddingRight: 4 }}>
             <div style={card}>
               {cur.category === 'Engine' && engine[cur.name] ? (
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginBottom: 8, alignItems: 'baseline' }}>

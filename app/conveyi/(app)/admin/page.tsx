@@ -4,7 +4,7 @@ import { FirmDetails, MySignature } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
 import { RulesPanel } from './RulesPanel';
 
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fallbackMatterRef } from '@/lib/ref-name';
 import EmailTemplates from './EmailTemplates';
 import NewMatter from './NewMatter';
@@ -12,7 +12,7 @@ import { ADMIN_TABS_IN_NAV, type AdminTab } from '@/app/shared/AppNav';
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
-import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check } from '@/app/shared/icons';
+import { Inbox, PenLine, FolderKanban, Settings, Target, Calendar, CheckCircle, Sparkles, Check, Search } from '@/app/shared/icons';
 import { decisionTask } from './EngineWork';
 import TaskList from './TaskList';
 import { DocGenerate } from './DocGenerate';
@@ -44,6 +44,18 @@ interface DocTemplate {
   sort_order: number;
   created_at: string;
 }
+
+/** Doc Packs tabs: the stage of the case that makes the document; the firm's own (not in the flow) last. */
+const DOC_TABS = ['All', 'Instruction', 'Pre-Exchange', 'Exchange', 'Completion', "Firm's Own"] as const;
+type DocTab = (typeof DOC_TABS)[number];
+const docTabOf = (t: DocTemplate): Exclude<DocTab, 'All'> => {
+  const stage = t.usage?.step.split(',')[0].trim() ?? '';
+  if (!t.usage) return "Firm's Own";
+  if (stage === 'Instruction') return 'Instruction';
+  if (stage === 'Contract & Exchange') return 'Exchange';
+  if (stage === 'Completion') return 'Completion';
+  return 'Pre-Exchange';
+};
 
 const TOKEN_KEY = 'cl_token';
 
@@ -657,6 +669,23 @@ function AdminPageInner() {
   }, []);
   const [status, setStatus] = useState('');
   const [docTemplates, setDocTemplates] = useState<DocTemplate[]>([]);
+  const [docLoaded, setDocLoaded] = useState(false);
+  const [docTab, setDocTab] = useState<DocTab>('All');
+  const [docQ, setDocQ] = useState('');
+  // Doc packs by the stage that makes them, then who they go to; the words typed narrow it.
+  const docSections = useMemo(() => {
+    const words = docQ.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const m = new Map<string, DocTemplate[]>();
+    for (const t of docTemplates) {
+      if (docTab !== 'All' && docTabOf(t) !== docTab) continue;
+      const hay = `${t.name} ${t.description ?? ''} ${t.usage?.step ?? ''} ${t.usage?.to ?? ''} ${t.file_name}`.toLowerCase();
+      if (!words.every((w) => hay.includes(w))) continue;
+      const sec = t.usage ? `To ${t.usage.to.split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}` : 'Not In The Flow';
+      m.set(sec, [...(m.get(sec) ?? []), t]);
+    }
+    return [...m.entries()].sort((a, b) => Number(a[0] === 'Not In The Flow') - Number(b[0] === 'Not In The Flow') || a[0].localeCompare(b[0]));
+  }, [docTemplates, docTab, docQ]);
+  const docCounts = useMemo(() => { const c: Record<string, number> = { All: docTemplates.length }; for (const t of docTemplates) { const k = docTabOf(t); c[k] = (c[k] ?? 0) + 1; } return c; }, [docTemplates]);
   const [genFor, setGenFor] = useState<{ id: string; name: string; to: string | null } | null>(null);
   const [docUpload, setDocUpload] = useState({ name: '', description: '' });
   const docFocus = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc') : null;
@@ -684,7 +713,7 @@ function AdminPageInner() {
         api('/admin/import-analytics').then(setImportStats).catch(() => {});
       }
       if (tab === 'templates') setTemplates((await api<{ templates: Template[] }>('/admin/templates')).templates);
-      if (tab === 'docpacks') setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates);
+      if (tab === 'docpacks') { setDocTemplates((await api<{ templates: DocTemplate[] }>('/admin/doc-templates')).templates); setDocLoaded(true); }
       if (tab === 'policy') setPolicy((await api<{ policy: any }>('/admin/policies')).policy);
       if (tab === 'audit') { const r = await api<{ logs: any[]; next?: string | null }>('/admin/audit?limit=100'); setAudit(r.logs); setAuditNext(r.next ?? null); }
       if (tab === 'team') setUsers((await api<{ users: any[] }>('/admin/users')).users);
@@ -1285,9 +1314,24 @@ function AdminPageInner() {
         {tab === 'docpacks' && (
           <>
             {genFor && <DocGenerate templateId={genFor.id} templateName={genFor.name} sendTo={genFor.to} onClose={() => setGenFor(null)} />}
-            {/* Template list */}
-
-            {docTemplates.map((tpl) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', borderBottom: '1px solid #e8eaf0', marginBottom: 12 }}>
+              <div role="tablist" style={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                {DOC_TABS.map((k) => (
+                  <button key={k} type="button" role="tab" aria-selected={docTab === k} onClick={() => setDocTab(k)} style={{ border: 'none', background: 'none', padding: '8px 12px', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: docTab === k ? '#5A27E0' : '#64748b', borderBottom: `2px solid ${docTab === k ? '#5A27E0' : 'transparent'}`, marginBottom: -1, fontFamily: 'inherit' }}>
+                    {k}{docLoaded ? <span style={{ marginLeft: 6, fontWeight: 600, color: '#94a3b8' }}>{docCounts[k] ?? 0}</span> : null}
+                  </button>
+                ))}
+              </div>
+              <div style={{ position: 'relative', marginLeft: 'auto', width: 260, maxWidth: '100%', marginBottom: 6 }}>
+                <span style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', display: 'flex' }}><Search size={16} /></span>
+                <input value={docQ} onChange={(e) => setDocQ(e.target.value)} placeholder="Search documents" aria-label="Search documents" style={{ ...input, paddingLeft: 32, margin: 0 }} />
+              </div>
+            </div>
+            {!docLoaded && <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 2px' }}>Loading…</div>}
+            {docLoaded && docSections.length === 0 && <div style={{ fontSize: 13, color: '#94a3b8', padding: '8px 2px' }}>{docTemplates.length ? 'No documents match.' : 'No documents yet.'}</div>}
+            {docSections.map(([sec, list]) => (<div key={sec} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '.05em', margin: '4px 2px 6px' }}>{sec} <span style={{ fontWeight: 600 }}>{list.length}</span></div>
+            {list.map((tpl) => (
               <div key={tpl.id} id={`doc-${tpl.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} style={{ ...card, ...(docFocus && docFocus === tpl.name ? { borderColor: '#5A27E0', boxShadow: '0 0 0 3px #ede9fe' } : {}) }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div>
@@ -1337,6 +1381,7 @@ function AdminPageInner() {
                 </div>
               </div>
             ))}
+            </div>))}
 
             {/* Create with AI — the headline feature, up top */}
             <div style={{ ...card, background: 'linear-gradient(180deg,#faf5ff,#ffffff)', borderColor: '#d8b4fe', boxShadow: '0 2px 10px rgba(124,58,237,0.10)' }}>
