@@ -600,7 +600,7 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
   );
 }
 
-export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place). */ stepKey?: string }) {
+export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow', stepKey }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' | 'step' | 'todo'; /** section 'step': the one due step whose action to show (the Tasks list opens it in place). */ stepKey?: string }) {
   // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
   const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
   const [disTick, setDisTick] = useState(0);
@@ -1288,6 +1288,22 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         </div>
       )}
 
+      {section === 'todo' && (<>
+        {(view.due?.length ?? 0) > 0 && (
+          <div className="ep-grid" style={{ marginBottom: 12 }}>
+            {view.due!.map((d) => (
+              <div key={d.key} className="ep-tile">
+                <b>{d.title}</b>
+                {d.dueDate && <span className="d" style={{ display: 'block', color: d.dueDate < new Date().toISOString().slice(0, 10) ? '#b91c1c' : '#b45309', fontWeight: 600 }}>By {fmtDay(d.dueDate)}</span>}
+                <div className="acts" style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{dueAction(d.key) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} hideWhenEmpty />
+        {Object.values(s.issues ?? {}).some((i) => i.status === 'open' || i.status === 'negotiating') && <div style={{ margin: '14px 0 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>}
+      </>)}
+
       {section === 'tasks' && (<>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div><AddNote busy={busy} cmd={cmd} /></div>
       {disErr && <div className="eg-err">{disErr}</div>}
@@ -1363,7 +1379,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           <select className="ep-input" value={bd.sourceChannel} onChange={(e) => setBd({ ...bd, sourceChannel: e.target.value })}>
             {['email', 'portal', 'phone', 'letter', 'in_person', 'manual', 'provider'].map((k) => <option key={k} value={k}>arrived by {pretty(k)}</option>)}
           </select>
-          <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record details (creates a hard-stop decision)</button>
+          <button className="ep-btn" style={{ margin: 0 }} disabled={busy || !bd.accountName || bd.sortCode.length !== 6 || bd.accountNumber.length !== 8} onClick={() => { void cmd({ type: 'record_bank_details', payeeKind: bd.payeeKind, payeeRef: bd.payeeRef || null, details: { sortCode: bd.sortCode, accountNumber: bd.accountNumber, accountName: bd.accountName, firmName: bd.firmName || null }, sourceChannel: bd.sourceChannel }); setBd({ ...bd, accountName: '', sortCode: '', accountNumber: '' }); }}>Record Details</button>
         </div>
         <NoticeBox n={noticeFor('money')} />
         {s.payments.length > 0 && <div style={{ marginTop: 8, fontSize: 12.5 }}><b>Payments authorised:</b> {s.payments.map((x) => `${pretty(x.purpose)} → ${pretty(x.payeeKind)}${x.amountPennies ? ` ${gbp(x.amountPennies)}` : ''} (${fmtDay(x.at)})`).join(' · ')}</div>}
@@ -1371,8 +1387,8 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
       <div className="ep-sec">Case</div>
       <div data-lane="case">
-        {!s.manualHandling.required && !closed && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Why does this case need manual handling?'); if (reason) void cmd({ type: 'mark_manual_handling', reason }); }}>Take over manually</button>}
-        {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Abandonment reason (client_withdrew, seller_withdrew, chain_collapsed, gazumped, survey, finance_failed, conflict, other):', 'client_withdrew'); if (reason) { const detail = ask('Detail (optional):', '') ?? ''; void cmd({ type: 'abandon_matter', reason, detail: detail || null }); } }}>Abandon case</button>}
+        {!s.manualHandling.required && !closed && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Why does this case need manual handling?'); if (reason) void cmd({ type: 'mark_manual_handling', reason }); }}>Take Over Manually</button>}
+        {!completed && !s.abandoned && <button className="ep-btn" disabled={busy} onClick={() => { const reason = ask('Abandonment reason (client_withdrew, seller_withdrew, chain_collapsed, gazumped, survey, finance_failed, conflict, other):', 'client_withdrew'); if (reason) { const detail = ask('Detail (optional):', '') ?? ''; void cmd({ type: 'abandon_matter', reason, detail: detail || null }); } }}>Abandon Case</button>}
       </div>
       <NoticeBox n={noticeFor('case')} />
       </>)}

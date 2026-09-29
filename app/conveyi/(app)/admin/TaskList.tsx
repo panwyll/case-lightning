@@ -4,7 +4,7 @@ import { PasswordInput } from '@/app/shared/engine/PasswordInput';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
-import { IssueReview, StepReview } from '@/app/shared/engine/StepReview';
+import { CaseTodoReview, IssueReview, StepReview } from '@/app/shared/engine/StepReview';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
 import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
@@ -251,6 +251,7 @@ export default function TaskList({ who }: { who: string }) {
             const isDecision = i.ref?.type === 'decision';
             const isStep = i.ref?.type === 'step';
             const isIssue = i.ref?.type === 'issue';
+            const isDeadline = i.ref?.type === 'case';
             const key = `${i.matterId}:${i.id}`;
             const isOpen = open === key;
             const due = dueIn(i, now);
@@ -273,8 +274,8 @@ export default function TaskList({ who }: { who: string }) {
                         ? <span className="tl-pw"><PasswordInput autoFocus value={pwd} onChange={setPwd} onEnter={() => void unlock(i)} onEscape={() => setUnlockingId(null)} style={{ width: 190 }} /><button type="button" className="tl-btn go" disabled={!pwd || unlockBusy} onClick={() => void unlock(i)}>{unlockBusy ? 'Unlocking…' : 'Unlock'}</button></span>
                         : <button type="button" className="tl-btn go" onClick={() => { setUnlockingId(i.id); setPwd(''); }}>Enter Password</button>)}
                       {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
-                      {isIssue
-                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => setOpen(isOpen ? null : key)}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
+                      {isIssue || isDeadline
+                        ? <button type="button" className={`tl-btn${isOpen ? ' on' : ''}`} aria-label={isOpen ? 'Collapse' : 'Review'} onClick={() => { setOpen(isOpen ? null : key); if (isOpen) void load(); }}>{isOpen ? null : 'Review '}<ChevronRight size={14} style={{ transform: isOpen ? 'rotate(90deg)' : undefined }} /></button>
                         : <a className="tl-btn" href={paths.matter(i.matterId)}>Open Case <ChevronRight size={14} /></a>}
                     </>}
                   <button type="button" className="tl-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={() => void dismiss(i)}><X size={16} /></button>
@@ -288,6 +289,11 @@ export default function TaskList({ who }: { who: string }) {
                 {isOpen && isIssue && (
                   <div className="tl-open tl-step">
                     <IssueReview api={api} matterId={i.matterId} issueId={i.ref.id} onDone={() => { markDone(i.ref.id); setOpen((cur) => (cur === key ? null : cur)); void load(); }} />
+                  </div>
+                )}
+                {isOpen && isDeadline && (
+                  <div className="tl-open tl-step">
+                    <CaseTodoReview api={api} matterId={i.matterId} />
                   </div>
                 )}
                 {isOpen && isStep && (

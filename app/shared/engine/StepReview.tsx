@@ -46,3 +46,14 @@ export function IssueReview({ api, matterId, issueId, onDone }: { api: Api; matt
     </div>
   );
 }
+
+/** A date we owe coming up (or gone): the case's own to-do list in place, since the way through is one of its steps, decisions or issues. */
+export function CaseTodoReview({ api, matterId }: { api: Api; matterId: string }) {
+  const eng = useEngine(matterId, api);
+  if (!eng.view) return <div style={{ fontSize: 13, color: eng.err ? '#b91c1c' : '#94a3b8', padding: 4 }}>{eng.err ?? 'Loading…'}</div>;
+  return (
+    <div>
+      <WorkPanel matterId={matterId} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section="todo" />
+    </div>
+  );
+}
