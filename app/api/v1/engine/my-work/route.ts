@@ -1,4 +1,5 @@
 import { NextRequest, after } from 'next/server';
+import { dismissedRefs } from '@/lib/server/task-dismissal';
 import { recheckLockedDocuments } from '@/lib/server/document-unlock';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
@@ -29,7 +30,11 @@ export async function GET(req: NextRequest) {
     const assistant = user.role === 'ASSISTANT';
     const all = (q.all === '1' && canCover(user)) || assistant;
     const who = q.user ?? user.userId;
-    const { items, matters } = await workItems(user, { all, who, limit: q.limit });
+    const listed = await workItems(user, { all, who, limit: q.limit });
+    // Dismissed tasks are out of the tray (restorable from Dismissed).
+    const gone = await dismissedRefs(user.tenantId);
+    const items = listed.items.filter((i) => !gone.has(`${i.matterId}|${i.ref.type}:${i.ref.id}`));
+    const matters = listed.matters;
     // A state stored before waits recorded their opener: read the opening event's actor from the log.
     const missing = items.filter((i) => !i.openedBy && i.openedBySeq != null);
     if (missing.length) {

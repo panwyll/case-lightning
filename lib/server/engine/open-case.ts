@@ -4,6 +4,7 @@
  * replayed the same log; here the state is projected once and every view is derived from it.
  * The single-purpose routes still exist and call the same builders.
  */
+import { dismissedRefs } from '../task-dismissal';
 import { dueSteps } from './due';
 import { query, queryOne } from '../db';
 import { boardSelect, type BoardMatter } from '../board';
@@ -64,6 +65,9 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
   ]);
   const profile = profileOf(state.transactionType);
   const chain = await chainView(svc, tenantId, state).catch(() => null);
+  // Tasks a person dismissed stay out of the case's tray and counts (restorable from Dismissed).
+  const gone = await dismissedRefs(tenantId, matterId);
+  const kept = <T extends { eventId: string }>(ds: T[]) => ds.filter((d) => !gone.has(`${matterId}|decision:${d.eventId}`));
   return {
     state,
     chain,
@@ -74,13 +78,13 @@ export async function engineView(svc: EngineService, tenantId: string, matterId:
     blockers: stageBlockers(state),
     waits: openWaits(state).map((w) => ({ ...w, chase: sla[w.key] ? nextChase(w, sla[w.key], new Date()) : null })),
     // Everything the log holds (the panel shows the engine's conclusions) …
-    pendingDecisions: pendingDecisions(state),
+    pendingDecisions: kept(pendingDecisions(state)),
     // What is waiting on us (due.ts): the Tasks tab lists it with the form that records each.
-    due: dueSteps(state, new Date()),
+    due: dueSteps(state, new Date()).filter((d) => !gone.has(`${matterId}|step:${d.key}`)),
     documentCount: docCount,
     people: Object.fromEntries(people.map((p) => [p.id, p.name])) as Record<string, string>,
     // … and what a person may act on (addendum 3 §2).
-    surfacedDecisions: surfacedDecisions(state),
+    surfacedDecisions: kept(surfacedDecisions(state)),
     levels: subflows,
     contracts: COMPLETION_CONTRACTS,
     matter: matter ? { matterRef: matter.matter_ref, propertyAddress: matter.property_address, legacyStage: matter.stage, shadowMode: !!matter.shadow_mode, assignedTo: matter.assigned_to, handler: matter.handler, sandbox: !!matter.sandbox, sandboxScenario: matter.sandbox_scenario, sandboxStep: matter.sandbox_step } : null,

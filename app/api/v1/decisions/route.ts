@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { dismissedRefs } from '@/lib/server/task-dismissal';
 import { z } from 'zod';
 import { assertFeature } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
@@ -22,7 +23,8 @@ export async function GET(req: NextRequest) {
     const user = await requireUser();
     const q = z.object({ matterId: z.string().uuid().optional(), limit: z.coerce.number().int().positive().max(500).default(100) }).parse(Object.fromEntries(req.nextUrl.searchParams));
     const svc = engine();
-    const decisions = await onlyVisible(user, await svc.eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit }));
+    const gone = await dismissedRefs(user.tenantId, q.matterId ?? null);
+    const decisions = (await onlyVisible(user, await svc.eventStore.listPendingDecisions(user.tenantId, { matterId: q.matterId ?? null, limit: q.limit }))).filter((d) => !gone.has(`${d.matterId}|decision:${d.eventId}`));
     // Scoped to one case, each row carries its task sentence (the same words the Tasks page uses).
     const state = q.matterId ? await svc.getState(user.tenantId, q.matterId).catch(() => null) : null;
     return ok({ decisions: decisions.map((d) => ({ ...d, options: offeredOptions(d.kind, d.options), sourceOpenedByMe: d.openedBy.includes(user.userId), what: state && state.decisions[d.eventId] ? decisionSentence(state, state.decisions[d.eventId]) : null, ...(state && state.decisions[d.eventId] ? (({ kind, chip }) => ({ taskKind: kind, chip }))(decisionTask(state, state.decisions[d.eventId])) : {}) })) });

@@ -163,7 +163,6 @@ const REQUEST_TITLE: Record<string, string> = {
   request_lender_consent: "The lender's consent", request_discharge: 'Discharge of the old mortgage', exchanged_agent: 'Exchanged: tell the agent', completed_agent: 'Completed: tell the agent',
   enquiries_to_seller_solicitor: 'Our enquiries',
 };
-const PROPOSAL_CHIP: Record<string, string> = { signing_pack: 'Proposal: signing pack', survey_advice: 'Proposal: survey advice to client', acknowledgement: 'Proposal: acknowledgement', chase: 'Proposal: chase', client_update: 'Proposal: client update', search_order: 'Proposal: search order', enquiry_draft: 'Proposal: enquiry', id_check_request: 'Proposal: ID check', proof_of_funds_request: 'Proposal: form to client' };
 /** What a standard client update is about, in the words of its subject line. */
 const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
 const DECISION_CHIP: Record<string, string> = { search: 'Search result', enquiry: 'Enquiry reply', mortgage: 'Mortgage offer', title: 'Official copies', id_check: 'ID / AML result', proof_of_funds: 'Proof of funds', bank_details: 'Bank details', report_on_title: 'Report on title', contract: 'Contract', management_pack: 'Management pack', requisition: 'HMLR requisition', escalation: 'Escalation', auto_clear: 'Auto-cleared', note_actions: 'Note to apply', lease: 'Lease' };
@@ -179,7 +178,8 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const who = role === 'seller_solicitor' ? "seller's solicitor" : role === 'buyer_solicitor' ? "buyer's solicitor" : role === 'search_provider' ? 'search provider' : role === 'lender' ? 'lender' : role === 'hmlr' ? 'HMLR' : role ? role.replace(/_/g, ' ') : null;
     // A first request is not a chase: it asks for the thing the first time.
     const request = sub === 'chase' && det.kind === 'request';
-    const chip = sub === 'acknowledgement' ? `Proposal: ${who ?? 'client'} acknowledgement` : request ? `Proposal: request to ${who ?? 'them'}` : sub === 'chase' ? `Proposal: chase ${who ?? 'them'}` : PROPOSAL_CHIP[sub] ?? 'Proposal';
+    // The chip says who it goes to (the title says what): everything in the tray is for approving, so "Proposal" says nothing.
+    const chip = sub === 'search_order' ? 'Order' : sub === 'acknowledgement' || request || sub === 'chase' ? `To ${who ?? 'client'}` : sub === 'enquiry_draft' ? "To seller's solicitor" : 'To client';
     // Proposed only because the case is in manual handling (it would otherwise have gone on its own): the chip says so.
     return { kind: `proposal:${sub}`, chip: det.manualMode ? `Manual Mode · ${chip}` : chip };
   }
@@ -211,36 +211,44 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const det = pr.detail as Record<string, unknown>;
     const to = typeof det.recipientRole === 'string' ? det.recipientRole.replace(/_/g, ' ') : det.kind === 'id_check_request' || det.kind === 'proof_of_funds_request' ? 'the client' : pr.action === 'client_update' ? 'the client' : 'the other side';
     const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+    // Every task is the action it approves, in words: "Send the client the ID check", "Ask the lender for a redemption statement".
+    const whom = (role: unknown) => (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side');
+    const low = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
     switch (pr.action) {
-      case 'acknowledgement': return `Received: ${typeof det.what === 'string' ? det.what : 'what they sent'}`;
+      case 'acknowledgement': return `Acknowledge ${typeof det.what === 'string' ? det.what : 'what they sent'} to ${whom(det.recipientRole ?? 'client')}`;
       case 'chase': {
-        // What is asked for, in words: the request's own title, or what the chase is chasing.
-        if (det.kind === 'request') return REQUEST_TITLE[String(det.template ?? '')] ?? cap(String(det.template ?? 'request').replace(/^request_/, '').replace(/_/g, ' '));
+        if (det.kind === 'request') {
+          const t = String(det.template ?? '');
+          if (t === 'exchanged_agent') return 'Tell the estate agent contracts are exchanged';
+          if (t === 'completed_agent') return 'Tell the estate agent completion has happened';
+          if (t === 'enquiries_to_seller_solicitor') return "Send our enquiries to the seller's solicitor";
+          return `Ask ${whom(det.recipientRole)} for ${low(REQUEST_TITLE[t] ?? t.replace(/^request_/, '').replace(/_/g, ' '))}`;
+        }
         const key = typeof det.waitKey === 'string' ? det.waitKey : '';
-        const what = WAIT_LABEL[key] ?? (key ? cap(key.replace(/_/g, ' ')) : 'What we are waiting for');
         const subj = typeof det.subject === 'string' && det.subject && !/^[0-9a-f-]{20,}$/i.test(det.subject) ? ` (${SEARCH_NAME[det.subject] ?? det.subject.replace(/_/g, ' ')})` : '';
-        return `${what}${subj}`;
+        return `Chase ${whom(det.recipientRole)} for ${low(WAIT_LABEL[key] ?? 'what they owe')}${subj}`;
       }
-      case 'search_order': return `${SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? '')}`;
+      case 'search_order': { const n = SEARCH_NAME[cleanSubject ?? String(det.searchType ?? '')] ?? cleanSubject ?? String(det.searchType ?? ''); return `Order the ${n}${/search/i.test(n) ? '' : ' search'}`; }
       case 'enquiry_draft': {
-        // What the enquiry is for, at a glance; the words themselves are in the task.
-        if (typeof det.title === 'string') return det.title;
         const k = pr.dedupKey;
-        if (k.startsWith('enquiry_draft:survey:')) return 'Enquiries from the survey';
-        if (/^enquiry_draft:access/.test(k)) return 'Access for specialists';
-        if (k.startsWith('enquiry_draft:evidence')) return 'Evidence from the seller';
-        if (k.startsWith('enquiry_draft:client:')) return "On the client's instruction";
-        if (typeof det.question === 'string' && det.question) return "From the seller's forms";
-        const first = typeof det.subject === 'string' ? det.subject.split(/[.:\n]/)[0].trim() : '';
-        return first.length > 60 ? `${first.slice(0, 57).replace(/\s+\S*$/, '')}…` : first || 'Enquiry to the seller';
+        const about = typeof det.title === 'string' ? det.title
+          : k.startsWith('enquiry_draft:survey:') ? 'from the survey'
+          : /^enquiry_draft:access/.test(k) ? 'access for specialists'
+          : k.startsWith('enquiry_draft:evidence') ? 'evidence from the seller'
+          : k.startsWith('enquiry_draft:client:') ? "on the client's instruction"
+          : typeof det.question === 'string' && det.question ? "from the seller's forms" : '';
+        return `Send enquiries to the seller's solicitor${about ? `: ${low(about)}` : ''}`;
       }
       case 'client_update': {
-        if (det.kind === 'id_check_request') return typeof det.label === 'string' ? det.label : 'The client';
-        if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Further evidence requested' : 'Proof-of-funds form';
+        if (det.kind === 'id_check_request') { const l = typeof det.label === 'string' ? det.label : ''; return `Send ${!l || /^the client$/i.test(l) ? 'the client' : l} the ID check`; }
+        if (det.kind === 'proof_of_funds_request') return det.followUpOf ? 'Ask the client for more proof of funds' : 'Send the client the proof-of-funds form';
+        if (det.kind === 'signing_pack') return 'Send the client the signing pack';
+        if (det.kind === 'survey_advice') return 'Send the client your advice on the survey';
         const tpl = typeof det.template === 'string' ? det.template : '';
         const ctx = (det.context ?? {}) as Record<string, unknown>;
-        if (tpl === 'progress_update' && typeof ctx.done === 'string') return cap(ctx.done);
-        return UPDATE_TITLE[tpl] ?? cap(tpl.replace(/_/g, ' '));
+        if (tpl === 'progress_update' && typeof ctx.done === 'string') return `Update the client: ${low(ctx.done)}`;
+        if (tpl === 'file_copy') return `Send the client a copy of ${typeof ctx.what === 'string' ? ctx.what : 'the file'}`;
+        return `Email the client: ${low(UPDATE_TITLE[tpl] ?? tpl.replace(/_/g, ' '))}`;
       }
       default: return `${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
     }
@@ -336,7 +344,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       id: `do:step:${d.key}`,
       bucket: 'do',
       what: d.title,
-      unblocks: d.detail ?? null,
+      // A step is its own title; the line under it is only ever something to know before doing it.
+      unblocks: null,
       actionOwner: 'conveyancer',
       urgency: overdue ? 'critical' : d.dueDate ? 'attention' : 'normal',
       workstream: d.lane,

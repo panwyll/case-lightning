@@ -6,7 +6,7 @@ import { House } from '@/app/shared/engine/CaseloadMap';
 import { DecisionPanel } from '@/app/shared/engine/DecisionPanel';
 import { type WorkItem , KIND_LABEL , pretty , chipLabel , quickApprovable } from '@/app/shared/engine/types';
 import { paths } from '@/lib/paths';
-import { ChevronRight, CheckCircle, Search } from '@/app/shared/icons';
+import { ChevronRight, CheckCircle, Search, X } from '@/app/shared/icons';
 import { Waiting, WORK_CSS } from './EngineWork';
 
 /**
@@ -17,6 +17,14 @@ import { Waiting, WORK_CSS } from './EngineWork';
 const CSS = `
 .tl-bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
 .tl-bar label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#64748b}
+.tl-x{width:28px;height:28px;padding:0;border:0;background:none;color:#94a3b8;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.tl-x:hover{background:#fee2e2;color:#b91c1c}
+.tl-dis{margin-top:14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
+.tl-dis > button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:10px 14px;font:inherit;font-size:13px;font-weight:800;color:#0f172a;cursor:pointer;text-align:left}
+.tl-dis .n{color:#94a3b8;font-weight:600}
+.tl-dis-row{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #f1f5f9;font-size:13px;color:#334155}
+.tl-dis-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-dis-row .m{color:#94a3b8;font-size:12px;white-space:nowrap}
 .tl-q{position:relative;flex:1;min-width:220px;max-width:420px}
 .tl-q svg{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:#94a3b8}
 .tl-q input{width:100%;box-sizing:border-box;border:1px solid #d0d5dd;border-radius:8px;padding:6px 10px 6px 32px;font-size:12.5px;font-family:inherit}
@@ -85,6 +93,23 @@ export default function TaskList({ who }: { who: string }) {
   const [checkedAt, setCheckedAt] = useState<Date | null>(null);
   const [sort, setSort] = useState<Sort>('urgency');
   const [q, setQ] = useState('');
+  // Tasks dismissed from the tray: listed under Dismissed, restorable.
+  const [dismissed, setDismissed] = useState<Array<{ id: string; matterId: string; ref: string; title: string | null; dismissedAt: string; dismissedBy: string | null; matterRef: string | null; propertyAddress: string | null }>>([]);
+  const [showDismissed, setShowDismissed] = useState(false);
+  const loadDismissed = useCallback(() => { api<{ dismissed: typeof dismissed }>('/tasks/dismissed').then((r) => setDismissed(r.dismissed)).catch(() => {}); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadDismissed(); }, [loadDismissed]);
+  const dismiss = async (i: WorkItem) => {
+    const key = i.ref?.id;
+    if (!key) return;
+    markDone(key);
+    try { await api('/tasks/dismissed', { method: 'POST', body: JSON.stringify({ matterId: i.matterId, ref: `${i.ref.type}:${i.ref.id}`, title: sentence(i.what) }) }); loadDismissed(); window.dispatchEvent(new Event('conveyi:counts')); }
+    catch (e: unknown) { setDone((cur) => { const n = new Map(cur); n.delete(key); return n; }); setQuickErr({ id: key, text: e instanceof Error ? e.message : 'Could not dismiss it.' }); }
+  };
+  const restore = async (id: string) => {
+    setDismissed((cur) => cur.filter((d) => d.id !== id));
+    await api('/tasks/dismissed', { method: 'POST', body: JSON.stringify({ restore: id }) }).catch(() => {});
+    void load(); loadDismissed(); window.dispatchEvent(new Event('conveyi:counts'));
+  };
   /** Every word typed matches the case (address, reference, clients) or the task itself. */
   const matches = useCallback((i: WorkItem) => { const hay = `${i.propertyAddress ?? ''} ${i.matterRef ?? ''} ${(i.clients ?? []).join(' ')} ${i.what} ${i.chip ?? ''}`.toLowerCase(); return q.trim().toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w)); }, [q]);
   const [open, setOpen] = useState<string | null>(null);
@@ -232,6 +257,7 @@ export default function TaskList({ who }: { who: string }) {
                       {i.kind === 'issue:send_failed:retry' && <button type="button" className="tl-btn go" disabled={retrying === i.ref.id} onClick={() => void retry(i.matterId, i.ref.id)}>{retrying === i.ref.id ? 'Sending…' : 'Try Again'}</button>}
                       <a className="tl-btn" href={`${paths.matter(i.matterId)}${i.ref?.type === 'issue' ? '?tab=tasks' : ''}`}>{i.ref?.type === 'issue' ? 'Open issue' : 'Open case'} <ChevronRight size={14} /></a>
                     </>}
+                  <button type="button" className="tl-x" title="Dismiss (restore it from Dismissed)" aria-label="Dismiss" onClick={() => void dismiss(i)}><X size={16} /></button>
                 </div>
                 {isOpen && isDecision && (
                   <div className="tl-open">
@@ -245,6 +271,19 @@ export default function TaskList({ who }: { who: string }) {
       ))}
       </div>}
       {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
+      {dismissed.length > 0 && (
+        <div className="tl-dis">
+          <button type="button" onClick={() => setShowDismissed((v) => !v)} aria-expanded={showDismissed}><ChevronRight size={16} style={{ transform: showDismissed ? 'rotate(90deg)' : undefined }} />Dismissed<span className="n">{dismissed.length}</span></button>
+          {showDismissed && dismissed.map((d) => (
+            <div key={d.id} className="tl-dis-row">
+              <span className="t">{d.title ?? d.ref}</span>
+              <span className="m">{d.propertyAddress ?? d.matterRef ?? ''}</span>
+              <span className="m">{stamp(d.dismissedAt)}{d.dismissedBy ? ` · ${d.dismissedBy}` : ''}</span>
+              <button type="button" className="tl-btn" onClick={() => void restore(d.id)}>Restore</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

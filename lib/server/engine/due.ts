@@ -37,7 +37,7 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
 
   // ── Before exchange ──
   if (!completed && (seller || remo || toe) && s.title.status === 'awaiting')
-    add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them', detail: 'Read as they are filed.' });
+    add({ key: 'official_copies', lane: 'title', title: 'Get the official copies from HM Land Registry and file them' });
   if (seller && p.hasExchange && !s.contractPack.sentAt && s.propertyForms.status === 'received' && s.title.status !== 'awaiting')
     add({ key: 'contract_pack', lane: 'exchange', title: "Send the contract pack to the buyer's solicitor" });
   if (tt === 'leasehold_sale' && s.managementPack.status === 'not_started')
@@ -48,16 +48,16 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && unreplied.length && !exchanged)
     add({ key: 'buyer_enquiries', lane: 'enquiries', title: `Reply to the buyer's enquiries (${unreplied.length})` });
   if (buyer && p.hasExchange && s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged)
-    add({ key: 'exchange', lane: 'exchange', title: 'Exchange contracts', detail: 'Everything is in place: exchange when the client instructs.' });
+    add({ key: 'exchange', lane: 'exchange', title: 'Exchange contracts' });
   if (seller && p.hasExchange && s.stage === 'pre_exchange' && s.exchange.conditionsMet && !exchanged)
-    add({ key: 'exchange', lane: 'exchange', title: 'Exchange contracts', detail: "Everything is in place on our side: exchange with the buyer's solicitor." });
+    add({ key: 'exchange', lane: 'exchange', title: 'Exchange contracts' });
 
   // ── Exchange to completion ──
   if (exchanged && !s.completion.statementGeneratedAt && !completed)
-    add({ key: 'completion_statement', lane: 'exchange', title: 'Check the completion statement and send it to the client', detail: 'Drafted on exchange under Documents.' });
+    add({ key: 'completion_statement', lane: 'exchange', title: 'Check the completion statement and send it to the client' });
   if (s.hasLender && (buyer || remo) && isResolved(s.mortgage.status) && !s.deeds.certificateOfTitleAt && !completed && (exchanged || remo)) {
     const due = completionDate ? day(subtractWorkingDays(new Date(completionDate), 5, EW_CALENDAR)) : null;
-    add({ key: 'certificate_of_title', lane: 'pre_completion_checks', title: 'Send the certificate of title to the lender', detail: "Through the lender's portal; it releases the advance.", dueDate: due });
+    add({ key: 'certificate_of_title', lane: 'pre_completion_checks', title: 'Send the certificate of title to the lender', dueDate: due });
   }
   const lenderChecks = s.hasLender && (buyer || remo) && !completed && (exchanged || (remo && s.stage === 'pre_completion'));
   if (lenderChecks && !s.preCompletion.bankruptcySearchAt) add({ key: 'bankruptcy_search', lane: 'pre_completion_checks', title: 'Bankruptcy search (K16) against every borrower' });
@@ -80,10 +80,10 @@ export function dueSteps(s: MatterState, now: Date = new Date()): DueStep[] {
   if (seller && completed && !paid('client')) add({ key: 'balance_to_client', lane: 'completion', title: 'Authorise the balance to the client' });
   if (completed && (seller || remo) && s.redemption.status === 'received') add({ key: 'mortgage_redeemed', lane: 'redemption', title: 'Record the mortgage as redeemed' });
   if (completed && p.registration === 'ap1' && (buyer || toe) && !s.postCompletion.sdltSubmittedAt && !s.sdltNotRequiredAt)
-    add({ key: 'sdlt', lane: 'registration', title: 'File the SDLT return', dueDate: day(addWorkingDays(new Date(s.completion.confirmedAt!), 10, EW_CALENDAR)), detail: 'Due within 14 days of completion.' });
+    add({ key: 'sdlt', lane: 'registration', title: 'File the SDLT return', dueDate: day(addWorkingDays(new Date(s.completion.confirmedAt!), 10, EW_CALENDAR)) });
   const sdltDone = !(buyer || toe) || !!s.postCompletion.sdltSubmittedAt || !!s.sdltNotRequiredAt;
   if (completed && p.registration === 'ap1' && sdltDone && !s.postCompletion.ap1SubmittedAt)
-    add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null, detail: s.preCompletion.prioritySearchExpiresAt ? 'Before the priority period ends.' : undefined });
+    add({ key: 'ap1', lane: 'registration', title: 'Lodge the AP1 at HM Land Registry', dueDate: s.preCompletion.prioritySearchExpiresAt ?? null });
   if (completed && tt === 'leasehold_purchase' && !(s.postCompletion as { noticeOfAssignmentAt?: string | null }).noticeOfAssignmentAt)
     add({ key: 'notice_of_assignment', lane: 'leasehold', title: 'Serve notice of assignment (and charge) on the landlord' });
   if (s.stage === 'post_completion' && stageBlockers(s).length === 0)

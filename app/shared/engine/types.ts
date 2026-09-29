@@ -316,12 +316,17 @@ export const STAGES = ['instruction', 'pre_contract', 'contract_review', 'pre_ex
 
 /** The short chip on a task row when the API did not send one. */
 export const chipLabel = (kind: string): string => (kind === 'auto_clear' ? 'Auto-cleared' : (KIND_LABEL[kind] ?? pretty(kind)).split(' — ')[0]);
-/** Proposals a person can approve from the row: a message whose whole content is the standard template (an acknowledgement, a status update). */
-export const quickApprovable = (kind: string | null | undefined): boolean => kind === 'proposal:acknowledgement' || kind === 'proposal:client_update';
+/**
+ * Approvable from the row: anything the system sends or does from a standard template or a fixed action
+ * (acknowledgements, updates, requests, chases, forms, the ID check, the signing pack, a search order).
+ * Not what needs reading first: a document that arrived, or words a model wrote (enquiries, survey advice).
+ */
+const NEEDS_READING = new Set(['proposal:enquiry_draft', 'proposal:survey_advice']);
+export const quickApprovable = (kind: string | null | undefined): boolean => !!kind && kind.startsWith('proposal:') && !NEEDS_READING.has(kind);
 
 export const KIND_LABEL: Record<string, string> = {
   issue: 'Issue',
-  proposal: 'Proposal',
+  proposal: 'To send',
   search: 'Search result',
   enquiry: 'Enquiry reply',
   mortgage: 'Mortgage offer',
