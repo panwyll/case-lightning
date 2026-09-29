@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X } from '@/app/shared/icons';
 import type { Api } from './types';
+import { LenderPicker } from './LenderPicker';
 
 interface Contact { id: string; email: string; name: string | null; role: string | null; phone: string | null }
 interface ClientRow { name: string; email: string; phone: string; contactId: string | null }
@@ -192,7 +193,7 @@ export function CaseDetailsEdit({ matterId, api, matter, side, onSaved }: { matt
               <h3>Money And Dates</h3>
               <div className="cd-grid">
                 {input('Price', 'price', { prefix: true })}
-                {input('Lender', 'lender')}
+                <div className="cd-f"><span>Lender</span><LenderPicker api={api} value={f.lender} onChange={(v) => setF({ ...f, lender: v })} className="cd-in" /></div>
                 {input('Exchange Target', 'exchange', { type: 'date' })}
                 {input('Completion Target', 'completion', { type: 'date' })}
               </div>

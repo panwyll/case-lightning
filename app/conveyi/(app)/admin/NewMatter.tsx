@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import { composeAddress, EMPTY_ADDR, UK_POSTCODE_RE, type AddrParts } from '@/lib/address';
 import { X } from '@/app/shared/icons';
+import { LenderPicker } from '@/app/shared/engine/LenderPicker';
 import { ChainPicker, type ChainOption } from '@/app/shared/engine/ChainPicker';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -261,6 +262,11 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         <div style={S.sec}>{weAre}{clients.length > 1 ? 's' : ''} (our client{clients.length > 1 ? 's' : ''})</div>
         {clients.map(person)}
         <button type="button" onClick={() => setClients((cs) => [...cs, blank()])} style={{ ...S.link, marginTop: 6 }}>+ Add another {weAre.toLowerCase()}</button>
+        {/* The clients' lender sits with them: the new mortgage on a purchase or remortgage, the one to pay off on a sale. */}
+        <div style={{ maxWidth: 360, marginTop: 10 }}>
+          <label style={S.lbl}>{track === 'SALE' ? 'Current mortgage lender' : 'Lender'}</label>
+          <LenderPicker api={api} value={lender} onChange={setLender} inputStyle={S.input} />
+        </div>
 
         {track !== 'REMORTGAGE' && (
           <>
@@ -295,11 +301,10 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
           </>
         )}
 
-        <div style={S.sec}>Agent and Lender</div>
+        <div style={S.sec}>Estate Agent</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 140px', minWidth: 0 }}><label style={S.lbl}>Estate agent</label><input value={agentName} onChange={(e) => setAgentName(e.target.value)} placeholder="Hunters" style={S.input} /></div>
           <div style={{ flex: '2 1 180px', minWidth: 0 }}><label style={S.lbl}>Agent email</label><input type="email" inputMode="email" value={agentEmail} onChange={(e) => setAgentEmail(e.target.value)} placeholder="sales@agent.co.uk" style={S.input} />{show('agentEmail')}</div>
-          <div style={{ flex: '1 1 140px', minWidth: 0 }}><label style={S.lbl}>Lender</label><input value={lender} onChange={(e) => setLender(e.target.value)} placeholder="Santander" style={S.input} /></div>
         </div>
 
         {err && <div style={{ fontSize: 12, color: '#b91c1c', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', margin: '10px 0 0' }}>{err}</div>}
