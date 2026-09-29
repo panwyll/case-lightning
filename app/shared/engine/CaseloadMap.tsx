@@ -40,13 +40,13 @@ const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> =
 };
 
 export const CASELOAD_CSS = `
-.cm-done{display:none;align-items:stretch;gap:8px;margin-left:auto}
-.cm-done div{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:92px;padding:6px 12px;border:1px solid #e6e8ee;border-radius:12px;background:#fff}
-.cm-done b{font-size:20px;font-weight:800;color:#0f172a;line-height:1.1;font-variant-numeric:tabular-nums}
-.cm-done span{font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
-.cm-done div.rec{border-color:#16a34a;background:#f0fdf4}
+.cm-head{container-type:inline-size}
+.cm-done{display:none;align-items:center;border:1px solid #e2e8f0;background:#fff;border-radius:999px;padding:0 4px;height:30px;font-size:12.5px;color:#334155;white-space:nowrap}
+.cm-done div{display:inline-flex;align-items:baseline;gap:5px;padding:0 9px;line-height:1}
+.cm-done div + div{border-left:1px solid #eef1f5}
+.cm-done b{font-weight:800;color:#0f172a;font-variant-numeric:tabular-nums}
 .cm-done div.rec b{color:#15803d}
-@media (min-width:1400px){.cm-done{display:flex}}
+@container (min-width: 1600px){.cm-done{display:inline-flex}}
 .cm-head{display:flex;align-items:center;gap:12px;flex-wrap:nowrap;margin-bottom:14px;min-width:0}
 .cm-head > *{flex-shrink:0}
 .cm-head .cm-chips{flex:1 1 auto;min-width:0;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
@@ -208,9 +208,9 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
         </div>}
         {!compact && completions && (
           <div className="cm-done" aria-label="Completions">
-            <div><b>{completions.month}</b><span>Completed This Month</span></div>
-            <div><b>{completions.year}</b><span>This Year</span></div>
-            {completions.best && completions.best.n > 0 && <div className={completions.month >= completions.best.n && completions.month > 0 ? 'rec' : undefined}><b>{completions.best.n}</b><span>Best Month · {new Date(`${completions.best.month}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</span></div>}
+            <div><b>{completions.month}</b>Completed This Month</div>
+            <div><b>{completions.year}</b>This Year</div>
+            {completions.best && completions.best.n > 0 && <div className={completions.month >= completions.best.n && completions.month > 0 ? 'rec' : undefined}><b>{completions.best.n}</b>Best · {new Date(`${completions.best.month}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })}</div>}
           </div>
         )}
         {!compact && !hideBoard && (
