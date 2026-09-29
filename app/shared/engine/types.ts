@@ -383,7 +383,8 @@ export const pretty = (s: string) => s.replace(/_/g, ' ');
 // ── Caseload map + work list (docs/caseload-ux.md) ──────────────────────────
 export type HealthBand = 'normal' | 'attention' | 'delayed' | 'blocked' | 'critical';
 export const HEALTH_BANDS: HealthBand[] = ['normal', 'attention', 'delayed', 'blocked', 'critical'];
-export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'Needs attention', delayed: 'Delayed', blocked: 'Blocked', critical: 'Critical' };
+/** Green nothing waiting on us · blue waiting on us, on time · yellow others late · red we are late · black both, or in jeopardy. */
+export const HEALTH_LABEL: Record<HealthBand, string> = { normal: 'On track', attention: 'With us', delayed: 'Others late', blocked: 'We are late', critical: 'Critical' };
 
 export interface HealthReason {
   code: string;

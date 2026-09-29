@@ -68,7 +68,7 @@ test('health: a case sitting in one phase with nothing outstanding becomes delay
   assert.ok(r.suggested, 'it suggests something');
 });
 
-test('health: a wait walks attention → delayed as its SLA passes, and always explains itself; a slow third party is never critical', async () => {
+test('health: a wait past its chase point is someone else late (yellow), and always explains itself; a slow third party is never critical', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: ['CON29'], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
@@ -83,7 +83,7 @@ test('health: a wait walks attention → delayed as its SLA passes, and always e
   let now = h.advanceDays(Math.ceil(rule.chaseAfter * 1.4) + 1);
   s = await h.svc.getState(TENANT, MATTER);
   let health = caseHealth(s, now);
-  assert.equal(health.band, 'attention');
+  assert.equal(health.band, 'delayed', 'the search provider is late: others late');
   const chase = health.reasons.find((r) => r.code === 'chase_due' && /search provider/.test(r.headline))!;
   assert.match(chase.headline, /search provider is \d+ working day/);
   assert.match(chase.why.join(' '), /No chase has gone out yet/);
@@ -105,7 +105,7 @@ test('health: a wait walks attention → delayed as its SLA passes, and always e
   }
 });
 
-test('health: an issue holding exchange reads as blocked; a critical issue outranks it; the map line names the case, not the code', async () => {
+test('health: an issue of ours holding exchange is with us (blue) while it is on time; a critical issue outranks it; the map line names the case, not the code', async () => {
   const h = harness();
   await h.svc.run(TENANT, MATTER, { type: 'enrol', actor: USER, hasLender: false, requiredSearches: [], requireProofOfFunds: false, requireExchangeAuthority: false });
   await h.svc.requestIdCheck(TENANT, MATTER, USER);
@@ -117,14 +117,14 @@ test('health: an issue holding exchange reads as blocked; a critical issue outra
   assert.equal(fresh.band, 'attention');
   assert.match(fresh.reasons[0].headline, /^Title defect \/ discrepancy to review — Restriction/);
   const health = caseHealth(s, h.advanceDays(5));
-  assert.equal(health.band, 'blocked');
+  assert.equal(health.band, 'attention', 'ours to resolve and not yet late');
   const r = health.reasons[0];
   assert.match(r.headline, /^Exchange blocked — Restriction in the register/);
   assert.ok(r.why.length >= 2 && r.suggested, 'the chain and the action are there');
   assert.equal(health.counts.blockingIssues, 1);
 
   const summary = summariseHealth(health);
-  assert.equal(summary.band, 'blocked');
+  assert.equal(summary.band, 'attention');
   assert.equal(summary.headline, r.headline);
   assert.deepEqual(summary.why, r.why);
 });
@@ -273,8 +273,9 @@ test('caseload: the queue row carries the health band, the coarse lifecycle and 
   const rows = await h.store.listQueue(TENANT, {});
   assert.equal(rows.length, 1);
   const row = rows[0];
-  assert.equal(row.health.band, 'blocked');
-  assert.match(row.health.headline ?? '', /Exchange blocked/);
+  // The row carries the case's own health, as the engine reads it now.
+  assert.equal(row.health.band, caseHealth(await h.svc.getState(TENANT, MATTER), new Date()).band);
+  assert.ok(row.health.headline, 'with the line that explains it');
   assert.equal(row.lifecycle, 'pre_exchange');
   assert.ok(row.dayOfCase >= 0);
   assert.equal(row.transactionType, 'freehold_purchase');

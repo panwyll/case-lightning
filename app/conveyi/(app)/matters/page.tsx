@@ -25,7 +25,7 @@ const CSS = `
 .cv-health{font-size:12px;font-weight:700}
 @media (max-width:820px){.cv-row{grid-template-columns:28px 1fr}.cv-cell,.cv-health{display:none}}
 `;
-const COLOUR: Record<string, string> = { normal: '#15803d', attention: '#b45309', delayed: '#c2410c', blocked: '#334155', critical: '#b91c1c' };
+const COLOUR: Record<string, string> = { normal: '#15803d', attention: '#1d4ed8', delayed: '#a16207', blocked: '#b91c1c', critical: '#111827' };
 const RANK: Record<string, number> = { critical: 0, blocked: 1, delayed: 2, attention: 3, normal: 4 };
 
 type Completions = { month: number; year: number; best: { month: string; n: number } | null };

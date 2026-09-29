@@ -20,6 +20,7 @@ import { DEFAULT_SLA, DEADLINE_LEAD, deadlineActions, dueActions, type SlaConfig
 import { ISSUE_KIND_SPEC, type Workstream } from './issues';
 import { awayNow, openIssues, openWaits, pendingDecisions, type MatterState, type Stage, type WaitState } from './types';
 import { profileOf } from './transactions';
+import { dueSteps } from './due';
 import { EW_CALENDAR, workingDaysBetween, type WorkingCalendar } from './working-days';
 
 export const HEALTH_BANDS = ['normal', 'attention', 'delayed', 'blocked', 'critical'] as const;
@@ -40,13 +41,49 @@ const OUR_DELAY = { late: 5, severe: 10 };
 const FRESH_ISSUE_DAYS = 3;
 export type HealthBand = (typeof HEALTH_BANDS)[number];
 
+/**
+ * The colour of a case, by whose move it is and whether anyone is late:
+ *   normal (green)    nothing waiting on us, nothing late;
+ *   attention (blue)  something waiting on us, all on time;
+ *   delayed (yellow)  someone else is late;
+ *   blocked (red)     we are late;
+ *   critical (black)  both, or the transaction is in jeopardy.
+ */
+function colourOf(s: MatterState, reasons: HealthReason[], now: Date): HealthBand {
+  const issueOf = (r: HealthReason) => (r.ref.type === 'issue' ? s.issues[r.ref.id] : undefined);
+  const oursIssue = (r: HealthReason) => { const i = issueOf(r); const who = i ? ISSUE_KIND_SPEC[i.kind]?.responsible : undefined; return !who || who === 'conveyancer' || who === 'mlro'; };
+  // The deal itself at risk: a jeopardy issue, or the offer or a notice to complete about to run out.
+  const jeopardy = reasons.some((r) => (r.code === 'issue_critical' && JEOPARDY.has(issueOf(r)?.kind ?? '')) || ((r.code === 'deadline_near' || r.code === 'deadline_passed') && r.band === 'critical' && /^(Mortgage offer|Notice to complete)/.test(r.headline)));
+  const today = now.toISOString().slice(0, 10);
+  const due = dueSteps(s, now);
+  const oursLate = reasons.some((r) =>
+    r.code === 'issue_stale' || r.code === 'deadline_passed' || r.code === 'hard_stop'
+    || (r.code === 'decision_pending' && r.band !== 'attention')
+    || (r.code === 'deadline_near' && r.band === 'critical')
+    || (r.code === 'issue_critical' && !JEOPARDY.has(issueOf(r)?.kind ?? '')))
+    || due.some((d) => !!d.dueDate && d.dueDate < today);
+  const theirsLate = reasons.some((r) =>
+    r.code === 'wait_overdue' || r.code === 'wait_escalated'
+    || (r.code === 'chase_due' && !/ is away$/.test(r.headline))
+    || (r.code === 'issue_blocking' && r.band === 'blocked' && !oursIssue(r))
+    || (r.code === 'stage_overrun' && r.band === 'delayed'));
+  const oursPending = due.length > 0 || reasons.some((r) =>
+    r.code === 'manual_handling' || r.code === 'decision_pending' || r.code === 'deadline_near'
+    || (r.code === 'issue_blocking' && oursIssue(r)));
+  if (jeopardy || (oursLate && theirsLate)) return 'critical';
+  if (oursLate) return 'blocked';
+  if (theirsLate) return 'delayed';
+  if (oursPending) return 'attention';
+  return 'normal';
+}
+
 /** Worst wins. Critical outranks blocked: a blocked case with a deadline on Friday is the one to ring today. */
 export const HEALTH_RANK: Record<HealthBand, number> = { normal: 0, attention: 1, delayed: 2, blocked: 3, critical: 4 };
 export const HEALTH_LABEL: Record<HealthBand, string> = {
-  normal: 'Moving normally',
-  attention: 'Needs attention',
-  delayed: 'Delayed',
-  blocked: 'Blocked',
+  normal: 'On track',
+  attention: 'With us',
+  delayed: 'Others late',
+  blocked: 'We are late',
   critical: 'Critical',
 };
 
@@ -284,8 +321,7 @@ export function caseHealth(s: MatterState, now: Date = new Date(), sla: SlaConfi
   }
 
   reasons.sort((a, b) => HEALTH_RANK[b.band] - HEALTH_RANK[a.band] || (b.ageWorkingDays ?? 0) - (a.ageWorkingDays ?? 0));
-  const band = reasons.reduce<HealthBand>((worst, r) => (HEALTH_RANK[r.band] > HEALTH_RANK[worst] ? r.band : worst), 'normal');
-  return { band, reasons, pace, counts };
+  return { band: colourOf(s, reasons, now), reasons, pace, counts };
 }
 
 /** The compact form the caseload map carries for every matter (one row, no drill-down). */

@@ -74,7 +74,7 @@ a.mx-li:hover{background:#fafafa}
 `;
 
 const BAND: Record<HealthBand, { fg: string; bg: string }> = {
-  normal: { fg: '#166534', bg: '#dcfce7' }, attention: { fg: '#92400e', bg: '#fef3c7' }, delayed: { fg: '#9a3412', bg: '#ffedd5' }, blocked: { fg: '#1e293b', bg: '#e2e8f0' }, critical: { fg: '#991b1b', bg: '#fee2e2' },
+  normal: { fg: '#166534', bg: '#dcfce7' }, attention: { fg: '#1e40af', bg: '#dbeafe' }, delayed: { fg: '#854d0e', bg: '#fef9c3' }, blocked: { fg: '#991b1b', bg: '#fee2e2' }, critical: { fg: '#fff', bg: '#111827' },
 };
 const money = (v: unknown) => { const n = Number(String(v ?? '').replace(/[£,\s]/g, '')); return Number.isFinite(n) && n > 0 ? `£${n.toLocaleString('en-GB')}` : ''; };
 const day = (iso: unknown) => (iso ? new Date(String(iso)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '');

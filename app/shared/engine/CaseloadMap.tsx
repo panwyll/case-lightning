@@ -32,11 +32,12 @@ const BAND_OF: Record<string, Band> = {
 export const bandOf = (lifecycle: string): Band => BAND_OF[lifecycle] ?? 'INSTRUCTION';
 
 const COLOUR: Record<HealthBand, { roof: string; wall: string; line: string }> = {
+  // Green on track · blue with us · yellow others late · red we are late · black both / jeopardy.
   normal: { roof: '#16a34a', wall: '#dcfce7', line: '#166534' },
-  attention: { roof: '#f59e0b', wall: '#fef3c7', line: '#b45309' },
-  delayed: { roof: '#ea580c', wall: '#ffedd5', line: '#9a3412' },
-  blocked: { roof: '#475569', wall: '#e2e8f0', line: '#1e293b' },
-  critical: { roof: '#dc2626', wall: '#fee2e2', line: '#991b1b' },
+  attention: { roof: '#2563eb', wall: '#dbeafe', line: '#1e40af' },
+  delayed: { roof: '#eab308', wall: '#fef9c3', line: '#a16207' },
+  blocked: { roof: '#dc2626', wall: '#fee2e2', line: '#991b1b' },
+  critical: { roof: '#111827', wall: '#d1d5db', line: '#000000' },
 };
 
 export const CASELOAD_CSS = `
@@ -200,11 +201,11 @@ export function CaseloadMap({ rows, rollup, onOpen, title, actions, corner, comp
         {compact ? <h2 className="eg-h1" style={{ fontSize: 15 }}>{title}<span style={{ marginLeft: 8, color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>{rows.length}</span></h2> : <h1 className="eg-h1">{title}</h1>}
         {!compact && <div className="cm-chips">
           {chip('all', rows.length, 'All')}
-          {chip('normal', rollup.normal, 'On track')}
-          {chip('attention', rollup.attention, 'Needs attention')}
-          {chip('delayed', rollup.delayed, 'Delayed')}
-          {chip('blocked', rollup.blocked, 'Blocked')}
-          {chip('critical', rollup.critical, 'Critical')}
+          {chip('normal', rollup.normal, HEALTH_LABEL.normal)}
+          {chip('attention', rollup.attention, HEALTH_LABEL.attention)}
+          {chip('delayed', rollup.delayed, HEALTH_LABEL.delayed)}
+          {chip('blocked', rollup.blocked, HEALTH_LABEL.blocked)}
+          {chip('critical', rollup.critical, HEALTH_LABEL.critical)}
         </div>}
         {!compact && completions && (
           <div className="cm-done" aria-label="Completions">
