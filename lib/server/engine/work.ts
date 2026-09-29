@@ -179,7 +179,44 @@ const REQUEST_TITLE: Record<string, string> = {
 };
 /** What a standard client update is about, in the words of its subject line. */
 const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
-const DECISION_CHIP: Record<string, string> = { search: 'Search result', enquiry: 'Enquiry reply', mortgage: 'Mortgage offer', title: 'Official copies', id_check: 'ID / AML result', proof_of_funds: 'Proof of funds', bank_details: 'Bank details', report_on_title: 'Report on title', contract: 'Contract', management_pack: 'Management pack', requisition: 'HMLR requisition', escalation: 'Escalation', auto_clear: 'Auto-cleared', note_actions: 'Note to apply', lease: 'Lease' };
+const DECISION_CHIP: Record<string, string> = { search: 'Search Result', enquiry: 'Enquiry Replies', mortgage: 'Mortgage Offer', title: 'Official Copies', id_check: 'ID Check Result', proof_of_funds: 'Client Proof Of Funds', bank_details: 'Bank Details', report_on_title: 'Client Report', contract: 'Draft Contract', management_pack: 'Management Pack', requisition: 'HMLR Requisition', escalation: 'Escalation', auto_clear: 'Auto-Cleared', note_actions: 'Note To Apply', lease: 'Lease' };
+
+/** Who a message is for, as a chip starts ("Client", "Seller's Solicitor") and as a sentence says it ("the client", "the seller's solicitor"). */
+const MSG_PARTY: Record<string, { chip: string; the: string }> = {
+  client: { chip: 'Client', the: 'the client' }, seller_solicitor: { chip: "Seller's Solicitor", the: "the seller's solicitor" }, buyer_solicitor: { chip: "Buyer's Solicitor", the: "the buyer's solicitor" },
+  lender: { chip: 'Lender', the: 'the lender' }, estate_agent: { chip: 'Agent', the: 'the estate agent' }, search_provider: { chip: 'Search Provider', the: 'the search provider' }, hmlr: { chip: 'HMLR', the: 'HM Land Registry' },
+};
+const partyOf = (role: unknown) => MSG_PARTY[String(role ?? 'client')] ?? { chip: 'Other Side', the: 'the other side' };
+/** Client messages that ask them to do something (a Client Request); the rest of a client's messages are updates. */
+const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'signing_pack', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
+/** A due step's chip: whose it is, and what kind of thing. */
+export const DUE_CHIP: Record<string, string> = {
+  official_copies: 'Official Copies', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Client Report', contract_pack: "Buyer's Solicitor Pack", management_pack_sale: 'Managing Agent Request',
+  contract_approved_sale: "Buyer's Solicitor Approval", contract_approve: 'Draft Contract', buyer_enquiries: "Buyer's Solicitor Enquiries", exchange: 'Exchange', completion_statement: 'Client Statement',
+  certificate_of_title: 'Lender Certificate', bankruptcy_search: 'Lender Check', priority_search: 'Lender Check', funds_request: 'Completion Funds', completion_monies: 'Completion Funds', consideration: 'Completion Funds',
+  completion_payment: "Seller's Solicitor Payment", redemption_payment: 'Lender Payment', completion: 'Completion', balance_to_client: 'Client Payment', mortgage_redeemed: 'Lender Redemption',
+  sdlt: 'HMRC Return', ap1: 'HMLR Application', notice_of_assignment: 'Landlord Notice', close_file: 'File Closure',
+};
+/** "your proof of funds form" → "proof-of-funds form": what an acknowledgement is for, without the letter's own pronoun. */
+const ackThing = (what: unknown): string => String(what ?? 'what they sent').replace(/^(your|the|their|our)\s+/i, '').replace(/\bproof of funds\b/i, 'proof-of-funds');
+
+/** The chip for a proposal: "<who> <kind>" — Client Acknowledgement, Seller's Solicitor Chaser, Lender Request, Client Update. */
+export function proposalChip(action: string, det: Record<string, unknown>): string {
+  const who = partyOf(det.recipientRole ?? (action === 'client_update' ? 'client' : null)).chip;
+  if (action === 'acknowledgement') return `${who} Acknowledgement`;
+  if (action === 'search_order') return 'Search Order';
+  if (action === 'enquiry_draft') return "Seller's Solicitor Enquiries";
+  if (action === 'chase' && det.kind === 'request') return det.template === 'exchanged_agent' || det.template === 'completed_agent' ? 'Agent Update' : `${who} Request`;
+  if (action === 'chase') return `${who} Chaser`;
+  if (action === 'client_update') {
+    const k = String(det.kind ?? det.template ?? '');
+    if (CLIENT_REQUESTS.has(k)) return 'Client Request';
+    if (k === 'survey_advice') return 'Client Advice';
+    if (k === 'file_copy') return 'Client Copy';
+    return 'Client Update';
+  }
+  return who;
+}
 
 /** What kind of task a decision is, for the chip on a list: a proposal by what it would send or do, anything else by what arrived. */
 export function decisionTask(s: MatterState, d: DecisionState): { kind: string; chip: string } {
@@ -187,13 +224,8 @@ export function decisionTask(s: MatterState, d: DecisionState): { kind: string; 
     const pr = s.proposals[d.eventId];
     const det = (pr?.detail ?? {}) as Record<string, unknown>;
     const sub = pr?.action === 'client_update' && typeof det.kind === 'string' ? det.kind : pr?.action ?? 'proposal';
-    // Who it is for rides in the chip: "Proposal: client acknowledgement", "Proposal: chase seller's solicitor".
-    const role = typeof det.recipientRole === 'string' ? det.recipientRole : null;
-    const who = role === 'seller_solicitor' ? "seller's solicitor" : role === 'buyer_solicitor' ? "buyer's solicitor" : role === 'search_provider' ? 'search provider' : role === 'lender' ? 'lender' : role === 'hmlr' ? 'HMLR' : role ? role.replace(/_/g, ' ') : null;
-    // A first request is not a chase: it asks for the thing the first time.
-    const request = sub === 'chase' && det.kind === 'request';
-    // The chip says who it goes to (the title says what): everything in the tray is for approving, so "Proposal" says nothing.
-    const chip = sub === 'search_order' ? 'Order' : sub === 'acknowledgement' || request || sub === 'chase' ? `To ${who ?? 'client'}` : sub === 'enquiry_draft' ? "To seller's solicitor" : 'To client';
+    // The chip is who and what kind ("Client Acknowledgement", "Lender Request"); the title says exactly what.
+    const chip = proposalChip(pr?.action ?? 'proposal', det);
     // Proposed only because the case is in manual handling (it would otherwise have gone on its own): the chip says so.
     return { kind: `proposal:${sub}`, chip: det.manualMode ? `Manual Mode · ${chip}` : chip };
   }
@@ -229,7 +261,7 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
     const whom = (role: unknown) => (role === 'seller_solicitor' ? "the seller's solicitor" : role === 'buyer_solicitor' ? "the buyer's solicitor" : role === 'search_provider' ? 'the search provider' : role === 'lender' ? 'the lender' : role === 'estate_agent' ? 'the estate agent' : role === 'hmlr' ? 'HM Land Registry' : role === 'client' ? 'the client' : 'the other side');
     const low = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
     switch (pr.action) {
-      case 'acknowledgement': return `Acknowledge ${typeof det.what === 'string' ? det.what : 'what they sent'} to ${whom(det.recipientRole ?? 'client')}`;
+      case 'acknowledgement': { const p = partyOf(det.recipientRole ?? 'client').the; return `Acknowledge receipt of ${p}'s ${ackThing(det.what)}`.replace("solicitor's's", "solicitor's"); }
       case 'chase': {
         if (det.kind === 'request') {
           const t = String(det.template ?? '');
@@ -262,7 +294,9 @@ export function decisionSentence(s: MatterState, d: DecisionState): string {
         const ctx = (det.context ?? {}) as Record<string, unknown>;
         if (tpl === 'progress_update' && typeof ctx.done === 'string') return `Update the client: ${low(ctx.done)}`;
         if (tpl === 'file_copy') return `Send the client a copy of ${typeof ctx.what === 'string' ? ctx.what : 'the file'}`;
-        return `Email the client: ${low(UPDATE_TITLE[tpl] ?? tpl.replace(/_/g, ' '))}`;
+        const asks: Record<string, string> = { property_forms_request: 'Send the client the property forms', deposit_request: 'Ask the client for the deposit', exchange_authority_request: 'Ask the client for authority to exchange', balance_request: 'Ask the client for the balance of the completion money', ownership_basis_request: 'Ask the clients how they will own the property', buildings_insurance_request: 'Ask the client for buildings insurance from exchange', request_survey_report: 'Ask the client for the survey report', mortgage_change_query: 'Ask the client what changed with the mortgage', completion_statement: 'Send the client the completion statement' };
+        if (asks[tpl]) return asks[tpl];
+        return `Update the client: ${low(UPDATE_TITLE[tpl] ?? tpl.replace(/_/g, ' '))}`;
       }
       default: return `${ENGINE_ACTION_LABEL[pr.action] ?? pr.action}`;
     }
@@ -365,6 +399,9 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       ...base,
       id: `do:step:${d.key}`,
       bucket: 'do',
+      kind: 'step',
+      // A step's chip is whose and what kind; a held-back send keeps its own ("Client Request").
+      chip: d.key.startsWith('resend:') ? (() => { const pr = s.proposals[d.key.slice('resend:'.length)]; return pr ? proposalChip(pr.action, pr.detail as Record<string, unknown>) : 'Held Back'; })() : DUE_CHIP[d.key] ?? undefined,
       what: d.title,
       // A step is its own title; the line under it is only ever something to know before doing it.
       unblocks: null,
