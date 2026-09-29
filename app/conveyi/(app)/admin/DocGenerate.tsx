@@ -7,7 +7,8 @@
 import { Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
-import { X } from '@/app/shared/icons';
+import { ArrowLeft, X } from '@/app/shared/icons';
+import { DocPage, type DocPreview } from './DocPage';
 
 interface CaseChoice { matterId: string; matterRef: string | null; propertyAddress: string | null; ready: boolean; reason: string | null; previous?: string | null }
 interface Generated { matterId: string; name: string; documentId: string; fileName: string; preview: string; webUrl: string | null; decisionEventId: string | null; capped: boolean }
@@ -47,7 +48,8 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState<Generated | null>(null);
   const [task, setTask] = useState<'idle' | 'busy' | 'made'>('idle');
-  const [preview, setPreview] = useState<{ preview: string; fileName: string; previous: string | null } | null>(null);
+  const [preview, setPreview] = useState<DocPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
   const [confirmAgain, setConfirmAgain] = useState(false);
 
   useEffect(() => {
@@ -67,9 +69,10 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
 
   const showPreview = async () => {
     if (!pick) return;
-    setBusy(true); setErr(null);
-    try { setPreview(await api<{ preview: string; fileName: string; previous: string | null }>(`/admin/doc-templates/${templateId}/generate`, { method: 'POST', body: JSON.stringify({ matterId: pick, preview: true }) })); }
-    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not preview it.'); }
+    // The preview replaces the case list (below a long list it could not be seen); Back returns to it.
+    setBusy(true); setErr(null); setPreview(null); setPreviewing(true);
+    try { setPreview(await api<DocPreview>(`/admin/doc-templates/${templateId}/generate`, { method: 'POST', body: JSON.stringify({ matterId: pick, preview: true }) })); }
+    catch (e: unknown) { setErr(e instanceof Error ? e.message : 'Could not preview it.'); setPreviewing(false); }
     finally { setBusy(false); }
   };
   const generate = async () => {
@@ -98,25 +101,27 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
       <div className="dg" role="dialog" aria-modal="true" aria-label={`Generate ${templateName}`}>
         <div className="dg-h"><b>Generate {templateName}</b><button type="button" className="dg-x" aria-label="Close" onClick={onClose}><X size={18} /></button></div>
         <div className="dg-b">
-          {!done ? (
+          {!done && previewing ? (
+            <>
+              <div className="dg-meta" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button type="button" className="dg-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px' }} onClick={() => setPreviewing(false)}><ArrowLeft size={16} />Back To Cases</button>
+                <span>{chosen?.propertyAddress ?? chosen?.matterRef ?? ''}{preview?.previous ? ` · produced ${preview.previous.slice(0, 10)}` : ''}</span>
+              </div>
+              <DocPage p={preview} />
+            </>
+          ) : !done ? (
             <>
               <input className="dg-in" placeholder="Search cases" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
               {cases === null && <div className="dg-meta">Loading…</div>}
               {cases && !shown.length && <div className="dg-meta">No open cases.</div>}
               {shown.map((c) => (
-                <button key={c.matterId} type="button" className={`dg-row${pick === c.matterId ? ' on' : ''}`} onClick={() => { setPick(c.matterId); setPreview(null); setConfirmAgain(false); }} title={c.reason ?? undefined}>
+                <button key={c.matterId} type="button" className={`dg-row${pick === c.matterId ? ' on' : ''}`} onClick={() => { setPick(c.matterId); setPreview(null); setPreviewing(false); setConfirmAgain(false); }} title={c.reason ?? undefined}>
                   <span className="a">{c.propertyAddress ?? c.matterRef ?? c.matterId}</span>
                   {c.matterRef && <span className="r">{c.matterRef}</span>}
                   {c.previous && <span className="sent">Sent {new Date(c.previous).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
                   {!c.ready && <span className="why">{c.reason}</span>}
                 </button>
               ))}
-              {preview && (
-                <div style={{ marginTop: 12 }}>
-                  <div className="dg-meta">{preview.fileName} · preview{preview.previous ? ` · produced ${preview.previous.slice(0, 10)}` : ''}</div>
-                  <pre className="dg-pre">{preview.preview || 'Nothing to show.'}</pre>
-                </div>
-              )}
             </>
           ) : (
             <>
@@ -129,7 +134,7 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
           {err ? <span className="dg-err">{err}</span> : confirmAgain && chosen?.previous ? <span className="dg-warn">Already produced for this case on {new Date(chosen.previous).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. Produce it again?</span> : task === 'made' ? <span className="dg-ok">Task created on the case.</span> : <span style={{ marginRight: 'auto' }} />}
           {!done ? (
             <>
-              <button type="button" className="dg-btn" disabled={!pick || busy} onClick={() => void showPreview()}>{busy && !confirmAgain ? <Spin>Loading…</Spin> : 'Preview'}</button>
+              {!previewing && <button type="button" className="dg-btn" disabled={!pick || busy} onClick={() => void showPreview()}>{busy && !confirmAgain ? <Spin>Loading…</Spin> : 'Preview'}</button>}
               {confirmAgain && <button type="button" className="dg-btn" onClick={() => setConfirmAgain(false)}>Cancel</button>}
               <button type="button" className="dg-btn go" disabled={!chosen?.ready || busy} title={chosen && !chosen.ready ? chosen.reason ?? undefined : undefined} onClick={() => void generate()}>{busy ? <Spin>Generating…</Spin> : confirmAgain ? 'Yes, Produce Again' : 'Generate'}</button>
             </>

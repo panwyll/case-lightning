@@ -11,9 +11,9 @@ import { BusyButton, Spin } from '@/app/shared/engine/BusyButton';
 import { CaseSearch, type CaseHit } from '@/app/shared/engine/CaseSearch';
 import { Search, Sparkles, Upload } from '@/app/shared/icons';
 import { DocGenerate } from './DocGenerate';
+import { DocPage as Page, type DocPreview as Preview } from './DocPage';
 
 interface DocTemplate { id: string; name: string; description: string | null; file_name: string; file_size_bytes: number; has_llm_prompts: boolean; usage?: { step: string; to: string } | null }
-type Preview = { preview: string; html: string | null; fileName: string; previous: string | null; sample?: boolean };
 
 /** Tabs: the stage of the case that makes the document; the firm's own (not in the flow) last. */
 const TABS = ['All', 'Instruction', 'Pre-Exchange', 'Exchange', 'Completion', "Firm's Own"] as const;
@@ -37,27 +37,12 @@ const PLACEHOLDERS: Array<[string, string]> = [
 ];
 
 const CSS = `
-.dp-page{background:#fff;border:1px solid #e8eaf0;border-radius:10px;padding:34px 40px;font:13.5px/1.6 Georgia,'Times New Roman',serif;color:#1e293b;box-shadow:0 1px 2px rgba(16,24,40,.04)}
-.dp-page h1,.dp-page h2,.dp-page h3{font-family:inherit;color:#0f172a;margin:14px 0 8px}
-.dp-page h1{font-size:19px}.dp-page h2{font-size:16px}.dp-page h3{font-size:14.5px}
-.dp-page p{margin:0 0 9px}
-.dp-page table{border-collapse:collapse;width:100%;margin:8px 0 12px}
-.dp-page td,.dp-page th{border:1px solid #e2e8f0;padding:5px 8px;vertical-align:top}
-.dp-page ul,.dp-page ol{margin:0 0 9px 20px;padding:0}
-.dp-page pre{white-space:pre-wrap;font:inherit;margin:0}
 .dp-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 12px 32px rgba(15,23,42,.14);padding:10px 12px;width:360px}
 .dp-menu table{font-size:12px;border-collapse:collapse;width:100%}
 .dp-menu td{padding:3px 0;border-top:1px solid #f1f5f9;vertical-align:top}
 .dp-menu td:first-child{font-family:ui-monospace,monospace;color:#5A27E0;padding-right:10px;white-space:nowrap}
 @media (max-width:900px){.dp-split{flex-direction:column}.dp-list{width:100% !important;max-height:none !important}.dp-page{padding:20px}}
 `;
-
-function Page({ p }: { p: Preview | null }) {
-  if (!p) return <div className="dp-page" style={{ color: '#94a3b8', fontFamily: 'inherit' }}><Spin>Loading…</Spin></div>;
-  return p.html
-    ? <div className="dp-page" dangerouslySetInnerHTML={{ __html: p.html }} />
-    : <div className="dp-page"><pre>{p.preview || 'Nothing to show.'}</pre></div>;
-}
 
 export default function DocPacks() {
   const [docs, setDocs] = useState<DocTemplate[] | null>(null);
