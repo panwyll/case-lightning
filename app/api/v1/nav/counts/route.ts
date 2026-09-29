@@ -1,6 +1,7 @@
 import { assertFeature, missingFor } from '@/lib/server/config';
 import { requireUser } from '@/lib/server/session';
-import { workItems, canCover } from '@/lib/server/engine/my-work';
+import { workItems } from '@/lib/server/engine/my-work';
+import { dismissedRefs } from '@/lib/server/task-dismissal';
 import { assistantMay } from '@/lib/server/engine/http';
 import { actionable } from '@/lib/server/engine/work';
 import { toFileCount } from '@/lib/server/mail/filing-queue';
@@ -20,8 +21,10 @@ export async function GET() {
     assertFeature('auth');
     const user = await requireUser();
     const [tasks, email] = await Promise.all([
-      // The badge is the Tasks page's own number: everything a person has to pick up (decisions, issues, escalations) across the caseload the page opens on ("Anyone" for cover roles).
-      workItems(user, { all: canCover(user) || user.role === 'ASSISTANT' }).then(({ items }) => actionable(items).filter((i) => user.role !== 'ASSISTANT' || assistantMay(i.kind)).length).catch(() => 0),
+      // The badge counts the person's own tasks: cases assigned to them (an assistant, who is on no case, counts what they may do anywhere). Dismissed tasks are out.
+      Promise.all([workItems(user, { all: user.role === 'ASSISTANT', who: user.userId }), dismissedRefs(user.tenantId)])
+        .then(([{ items }, gone]) => actionable(items).filter((i) => !gone.has(`${i.matterId}|${i.ref.type}:${i.ref.id}`) && (user.role !== 'ASSISTANT' || assistantMay(i.kind))).length)
+        .catch(() => 0),
       missingFor('graph').length === 0
         ? toFileCount(user).catch((e) => {
             // Fail soft to zero, but say why in the log: a missing email_queue table (migration
