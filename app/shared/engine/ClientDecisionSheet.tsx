@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { useEffect, useMemo, useState } from 'react';
 import type { Api, CaseDocument } from './types';
 
@@ -122,7 +123,7 @@ export function ClientDecisionSheet({ matterId, api, subject, decision, about = 
         <textarea className="ep-input" rows={2} value={words} onChange={(e) => setWords(e.target.value)} placeholder={wordsNeeded ? 'Required' : 'Optional'} />
       </label>
       <div className="cds-a">
-        <button className="ep-btn primary" disabled={busy || !ready} onClick={() => void submit()}>{busy ? 'Recording…' : 'Record'}</button>
+        <button className="ep-btn primary" disabled={busy || !ready} onClick={() => void submit()}>{busy ? <Spin>Recording…</Spin> : 'Record'}</button>
         <button className="ep-btn" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </div>

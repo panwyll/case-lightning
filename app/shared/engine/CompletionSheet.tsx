@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { useMemo, useState } from 'react';
 import type { CaseDocument, CompletionContract, TaskContextView } from './types';
 import { TASK_CONTEXT_CSS, TaskContextBody, TaskContextFacts } from './TaskContext';
@@ -87,7 +88,7 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
           {upload && (
             <label className="cs-up">
               <input type="file" accept="application/pdf,image/*" hidden onChange={(e) => void onFile(e.target.files?.[0])} disabled={uploading} />
-              <span className="ep-btn">{uploading ? 'Uploading…' : 'Upload a Scan'}</span>
+              <span className="ep-btn">{uploading ? <Spin>Uploading…</Spin> : 'Upload a Scan'}</span>
               {uploadErr && <span className="cs-err">{uploadErr}</span>}
             </label>
           )}
@@ -125,7 +126,7 @@ export function CompletionSheet({ contract, docs, context, busy, onSubmit, onCan
       ))}
       {row('Note', <input className="ep-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" style={{ width: 420, maxWidth: '100%' }} />)}
       <div className="cs-a">
-        <button className="ep-btn primary" disabled={busy || missing.length > 0} title={missing.length ? `Needs: ${missing.join(', ')}` : contract.effect} onClick={() => void submit()}>{busy ? 'Recording…' : /^Record\b/.test(contract.label) ? 'Record' : `Record ${contract.label}`}</button>
+        <button className="ep-btn primary" disabled={busy || missing.length > 0} title={missing.length ? `Needs: ${missing.join(', ')}` : contract.effect} onClick={() => void submit()}>{busy ? <Spin>Recording…</Spin> : /^Record\b/.test(contract.label) ? 'Record' : `Record ${contract.label}`}</button>
         <button className="ep-btn" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </div>

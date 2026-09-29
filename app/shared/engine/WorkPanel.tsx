@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { MarkComplete } from './MarkComplete';
 import { uploadCaseFile } from './uploadCaseFile';
@@ -1109,7 +1110,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         ? (stuck ? 'Still reading after five minutes.' : 'Reading…')
         : lastReport.unread ? 'The report could not be read. Read it again, or record the findings by hand.'
         : found || (lastReport.urgent === undefined ? 'Read before the legal points were asked for; read it again to get them.' : 'Nothing in it needs action.'),
-      action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? 'Reading…' : 'Read Again'}</button> : undefined,
+      action: lastReport.documentId ? <button className="ep-btn" disabled={busy || rereading === lastReport.documentId || (readingThis && !stuck)} onClick={() => setReadChoice(lastReport.documentId!)}>{readingThis && !stuck ? <Spin>Reading…</Spin> : 'Read Again'}</button> : undefined,
     } : null;
     const plan = s.survey.plan ?? null;
     const surveyWait = (s.waits ?? []).find((w) => w.key === 'survey' && w.closedAt === null) ?? null;
@@ -1196,7 +1197,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         };
       }),
       actions: !completed && toSign.some((d) => !done(d)) ? <>
-        <button className="ep-btn primary" disabled={busy || packBusy} onClick={() => void sendPack()}>{packBusy ? 'Sending…' : sg.packSentAt ? 'Send the Pack Again' : 'Send Signing Pack'}</button>
+        <button className="ep-btn primary" disabled={busy || packBusy} onClick={() => void sendPack()}>{packBusy ? <Spin>Sending…</Spin> : sg.packSentAt ? 'Send the Pack Again' : 'Send Signing Pack'}</button>
         {packNote && <span className="ep-note">{packNote}</span>}
       </> : null,
     });
@@ -1359,7 +1360,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
                         : proposes ? 'Chase due: it is proposed to you on the next sweep' : 'Chase due: it goes on the next sweep'}
                     </span>
                   ) : <span className="d" style={{ display: 'block' }}>No further chase scheduled</span>}
-                  <div className="acts" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{waitConfirm(w.key, w.subject)}<button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? 'Sending…' : chased ? 'Chase Again' : 'Chase Now'}</button></div>
+                  <div className="acts" style={{ marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{waitConfirm(w.key, w.subject)}<button className="ep-btn" style={{ margin: 0, padding: '3px 9px', fontSize: 11.5, ...(justSent ? { background: '#16a34a', borderColor: '#16a34a', color: '#fff' } : {}) }} disabled={busy || !w.chase || justSent || chasing === wk} onClick={async () => { setChasing(wk); setChaseFailed(null); const ok = await cmd({ type: 'chase_now', waitKey: w.key, subject: w.subject || null }); setChasing(null); if (ok) setChaseSent((m) => ({ ...m, [wk]: Date.now() })); else setChaseFailed(wk); }}>{justSent ? <><Check size={12} /> Sent</> : chasing === wk ? <Spin>Sending…</Spin> : chased ? 'Chase Again' : 'Chase Now'}</button></div>
                   {chaseFailed === wk && notice?.kind === 'err' && <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4, fontSize: 12, color: '#b91c1c' }}><span style={{ flex: 1 }}>Not sent: {notice.text}</span><button type="button" aria-label="Dismiss" onClick={() => setChaseFailed(null)} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button></div>}
                 </div>
               );

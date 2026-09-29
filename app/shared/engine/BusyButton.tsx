@@ -85,3 +85,8 @@ export function UploadButton({ label, onFiles, multiple = true, accept, classNam
     </>
   );
 }
+
+/** A busy label with its spinner, for a button whose own code shows the working state ("Saving…"). */
+export function Spin({ children }: { children: ReactNode }) {
+  return <span className="bb" style={{ display: 'inline-flex', gap: 6 }}><style>{BUSY_CSS}</style><Loader size={16} className="bb-spin" />{children}</span>;
+}

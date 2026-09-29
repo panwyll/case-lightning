@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { paths } from '@/lib/paths';
 import { CheckedDraft } from './CheckedDraft';
 import { PdfView, PDF_CSS } from './PdfView';
@@ -631,7 +632,7 @@ export function DecisionPanel({ eventId, inline = false, onResolved }: { eventId
                 ))}
                 {choice && (
                   <button className="dp-btn primary" disabled={busy || !engaged || (needsReason(choice) && !note.trim())} onClick={() => resolve(choice)}>
-                    {busy ? 'Recording…' : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
+                    {busy ? <Spin>Recording…</Spin> : `Confirm: ${optionLabel(choice)}${choice === 'approve' && openQueries > 0 ? ` (withdraws ${openQueries} open ${openQueries === 1 ? 'query' : 'queries'})` : ''}`}
                   </button>
                 )}
                 {flagged > 0 && <span className="dp-gate" style={{ marginLeft: 'auto' }}>{flagged} to look at</span>}

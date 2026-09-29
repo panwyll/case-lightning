@@ -12,6 +12,7 @@
  * Subscription management itself is delegated to the Stripe Billing Portal: the
  * "Manage subscription" button mints a portal session server-side and redirects.
  */
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 
 const TOKEN_KEY = 'cl_token';
@@ -218,7 +219,7 @@ export default function AccountPage() {
               disabled={busy}
               className="rounded-lg bg-violet px-4 py-2 font-semibold text-white shadow-violet disabled:opacity-60"
             >
-              {busy ? 'Working…' : 'Add payment details'}
+              {busy ? <Spin>Working…</Spin> : 'Add Payment Details'}
             </button>
           )}
           {summary.hasSubscription && (

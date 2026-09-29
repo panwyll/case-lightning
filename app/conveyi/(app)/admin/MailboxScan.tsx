@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { paths } from '@/lib/paths';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -247,7 +248,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
             <div style={{ fontSize: 12.5, color: '#b91c1c', marginTop: 8 }}>Last scan failed: {job.error}</div>
           )}
           <button onClick={start} disabled={busy} style={{ ...primary, marginTop: 12 }}>
-            {busy ? 'Starting…' : onboarded.length ? 'Scan again' : 'Scan my mailbox'}
+            {busy ? <Spin>Starting…</Spin> : onboarded.length ? 'Scan Again' : 'Scan My Mailbox'}
           </button>
         </div>
       )}
@@ -334,7 +335,7 @@ export default function MailboxScan({ onImported }: { onImported?: (count: numbe
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                 <button onClick={confirm} disabled={busy || chosen === 0} style={{ ...primary, opacity: chosen === 0 ? 0.5 : 1 }}>
-                  {busy ? 'Importing…' : `Import ${chosen} case${chosen === 1 ? '' : 's'}`}
+                  {busy ? <Spin>Importing…</Spin> : `Import ${chosen} case${chosen === 1 ? '' : 's'}`}
                 </button>
                 <button onClick={() => setSel(Object.fromEntries(proposed.map((c) => [c.id, true])))} style={link}>
                   Select all

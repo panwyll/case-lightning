@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 import { X } from '@/app/shared/icons';
 import type { Api } from './types';
@@ -67,7 +68,7 @@ export function ContactsCard({ matterId, api }: { matterId: string; api: Api }) 
       <label className="chk"><input type="checkbox" checked={draft.whatsappOptIn} onChange={(e) => setDraft((d) => ({ ...d, whatsappOptIn: e.target.checked }))} /> Has opted in to WhatsApp</label>
       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
         <button type="button" className="cc-btn" onClick={() => setEditing(null)}>Cancel</button>
-        <button type="button" className="cc-btn primary" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
+        <button type="button" className="cc-btn primary" disabled={busy} onClick={() => void save()}>{busy ? <Spin>Saving…</Spin> : 'Save'}</button>
       </div>
       {err && <div className="cc-err" style={{ gridColumn: '1 / -1' }}>{err}</div>}
     </div>

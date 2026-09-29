@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -204,7 +205,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
             </div>
             <div className="mx-ctl">
               {view?.matter?.sandbox && /^\d+\//.test(view.matter.sandboxStep ?? '') && !view.state.closedAt && (
-                <button className="mx-sel" style={{ cursor: 'pointer', background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' }} disabled={stepping} onClick={() => void nextStep()} title={view.matter.sandboxStep ?? undefined}>{stepping ? 'Stepping…' : 'Next Step'}</button>
+                <button className="mx-sel" style={{ cursor: 'pointer', background: '#5A27E0', color: '#fff', borderColor: '#5A27E0' }} disabled={stepping} onClick={() => void nextStep()} title={view.matter.sandboxStep ?? undefined}>{stepping ? <Spin>Stepping…</Spin> : 'Next Step'}</button>
               )}
               {view?.matter?.sandbox && <button className="mx-sel" style={{ cursor: 'pointer' }} onClick={() => { if (window.confirm('Retire this sandbox case? It leaves every list; its log stays.')) void api(`/engine/scenarios/${matterId}`, { method: 'DELETE' }).then(() => { window.location.href = '/conveyi/engine/scenarios'; }); }}>Retire Sandbox Case</button>}
               {band && <span className="mx-health" style={{ background: BAND[band].bg, color: BAND[band].fg }}><House band={band} size={18} />{HEALTH_LABEL[band]}</span>}
@@ -242,7 +243,7 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
                 {(files?.length ?? 0) > 0 && (
                   <div>
                     <h2 className="mx-h">Files</h2>
-                    <div className="mx-list"><ListToolbar tools={fileTools} placeholder="Search files" /><Grouped tools={fileTools} render={(f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}{f.documentId && <button className="mx-sel" style={{ cursor: 'pointer', marginLeft: 8, padding: '2px 8px', fontSize: 12 }} disabled={rereadingFile === f.documentId} onClick={() => { const id = f.documentId!; setRereadingFile(id); void api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }).then((r) => setFileNote((m) => ({ ...m, [id]: r.said }))).catch((e: unknown) => setFileNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' }))).finally(() => { setRereadingFile(null); void eng.load(); }); }}>{rereadingFile === f.documentId ? 'Reading…' : 'Read Again'}</button>}{f.documentId && fileNote[f.documentId] && <span className="d" style={{ marginLeft: 8 }}>{fileNote[f.documentId]}</span>}</div>} /></div>
+                    <div className="mx-list"><ListToolbar tools={fileTools} placeholder="Search files" /><Grouped tools={fileTools} render={(f) => <div key={f.id} className="mx-row">{f.webUrl ? <a className="mx-ellip" href={f.webUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#5A27E0', textDecoration: 'none' }}>{f.name}</a> : <span className="mx-ellip">{f.name}</span>}{f.documentId && <button className="mx-sel" style={{ cursor: 'pointer', marginLeft: 8, padding: '2px 8px', fontSize: 12 }} disabled={rereadingFile === f.documentId} onClick={() => { const id = f.documentId!; setRereadingFile(id); void api<{ said: string }>(`/documents/${id}/read-again`, { method: 'POST', body: '{}' }).then((r) => setFileNote((m) => ({ ...m, [id]: r.said }))).catch((e: unknown) => setFileNote((m) => ({ ...m, [id]: e instanceof Error ? e.message : 'Could not read it again.' }))).finally(() => { setRereadingFile(null); void eng.load(); }); }}>{rereadingFile === f.documentId ? <Spin>Reading…</Spin> : 'Read Again'}</button>}{f.documentId && fileNote[f.documentId] && <span className="d" style={{ marginLeft: 8 }}>{fileNote[f.documentId]}</span>}</div>} /></div>
                   </div>
                 )}
               </div>

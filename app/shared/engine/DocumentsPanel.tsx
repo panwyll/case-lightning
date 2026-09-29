@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { uploadCaseFile } from './uploadCaseFile';
 import { useEffect, useMemo, useState } from 'react';
 import { PasswordInput } from './PasswordInput';
@@ -176,7 +177,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
                 <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{d.fileName ?? d.id}</b>
                 <span className="ep-note">{fmtWhen(d.createdAt)}</span>
                 <PasswordInput className="ep-input" value={pw[d.id] ?? ''} onChange={(v) => setPw((m) => ({ ...m, [d.id]: v }))} onEnter={() => void unlock(d.id)} style={{ width: 200 }} />
-                <button className="ep-btn primary" disabled={unlocking === d.id || !(pw[d.id] ?? '').length} onClick={() => void unlock(d.id)}>{unlocking === d.id ? 'Unlocking…' : 'Unlock'}</button>
+                <button className="ep-btn primary" disabled={unlocking === d.id || !(pw[d.id] ?? '').length} onClick={() => void unlock(d.id)}>{unlocking === d.id ? <Spin>Unlocking…</Spin> : 'Unlock'}</button>
                 {unlockErr[d.id] && <span className="ep-note" style={{ color: '#b91c1c' }}>{unlockErr[d.id]}</span>}
               </div>
             ))}
@@ -197,7 +198,7 @@ export function DocumentsPanel({ matterId, api, view, events, busy, setBusy, onC
             <b style={{ minWidth: 0, overflowWrap: 'anywhere' }}>{dd.fileName ?? pretty((dd.docType ?? 'document').toLowerCase())}</b>
             <span className="ep-note">{e ? `${pretty(e.type)}${typeof e.payload.searchType === 'string' ? ` ${e.payload.searchType}` : ''}${typeof e.payload.enquiryId === 'string' ? ` ${e.payload.enquiryId}` : ''}${e.confidenceScore != null ? ` · confidence ${Math.round(e.confidenceScore * 100)}%` : ''}` : 'Filed'}</span>
             <a className="ep-note" href={`/api/v1/documents/${id}/raw`} target="_blank" rel="noopener noreferrer" onClick={(ev) => ev.stopPropagation()}>Open</a>
-            <button className="ep-btn" style={{ padding: '2px 8px', fontSize: 12 }} disabled={rereading === id} onClick={(ev) => { ev.stopPropagation(); void readAgain(id); }}>{rereading === id ? 'Reading…' : 'Read Again'}</button>
+            <button className="ep-btn" style={{ padding: '2px 8px', fontSize: 12 }} disabled={rereading === id} onClick={(ev) => { ev.stopPropagation(); void readAgain(id); }}>{rereading === id ? <Spin>Reading…</Spin> : 'Read Again'}</button>
             {reread[id] && <span className="ep-note">{reread[id]}</span>}
             {badge(reviewOf(id))}
             {checked.has(id) && <span className="ep-pill" style={{ background: '#f3efff', color: '#5A27E0' }}>Checked</span>}

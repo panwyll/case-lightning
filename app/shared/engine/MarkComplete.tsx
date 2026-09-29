@@ -4,6 +4,7 @@
  * from a document (the offer, the redemption statement, the register), the facts later rules run
  * on are asked for here; they can be skipped only with a reason, and the step still completes.
  */
+import { Spin } from './BusyButton';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Paperclip, X } from '@/app/shared/icons';
@@ -211,7 +212,7 @@ export function MarkComplete({ matterId, api, step, label, busy, cmd, lender: kn
           </div>
           <div className="mc-a">
             <button type="button" className="ep-btn" disabled={saving} onClick={reset}>Cancel</button>
-            <button type="button" className="ep-btn primary" disabled={saving || busy || !canSave} onClick={() => void save()}>{saving ? 'Saving…' : 'Mark Complete'}</button>
+            <button type="button" className="ep-btn primary" disabled={saving || busy || !canSave} onClick={() => void save()}>{saving ? <Spin>Saving…</Spin> : 'Mark Complete'}</button>
           </div>
         </div>
       </div>,

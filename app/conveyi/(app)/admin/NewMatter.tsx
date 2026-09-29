@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useState } from 'react';
 import { matterRefFrom, fallbackMatterRef } from '@/lib/ref-name';
 import { composeAddress, EMPTY_ADDR, UK_POSTCODE_RE, type AddrParts } from '@/lib/address';
@@ -210,7 +211,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
             <input autoFocus value={addr.postcode} autoComplete="postal-code" onChange={(e) => { setPart('postcode', e.target.value.toUpperCase()); setFound(null); setPcNote(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void lookup(); } }} placeholder="LS1 2AB" style={S.input} />
             {show('postcode')}
           </div>
-          <button type="button" onClick={() => void lookup()} disabled={looking} style={{ ...S.btn, marginBottom: 1 }}>{looking ? 'Looking…' : 'Find Address'}</button>
+          <button type="button" onClick={() => void lookup()} disabled={looking} style={{ ...S.btn, marginBottom: 1 }}>{looking ? <Spin>Looking…</Spin> : 'Find Address'}</button>
           <div style={{ flex: '1 1 120px', minWidth: 0 }}>
             <label style={S.lbl}>Country</label>
             <select value={addr.country} onChange={(e) => setPart('country', e.target.value)} style={S.input}>
@@ -325,7 +326,7 @@ export default function NewMatter({ onClose, onCreated }: { onClose: () => void;
         {tried && !ok && !err && <div style={{ fontSize: 12, color: '#b91c1c', margin: '10px 0 0' }}>Fix the fields marked above.</div>}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <button onClick={() => void create()} disabled={busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: busy ? 0.5 : 1 }}>{busy ? 'Creating…' : 'Create Case'}</button>
+          <button onClick={() => void create()} disabled={busy} style={{ ...S.btn, background: '#5A27E0', color: '#fff', border: 'none', opacity: busy ? 0.5 : 1 }}>{busy ? <Spin>Creating…</Spin> : 'Create Case'}</button>
           <button onClick={onClose} style={S.btn}>Cancel</button>
         </div>
       </div>

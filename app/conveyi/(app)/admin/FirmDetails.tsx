@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 
@@ -49,7 +50,7 @@ export function FirmDetails({ canEdit }: { canEdit: boolean }) {
           </select>
         </label>
       </div>
-      {canEdit && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+      {canEdit && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void save()}>{busy ? <Spin>Saving…</Spin> : 'Save'}</button>{note && <span className="fd-note">{note}</span>}</div>}
     </div>
   );
 }
@@ -77,7 +78,7 @@ export function MySignature() {
       <div className="fd-h">My Signature</div>
       <div ref={ref} className="fd-sig" contentEditable suppressContentEditableWarning role="textbox" aria-multiline="true" aria-label="My signature" />
       <div className="fd-a">
-        <button className="fd-btn" disabled={busy} onClick={() => void save(ref.current?.innerHTML ?? null)}>{busy ? 'Saving…' : 'Save'}</button>
+        <button className="fd-btn" disabled={busy} onClick={() => void save(ref.current?.innerHTML ?? null)}>{busy ? <Spin>Saving…</Spin> : 'Save'}</button>
         {sig.own && <button className="fd-btn2" disabled={busy} onClick={() => void save(null)}>Use The Firm&apos;s Standard</button>}
         {note && <span className="fd-note">{note}</span>}
       </div>
@@ -124,7 +125,7 @@ export function StorageCard() {
       <div style={{ fontSize: 13, color: '#334155', lineHeight: 1.6 }}>
         {c.inStorage} in storage · {c.inDatabase} in the database · {c.oneDriveOnly} only in OneDrive
       </div>
-      {left > 0 && c.configured && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void move()}>{busy ? 'Moving…' : 'Move To Storage'}</button>{note && <span className="fd-note">{note}</span>}</div>}
+      {left > 0 && c.configured && <div className="fd-a"><button className="fd-btn" disabled={busy} onClick={() => void move()}>{busy ? <Spin>Moving…</Spin> : 'Move To Storage'}</button>{note && <span className="fd-note">{note}</span>}</div>}
       {left === 0 && note && <div className="fd-a"><span className="fd-note">{note}</span></div>}
     </div>
   );

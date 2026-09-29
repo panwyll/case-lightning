@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { House } from '@/app/shared/engine/CaseloadMap';
@@ -212,7 +213,7 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
             <span className="right">
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
                 {chasing}
-                <button type="button" className="wk-send" disabled={sending !== null} onClick={() => void sendNow(i)}>{sending === i.id ? 'Sending…' : 'Send Now'}</button>
+                <button type="button" className="wk-send" disabled={sending !== null} onClick={() => void sendNow(i)}>{sending === i.id ? <Spin>Sending…</Spin> : 'Send Now'}</button>
               </div>
               {sendErr && sending === null && <div className="over" style={{ marginTop: 2 }}>{sendErr}</div>}
             </span>

@@ -4,6 +4,7 @@
  * the document's step can be picked; the result is shown so it can be checked, then opened on the
  * case, downloaded, or turned into a task to send.
  */
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { X } from '@/app/shared/icons';
@@ -128,15 +129,15 @@ export function DocGenerate({ templateId, templateName, sendTo, onClose }: { tem
           {err ? <span className="dg-err">{err}</span> : confirmAgain && chosen?.previous ? <span className="dg-warn">Already produced for this case on {new Date(chosen.previous).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}. Produce it again?</span> : task === 'made' ? <span className="dg-ok">Task created on the case.</span> : <span style={{ marginRight: 'auto' }} />}
           {!done ? (
             <>
-              <button type="button" className="dg-btn" disabled={!pick || busy} onClick={() => void showPreview()}>{busy && !confirmAgain ? 'Loading…' : 'Preview'}</button>
+              <button type="button" className="dg-btn" disabled={!pick || busy} onClick={() => void showPreview()}>{busy && !confirmAgain ? <Spin>Loading…</Spin> : 'Preview'}</button>
               {confirmAgain && <button type="button" className="dg-btn" onClick={() => setConfirmAgain(false)}>Cancel</button>}
-              <button type="button" className="dg-btn go" disabled={!chosen?.ready || busy} title={chosen && !chosen.ready ? chosen.reason ?? undefined : undefined} onClick={() => void generate()}>{busy ? 'Generating…' : confirmAgain ? 'Yes, Produce Again' : 'Generate'}</button>
+              <button type="button" className="dg-btn go" disabled={!chosen?.ready || busy} title={chosen && !chosen.ready ? chosen.reason ?? undefined : undefined} onClick={() => void generate()}>{busy ? <Spin>Generating…</Spin> : confirmAgain ? 'Yes, Produce Again' : 'Generate'}</button>
             </>
           ) : (
             <>
               <a className="dg-btn" href={`/api/v1/documents/${done.documentId}/raw`} target="_blank" rel="noopener noreferrer">Download</a>
               {done.webUrl && <a className="dg-btn" href={done.webUrl} target="_blank" rel="noopener noreferrer">Open In Word</a>}
-              {!done.decisionEventId && <button type="button" className="dg-btn" disabled={task !== 'idle'} onClick={() => void makeTask()}>{task === 'made' ? 'Task Created' : task === 'busy' ? 'Creating…' : `Create Task To Send`}</button>}
+              {!done.decisionEventId && <button type="button" className="dg-btn" disabled={task !== 'idle'} onClick={() => void makeTask()}>{task === 'made' ? 'Task Created' : task === 'busy' ? <Spin>Creating…</Spin> : `Create Task To Send`}</button>}
               <a className="dg-btn go" href={caseHref}>{done.decisionEventId ? 'Review In Tasks' : 'Open Case'}</a>
             </>
           )}

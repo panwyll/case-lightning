@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from './BusyButton';
 import { useState } from 'react';
 import { fmtWhen, pretty, type Api, type EngineState, type NoteRow } from './types';
 import { Grouped, ListToolbar, useListTools, type Filter } from './ListTools';
@@ -67,7 +68,7 @@ export function NotesPanel({
           {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <button className="ep-btn primary" disabled={busy || text.trim().length < 10} onClick={file}>
-          {busy ? 'Filing…' : 'File it'}
+          {busy ? <Spin>Filing…</Spin> : 'File It'}
         </button>
         {text.trim().length > 0 && text.trim().length < 10 && <span style={{ color: '#94a3b8', fontSize: 12 }}>A little more than that.</span>}
       </div>
@@ -142,7 +143,7 @@ export function AddNote({ busy, cmd }: { busy: boolean; cmd: (body: Record<strin
               </select>
               <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                 <button className="ep-btn" style={{ margin: 0 }} onClick={() => setOpen(false)}>Cancel</button>
-                <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || text.trim().length < 10} onClick={() => void file()}>{busy ? 'Filing…' : 'File'}</button>
+                <button className="ep-btn primary" style={{ margin: 0 }} disabled={busy || text.trim().length < 10} onClick={() => void file()}>{busy ? <Spin>Filing…</Spin> : 'File'}</button>
               </span>
             </div>
           </div>

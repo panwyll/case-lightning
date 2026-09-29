@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { paths } from '@/lib/paths';
@@ -106,7 +107,7 @@ function SignIn() {
                 onChange={(e) => setEmail(e.target.value)}
               />
               <button className="si-btn" type="submit" disabled={busy || !email.trim()}>
-                {busy ? 'Sending…' : 'Send me a link'}
+                {busy ? <Spin>Sending…</Spin> : 'Send Me A Link'}
               </button>
             </form>
           )}

@@ -4,6 +4,7 @@
  * the other side, the price, the lender and the target dates. Every client with an email is
  * written to; the engine's clients (their ID checks, the signers) follow the names.
  */
+import { Spin } from './BusyButton';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, X } from '@/app/shared/icons';
@@ -202,7 +203,7 @@ export function CaseDetailsEdit({ matterId, api, matter, side, onSaved }: { matt
           </div>
           <div className="cd-a">
             <button type="button" className="ep-btn" disabled={saving} onClick={() => setOpen(false)}>Cancel</button>
-            <button type="button" className="ep-btn primary" disabled={saving} onClick={() => void save()}>{saving ? 'Saving…' : 'Save'}</button>
+            <button type="button" className="ep-btn primary" disabled={saving} onClick={() => void save()}>{saving ? <Spin>Saving…</Spin> : 'Save'}</button>
           </div>
         </div>
       </div>,

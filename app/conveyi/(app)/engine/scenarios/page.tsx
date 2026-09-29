@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { BackLink } from '@/app/shared/BackLink';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
@@ -89,7 +90,7 @@ export default function ScenariosPage() {
               <div className="sc-row">
                 <label className="sc-switch"><input type="checkbox" checked={!!flagged[s.id]} onChange={(e) => setFlagged((cur) => ({ ...cur, [s.id]: e.target.checked }))} />Flagged branches</label>
                 <button className="eg-btn" style={{ marginLeft: 'auto' }} disabled={busy !== null} onClick={() => void run(s, 'step')} title="Create the case and take it one step at a time; every proposal and decision is yours under Tasks">Start Stepping</button>
-                <button className="eg-btn on" disabled={busy !== null} onClick={() => void run(s)}>{busy === s.id ? 'Running…' : 'Run'}</button>
+                <button className="eg-btn on" disabled={busy !== null} onClick={() => void run(s)}>{busy === s.id ? <Spin>Running…</Spin> : 'Run'}</button>
               </div>
               {r && (
                 <div className="sc-result">

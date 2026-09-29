@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 import { paths } from '@/lib/paths';
 import { api } from '@/app/shared/engine/api';
@@ -60,7 +61,7 @@ export default function LeapPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {s?.configured && !connected && <a className="eg-btn accent" href="/api/v1/integrations/leap/connect">Connect LEAP</a>}
-          {connected && <button className="eg-btn primary" disabled={busy} onClick={() => sync(false)}>{busy ? 'Syncing…' : 'Sync now'}</button>}
+          {connected && <button className="eg-btn primary" disabled={busy} onClick={() => sync(false)}>{busy ? <Spin>Syncing…</Spin> : 'Sync Now'}</button>}
           {connected && <button className="eg-btn" disabled={busy} onClick={() => sync(true)}>Full sync</button>}
           {connected && <button className="eg-btn danger" disabled={busy} onClick={disconnect}>Disconnect</button>}
           <a className="eg-btn" href={paths.tasks}>Tasks</a>

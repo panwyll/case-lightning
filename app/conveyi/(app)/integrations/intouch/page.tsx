@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
@@ -56,7 +57,7 @@ function ConnectForm({ s, busy, onConnect }: { s: Status; busy: boolean; onConne
       <label>API key<input id="it-api-key" type="password" placeholder={cr?.hasApiKey ? saved : 'If InTouch issued one'} value={f.apiKey} onChange={set('apiKey')} autoComplete="new-password" /></label>
       <label>Webhook secret<input id="it-webhook-secret" type="password" placeholder={cr?.hasWebhookSecret ? saved : 'If InTouch issued one'} value={f.webhookSecret} onChange={set('webhookSecret')} autoComplete="new-password" /></label>
       <label className="wide">Sign-in address<input id="it-auth" type="url" placeholder="Only if InTouch gave you a separate one" value={f.authBaseUrl} onChange={set('authBaseUrl')} autoComplete="off" /></label>
-      <div className="it-acts"><button className="eg-btn primary" type="submit" disabled={busy || !ready}>{busy ? 'Connecting…' : 'Connect InTouch'}</button></div>
+      <div className="it-acts"><button className="eg-btn primary" type="submit" disabled={busy || !ready}>{busy ? <Spin>Connecting…</Spin> : 'Connect InTouch'}</button></div>
     </form>
   );
 }
@@ -119,7 +120,7 @@ export default function InTouchPage() {
                 {connected && s.canManage && (
                   <>
                     <button className="eg-btn" disabled={!!busy} onClick={() => act('Sync', () => api('/integrations/intouch/sync', { method: 'POST', body: '{}' }))}>
-                      {busy === 'Sync' ? 'Syncing…' : 'Sync now'}
+                      {busy === 'Sync' ? <Spin>Syncing…</Spin> : 'Sync Now'}
                     </button>
                     <button className="eg-btn" disabled={!!busy} onClick={() => act('Full sync', () => api('/integrations/intouch/sync?full=1', { method: 'POST', body: '{}' }))}>
                       Re-read everything

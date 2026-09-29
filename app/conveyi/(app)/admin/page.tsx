@@ -1,4 +1,5 @@
 'use client';
+import { Spin } from '@/app/shared/engine/BusyButton';
 import { BackLink } from '@/app/shared/BackLink';
 import { FirmDetails, MySignature } from './FirmDetails';
 import { RefreshButton } from '@/app/shared/RefreshButton';
@@ -393,7 +394,7 @@ function PersonPanel({ person, setPerson, users, isNew, busy, onSave, onClose, t
         </div>
         <div className="pp-foot">
           <button type="button" className="pp-btn" disabled={busy} onClick={onClose}>Cancel</button>
-          <button type="button" className="pp-btn primary" disabled={!canSave} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? 'Saving…' : isNew ? 'Create Account' : 'Save'}</button>
+          <button type="button" className="pp-btn primary" disabled={!canSave} onClick={onSave} title={isNew ? 'Creates the account and emails a sign-in link.' : 'Saves role and access. Logged.'}>{busy ? <Spin>Saving…</Spin> : isNew ? 'Create Account' : 'Save'}</button>
         </div>
       </div>
     </div>
@@ -1108,7 +1109,7 @@ function AdminPageInner() {
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
                   {!billing.hasSubscription && (
-                    <button style={btnPrimary} disabled={billingBusy} onClick={subscribe}>{billingBusy ? 'Working…' : 'Add payment details'}</button>
+                    <button style={btnPrimary} disabled={billingBusy} onClick={subscribe}>{billingBusy ? <Spin>Working…</Spin> : 'Add Payment Details'}</button>
                   )}
                   {billing.hasSubscription && (
                     <button style={btnGhost} disabled={billingBusy} onClick={manageSubscription}>Manage subscription</button>
@@ -1418,7 +1419,7 @@ function AdminPageInner() {
                 onClick={generateAiTemplate}
                 disabled={aiGenBusy}
               >
-                {aiGenBusy ? 'Generating…' : 'Generate template'}
+                {aiGenBusy ? <Spin>Generating…</Spin> : 'Generate Template'}
               </button>
             </div>
 
@@ -1484,7 +1485,7 @@ function AdminPageInner() {
                   onClick={uploadDocTemplate}
                   disabled={docUploading}
                 >
-                  {docUploading ? 'Uploading…' : 'Upload'}
+                  {docUploading ? <Spin>Uploading…</Spin> : 'Upload'}
                 </button>
               </div>
             </div>
@@ -1582,7 +1583,7 @@ function AdminPageInner() {
                 onClick={mergeCases}
                 disabled={!mergeKeep || !mergeAway || mergeBusy}
               >
-                {mergeBusy ? 'Merging…' : 'Merge cases'}
+                {mergeBusy ? <Spin>Merging…</Spin> : 'Merge Cases'}
               </button>
             </div>
           </>
@@ -1700,7 +1701,7 @@ function AdminPageInner() {
                   setAuditMore(true);
                   try { const r = await api<{ logs: any[]; next?: string | null }>(`/admin/audit?limit=100&before=${encodeURIComponent(auditNext)}`); setAudit((cur) => [...cur, ...r.logs]); setAuditNext(r.next ?? null); }
                   finally { setAuditMore(false); }
-                }}>{auditMore ? 'Loading…' : 'Load More'}</button>
+                }}>{auditMore ? <Spin>Loading…</Spin> : 'Load More'}</button>
               </div>
             )}
           </div>
