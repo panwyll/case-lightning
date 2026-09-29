@@ -3,10 +3,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DecisionCard, DECISION_CSS } from './DecisionCard';
 import { DecisionPanel } from './DecisionPanel';
 import { ChevronRight } from '@/app/shared/icons';
+import { DismissButton, dismissTask } from './Dismissed';
 import { KIND_LABEL, pretty, type Api, type DecisionRow , chipLabel , quickApprovable } from './types';
 
 const ROW_CSS = `
-.df-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px 14px;align-items:center;padding:10px 14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-bottom:8px}
+.df-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:center;padding:10px 14px;border:1px solid #e6e8ee;border-radius:12px;background:#fff;margin-bottom:8px}
+.df-acts{display:flex;align-items:center;gap:6px}
 .df-chip{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#475569;background:#f1f5f9;border-radius:999px;padding:2px 8px;margin-right:8px;vertical-align:1px}
 .df-chip.prop{color:#5A27E0;background:#f5f3ff}
 .df-row .what{font-size:13.5px;font-weight:600;line-height:1.35;color:#0f172a}
@@ -32,7 +34,7 @@ const subjectLabel = (s: string | null | undefined): string => {
  * by matter, filterable by kind. Used by /decisions, the admin matter drawer (scoped
  * to one matter) and the Outlook taskpane (compact).
  */
-export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCount, hideWhenEmpty = false, onResolved }: { api: Api; matterId?: string; compact?: boolean; limit?: number; onCount?: (n: number) => void; hideWhenEmpty?: boolean; onResolved?: () => void }) {
+export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCount, hideWhenEmpty = false, onResolved, onDismissed, reloadKey = 0 }: { api: Api; matterId?: string; compact?: boolean; limit?: number; onCount?: (n: number) => void; hideWhenEmpty?: boolean; onResolved?: () => void; /** Set: each row can be dismissed (restorable from Dismissed). */ onDismissed?: () => void; reloadKey?: number }) {
   const [rows, setRows] = useState<DecisionRow[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [kind, setKind] = useState<string>('all');
@@ -77,7 +79,12 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, reloadKey]);
+  const dismiss = async (d: DecisionRow) => {
+    hide(d.eventId, true);
+    try { await dismissTask(api, d.matterId, `decision:${d.eventId}`, d.what ?? KIND_LABEL[d.kind] ?? pretty(d.kind)); onDismissed?.(); }
+    catch (e: unknown) { hide(d.eventId, false); setQuickErr({ id: d.eventId, text: e instanceof Error ? e.message : 'Could not dismiss it.' }); }
+  };
 
   const live = useMemo(() => (rows === null ? null : rows.filter((r) => !done.has(r.eventId))), [rows, done]);
   useEffect(() => { if (live) onCount?.(live.length); }, [live, onCount]);
@@ -122,8 +129,11 @@ export function DecisionFeed({ api, matterId, compact = false, limit = 200, onCo
             <div key={d.eventId} className={`df-item${open === d.eventId ? ' open' : ''}`}>
               <div className="df-row">
                 <div className="what">{quickErr?.id === d.eventId && <div style={{ color: '#b91c1c', fontSize: 12, fontWeight: 500 }}>{quickErr.text}</div>}<span className={`df-chip${d.kind === 'proposal' ? ' prop' : ''}`}>{d.chip ?? chipLabel(d.kind)}</span>{d.what ?? `${KIND_LABEL[d.kind] ?? pretty(d.kind)}${subjectLabel(d.subject) ? ` · ${subjectLabel(d.subject)}` : ''}`}</div>
+                <span className="df-acts">
                 {quickApprovable(d.taskKind) && open !== d.eventId && <button type="button" className="df-btn go" onClick={() => void quickApprove(d.eventId)}>Approve</button>}
                 <button type="button" className={`df-btn${open === d.eventId ? ' on' : ''}`} aria-label={open === d.eventId ? 'Collapse' : 'Review'} onClick={() => setOpen(open === d.eventId ? null : d.eventId)}>{open === d.eventId ? null : 'Review '}<ChevronRight size={14} style={{ transform: open === d.eventId ? 'rotate(90deg)' : undefined }} /></button>
+                {onDismissed && <DismissButton onClick={() => void dismiss(d)} />}
+                </span>
               </div>
               {open === d.eventId && (
                 <div className="df-open">

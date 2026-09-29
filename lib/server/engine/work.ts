@@ -49,6 +49,8 @@ export interface WorkItem {
   /** The fee-earner accountable. Falls back to the matter's handler. */
   responsibilityOwner: string | null;
   urgency: HealthBand;
+  /** The case's own colour (set on the Tasks list). */
+  caseBand?: HealthBand;
   workstream: string | null;
   /** WAITING / CHASE: when we asked. */
   since: string | null;

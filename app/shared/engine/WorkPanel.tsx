@@ -6,6 +6,7 @@ import { IssuesPanel } from './IssuesPanel';
 import { AddNote } from './NotesPanel';
 import { createPortal } from 'react-dom';
 import { DecisionFeed } from './DecisionFeed';
+import { DismissButton, DismissedTasks, dismissTask } from './Dismissed';
 import { TRANSACTION_LABEL, TRANSACTION_TYPES, fmtDay, fmtWhen, pretty, stageLabel, type Api, type CaseDocument, type CompletionContract, type EngineState, type EngineView, type ProfileView, type TaskContextView, type TransactionType } from './types';
 import { CompletionSheet } from './CompletionSheet';
 import { ClientDecisionSheet } from './ClientDecisionSheet';
@@ -599,6 +600,17 @@ function EnrolForm({ busy, cmd, err }: { busy: boolean; cmd: Cmd; err: string | 
 }
 
 export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, notice, section = 'flow' }: { matterId: string; api: Api; view: EngineView; busy: boolean; err: string | null; cmd: Cmd; onChanged?: () => void; notice?: Notice; section?: 'flow' | 'tasks' }) {
+  // Tasks dismissed here: hidden at once, listed under Dismissed (restorable).
+  const [goneSteps, setGoneSteps] = useState<Set<string>>(new Set());
+  const [disTick, setDisTick] = useState(0);
+  const [restoreTick, setRestoreTick] = useState(0);
+  const [disErr, setDisErr] = useState<string | null>(null);
+  const dismissStep = async (key: string, title: string) => {
+    setGoneSteps((cur) => new Set(cur).add(key));
+    setDisErr(null);
+    try { await dismissTask(api, matterId, `step:${key}`, title); setDisTick((n) => n + 1); onChanged?.(); }
+    catch (e: unknown) { setGoneSteps((cur) => { const n = new Set(cur); n.delete(key); return n; }); setDisErr(e instanceof Error ? e.message : 'Could not dismiss it.'); }
+  };
   // A chase sent by hand shows as sent on its button for 20 seconds.
   const [chaseSent, setChaseSent] = useState<Record<string, number>>({});
   const [chasing, setChasing] = useState<string | null>(null);
@@ -1271,11 +1283,12 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
 
       {section === 'tasks' && (<>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><div className="ep-sec" style={{ marginRight: 'auto' }}>To Do ({view.pendingDecisions.length + (view.due?.length ?? 0)})</div><AddNote busy={busy} cmd={cmd} /></div>
+      {disErr && <div className="eg-err">{disErr}</div>}
       {(view.due?.length ?? 0) > 0 && (
         <div className="ep-grid" style={{ marginBottom: 12 }}>
-          {view.due!.map((d) => (
+          {view.due!.filter((d) => !goneSteps.has(d.key)).map((d) => (
             <div key={d.key} className="ep-tile">
-              <b>{d.title}</b>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}><b style={{ flex: 1, minWidth: 0 }}>{d.title}</b><DismissButton onClick={() => void dismissStep(d.key, d.title)} /></div>
               {d.dueDate && <span className="d" style={{ display: 'block', color: d.dueDate < new Date().toISOString().slice(0, 10) ? '#b91c1c' : '#b45309', fontWeight: 600 }}>By {fmtDay(d.dueDate)}</span>}
               {d.detail && <span className="d" style={{ display: 'block' }}>{d.detail}</span>}
               <div className="acts" style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>{dueAction(d.key)}</div>
@@ -1283,8 +1296,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
           ))}
         </div>
       )}
-      <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} />
+      <DecisionFeed api={api} matterId={matterId} onResolved={onChanged} onDismissed={() => { setDisTick((n) => n + 1); onChanged?.(); }} reloadKey={restoreTick} />
       <div style={{ margin: '14px 0' }}><IssuesPanel api={api} state={s as never} busy={busy} cmd={cmd} onChanged={onChanged} /></div>
+      <DismissedTasks api={api} matterId={matterId} reloadKey={disTick} onRestored={() => { setGoneSteps(new Set()); setRestoreTick((n) => n + 1); onChanged?.(); }} />
 
       {openWaits.length > 0 && (
         <>

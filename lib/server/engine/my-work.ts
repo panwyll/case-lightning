@@ -1,3 +1,4 @@
+import { caseHealth } from './health';
 /**
  * The personal work list (docs/caseload-ux.md §4), derived from the same state the machine
  * enforces. One builder for the Tasks page and the sidebar number, so the badge is always the
@@ -25,7 +26,9 @@ export async function workItems(user: SessionUser, opts: { all?: boolean; who?: 
   const visible = await visibleMatterIds(user);
   for (const { state, meta } of states) {
     if (visible && !visible.has(state.matterId)) continue;
-    items.push(...matterWork(state, now, { ...meta, levels: subflows }).items);
+    // The case's own colour (whose move it is), so the list's house matches the Case View.
+    const caseBand = caseHealth(state, now).band;
+    items.push(...matterWork(state, now, { ...meta, levels: subflows }).items.map((i) => ({ ...i, caseBand })));
   }
   return { items, matters: states.length };
 }

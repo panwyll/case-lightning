@@ -201,9 +201,9 @@ export default function TaskList({ who }: { who: string }) {
   const groups = useMemo(() => {
     const m = new Map<string, { matterId: string; address: string; ref: string | null; clients: string[]; band: string; items: WorkItem[] }>();
     for (const i of tasks) {
-      const g = m.get(i.matterId) ?? { matterId: i.matterId, address: i.propertyAddress ?? i.matterRef ?? 'Case', ref: i.matterRef, clients: i.clients ?? [], band: i.urgency, items: [] };
+      const g = m.get(i.matterId) ?? { matterId: i.matterId, address: i.propertyAddress ?? i.matterRef ?? 'Case', ref: i.matterRef, clients: i.clients ?? [], band: i.caseBand ?? i.urgency, items: [] };
       g.items.push(i);
-      if ((RANK[i.urgency] ?? 9) < (RANK[g.band] ?? 9)) g.band = i.urgency;
+      if (!i.caseBand && (RANK[i.urgency] ?? 9) < (RANK[g.band] ?? 9)) g.band = i.urgency;
       m.set(i.matterId, g);
     }
     return Array.from(m.values());
