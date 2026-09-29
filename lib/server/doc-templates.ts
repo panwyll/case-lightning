@@ -151,6 +151,7 @@ async function callForDocFill(
       byok,
       status: 'FAILED',
       latencyMs: Date.now() - startedAt,
+      meta: { error: String((err as Error)?.message ?? err).slice(0, 500) },
     }).catch(() => {});
     throw err;
   }

@@ -7,8 +7,9 @@ import { getTenantBilling } from './plan';
 import { accountForUser } from './referrals';
 
 export async function listFirms() {
-  const firms = await query<{ id: string; name: string; created_at: string; users: number; cases: number; comp_plan: string | null; comp_until: string | null }>(
+  const firms = await query<{ id: string; name: string; created_at: string; users: number; cases: number; comp_plan: string | null; comp_until: string | null; contact: string | null }>(
     `select t.id, t.name, t.created_at::text,
+            (select email from app_user u where u.tenant_id = t.id order by (u.role = 'ADMIN') desc, u.created_at limit 1) as contact,
             (select count(*) from app_user u where u.tenant_id = t.id)::int as users,
             (select count(*) from matter m where m.tenant_id = t.id and coalesce(m.sandbox, false) = false)::int as cases,
             b.comp_plan, b.comp_until::text

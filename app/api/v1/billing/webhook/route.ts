@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import type Stripe from 'stripe';
 import { assertFeature } from '@/lib/server/config';
+import { recordError } from '@/lib/server/error-log';
 import { constructEvent } from '@/lib/server/stripe';
 import { query } from '@/lib/server/db';
 import {
@@ -152,6 +153,7 @@ export async function POST(req: NextRequest) {
       }
     } catch (error) {
       console.error('[stripe webhook] processing failed', event.type, (error as Error).message);
+      recordError({ source: 'webhook', route: `stripe:${event.type}`, message: (error as Error).message, detail: (error as Error).stack?.split('\n').slice(0, 6).join('\n') ?? null });
     }
   });
 

@@ -19,6 +19,7 @@ import { getPolicy } from '../policy';
 import { PgLenderDirectory } from './lender-directory';
 import { sandboxGuard } from './sandbox';
 import { previewProposal } from '../comms/preview';
+import { recordError, stackTop } from '../error-log';
 import { findFiles, fileBytes } from './file-finder';
 import { billOnIdResolved } from './billing-reaction';
 import crypto from 'node:crypto';
@@ -161,7 +162,11 @@ function productionSigningPort(): EnginePorts['signing'] {
 
 export function productionPorts(): EnginePorts {
   if (!_ports) {
-    const log = (msg: string, detail?: unknown) => console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
+    // A warning that carries an error is also kept for the owner's console (Errors).
+    const log = (msg: string, detail?: unknown) => {
+      console.warn(`[engine] ${msg}`, detail instanceof Error ? detail.message : detail ?? '');
+      if (detail instanceof Error) recordError({ source: 'engine', message: `${msg}: ${detail.message}`, detail: stackTop(detail.stack) });
+    };
     const { extractor, classifier } = chooseExtractor();
     const { summariser, reportDrafter, pofSummariser, noteExtractor, surveyAdviser, enquiryWriter } = chooseAi(log);
     const { searchProvider, idCheckProvider } = chooseIntegrations();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import { queryOne } from '@/lib/server/db';
+import { recordError } from '@/lib/server/error-log';
 import { isEntitled, emailQuotaStatus } from '@/lib/server/plan';
 import { processIncomingMessage } from '@/lib/server/mail/incoming';
 import { holdMail } from '@/lib/server/billing-suspension';
@@ -63,6 +64,7 @@ export async function POST(req: NextRequest) {
         // actually actioned it (replied / updated / delegated / marked handled).
       } catch (error) {
         console.error('[graph notification] processing failed', n.subscriptionId, (error as Error).message);
+        recordError({ source: 'webhook', route: 'graph:notification', message: (error as Error).message, detail: (error as Error).stack?.split('\n').slice(0, 6).join('\n') ?? null });
       }
     }
   });

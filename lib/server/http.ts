@@ -8,6 +8,7 @@ import { ZodError } from 'zod';
 import { UnauthorizedError, ForbiddenError } from './session';
 import { FeatureUnavailableError } from './config';
 import { describeGraphError } from './graph';
+import { recordError, routeFromStack, stackTop } from './error-log';
 
 export function ok(data: unknown, init?: ResponseInit) {
   return NextResponse.json(data, init);
@@ -41,6 +42,7 @@ export function fail(error: unknown) {
   // mailbox-less account), which would otherwise surface as a blank "HTTP 500".
   // describeGraphError() always yields a legible string; 502 marks it upstream.
   if (error instanceof GraphError) {
+    record(error, 502, describeGraphError(error));
     return NextResponse.json({ error: describeGraphError(error) }, { status: 502 });
   }
   // Rules the DATABASE enforces (migration 068): the ethical wall between handlers of
@@ -56,9 +58,17 @@ export function fail(error: unknown) {
   // 409/429) — honour it and pass through any `action` hint for the client.
   if (error instanceof Error && typeof (error as { status?: unknown }).status === 'number') {
     const e = error as Error & { status: number; action?: string };
+    if (e.status >= 500) record(e, e.status, e.message);
     return NextResponse.json(e.action ? { error: e.message, action: e.action } : { error: e.message }, { status: e.status });
   }
   // describeGraphError also covers plain Errors (falls back to name) and unknown
   // throwables, so the client never receives an empty error string.
+  record(error, 500, describeGraphError(error));
   return NextResponse.json({ error: describeGraphError(error) }, { status: 500 });
+}
+
+/** A server-side failure (5xx) goes to the owner's error log, with the route read off its stack. */
+function record(error: unknown, status: number, message: string): void {
+  const stack = (error as { stack?: string } | null)?.stack;
+  recordError({ source: 'api', route: routeFromStack(stack), status, message: message || 'Unknown error', detail: stackTop(stack) });
 }

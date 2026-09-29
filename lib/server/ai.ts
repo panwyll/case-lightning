@@ -118,8 +118,9 @@ async function structured<T>(
   const maxTokens = tier === 'classify' ? 1024 : tier === 'fast' ? 2048 : 4096;
 
   // Best-effort metering wrapper: record token usage/cost, never throw from here.
-  const meterCall = (usage: TokenUsage, status: 'SUCCESS' | 'FAILED') =>
-    recordAiUsage({ ctx, provider, model, tier, usage, byok, status, latencyMs: Date.now() - startedAt });
+  // A failure keeps why (meta.error), so the owner's Errors page can say what went wrong.
+  const meterCall = (usage: TokenUsage, status: 'SUCCESS' | 'FAILED', error?: unknown) =>
+    recordAiUsage({ ctx, provider, model, tier, usage, byok, status, latencyMs: Date.now() - startedAt, ...(error ? { meta: { error: String((error as Error)?.message ?? error).slice(0, 500) } } : {}) });
 
   if (provider === 'anthropic') {
     let resp: Anthropic.Message;
@@ -135,7 +136,7 @@ async function structured<T>(
         messages: [{ role: 'user', content: userContent }],
       });
     } catch (err) {
-      await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED');
+      await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED', err);
       throw err;
     }
     await meterCall(anthropicUsage(resp.usage), 'SUCCESS');
@@ -169,7 +170,7 @@ async function structured<T>(
       }),
     });
   } catch (err) {
-    await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED');
+    await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED', controller.signal.aborted ? 'Groq request timed out after 30s' : err);
     throw new Error(
       controller.signal.aborted ? 'Groq request timed out after 30s' : `Groq request failed: ${(err as Error).message}`
     );
@@ -177,8 +178,9 @@ async function structured<T>(
     clearTimeout(timer);
   }
   if (!res.ok) {
-    await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED');
-    throw new Error(`Groq error ${res.status}: ${await res.text()}`);
+    const text = await res.text();
+    await meterCall({ inputTokens: 0, outputTokens: 0 }, 'FAILED', `Groq error ${res.status}: ${text.slice(0, 300)}`);
+    throw new Error(`Groq error ${res.status}: ${text}`);
   }
   const json = (await res.json()) as {
     choices?: Array<{ message?: { tool_calls?: Array<{ function?: { arguments?: string } }> } }>;
@@ -729,7 +731,7 @@ export async function reviewDocument(input: {
       messages: [{ role: 'user', content }],
     });
   } catch (err) {
-    await recordAiUsage({ ctx, provider, model, tier: input.tier ?? 'fast', usage: { inputTokens: 0, outputTokens: 0 }, byok, status: 'FAILED', latencyMs: Date.now() - startedAt });
+    await recordAiUsage({ ctx, provider, model, tier: input.tier ?? 'fast', usage: { inputTokens: 0, outputTokens: 0 }, byok, status: 'FAILED', latencyMs: Date.now() - startedAt, meta: { error: String((err as Error)?.message ?? err).slice(0, 500), fileName: input.fileName } });
     throw err;
   }
   await recordAiUsage({ ctx, provider, model, tier: input.tier ?? 'fast', usage: anthropicUsage(resp.usage), byok, status: 'SUCCESS', latencyMs: Date.now() - startedAt, meta: { fileName: input.fileName } });
