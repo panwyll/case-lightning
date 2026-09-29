@@ -1,6 +1,7 @@
 import { query } from '../db';
 import { readQueue, queueCounts, sweepForRead, recheckSenderAddress, QUEUE_PAGE, type QueueUser } from './queue';
 import { caseCards, explainMatch, senderOnCase } from './case-cards';
+import { liveMatterIds } from '../matching';
 
 /**
  * The filing queue as the Email page and the sidebar see it. Rows come from the
@@ -20,6 +21,10 @@ export async function filingQueue(user: QueueUser, q: { cursor?: string | null; 
     if (changed) ({ rows, nextCursor } = await readQueue(user, { cursor: q.cursor, limit: q.limit ?? QUEUE_PAGE }));
   }
 
+  // Suggestions are stored when the email is matched; a case abandoned or closed since is no longer offered.
+  const allIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
+  const live = await liveMatterIds(user.tenantId, allIds).catch(() => new Set(allIds));
+  rows = rows.map((r) => ({ ...r, candidates: r.candidates.filter((c) => live.has(c.matterId)) }));
   const matterIds = rows.flatMap((r) => r.candidates.map((c) => c.matterId));
   const cards = await caseCards(user.tenantId, matterIds);
   const senders = [...new Set(rows.map((r) => r.from_address?.toLowerCase()).filter(Boolean))] as string[];

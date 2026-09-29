@@ -270,6 +270,13 @@ export function bandFor(score: number, signals: MatchSignal[]): Band {
  */
 const LIVE = `coalesce(status, 'OPEN') not in ('CLOSED', 'MERGED') and not exists (select 1 from matter_engine_state s where s.matter_id = matter.id and (jsonb_typeof(s.state->'abandoned') = 'object' or (s.state->>'closedAt') is not null))`;
 
+/** Of these cases, the ones still live (LIVE): a stored suggestion for a case since abandoned or closed is dropped on read. */
+export async function liveMatterIds(tenantId: string, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await query<{ id: string }>(`select id from matter where tenant_id = $1 and id = any($2::uuid[]) and ${LIVE}`, [tenantId, [...new Set(ids)]]);
+  return new Set(rows.map((r) => r.id));
+}
+
 export async function matchMessage(tenantId: string, signals: MessageSignals, opts: { distrustSender?: boolean } = {}): Promise<Candidate[]> {
   const haystack = `${signals.subject}\n${signals.bodyText}`;
   const tokens = extractCaseRefTokens(haystack);

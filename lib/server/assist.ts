@@ -24,7 +24,7 @@ import { learnFirmRef, recordContactsFromMessage } from './contacts';
 import { threadToText } from './text';
 import type { SessionUser } from './types';
 import type { Classification, TriageResult } from './triage';
-import { hasDefinitiveSignal, hasTrustedLink, isNoiseAddress, type Candidate } from './matching';
+import { hasDefinitiveSignal, hasTrustedLink, isNoiseAddress, liveMatterIds, type Candidate } from './matching';
 import { getStatusSnapshot, renderStatusSnapshot } from './status-snapshot';
 import { getVoiceGuide } from './voice';
 
@@ -125,7 +125,10 @@ async function loadStoredTriage(tenantId: string, messageId: string): Promise<Tr
     [tenantId, messageId]
   );
   if (!row) return null;
-  const candidates = Array.isArray(row.candidates) ? row.candidates : [];
+  const stored = Array.isArray(row.candidates) ? row.candidates : [];
+  // A case abandoned or closed since the email was matched is no longer offered.
+  const live = await liveMatterIds(tenantId, stored.map((c) => c.matterId)).catch(() => new Set(stored.map((c) => c.matterId)));
+  const candidates = stored.filter((c) => live.has(c.matterId));
   const top = candidates[0] ?? null;
   return { triageId: row.id, classification: row.classification, candidates, top, band: top?.band ?? 'NONE' };
 }
