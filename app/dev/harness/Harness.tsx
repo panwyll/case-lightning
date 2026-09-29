@@ -6,6 +6,7 @@ import { WorkPanel } from '@/app/shared/engine/WorkPanel';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
 import { StepReview } from '@/app/shared/engine/StepReview';
+import EmailTemplates from '@/app/conveyi/(app)/admin/EmailTemplates';
 
 const MATTER = '22222222-2222-4222-8222-222222222222';
 
@@ -43,6 +44,7 @@ export function Harness() {
       </div>
       {typeof window !== 'undefined' && window.location.hash.startsWith('#step:')
         ? <StepReview api={api} matterId={MATTER} stepKey={window.location.hash.slice('#step:'.length)} onDone={() => {}} />
+        : typeof window !== 'undefined' && window.location.hash === '#templates' ? <EmailTemplates />
         : view === 'tasks' ? <TaskList who="" /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
     </div>
   );

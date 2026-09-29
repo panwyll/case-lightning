@@ -17,14 +17,10 @@ Waits are not tasks: they are listed under **Waiting** and chase themselves ([wa
 ## Rules
 
 - **Title is the action**: "Send the client the ID check", "Upload Official Copies", "Approve the contract for signature". No "Proposal:", no "Decide:".
-- **Chip is `<who> <kind>`, title is the exact action** (`work.ts proposalChip`, `DUE_CHIP`):
-  - Client Acknowledgement · Acknowledge receipt of the client's proof-of-funds form
-  - Seller's Solicitor Chaser · Chase the seller's solicitor for replies to our enquiries
-  - Lender Request · Ask the lender for a redemption statement
-  - Client Request · Send the client the signing pack (anything asking the client to act)
-  - Client Update · Update the client: searches ordered
-  - Agent Update · Tell the estate agent contracts are exchanged
-  - Steps and reviews: Official Copies, Lender Certificate, HMLR Application, Search Result, Mortgage Offer; issues by kind (Building Regs). Never what it holds.
+- **Chip is the kind of work; title is the exact action** (`work.ts proposalChip`, `DECISION_CHIP`, `DUE_CHIP`):
+  - Outbound, by who and type: Client Acknowledgement · Acknowledge receipt of the client's proof-of-funds form; Seller's Solicitor Chaser; Lender Request; Client Request (asks the client to act); Client Update; Agent Update; Search Order. Files going out: **Send <Who> Documents** (Send Client Documents · Send the client the signing pack).
+  - A conveyancer's own job, by what kind it is (never the document's name): Document Sign-Off, Upload Documents, Record Outcome, Record Receipt, Authorise Payment, Reply To Enquiries, Run Search, Submit Application, File Return, Resolve Issue, Unsuccessful Send, Unlock File, Verify Details.
+- **Waiting and Deleted never show finished or abandoned cases** (they would grow for ever).
 - **Offered only when doable**: a due step's condition includes the stage and blockers the machine checks for its command.
 - **Every due key has an action** in `WorkPanel dueAction` and a label in `STEP_ACTION_LABEL` (or an upload in `STEP_UPLOADS`). A key without one falls back to "Open Case", which is a bug.
 - **Due date**: set where one exists (a deadline we owe, an issue's resolve-by). Overdue shows red on the row and colours the case.

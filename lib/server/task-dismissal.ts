@@ -19,6 +19,9 @@ export async function listDismissed(tenantId: string, matterId: string | null = 
     `select d.id, d.matter_id, d.ref, d.title, d.dismissed_at::text, coalesce(u.display_name, u.email) as who, m.matter_ref, m.property_address
        from task_dismissal d left join app_user u on u.id = d.dismissed_by left join matter m on m.id = d.matter_id
       where d.tenant_id = $1 and d.restored_at is null and ($2::uuid is null or d.matter_id = $2::uuid)
+        -- A finished or abandoned case's deleted tasks are history, not a list that grows for ever.
+        and coalesce(m.status, 'OPEN') not in ('CLOSED', 'MERGED')
+        and not exists (select 1 from matter_engine_state s where s.matter_id = d.matter_id and (s.finished_at is not null or jsonb_typeof(s.state->'abandoned') = 'object' or (s.state->>'closedAt') is not null))
       order by d.dismissed_at desc limit 200`,
     [tenantId, matterId]
   ).then((rows) => rows.map((r) => ({ id: r.id, matterId: r.matter_id, ref: r.ref, title: r.title, dismissedAt: r.dismissed_at, dismissedBy: r.who, matterRef: r.matter_ref, propertyAddress: r.property_address }))).catch(() => []);

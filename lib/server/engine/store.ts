@@ -514,7 +514,7 @@ export class PgEventStore implements EventStore {
       `select s.state, m.matter_ref, m.property_address, m.assigned_to, s.updated_at, m.sandbox, m.buyer_names, m.seller_names
          from matter_engine_state s
          join matter m on m.id = s.matter_id
-        where s.tenant_id = $1 and ($5::boolean or s.finished_at is null)
+        where s.tenant_id = $1 and ($5::boolean or (s.finished_at is null and coalesce(m.status, 'OPEN') not in ('CLOSED', 'MERGED')))
           and ($2::uuid is null or m.assigned_to = $2::uuid)
           and ($3::boolean or coalesce((s.state->>'shadowMode')::boolean, m.shadow_mode, false) = false)
         order by s.updated_at desc limit $4`,

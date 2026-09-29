@@ -19,6 +19,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ pat
   if (/^matters\/[^/]+\/engine\/documents/.test(p)) return NextResponse.json(await devDocuments());
   if (/^matters\/[^/]+\/engine$/.test(p)) return NextResponse.json(await devView());
   if (p.startsWith('decisions')) return NextResponse.json({ decisions: [] });
+  if (p === 'admin/templates') {
+    const { messageInfo } = await import('@/lib/server/engine/messages');
+    const { CLIENT_UPDATES, CHASES } = await import('@/lib/server/comms/templates');
+    const pick = { ...CLIENT_UPDATES, ...CHASES } as Record<string, { subject: string; body: string }>;
+    const names = ['searches_ordered', 'chase_contract_pack', 'deposit_request'];
+    return NextResponse.json({ engine: messageInfo(), docTemplates: [{ id: 'd1', name: 'Client care letter' }, { id: 'd2', name: 'Completion statement' }], templates: [...names.map((n, i) => ({ id: `t${i}`, name: n, category: 'Engine', subjectTemplate: pick[n]?.subject ?? '', bodyTemplate: pick[n]?.body ?? '', styleTag: 'NEUTRAL', attachDocTemplateIds: i === 2 ? ['d1'] : [] })), { id: 'tf', name: 'Welcome letter', category: 'General', subjectTemplate: 'Welcome', bodyTemplate: 'Dear {{buyer_names}},', styleTag: 'NEUTRAL', attachDocTemplateIds: [] }] });
+  }
   return NextResponse.json({});
 }
 

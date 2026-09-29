@@ -76,8 +76,8 @@ const OWNER: Record<string, string> = {
 };
 const day = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 const WHO_SHORT: Record<string, string> = {
-  conveyancer: 'Us', client: 'Client', seller_side: 'Other side', lender: 'Lender', third_party: 'Third party',
-  mlro: 'MLRO', hmlr: 'Land Registry', search_provider: 'Search provider', id_provider: 'ID provider',
+  conveyancer: 'Us', client: 'Client', seller_side: 'Other Side', lender: 'Lender', third_party: 'Third Party',
+  mlro: 'MLRO', hmlr: 'Land Registry', search_provider: 'Search Provider', id_provider: 'ID Provider',
 };
 
 /** Days until the date a reply is due: negative once it has passed. */
@@ -200,7 +200,7 @@ export function Waiting({ items: all, total, onChanged }: { items: WorkItem[]; /
       {expanded && (
         <div className="wk-tools">
           <label>Sort<select value={waitSort} onChange={(e) => setWaitSort(e.target.value as typeof waitSort)}><option value="overdue">Most Overdue</option><option value="chase">Next Chase</option><option value="asked">Asked Longest Ago</option><option value="case">Case</option></select></label>
-          <label>Waiting On<select value={whoFilter ?? ''} onChange={(e) => setWhoFilter(e.target.value || null)}><option value="">Anyone</option>{byWho.map(([who, n]) => <option key={who} value={who}>{OWNER[who] ?? pretty(who)} ({n})</option>)}</select></label>
+          <label>Waiting On<select value={whoFilter ?? ''} onChange={(e) => setWhoFilter(e.target.value || null)}><option value="">Anyone</option>{byWho.map(([who, n]) => <option key={who} value={who}>{WHO_SHORT[who] ?? pretty(who)} ({n})</option>)}</select></label>
         </div>
       )}
       {expanded && groupByCase(sorted).map((g) => (

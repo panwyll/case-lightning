@@ -23,7 +23,7 @@
 import { noteTaskTitle, nothingToActTitle } from './notes';
 import { profileOf } from './transactions';
 import { DEFAULT_SLA, dueActions, type SlaConfig } from './sla';
-import { ISSUE_CHIP, ISSUE_KIND_SPEC } from './issues';
+import { ISSUE_KIND_SPEC } from './issues';
 import { nextActions } from './graph';
 import { caseHealth, summariseHealth, type HealthBand, type HealthSummary } from './health';
 import { dueSteps } from './due';
@@ -179,7 +179,8 @@ const REQUEST_TITLE: Record<string, string> = {
 };
 /** What a standard client update is about, in the words of its subject line. */
 const UPDATE_TITLE: Record<string, string> = { searches_ordered: 'Searches ordered', searches_all_back: 'Searches all back', search_back_all_clear: 'Search back, all clear', search_back_under_review: 'Search back, under review', enquiries_raised: 'Enquiries raised', mortgage_offer_checked: 'Mortgage offer checked', report_on_title_sent: 'Report on title sent', exchanged: 'Contracts exchanged', completed: 'Completed', registration_complete: 'Registration complete', chase_update: 'We chased today', access_conditions: 'Access for the specialist: the seller\'s conditions', file_password: 'Password for a file we sent' };
-const DECISION_CHIP: Record<string, string> = { search: 'Search Result', enquiry: 'Enquiry Replies', mortgage: 'Mortgage Offer', title: 'Official Copies', id_check: 'ID Check Result', proof_of_funds: 'Client Proof Of Funds', bank_details: 'Bank Details', report_on_title: 'Client Report', contract: 'Draft Contract', management_pack: 'Management Pack', requisition: 'HMLR Requisition', escalation: 'Escalation', auto_clear: 'Auto-Cleared', note_actions: 'Note To Apply', lease: 'Lease' };
+/** A review's chip is the kind of work it is (the title says which document): signing off a document, verifying details, answering a requisition. */
+const DECISION_CHIP: Record<string, string> = { search: 'Document Sign-Off', enquiry: 'Document Sign-Off', mortgage: 'Document Sign-Off', title: 'Document Sign-Off', id_check: 'Document Sign-Off', proof_of_funds: 'Document Sign-Off', report_on_title: 'Document Sign-Off', contract: 'Document Sign-Off', management_pack: 'Document Sign-Off', lease: 'Document Sign-Off', bank_details: 'Verify Details', requisition: 'Answer Requisition', escalation: 'Escalation', auto_clear: 'Confirm Check', note_actions: 'Apply Note' };
 
 /** Who a message is for, as a chip starts ("Client", "Seller's Solicitor") and as a sentence says it ("the client", "the seller's solicitor"). */
 const MSG_PARTY: Record<string, { chip: string; the: string }> = {
@@ -188,14 +189,15 @@ const MSG_PARTY: Record<string, { chip: string; the: string }> = {
 };
 const partyOf = (role: unknown) => MSG_PARTY[String(role ?? 'client')] ?? { chip: 'Other Side', the: 'the other side' };
 /** Client messages that ask them to do something (a Client Request); the rest of a client's messages are updates. */
-const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'signing_pack', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
+const CLIENT_REQUESTS = new Set(['id_check_request', 'proof_of_funds_request', 'deposit_request', 'property_forms_request', 'exchange_authority_request', 'balance_request', 'ownership_basis_request', 'buildings_insurance_request', 'request_survey_report', 'mortgage_change_query']);
 /** A due step's chip: whose it is, and what kind of thing. */
+/** A due step's chip is the kind of work (the title says what exactly); files going out are "Send <who> Documents". */
 export const DUE_CHIP: Record<string, string> = {
-  official_copies: 'Official Copies', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Client Report', contract_pack: "Buyer's Solicitor Pack", management_pack_sale: 'Managing Agent Request',
-  contract_approved_sale: "Buyer's Solicitor Approval", contract_approve: 'Draft Contract', buyer_enquiries: "Buyer's Solicitor Enquiries", exchange: 'Exchange', completion_statement: 'Client Statement',
-  certificate_of_title: 'Lender Certificate', bankruptcy_search: 'Lender Check', priority_search: 'Lender Check', funds_request: 'Completion Funds', completion_monies: 'Completion Funds', consideration: 'Completion Funds',
-  completion_payment: "Seller's Solicitor Payment", redemption_payment: 'Lender Payment', completion: 'Completion', balance_to_client: 'Client Payment', mortgage_redeemed: 'Lender Redemption',
-  sdlt: 'HMRC Return', ap1: 'HMLR Application', notice_of_assignment: 'Landlord Notice', close_file: 'File Closure',
+  official_copies: 'Upload Documents', proof_of_funds_request: 'Client Request', report_on_title_redraft: 'Draft Document', contract_pack: "Send Buyer's Solicitor Documents", management_pack_sale: 'Managing Agent Request',
+  contract_approved_sale: 'Record Outcome', contract_approve: 'Document Sign-Off', buyer_enquiries: 'Reply To Enquiries', exchange: 'Exchange Contracts', completion_statement: 'Send Client Documents',
+  certificate_of_title: 'Send Lender Documents', bankruptcy_search: 'Run Search', priority_search: 'Run Search', funds_request: 'Request Funds', completion_monies: 'Record Receipt', consideration: 'Record Receipt',
+  completion_payment: 'Authorise Payment', redemption_payment: 'Authorise Payment', completion: 'Confirm Completion', balance_to_client: 'Authorise Payment', mortgage_redeemed: 'Record Outcome',
+  sdlt: 'File Return', ap1: 'Submit Application', notice_of_assignment: 'Send Landlord Documents', close_file: 'Close File',
 };
 /** "your proof of funds form" → "proof-of-funds form": what an acknowledgement is for, without the letter's own pronoun. */
 const ackThing = (what: unknown): string => String(what ?? 'what they sent').replace(/^(your|the|their|our)\s+/i, '').replace(/\bproof of funds\b/i, 'proof-of-funds');
@@ -210,9 +212,10 @@ export function proposalChip(action: string, det: Record<string, unknown>): stri
   if (action === 'chase') return `${who} Chaser`;
   if (action === 'client_update') {
     const k = String(det.kind ?? det.template ?? '');
+    // Files going to them: the pack to sign, a copy of a document, the completion statement.
+    if (k === 'signing_pack' || k === 'file_copy' || k === 'completion_statement') return 'Send Client Documents';
     if (CLIENT_REQUESTS.has(k)) return 'Client Request';
     if (k === 'survey_advice') return 'Client Advice';
-    if (k === 'file_copy') return 'Client Copy';
     return 'Client Update';
   }
   return who;
@@ -377,7 +380,8 @@ export function matterWork(s: MatterState, now: Date = new Date(), ctx: WorkCont
       // A locked file is opened from the task itself: the password goes against this document.
       documentId: i.kind === 'file_locked' ? (/\[doc:([0-9a-f-]{36})\]/.exec(i.detail ?? '')?.[1] ?? null) : null,
       // The chip says what kind of problem; the line is the problem itself, as it was raised.
-      chip: i.kind === 'send_failed' ? 'Unsuccessful' : i.kind === 'file_locked' ? 'Locked File' : ISSUE_CHIP[i.kind] ?? spec.label,
+      // The kind of work: sort out the problem (the title says which), send it again, unlock the file.
+      chip: i.kind === 'send_failed' ? 'Unsuccessful Send' : i.kind === 'file_locked' ? 'Unlock File' : 'Resolve Issue',
       // Older failures were titled "The chase to seller solicitor did not go: <reason>": read as the current wording.
       what: i.title.replace(/\s*\[[a-z-]+:[^\]]*\]/g, '').trim().replace(/^The (.+?) did not go:.*$/, (_m, w: string) => `${w.charAt(0).toUpperCase()}${w.slice(1).replace(/\bseller solicitor\b/, "the seller's solicitor").replace(/\bbuyer solicitor\b/, "the buyer's solicitor")} unsuccessful`),
       // No address for them: the task takes it and sends (not a trip to the case's contacts).

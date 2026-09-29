@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Paperclip, Check, Search } from '@/app/shared/icons';
+import { Paperclip, Search } from '@/app/shared/icons';
+import { BusyButton } from '@/app/shared/engine/BusyButton';
 import { CaseSearch, type CaseHit } from '@/app/shared/engine/CaseSearch';
 
 async function api<T = any>(path: string, options: RequestInit = {}): Promise<T> {
@@ -54,7 +55,8 @@ export default function EmailTemplates() {
   const [engine, setEngine] = useState<Record<string, Info>>({});
   const [sel, setSel] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // Preview against a real case: the words as they stand in the editor, filled from that case.
   const [previewCase, setPreviewCase] = useState<CaseHit | null>(null);
@@ -110,8 +112,8 @@ export default function EmailTemplates() {
       const r = await api<{ template: Tpl }>(`/admin/templates/${t.id}`, { method: 'PATCH', body: JSON.stringify({ name: t.name, category: t.category, subjectTemplate: t.subjectTemplate ?? '', bodyTemplate: t.bodyTemplate, styleTag: t.styleTag, attachDocTemplateIds: t.attachDocTemplateIds ?? [] }) });
       // The server may have de-duplicated the name (macOS-style _1); reflect what it stored.
       if (r?.template?.name && r.template.name !== t.name) setTemplates((ts) => (ts ?? []).map((x) => x.id === t.id ? { ...x, name: r.template.name } : x));
-      setSaved(true); setTimeout(() => setSaved(false), 1200);
-    } catch (e: any) { setErr(e?.message || 'Could not save.'); }
+      return true;
+    } catch (e: any) { setErr(e?.message || 'Could not save.'); return false; }
   };
   const create = async () => {
     try {
@@ -168,90 +170,87 @@ export default function EmailTemplates() {
           {list.map((t) => (
             <button key={t.id} onClick={() => setSel(t.id)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 9px', border: 'none', borderRadius: 8, background: sel === t.id ? '#F2EEFC' : 'transparent', cursor: 'pointer', marginBottom: 2 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a' }}>{label(t)}</div>
-              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category === 'Engine' ? (engine[t.name]?.to ?? 'Engine') : `${t.category} · ${t.styleTag}`}</div>
+              <div style={{ fontSize: 10.5, color: '#94a3b8' }}>{t.category === 'Engine' ? (engine[t.name]?.to ?? 'Engine') : t.category}</div>
             </button>
           ))}
           </div>))}
         </div>
 
-        {/* Editor */}
-        {cur ? (
+        {/* Editor: the tools sit at the top right, above the fold; the preview is behind its button. */}
+        {cur ? (() => {
+          const ids = cur.attachDocTemplateIds ?? [];
+          const setIds = (next: string[]) => { set({ attachDocTemplateIds: next }); void save({ ...cur, attachDocTemplateIds: next }); };
+          const available = docTemplates.filter((d) => !ids.includes(d.id));
+          const vars = cur.category === 'Engine' && engine[cur.name] ? engine[cur.name].vars : PLACEHOLDERS;
+          const info = cur.category === 'Engine' ? engine[cur.name] : null;
+          const has = (k: string) => cur.bodyTemplate.includes(`{{${k}}}`) || (cur.subjectTemplate ?? '').includes(`{{${k}}}`);
+          return (
           <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 'calc(100vh - 240px)', overflowY: 'auto', paddingRight: 4 }}>
             <div style={card}>
-              {cur.category === 'Engine' && engine[cur.name] ? (
-                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', fontSize: 12.5, marginBottom: 8, alignItems: 'baseline' }}>
-                  <strong style={{ fontSize: 14, gridColumn: '1 / -1' }}>{engineName(cur.name)}</strong>
-                  <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>Sent when</span><span>{engine[cur.name].when}</span>
-                  <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>To</span><span>{engine[cur.name].to}</span>
-                  {engine[cur.name].requires.length > 0 && (<>
-                    <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase' }}>Must keep</span>
-                    <span style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{engine[cur.name].requires.map((k) => <code key={k} style={{ fontSize: 11, background: cur.bodyTemplate.includes(`{{${k}}}`) || (cur.subjectTemplate ?? '').includes(`{{${k}}}`) ? '#F2EEFC' : '#fee2e2', color: cur.bodyTemplate.includes(`{{${k}}}`) || (cur.subjectTemplate ?? '').includes(`{{${k}}}`) ? '#5A27E0' : '#b91c1c', borderRadius: 5, padding: '2px 6px' }}>{`{{${k}}}`}</code>)}</span>
-                  </>)}
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', gap: 8 }}>
-                {cur.category !== 'Engine' && <input value={cur.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => save(cur)} placeholder="Name" style={{ ...input, fontWeight: 700, flex: 2 }} />}
-                {cur.category !== 'Engine' && <input value={cur.category} onChange={(e) => set({ category: e.target.value })} onBlur={() => save(cur)} placeholder="Category" style={{ ...input, flex: 1 }} />}
-                <select value={cur.styleTag} onChange={(e) => { set({ styleTag: e.target.value }); save({ ...cur, styleTag: e.target.value }); }} style={{ ...input, width: 120, flex: 'none' }}>
-                  {STYLES.map((s) => <option key={s} value={s}>{s.charAt(0) + s.slice(1).toLowerCase()}</option>)}
-                </select>
-              </div>
-              <label style={lbl}>Subject</label>
-              <input value={cur.subjectTemplate ?? ''} onChange={(e) => set({ subjectTemplate: e.target.value })} onBlur={() => save(cur)} placeholder="e.g. {{matter_ref}} — update on your purchase" style={input} />
-              <label style={lbl}>Body</label>
-              <textarea ref={bodyRef} value={cur.bodyTemplate} onChange={(e) => set({ bodyTemplate: e.target.value })} onBlur={() => save(cur)} rows={12} style={{ ...input, fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' }} />
-              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                <span style={{ fontSize: 11, color: '#94a3b8', marginRight: 4 }}>Insert:</span>
-                {(cur.category === 'Engine' && engine[cur.name] ? engine[cur.name].vars : PLACEHOLDERS).map((k) => (
-                  <button key={k} onClick={() => insertPlaceholder(k)} title={SAMPLE[k] ? `Sample: ${SAMPLE[k]}` : `{{${k}}} is filled in automatically`} style={{ fontSize: 10.5, fontFamily: 'ui-monospace, monospace', color: '#5A27E0', background: '#F2EEFC', border: '1px solid #ddd2f7', borderRadius: 6, padding: '2px 6px', cursor: 'pointer' }}>{`{{${k}}}`}</button>
-                ))}
-              </div>
-              <label style={lbl}>Attach documents</label>
-              {(() => {
-                const ids = cur.attachDocTemplateIds ?? [];
-                const setIds = (next: string[]) => { set({ attachDocTemplateIds: next }); save({ ...cur, attachDocTemplateIds: next }); };
-                const available = docTemplates.filter((d) => !ids.includes(d.id));
-                return (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                    {ids.map((id) => {
-                      const d = docTemplates.find((x) => x.id === id);
-                      return (
-                        <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, fontWeight: 600, color: '#7c4a03', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 999, padding: '3px 6px 3px 9px' }}>
-                          <Paperclip size={11} /> {d?.name ?? 'document'}
-                          <button onClick={() => setIds(ids.filter((x) => x !== id))} title="Remove" style={{ border: 'none', background: 'none', color: '#b45309', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
-                        </span>
-                      );
-                    })}
-                    {available.length > 0 && (
-                      <select value="" onChange={(e) => { if (e.target.value) setIds([...ids, e.target.value]); }} style={{ ...input, width: 'auto' }}>
-                        <option value="">{ids.length ? '+ add another…' : '+ attach a document…'}</option>
-                        {available.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                      </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {cur.category === 'Engine'
+                  ? <strong style={{ fontSize: 14, flex: 1, minWidth: 180 }}>{engineName(cur.name)}</strong>
+                  : <span style={{ display: 'flex', gap: 8, flex: 1, minWidth: 260 }}>
+                      <input value={cur.name} onChange={(e) => set({ name: e.target.value })} onBlur={() => void save(cur)} placeholder="Name" style={{ ...input, fontWeight: 700, flex: 2 }} />
+                      <input value={cur.category} onChange={(e) => set({ category: e.target.value })} onBlur={() => void save(cur)} placeholder="Category" style={{ ...input, flex: 1 }} />
+                    </span>}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 'auto' }}>
+                  <select value="" aria-label="Insert a field" onChange={(e) => { if (e.target.value) insertPlaceholder(e.target.value); }} style={{ ...input, width: 'auto' }}>
+                    <option value="">Insert…</option>
+                    {vars.map((k) => <option key={k} value={k}>{`{{${k}}}`}{SAMPLE[k] ? ` · ${SAMPLE[k]}` : ''}</option>)}
+                  </select>
+                  <span style={{ position: 'relative' }}>
+                    <button type="button" title="Attach a document" aria-label="Attach a document" disabled={!available.length && !ids.length} onClick={() => setAttachOpen((o) => !o)} style={{ ...btn, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 9px' }}><Paperclip size={16} />{ids.length ? ids.length : null}</button>
+                    {attachOpen && (
+                      <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,.14)', padding: 4, minWidth: 240, display: 'grid' }}>
+                        {available.length ? available.map((d) => <button key={d.id} type="button" onClick={() => { setIds([...ids, d.id]); setAttachOpen(false); }} style={{ textAlign: 'left', border: 0, background: 'none', padding: '7px 10px', borderRadius: 7, fontSize: 13, cursor: 'pointer' }}>{d.name}</button>) : <span style={{ padding: '7px 10px', fontSize: 12.5, color: '#94a3b8' }}>Every document is attached</span>}
+                      </div>
                     )}
+                  </span>
+                  <button type="button" onClick={() => setPreviewOpen(true)} style={btn}>Preview</button>
+                  <BusyButton className="" style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }} busyLabel="Saving…" doneLabel="Saved" onClick={() => save(cur)}>Save</BusyButton>
+                  {cur.category !== 'Engine' && <button type="button" onClick={() => archive(cur)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca' }}>Archive</button>}
+                </div>
+              </div>
+              {info && (
+                <div style={{ fontSize: 12.5, color: '#475569', marginTop: 8, display: 'flex', gap: '4px 14px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span><b style={{ color: '#94a3b8', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>Sent When</b>{info.when}</span>
+                  <span><b style={{ color: '#94a3b8', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 6 }}>To</b>{info.to}</span>
+                  {info.requires.length > 0 && <span style={{ display: 'inline-flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}><b style={{ color: '#94a3b8', fontSize: 11, letterSpacing: '.05em', textTransform: 'uppercase', marginRight: 1 }}>Must Keep</b>{info.requires.map((k) => <code key={k} style={{ fontSize: 11, background: has(k) ? '#F2EEFC' : '#fee2e2', color: has(k) ? '#5A27E0' : '#b91c1c', borderRadius: 5, padding: '2px 6px' }}>{`{{${k}}}`}</code>)}</span>}
+                </div>
+              )}
+              {ids.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {ids.map((id) => (
+                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#334155', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 999, padding: '3px 4px 3px 10px' }}>
+                      <Paperclip size={16} /> {docTemplates.find((x) => x.id === id)?.name ?? 'Document'}
+                      <button type="button" onClick={() => setIds(ids.filter((x) => x !== id))} style={{ border: 0, background: 'none', color: '#b91c1c', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, padding: '0 6px' }}>Remove</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <label style={lbl}>Subject</label>
+              <input value={cur.subjectTemplate ?? ''} onChange={(e) => set({ subjectTemplate: e.target.value })} onBlur={() => void save(cur)} placeholder="e.g. {{matter_ref}} — update on your purchase" style={input} />
+              <label style={lbl}>Body</label>
+              <textarea ref={bodyRef} value={cur.bodyTemplate} onChange={(e) => set({ bodyTemplate: e.target.value })} onBlur={() => void save(cur)} rows={18} style={{ ...input, fontFamily: 'inherit', lineHeight: 1.5, resize: 'vertical' }} />
+            </div>
+            {previewOpen && (
+              <div role="dialog" aria-label="Preview" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreviewOpen(false); }} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.38)', zIndex: 60, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '70px 16px 16px' }}>
+                <div style={{ ...card, width: '100%', maxWidth: 720, maxHeight: 'calc(100vh - 110px)', overflowY: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,.24)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <strong style={{ fontSize: 14 }}>Preview</strong>
+                    <div style={{ flex: 1, maxWidth: 360, marginLeft: 'auto' }}><CaseSearch api={api} value={previewCase} onChange={setPreviewCase} placeholder="Preview for a case" /></div>
+                    <button type="button" onClick={() => setPreviewOpen(false)} style={btn}>Close</button>
                   </div>
-                );
-              })()}
-              {(cur.attachDocTemplateIds?.length ?? 0) > 0
-                ? <p style={{ fontSize: 10.5, color: '#b45309', margin: '6px 0 0' }}><Paperclip size={11} /> Generated from the case and attached whenever this email sends. If the total is too large, the email is held as a draft and flagged rather than sent without them.</p>
-                : docTemplates.length === 0 && <p style={{ fontSize: 10.5, color: '#94a3b8', margin: '6px 0 0' }}>No document templates yet — add one in Doc packs to attach it here.</p>}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                <button onClick={() => save(cur)} style={{ ...btn, background: '#5A27E0', color: '#fff', border: 'none' }}>Save</button>
-                {saved && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}><Check size={12} /> Saved</span>}
-                {cur.category !== 'Engine' && <button onClick={() => archive(cur)} style={{ ...btn, color: '#b91c1c', borderColor: '#fecaca', marginLeft: 'auto' }}>Archive</button>}
+                  {liveErr && <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>{liveErr}</div>}
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{live ? live.subject || '(no subject)' : fill(cur.subjectTemplate || '(no subject)')}</div>
+                  <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{live ? live.body : fill(cur.bodyTemplate)}</div>
+                </div>
               </div>
-            </div>
-            {/* Live preview with sample data */}
-            <div style={{ ...card, background: '#fbfbfe' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.3 }}>Preview</div>
-                <div style={{ flex: 1, maxWidth: 360, marginLeft: 'auto' }}><CaseSearch api={api} value={previewCase} onChange={setPreviewCase} placeholder="Preview for a case" /></div>
-              </div>
-              {liveErr && <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>{liveErr}</div>}
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', marginBottom: 6 }}>{live ? live.subject || '(no subject)' : fill(cur.subjectTemplate || '(no subject)')}</div>
-              <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{live ? live.body : fill(cur.bodyTemplate)}</div>
-            </div>
+            )}
           </div>
-        ) : (
+          );
+        })() : (
           <div style={{ ...card, flex: 1, color: '#94a3b8', fontSize: 13 }}>Pick a template to edit, or create a new one.</div>
         )}
       </div>
