@@ -20,15 +20,15 @@ function patchFetch() {
   };
 }
 
-function CasePanel() {
+function CasePanel({ section }: { section: 'tasks' | 'flow' }) {
   const eng = useEngine(MATTER, api);
   if (!eng.view) return <div>{eng.err ?? 'Loading…'}</div>;
-  return <WorkPanel matterId={MATTER} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section="tasks" />;
+  return <WorkPanel matterId={MATTER} api={api} view={eng.view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={() => void eng.load()} notice={eng.notice} section={section} />;
 }
 
 export function Harness() {
   const [ready, setReady] = useState(false);
-  const [view, setView] = useState<'tasks' | 'case'>(() => (typeof window !== 'undefined' && window.location.hash === '#case' ? 'case' : 'tasks'));
+  const [view, setView] = useState<'tasks' | 'case' | 'flow'>(() => (typeof window !== 'undefined' ? (window.location.hash.slice(1) as 'tasks' | 'case' | 'flow') || 'tasks' : 'tasks'));
   useEffect(() => { patchFetch(); setReady(true); }, []);
   if (!ready) return null;
   return (
@@ -37,9 +37,10 @@ export function Harness() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         <button className="ep-btn" onClick={() => { window.location.hash = 'tasks'; setView('tasks'); }}>Tasks</button>
         <button className="ep-btn" onClick={() => { window.location.hash = 'case'; setView('case'); }}>Case Tasks Tab</button>
+        <button className="ep-btn" onClick={() => { window.location.hash = 'flow'; setView('flow'); }}>Flowchart</button>
         <button className="ep-btn" onClick={() => void fetch('/api/dev/harness/reset', { method: 'POST' }).then(() => window.location.reload())}>Reset</button>
       </div>
-      {view === 'tasks' ? <TaskList who="" /> : <CasePanel />}
+      {view === 'tasks' ? <TaskList who="" /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
     </div>
   );
 }

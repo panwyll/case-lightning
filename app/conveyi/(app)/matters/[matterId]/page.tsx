@@ -137,11 +137,9 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
   const [team, setTeam] = useState<Person[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [model, setModel] = useState<Model | null>(null);
-  const [emails, setEmails] = useState<Array<{ id: string; subject: string; lastMessageAt: string | null }> | null>(null);
   const [files, setFiles] = useState<Array<{ id: string; name: string; webUrl: string | null; documentId?: string | null; lastModified?: string | null }> | null>(null);
   const [rereadingFile, setRereadingFile] = useState<string | null>(null);
-  // The case's emails and files are searched and grouped by when, never cut off at a dozen.
-  const emailTools = useListTools(emails ?? [], { date: (t) => t.lastMessageAt ?? '1970-01-01', text: (t) => t.subject ?? '' });
+  // The case's files are searched and grouped by when, never cut off at a dozen.
   const fileTools = useListTools(files ?? [], { date: (f) => f.lastModified ?? '1970-01-01', text: (f) => f.name });
   const [fileNote, setFileNote] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
@@ -158,7 +156,6 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
       .catch(() => setCaseLog([]));
   }, [tab, matterId, eng.events.length]);
   const load = useCallback(async () => {
-    api<{ threads: any[] }>(`/matters/${matterId}/emails`).then((x) => setEmails(x.threads ?? [])).catch(() => setEmails([]));
     api<{ files: any[] }>(`/matters/${matterId}/files`).then((x) => setFiles(x.files ?? [])).catch(() => setFiles([]));
   }, [matterId]);
   useEffect(() => { void load(); }, [load]);
@@ -232,14 +229,8 @@ export default function MatterPage({ params }: { params: Promise<{ matterId: str
 
           {tab === 'tasks' && view && enrolled && <WorkPanel matterId={matterId} api={api} view={view} busy={eng.busy} err={eng.err} cmd={eng.cmd} onChanged={refresh} notice={eng.notice} section="tasks" />}
           {tab === 'documents' && view && enrolled && <DocumentsPanel matterId={matterId} api={api} view={view} events={eng.events} busy={eng.busy} setBusy={eng.setBusy} onChanged={refresh} doc={doc} />}
-          {tab === 'documents' && ((emails?.length ?? 0) > 0 || (files?.length ?? 0) > 0) && (
-              <div className="mx-sec mx-two">
-                {(emails?.length ?? 0) > 0 && (
-                  <div>
-                    <h2 className="mx-h">Emails</h2>
-                    <div className="mx-list"><ListToolbar tools={emailTools} placeholder="Search emails" /><Grouped tools={emailTools} render={(t) => <div key={t.id} className="mx-row"><span className="mx-ellip">{t.subject || '(no subject)'}</span><span className="d">{short(t.lastMessageAt)}</span></div>} /></div>
-                  </div>
-                )}
+          {tab === 'documents' && (files?.length ?? 0) > 0 && (
+              <div className="mx-sec">
                 {(files?.length ?? 0) > 0 && (
                   <div>
                     <h2 className="mx-h">Files</h2>
