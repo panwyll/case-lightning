@@ -10,6 +10,7 @@ import { dueSteps } from './engine/due';
 import { matterWork, buckets } from './engine/work';
 import { pendingDecisions, surfacedDecisions, type LevelConfig } from './engine/types';
 import { profileOf } from './engine/transactions';
+import { COMPLETION_CONTRACTS } from './engine/completion';
 
 export const DEV_TENANT = '11111111-1111-4111-8111-111111111111';
 export const DEV_MATTER = '22222222-2222-4222-8222-222222222222';
@@ -52,7 +53,7 @@ export async function devView() {
     documentCount: 0,
     people: {},
     levels: LEVELS,
-    contracts: {},
+    contracts: COMPLETION_CONTRACTS,
     matter: { matterRef: 'DEV-001', propertyAddress: '14 Oak Street, Leeds LS1 2AB', shadowMode: false, sandbox: false },
   };
 }

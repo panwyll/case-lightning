@@ -24,6 +24,8 @@ import { AlertTriangle, Check, CheckCircle, Circle, Clock, FileText, Lock, Mail,
  * the server returns (docs/transaction-types.md); nothing here is duplicated per type.
  */
 export const WORK_CSS = `
+.ep-inplace{margin-top:8px}
+.ep-inplace > *{max-width:100% !important;box-shadow:none !important;border:1px solid #e6e8ee}
 .ep-upmsg{font-size:12.5px;font-weight:600;color:#92400e;margin-top:6px;line-height:1.4}
 .ep-upmsg.ok{color:#15803d}
 .ep{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;font-size:13px}
@@ -685,8 +687,21 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     return () => { live = false; };
   }, [api, matterId, view.state.stage, view.pendingDecisions.length, view.blockers.length]);
   const openSheet = (laneId: string, type: string, extra: Record<string, unknown>) => setSheet({ laneId, type, extra });
+  const inPlace = section === 'step' || section === 'wait';
+  const rendered = useRef<Array<{ laneId: string; type: string; extra: Record<string, unknown>; form: boolean }>>([]);
+  // Only the shown step's own buttons count (the lanes build theirs too, on every render).
+  const capturing = useRef(false);
+  const capture = (f: () => ReactNode): ReactNode => { rendered.current = []; capturing.current = true; try { return f(); } finally { capturing.current = false; } };
+  const autoOpened = useRef(false);
+  useEffect(() => {
+    if (!inPlace || autoOpened.current) return;
+    const acts = rendered.current;
+    if (acts.length === 1 && acts[0].form) { autoOpened.current = true; openSheet(acts[0].laneId, acts[0].type, acts[0].extra); }
+  });
   const act = (laneId: string, type: string, label: string, extra: Record<string, unknown> = {}, opts: { primary?: boolean; disabled?: boolean; title?: string } = {}) => {
     const c: CompletionContract | undefined = contracts[type];
+    // Opened from the Tasks list: a step that is one form opens straight onto it (the row's button already said what it is).
+    if (capturing.current && !opts.disabled) rendered.current.push({ laneId, type, extra, form: !!c });
     return (
       c
         ? <button className={`ep-btn${opts.primary ? ' primary' : ''}`} disabled={busy || opts.disabled} title={opts.title ?? c?.effect} onClick={() => openSheet(laneId, type, extra)}>{label}</button>
@@ -849,7 +864,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
     }} />;
   };
   const sheetDialog = sheet && sheet.type === 'client_decision_recorded' ? (
-    <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
+    <div className={inPlace ? 'ep-inplace' : 'ep-veil'} onMouseDown={(e) => { if (!inPlace && e.target === e.currentTarget && !busy) setSheet(null); }}>
       <ClientDecisionSheet
         matterId={matterId}
         api={api}
@@ -867,7 +882,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       />
     </div>
   ) : sheet && contracts[sheet.type] ? (
-    <div className="ep-veil" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) setSheet(null); }}>
+    <div className={inPlace ? 'ep-inplace' : 'ep-veil'} onMouseDown={(e) => { if (!inPlace && e.target === e.currentTarget && !busy) setSheet(null); }}>
       <CompletionSheet
         upload={/_deed_executed$|deed_of_trust_executed/.test(sheet.type) ? async (file) => {
           const base64 = await new Promise<string>((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] ?? ''); r.onerror = () => rej(new Error('Could not read the file.')); r.readAsDataURL(file); });
@@ -1323,8 +1338,9 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
       {readDialog}
 
       {section === 'step' && stepKey && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-          {dueAction(stepKey) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}
+        // While its form is open, the form is the step: the button that opened it would say the same thing again.
+        <div style={{ display: sheet ? 'none' : 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          {capture(() => dueAction(stepKey)) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}
         </div>
       )}
       {section === 'step' && stepKey && upMsg[stepKey] && <div className={`ep-upmsg${upMsg[stepKey].ok ? ' ok' : ''}`}>{upMsg[stepKey].text}</div>}
@@ -1333,7 +1349,7 @@ export function WorkPanel({ matterId, api, view, busy, err, cmd, onChanged, noti
         const key = at < 0 ? stepKey : stepKey.slice(0, at), subject = at < 0 ? '' : stepKey.slice(at + 1);
         const mk = `wait:${key}:${subject}`;
         return <>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>{waitAction(key, subject) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}</div>
+          <div style={{ display: sheet ? 'none' : 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>{capture(() => waitAction(key, subject)) ?? <a className="ep-btn" style={{ margin: 0 }} href={`${paths.matter(matterId)}?tab=tasks`}>Open Case</a>}</div>
           {upMsg[mk] && <div className={`ep-upmsg${upMsg[mk].ok ? ' ok' : ''}`}>{upMsg[mk].text}</div>}
         </>;
       })()}

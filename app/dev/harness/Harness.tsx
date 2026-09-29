@@ -5,6 +5,7 @@ import { useEngine } from '@/app/shared/engine/useEngine';
 import { WorkPanel } from '@/app/shared/engine/WorkPanel';
 import { api } from '@/app/shared/engine/api';
 import { ENGINE_CSS } from '@/app/shared/engine/ui';
+import { StepReview } from '@/app/shared/engine/StepReview';
 
 const MATTER = '22222222-2222-4222-8222-222222222222';
 
@@ -40,7 +41,9 @@ export function Harness() {
         <button className="ep-btn" onClick={() => { window.location.hash = 'flow'; setView('flow'); }}>Flowchart</button>
         <button className="ep-btn" onClick={() => void fetch('/api/dev/harness/reset', { method: 'POST' }).then(() => window.location.reload())}>Reset</button>
       </div>
-      {view === 'tasks' ? <TaskList who="" /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
+      {typeof window !== 'undefined' && window.location.hash.startsWith('#step:')
+        ? <StepReview api={api} matterId={MATTER} stepKey={window.location.hash.slice('#step:'.length)} onDone={() => {}} />
+        : view === 'tasks' ? <TaskList who="" /> : <CasePanel section={view === 'flow' ? 'flow' : 'tasks'} />}
     </div>
   );
 }
