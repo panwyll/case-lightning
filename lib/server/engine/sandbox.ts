@@ -14,7 +14,7 @@
  */
 import { query, queryOne, runOutsideAutomation } from '../db';
 import { putBlob } from '../blob-store';
-import type { EnginePorts } from './ports';
+import type { ClientComms, EnginePorts, ThirdPartyChaser } from './ports';
 import crypto from 'node:crypto';
 import { FixtureExtractor, MockIdCheckProvider, MockSearchProvider, TemplateReportDrafter, TemplateSummariser } from './mocks';
 import { ProductionChaser, ProductionClientComms, type CommsDeps, type MatterContactInfo } from '../comms/client-comms';
@@ -40,6 +40,25 @@ export async function isSandboxMatter(tenantId: string, matterId: string): Promi
 export const rememberSandbox = (tenantId: string, matterId: string) => cache.set(`${tenantId}:${matterId}`, { at: Date.now(), sandbox: true });
 
 /** The production ports, with every outward effect routed to its mock on a sandbox matter. */
+/** A port whose every method goes to `mock` on a sandbox matter and to `real` otherwise (methods take `{ tenantId, matterId }`). */
+export function routeEach<T extends object>(real: T, mock: T, pick: <X>(tenantId: string, matterId: string, real: X, mock: X) => Promise<X>): T {
+  const out: Record<string, unknown> = {};
+  const keys = new Set<string>();
+  for (let o: object | null = real; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) for (const k of Object.getOwnPropertyNames(o)) keys.add(k);
+  for (const k of keys) {
+    if (k === 'constructor') continue;
+    const v = (real as Record<string, unknown>)[k];
+    if (typeof v !== 'function') { out[k] = v; continue; }
+    out[k] = async (input: { tenantId: string; matterId: string }, ...rest: unknown[]) => {
+      const target = (await pick(input.tenantId, input.matterId, real, mock)) as Record<string, (...a: unknown[]) => unknown>;
+      // A sandbox never falls through to the live sender: a method its outbox lacks refuses.
+      if (typeof target[k] !== 'function') throw new Error(`${k} is not available on a sandbox case.`);
+      return target[k].call(target, input, ...rest);
+    };
+  }
+  return out as T;
+}
+
 export function sandboxGuard(base: EnginePorts): EnginePorts {
   const fixture = new FixtureExtractor();
   const summariser = new TemplateSummariser();
@@ -78,17 +97,10 @@ export function sandboxGuard(base: EnginePorts): EnginePorts {
     noteExtractor: base.noteExtractor ? { name: base.noteExtractor.name, extract: async (input) => (await pick(input.tenantId, input.matterId, base.noteExtractor!, notes)).extract(input) } : base.noteExtractor,
     searchProvider: { name: base.searchProvider.name, orderSearch: async (input) => (await pick(input.tenantId, input.matterId, base.searchProvider, search)).orderSearch(input) },
     idCheckProvider: { name: base.idCheckProvider.name, requestCheck: async (input) => (await pick(input.tenantId, input.matterId, base.idCheckProvider, idCheck)).requestCheck(input) },
-    clientComms: {
-      name: base.clientComms.name,
-      sendStatusUpdate: async (input) => (await pick(input.tenantId, input.matterId, base.clientComms, comms)).sendStatusUpdate(input),
-      sendReportOnTitle: async (input) => (await pick(input.tenantId, input.matterId, base.clientComms, comms)).sendReportOnTitle(input),
-    },
-    chaser: {
-      name: base.chaser.name,
-      sendChase: async (input) => (await pick(input.tenantId, input.matterId, base.chaser, chaser)).sendChase(input),
-      sendPartyNotice: async (input) => (await pick(input.tenantId, input.matterId, base.chaser, chaser)).sendPartyNotice(input),
-      sendAcknowledgement: async (input) => (await pick(input.tenantId, input.matterId, base.chaser, chaser)).sendAcknowledgement(input),
-    },
+    // Every sender the live port has, sent to the case's outbox instead on a sandbox: listed from the port itself,
+    // so a method added later (a first request, our enquiries) is never dropped — a dropped optional method reads as "not configured" on every case.
+    clientComms: routeEach(base.clientComms, comms as unknown as ClientComms, pick),
+    chaser: routeEach(base.chaser, chaser as unknown as ThirdPartyChaser, pick),
     onEvents: base.onEvents ? async (input) => { if (!(await isSandboxMatter(input.tenantId, input.matterId))) await base.onEvents!(input); } : undefined,
   };
 }
