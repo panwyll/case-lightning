@@ -186,12 +186,9 @@ export const config = {
   // 0 = unlimited. Per-case pricing means volume is already paid for, so this is a
   // safety valve against runaway mailboxes, not a funnel lever.
   emailCap: Number(env('EMAIL_CAP') ?? '0'),
-  // Recurring single-level referral commission — a share of what the *referred* firm
-  // actually pays each invoice, capped. Commission = min(cap, rate × invoice).
-  // Under per-case billing an invoice is £100 × cases that month, so a referred firm
-  // that opens one case earns £25 and one that opens two or more earns the £50 cap.
-  referralCommissionPennies: Number(env('REFERRAL_COMMISSION_PENNIES') ?? '5000'), // the cap (max)
-  referralCommissionRate: Number(env('REFERRAL_COMMISSION_RATE') ?? '0.25'),
+  // Recurring single-level referral reward: £10 for every case the *referred* firm is billed
+  // for, as account credit, for as long as they stay. Never more than the invoice collected.
+  referralPerCasePennies: Number(env('REFERRAL_PER_CASE_PENNIES') ?? '1000'),
   billingCurrency: env('BILLING_CURRENCY') ?? 'gbp',
 
   // LEAP (leap.build) as the backend — phase 0/1. Hosts are configured, never derived:

@@ -94,6 +94,8 @@ export async function POST(req: NextRequest) {
             refereeAccountId: account.id,
             stripeInvoiceId: inv.id,
             amountPaidPennies: inv.amount_paid ?? null,
+            // The metered line's quantity is the number of cases billed.
+            cases: (inv.lines?.data ?? []).filter((l) => (l.amount ?? 0) > 0).reduce((n, l) => n + (l.quantity ?? 0), 0) || null,
             periodStart: line?.period?.start ?? null,
             periodEnd: line?.period?.end ?? null,
           });

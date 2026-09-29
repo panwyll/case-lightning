@@ -20,11 +20,11 @@ export default function ReferralTermsPage() {
 
       <section className="mx-auto max-w-3xl px-6 pt-16 pb-16 md:pt-24">
         <p className="text-sm font-semibold uppercase tracking-wide text-ink/50">Referrals</p>
-        <h1 className="mt-2 text-3xl font-bold md:text-4xl">Earn up to £50 a month, for every firm you refer</h1>
+        <h1 className="mt-2 text-3xl font-bold md:text-4xl">Earn £10 for every case a firm you refer runs</h1>
         <p className="mt-4 text-lg text-ink/70">
-          Share your link. Every firm that subscribes through it earns you <strong>a quarter of what
-          they pay, up to £50 a month, in account credit</strong> — recurring, for as long as they stay
-          a customer. Refer five active firms and that’s up to £250 a month off your own bill.
+          Share your link. Every firm that signs up through it earns you <strong>£10 in account credit for every
+          case they’re billed for</strong> — recurring, for as long as they stay a customer. Refer five
+          firms running ten cases a month each and that’s £500 a month off your own bill.
         </p>
 
         <H2>How the payments actually work</H2>
@@ -36,8 +36,7 @@ export default function ReferralTermsPage() {
           </li>
           <li>
             <span className="font-semibold">2. Credit accrues when they pay.</span> Each time that firm
-            pays a monthly invoice, a quarter of it (up to £50) is <em>accrued</em> to you — two or more
-            cases in a month reaches the cap. Nothing accrues from a sign-up that never pays, or during
+            pays a monthly invoice, £10 for every case on it is <em>accrued</em> to you — no cap. Nothing accrues from a sign-up that never pays, or during
             an unpaid trial.
           </li>
           <li>

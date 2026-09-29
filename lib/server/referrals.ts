@@ -2,9 +2,9 @@
  * Referral graph + recurring commission ledger.
  *
  * Model: single-level. Each billing_account is referred by at most one other
- * account (the DAG is a forest of chains). Commission is £50/month per directly-
- * referred account, accrued when that referee PAYS an invoice and payable the
- * first of the following month, applied as account credit.
+ * account (the DAG is a forest of chains). Commission is £10 for every case a
+ * directly-referred account is billed for, accrued when that referee PAYS an invoice
+ * and payable the first of the following month, applied as account credit.
  *
  * Integrity guarantees:
  *  - no self-referral, no double-referral (unique referee), no cycles (ancestor walk);
@@ -139,6 +139,8 @@ export async function accrueCommission(args: {
   refereeAccountId: string;
   stripeInvoiceId: string;
   amountPaidPennies?: number | null;
+  /** Cases billed on the invoice (the metered quantity); worked out from the amount when absent. */
+  cases?: number | null;
   periodStart?: number | null;
   periodEnd?: number | null;
 }): Promise<void> {
@@ -148,13 +150,11 @@ export async function accrueCommission(args: {
   );
   if (!edge) return;
 
-  // Commission is a share of what the referred firm actually paid this invoice, capped.
-  // Under per-case billing an invoice is £100 × cases opened that month, so a one-case
-  // month accrues £25 and two or more cases reach the £50 cap (see referralCommissionRate
-  // in config.ts). A £0 invoice accrues nothing; you only ever pay commission out of
-  // revenue you've collected.
+  // £10 for every case the referred firm was billed for on this invoice, never more than
+  // they actually paid. A £0 invoice accrues nothing: commission only comes out of revenue collected.
   const paid = Math.max(0, args.amountPaidPennies ?? 0);
-  const amount = Math.min(config.referralCommissionPennies, Math.round(paid * config.referralCommissionRate));
+  const cases = args.cases != null && args.cases > 0 ? Math.floor(args.cases) : Math.floor(paid / config.casePricePennies);
+  const amount = Math.min(paid, cases * config.referralPerCasePennies);
   if (amount <= 0) return;
 
   await query(

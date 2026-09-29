@@ -242,10 +242,10 @@ export default function Page() {
         <div className="mx-auto max-w-4xl rounded-3xl border border-violet/20 bg-violet-soft p-10 md:p-14">
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-violet">The best referral scheme in legal software</p>
           <h2 className="mt-4 font-serif text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            Refer a firm, earn <span className="italic text-violet">£50 every month</span> they stay.
+            Refer a firm, earn <span className="italic text-violet">£10 on every case</span> they run.
           </h2>
           <p className="mt-5 max-w-2xl text-lg text-ink-soft">
-            Not a one-off finder’s fee — a recurring £50/month in account credit for every firm you refer,
+            Not a one-off finder’s fee — £10 in account credit for every case a firm you refer is billed for,
             for as long as they’re a customer. Refer a handful and your own subscription pays for itself.
           </p>
         </div>

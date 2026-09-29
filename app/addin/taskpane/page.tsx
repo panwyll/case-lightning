@@ -3566,10 +3566,10 @@ export default function Taskpane() {
             <div style={{ textAlign: 'center', padding: '4px 0 2px' }}>
               <div style={{ color: '#16a34a', lineHeight: 1 }}><CheckCircle size={30} /></div>
               <div style={{ fontSize: 40, fontWeight: 800, color: '#5A27E0', letterSpacing: -1, marginTop: 10, lineHeight: 1 }}>
-                £{referral ? (referral.commissionPennies / 100).toFixed(0) : '50'}
+                £{referral ? (referral.commissionPennies / 100).toFixed(0) : '10'}
               </div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', marginTop: 6, lineHeight: 1.3 }}>
-                every month<br />for every referral you make
+                for every case<br />a firm you refer runs
               </div>
             </div>
 

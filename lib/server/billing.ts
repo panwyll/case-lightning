@@ -99,7 +99,7 @@ export async function getBillingSummary(user: SessionUser): Promise<BillingSumma
     referralLink: `${appUrl}/start-trial?ref=${account.referral_code}`,
     creditBalancePennies: account.credit_balance_pennies,
     currency: config.billingCurrency,
-    commissionPennies: config.referralCommissionPennies,
+    commissionPennies: config.referralPerCasePennies,
     referrals: { total: referees.length, active: referees.filter((r) => r.status === 'active').length },
     commissions: {
       accruedPennies: totalFor('ACCRUED'),
