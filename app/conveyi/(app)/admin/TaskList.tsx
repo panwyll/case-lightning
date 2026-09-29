@@ -23,9 +23,15 @@ const CSS = `
 .tl-q input:focus{outline:2px solid #c4b5fd;border-color:#8b5cf6}
 .tl-bar select{border:1px solid #d0d5dd;border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:700;color:#0f172a;background:#fff;cursor:pointer;font-family:inherit;max-width:280px}
 .tl-bar .n{margin-left:auto;font-size:12.5px;color:#94a3b8;font-variant-numeric:tabular-nums}
-.tl-group{background:#fff;border:1px solid #e6e8ee;border-radius:12px;margin-bottom:10px;overflow:hidden}
-.tl-case{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #f1f5f9;text-decoration:none;color:inherit}
-.tl-case:hover{background:#fafafa}
+.tl-groups{background:#fff;border:1px solid #e2dcf5;border-radius:12px;overflow:hidden;margin-bottom:12px}
+.tl-group + .tl-group{border-top:1px solid #e2dcf5}
+.tl-case{display:flex;align-items:center;gap:10px;padding:9px 14px;background:#f3f0fb;color:inherit;cursor:pointer;user-select:none}
+.tl-case:hover{background:#ece7fa}
+.tl-case .chev{display:inline-flex;color:#5A27E0;transition:transform .12s}
+.tl-case .chev.open{transform:rotate(90deg)}
+.tl-case a{text-decoration:none;color:inherit;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tl-case a:hover b{color:#5A27E0}
+.tl-case .cnt{font-size:11.5px;font-weight:800;color:#5A27E0;background:#fff;border:1px solid #d9d0f7;border-radius:99px;padding:1px 8px}
 .tl-case b{font-size:13.5px;font-weight:800;color:#0f172a}
 .tl-case .ref{font-size:12px;color:#5A27E0;font-weight:700}
 .tl-case .who{font-size:12px;color:#64748b;margin-left:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%}
@@ -82,6 +88,10 @@ export default function TaskList({ who }: { who: string }) {
   /** Every word typed matches the case (address, reference, clients) or the task itself. */
   const matches = useCallback((i: WorkItem) => { const hay = `${i.propertyAddress ?? ''} ${i.matterRef ?? ''} ${(i.clients ?? []).join(' ')} ${i.what} ${i.chip ?? ''}`.toLowerCase(); return q.trim().toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w)); }, [q]);
   const [open, setOpen] = useState<string | null>(null);
+  // Cases folded away, remembered in this browser.
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  useEffect(() => { try { setFolded(new Set(JSON.parse(localStorage.getItem('tl-folded') ?? '[]') as string[])); } catch { /* storage blocked */ } }, []);
+  const toggleFold = (id: string) => setFolded((cur) => { const n = new Set(cur); if (n.has(id)) n.delete(id); else n.add(id); try { localStorage.setItem('tl-folded', JSON.stringify([...n])); } catch { /* storage blocked */ } return n; });
   // Several approvals can be in flight at once; each row tracks its own.
   const [approving, setApproving] = useState<Set<string>>(new Set());
   const busyOn = (id: string, on: boolean) => setApproving((cur) => { const n = new Set(cur); if (on) n.add(id); else n.delete(id); return n; });
@@ -186,15 +196,18 @@ export default function TaskList({ who }: { who: string }) {
       {tasks.length === 0 && checkedAt && (
         <div className="tl-clear"><CheckCircle size={16} /><span>All clear</span><span className="t">checked {checkedAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span></div>
       )}
+      {groups.length > 0 && <div className="tl-groups">
       {groups.map((g) => (
         <div key={g.matterId} className="tl-group">
-          <a className="tl-case" href={paths.matter(g.matterId)}>
+          <div className="tl-case" role="button" tabIndex={0} aria-expanded={!folded.has(g.matterId)} onClick={() => toggleFold(g.matterId)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFold(g.matterId); } }}>
+            <span className={`chev${folded.has(g.matterId) ? '' : ' open'}`}><ChevronRight size={16} /></span>
             <House band={g.band as never} size={18} />
-            <b>{g.address}</b>
+            <a href={paths.matter(g.matterId)} onClick={(e) => e.stopPropagation()}><b>{g.address}</b></a>
             {g.ref && <span className="ref">{g.ref}</span>}
+            <span className="cnt">{g.items.length}</span>
             {g.clients.length > 0 && <span className="who">{g.clients.join(' & ')}</span>}
-          </a>
-          {g.items.map((i) => {
+          </div>
+          {!folded.has(g.matterId) && g.items.map((i) => {
             const isDecision = i.ref?.type === 'decision';
             const key = `${i.matterId}:${i.id}`;
             const isOpen = open === key;
@@ -230,6 +243,7 @@ export default function TaskList({ who }: { who: string }) {
           })}
         </div>
       ))}
+      </div>}
       {data.waiting.length > 0 && <Waiting items={data.waiting.filter(matches)} total={data.waiting.length} onChanged={() => void load()} />}
     </div>
   );
